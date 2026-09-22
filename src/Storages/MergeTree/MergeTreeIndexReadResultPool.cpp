@@ -163,8 +163,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             if (prune_primary_key)
             {
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
-                KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
-                dynamic_key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
+                auto dynamic_key_condition = KeyCondition::createForPrimaryKey(filter_dag, context, primary_key);
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     data_part,

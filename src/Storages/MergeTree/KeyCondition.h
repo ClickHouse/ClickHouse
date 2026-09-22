@@ -82,16 +82,24 @@ public:
         bool skip_analysis_ = false, /// Toggled by `use_primary_key`, `use_partition_key` setting. Useful for testing.
         bool require_ready_sets_ = false); /// Analyse only already-built `IN` sets; never execute a subquery.
 
-    /// Same as above, but takes the key's KeyDescription. The condition honors the key's per-column
-    /// sort directions (reverse flags; an empty vector means all-ascending, e.g. a partition key).
-    /// Any condition over a key that can be reverse-sorted (a MergeTree primary key) must be
-    /// constructed this way, otherwise a reverse key would be analyzed as ascending.
+    /// Takes the key's `KeyDescription` and honors its per-column sort directions. An empty vector
+    /// of reverse flags means all-ascending, as for a partition key. Passing only column names and
+    /// expressions would analyze a reverse-sorted key as ascending.
+    /// Primary-key conditions must use `createForPrimaryKey`, which also applies exactness restrictions.
     KeyCondition(
         const ActionsDAGWithInversionPushDown & filter_dag,
         ContextPtr context,
         const KeyDescription & key_description,
         bool single_point_ = false,
         bool skip_analysis_ = false);
+
+    /// Builds a primary-key condition with its sort directions and restrictions on range exactness.
+    /// Partition and skip-index conditions use the general constructors because their range semantics differ.
+    static KeyCondition createForPrimaryKey(
+        const ActionsDAGWithInversionPushDown & filter_dag,
+        ContextPtr context,
+        const KeyDescription & primary_key,
+        bool skip_analysis = false);
 
     struct BloomFilterData
     {
@@ -478,8 +486,8 @@ public:
     /// These atoms are relaxed when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
     /// mentioned earlier, and a right-unbounded FUNCTION_IN_RANGE atom is also
-    /// relaxed when its key column can hold a NaN inside a Tuple (see
-    /// relaxRangeAtomsOverNaNHidingTupleColumns).
+    /// relaxed when its primary-key column can hold a NaN inside a `Tuple`.
+    /// `createForPrimaryKey` applies this restriction before publishing the condition.
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -501,8 +509,6 @@ public:
     /// full condition retains their stronger pruning. Uncovered relaxed atoms and multi-value set
     /// indexes remain subject to the conservative `isRelaxed` contract.
     bool canCheckExactness() const { return exactness_condition || !isRelaxed(); }
-
-    void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }
 
@@ -885,6 +891,10 @@ private:
     ///   In this case will be (FUNCTION_IN_RANGE, FUNCTION_UNKNOWN, FUNCTION_AND)
     ///   and all, two, partitions will be scanned, but due to filtering later none of rows will be matched.
     bool unknownOrAlwaysTrue(bool unknown_any) const;
+
+    /// Marks range atoms that cannot exclude tuple-contained NaNs as inexact and refreshes derived exactness.
+    /// Requires the full primary-key types in key-column order.
+    void relaxRangeAtomsForTupleNaNs(const DataTypes & key_types);
 
     /// Rebuilds the derived exactness condition after changing the RPN, without modifying shared copies.
     void updateExactnessCondition();

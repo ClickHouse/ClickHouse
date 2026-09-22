@@ -1626,6 +1626,17 @@ KeyCondition::KeyCondition(
         exactness_condition->key_order = key_order;
 }
 
+KeyCondition KeyCondition::createForPrimaryKey(
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context,
+    const KeyDescription & primary_key,
+    bool skip_analysis)
+{
+    KeyCondition condition(filter_dag, std::move(context), primary_key, /*single_point_*/ false, skip_analysis);
+    condition.relaxRangeAtomsForTupleNaNs(primary_key.data_types);
+    return condition;
+}
+
 KeyCondition::KeyCondition(
     ThisIsPrivate, ColumnIndices key_columns_, size_t num_key_columns_, bool single_point_,
     bool date_time_overflow_behavior_ignore_)
@@ -1777,7 +1788,7 @@ bool KeyCondition::isRelaxed() const
 static bool floatReachableThroughTupleElements(const DataTypePtr & type)
 {
     const auto unwrapped = removeLowCardinalityAndNullable(type);
-    if (WhichDataType(unwrapped).isFloat())
+    if (isFloat(unwrapped))
         return true;
 
     const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
@@ -1788,33 +1799,24 @@ static bool floatReachableThroughTupleElements(const DataTypePtr & type)
     return std::any_of(elements.begin(), elements.end(), floatReachableThroughTupleElements);
 }
 
-static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
-{
-    if (!type)
-        return false;
-
-    const auto unwrapped = removeLowCardinalityAndNullable(type);
-    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && floatReachableThroughTupleElements(unwrapped);
-}
-
 /// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
 /// between two granule bounds that hold none, while every row comparison against it is false, and the
 /// bounds therefore cannot answer `can_be_false` for a range atom over such a key column. Only a range
 /// that reaches the top of the order can hold such a value: one bounded above by an ordinary value
 /// excludes it, because a row whose first differing position holds a NaN compares greater than the
 /// constant. `can_be_true` is left alone, so every pruning decision is unchanged.
-void KeyCondition::relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types)
+void KeyCondition::relaxRangeAtomsForTupleNaNs(const DataTypes & key_types)
 {
+    chassert(key_types.size() == num_key_columns);
     for (auto & element : rpn)
     {
-        if (element.function != RPNElement::FUNCTION_IN_RANGE || element.key_columns.size() != 1)
+        if (element.function != RPNElement::FUNCTION_IN_RANGE || !element.range.right.isPositiveInfinity())
             continue;
 
         const size_t key_column = element.getKeyColumn();
-        if (key_column >= key_types.size() || !typeCanHideNaNInsideTuple(key_types[key_column]))
-            continue;
-
-        if (element.range.right.isPositiveInfinity())
+        chassert(key_column < key_types.size());
+        const auto key_type = removeLowCardinalityAndNullable(key_types[key_column]);
+        if (isTuple(key_type) && floatReachableThroughTupleElements(key_type))
             element.relaxed = true;
     }
 
