@@ -345,6 +345,15 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
         SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
         MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
 
+    auto tuple_settings = settings;
+    tuple_settings.nullable_serialization_version = MergeTreeNullableSerializationVersion::ALLOW_SPARSE;
+    for (const auto & type_name : {"Tuple(s String)", "Tuple(a Nullable(String))"})
+    {
+        EXPECT_EQ(
+            SerializationInfoByName(NamesAndTypesList{{"t", DataTypeFactory::instance().get(type_name)}}, tuple_settings).getVersion(),
+            MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
+    }
+
     settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
     EXPECT_EQ(
         SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
