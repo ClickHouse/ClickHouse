@@ -43,6 +43,7 @@ public:
     bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     JoinResultPtr joinBlock(Block block) override;
+    using IJoin::joinBlock;
     void joinBlock(Block & block, std::optional<MergeJoin::NotProcessed> & not_processed);
 
     void setTotals(const Block &) override;
