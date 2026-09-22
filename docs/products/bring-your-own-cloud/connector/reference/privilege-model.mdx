@@ -1,0 +1,203 @@
+---
+title: 'Privilege model'
+sidebarTitle: 'Privilege model'
+description: 'Exactly what the ClickHouse Connector can and cannot do: identities, outbound connections, ClickHouse grants, Kubernetes RBAC, cloud access, attribution, and data minimization'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'privilege', 'security', 'managed mode', 'executor']
+doc_type: 'reference'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+This page is the security reference for the ClickHouse Connector: its identities, connections, exact privileges, structural limits, and how every action is attributed. For how the pieces fit together, see [architecture](/products/bring-your-own-cloud/connector/architecture).
+
+<Note>
+The managed-mode workflows described here require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team. Public `v0.16.0` has neither `init --managed` nor `init --no-managed`, and it does not ship the customer-create workflow or the `platform` command. The permissions below describe those workflows once that support is available.
+</Note>
+
+## Identities {#identities}
+
+Managed-mode enrollment, customer service creation, and platform approval use these identities only on a [supported build and deployment](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
+
+<Image img="/images/cloud/reference/byoc-connector-identity-model.svg" size="lg" alt="ClickHouse Connector identity model" />
+
+- **The connector's mTLS client certificate**, with your organization ID as its common name, authenticates every daemon to your connector endpoint. `clicklink clctl instances create` uses the same certificate and HMAC key when it calls the endpoint.
+- **`pcm_scraper` and `pcm_troubleshooter`** are the read-only ClickHouse users the scraper and troubleshooter connect as. The executor has no ClickHouse user.
+- **Troubleshooter ServiceAccounts**, one per provisioned deployment, carry the read-only Kubernetes views a support session can use.
+- **`pcm-executor`** is the executor's Kubernetes ServiceAccount for the lifecycle of managed services. A ValidatingAdmissionPolicy confines its writes to service namespaces.
+- **`pcm-platform`** is the executor's identity for platform updates. Your `clicklink clctl platform approve` mints its token for 2 hours and never renews it; between approvals the executor has no write access to the platform layer.
+- **The per-service IAM role** (`CH-S3-<service>-<region>-00-Role` by default) is created by `clicklink clctl executor prepare` with your credentials. It is scoped to that service's data and backup buckets and trusted only by that service's Kubernetes ServiceAccount, so neither the executor nor ClickHouse can assume it.
+- **The connector EC2 VM's instance profile**, for direct platform access, is used to assume your environment's read-only ECR puller role for both chart login and image checks. The approval CLI uses the same instance-profile path; workstation AWS profiles or SSO credentials do not replace it. Other ECR chart registries use ambient AWS credentials. No S3 or IAM calls. Image pulls happen on your nodes under their own pull role. The executor holds no credentials for your buckets or IAM. See [registry credentials](/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
+- **Your own credentials** apply every grant. That is the executor's access grant at `init --managed`, the buckets and role at `prepare`, the permission half of every platform update at `approve`, and the cleanup at `teardown`.
+
+## What the connector can do {#what-the-connector-can-do}
+
+### Outbound connections {#outbound-connections}
+
+This is the complete list of connections the connector opens. All of them originate inside your environment.
+
+| Destination | Protocol | Purpose |
+|-------------|----------|---------|
+| Your connector endpoint | HTTPS with mTLS, every request HMAC-signed | `POST /v1/metrics`, `/v1/self-metrics`, `/v1/status`, `/v1/instance/sync`, `/v1/infra/sync`, `/v1/backup/sync`, `/v1/pcm/cert/renew`; from `clicklink clctl`, `POST /v1/pcm/instances` (submit a service definition) |
+| Your connector endpoint | Outbound WebSocket, `/v1/commands/ws` | The troubleshooter's command channel, gated by support-session state |
+| Your connector endpoint | Outbound WebSocket, `/v1/commands/ws/executor` | The executor's command channel: lifecycle commands for managed services and their results |
+| Your enrollment endpoint | HTTPS (enrollment token or HMAC; no mTLS) | Token redemption and certificate signing (`/v1/pcm/cert/sign`) at install time |
+| Your ClickHouse instances | ClickHouse native protocol | Read-only queries as `pcm_scraper` and `pcm_troubleshooter`, plus the scraper's log-flush statement (see [grants](#clickhouse-grants)); the executor opens no ClickHouse connection |
+| The Kubernetes API server | HTTPS | Namespace-scoped reads and ServiceAccount token requests for the scraper and troubleshooter (both targets); the executor's writes inside service namespaces and, during an approved platform update, inside the platform namespaces; exact-name read and update of the connector's own mTLS Secret to persist renewed certificates (Kubernetes installs only; a VM writes renewals to its local TLS files) |
+| Amazon ECR | HTTPS, the read-only pull role assumed using the connector EC2 VM's instance profile for direct platform access; ambient AWS credentials for other ECR chart registries | Registry login when a platform sync or create pulls a chart from ECR; `DescribeImages` during a platform update to confirm the images exist |
+| AWS STS | HTTPS, the connector EC2 VM's instance profile for direct platform access; the configured AWS credential chain for other ECR chart registries | Assumes the read-only pull role for direct platform chart login and image checks; may also supply credentials for other ECR logins. ECR and STS are the executor's only cloud API calls |
+| A container registry, from your cluster nodes | HTTPS | Image pulls for managed services and platform components, through a read-only pull role ClickHouse grants to the node roles you registered, or from your own registry after you import the images |
+| Your identity provider's JWKS endpoint | HTTPS | Operator token validation, only when the session gateway is enabled |
+
+Inbound, each daemon exposes one local health port, which also serves its Prometheus metrics, plus the opt-in session gateway. The executor's local command API binds to loopback only. Nothing else listens. ClickHouse Cloud never connects into your environment: it can only answer the two outbound WebSockets.
+
+### ClickHouse grants {#clickhouse-grants}
+
+Provisioning creates one read-only user per observing component. The users are created with `IDENTIFIED WITH bcrypt_hash`, so only a salted bcrypt hash exists in the provisioning SQL. The plaintext password lives only in the credential file the daemon reads at runtime. The `ALTER USER` line after each `CREATE USER` is what rotates the hash on `--force`. The executor has no ClickHouse user and never connects to ClickHouse. The grants are exactly these, with the default table sets:
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+ALTER USER `pcm_scraper` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`metric_log` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`server_settings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`tables` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`warnings` TO `pcm_scraper`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_scraper`;
+GRANT READ ON REMOTE TO `pcm_scraper`;
+GRANT SYSTEM FLUSH LOGS ON *.* TO `pcm_scraper`;
+```
+
+`READ ON REMOTE` is required because scrape queries wrap each system table in `clusterAllReplicas()`. `SYSTEM FLUSH LOGS` is the one system-level grant. It forces the `*_log` system tables to persist entries they already buffer so scrapes see current data; it cannot read or modify anything. ClickHouse accepts that privilege only at the global scope and honors it only for log tables, so the grant is broader than the capability.
+
+```sql
+CREATE USER IF NOT EXISTS `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+ALTER USER `pcm_troubleshooter` IDENTIFIED WITH bcrypt_hash BY '<bcrypt-hash>';
+
+GRANT SELECT ON `system`.`asynchronous_metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`build_options` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`clusters` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`databases` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`detached_parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`disks` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`events` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`formats` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`functions` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`grants` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`merges` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`metrics` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`mutations` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_columns` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`parts_summary` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`processes` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replicas` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`replication_queue` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`roles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profile_elements` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`settings_profiles` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`storage_policies` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`table_engines` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`tables` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`users` TO `pcm_troubleshooter`;
+GRANT SELECT ON `system`.`user_directories` TO `pcm_troubleshooter`;
+```
+
+The `system.user_directories` grant on both users exists for one diagnostic. `clicklink clctl preflight` runs with the connector's own credentials and checks how the instance stores its ClickHouse users (replicated or local). The table holds user-storage configuration metadata, not user data. Neither the scrape set nor the session table allowlist includes it, so no scrape or session output path reads it. Without the grant, that one preflight check reports itself skipped and everything else proceeds.
+
+There are no `INSERT`, DDL, user-management, settings, or process-control grants. When a second connector deployment shares an instance, its users carry a suffix (`pcm_scraper_<suffix>`) with the same grant sets.
+
+### Kubernetes RBAC {#kubernetes-rbac}
+
+#### Scraper and troubleshooter {#kubernetes-rbac-observing}
+
+The scraper and troubleshooter have no ClusterRole or ClusterRoleBinding. The chart creates namespace-scoped Roles in the connector namespace, and each per-instance access bundle creates a Role in that instance's ClickHouse or service namespace.
+
+| Resources | Verbs | Scope |
+|-----------|-------|-------|
+| `secrets` | `get` | Exact names only: the mTLS Secret, the HMAC Secret, and each per-instance access-bundle Secret |
+| `secrets` | `update` | The mTLS Secret only, by exact name, so the daemons can persist the automatically renewed client certificate |
+| `serviceaccounts/token` | `create` | Exact names only: the component's own ServiceAccount and each per-instance access-bundle ServiceAccount |
+| `clickhouseclusters`, `backups` (`clickhouse.com`) | `get`, `list`, `watch` | Scraper only, through the per-instance Role in each ClickHouse or service namespace, for service and backup status sync |
+| `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | Troubleshooter only |
+| `deployments`, `statefulsets`, `replicasets` (`apps`) | `get`, `list`, `watch` | Troubleshooter only |
+
+#### Executor {#kubernetes-rbac-executor}
+
+The `init --managed` workflow below is unavailable in public `v0.16.0`; confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it.
+
+In managed mode, `clicklink clctl init --managed` (or `clicklink clctl executor access grant --cluster` followed by `apply --cluster`) applies the executor's grant with your credentials. The grant is the `pcm-executor` ServiceAccount (in the connector namespace on Kubernetes, in `clicklink-system` on a VM install), one ClusterRole bound to it, and the `pcm-executor-prefix-guard` ValidatingAdmissionPolicy.
+
+The verbs are granted cluster-wide because RBAC cannot express a namespace prefix. The admission policy then denies every write from `pcm-executor` that targets a namespace outside the service prefix (`ns-` by default). Its home namespace admits three writes: its own token renewal, the `clicklink-instance-registry` ConfigMap the scraper reads, and, on Kubernetes, the renewed client certificate written back to the `clicklink-mtls` Secret. The policy applies to that ServiceAccount alone and uses `failurePolicy: Fail` and `validationActions: [Deny]`. The ClusterRoleBinding is applied last, after the policy and its binding, so a partially applied grant leaves the executor with no permissions rather than unguarded ones.
+
+On a VM, `clicklink clctl executor prepare` also applies a per-service bundle. The bundle is a `pcm-executor` ServiceAccount inside `ns-<name>`, a Role carrying the same resource families, and a ClusterRole pinned to `get` and `delete` on that one namespace. The executor uses that bundle for the service when present and the cluster-wide grant otherwise. On Kubernetes the pod always acts as the connector-namespace `pcm-executor` ServiceAccount.
+
+| Resources | Verbs | What for |
+|-----------|-------|----------|
+| `clickhouseclusters` (`clickhouse.com`) | `get`, `list`, `watch`, `create`, `update`, `patch`, `delete` | The service definition ClickHouse Cloud renders; restarts annotate it, delete removes it |
+| `backups` (`clickhouse.com`) | `get`, `list`, `watch`, `create`, `delete` | Backup and backup deletion |
+| `scalingoverrides` (`clickhouse.com`) | `get`, `create`, `update` | Scaling to the replica count ClickHouse Cloud requests |
+| `pods` | `get`, `delete` | Restarting a single pod |
+| `secrets` | `get`, `list`, `create`, `update`, `delete` | The service's credential Secrets |
+| `serviceaccounts` | `get`, `create`, `update`, `patch`, `delete` | The service's ServiceAccount, which carries the IAM role annotation |
+| `services` | `get`, `list`, `create` | The service's internal load balancer, when requested |
+| `namespaces` | `get`, `create`, `update`, `delete` | Creating a service namespace and deleting it with the service; prefixed names only |
+| `roles`, `rolebindings` (`rbac.authorization.k8s.io`) | `get`, `create`, `update`, `patch` | The scraper's read-only access inside each service namespace; Kubernetes escalation prevention limits these to permissions the executor already holds. The executor provisions nothing for the troubleshooter; see [support sessions for a managed service](/products/bring-your-own-cloud/connector/managed-services#support-sessions) |
+| `serviceaccounts/token` | `create` | Exact names only: `pcm-executor` and the scraper's ServiceAccount, for token renewal |
+| `secrets` | `get`, `update` | The connector's mTLS Secret only, by exact name, to persist the renewed client certificate. Kubernetes installs only, granted by the chart's Role in the connector namespace |
+| `configmaps` | `get`, `update`, `patch`, `create` | The `clicklink-instance-registry` ConfigMap in the connector namespace. Kubernetes installs only, granted by the chart's Role; `get`, `update`, and `patch` are pinned by name, and the admission policy confines `create` to that name |
+
+Admission does not run on `get`, `list`, or `watch`, so the executor's reads of these resource families are not confined to the prefix.
+
+#### Platform identity {#kubernetes-rbac-platform}
+
+The public `v0.16.0` CLI has no `platform` command; this approval model requires [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
+
+`clicklink clctl platform approve` applies the permission half of a platform update with your credentials: Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and ClusterRoleBindings, Roles and RoleBindings, webhook and admission configurations, PriorityClasses, and the StorageClass. It then ensures the `pcm-platform` ServiceAccount, its ClusterRole, the `pcm-platform-scope-guard` ValidatingAdmissionPolicy, and the binding, and mints a bound token valid for 2 hours.
+
+With that token the executor may write only `deployments`, `services`, `configmaps`, `secrets`, `jobs`, and `poddisruptionbudgets`, and only in the platform namespaces the scope guard allows. It may read `pods`, `events`, `namespaces`, `serviceaccounts`, CustomResourceDefinitions, RBAC objects, webhook configurations, StorageClasses, and PriorityClasses to check that the permission half is in place before it applies anything. It never holds `escalate`, `bind`, or `impersonate`, never writes a cluster-scoped kind or an RBAC object, and cannot mint or renew its own token. The token authorizes exactly one bundle: the digest you approved is recorded on the ServiceAccount, and the executor refuses any other.
+
+## What the connector cannot do {#what-the-connector-cannot-do}
+
+- **No writes to ClickHouse data or state.** The grants above contain no `INSERT`, no DDL, and no user-management, settings, or process-control privileges. The single system-class grant, the scraper's `SYSTEM FLUSH LOGS`, only makes log tables persist what they already buffer. The executor has no ClickHouse user. No component can modify data, schemas, users, or settings through ClickHouse.
+- **No exec.** No RBAC contains `pods/exec`; no component can run commands in your pods.
+- **No writes outside service and platform namespaces.** The scraper and troubleshooter hold no `delete` or `patch`. Their only mutations are the exact-name `update` on the connector's own mTLS Secret and `create` on `serviceaccounts/token`, which mints short-lived tokens for their own ServiceAccounts and modifies no stored object. Admission denies the executor's writes outside the service prefix, and its platform writes exist only while a token you minted is valid.
+- **No permission to grant permissions.** Your credentials apply the platform's Namespaces, CRDs, ServiceAccounts, RBAC, webhook and admission configurations, PriorityClasses, and StorageClass during `approve`. The executor's platform identity cannot escalate, bind, or impersonate. Inside a service namespace the executor can create only Roles that grant permissions it already holds.
+- **No credentials for your buckets or IAM.** `clicklink clctl executor prepare` creates the buckets and the per-service role, and `clicklink clctl executor teardown` removes them, both under your credentials. The role is assumable only by that service's pods. For direct platform access, the executor uses the connector EC2 VM's instance profile to assume the read-only ECR puller role for both chart login and image checks. Other ECR chart registries use ambient AWS credentials, as described under [identities](#identities). Its only cloud API calls go to ECR and STS; it cannot read or delete your data.
+- **No knowledge of your default user password.** `clicklink clctl executor prepare` generates it on your side and shows it once (or `clicklink clctl instances create` does, when you pass the inputs as flags). Only its hashes are submitted, so neither the connector nor ClickHouse Cloud can recover it.
+- **Nothing inbound.** ClickHouse Cloud never opens a connection into your environment. The only command paths are the two outbound WebSockets. The troubleshooter refuses every command unless a support session you enabled is active. The executor accepts lifecycle commands only for the services you asked ClickHouse to manage, within the scopes above. Even during a session, the troubleshooter's reach is bounded on both sides. ClickHouse queries are limited to the table allowlist, which refuses `query_log` and `text_log`, so they are never granted. Kubernetes access is limited to the read-only views and pod logs the namespace-scoped Roles grant.
+
+## What requires your action {#what-requires-your-action}
+
+Before using the managed-mode enrollment, service-creation, or platform-approval commands below, confirm [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team. Those workflows are unavailable in public `v0.16.0`.
+
+- **Enabling managed mode.** The executor runs, and its Kubernetes grant exists, only after you enable managed mode at `init`; the grant is applied with cluster admin. See [managed services](/products/bring-your-own-cloud/connector/managed-services#enable-managed-mode).
+- **Creating a service.** `clicklink clctl executor prepare` runs with your AWS credentials to create the buckets and the IAM role, and `clicklink clctl instances create` submits the definition. ClickHouse Cloud cannot create a service in your cluster without both. See [create a service](/products/bring-your-own-cloud/connector/managed-services#create-a-service).
+- **Platform updates.** Each update to the platform components is applied only after you run `clicklink clctl platform approve` for that exact bundle; the token it mints expires after 2 hours and is never renewed. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates#approve-a-platform-update).
+- **Cleaning up after a delete.** Deleting a service removes its Kubernetes resources only. `clicklink clctl executor teardown`, run with your credentials, removes the IAM role and, only with explicit flags, the data and backups. See [delete a service](/products/bring-your-own-cloud/connector/managed-services#delete-a-service).
+- **Support sessions.** Interactive troubleshooting happens only inside a session you enable, time-boxed to 4 hours by default and 24 hours at most. Disabling takes effect immediately. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
+- **The operator allowlist.** Every gateway request must carry an OIDC token whose attested email is on your allowlist. An empty allowlist is closed. You manage the list; see the [configuration guide](/products/bring-your-own-cloud/connector/configuration).
+- **Gateway exposure.** The session gateway is off unless you enable it, and reachable only by port-forward unless you opt into an Ingress. On a VM, each operator must fingerprint-pin its self-signed certificate, or verify it with a CA bundle passed as `--gateway-ca`, before the session commands will talk to it.
+- **Network egress.** Under an enforcing CNI, no daemon reaches your connector endpoint until you list its CIDRs in `networkPolicy.allowEgressCIDRs`. The executor also needs the Kubernetes API server CIDRs (`networkPolicy.apiserverCIDRs`), which `init --managed` derives from the cluster's VPC. If platform charts come from Amazon ECR, add the ECR and STS ranges too.
+
+## How access is attributed {#how-access-is-attributed}
+
+- **Deployment identity.** The mTLS client certificate's common name is your org ID, with a single DNS name bound to your endpoint host, so every API connection is attributable to your org. Renewal is automatic and in-daemon; no operator handles the key material.
+- **Request integrity.** Every API request also carries an HMAC-SHA256 signature (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) over the method, path, timestamp, and body hash, using the key pair issued at enrollment.
+- **Operator identity.** Gateway calls are attributed to the email attested by the operator's OIDC ID token, verified against your identity provider's JWKS. A self-reported name is never trusted where a token is available.
+- **Lifecycle commands.** The executor records every command it receives in its local store with its origin (ClickHouse Cloud or a local `clicklink clctl` call), its stage, and its result. It reports the result back over the command channel. Read the record with `clicklink clctl commands list` and `clicklink clctl commands get`; see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli).
+- **Platform approvals.** The digest of the bundle you approved is recorded on the `pcm-platform` ServiceAccount, and every object your credentials applied carries a content hash the executor verifies before it writes anything. A bundle with any other digest is refused.
+- **Audit trail.** Every session command, accepted or blocked, is appended to the NDJSON audit log with the org identity from the command channel. Gateway calls are logged as structured `clctl.gateway` lines in the troubleshooter log with the attested operator email. VM local session changes record the host user in `session.json`. Read the audit log with `clicklink clctl troubleshoot audit tail`; see the [CLI reference](/products/bring-your-own-cloud/connector/reference/cli).
+
+## Data minimization defaults {#data-minimization-defaults}
+
+- **`query_log` is excluded from scrapes by default.** Its columns carry raw SQL with literal values, which can contain personal data or secrets, so it does not leave your boundary unless you add it.
+- **The troubleshooter reads only allowlisted tables.** `query_log` and `text_log` are refused in the allowlist configuration itself, so they are never granted and query history is never readable. The default allowlist does include `system.processes` (live query text); trim it (`troubleshooter.allowedTables` on Kubernetes, `troubleshooter.allowed_tables` on a VM) if that must stay hidden during sessions.
+- **All troubleshooter output is redacted** with built-in patterns plus any you define. The built-ins cover IPv4 and IPv6 addresses, bearer tokens, AWS access keys, emails, JWTs, SSH private keys, and connection-string credentials. The daemon refuses to start with an invalid patterns file rather than run unredacted.
+- **Managed service status is metadata only.** The executor reports a service's state, replica counts, versions, and command outcomes. It never reads the service's tables or buckets.
+- **Credentials are minimized at rest.** Provisioning SQL contains bcrypt hashes, never plaintext passwords. A managed service's default user password is shown once and leaves only as hashes. The enrollment token is never written to the command line, disk, or logs. Keys live in Kubernetes Secrets or files with mode 0600.

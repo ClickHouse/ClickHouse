@@ -1,0 +1,72 @@
+-- Case 16: outer String vs inner LowCardinality(String); lossless rewrap, no pre-filter
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+a
+zz
+-- Case 17: outer LowCardinality(String) vs inner String; lossless rewrap in the other direction
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+a
+zz
+-- Case 18: outer String vs inner LowCardinality(Nullable(String)); inner NULL must not match, in particular not outer \'\'
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+a
+b
+-- Case 19: outer LowCardinality(Nullable(Int64)) vs inner Int32; lossless widening, outer NULL rows must not match
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+1
+3
+-- Case 20: outer Int64 vs inner LowCardinality(Nullable(Int32)); inner NULL must not match, in particular not outer 0
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+1
+3
+-- Case 21: guarded, outer String vs inner LowCardinality(FixedString(2)); the comparison ignores padding, so \'a\' must match toFixedString(\'a\', 2)
+plan: substituted=0
+a
+bb
+-- Case 22: scalar count() through narrowing, outer Int32 vs inner Int64; outer 0 must count only the genuine inner 0 (non-convertible values must not fold into it), and 705032704 (= 5000000000 mod 2^32) must not count 5000000000
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+0	1
+1	2
+2	\N
+705032704	\N
+-- Case 23: scalar count() through the float-to-int accurate cast, outer Int32 vs inner Float64; outer 0 must count only the genuine 0.0 (0.5 and 1.5 must not fold into 0), and 3.0 must count for 3
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+0	1
+1	\N
+3	1
+-- Case 24: guarded, outer Float64 vs inner Nullable(Float64); a float correlated value cannot be reconstructed exactly when the types differ: equals merges -0.0 and +0.0 (each outer zero counts both inner zeros, count 2 with the equality kept as a filter (see issue #116358)) while a substituted plan would group bitwise (count 1); inner NULL never counts
+plan: substituted=0
+-0	2
+0	2
+7	1
+-- Case 25: guarded, outer Bool vs inner Int32; accurateCastOrNull to Bool maps any non-zero value to true instead of checking exactness, so true must count only the genuine inner 1 rows (never the 2) and false counts only the 0
+plan: substituted=0
+false	1
+true	2
+-- Case 26: outer Int32 vs inner Bool; the member-side direction is faithful, CAST from Bool to Int32 is lossless (true is 1, false is 0), so 0 and 1 match while 2 must not
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+0
+1
+-- Case 27: guarded, outer Float64 with an exact-type member reached through a numeric bridge (i.a = o.x AND i.a = i.b); the float correlated column must not be reconstructed even from the exact-type member i.b, because the fallback\'s equals keeps -0.0 matching the inner 0 while a substituted bitwise join would drop it
+plan: substituted=0
+-0
+1
+-- Case 28: outer Bool vs inner Nullable(Bool); the wrapper-only difference is faithful for Bool (isNotNull + assumeNotNull, canonical 0/1 values), so it is substituted; inner NULL never counts
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+false	\N
+true	2
+-- Case 29: guarded, outer Bool vs inner UInt8; Bool is a custom-named UInt8 and must not be reconstructed from a plain UInt8 member: the smuggled non-canonical 2 would reach expressions that are safe over the Bool domain (here intDiv(1, 2 - o.x) would throw)
+plan: substituted=0
+false
+true
+-- Case 30: guarded, outer DateTime(\'UTC\') vs inner DateTime(\'Asia/Tokyo\'); ->equals ignores the DateTime timezone, but the timezone changes meaning: a substituted Asia/Tokyo member would make toHour(o.ts) see hour 9 instead of UTC hour 0 and drop the row
+plan: substituted=0
+1970-01-01 00:00:00
+-- Case 31: outer DateTime(\'UTC\') vs inner Nullable(DateTime(\'UTC\')); attribute-identical non-numeric types remain substitutable: the name-based check admits DateTime(\'UTC\') against Nullable(DateTime(\'UTC\')); inner NULL never matches
+plan: cross_joins=0 substituted=1 null_prefiltered=1
+1970-01-01 00:00:00
+-- Case 32: outer UInt8 vs inner Bool; the member\'s Bool custom name must be normalized away by a CAST (not an alias) so that the correlated column keeps UInt8 rendering; a query that also uses toString(o.x) inside the subquery is guarded by the usage restriction
+plan: cross_joins=0 substituted=1 null_prefiltered=0
+0
+1
+plan: substituted=0
+1

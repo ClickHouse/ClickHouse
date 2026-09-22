@@ -11,7 +11,6 @@
 #include <Processors/Transforms/RemovingReplicatedColumnsTransform.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageDistributed.h>
@@ -101,7 +100,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -302,35 +300,6 @@ static std::exception_ptr addStorageToException(std::exception_ptr ptr, const St
         return ptr;
     }
 }
-
-
-class PushingToWindowViewSink final : public SinkToStorage
-{
-public:
-    PushingToWindowViewSink(SharedHeader header, StorageWindowView & window_view_, ContextPtr context_)
-        : SinkToStorage(header)
-        , window_view(window_view_)
-        , context(std::move(context_))
-    {
-    }
-    String getName() const override { return "PushingToWindowViewSink"; }
-    void consume(Chunk & chunk) override
-    {
-        Progress local_progress(chunk.getNumRows(), chunk.bytes(), 0);
-        StorageWindowView::writeIntoWindowView(
-            window_view, getHeader().cloneWithColumns(chunk.getColumns()), std::move(chunk.getChunkInfos()), context);
-
-        if (auto process = context->getProcessListElement())
-            process->updateProgressIn(local_progress);
-
-        ProfileEvents::increment(ProfileEvents::SelectedRows, local_progress.read_rows);
-        ProfileEvents::increment(ProfileEvents::SelectedBytes, local_progress.read_bytes);
-    }
-
-private:
-    StorageWindowView & window_view;
-    ContextPtr context;
-};
 
 
 class BeginingViewsTransform final : public ISimpleTransform
@@ -657,7 +626,7 @@ private:
     {
         /// We create a table with the same name as original table and the same alias columns,
         ///  but it will contain single block (that is INSERT-ed into main table).
-        /// InterpreterSelectQuery will do processing of alias columns.
+        /// The interpreter will do processing of alias columns.
         auto local_context = Context::createCopy(context);
 
         local_context->addViewSource(std::make_shared<StorageValues>(
@@ -666,19 +635,9 @@ private:
             std::move(data_block),
             source_metadata->virtuals));
 
-        QueryPipelineBuilder pipeline;
-
-        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            InterpreterSelectQueryAnalyzer interpreter(
-                select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-            pipeline = interpreter.buildQueryPipeline();
-        }
-        else
-        {
-            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
-            pipeline = interpreter.buildQueryPipeline();
-        }
+        InterpreterSelectQueryAnalyzer interpreter(
+            select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
+        QueryPipelineBuilder pipeline = interpreter.buildQueryPipeline();
         pipeline.resize(1);
         pipeline.dropTotalsAndExtremes();
 
@@ -1492,6 +1451,17 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
     if (materialized_view && current != init_table_id)
     {
+        /// A view selects from its own source, never from the view that forwards into it, so on a target edge
+        /// the check below is never satisfied and the path is abandoned with no output header. Abandoning is
+        /// right for a view reached as a dependent, which is skipped, but `createPreSink` requires the header
+        /// of the view the insert addresses.
+        if (parent == init_table_id && isView(parent) && inner_tables.at(parent) == current)
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Table '{}' is a materialized view, so it cannot be the target of materialized view '{}'. "
+                "Use the target table of '{}' instead.",
+                current, parent, current);
+
         StorageIDMaybeEmpty select_table_id = metadata->getSelectQuery().select_table_id;
         if (select_table_id != parent)
         {
@@ -1554,38 +1524,6 @@ bool InsertDependenciesBuilder::observePath(const DependencyPath & path)
 
         if (init_context->hasQueryContext())
             init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
-
-        return true;
-    }
-    else if (auto * window_view = dynamic_cast<StorageWindowView *>(init_storage.get()))
-    {
-        if (current == init_table_id)
-        {
-            set_defaults_for_root_view(init_table_id, init_table_id);
-            view_types[init_table_id] = QueryViewsLogElement::ViewType::WINDOW;
-            return true;
-        }
-
-        inner_tables[current] = current;
-        select_queries[current] = window_view->getMergeableQuery();
-        input_headers[current] = output_headers.at(path.parent(2));
-        thread_groups[current] = ThreadGroup::createForMaterializedView(init_context);
-        view_types[current] = QueryViewsLogElement::ViewType::WINDOW;
-        views_error_registry->init(current);
-
-        auto parent_select_context = select_contexts.at(path.parent(2));
-        auto view_context = metadata->getSQLSecurityOverriddenContext(parent_select_context);
-        view_context->setQueryAccessInfo(parent_select_context->getQueryAccessInfoPtr());
-        select_contexts[current] = view_context;
-        insert_contexts[current] = view_context;
-
-        if (init_context->hasQueryContext())
-        {
-            init_context->getQueryContext()->addViewAccessInfo(current.getFullTableName());
-            init_context->getQueryContext()->addQueryAccessInfo(current, /*column_names=*/ {});
-        }
-
-        dependent_views[path.parent(2)].push_back(current);
 
         return true;
     }
@@ -1881,14 +1819,7 @@ Chain InsertDependenciesBuilder::createSinkImpl(StorageIDMaybeEmpty view_id) con
 
     const bool has_dependent_materialized_views = !dependent_views.at(view_id).empty();
 
-    if (auto * window_view = dynamic_cast<StorageWindowView *>(inner_storage.get()))
-    {
-        auto sink = std::make_shared<PushingToWindowViewSink>(std::make_shared<const Block>(window_view->getInputHeader()), *window_view, insert_context);
-        sink->setRuntimeData(thread_groups.at(view_id));
-        sink->setHasDependentMaterializedViews(has_dependent_materialized_views);
-        result.addSink(std::move(sink));
-    }
-    else if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
+    if (dynamic_cast<StorageMaterializedView *>(inner_storage.get()))
     {
         // Data is never inserted to the StorageMaterializedView, it is inserted to its inner table
         UNREACHABLE();
@@ -1976,6 +1907,19 @@ static String getCleanQueryAst(const ASTPtr q, ContextPtr context)
 }
 
 
+/// A half-built view can reach the log with its query stored but not its context. The context
+/// only supplies the log cut-off, so the init one stands in for a missing one.
+String InsertDependenciesBuilder::getViewQueryForLog(StorageID view_id) const
+{
+    auto query_it = select_queries.find(view_id);
+    if (query_it == select_queries.end())
+        return {};
+
+    auto context_it = select_contexts.find(view_id);
+    return getCleanQueryAst(query_it->second, context_it == select_contexts.end() ? init_context : context_it->second);
+}
+
+
 void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_ptr exception, bool before_start) const
 {
     const auto & settings = init_context->getSettingsRef();
@@ -2020,7 +1964,7 @@ void InsertDependenciesBuilder::logQueryView(StorageID view_id, std::exception_p
             element.view_name = view_id.getFullTableName();
             element.view_uuid = view_id.uuid;
             element.view_type = view_type;
-            element.view_query = getCleanQueryAst(select_queries.at(view_id), select_contexts.at(view_id));
+            element.view_query = getViewQueryForLog(view_id);
             element.view_target = inner_table_id.getFullTableName();
 
             element.peak_memory_usage = thread_group->memory_tracker.getPeak() > 0 ? thread_group->memory_tracker.getPeak() : 0;

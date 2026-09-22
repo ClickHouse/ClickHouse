@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import re
 
 from ci.defs.job_configs import JobConfigs
@@ -9,6 +10,8 @@ from ci.praktika.gh import GH
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
+_COMMIT_SHA_RE = re.compile(r"[0-9a-f]{40}")
+
 _SETTINGS_HISTORY_ENTRY_RE = re.compile(r'^\s*\{\s*"([A-Za-z0-9_]+)"')
 _SETTINGS_HISTORY_BLOCK_RE = re.compile(r'addSettingsChanges\(\s*(\w+)\s*,\s*"([\d.]+)"')
 _SETTINGS_HISTORY_HUNK_RE = re.compile(r"^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@")
@@ -17,6 +20,89 @@ _SETTINGS_HISTORY_NAMESPACES = {
     "settings_changes_history": "Session",
     "merge_tree_settings_changes_history": "MergeTree",
 }
+
+
+def _is_commit_sha(value):
+    """Whether `value` is a full commit id.
+
+    `gh api -q` prints an absent field as an empty line and a present non-id field verbatim,
+    both at exit code 0, so a successful read is not by itself a revision."""
+    return bool(_COMMIT_SHA_RE.fullmatch(value or ""))
+
+
+# How many first-parent master commits to record in `master_track_commits_sha`,
+# and how many `/commits` pages the walk that reconstructs them may fetch. One
+# page (100 entries) covers 100 first-parent commits only when master holds no
+# merge commit at all; the budget leaves room for the side-branch commits the
+# listing interleaves, and a walk that runs out of it returns the (shorter)
+# chain it has instead of failing the whole hook.
+MASTER_TRACK_COMMITS = 50
+MASTER_TRACK_MAX_PAGES = 10
+
+
+def _list_master_commits_page(anchor_sha):
+    """One page of the commits reachable from `anchor_sha`, newest first.
+
+    Each entry is `(sha, first_parent_sha)`; the first parent is empty for a
+    root commit. This is NOT the first-parent chain: the listing interleaves
+    merged PRs' side-branch commits, which is why `get_master_first_parent_commits`
+    reconstructs the chain client-side from the parent shas."""
+    raw = Shell.get_output(
+        f"gh api 'repos/ClickHouse/ClickHouse/commits?sha={anchor_sha}&per_page=100'"
+        " -q '.[] | [.sha, (.parents[0].sha // \"\")] | @tsv'",
+        verbose=True,
+    )
+    page = []
+    for line in raw.splitlines():
+        parts = line.split("\t")
+        if len(parts) == 2 and parts[0]:
+            page.append((parts[0], parts[1]))
+    return page
+
+
+def get_master_first_parent_commits(
+    anchor_sha, count, list_page=_list_master_commits_page
+):
+    """Up to `count` commits of the first-parent chain starting at `anchor_sha`, newest first.
+
+    `repos/.../commits?sha=...` lists every commit reachable from the anchor,
+    merged PRs' side-branch commits included, so the listing itself must not be
+    taken for the master chain: consumers that walk `master_track_commits_sha`
+    commit by commit (the perf `release_base` gate) would spend their window on
+    commits that never had a master CI run, and a single merge of a long branch
+    could push the previous actual master run out of the stored list entirely.
+
+    The chain is therefore reconstructed by following `parents[0]`, re-anchoring
+    each fetch at the first sha the walk has not seen yet - a listing always
+    starts with its own anchor, so every fetch advances the walk. A listing that
+    does not contain its own anchor means the fetch failed or returned something
+    unusable: stop there and return the chain built so far rather than continue
+    with a hole in it."""
+    first_parent = {}
+    chain = []
+    wanted = anchor_sha
+    pages = 0
+    while True:
+        while wanted in first_parent:
+            chain.append(wanted)
+            wanted = first_parent[wanted]
+            if not wanted or len(chain) >= count:
+                return chain
+        if pages >= MASTER_TRACK_MAX_PAGES:
+            print(
+                f"WARNING: the master first-parent chain holds only {len(chain)} "
+                f"commits after {MASTER_TRACK_MAX_PAGES} pages"
+            )
+            return chain
+        pages += 1
+        for sha, parent in list_page(wanted):
+            first_parent.setdefault(sha, parent)
+        if wanted not in first_parent:
+            print(
+                f"WARNING: the commit listing anchored at {wanted} does not "
+                f"contain it - stopping the master first-parent walk"
+            )
+            return chain
 
 
 def _settings_history_entry_signature(entry_body):
@@ -194,7 +280,9 @@ def parse_settings_history_changes(patch, file_lines):
     (check_settings_changes_history), which enforces the rule as soon as any other C++ source
     file changed. A change that edits only this file - fixing what a past release recorded -
     is a historical correction, not a default change made now, so it is allowed there; that is
-    what keeps a phantom record deletable."""
+    what keeps a phantom record deletable. The caller also drops reported settings that are no
+    longer declared at all, so removing a setting that was never released - records included -
+    stays possible; nothing can be recorded for a setting that does not exist."""
     added = []  # (new_line_number, name, signature, body_without_name)
     removed = []  # (new_line_number, name, signature, body_without_name)
     headers_added = []  # new_line_number of an added `addSettingsChanges` header
@@ -328,6 +416,52 @@ def parse_settings_history_changes(patch, file_lines):
     return result
 
 
+# Paths whose changed lines decide whether a PR is "small" for the purpose of
+# skipping the stress tests, fuzzers and SQL suites (see `filter_job.py`): the product-code
+# part of `build_digest_config.include_paths`, i.e. everything whose change ends
+# up in the built server. Tests, docs and CI scripts do not count: only changes
+# to the server itself can introduce the bugs those jobs look for.
+#
+# `contrib/` and `.gitmodules` are deliberately absent. A submodule bump is two
+# lines in the diff and an arbitrary amount of new code in the binary, so its
+# line count means nothing; `filter_job.py` never treats such a PR as small.
+PRODUCT_CODE_PATHS = (
+    "src/",
+    "base/",
+    "programs/",
+    "rust/",
+    "cmake/",
+    "CMakeLists.txt",
+    "PreLoad.cmake",
+)
+
+
+def get_product_changed_lines(info):
+    """Lines changed (additions + deletions) under `PRODUCT_CODE_PATHS` in the PR,
+    per GitHub's per-file `changes` counter from the paginated `pulls/{pr}/files`
+    listing.
+
+    A renamed file counts when either side of the rename is product code, so that
+    moving a source file out of `src/` and editing it on the way counts as the
+    product-code change it is, instead of as nothing.
+
+    Raises on any failure: the caller decides whether a missing count is fatal."""
+    selector = " or ".join(f'startswith("{path}")' for path in PRODUCT_CODE_PATHS)
+    # One `select` per side of a rename; an entry matching both is still counted once.
+    jq = (
+        f'[.[] | select((.filename | {selector}) '
+        f'or ((.previous_filename // "") | {selector})) | .changes] | add // 0'
+    )
+    out = GH.get_output_with_retries(
+        f"gh api repos/{info.repo_name}/pulls/{info.pr_number}/files --paginate "
+        f"--jq '{jq}'",
+        verbose=True,
+        strict=True,
+    )
+    # `--paginate` with `--jq` prints one line per page.
+    return sum(int(line) for line in out.split())
+
+
 def store_settings_history_changes(info, path=SETTINGS_HISTORY_FILE):
     """Record what the settings-history style check needs: the added setting entries, or
     else why they could not be determined.
@@ -398,13 +532,14 @@ if __name__ == "__main__":
     info.store_kv_data("master_commits", master_commits)
 
     if info.git_branch == "master" and info.repo_name == "ClickHouse/ClickHouse":
-        # store previous commits for perf tests
-        commits = list(master_commits)
-
-        # Drop commits newer than the one under test (they may have been pushed
-        # after this run was triggered) so that commits[0] is the current commit.
-        while commits and commits[0] != info.sha:
-            commits.pop(0)
+        # Store the previous commits for perf tests. The raw listing above is
+        # not usable here: it interleaves merged PRs' side-branch commits, so a
+        # consumer walking it commit by commit can run out of entries before
+        # reaching the previous actual master run. Walk the first-parent chain
+        # from the commit under test instead - every entry is a master commit,
+        # and starting at `info.sha` also drops the commits pushed after this
+        # run was triggered.
+        commits = get_master_first_parent_commits(info.sha, MASTER_TRACK_COMMITS + 1)
 
         # Drop the current commit itself so the performance test compares against
         # the previous commit on master (commit-to-commit). Otherwise the job picks
@@ -417,46 +552,74 @@ if __name__ == "__main__":
         info.store_kv_data("master_track_commits_sha", commits)
 
     if info.pr_number > 0:
+        # Store how many lines of product code the PR changes: `filter_job.py` skips
+        # the stress tests, fuzzers and SQL suites on small PRs. On failure the key stays absent,
+        # and the hook then runs those jobs rather than skipping them on a missing
+        # count.
+        try:
+            info.store_kv_data("product_changed_lines", get_product_changed_lines(info))
+        except Exception as e:
+            print(f"Failed to count changed lines of product code: {e}")
+
+    merge_base_commit_sha = ""
+    if info.pr_number > 0:
         # store merge base between master and current branch
         try:
-            # Get the merge base commit using git
-            merge_base_commit_sha = Shell.get_output(
+            # A stored merge base is a full commit id, or the key is absent.
+            merge_base_commit_sha = GH.get_output_with_retries(
                 f"gh api repos/ClickHouse/ClickHouse/compare/master...{info.sha} -q .merge_base_commit.sha",
                 verbose=True,
+                strict=True,
             ).strip()
+            if not _is_commit_sha(merge_base_commit_sha):
+                raise RuntimeError(
+                    f"merge base is not a commit id: [{merge_base_commit_sha[:200]}]"
+                )
             info.store_kv_data("merge_base_commit_sha", merge_base_commit_sha)
 
         except Exception as e:
-            print(f"Failed to get merge base via git: {e}")
+            print(f"Failed to get merge base via the GitHub API: {e}")
 
     # store integration test diff to find: TODO: find changed test cases
     if info.pr_number:
         # store master side commits for perf tests comparison
-        # In PR CI, HEAD is a merge commit; HEAD^1 is the master parent (first parent)
-        master_parent = Shell.get_output(
-            "git rev-parse HEAD^1", verbose=True
-        ).strip()
-        if master_parent:
-            master_parent_commits = [
-                s.strip()
-                for s in Shell.get_output(
-                    # 100 commits gives enough range to find 5-6 recent master coverage
-                # .info files even when coverage runs are sparse (only some master
-                # commits publish coverage). 30 was too few — the 6th baseline could
-                # be 80+ commits back with a meaningfully different test set.
-                f"git rev-list --first-parent --max-count=100 {master_parent}", verbose=True
-                ).splitlines()
-                if s.strip()
-            ]
-            if master_parent_commits:
-                info.store_kv_data("master_track_commits_sha", master_parent_commits)
-                print(
-                    f"Stored {len(master_parent_commits)} master parent commits for perf test comparison, starting from {master_parent}"
-                )
-        else:
-            print(
-                "WARNING: Could not find master parent commit (HEAD^1), skipping perf test commit storage"
+        if os.getenv("DISABLE_CI_MERGE_COMMIT") == "1":
+            # HEAD is the raw PR head in this mode, so HEAD^1 is another PR
+            # commit. Walk master from the merge base resolved above instead.
+            master_parent_commits = (
+                get_master_first_parent_commits(merge_base_commit_sha, 100)
+                if _is_commit_sha(merge_base_commit_sha)
+                else []
             )
+        else:
+            # In normal PR CI, HEAD is GitHub's synthetic merge commit and
+            # HEAD^1 is the exact master revision tested by the workflow.
+            master_parent = Shell.get_output(
+                "git rev-parse HEAD^1", verbose=True
+            ).strip()
+            master_parent_commits = []
+            if master_parent:
+                master_parent_commits = [
+                    sha.strip()
+                    for sha in Shell.get_output(
+                        # 100 commits gives enough range to find 5-6 recent master coverage
+                        # .info files even when coverage runs are sparse (only some master
+                        # commits publish coverage). 30 was too few -- the 6th baseline could
+                        # be 80+ commits back with a meaningfully different test set.
+                        f"git rev-list --first-parent --max-count=100 {master_parent}",
+                        verbose=True,
+                    ).splitlines()
+                    if sha.strip()
+                ]
+
+        if master_parent_commits:
+            info.store_kv_data("master_track_commits_sha", master_parent_commits)
+            print(
+                f"Stored {len(master_parent_commits)} master commits for perf test comparison, "
+                f"starting from {master_parent_commits[0]}"
+            )
+        else:
+            print("WARNING: Could not find master commits for perf test comparison")
 
         # Record which integration test files changed so a downstream job can
         # find the changed test cases (TODO). Store only the file paths, never

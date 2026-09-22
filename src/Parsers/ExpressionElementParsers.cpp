@@ -45,6 +45,8 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -220,10 +222,22 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
+    const auto opening_bracket_pos = pos;
     ++pos;
 
     /// Lookahead for inner subquery
     const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
+    /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
+    /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
+    /// parentheses hold a subquery at all. Where the contents read as an expression over a column
+    /// named `from`, that older reading wins and these are not a subquery.
+    const bool starts_with_from_clause
+        = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
+
+    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
+        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -314,7 +328,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Inner subquery should be handled separately
-    starts_with_valid_select_or_explain = !possible_inner_subquery && result_node != nullptr;
+    starts_with_valid_select_or_explain = !possible_inner_subquery && !starts_with_from_clause && result_node != nullptr;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
@@ -1432,7 +1446,9 @@ inline static bool makeHexOrBinStringLiteral(IParser::Pos & pos, ASTPtr & node, 
         binStringDecode(str_begin, str_end, res_pos, word_size);
     }
 
-    return makeStringLiteral(pos, node, String(reinterpret_cast<char *>(res.data()), res.size()), expected);
+    /// The buffer is sized for the worst case; a binary literal whose length is not a multiple of
+    /// eight can write fewer bytes than that, and the unwritten tail is uninitialized memory.
+    return makeStringLiteral(pos, node, String(res_begin, res_pos - res_begin), expected);
 }
 
 bool ParserStringLiteral::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -2798,6 +2814,115 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         assignment->children.push_back(expression);
 
     return true;
+}
+
+}
+
+namespace DB
+{
+
+void registerStatementColumnsTransformers(StatementFactory & factory)
+{
+    factory.registerStatement("APPLY modifier",
+    {
+        .description = R"DOCS_MD(
+> Allows you to invoke some function for each row returned by an outer table expression of a query.
+
+## Syntax {#syntax}
+
+```sql
+SELECT <expr> APPLY( <func> ) FROM [db.]table_name
+```
+
+## Example {#example}
+
+```sql
+CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
+INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
+SELECT * APPLY(sum) FROM columns_transformers;
+```
+
+```response
+┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
+│    220 │     18 │    347 │
+└────────┴────────┴────────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> APPLY(<func>) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
+    });
+
+    factory.registerStatement("EXCEPT modifier",
+    {
+        .description = R"DOCS_MD(
+> Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
+
+## Syntax {#syntax}
+
+```sql
+SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
+```
+
+Parentheses are optional when excluding a single column.
+
+## Examples {#examples}
+
+```sql title="Query"
+SELECT * EXCEPT i FROM columns_transformers;
+```
+
+```response title="Response"
+┌──j─┬───k─┐
+│ 10 │ 324 │
+│  8 │  23 │
+└────┴─────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
+    });
+
+    factory.registerStatement("REPLACE modifier",
+    {
+        .description = R"DOCS_MD(
+> Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
+
+Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches
+the alias is replaced by the expression in that `REPLACE`.
+
+This modifier does not change the names or order of columns. However, it can change the value and the value type.
+
+**Syntax:**
+
+```sql
+SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
+```
+
+**Example:**
+
+```sql
+SELECT * REPLACE(i + 1 AS i) from columns_transformers;
+```
+
+```response
+┌───i─┬──j─┬───k─┐
+│ 101 │ 10 │ 324 │
+│ 121 │  8 │  23 │
+└─────┴────┴─────┘
+```
+)DOCS_MD",
+        .syntax = R"(
+SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
+)",
+        .parent = "SELECT",
+        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
+    });
 }
 
 }

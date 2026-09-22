@@ -1,6 +1,7 @@
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
 #include <Common/isValidUTF8.h>
 
@@ -190,8 +191,8 @@ namespace
     class PrometheusQueryTreeBuilder : public antlr4_grammars::PromQLParserBaseVisitor
     {
     public:
-        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 timestamp_scale_, ErrorListener & error_listener_)
-            : promql_query(promql_query_), timestamp_scale(timestamp_scale_), error_listener(error_listener_) {}
+        explicit PrometheusQueryTreeBuilder(std::string_view promql_query_, UInt32 time_scale_, ErrorListener & error_listener_)
+            : promql_query(promql_query_), time_scale(time_scale_), error_listener(error_listener_) {}
 
         Node * makeNode(antlr4::ParserRuleContext * expression)
         {
@@ -207,7 +208,7 @@ namespace
 
     private:
         std::string_view promql_query;
-        UInt32 timestamp_scale;
+        UInt32 time_scale;
         ErrorListener & error_listener;
         std::vector<std::unique_ptr<Node>> nodes;
 
@@ -263,7 +264,8 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseTimestamp(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseTimestamp(
+                    getText(ctx), time_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -275,7 +277,8 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseDuration(getText(ctx), timestamp_scale, result, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseDuration(
+                    getText(ctx), time_scale, result, &error_message, &error_pos, /* allow_octal_literals */ true))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -287,7 +290,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), timestamp_scale, res_range, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSelectorRange(getText(ctx), time_scale, res_range, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -299,7 +302,7 @@ namespace
         {
             String error_message;
             size_t error_pos = 0;
-            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), timestamp_scale, res_range, res_step, &error_message, &error_pos))
+            if (!PrometheusQueryParsingUtil::tryParseSubqueryRange(getText(ctx), time_scale, res_range, res_step, &error_message, &error_pos))
             {
                 error_listener.setError(error_message, error_pos + getStartPos(ctx));
                 return false;
@@ -350,41 +353,44 @@ namespace
         /// Extracts a metric name.
         String getMetricName(antlr4_grammars::PromQLParser::MetricNameContext * ctx) const { return ctx->getText(); }
 
-        /// Extracts a label name.
-        String getLabelName(antlr4_grammars::PromQLParser::LabelNameContext * ctx) const { return ctx->getText(); }
-
-        bool getSelectorIdentifier(antlr4_grammars::PromQLParser::SelectorIdentifierContext * ctx, String & identifier)
+        /// Extracts a label name, unquoting quoted names.
+        bool getLabelName(
+            antlr4_grammars::PromQLParser::LabelNameContext * ctx, String & label_name, bool require_non_empty)
         {
-            if (auto * label_name_ctx = ctx->labelName())
+            if (auto * string_ctx = ctx->STRING())
             {
-                identifier = getLabelName(label_name_ctx);
+                if (!parseStringLiteral(string_ctx, label_name))
+                    return false;
+
+                if ((require_non_empty && label_name.empty())
+                    || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
+                {
+                    error_listener.setError(
+                        require_non_empty ? "invalid label name for grouping" : "invalid selector identifier",
+                        getStartPos(string_ctx));
+                    return false;
+                }
+
                 return true;
             }
 
-            auto * string_ctx = ctx->STRING();
-            if (!string_ctx)
-                throwInconsistentSchema("SelectorIdentifier", ctx->getText());
-
-            if (!parseStringLiteral(string_ctx, identifier))
-                return false;
-
-            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(identifier.data()), identifier.size()))
-            {
-                error_listener.setError("invalid selector identifier", getStartPos(string_ctx));
-                return false;
-            }
-
+            label_name = ctx->getText();
             return true;
         }
 
         /// Extracts multiple label names separated by comma.
-        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx) const
+        Strings getLabelNameList(antlr4_grammars::PromQLParser::LabelNameListContext * ctx)
         {
             Strings label_name_list;
 
             antlr4_grammars::PromQLParser::LabelNameContext * label_name_ctx = nullptr;
             for (size_t i = 0; (label_name_ctx = ctx->labelName(i)) != nullptr; ++i)
-                label_name_list.push_back(getLabelName(label_name_ctx));
+            {
+                String label_name;
+                if (!getLabelName(label_name_ctx, label_name, /* require_non_empty = */ true))
+                    return {};
+                label_name_list.push_back(std::move(label_name));
+            }
 
             return label_name_list;
         }
@@ -392,13 +398,13 @@ namespace
         /// Extracts a matcher.
         bool getMatcher(antlr4_grammars::PromQLParser::LabelMatcherContext * ctx, Matcher & res_matcher)
         {
-            auto * selector_identifier_ctx = ctx->selectorIdentifier();
+            auto * label_name_ctx = ctx->labelName();
             auto * label_value_ctx = ctx->STRING();
             auto * op_ctx = ctx->labelMatcherOperator();
-            if (!selector_identifier_ctx || !label_value_ctx || !op_ctx)
+            if (!label_name_ctx || !label_value_ctx || !op_ctx)
                 throwInconsistentSchema("LabelMatcher", ctx->getText());
 
-            if (!getSelectorIdentifier(selector_identifier_ctx, res_matcher.label_name))
+            if (!getLabelName(label_name_ctx, res_matcher.label_name, /* require_non_empty = */ false))
                 return false;
 
             MatcherType matcher_type = {};
@@ -470,7 +476,7 @@ namespace
                 for (size_t i = 0; (label_matcher_ctx = label_matcher_list_ctx->labelMatcher(i)) != nullptr; ++i)
                 {
                     Matcher matcher;
-                    bool parsed = label_matcher_ctx->selectorIdentifier()
+                    bool parsed = label_matcher_ctx->labelName()
                         ? getMatcher(label_matcher_ctx, matcher)
                         : getMatcherForQuotedMetricName(label_matcher_ctx, matcher);
                     if (!parsed)
@@ -815,6 +821,7 @@ namespace
                 throwInconsistentSchema("Aggregation", ctx->getText());
 
             auto operator_name = getText(operator_name_ctx);
+            toLowerASCII(operator_name);
             return makeAggregationOperator(operator_name, arguments, ctx->by(), ctx->without());
         }
 
@@ -1025,7 +1032,7 @@ namespace
 
 #endif
 
-bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 timestamp_scale, [[maybe_unused]] PrometheusQueryTree & res_query, [[maybe_unused]] String * error_message, [[maybe_unused]] size_t * error_pos)
+bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view input, [[maybe_unused]] UInt32 time_scale, [[maybe_unused]] PrometheusQueryTree & res_query, [[maybe_unused]] String * error_message, [[maybe_unused]] size_t * error_pos)
 {
 #if USE_ANTLR4_GRAMMARS
     ErrorListener error_listener{input};
@@ -1048,7 +1055,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!expression)
         error_listener.setError("Couldn't get an expression after parsing promql query", 0);
 
-    PrometheusQueryTreeBuilder builder{input, timestamp_scale, error_listener};
+    PrometheusQueryTreeBuilder builder{input, time_scale, error_listener};
     std::vector<std::unique_ptr<Node>> parsed_nodes;
     Node * parsed_root = nullptr;
     if (expression && !error_listener.hasError())
@@ -1069,7 +1076,7 @@ bool PrometheusQueryParsingUtil::tryParseQuery([[maybe_unused]] std::string_view
     if (!parsed_root)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parsing promql query '{}' failed without setting any error message", input);
 
-    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, timestamp_scale};
+    res_query = PrometheusQueryTree{std::move(parsed_nodes), parsed_root, time_scale};
     return true;
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "ANTLR4 support is disabled");

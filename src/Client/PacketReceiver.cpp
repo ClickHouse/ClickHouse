@@ -1,11 +1,12 @@
 #include <Client/PacketReceiver.h>
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
 
 namespace DB
 {
 
-PacketReceiver::PacketReceiver(Connection * connection_) : AsyncTaskExecutor(std::make_unique<Task>(*this)), connection(connection_)
+PacketReceiver::PacketReceiver(Connection * connection_)
+    : AsyncTaskExecutor(std::make_unique<Task>(*this), "PacketReceiver"), connection(connection_)
 {
     epoll.add(timeout_descriptor.getDescriptor());
     socket_fd = connection->getSocket()->impl()->sockfd();

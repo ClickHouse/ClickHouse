@@ -2,7 +2,6 @@
 
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
-#include <Processors/Formats/IInputFormat.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
@@ -130,6 +129,8 @@ public:
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
 
+    virtual String getDataSourceDescriptionForNamespace(const String &) const { return getDataSourceDescription(); }
+
     virtual StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const = 0;
 
     /// Add/replace structure and format arguments in the AST arguments if they have 'auto' values.
@@ -151,6 +152,8 @@ public:
     virtual bool isDataLakeConfiguration() const { return false; }
     virtual bool isIcebergConfiguration() const { return false; }
 
+    virtual bool supportsFullyQualifiedPaths() const { return false; }
+
     virtual bool supportsTotalRows(ContextPtr, ObjectStorageType) const { return false; }
     virtual std::optional<size_t> totalRows(ContextPtr) { return {}; }
     virtual bool supportsTotalBytes(ContextPtr, ObjectStorageType) const { return false; }
@@ -160,7 +163,7 @@ public:
     /// However snapshot_id is specified in StorageMetadataPtr, so we can extract necessary information from it.
     virtual bool isDataSortedBySortingKey(StorageMetadataPtr, ContextPtr) const { return false; }
 
-    virtual IDataLakeMetadata * getExternalMetadata() { return nullptr; }
+    virtual std::shared_ptr<IDataLakeMetadata> getExternalMetadata() { return {}; }
 
     virtual std::shared_ptr<NamesAndTypesList> getInitialSchemaByPath(ContextPtr, ObjectInfoPtr) const { return {}; }
 
@@ -198,6 +201,8 @@ public:
     virtual bool supportsParallelInsert() const { return false; }
     virtual bool supportsWrites() const { return true; }
 
+    virtual bool supportsCreateFromExistingTableInCatalog() const { return false; }
+
     virtual bool supportsPartialPathPrefix() const { return true; }
 
     virtual ObjectIterator iterate(
@@ -212,6 +217,13 @@ public:
 
     virtual void update(ObjectStoragePtr object_storage, ContextPtr local_context);
     virtual void lazyInitializeIfNeeded(ObjectStoragePtr object_storage, ContextPtr local_context);
+
+    /// For a table created on top of a server disk: the config section of the disk that holds the
+    /// backend object storage settings. Follows `disk` references of layered disk configs (e.g. a
+    /// cache disk over an S3 disk resolves to the S3 disk's section) and descends into the local
+    /// location's subsection for multi-location disks. Returns std::nullopt when the disk is not
+    /// present in the config (e.g. a custom disk created from SQL).
+    static std::optional<String> tryGetDiskConfigurationPrefix(const Poco::Util::AbstractConfiguration & config, const String & disk_name);
 
     virtual void create(
         ObjectStoragePtr object_storage,
@@ -284,7 +296,7 @@ public:
 
     virtual bool optimize(ObjectStoragePtr /*object_storage*/, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr /*context*/, const std::optional<FormatSettings> & /*format_settings*/)
     {
-        return false;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Table engine {} doesn't support optimize", getTypeName());
     }
 
     virtual bool supportsPrewhere() const
@@ -335,6 +347,8 @@ public:
     String compression_method = "auto";
     String structure = "auto";
     PartitionStrategyFactory::StrategyType partition_strategy_type = PartitionStrategyFactory::StrategyType::NONE;
+    /// Tracks whether `partition_strategy` was explicitly provided in the engine arguments or a named collection.
+    bool partition_strategy_was_set = false;
     /// Whether partition column values are contained in the actual data.
     /// And alternative is with hive partitioning, when they are contained in file path.
     bool partition_columns_in_data_file = true;
@@ -342,6 +356,8 @@ public:
     /// When false, `initPartitionStrategy` recomputes the default once the effective strategy is known
     /// (which may have been chosen implicitly via `file_like_engine_default_partition_strategy`).
     bool partition_columns_in_data_file_was_set = false;
+    /// Set when `initPartitionStrategy` evaluates an omitted partition strategy.
+    bool partition_strategy_was_inferred = false;
     std::shared_ptr<IPartitionStrategy> partition_strategy;
 
     /// Set by the storage when it is being loaded from existing metadata (server startup or RESTORE), so the
@@ -369,7 +385,11 @@ public:
     /// DDL does not depend on the setting at attach time.
     String url_overridden_by_base_setting;
 
+    std::optional<String> source_disk_name;
+
 protected:
+    void checkFormat() const;
+
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);
     virtual void fromNamedCollection(const NamedCollection & collection, ContextPtr context) = 0;
     virtual void fromAST(ASTs & args, ContextPtr context, bool with_structure) = 0;
