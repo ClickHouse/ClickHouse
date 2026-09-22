@@ -86,10 +86,10 @@ void SerializationInfoNullable::serialializeKindStackBinary(WriteBuffer & out) c
     nested->serialializeKindStackBinary(out);
 }
 
-void SerializationInfoNullable::deserializeFromKindsBinary(ReadBuffer & in)
+void SerializationInfoNullable::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
-    SerializationInfo::deserializeFromKindsBinary(in);
-    nested->deserializeFromKindsBinary(in);
+    SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
+    nested->deserializeFromKindsBinary(in, allowed_kinds.without(ISerialization::Kind::DETACHED));
     syncData();
 }
 

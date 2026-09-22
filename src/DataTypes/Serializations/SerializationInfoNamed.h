@@ -21,7 +21,7 @@ public:
     void replaceData(const SerializationInfo & other) override;
 
     void serialializeKindStackBinary(WriteBuffer & out) const override;
-    void deserializeFromKindsBinary(ReadBuffer & in) override;
+    void deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds) override;
 
     void toJSON(Poco::JSON::Object & object) const override;
     void fromJSON(const Poco::JSON::Object & object) override;

@@ -139,11 +139,12 @@ void SerializationInfoNamed::serialializeKindStackBinary(WriteBuffer & out) cons
         elem->serialializeKindStackBinary(out);
 }
 
-void SerializationInfoNamed::deserializeFromKindsBinary(ReadBuffer & in)
+void SerializationInfoNamed::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
-    SerializationInfo::deserializeFromKindsBinary(in);
+    SerializationInfo::deserializeFromKindsBinary(in, allowed_kinds);
+    auto elements_allowed_kinds = allowed_kinds.without(ISerialization::Kind::DETACHED);
     for (const auto & elem : elems)
-        elem->deserializeFromKindsBinary(in);
+        elem->deserializeFromKindsBinary(in, elements_allowed_kinds);
 }
 
 void SerializationInfoNamed::writeJSONFields(WriteBuffer & out, const String * name) const
