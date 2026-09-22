@@ -7,6 +7,8 @@
 #include <Common/ProfileEvents.h>
 #include <Poco/Net/Socket.h>
 
+#include <optional>
+
 namespace DB
 {
 
@@ -36,21 +38,26 @@ public:
 
     ssize_t socketReceiveBytesImpl(char * ptr, size_t size);
 
+    /// 0 does nothing, rather than clearing the socket's timeout.
     void setReceiveTimeout(size_t receive_timeout_microseconds);
 
-    /// Set a wall-clock deadline for the entire handshake phase.
-    /// Every nextImpl() call will check elapsed time and throw SOCKET_TIMEOUT if exceeded.
-    /// Call clearHandshakeTimeout() after the handshake completes.
+    /// Bound the whole handshake phase, so an unauthenticated connection cannot hold a thread,
+    /// whether it trickles bytes or goes silent inside a read. 0 disables.
     void setHandshakeTimeout(size_t timeout_milliseconds);
     void clearHandshakeTimeout();
+    /// What is left of the deadline, for a buffer that replaces this one mid-handshake to adopt.
+    /// 0 only when none is armed, so adopting it never disables the deadline by accident.
+    UInt64 handshakeMillisecondsLeft() const;
 
 private:
+    void clampReceiveTimeoutToHandshakeDeadline(UInt64 milliseconds_left);
+
     AsyncCallback async_callback;
     std::string socket_description;
 
-    /// Wall-clock deadline for the handshake phase (optional).
     size_t handshake_timeout_milliseconds = 0;
     Stopwatch handshake_stopwatch = Stopwatch(STOPWATCH_DEFAULT_CLOCK, 0, /* is running */ false);
+    std::optional<Poco::Timespan> receive_timeout_before_handshake;
 };
 
 class ReadBufferFromPocoSocket : public ReadBufferFromPocoSocketBase

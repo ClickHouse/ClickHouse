@@ -66,6 +66,7 @@ namespace Setting
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+    extern const ServerSettingsUInt64 handshake_timeout_milliseconds;
 }
 
 using namespace MySQLProtocol;
@@ -561,6 +562,8 @@ void MySQLHandler::run()
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket(), write_event);
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
+    in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
+
     try
     {
         Handshake handshake(server_capabilities, connection_id, VERSION_STRING + String("-") + VERSION_NAME,
@@ -611,6 +614,8 @@ void MySQLHandler::run()
         }
 
         authenticate(handshake_response.username, handshake_response.auth_plugin_name, handshake_response.auth_response);
+
+        in->clearHandshakeTimeout();
 
         try
         {
@@ -1058,14 +1063,20 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
 
+    const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
+
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    ss->setReceiveTimeout(socket().getReceiveTimeout());
+    /// Not from the plaintext socket: the deadline clamped that one, and the clamped value would
+    /// become the one restored after authentication.
+    ss->setReceiveTimeout(server.context()->getSettingsRef()[Setting::receive_timeout]);
     ss->setSendTimeout(socket().getSendTimeout());
 
     in = std::make_shared<ReadBufferFromPocoSocket>(*ss);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(*ss);
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
+
+    in->setHandshakeTimeout(handshake_milliseconds_left);
 
     /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
     /// path: read the packet header, reject an oversized declared payload before reading it, and

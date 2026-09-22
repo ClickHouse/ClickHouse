@@ -447,6 +447,36 @@ def test_slowloris_handshake_timeout(started_cluster):
         sock.close()
 
 
+def test_silent_client_handshake_timeout(started_cluster):
+    """A client that connects and then says nothing must be cut off by the handshake timeout.
+
+    No read completes here, so the wall-clock check in `nextImpl` never gets to run: this covers the
+    receive timeout that `setHandshakeTimeout` clamps to the same budget. Without the clamp the
+    server waits `receive_timeout`, 300 seconds by default.
+    """
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(60)
+    try:
+        sock.connect((node.ip_address, 9000))
+        # Announce a Hello packet and send nothing more, so the server blocks reading the rest.
+        sock.sendall(encode_varuint(0))  # Client::Hello = 0
+
+        started = time.monotonic()
+        while time.monotonic() - started < 60:
+            try:
+                if not sock.recv(4096):
+                    break
+            except (ConnectionResetError, BrokenPipeError, socket.timeout, OSError):
+                break
+        else:
+            raise AssertionError("Server kept a silent unauthenticated connection for over 60 seconds")
+
+        elapsed = time.monotonic() - started
+        assert elapsed >= 1, f"Disconnected after {elapsed} seconds, too early to be the timeout"
+    finally:
+        sock.close()
+
+
 def test_server_healthy_after_rejections(started_cluster):
     """After rejecting oversized packets, the server must still be healthy."""
     result = node.query("SELECT 1")
