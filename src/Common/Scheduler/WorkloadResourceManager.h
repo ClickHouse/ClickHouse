@@ -246,7 +246,9 @@ private:
             // Anonymous root: an empty basename, which getPath() skips, so a workload directly under
             // the implicit root renders as "/all".
             implicit->basename = {};
-            implicit_root = std::static_pointer_cast<IWorkloadNode>(implicit);
+            // Store the implicit root under the empty-string key so a parentless workload (parent == "")
+            // attaches through the same node_for_workload[parent] path as any other child.
+            node_for_workload[""] = std::static_pointer_cast<IWorkloadNode>(implicit);
             auto implicit_scheduler_node = std::static_pointer_cast<typename Node::Base>(implicit);
             executeInSchedulerThread([&, this]
             {
@@ -266,12 +268,11 @@ private:
 
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
+        /// Maps workload name to its node. The implicit anonymous root workload (the scheduler's
+        /// single child, empty basename) is stored under the empty-string key: every workload without
+        /// an explicit parent is its child, so multiple SQL "root" workloads form one hierarchy under
+        /// it, scheduled with fairness/priorities by the normal policy machinery.
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        /// Implicit anonymous root workload (empty basename): the scheduler's single child. Every workload without an
-        /// explicit parent is attached as its child (see createNode()), so multiple SQL "root"
-        /// workloads form one hierarchy under it, scheduled with fairness/priorities by the normal
-        /// policy machinery.
-        WorkloadNodePtr implicit_root;
         VersionPtr current_version;
     };
 

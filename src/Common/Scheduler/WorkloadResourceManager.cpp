@@ -97,22 +97,16 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for creating workload '{}' already exist in resource '{}'",
             info.name, resource_name);
 
-    if (!info.parent.empty() && !node_for_workload.contains(info.parent))
+    if (!node_for_workload.contains(info.parent))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
-
-    // A workload without a parent attaches as a child of this resource's implicit anonymous root
-    // workload (see setup()).
 
     executeInSchedulerThread([&, this]
     {
         auto node_pair = make_workload_node(scheduler->event_queue, info);
         const WorkloadNodePtr & workload_node = node_pair.first;
-        if (!info.parent.empty())
-            node_for_workload[info.parent]->attachWorkloadChild(workload_node);
-        else
-            // Root workload (no explicit parent): attach under the resource's implicit root workload.
-            implicit_root->attachWorkloadChild(workload_node);
+        // A parentless workload has parent == "", which maps to the implicit root in node_for_workload.
+        node_for_workload[info.parent]->attachWorkloadChild(workload_node);
         node_for_workload[info.name] = workload_node;
 
         updateCurrentVersion();
@@ -125,7 +119,7 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for removing workload '{}' does not exist in resource '{}'",
             info.name, resource_name);
 
-    if (!info.parent.empty() && !node_for_workload.contains(info.parent))
+    if (!node_for_workload.contains(info.parent))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for removing workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
 
@@ -137,11 +131,8 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
 
     executeInSchedulerThread([&, n = std::move(node)]() mutable
     {
-        if (!info.parent.empty())
-            node_for_workload[info.parent]->detachWorkloadChild(n);
-        else
-            // Root workload (no explicit parent): detach from the implicit root (see createNode()).
-            implicit_root->detachWorkloadChild(n);
+        // A parentless workload has parent == "", which maps to the implicit root in node_for_workload.
+        node_for_workload[info.parent]->detachWorkloadChild(n);
 
         node_for_workload.erase(info.name);
 
@@ -168,11 +159,11 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Node for updating workload '{}' does not exist in resource '{}'",
             old_info.name, resource_name);
 
-    if (!old_info.parent.empty() && !node_for_workload.contains(old_info.parent))
+    if (!node_for_workload.contains(old_info.parent))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Old parent node '{}' for updating workload '{}' does not exist in resource '{}'",
             old_info.parent, old_info.name, resource_name);
 
-    if (!new_info.parent.empty() && !node_for_workload.contains(new_info.parent))
+    if (!node_for_workload.contains(new_info.parent))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "New parent node '{}' for updating workload '{}' does not exist in resource '{}'",
             new_info.parent, new_info.name, resource_name);
 
@@ -188,24 +179,16 @@ void WorkloadResourceManager::Resource::updateNode(const NodeInfo & old_info, co
             new_info.settings,
             getSharingMode(getUnit())))
         {
-            // Detach here and reattach below so the workload is re-positioned among its siblings
-            // (under the implicit root when it is parentless) for the new priority/precedence.
-            if (!old_info.parent.empty())
-                node_for_workload[old_info.parent]->detachWorkloadChild(node);
-            else
-                implicit_root->detachWorkloadChild(node);
+            // Detach here and reattach below so the workload is re-positioned among its siblings for
+            // the new parent/priority/precedence (parent "" maps to the implicit root).
+            node_for_workload[old_info.parent]->detachWorkloadChild(node);
             detached = true;
         }
 
         node->updateSchedulingSettings(new_info.settings);
 
         if (detached)
-        {
-            if (!new_info.parent.empty())
-                node_for_workload[new_info.parent]->attachWorkloadChild(node);
-            else
-                implicit_root->attachWorkloadChild(node);
-        }
+            node_for_workload[new_info.parent]->attachWorkloadChild(node);
         updateCurrentVersion();
         SCHED_DBG("WorkloadResourceManager -- [end] updateNode(resource={}, workload={})", resource_name, old_info.name);
     });
@@ -218,8 +201,8 @@ void WorkloadResourceManager::Resource::updateCurrentVersion()
     // Create a full list of constraints and queues in the current hierarchy (walk from the implicit
     // root, which owns every workload subtree of this resource).
     current_version = std::make_shared<Version>();
-    if (implicit_root)
-        implicit_root->addRawPointerNodes(current_version->nodes);
+    if (auto it = node_for_workload.find(""); it != node_for_workload.end())
+        it->second->addRawPointerNodes(current_version->nodes);
 
     // See details in version control section of description in WorkloadResourceManager.h
     if (previous_version)
@@ -478,7 +461,9 @@ std::future<void> WorkloadResourceManager::Resource::attachClassifier(Classifier
     {
         try
         {
-            if (auto iter = node_for_workload.find(workload_name); iter != node_for_workload.end())
+            // The implicit root lives under the empty-string key; it is internal, not a workload a
+            // query can be classified into, so an empty workload name is treated as unknown.
+            if (auto iter = node_for_workload.find(workload_name); !workload_name.empty() && iter != node_for_workload.end())
                 classifier.attach(shared_from_this(), current_version, *iter->second);
             else
             {
@@ -529,15 +514,8 @@ void WorkloadResourceManager::Resource::forEachResourceNode(IResourceManager::Vi
 {
     executeInSchedulerThread([&, this]
     {
-        // Expose the implicit root workload and the inter-root scheduling nodes it holds, so
-        // system.scheduler is complete: with several root workloads, the fairness/priority node that
-        // multiplexes them lives on the implicit root.
-        if (implicit_root)
-            implicit_root->forEachSchedulerNode([&] (ISchedulerNode * scheduler_node)
-            {
-                visitor(resource_name, scheduler_node->getPath(), scheduler_node);
-            });
-
+        // node_for_workload includes the implicit root under the empty-string key, so this also
+        // exposes the implicit root and the inter-root scheduling nodes it holds in system.scheduler.
         for (auto & [path, node] : node_for_workload)
         {
             node->forEachSchedulerNode([&] (ISchedulerNode * scheduler_node)
