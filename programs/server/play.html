@@ -1868,7 +1868,7 @@
             position: relative;
         }
 
-        /* The "format" button sits inside the editor, in its bottom right corner: just inside the
+        /* The "Format" button sits inside the editor, in its bottom right corner: just inside the
            1px border and to the left of the vertical scrollbar, whose width is kept in
            `--query-scrollbar-width` by `updateFormatButtonPosition`. It is subtle while inactive
            (a gray link) and becomes a regular yellow button on hover. It is above the completion
@@ -1901,20 +1901,6 @@
         #format-query.busy
         {
             cursor: progress;
-        }
-
-        /* The balloon with a formatting error: aligned to the right edge of the button (which is at
-           the right edge of the editor) instead of centered on it, and wrapping the error text. */
-        #format-query .copy-balloon
-        {
-            left: auto;
-            right: 0;
-            transform: none;
-            width: max-content;
-            max-width: 40em;
-            white-space: pre-wrap;
-            text-align: left;
-            animation-duration: 5s;
         }
 
         #query-params
@@ -2072,7 +2058,7 @@
             </div>
         </div>
         <form id="controls">
-            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div><button type="button" id="format-query" title="Format the query">format</button></div>
+            <div id="query_div"><div id="query-backdrop"></div><div id="completion-mirror"></div><textarea autofocus spellcheck="false" autocorrect="false" autocomplete="false" data-gramm="false" class="monospace shadow" id="query"></textarea><div id="completion-overlay"></div><button type="button" id="format-query" title="Format the query">Format</button></div>
             <div id="query-params"></div>
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
@@ -15718,7 +15704,7 @@ document.addEventListener('keydown', event => {
     }
 });
 
-/// The "format" button in the bottom right corner of the editor: sends the editor's text to the server
+/// The "Format" button in the bottom right corner of the editor: sends the editor's text to the server
 /// as the `q` parameter of `SELECT formatQuery({q:String})` and replaces the text with the result.
 /// The query text goes in the request body (as a `multipart/form-data` field, next to the `query`
 /// field itself), so a long query does not bloat the URL.
@@ -15752,17 +15738,12 @@ format_button.addEventListener('click', async () => {
     body.append('param_q', original.replace(/[\\\n\t\r]/g,
         (c) => ({ '\\': '\\\\', '\n': '\\n', '\t': '\\t', '\r': '\\r' })[c]));
 
+    /// An error (e.g. a syntax error in the query) is shown in the result pane, as for the other queries.
     format_button.classList.add('busy');
-    let error_text = null;
     const json = await auxiliaryQuery(url_elem.value, user_elem.value, password_elem.value, body,
-        '', true, null, (text) => { error_text = text; });
+        '', false, connectionGeneration);
     format_button.classList.remove('busy');
-
-    if (!json) {
-        /// Only the first line, without the server version: the rest is the stack trace, if any.
-        showButtonBalloon(format_button, error_text.trim().split('\n')[0].replace(/\s*\(version [^)]*\)$/, ''));
-        return;
-    }
+    if (!json) return;
 
     /// The user could have edited the query or switched to another tab while the request was in
     /// flight; the result then belongs to a text that is no longer in the editor.
