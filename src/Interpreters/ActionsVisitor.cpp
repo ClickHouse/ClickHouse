@@ -60,6 +60,7 @@
 #include <Interpreters/Set.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/convertColumnToType.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
@@ -1459,6 +1460,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         }
 
         function_builder = UserDefinedExecutableFunctionFactory::instance().tryGet(node.name, current_context, parameters); /// NOLINT(readability-static-accessed-through-instance)
+
+        if (function_builder)
+            checkFunctionAccess(current_context, node.name);
     }
 
     bool is_user_defined_wasm_function = false;
@@ -1470,6 +1474,9 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
             UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
+
+            if (is_user_defined_wasm_function)
+                checkFunctionAccess(current_context, node.name);
         }
     }
 
@@ -1486,6 +1493,8 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
                 e.addMessage("Or unknown aggregate function " + node.name + ". Maybe you meant: " + toString(hints));
             throw;
         }
+
+        checkFunctionAccess(current_context, node.name);
 
         /// Normal functions are not parametric for now.
         if (node.parameters)

@@ -2,7 +2,6 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyScriptAbi.h>
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
-#include <Access/AccessControl.h>
 
 #include <ranges>
 #include <base/hex.h>
@@ -945,7 +944,6 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::get(const Str
         wasm_func = it->second.function;
     }
 
-    AccessControl::checkFunctionGrant(context, function_name);
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }
@@ -961,7 +959,6 @@ FunctionOverloadResolverPtr UserDefinedWebAssemblyFunctionFactory::tryGet(const 
         wasm_func = it->second.function;
     }
 
-    AccessControl::checkFunctionGrant(context, function_name);
     auto executable_function = std::make_shared<FunctionUserDefinedWasm>(function_name, std::move(wasm_func), std::move(context));
     return std::make_unique<FunctionToOverloadResolverAdaptor>(std::move(executable_function));
 }

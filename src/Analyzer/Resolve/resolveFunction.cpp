@@ -40,6 +40,7 @@
 #include <Functions/exists.h>
 #include <Columns/validateColumnType.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/checkFunctionAccess.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/misc.h>
@@ -2871,8 +2872,16 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function_name);
 
         if (!lambda_expression_untyped && user_defined_function)
+        {
             /// Try to substitute user defined SQL expression
             lambda_expression_untyped = tryGetLambdaFromUserDefinedSQLFunctions(user_defined_function, scope.context);
+
+            /// Only here the identifier is committed to the SQL user defined function: up to this point
+            /// a column or lambda alias with the same name would have won, and `system.functions` reads
+            /// the same factory without invoking anything.
+            if (lambda_expression_untyped)
+                checkFunctionAccess(scope.context, function_name);
+        }
 
         /** If function is resolved as lambda.
           * Clone lambda before resolve.
@@ -3047,6 +3056,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     /// Executable UDFs may have parameters. They are checked in UserDefinedExecutableFunctionFactory.
     bool can_have_parameters = (function != nullptr);
 
+    if (function)
+        checkFunctionAccess(scope.context, function_name);
+
     if (!function)
     {
         if (const auto * create_function_query = typeid_cast<const ASTCreateWasmFunctionQuery *>(user_defined_function.get()))
@@ -3054,6 +3066,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             UNUSED(create_function_query);
             UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(scope.context);
             function = UserDefinedWebAssemblyFunctionFactory::instance().get(function_name, scope.context);
+            checkFunctionAccess(scope.context, function_name);
         }
     }
 
@@ -3063,6 +3076,9 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         function = FunctionFactory::instance().tryGet(function_name, scope.context);
         can_have_parameters = false;
+
+        if (function)
+            checkFunctionAccess(scope.context, function_name);
 
         /// This is a hack to allow a query like `select randConstant(), randConstant(), randConstant()`.
         /// A non-deterministic function like `randConstant` returns a different value on every `build`,

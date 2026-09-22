@@ -3,7 +3,6 @@
 
 #include <Functions/DateTimeTransforms.h>
 
-#include <Access/AccessControl.h>
 #include <Interpreters/Context.h>
 
 #include <Common/Exception.h>
@@ -151,11 +150,6 @@ FunctionOverloadResolverPtr FunctionFactory::tryGetImpl(
 
     if (!res)
         return nullptr;
-
-    /// Default: the config list is empty, this is a single relaxed atomic load.
-    /// Unlisted functions never take the Context lock. Listed functions pay
-    /// `checkAccess` once at resolve time, not per row.
-    AccessControl::checkFunctionGrant(context, getCanonicalNameIfAny(name));
 
     if (CurrentThread::isInitialized())
     {
