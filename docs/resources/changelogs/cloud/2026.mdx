@@ -12,6 +12,38 @@ import { Image } from "/snippets/components/Image.jsx";
 
 In addition to this ClickHouse Cloud changelog, please see the [Cloud Compatibility](/products/cloud/guides/cloud-compatibility) page.
 
+<Update label="2026-09-22">
+
+This week's updates expand ClickHouse Cloud's compliance footprint into new APAC regions, add public-beta replica-aware routing, and introduce new capabilities for metrics, compute, and dbt. HIPAA- and PCI-regulated cells are now available in AWS Seoul and Sydney; eligible customers can evaluate Prometheus-compatible metrics workloads and On-Demand Compute; and ClickHouse is available through dbt Core v2 and dbt Platform.
+
+## Security {#security}
+
+### HIPAA and PCI support in AWS Seoul and Sydney {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+HIPAA- and PCI-regulated cells are now available in the AWS Seoul (`ap-northeast-2`) and AWS Sydney (`ap-southeast-2`) regions. Select HIPAA or PCI at service creation to run compliant workloads in these regions; see the [compliance overview](/products/cloud/reference/security/compliance-overview#hipaa-since-2024) and [supported regions](/products/cloud/reference/supported-regions) for details.
+
+## New features {#new-features}
+
+### Replica-aware routing now in public beta {#replica-aware-routing-now-in-public-beta}
+
+[Replica-aware routing](/products/cloud/features/infrastructure/replica-aware-routing) is available in public beta for Enterprise customers, with support for native ClickHouse Cloud and BYOC deployments. Once enabled on your account, you can turn it on directly from your service settings. See the [announcement](https://clickhouse.com/blog/replica-aware-routing-public-beta).
+
+### PromQL support in private preview {#promql-support-in-private-preview}
+
+You can now store Prometheus metrics in the `TimeSeries` table engine and query them with PromQL directly against your ClickHouse service—no transpiler or proxy required, so existing collectors, Grafana dashboards, and Prometheus tooling keep working unchanged. Write with Prometheus remote-write v1 and read through the Prometheus HTTP API, or run PromQL from a SQL session using the `prometheusQuery` and `prometheusQueryRange` table functions. Available to selected ClickHouse Cloud and BYOC customers via the [private-preview waitlist](https://clickhouse.com/cloud/promql-support-waitlist) on AWS, GCP, and Azure. See the [Prometheus interface documentation](/concepts/features/interfaces/prometheus) and [announcement](https://clickhouse.com/blog/introducing-promql).
+
+### On-Demand Compute now in private preview {#on-demand-compute-now-in-private-preview}
+
+On-Demand Compute lets eligible, compute-intensive `SELECT` queries tap additional ClickHouse workers through your existing service and endpoint—no resizing or extra provisioning required. You opt individual queries in via query settings while your service continues to handle authentication, planning, coordination, and results; under the hood it introduces a cost-based optimizer and multi-stage query execution. It is a fit for occasional heavy ad hoc reads, large scans, joins, and aggregations over `SharedMergeTree`, Apache Iceberg, or Delta Lake data. It is available to selected customers via the [private preview waitlist](https://clickhouse.com/cloud/on-demand-compute-waitlist). See the [On-Demand Compute documentation](/products/cloud/features/infrastructure/on-demand-compute) and [announcement](https://clickhouse.com/blog/on-demand-compute).
+
+## Integrations {#integrations}
+
+### ClickHouse adapter for dbt v2 and ClickHouse in dbt Platform {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+You can now run dbt against ClickHouse on the new Rust-based Core v2 engine with the dbt v2 adapter, available in public beta. ClickHouse is also available as a connection in dbt Platform (Studio, jobs, and environments) for the first time, in private beta and enabled per account. The existing v1 adapter (`dbt-clickhouse`) remains fully maintained in parallel. See [dbt Core](https://github.com/dbt-labs/dbt), the [dbt-clickhouse adapter pull request](https://github.com/ClickHouse/dbt-clickhouse/pull/739), and the [dbt Platform documentation pull request](https://github.com/dbt-labs/docs.getdbt.com/pull/9975).
+
+</Update>
+
 
 <Update label="2026-09-08">
 
