@@ -1,4 +1,5 @@
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/Serializations/SerializationStringSize.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeBlockReadUtils.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -487,6 +488,47 @@ MergeTreeReadTaskColumns getReadTaskColumns(
         .withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader)
         .withSubcolumns(with_subcolumns);
 
+    auto addLegacyStringParentIfNeeded = [&](Names & step_column_names)
+    {
+        const size_t original_size = step_column_names.size();
+        for (size_t i = 0; i < original_size; ++i)
+        {
+            const auto & name = step_column_names[i];
+            constexpr size_t string_size_suffix_length = 5;
+            if (name.size() <= string_size_suffix_length
+                || name.compare(name.size() - string_size_suffix_length, string_size_suffix_length, ".size") != 0)
+                continue;
+
+            auto column_in_storage = storage_snapshot->tryGetColumn(options, name);
+            auto column_in_part = data_part_info_for_reader.tryGetColumn(name);
+            if (!column_in_storage || !column_in_storage->isSubcolumn() || !column_in_part)
+                continue;
+
+            auto serialization = data_part_info_for_reader.getSerialization(*column_in_part);
+            const auto * string_size_serialization = typeid_cast<const SerializationStringSize *>(serialization.get());
+            if (!string_size_serialization || string_size_serialization->hasSeparateSizeStream())
+                continue;
+
+            String parent_name = name.substr(0, name.size() - string_size_suffix_length);
+            auto parent_column = storage_snapshot->tryGetColumn(options, parent_name);
+            if (!parent_column || parent_column->type->getTypeId() != TypeIndex::String)
+                continue;
+
+            if (std::find(column_to_read_after_prewhere.begin(), column_to_read_after_prewhere.end(), parent_name)
+                    == column_to_read_after_prewhere.end()
+                || columns_from_previous_steps.contains(parent_name)
+                || std::find(step_column_names.begin(), step_column_names.end(), parent_name) != step_column_names.end())
+                continue;
+
+            /// A legacy String .size is virtual and scans the regular String stream. PREWHERE and
+            /// the main read use separate MergeTree readers, so reading only .size here and the full
+            /// String later would scan the same data twice. Co-read the parent in this step instead.
+            /// SerializationStringSize then shares one deserialize state with the full String inside
+            /// this reader, and the parent is kept for the rest of the readers chain.
+            step_column_names.push_back(std::move(parent_name));
+        }
+    };
+
     auto add_step = [&](const PrewhereExprStep & step)
     {
         /// Computation results from previous steps might be used in the current step as well. In such a case these
@@ -509,6 +551,8 @@ MergeTreeReadTaskColumns getReadTaskColumns(
             if (!columns_from_previous_steps.contains(name))
                 step_column_names.push_back(name);
         }
+
+        addLegacyStringParentIfNeeded(step_column_names);
 
         const bool has_adaptive_granularity = data_part_info_for_reader.getIndexGranularityInfo().mark_type.adaptive;
 
