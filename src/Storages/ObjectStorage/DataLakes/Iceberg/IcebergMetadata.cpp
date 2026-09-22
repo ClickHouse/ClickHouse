@@ -758,7 +758,7 @@ void IcebergMetadata::truncate(ContextPtr context, std::shared_ptr<DataLake::ICa
         FileNamesGenerator filename_generator(
             persistent_components.path_resolver.getTableLocation(),
             catalog_writes_metadata_file,
-            persistent_components.metadata_compression_method,
+            compression_method,
             write_format);
 
         Int32 new_metadata_version = last_version + 1;
