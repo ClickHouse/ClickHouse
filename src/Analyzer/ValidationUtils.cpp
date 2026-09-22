@@ -778,7 +778,9 @@ void validateFromClause(const QueryTreeNodePtr & node)
                 {
                     if (!is_lateral_allowed && !correlated_columns_set.contains(std::static_pointer_cast<ColumnNode>(column)))
                         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                            "Lateral joins are not supported. Correlated column '{}' is found in the FROM clause. In query {}",
+                            "Correlated column '{}' is found in the FROM clause. "
+                            "Correlated table expressions in the FROM clause are only supported as a subquery "
+                            "on the right side of JOIN LATERAL (experimental, requires setting allow_experimental_lateral_join = 1). In query {}",
                             column->formatASTForErrorMessage(),
                             node->formatASTForErrorMessage());
                 }

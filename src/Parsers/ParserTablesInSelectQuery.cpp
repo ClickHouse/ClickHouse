@@ -583,8 +583,10 @@ expressions on its left side; the subquery is evaluated once per left row:
 ```sql
 SELECT ...
 FROM <left_table>
-[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> [ON true]
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
 ```
+
+The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
 
 It is experimental and disabled by default; enable it with the
 [`allow_experimental_lateral_join`](/reference/settings/session-settings/allow#allow_experimental_lateral_join) setting.
@@ -593,8 +595,8 @@ Only the following subset is supported so far; anything else is rejected with an
 
 - `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
 - The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
-- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported. Put the filters
-  that relate the two sides into the `WHERE` clause of the lateral subquery.
+- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
+  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
 - `GLOBAL` is not supported.
 - The lateral subquery must reference at least one column of the left side. Use a regular join for a
   non-correlated subquery.
