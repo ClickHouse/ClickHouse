@@ -678,11 +678,20 @@ struct ManualAllocation : public ResourceAllocation
         return allocated_size;
     }
 
+    /// Whether any increase was ever approved. An allocation that fails its own grow (self-kills) before it is
+    /// served never sees one, which distinguishes "served last" from "grew then evicted".
+    bool everIncreased()
+    {
+        std::unique_lock lock(mutex);
+        return increased_ever;
+    }
+
 private: // interaction with the scheduler thread
     void increaseApproved(const IncreaseRequest & increase) override
     {
         std::unique_lock lock(mutex);
         allocated_size += increase.size;
+        increased_ever = true;
         increase_enqueued = false;
         cv.notify_all();
     }
@@ -719,6 +728,7 @@ private: // interaction with the scheduler thread
     bool increase_enqueued = false;
     bool decrease_enqueued = false;
     bool removed = false;
+    bool increased_ever = false;
     size_t kills = 0;
     ResourceCost allocated_size = 0;
 };
@@ -832,7 +842,7 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreEqualEvictsLargestFirst)
 /// The reported score inversion (clickhouse-gh r3998593314): a running `reserve_memory = 0` requester with a
 /// high `eviction_score`, growing under the workload limit next to a lower-score memory holder, must fail its
 /// own grow rather than evict the holder. A zero-size allocation is admitted the moment it starts running, so
-/// the requester participates in `ByEvictionKey` by score and — carrying the highest score — is selected as
+/// the requester participates in `ByKey` by score and — carrying the highest score — is selected as
 /// the victim of its own increase, leaving the lower-score peer untouched.
 TEST(SchedulerSpaceShared, MemoryEvictionScoreZeroReserveRequesterSelfKillsBeforeLowerScorePeer)
 {
@@ -866,6 +876,46 @@ TEST(SchedulerSpaceShared, MemoryEvictionScoreZeroReserveRequesterSelfKillsBefor
     ASSERT_EQ(requester.killCount(), 1u)
         << "The high-score zero-reserve requester must self-kill instead of evicting a lower-score peer";
     EXPECT_EQ(peer.killCount(), 0u) << "The lower-score memory holder must survive";
+}
+
+
+/// Grow order follows the same single `ByKey` ordering as eviction: under contention the more important
+/// (lower `eviction_score`) allocation is served first, even when it has the larger `fair_key`. Here `lo`
+/// carries the lower score but the larger grow and `hi` the higher score but the smaller grow, so score and
+/// `fair_key` disagree. The unified order serves `lo` first; `hi`'s grow then cannot fit and, being the least
+/// important allocation, fails its own request without ever growing. Under a `fair_key`-only increase order
+/// `hi` (the smaller grow) would have been served first instead.
+TEST(SchedulerSpaceShared, MemoryEvictionScoreLowerScoreGrowsFirst)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 100);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+
+    // Park the scheduler so both zero-size admissions and both grows are queued together and processed in a
+    // single activation, letting the ordering — not the arrival timing — decide which grow is served first.
+    std::promise<void> entered;
+    std::promise<void> release;
+    t.scheduler.event_queue.enqueue([&] { entered.set_value(); release.get_future().get(); });
+    entered.get_future().get();
+
+    // Both start running at zero size (admitted immediately), so their grows below are regular increases.
+    ManualAllocation lo(queue, "lo", 0, /* eviction_score = */ 0);
+    ManualAllocation hi(queue, "hi", 0, /* eviction_score = */ 100);
+    lo.increaseAsync(70); // lower score, larger fair_key
+    hi.increaseAsync(60); // higher score, smaller fair_key; 70 + 60 > 100, so only one grow fits
+
+    release.set_value();
+
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
+    while (hi.killCount() == 0 && std::chrono::steady_clock::now() < deadline)
+        std::this_thread::yield();
+    lo.waitSynced();
+
+    EXPECT_EQ(lo.size(), 70) << "The lower-score allocation must be served first even with the larger fair_key";
+    EXPECT_EQ(hi.killCount(), 1u) << "The higher-score allocation must fail its own grow";
+    EXPECT_FALSE(hi.everIncreased()) << "The higher-score allocation must never grow — it is served last";
 }
 
 

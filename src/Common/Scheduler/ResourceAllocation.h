@@ -75,27 +75,26 @@ private:
     /// Keys for intrusive sets
     /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
     size_t unique_id = 0; /// Unique id for tie breaking in ordering.
-    ResourceCost fair_key = 0; /// Currently allocated plus pending increase (key for max-min fair ordering).
+    ResourceCost fair_key = 0; /// Currently allocated plus pending increase (the fair-share component of the ordering key).
 
-    /// Ordering by size and unique id for tie breaking.
-    /// Used for `increasing_allocations`: the next increase to process is the one with the smallest `fair_key`.
+    /// A single ordering of allocations, from most important (`begin()`) to least important (`rbegin()`):
+    /// a lower `eviction_score` is more important, ties break on a smaller `fair_key`, then `unique_id`.
+    /// Both actions read opposite ends of this one order:
+    ///   - `increasing_allocations`: the next increase to process is the most important allocation (`begin()`);
+    ///   - `running_allocations`: the eviction victim is the least important allocation (`rbegin()` — the
+    ///     highest `eviction_score`, then the largest `fair_key`).
+    /// `fair_key` is a mutable key, so an allocation must be erased from the set before it changes and
+    /// re-inserted afterwards. Pending and admitting allocations are structurally absent from
+    /// `running_allocations`, so they are never selected as victims.
     /// NOTE: called outside of the scheduler thread and thus requires queue.mutex
-    struct ByFairKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.fair_key, lhs.unique_id) < std::tie(rhs.fair_key, rhs.unique_id); } };
-
-    /// Ordering for eviction victim selection (`running_allocations`): the victim is `rbegin()` (the greatest
-    /// key) — the highest `eviction_score`, then the largest `fair_key`, then `unique_id` for tie-breaking.
-    /// Pending and admitting allocations are structurally absent from `running_allocations`, so they are never
-    /// selected as victims. `fair_key` is a mutable key, so an allocation must be erased from the set before it
-    /// changes and re-inserted afterwards.
-    /// NOTE: called outside of the scheduler thread and thus requires queue.mutex
-    struct ByEvictionKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.eviction_score, lhs.fair_key, lhs.unique_id) < std::tie(rhs.eviction_score, rhs.fair_key, rhs.unique_id); } };
+    struct ByKey { bool operator()(const auto & lhs, const auto & rhs) const noexcept { return std::tie(lhs.eviction_score, lhs.fair_key, lhs.unique_id) < std::tie(rhs.eviction_score, rhs.fair_key, rhs.unique_id); } };
 
     /// Intrusive data structures for managing allocations
     /// We use intrusive structures to avoid allocations during scheduling (we might be under memory pressure)
     using PendingList    = boost::intrusive::list<ResourceAllocation, PendingHook>;
     using AdmittingList  = boost::intrusive::list<ResourceAllocation, AdmittingHook>;
-    using RunningSet     = boost::intrusive::set<ResourceAllocation, RunningHook, boost::intrusive::compare<ByEvictionKey>>;
-    using IncreasingSet  = boost::intrusive::set<ResourceAllocation, IncreasingHook, boost::intrusive::compare<ByFairKey>>;
+    using RunningSet     = boost::intrusive::set<ResourceAllocation, RunningHook, boost::intrusive::compare<ByKey>>;
+    using IncreasingSet  = boost::intrusive::set<ResourceAllocation, IncreasingHook, boost::intrusive::compare<ByKey>>;
     using DecreasingList = boost::intrusive::list<ResourceAllocation, DecreasingHook>;
     using RemovingList   = boost::intrusive::list<ResourceAllocation, RemovingHook>;
 };

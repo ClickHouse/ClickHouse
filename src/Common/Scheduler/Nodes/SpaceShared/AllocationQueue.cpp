@@ -96,7 +96,7 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
     // `admitting_allocations`, not yet promoted by the scheduler thread).
     chassert(allocation.running_hook.is_linked() || allocation.admitting_hook.is_linked());
 
-    // Update the fair-ordering key. Re-key `running_allocations` only if the allocation is actually a member;
+    // Update the ordering key. Re-key `running_allocations` only if the allocation is actually a member;
     // an admitting allocation is not there yet, so its promotion in `processActivation` inserts it with the
     // already-updated `fair_key`.
     if (allocation.running_hook.is_linked())
@@ -349,9 +349,9 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     // cross-workload least common ancestor. Nothing to decide from `limit` at the leaf.
     UNUSED(limit);
 
-    // The victim is the greatest allocation by `ByEvictionKey`: the highest `eviction_score`, then the largest
-    // `fair_key`, then `unique_id`. Pending and admitting allocations are not members of `running_allocations`,
-    // so they are never selected as victims.
+    // The victim is the least important allocation — the greatest by `ByKey` (`rbegin()`): the highest
+    // `eviction_score`, then the largest `fair_key`, then `unique_id`. Pending and admitting allocations are not
+    // members of `running_allocations`, so they are never selected as victims.
     ResourceAllocation & victim = *running_allocations.rbegin();
 
     // If this is the least common ancestor of killer and victim - add details
@@ -501,6 +501,8 @@ void AllocationQueue::updateQueueLimit(Int64 value)
 bool AllocationQueue::setIncrease() // TSA_REQUIRES(mutex)
 {
     IncreaseRequest * old_increase = increase;
+    // Process the most important pending grow first (`begin()` of the `ByKey` order), then fall back to the
+    // oldest first-time allocation still awaiting admission.
     if (!increasing_allocations.empty())
         increase = &increasing_allocations.begin()->increase;
     else if (!pending_allocations.empty())
