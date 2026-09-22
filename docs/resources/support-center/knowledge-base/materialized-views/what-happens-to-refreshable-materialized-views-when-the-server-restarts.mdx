@@ -15,17 +15,17 @@ A refreshable materialized view whose refreshes are not coordinated through Clic
 
 ## Which views keep their schedule? {#which-views-keep-their-schedule}
 
-Refreshes are coordinated through ClickHouse Keeper for a view in a [`Replicated`](/reference/engines/database-engines/replicated) database, and a `REFRESH ... APPEND` view there can opt out of coordination with `SETTINGS all_replicas = 1`. Every other refreshable materialized view holds its last refresh time in memory only, so a restart leaves it overdue on any ordinary schedule. `RANDOMIZE FOR` does not spread these refreshes out.
+Refreshes are coordinated through ClickHouse Keeper for a view in a [`Replicated`](/reference/engines/database-engines/replicated) database. In ClickHouse Cloud, the same is true for a [`Shared`](/cloud/reference/shared-catalog) database. An `APPEND`-family view in either Cloud database can opt out of coordination with `SETTINGS all_replicas = 1`; on an open-source ClickHouse server, only a `Replicated` database has this coordination. A view without coordination holds its last refresh time in memory only, so a restart leaves it overdue on any ordinary schedule. `RANDOMIZE FOR` does not spread these refreshes out.
 
 ## The extra refreshes can also duplicate data {#the-extra-refreshes-can-also-duplicate-data}
 
-An `APPEND` view appends another full result. An `APPEND INCREMENTAL` view loses the cursor it resumes from unless its target table commits one itself, so it reprocesses rows it had already appended.
+An `APPEND` view appends another full result. An uncoordinated `APPEND INCREMENTAL` view loses its in-memory cursor on restart unless its transactional target committed the cursor, so it reprocesses rows it had already appended.
 
 Staging the start as described below limits how many refreshes run at once, but it still runs them. An `APPEND` view avoids the extra append if you start it only when its next refresh is due anyway. An `APPEND INCREMENTAL` view that lost its cursor gains nothing from the timing, because whenever it next runs it reprocesses the whole source table and appends that result, so keep it stopped until you can absorb or remove the duplicated rows.
 
 ## Keep every view stopped when the server comes up {#keep-every-view-stopped-when-the-server-comes-up}
 
-Set [`stop_refreshable_materialized_views_on_startup`](/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) in the server's own settings profile, which is the profile named by `system_profile`, falling back to `default_profile` and then to `default`:
+Set [`stop_refreshable_materialized_views_on_startup`](/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) in the server's own settings profile, which is the profile named by `system_profile`, falling back to `default_profile` and then to `default`. This setting is experimental:
 
 ```xml title="/etc/clickhouse-server/users.d/refreshable_materialized_views.xml"
 <clickhouse>
@@ -37,11 +37,13 @@ Set [`stop_refreshable_materialized_views_on_startup`](/reference/settings/sessi
 </clickhouse>
 ```
 
+The example uses the default `default` profile. Replace it with your custom `system_profile` when you use one.
+
 [`SYSTEM STOP VIEWS`](/reference/statements/system#stop-view-stop-views) is not an alternative, because the stopped state it sets does not survive a restart.
 
 ## Start the views one at a time {#start-the-views-one-at-a-time}
 
-[`SYSTEM START VIEWS`](/reference/statements/system#start-view-start-views) starts all of the views at once, which produces the same burst, so start each view by name and let its refresh finish before starting the next one. [`system.view_refreshes`](/reference/system-tables/view_refreshes) lists them:
+[`SYSTEM START VIEWS`](/reference/statements/system#start-view-start-views) starts all of the views at once, which produces the same burst, so start each view by name and let its refresh finish before starting the next one. [`system.view_refreshes`](/reference/system-tables/view_refreshes) lists them. In ClickHouse Cloud, this system table is node-local, so inspect each node:
 
 ```sql
 SYSTEM START VIEW my_database.my_view;
@@ -54,4 +56,4 @@ A view that is waiting for a [`REFRESH ... DEPENDS ON`](/reference/statements/cr
 
 ## What this means for your automation {#what-this-means-for-your-automation}
 
-While the setting is in place, an unplanned restart leaves every refreshable materialized view stopped, and a newly created view does not begin refreshing until it is started either. A view that is not coordinated is the exception when a `RESTORE` includes it: the restore starts it, whether it created the view or found it already there and stopped, so it refreshes without waiting for you. Make whatever automation restarts your servers and creates your views responsible for starting them.
+While the setting is in place, an unplanned restart leaves every refreshable materialized view stopped, and a newly created view does not begin refreshing until it is started either. `RESTORE` is the exception: it starts every included refreshable materialized view. An uncoordinated view may then be immediately overdue and replay its source. Make whatever automation restarts your servers and creates your views responsible for starting them.
