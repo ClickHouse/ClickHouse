@@ -36,6 +36,8 @@ class StampPartitionCursorsTransform final : public ISimpleTransform
 {
     PartitionCursor cursorAt(const Columns & cols, size_t row) const
     {
+        chassert(cols[pos_block_number]->size() == cols[pos_block_offset]->size());
+        chassert(cols[pos_block_number]->size() < row && cols[pos_block_offset]->size() < row);
         return {cols[pos_block_number]->getInt(row), cols[pos_block_offset]->getInt(row)};
     }
 
@@ -71,11 +73,10 @@ public:
 
     void transform(Chunk & chunk) override
     {
+        const auto & cols = chunk.getColumns();
         const size_t rows = chunk.getNumRows();
         if (rows == 0)
             return;
-
-        const auto & cols = chunk.getColumns();
 
         auto info = std::make_shared<PartitionCursorInfo>();
         info->partition_id = partition_id;

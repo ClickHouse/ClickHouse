@@ -278,15 +278,14 @@ void MergeTreeCommitOrderSource::work()
     if (subscription->isDisabled())
         return;
 
-    const auto [safe_block_numbers, was_updated] = subscription->snapshot();
-    const auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
-    chassert(was_updated);
+    auto [safe_block_numbers, was_updated] = subscription->snapshot();
+    auto classification = classifyPartitions(read_state, safe_block_numbers, stream_settings);
 
     read_state.updatePartitionSet(classification);
-    pending_round = ReadRound{
-        .partitions = classification,
-        .safe_block_numbers = safe_block_numbers,
+    pending_round = {
         .pipeline = buildReadRoundPipeline(reading_context, read_state, safe_block_numbers),
+        .safe_block_numbers = std::move(safe_block_numbers),
+        .partitions = std::move(classification),
     };
 
     if (!pending_round->pipeline.has_value())

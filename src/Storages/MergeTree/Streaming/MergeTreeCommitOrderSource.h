@@ -28,9 +28,9 @@ class MergeTreeCommitOrderSource final : public IProcessor
 {
     struct ReadRound
     {
-        ClassifiedPartitions partitions;
-        std::map<std::string, int64_t> safe_block_numbers;
         std::optional<ReadRoundPipeline> pipeline;
+        std::map<std::string, int64_t> safe_block_numbers;
+        ClassifiedPartitions partitions;
     };
 
     Status handleRunningPipeline();
