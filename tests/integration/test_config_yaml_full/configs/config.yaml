@@ -94,10 +94,8 @@ iceberg_metadata_log:
   table: iceberg_metadata_log
   flush_interval_milliseconds: 2000
 opentelemetry_span_log:
-  engine: |-
-    engine MergeTree
-                partition by toYYYYMM(finish_date)
-                order by (finish_date, finish_time_us, trace_id)
+  partition_by: toYYYYMM(finish_date)
+  order_by: finish_date, finish_time_us
   database: system
   table: opentelemetry_span_log
   flush_interval_milliseconds: 7500

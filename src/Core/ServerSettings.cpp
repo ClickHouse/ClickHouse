@@ -2173,6 +2173,7 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "filesystem_caches",
         "custom_cached_disks_base_directory",
         "custom_local_disks_base_directory",
+        "system_tables",
 
         /// Dictionaries and functions
         "dictionaries_config",

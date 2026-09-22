@@ -1448,11 +1448,8 @@
             global order that we can use to e.g. retry insertion into some external
             system.
         -->
-        <engine>
-            engine MergeTree
-            partition by toYYYYMM(finish_date)
-            order by (finish_date, finish_time_us)
-        </engine>
+        <partition_by>toYYYYMM(finish_date)</partition_by>
+        <order_by>finish_date, finish_time_us</order_by>
         <database>system</database>
         <table>opentelemetry_span_log</table>
         <flush_interval_milliseconds>7500</flush_interval_milliseconds>
@@ -1576,6 +1573,24 @@
         <partition_by>toYYYYMM(event_date)</partition_by>
         <ttl>event_date + INTERVAL 30 DAY</ttl>
     </zookeeper_connection_log>
+
+    <!-- Global settings for system tables -->
+    <!--
+    <system_tables>
+        <ttl></ttl>
+        <partition_by></partition_by>
+        <order_by></order_by>
+        <storage_policy></storage_policy>
+        <settings></settings>
+
+        <flush_interval_milliseconds></flush_interval_milliseconds>
+        <max_size_rows></max_size_rows>
+        <reserved_size_rows></reserved_size_rows>
+        <buffer_size_rows_flush_threshold></buffer_size_rows_flush_threshold>
+        <flush_on_crash></flush_on_crash>
+        <skip_alias_columns></skip_alias_columns>
+    </system_tables>
+    -->
 
     <!-- Configure system.dashboards for dashboard.html.
 

@@ -776,10 +776,8 @@ opentelemetry_span_log:
     # between several spans inserted in parallel). This gives the spans a
     # global order that we can use to e.g. retry insertion into some external
     # system.
-    engine: |-
-        engine MergeTree
-             partition by toYYYYMM(finish_date)
-             order by (finish_date, finish_time_us, trace_id)
+    partition_by: toYYYYMM(finish_date)
+    order_by: finish_date, finish_time_us
     database: system
     table: opentelemetry_span_log
     flush_interval_milliseconds: 7500
