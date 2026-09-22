@@ -105,9 +105,9 @@ using ZooKeeperPtr = std::shared_ptr<zkutil::ZooKeeper>;
 /// On-Keeper payloads and their formats live in `TransactionPayloads.h`.
 class TransactionManager final : public SingletonHelper<TransactionManager>
 {
-public:
+    friend class SingletonHelper<TransactionManager>;
 
-    TransactionManager();
+public:
 
     ~TransactionManager();
 
@@ -250,6 +250,19 @@ public:
     }
 
 private:
+    /// Both are private and called only by `SingletonHelper::createInstanceOrThrow`, which
+    /// constructs and immediately starts the instance under `instance_mutex`. Construction alone
+    /// leaves the Keeper state unestablished, so it must not be reachable on its own.
+    TransactionManager();
+    /// Establishes this replica's Keeper state: the feature-flag check, the log load, and the
+    /// updating thread. Separate from the constructor because it takes two ephemeral node holders
+    /// that are members: during construction those are destroyed after the body's locals, i.e.
+    /// after the Coordination component guard, and `ZooKeeper::pushRequest` rejects a request with
+    /// no component set. Runs exactly once, on a fresh instance, before it is published, so its
+    /// Keeper waits never block `mutex`'s hot-path users, and it is serialised against
+    /// `shutdownIfAny()` by `instance_mutex`.
+    void start();
+
     void loadLogFromZooKeeper() TSA_REQUIRES(mutex);
     void runUpdatingThread();
 
@@ -362,7 +375,13 @@ Derived & SingletonHelper<Derived>::createInstanceOrThrow()
     std::lock_guard lock{instance_mutex};
     if (!instance_holder)
     {
-        instance_holder = std::make_shared<Derived>();
+        /// A fresh instance per attempt, published only once `start()` has succeeded: the fast
+        /// path in `instance()` must never hand out an instance whose Keeper state is not
+        /// established, and `start()` commits state it cannot roll back, so a failed instance
+        /// is discarded rather than retried.
+        std::shared_ptr<Derived> new_instance{new Derived()};
+        new_instance->start();
+        instance_holder = std::move(new_instance);
         instance_raw_ptr = instance_holder.get();
     }
     return *instance_holder;

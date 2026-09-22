@@ -90,37 +90,31 @@ TransactionManager::TransactionManager()
     , fault_probability_before_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_before_commit", 0))
     , fault_probability_after_commit(global_context->getConfigRef().getDouble("transaction_log.fault_probability_after_commit", 0))
 {
-    auto component_guard = Coordination::setCurrentComponent("TransactionManager::TransactionManager");
+}
 
-    try
+void TransactionManager::start()
+{
+    std::lock_guard lock{mutex};
+    auto component_guard = Coordination::setCurrentComponent("TransactionManager::start");
+
+    /// Fail-close before any list-with-data, multi-read or check-stat call runs. Without
+    /// `CHECK_STAT` Keeper answers `Unsupported operation: CheckStat` and drops the session, which
+    /// surfaces as a lost commit rather than a clear error.
+    auto zk = global_context->getZooKeeper();
+    if (!zk->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA)
+        || !zk->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST)
+        || !zk->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ)
+        || !zk->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
     {
-        /// Fail-close before any list-with-data, multi-read or check-stat call runs. Without
-        /// `CHECK_STAT` Keeper answers `Unsupported operation: CheckStat` and drops the session, which
-        /// surfaces as a lost commit rather than a clear error.
-        auto zk = global_context->getZooKeeper();
-        if (!zk->isFeatureEnabled(KeeperFeatureFlag::LIST_WITH_STAT_AND_DATA)
-            || !zk->isFeatureEnabled(KeeperFeatureFlag::FILTERED_LIST)
-            || !zk->isFeatureEnabled(KeeperFeatureFlag::MULTI_READ)
-            || !zk->isFeatureEnabled(KeeperFeatureFlag::CHECK_STAT))
-        {
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Transactions require Keeper to advertise `LIST_WITH_STAT_AND_DATA`, "
-                "`FILTERED_LIST`, `MULTI_READ` and `CHECK_STAT` feature flags. Upgrade the Keeper cluster.");
-        }
-
-        loadLogFromZooKeeper();
-
-        updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionManager::runUpdatingThread, this);
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Transactions require Keeper to advertise `LIST_WITH_STAT_AND_DATA`, "
+            "`FILTERED_LIST`, `MULTI_READ` and `CHECK_STAT` feature flags. Upgrade the Keeper cluster.");
     }
-    catch (...)
-    {
-        /// Member subobjects are destroyed after this body's locals, so `~EphemeralNodeHolder` would run
-        /// without a component and `ZooKeeper::pushRequest` rejects that (same invariant as `shutdown()`).
-        cleanup_lock_holder.reset();
-        session.releaseActiveNode();
-        throw;
-    }
+
+    loadLogFromZooKeeper();
+
+    updating_thread = std::make_unique<ThreadFromGlobalPool>(&TransactionManager::runUpdatingThread, this);
 }
 
 TransactionManager::~TransactionManager()

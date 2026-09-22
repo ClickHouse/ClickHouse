@@ -89,6 +89,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/loadMetadata.h>
 #include <Interpreters/registerInterpreters.h>
@@ -3486,6 +3487,19 @@ try
         /// and so loadMarkedAsDroppedTables() will find it and try to add, and UUID will overlap.
         database_catalog.loadMarkedAsDroppedTables();
         database_catalog.createBackgroundTasks();
+        if (config().getInt("allow_experimental_transactions", 0))
+        {
+            /// Resolving a part's transactional `creation_tid` while the databases load would
+            /// otherwise build this singleton on a background table-loading thread.
+            try
+            {
+                TransactionManager::instance();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Cannot initialize the transaction log at startup");
+            }
+        }
         /// Then, load remaining databases (some of them maybe be loaded asynchronously)
         load_metadata_tasks = loadMetadata(global_context, default_database, server_settings[ServerSetting::async_load_databases]);
         /// If we need to convert database engines, disable async tables loading
