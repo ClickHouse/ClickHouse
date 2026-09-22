@@ -2837,6 +2837,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
             auto it = scope.nullable_group_by_keys.find(node);
             if (it != scope.nullable_group_by_keys.end())
             {
+                const auto node_type = node->getNodeType();
+                if (node_type != QueryTreeNodeType::COLUMN
+                    && node_type != QueryTreeNodeType::CONSTANT
+                    && node_type != QueryTreeNodeType::FUNCTION)
+                    continue;
+
                 /// Look up the projection name before the clone replaces the node: the map is keyed
                 /// by node identity, so afterwards the original key is unreachable.
                 auto projection_name_it = node_to_projection_name.find(node);
