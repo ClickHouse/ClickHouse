@@ -258,15 +258,18 @@ std::optional<Cluster::Address> Cluster::Address::tryParseFullString(std::string
     /// "_all_replicas" is a marker for all the replicas of the shard, see Cluster::addShard().
     std::string_view replica = rest.substr(underscore_pos + 1);
     if (replica == "all_replicas")
-    {
         address.replica_index = 0;
-        return address;
-    }
-
-    if (!replica.starts_with("replica"))
+    else if (!replica.starts_with("replica"))
+        return {};
+    else if (!tryParse<UInt32>(address.replica_index, replica.substr(strlen("replica"))) || address.replica_index == 0)
         return {};
 
-    if (!tryParse<UInt32>(address.replica_index, replica.substr(strlen("replica"))) || address.replica_index == 0)
+    /// tryParse accepts spellings the writer never produces (leading zeros, an explicit sign),
+    /// so only a name that round-trips to exactly the same string is a directory queue name.
+    String canonical = address.replica_index == 0
+        ? fmt::format("shard{}_all_replicas", address.shard_index)
+        : address.toFullString();
+    if (canonical != full_string)
         return {};
 
     return address;

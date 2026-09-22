@@ -194,6 +194,12 @@ def test_invalid_shard_directory_format(started_cluster):
         # Well-formed names joined with a comma: the sink writes one directory per destination, so
         # this must not be taken for a queue that sends to both replicas.
         "shard1_replica1,shard1_replica2",
+        # Alternate spellings of a well-formed name: the sink writes indices without leading zeros
+        # or a sign, so these are not the same directory as shard1_replica1 / shard1_all_replicas.
+        "shard01_replica1",
+        "shard+1_replica1",
+        "shard1_replica01",
+        "shard01_all_replicas",
         # As a server older than 26.9 would have named it with
         # use_compact_format_in_distributed_parts_names=0.
         "default:hunter2@127%2E0%2E0%2E1:9000",
