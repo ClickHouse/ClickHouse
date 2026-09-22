@@ -41,13 +41,15 @@ CREATE TABLE db.dst (k1 UInt32, k2 UInt32) ENGINE = MergeTree ORDER BY k1;
 CREATE TABLE db.d (k1 UInt32, k2 UInt32) ENGINE = Distributed('two_shards', 'db', 'dst', cityHash64(k1, k2));
 "
 
-# Whether the initiator keeps a merge step of its own is the decision: `0` means the shortcut was taken
-# and the shards' output needs nothing above the remote read, `1` means the initiator still merges, so
-# the shortcut was declined. An ordinary key takes it, which is what the two lines below are read
-# against.
+# Whether the initiator keeps a step of its own is the decision: `0` means the shortcut was taken and
+# the shards' output needs nothing above the remote read, `1` means the initiator still merges or
+# re-applies the clause, so the shortcut was declined. An ordinary key takes it, which is what the
+# three lines below are read against. The key is probed once per clause that can carry it - `DISTINCT`,
+# `GROUP BY` and `LIMIT BY` - and each probe is a separate entry into the walk, so all three are read.
 $LOCAL -q "${SETTINGS}
 SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT k1, k2 FROM db.d) WHERE explain ILIKE '%Distinct (DISTINCT)%';
 SELECT count() > 0 FROM (EXPLAIN SELECT k1, k2 FROM db.d GROUP BY k1, k2) WHERE explain ILIKE '%MergingAggregated%';
+SELECT count() > 0 FROM (EXPLAIN SELECT k1, k2 FROM db.d LIMIT 1 BY k1, k2) WHERE explain ILIKE '%LimitBy%';
 "
 
 sed -i 's/cityHash64(k1, k2))$/cityHash64(k1, arrayJoin([1, 2]), k2))/' "${WORKING_DIR}/metadata/db/d.sql"
@@ -60,6 +62,7 @@ $LOCAL -q "SELECT count() FROM system.tables WHERE database = 'db' AND name = 'd
 $LOCAL -q "${SETTINGS}
 SELECT count() > 0 FROM (EXPLAIN SELECT DISTINCT k1, k2 FROM db.d) WHERE explain ILIKE '%Distinct (DISTINCT)%';
 SELECT count() > 0 FROM (EXPLAIN SELECT k1, k2 FROM db.d GROUP BY k1, k2) WHERE explain ILIKE '%MergingAggregated%';
+SELECT count() > 0 FROM (EXPLAIN SELECT k1, k2 FROM db.d LIMIT 1 BY k1, k2) WHERE explain ILIKE '%LimitBy%';
 "
 
 rm -rf "${WORKING_DIR}"
