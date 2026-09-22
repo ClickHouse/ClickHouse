@@ -1,12 +1,16 @@
-#include <Common/Arena.h>
 #include <Columns/ColumnsNumber.h>
+#include <Interpreters/PartitionedHashJoin/DuplicateSpans.h>
 #include <Interpreters/RowRefs.h>
+#include <Common/Arena.h>
 
 #include <base/defines.h>
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <limits>
+#include <numeric>
+#include <vector>
 
 using namespace DB;
 
@@ -252,3 +256,300 @@ TEST(RowRefListDeathTest, RangeLeavingItsBlockIsRejected)
 }
 
 #endif
+
+/// Spans as `PartitionedHashJoin` writes them through `SpanWriter`. The cases check the reader
+/// contract (`rows`, `firstWord`, the iterator) and, where a header is expected, its links.
+namespace
+{
+
+UInt64 ref(size_t row)
+{
+    return RowRef(/*block_no=*/1, row).encode();
+}
+
+std::vector<UInt32> rowsOf(const RowRefList & list)
+{
+    std::vector<UInt32> rows;
+    for (auto it = list.begin(); it.ok(); ++it)
+        rows.push_back(refWordRowNo(*it));
+    return rows;
+}
+
+std::vector<UInt32> iotaFrom(size_t from, size_t n)
+{
+    std::vector<UInt32> rows(n);
+    std::iota(rows.begin(), rows.end(), static_cast<UInt32>(from));
+    return rows;
+}
+
+std::vector<UInt32> expectedNewestFirst(const std::vector<std::vector<UInt32>> & passes)
+{
+    std::vector<UInt32> out;
+    for (auto pass = passes.rbegin(); pass != passes.rend(); ++pass)
+    {
+        const size_t max = RowRefList::MAX_RANGE_REFS;
+        const size_t chunks = (pass->size() + max - 1) / max;
+        for (size_t c = chunks; c-- > 0;)
+        {
+            const size_t begin = c * max;
+            const size_t end = std::min(begin + max, pass->size());
+            out.insert(out.end(), pass->begin() + static_cast<std::ptrdiff_t>(begin), pass->begin() + static_cast<std::ptrdiff_t>(end));
+        }
+    }
+    return out;
+}
+
+struct SpanFixture
+{
+    static constexpr UInt32 bucket = 7;
+
+    Arena pool;
+    SpanWriter writer{pool};
+    PassScratch scratch;
+    std::vector<RowRefList> cells{16};
+    RowRefList zero;
+
+    RowRefList & cell() { return cells[bucket]; }
+
+    void insert(UInt64 word)
+    {
+        if (cell().word == 0)
+            cell() = RowRefList::fromWord(word);
+        else
+            appendRow(cell(), word, bucket, scratch);
+    }
+
+    void insertZero(UInt64 word)
+    {
+        if (zero.word == 0)
+            zero = RowRefList::fromWord(word);
+        else
+            appendRowZero(zero, word, scratch);
+    }
+
+    void finish()
+    {
+        writer.finish(scratch, [&](UInt32 b) -> RowRefList & { return cells[b]; }, scratch.zero_items.empty() ? nullptr : &zero);
+    }
+
+    /// One pass of `n` rows for the test key (or the zero key), ids `[next, next + n)`. Updates `next`.
+    std::vector<UInt32> pass(size_t n, size_t & next, bool zero_key = false)
+    {
+        std::vector<UInt32> ids;
+        ids.reserve(n);
+        for (size_t i = 0; i < n; ++i)
+        {
+            ids.push_back(static_cast<UInt32>(next));
+            if (zero_key)
+                insertZero(ref(next++));
+            else
+                insert(ref(next++));
+        }
+        finish();
+        return ids;
+    }
+};
+
+}
+
+TEST(RowRefList, RunDecode)
+{
+    for (const size_t n : {2uz, 300uz})
+    {
+        SpanFixture build;
+        size_t next = 0;
+        build.pass(n, next);
+        EXPECT_TRUE(build.cell().isRun());
+        EXPECT_EQ(build.cell().rows(), n);
+        EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u);
+        EXPECT_EQ(rowsOf(build.cell()), iotaFrom(0, n));
+        EXPECT_EQ(build.writer.stats().arena_bytes, 8u * n);
+        EXPECT_EQ(build.writer.stats().headers, 0u);
+    }
+}
+
+TEST(RowRefList, ChainAcrossPasses)
+{
+    SpanFixture build;
+    size_t next = 0;
+    const auto g1 = build.pass(3, next);
+    const auto g2 = build.pass(2, next);
+    const auto g3 = build.pass(1, next);
+    EXPECT_TRUE(build.cell().isChain());
+    EXPECT_EQ(build.cell().rows(), 6u);
+    EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u) << "the headerless range's first ref is the first-inserted row";
+    EXPECT_EQ(rowsOf(build.cell()), (std::vector<UInt32>{5, 3, 4, 0, 1, 2}));
+    EXPECT_EQ(rowsOf(build.cell()), expectedNewestFirst({g1, g2, g3}));
+    EXPECT_EQ(build.writer.stats().headers, 2u);
+    EXPECT_EQ(build.writer.stats().arena_bytes, 6u * 8u + 2u * 16u);
+
+    const auto * newest = build.cell().chainHeader();
+    EXPECT_EQ(newest->ownLen(), 1u);
+    EXPECT_EQ(newest->total(), 6u);
+    EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(newest->prev));
+    EXPECT_EQ(RowRefList::RangeHeader::prevLen(newest->prev), 2u);
+    const auto * middle = reinterpret_cast<const RowRefList::RangeHeader *>(RowRefList::RangeHeader::prevPtr(newest->prev));
+    EXPECT_EQ(middle->ownLen(), 2u);
+    EXPECT_EQ(middle->total(), 5u);
+    EXPECT_FALSE(RowRefList::RangeHeader::prevHasHeader(middle->prev));
+    EXPECT_EQ(RowRefList::RangeHeader::prevLen(middle->prev), 3u);
+}
+
+TEST(RowRefList, InlineThenDuplicates)
+{
+    SpanFixture build;
+    size_t next = 0;
+    build.pass(1, next);
+    EXPECT_TRUE(build.cell().isInline());
+    build.pass(2, next);
+    EXPECT_TRUE(build.cell().isRun());
+    EXPECT_EQ(build.cell().rows(), 3u);
+    EXPECT_EQ(build.writer.stats().headers, 0u);
+    EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u);
+    EXPECT_EQ(rowsOf(build.cell()), iotaFrom(0, 3));
+}
+
+TEST(RowRefList, OneRowAfterRange)
+{
+    SpanFixture build;
+    size_t next = 0;
+    build.pass(2, next);
+    build.pass(1, next);
+    EXPECT_TRUE(build.cell().isChain());
+    EXPECT_EQ(build.cell().rows(), 3u);
+    EXPECT_EQ(build.cell().chainHeader()->ownLen(), 1u);
+    EXPECT_EQ(build.writer.stats().arena_bytes, 8u * 2u + 8u * 1u + 16u);
+    EXPECT_EQ(build.writer.stats().headers, 1u);
+    EXPECT_EQ(rowsOf(build.cell()), (std::vector<UInt32>{2, 0, 1}));
+}
+
+TEST(RowRefList, SaturatedTotalFromHeader)
+{
+    SpanFixture build;
+    size_t next = 0;
+    build.pass(20000, next);
+    build.pass(20000, next);
+    EXPECT_TRUE(build.cell().isChain());
+    EXPECT_EQ(build.cell().countField(), RowRefList::COUNT_SAT);
+    EXPECT_EQ(build.cell().rows(), 40000u);
+    EXPECT_EQ(build.writer.stats().headers, 1u);
+    EXPECT_EQ(build.cell().chainHeader()->total(), 40000u);
+    EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u);
+}
+
+TEST(RowRefList, RangeCapIsCountSatMinusOne)
+{
+    {
+        SpanFixture build;
+        size_t next = 0;
+        build.pass(RowRefList::MAX_RANGE_REFS, next);
+        EXPECT_TRUE(build.cell().isRun());
+        EXPECT_EQ(build.cell().rows(), RowRefList::MAX_RANGE_REFS);
+        EXPECT_EQ(build.writer.stats().headers, 0u);
+        EXPECT_EQ(build.writer.stats().arena_bytes, 8u * RowRefList::MAX_RANGE_REFS);
+    }
+    {
+        SpanFixture build;
+        size_t next = 0;
+        build.pass(RowRefList::COUNT_SAT, next);
+        EXPECT_TRUE(build.cell().isChain());
+        EXPECT_EQ(build.cell().countField(), RowRefList::COUNT_SAT);
+        EXPECT_EQ(build.cell().rows(), RowRefList::COUNT_SAT);
+        EXPECT_EQ(build.writer.stats().headers, 1u);
+        EXPECT_EQ(build.writer.stats().arena_bytes, 8u * RowRefList::COUNT_SAT + 16u);
+        EXPECT_EQ(build.writer.stats().ref_words, RowRefList::COUNT_SAT);
+    }
+}
+
+TEST(RowRefList, SplitAt32766)
+{
+    SpanFixture build;
+    size_t next = 0;
+    build.pass(70000, next);
+    EXPECT_TRUE(build.cell().isChain());
+    EXPECT_EQ(build.cell().rows(), 70000u);
+    EXPECT_EQ(build.writer.stats().headers, 2u);
+    EXPECT_EQ(rowsOf(build.cell()), expectedNewestFirst({iotaFrom(0, 70000)}));
+    EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u);
+}
+
+TEST(RowRefList, HeaderedSplitLinksHeader)
+{
+    {
+        SpanFixture build;
+        size_t next = 0;
+        build.pass(3, next);
+        const size_t later = 2uz * RowRefList::MAX_RANGE_REFS + 5;
+        build.pass(later, next);
+        EXPECT_EQ(build.cell().rows(), 3u + later);
+        EXPECT_EQ(build.writer.stats().headers, 3u);
+        const auto * third = build.cell().chainHeader();
+        EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(third->prev));
+        const auto * second = reinterpret_cast<const RowRefList::RangeHeader *>(RowRefList::RangeHeader::prevPtr(third->prev));
+        EXPECT_EQ(third->ownLen(), 5u);
+        EXPECT_EQ(second->ownLen(), RowRefList::MAX_RANGE_REFS);
+        EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(second->prev))
+            << "the first later-pass chunk is headered because the key already had a range";
+        const auto * first_later = reinterpret_cast<const RowRefList::RangeHeader *>(RowRefList::RangeHeader::prevPtr(second->prev));
+        EXPECT_EQ(first_later->ownLen(), RowRefList::MAX_RANGE_REFS);
+        EXPECT_FALSE(RowRefList::RangeHeader::prevHasHeader(first_later->prev));
+        EXPECT_EQ(RowRefList::RangeHeader::prevLen(first_later->prev), 3u);
+        EXPECT_EQ(rowsOf(build.cell()), expectedNewestFirst({iotaFrom(0, 3), iotaFrom(3, later)}));
+    }
+    {
+        SpanFixture build;
+        size_t next = 0;
+        const size_t n = 2uz * RowRefList::MAX_RANGE_REFS + 5;
+        build.pass(n, next);
+        EXPECT_EQ(build.writer.stats().headers, 2u);
+        const auto * third = build.cell().chainHeader();
+        EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(third->prev));
+        const auto * second = reinterpret_cast<const RowRefList::RangeHeader *>(RowRefList::RangeHeader::prevPtr(third->prev));
+        EXPECT_EQ(second->ownLen(), RowRefList::MAX_RANGE_REFS);
+        EXPECT_FALSE(RowRefList::RangeHeader::prevHasHeader(second->prev));
+        EXPECT_EQ(RowRefList::RangeHeader::prevLen(second->prev), RowRefList::MAX_RANGE_REFS);
+        EXPECT_EQ(rowsOf(build.cell()), expectedNewestFirst({iotaFrom(0, n)}));
+    }
+}
+
+TEST(RowRefList, SplitBehindPrevious)
+{
+    SpanFixture build;
+    size_t next = 0;
+    build.pass(3, next);
+    build.pass(40000, next);
+    EXPECT_TRUE(build.cell().isChain());
+    EXPECT_EQ(build.cell().rows(), 40003u);
+    EXPECT_EQ(build.writer.stats().headers, 2u) << "both new chunks are headered";
+    EXPECT_EQ(build.cell().chainHeader()->ownLen(), 40000u - RowRefList::MAX_RANGE_REFS);
+    EXPECT_TRUE(RowRefList::RangeHeader::prevHasHeader(build.cell().chainHeader()->prev));
+}
+
+TEST(RowRefList, ZeroKeyItems)
+{
+    SpanFixture build;
+    size_t next = 0;
+    build.pass(3, next, /*zero_key=*/true);
+    build.pass(2, next, /*zero_key=*/true);
+    EXPECT_TRUE(build.zero.isChain());
+    EXPECT_EQ(build.zero.rows(), 5u);
+    EXPECT_EQ(build.writer.stats().headers, 1u);
+    EXPECT_EQ(refWordRowNo(build.zero.firstWord()), 0u);
+    EXPECT_EQ(rowsOf(build.zero), (std::vector<UInt32>{3, 4, 0, 1, 2}));
+}
+
+TEST(RowRefList, FinishMidPassThenContinue)
+{
+    /// A pass cut after 5 of 12 rows, then continued.
+    SpanFixture build;
+    size_t next = 0;
+    for (size_t i = 0; i < 5; ++i)
+        build.insert(ref(next++));
+    build.finish();
+    for (size_t i = 0; i < 7; ++i)
+        build.insert(ref(next++));
+    build.finish();
+    EXPECT_EQ(build.cell().rows(), 12u);
+    EXPECT_EQ(refWordRowNo(build.cell().firstWord()), 0u);
+    EXPECT_EQ(rowsOf(build.cell()), expectedNewestFirst({iotaFrom(0, 5), iotaFrom(5, 7)}));
+}
