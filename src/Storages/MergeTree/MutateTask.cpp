@@ -1012,8 +1012,7 @@ getColumnsForNewDataPart(
                 continue;
             }
 
-            /// `NameAndTypePair` holds the type in storage in a separate field that assigning `type`
-            /// does not update, so rebuild the pair instead of assigning to it.
+            /// `NameAndTypePair` holds the type in storage in a separate field that assigning `type` does not update.
             auto updated_type = updated_header.getByName(it->name).type;
             if (updated_type != it->type)
                 *it = NameAndTypePair{it->name, updated_type};
