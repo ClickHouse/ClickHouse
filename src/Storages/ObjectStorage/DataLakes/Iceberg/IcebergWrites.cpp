@@ -297,21 +297,22 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
     }
 }
 
-bool canWriteStatistics(
+/// Retains only the bounds that can be serialized. A field left out is simply absent from the
+/// manifest bounds map, which readers treat as "bound unknown" for that column.
+std::vector<std::pair<size_t, Field>> filterWritableStatistics(
     const std::vector<std::pair<size_t, Field>> & statistics,
     const std::unordered_map<size_t, size_t> & field_id_to_column_index,
     SharedHeader sample_block)
 {
-    if (statistics.empty())
-        return false;
-
+    std::vector<std::pair<size_t, Field>> writable;
+    writable.reserve(statistics.size());
     for (const auto & [field_id, stat] : statistics)
     {
         auto type = sample_block->getDataTypes()[field_id_to_column_index.at(field_id)];
-        if (!canDumpIcebergStats(stat, type))
-            return false;
+        if (canDumpIcebergStats(stat, type))
+            writable.emplace_back(field_id, stat);
     }
-    return true;
+    return writable;
 }
 
 }
@@ -623,10 +624,11 @@ void generateManifestFile(
         }
         else if (effective_statistics)
         {
-            auto statistics = effective_statistics->getColumnSizes();
-            set_fields(statistics, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
+            auto column_sizes = effective_statistics->getColumnSizes();
+            if (!column_sizes.empty())
+                set_fields(column_sizes, Iceberg::f_column_sizes, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
-            statistics = effective_statistics->getNullCounts();
+            auto statistics = effective_statistics->getNullCounts();
             set_fields(statistics, Iceberg::f_null_value_counts, [](size_t, size_t value) { return static_cast<Int64>(value); });
 
             std::unordered_map<size_t, size_t> field_id_to_column_index;
@@ -637,13 +639,15 @@ void generateManifestFile(
             auto dump_fields = [&](size_t field_id, Field value)
             { return dumpFieldToBytes(value, sample_block->getDataTypes()[field_id_to_column_index.at(field_id)]); };
 
-            auto lower_statistics = effective_statistics->getLowerBounds();
-            if (canWriteStatistics(lower_statistics, field_id_to_column_index, sample_block))
+            auto lower_statistics
+                = filterWritableStatistics(effective_statistics->getLowerBounds(), field_id_to_column_index, sample_block);
+            if (!lower_statistics.empty())
             {
                 set_fields(lower_statistics, Iceberg::f_lower_bounds, dump_fields);
             }
-            auto upper_statistics = effective_statistics->getUpperBounds();
-            if (canWriteStatistics(upper_statistics, field_id_to_column_index, sample_block))
+            auto upper_statistics
+                = filterWritableStatistics(effective_statistics->getUpperBounds(), field_id_to_column_index, sample_block);
+            if (!upper_statistics.empty())
             {
                 set_fields(upper_statistics, Iceberg::f_upper_bounds, dump_fields);
             }
@@ -763,7 +767,8 @@ void generateManifestList(
     const std::unordered_set<String> & carry_forward_manifest_paths,
     const std::vector<Int64> & entry_partition_spec_ids,
     const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries,
-    const std::vector<Int64> & entry_row_counts)
+    const std::vector<Int64> & entry_row_counts,
+    const std::vector<Int64> & entry_file_counts)
 {
     chassert(
         per_entry_content_types.empty() || per_entry_content_types.size() == manifest_entry_names.size(),
@@ -784,6 +789,12 @@ void generateManifestList(
             ErrorCodes::LOGICAL_ERROR,
             "Iceberg manifest list needs one row count per manifest entry, got {} counts for {} entries",
             entry_row_counts.size(),
+            manifest_entry_names.size());
+    if (!manifest_rewrite && entry_file_counts.size() != manifest_entry_names.size())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Iceberg manifest list needs one file count per manifest entry, got {} counts for {} entries",
+            entry_file_counts.size(),
             manifest_entry_names.size());
 
     Int32 version = metadata->getValue<Int32>(Iceberg::f_format_version);
@@ -996,9 +1007,11 @@ void generateManifestList(
             continue;
         }
 
+        const Int32 added_files_count = static_cast<Int32>(entry_file_counts[entry_idx]);
+
         if (version == 1)
         {
-            setVersionedField(entry, 1, Iceberg::f_added_files_count);
+            setVersionedField(entry, added_files_count, Iceberg::f_added_files_count);
             setVersionedField(entry, std::stoi(summary->getValue<String>(Iceberg::f_total_data_files)), Iceberg::f_existing_files_count);
             setVersionedField(entry, 0, Iceberg::f_deleted_files_count);
             if (summary->has(Iceberg::f_added_position_deletes))
@@ -1008,7 +1021,7 @@ void generateManifestList(
         }
         else
         {
-            entry.field(Iceberg::f_added_files_count) = 1;
+            entry.field(Iceberg::f_added_files_count) = added_files_count;
             /// This manifest only contains newly added files; no pre-existing entries.
             entry.field(Iceberg::f_existing_files_count) = 0;
             entry.field(Iceberg::f_deleted_files_count) = 0;
@@ -1337,6 +1350,7 @@ bool IcebergStorageSink::initializeMetadata()
     std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
     std::vector<Int64> manifest_entry_sizes;
     std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
     std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
 
     auto cleanup = [&] (bool retry_because_of_metadata_conflict)
@@ -1446,6 +1460,7 @@ bool IcebergStorageSink::initializeMetadata()
             for (UInt64 data_file_row_count : writer.getDataFileRowCounts())
                 manifest_row_count += static_cast<Int64>(data_file_row_count);
             manifest_entry_row_counts.push_back(manifest_row_count);
+            manifest_entry_file_counts.push_back(static_cast<Int64>(writer.getDataFiles().size()));
 
             /// The manifest holds a single partition tuple, which becomes its manifest-list field summary.
             if (partitioner)
@@ -1528,7 +1543,8 @@ bool IcebergStorageSink::initializeMetadata()
                     /* carry_forward_manifest_paths = */ {},
                     /* entry_partition_spec_ids = */ {},
                     entry_partition_summaries,
-                    manifest_entry_row_counts);
+                    manifest_entry_row_counts,
+                    manifest_entry_file_counts);
                 buffer_manifest_list->finalize();
             }
             catch (...)
