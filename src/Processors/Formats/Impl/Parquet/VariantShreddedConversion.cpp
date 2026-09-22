@@ -757,6 +757,10 @@ std::vector<ConvertedTypedValue> convertTypedColumnRangeImpl(
 
 }
 
+/// A present empty array `typed_value` next to a non-null residual `value`. The shredding specification
+/// forbids a non-null `value` next to an array `typed_value`, and ClickHouse never writes this shape (an
+/// array path is shredded only when every value of it is an array), so it can only come from a writer that
+/// has no way to make its array `typed_value` absent; the residual `value` is the actual value then.
 bool isTypedArrayDefaultFiller(const ConvertedTypedValue & typed_value)
 {
     return typed_value.present

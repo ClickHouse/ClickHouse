@@ -741,16 +741,18 @@ FROM file('data.parquet', Parquet, 'id UInt64, var JSON')
 ORDER BY id;
 ```
 
-### Known limitation: shredded array paths with mixed-type rows {#parquet-variant-array-shredding-limitation}
+### Array paths and shredding {#parquet-variant-array-shredding}
 
 A path that is shredded as an array writes its `typed_value` as a Parquet `LIST`. ClickHouse cannot mark
-such a `LIST` as absent for an individual row, so a row of that path holding a non-array value (for
-example the values `{"a":[1]}`, `{"a":[2]}`, `{"a":42}` written into the same column) is encoded with the
-non-array value in the residual `value` field and an empty `typed_value` array. ClickHouse's own Parquet
-reader recognizes that empty array as a filler and returns the residual value, so the round trip through
-ClickHouse is lossless; other Parquet `VARIANT` readers cannot distinguish that filler from a genuinely
-empty array. If full interoperability of such columns matters, write them as Parquet `JSON`
-(`output_format_parquet_json_as_variant = 0`) or as `String`.
+such a `LIST` as absent for an individual row, and a row holding a non-array value in an array-shredded
+path would have to be written with the value in the residual `value` field next to an empty
+`typed_value` array, which other Parquet `VARIANT` readers cannot distinguish from a genuinely empty
+array. ClickHouse therefore never writes that shape: the shredded layout is chosen over the whole file,
+and a path is shredded as an array only when every value of that path (including the elements of nested
+arrays) is an array. A path with mixed array and non-array values (for example `{"a":[1]}`, `{"a":[2]}`,
+`{"a":42}` written into the same column) stays entirely in the residual `value` field, so the file is
+readable by any Parquet `VARIANT` reader, at the cost of not being able to read that path directly from
+a shredded column.
 
 ## Geo types (GeoParquet) {#geo-types}
 

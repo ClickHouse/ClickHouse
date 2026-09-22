@@ -3229,12 +3229,15 @@ void encodeVariantShreddedTypedValueColumnar(
     {
         const auto * array_data_type = is_null ? nullptr : typeid_cast<const DataTypeArray *>(resolved_normalized.get());
         const auto * unnamed_tuple = is_null ? nullptr : typeid_cast<const DataTypeTuple *>(resolved_normalized.get());
+        /// An array `typed_value` is a non-nullable `LIST`, so a non-array (or null) value here could only
+        /// be written as a residual `value` next to an empty `typed_value` array, which other `Parquet`
+        /// `VARIANT` readers cannot tell from a genuinely empty array. The analysis never shreds a path
+        /// as an array unless every value of the path is an array, so this shape must not be reachable.
         if (!array_data_type && !(unnamed_tuple && !unnamed_tuple->hasExplicitNames()))
-        {
-            out.residual_value = encodeVariantResidualColumnar(column, type, row, from_dynamic, context, depth);
-            out.typed_value = std::nullopt;
-            return;
-        }
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Cannot write a {} value into the array-shredded `Parquet` `VARIANT` path: only paths whose every value is an array can be shredded as arrays",
+                is_null ? "NULL" : resolved_normalized->getName());
 
         Array values;
         if (array_data_type)

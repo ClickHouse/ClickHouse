@@ -182,15 +182,14 @@ DataTypePtr makeVariantWrappedTypedValueType(const DataTypePtr & type)
     /// distinguish "row used residual `value`" from "row used shredded object fields". Arrays
     /// cannot be wrapped in `Nullable` in ClickHouse types, so keep them as-is.
     ///
-    /// KNOWN LIMITATION (explicitly out of scope here): because an array `typed_value` cannot be
-    /// made optional, a row of an array-shredded path that carries a non-array value is written as
-    /// `value = <residual>` together with `typed_value = []` instead of an absent `typed_value`.
-    /// Our own reader compensates via `isTypedArrayDefaultFiller`, but a foreign `Parquet` reader
-    /// cannot tell that `[]` from a genuinely empty array. Emitting a real absent array
-    /// `typed_value` requires an optional `LIST` group in the writer, which the writer cannot
-    /// express from a non-`Nullable` ClickHouse `Array` column; that is left to a follow-up that
-    /// adds optional-group support to the writer. Until then, shredded array paths with mixed-type
-    /// rows are only round-trippable through ClickHouse.
+    /// An array `typed_value` therefore cannot be absent for an individual row, and a row of an
+    /// array-shredded path that is not an array would have to be written as `value = <residual>`
+    /// together with `typed_value = []`, which a foreign `Parquet` `VARIANT` reader cannot tell
+    /// from a genuinely empty array. The shredded shape is chosen over the whole file, and
+    /// `constructShreddedType` shreds a path as an array only when every value of that path
+    /// (including nested array elements) is an array, so such a row never exists: a path with mixed
+    /// array and non-array values stays in the residual `value`. `encodeVariantShreddedTypedValueColumnar`
+    /// enforces this invariant instead of emitting the ambiguous filler.
     DataTypePtr typed_value_type;
     if (typeid_cast<const DataTypeTuple *>(type.get()))
         typed_value_type = std::make_shared<DataTypeNullable>(type);
