@@ -598,7 +598,6 @@ std::unique_ptr<DB::AzureObjectStorage> makeObjectStorage(size_t claimed_size, s
 
     return std::make_unique<DB::AzureObjectStorage>(
         "azure",
-        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
         std::move(container_client),
         std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
         connection_params,
@@ -698,7 +697,6 @@ std::unique_ptr<DB::AzureObjectStorage> makeCountingObjectStorage(std::shared_pt
 
     return std::make_unique<DB::AzureObjectStorage>(
         "azure",
-        DB::AzureBlobStorage::AuthMethod{DB::AzureBlobStorage::ConnectionString{""}},
         std::move(container_client),
         std::make_unique<DB::AzureBlobStorage::RequestSettings>(),
         connection_params,
