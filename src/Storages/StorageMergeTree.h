@@ -412,8 +412,7 @@ private:
     {
         struct PartInfo
         {
-            /// 2^power milliseconds must survive the conversion to microseconds and the addition to a
-            /// microsecond timestamp, so the exponent is bounded well below UInt64's width.
+            /// 2^power milliseconds must still fit in UInt64 once converted to microseconds and added to a timestamp.
             static constexpr size_t max_postpone_power_limit = 53;
 
             static size_t postponePowerFor(size_t max_postpone_time_ms_)
@@ -491,8 +490,7 @@ private:
         {
             std::unique_lock _lock(parts_info_lock);
 
-            /// The cap comes from the settings on every failure, so MODIFY SETTING reaches a part
-            /// that has already failed.
+            /// The cap is re-read on every failure, so MODIFY SETTING also reaches an already failed part.
             if (max_postpone_time_ms_ == 0)
             {
                 failed_parts.erase(part_name);
