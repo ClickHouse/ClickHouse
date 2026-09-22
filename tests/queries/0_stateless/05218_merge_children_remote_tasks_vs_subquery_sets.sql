@@ -31,6 +31,10 @@ SELECT count() FROM m_05218 WHERE k GLOBAL IN (SELECT number FROM numbers(100)) 
 SELECT count() FROM m_05218 WHERE k IN (1, 2, 3) SETTINGS log_comment = '05218 6 tuple set: child tasks';
 SELECT count() FROM mv_05218 SETTINGS log_comment = '05218 7 View child owning its IN set: child tasks';
 
+-- The verification below must not itself run as a distributed plan: `system.query_log` receives new parts
+-- while it runs, and a bucketed distributed read pinned to the coordinator's part list then fails with
+-- `NO_SUCH_DATA_PART`. Turn the setting off before it.
+SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log;
 -- Only rows of this run: the test's own `Merge` table is created at the start of the run.
 WITH (SELECT metadata_modification_time FROM system.tables WHERE database = currentDatabase() AND name = 'm_05218') AS run_start
