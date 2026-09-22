@@ -639,6 +639,11 @@ String Cluster::makeShardScopeIdentity(std::string_view prefix, const String & s
     return out.str();
 }
 
+String Cluster::makeKeeperScopeKey(const String & zookeeper_name, const String & zookeeper_path)
+{
+    return toString(zookeeper_name.size()) + ':' + zookeeper_name + zookeeper_path;
+}
+
 Cluster::Cluster(
     const Settings & settings,
     const HostsByShard & names,

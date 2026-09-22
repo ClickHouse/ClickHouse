@@ -88,6 +88,18 @@ ClusterPtr makeDiscoveredCluster(
         return std::make_shared<Cluster>(settings, hosts, params);
 }
 
+/// What `DatabaseReplicated::updateCluster` and `ClusterDiscovery::makeCluster` key the shard-scope
+/// identity by: the Keeper name together with the path. On a tree without the helper this falls back to
+/// the path alone, which is what makes the arm below report what an unpatched server computes.
+template <typename NameT>
+String makeKeeperScopeKeyCompat(const NameT & zookeeper_name, const String & zookeeper_path)
+{
+    if constexpr (requires { Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path); })
+        return Cluster::makeKeeperScopeKey(zookeeper_name, zookeeper_path);
+    else
+        return zookeeper_path;
+}
+
 /// A `Replicated` database's cluster: `DatabaseReplicated::getClusterImpl` walks the visible replicas,
 /// starts a new shard each time the shard name parsed out of Keeper changes, and lets `Cluster` renumber
 /// the groups `1..N`. A shard disappears from that walk once its last visible replica is filtered out by
@@ -445,6 +457,32 @@ TEST(ParallelReplicasShardScope, ReplicatedDatabasesSharingTheNameAreForeign)
 
     auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
     EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_FOREIGN);
+}
+
+/// The path is unique only inside one Keeper: `DatabaseReplicated::getZooKeeper` resolves the database
+/// through its `zookeeper_name`, so two unrelated databases mounted at the same path on two auxiliary
+/// Keepers, with equal default shard names, are the same silent wrong read keyed on the path alone. The
+/// key must carry the Keeper name too - and only the name, so the same database is still one identity.
+TEST(ParallelReplicasShardScope, ReplicatedDatabasesSharingThePathOnAnotherKeeperAreForeign)
+{
+    const auto & settings = getContext().context->getSettingsRef();
+    const Strings shard_names{"shard1", "shard2"};
+    const String on_aux1 = makeKeeperScopeKeyCompat(String("aux1"), "/clickhouse/db");
+    const String on_aux2 = makeKeeperScopeKeyCompat(String("aux2"), "/clickhouse/db");
+    auto producer = makeReplicatedDatabaseCluster(settings, "db", shard_names, on_aux1);
+    auto consumer = makeReplicatedDatabaseCluster(settings, "db", shard_names, on_aux2);
+    EXPECT_NE(getShardScopeIdentityCompat(*producer), getShardScopeIdentityCompat(*consumer));
+
+    auto context = makeContextWithScalar(makeShardNumScalarCompat(2, getShardScopeIdentityCompat(*producer)));
+    EXPECT_EQ(getShardScopeCompat(context, *consumer).kind, SCOPE_FOREIGN);
+
+    auto same_database = makeReplicatedDatabaseCluster(settings, "db", shard_names, on_aux1);
+    EXPECT_EQ(getShardScopeCompat(context, *same_database).kind, SCOPE_SCOPED);
+
+    /// The name is length-prefixed, so moving characters between the name and the path is not the same key.
+    const String shifted_boundary = makeKeeperScopeKeyCompat(String("aux1/clickhouse"), "/db");
+    auto shifted = makeReplicatedDatabaseCluster(settings, "db", shard_names, shifted_boundary);
+    EXPECT_EQ(getShardScopeCompat(context, *shifted).kind, SCOPE_FOREIGN);
 }
 
 /// With `replica_group_name` configured the same database is resolved both as `<db>` (the local group's

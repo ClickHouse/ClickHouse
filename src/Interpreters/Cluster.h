@@ -109,13 +109,21 @@ public:
     /// apart two spellings of the same one: a `Replicated` database is reachable both as `<db>` and as
     /// `all_groups.<db>`, and when both spellings see the same ordered shards, a shard number means the
     /// same shard through either. Such a caller passes a spelling-independent key - the database's
-    /// ZooKeeper path. A caller without one leaves it empty and `params.cluster_name` is used.
+    /// Keeper name and path (see `makeKeeperScopeKey`). A caller without one leaves it empty and
+    /// `params.cluster_name` is used.
     Cluster(
         const Settings & settings,
         const std::vector<std::vector<DatabaseReplicaInfo>> & infos,
         const ClusterConnectionParameters & params,
         bool internal_replication = false,
         const String & shard_scope_key = {});
+
+    /// The scope key of a cluster whose shards live in Keeper, for `ClusterDiscovery` and a `Replicated`
+    /// database: the Keeper name together with the path. A path is unique only inside one Keeper - two
+    /// unrelated databases can be mounted at `/clickhouse/db` on two auxiliary Keepers - so the path
+    /// alone would let a `_shard_num` produced by one of them pass as scoped on the other. The name is
+    /// length-prefixed so the boundary between the two parts cannot slide.
+    static String makeKeeperScopeKey(const String & zookeeper_name, const String & zookeeper_path);
 
     Cluster(const Cluster &)= delete;
     Cluster & operator=(const Cluster &) = delete;
