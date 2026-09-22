@@ -11,7 +11,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/InterpreterSelectQuery.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/QueryFlags.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ParserSelectQuery.h>
@@ -228,7 +228,7 @@ String FormatSchemaInfo::querySchema(const String & query, const ContextPtr & cu
     ASTPtr select_ast = parseQuery(parser, query, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
     auto query_context = Context::createCopy(current_query_context);
-    InterpreterSelectQuery interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
+    InterpreterSelectQueryAnalyzer interpreter(select_ast, query_context, SelectQueryOptions().setInternal());
     BlockIO io = interpreter.execute();
 
     PullingPipelineExecutor executor(io.pipeline);

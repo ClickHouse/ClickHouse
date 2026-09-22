@@ -77,6 +77,11 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+bool StackTrace::showAddresses()
+{
+    return show_addresses.load(std::memory_order_relaxed);
+}
+
 #if !defined(OS_WINDOWS)
 /// Everything from here to the matching #endif interprets a POSIX signal context.
 /// Windows reports faults through Structured Exception Handling and has neither
@@ -346,19 +351,40 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 }
 #endif
 
-StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
-{
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+namespace
+{
+StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
     const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
 
     if (!object)
-        return {virtual_addr, {}, AddressKind::UnknownMapping};
+        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
     if (object == symbol_index.thisObject())
-        return {reinterpret_cast<const void *>(address), {}, AddressKind::MainObject};
-    return {reinterpret_cast<const void *>(address), object->name, AddressKind::OtherObject};
+        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
+}
+}
+#endif
+
+StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
+    if (!symbol_index)
+        return std::nullopt;
+    return ::resolveAddress(*symbol_index, virtual_addr);
+#else
+    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
 #endif
 }
 

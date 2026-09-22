@@ -1259,6 +1259,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
         consumer_group=f"{topic_name}-group",
     )
 
+    # A streaming loop keeps the materialized views it started with, so one that began before the
+    # second view existed commits without it; detaching and re-attaching joins it before producing.
     instance.query(f"""
         DROP TABLE IF EXISTS test.{kafka_table}_view1;
         DROP TABLE IF EXISTS test.{kafka_table}_view2;
@@ -1275,11 +1277,10 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             SELECT * FROM test.{kafka_table};
         CREATE MATERIALIZED VIEW test.{kafka_table}_consumer2 TO test.{kafka_table}_view2 AS
             SELECT * FROM test.{kafka_table};
-    """)
 
-    # we have to wait > kafka_poll_timeout_ms before producing data,
-    #  otherwise it is expected that data might go via the first MV only
-    time.sleep(3)
+        DETACH TABLE test.{kafka_table} SYNC;
+        ATTACH TABLE test.{kafka_table};
+    """)
 
     messages = []
     for i in range(50):
@@ -1310,8 +1311,8 @@ def test_kafka_many_materialized_views(kafka_cluster, create_query_generator):
             DROP TABLE test.{kafka_table}_view2;
         """)
 
-        k.kafka_check_result(result1, True)
-        k.kafka_check_result(result2, True)
+        assert k.kafka_check_result(result1), f"view1 got: {result1!r}"
+        assert k.kafka_check_result(result2), f"view2 got: {result2!r}"
 
 @pytest.mark.parametrize(
     "create_query_generator",

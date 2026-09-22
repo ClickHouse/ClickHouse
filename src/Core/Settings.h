@@ -126,6 +126,7 @@ class WriteBuffer;
     M(CLASS_NAME, ObjectStorageGranularityLevel) \
     M(CLASS_NAME, DecorrelationJoinKind) \
     M(CLASS_NAME, JoinOrderAlgorithm) \
+    M(CLASS_NAME, JoinOrderConflictDetector) \
     M(CLASS_NAME, DeduplicateInsertSelectMode) \
     M(CLASS_NAME, DeduplicateInsertMode) \
     M(CLASS_NAME, FileLikeEngineDefaultPartitionStrategy) \

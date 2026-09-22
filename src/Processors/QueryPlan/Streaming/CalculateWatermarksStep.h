@@ -9,7 +9,7 @@
 namespace DB
 {
 
-/// Evaluates the watermark expression, appends the time-attribute and watermark columns.
+/// Evaluates the watermark expression, emits a watermark marker after each data chunk.
 class CalculateWatermarksStep : public ITransformingStep
 {
     void updateOutputHeader() override;

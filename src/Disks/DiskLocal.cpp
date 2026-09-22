@@ -819,11 +819,15 @@ void registerDiskLocal(DiskFactory & factory, bool global_skip_access_check)
         const String & config_prefix,
         ContextPtr context,
         const DisksMap & map,
-        bool, bool) -> DiskPtr
+        bool attach,
+        bool custom_disk) -> DiskPtr
     {
         String path;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, path, keep_free_space_bytes);
+
+        if (custom_disk && !attach)
+            checkCustomLocalDiskPath(path, context);
 
         for (const auto & [disk_name, disk_ptr] : map)
             if (path == disk_ptr->getPath())

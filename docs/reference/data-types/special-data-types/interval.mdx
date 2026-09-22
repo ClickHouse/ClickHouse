@@ -87,6 +87,26 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 └──────────────────────────────────────────────────────────────┘
 ```
 
+## Aggregation {#aggregation}
+
+`avg`, `min`, `max` and `any` over an `Interval` column return an interval of the same type.
+`avg` averages the number of units and rounds the result to a whole number of them:
+
+```sql
+SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+FROM VALUES('duration IntervalMillisecond',
+    toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
+```
+
+```text
+┌─avg_duration─┬─toTypeName(avg_duration)─┐
+│          200 │ IntervalMillisecond      │
+└──────────────┴──────────────────────────┘
+```
+
+Intervals of different units are not commensurable - a month is not a fixed number of days - so
+there is no conversion between them and every interval type is aggregated on its own.
+
 ## Mixed-type Intervals {#mixed-type-intervals}
 
 Intervals of mixed type, e.g. multiple hours and multiple minutes, can be created using `INTERVAL 'value' <from_kind> TO <to_kind>` syntax.
@@ -134,3 +154,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 
 - [INTERVAL](/reference/operators/index#interval) operator
 - [toInterval](/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) type conversion functions
+- [avg](/reference/functions/aggregate-functions/avg) aggregate function

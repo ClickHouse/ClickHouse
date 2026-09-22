@@ -134,6 +134,7 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
+DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -544,7 +545,8 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking
+    Bitpacking,
+    PFor
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

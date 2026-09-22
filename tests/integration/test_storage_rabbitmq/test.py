@@ -2172,6 +2172,166 @@ def test_rabbitmq_drop_table_properly(rabbitmq_cluster, db, unique):
         time.sleep(min(0.5, remaining))
 
 
+def test_rabbitmq_drop_table_waits_for_consumer_channels(rabbitmq_cluster, db, unique):
+    # A queue.delete carries AMQP::ifunused, and AMQP orders method completion per channel only,
+    # so the delete is issued on a fresh channel while the consumer may still be registered on
+    # its own one, and a classic queue then refuses it. The broker deregisters a channel's
+    # consumers while handling its channel.close, before answering it, so DROP TABLE must see
+    # that answer before it asks for the deletion.
+    table = f"{db}.rabbitmq_drop_awaits"
+    queue = f"{unique}_rabbit_queue_drop_awaits"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{unique}_drop_awaits',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{queue}'
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(
+        exchange=f"{unique}_drop_awaits", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+
+    # Reading attaches the consumer whose channel the deletion has to wait for.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        if instance.query(f"SELECT * FROM {table} ORDER BY key", ignore_error=True) == "1\t2\n":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached before reading a message.")
+
+    assert channel.queue_declare(queue=queue, passive=True)
+
+    # All three patterns are scoped to this table's own logger, so no other test in this module can
+    # satisfy them, and the close they match is this table's own consumer channel. The bound in the
+    # wait pattern is what distinguishes the awaiting wait from the unrelated 30000ms ones: the
+    # remaining time shrinks across iterations, so any value below the four-digit ceiling matches
+    # while 30000 cannot.
+    closed_pattern = f"StorageRabbitMQ ({table}): Consumer channel .* is closed"
+    deleted_pattern = f"StorageRabbitMQ ({table}): Successfully deleted queue {queue}"
+    wait_pattern = (
+        f"StorageRabbitMQ ({table}): "
+        r"Started blocking loop with [0-9]\{1,4\}ms timeout"
+    )
+
+    def first_timestamp(lines):
+        match = re.search(r"\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.\d+", lines)
+        assert match, f"no timestamp in matched log lines: {lines}"
+        return match.group(0)
+
+    assert not instance.grep_in_log(closed_pattern), "consumer channel closed before DROP TABLE"
+    assert not instance.grep_in_log(wait_pattern), "consumer channels awaited before DROP TABLE"
+
+    instance.query(f"DROP TABLE {table}")
+
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        deleted = instance.grep_in_log(deleted_pattern, only_latest=True)
+        if deleted:
+            break
+        time.sleep(0.5)
+    else:
+        pytest.fail(f"Queue {queue} was not deleted within {DEFAULT_TIMEOUT_SEC} seconds.")
+
+    closed = instance.grep_in_log(closed_pattern, only_latest=True)
+    assert closed, "DROP TABLE deleted the queue without awaiting the consumer channel close"
+    assert first_timestamp(closed) <= first_timestamp(deleted), (
+        f"consumer channel closed after the queue was deleted:\n{closed}\n{deleted}"
+    )
+
+    # The close alone can be ordered first by the reply merely arriving early, so require the wait
+    # itself to have run before the deletion. That edge exists only when the queues are deleted
+    # after awaiting the channels, rather than concurrently with them.
+    waited = instance.grep_in_log(wait_pattern, only_latest=True)
+    assert waited, "DROP TABLE deleted the queue without waiting for the consumer channels"
+    assert first_timestamp(waited) <= first_timestamp(deleted), (
+        f"consumer channels awaited after the queue was deleted:\n{waited}\n{deleted}"
+    )
+
+    # The queue must be really gone, not merely reported as deleted. Only a 404 means that.
+    try:
+        channel.queue_declare(queue=queue, passive=True)
+    except pika.exceptions.ChannelClosedByBroker as e:
+        assert e.reply_code == 404, f"unexpected channel close: {e}"
+    else:
+        pytest.fail(f"Queue {queue} still exists after DROP TABLE.")
+
+
+def test_rabbitmq_detach_after_failed_truncate_keeps_queue(rabbitmq_cluster, db, unique):
+    # checkTableCanBeDropped() marks the table before the statement it guards can fail, and nothing
+    # ever unmarks it, so a table whose TRUNCATE threw stays marked while remaining fully alive. A
+    # later DETACH is not a drop, so it must leave the queue and its unconsumed messages alone.
+    table = f"{db}.rabbitmq_detach_keeps_queue"
+    queue = f"{unique}_rabbit_queue_detach_keeps"
+    instance.query(
+        f"""
+        CREATE TABLE {table} (key UInt64, value UInt64)
+            ENGINE = RabbitMQ
+            SETTINGS rabbitmq_host_port = 'rabbitmq1:5672',
+                     rabbitmq_flush_interval_ms=1000,
+                     rabbitmq_exchange_name = '{unique}_detach_keeps',
+                     rabbitmq_format = 'JSONEachRow',
+                     rabbitmq_queue_base = '{queue}'
+        """
+    )
+
+    credentials = pika.PlainCredentials("root", "clickhouse")
+    parameters = pika.ConnectionParameters(
+        rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials
+    )
+    connection = pika.BlockingConnection(parameters)
+    channel = connection.channel()
+    channel.basic_publish(
+        exchange=f"{unique}_detach_keeps", routing_key="", body=json.dumps({"key": 1, "value": 2})
+    )
+
+    # Reading attaches the consumer, so the shutdown below takes the same path a drop would.
+    deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
+    while time.monotonic() < deadline:
+        if instance.query(f"SELECT * FROM {table} ORDER BY key", ignore_error=True) == "1\t2\n":
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"Time limit of {DEFAULT_TIMEOUT_SEC} seconds reached before reading a message.")
+
+    assert channel.queue_declare(queue=queue, passive=True)
+
+    # RabbitMQ does not implement truncate, so this throws after the table was already marked.
+    error = instance.query_and_get_error(f"TRUNCATE TABLE {table}")
+    assert "NOT_IMPLEMENTED" in error, f"TRUNCATE failed for another reason: {error}"
+
+    # The table is still alive, so the mark it now carries must not turn this into a queue deletion.
+    instance.query(f"DETACH TABLE {table}")
+
+    # Both patterns are scoped to this table's own logger, so no other test can satisfy them. The
+    # refusal line is checked as well, so a delete that was attempted and refused cannot pass for
+    # one that was never attempted.
+    deleted_pattern = f"StorageRabbitMQ ({table}): Successfully deleted queue {queue}"
+    failed_pattern = f"StorageRabbitMQ ({table}): Failed to delete queue {queue}"
+    assert not instance.grep_in_log(deleted_pattern), "DETACH TABLE deleted the queue"
+    assert not instance.grep_in_log(failed_pattern), "DETACH TABLE tried to delete the queue"
+
+    # A passive declare that 404s closes the channel, so ask on a channel nothing else has used.
+    check_channel = connection.channel()
+    assert check_channel.queue_declare(queue=queue, passive=True), (
+        f"Queue {queue} is gone after DETACH TABLE."
+    )
+
+    instance.query(f"ATTACH TABLE {table}")
+    instance.query(f"DROP TABLE {table}")
+
+
 def test_rabbitmq_queue_settings(rabbitmq_cluster, db, unique):
     instance.query(
         f"""

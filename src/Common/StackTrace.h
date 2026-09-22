@@ -148,6 +148,11 @@ public:
     /// symbolized trace lines use, so that it can be fed to `addr2line` or `llvm-symbolizer`.
     static ResolvedAddress resolveAddress(const void * virtual_addr);
 
+    /// The same as `resolveAddress`, but never builds the symbol index: returns nothing when it has
+    /// not been built yet. For the fatal signal handler, whose first bare dump of addresses must not
+    /// depend on the machinery the symbolized trace after it may fail or block on.
+    static std::optional<ResolvedAddress> tryResolveAddress(const void * virtual_addr);
+
     /// The form to store an address in a bare integer column: an address in the main executable
     /// becomes its file offset, which stays valid across restarts and hosts, while any other address
     /// is kept as is, because a stored offset into a library reads as a main executable one.
@@ -161,6 +166,7 @@ public:
     /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
+    static bool showAddresses();
 
     /// Renders the demangled name of a frame for display: shortens well-known libc++ spellings, and returns
     /// "?" for frames whose name carries no information. @param file is the source location of the frame.
