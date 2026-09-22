@@ -373,7 +373,7 @@ exception:
 
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_TRACE_LOG[] = R"DOCS_MD(
 .description
-Contains stack traces collected by the [sampling query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler).
+Contains stack traces collected by the [sampling query profiler](/concepts/features/performance/troubleshoot/sampling-query-profiler) and by the other sources named in the `trace_type` column.
 
 ClickHouse creates this table when the [trace_log](/reference/settings/server-settings/settings/other#trace_log) server configuration section is set. Also see settings: [query_profiler_real_time_period_ns](/reference/settings/session-settings/query-profiler#query_profiler_real_time_period_ns), [query_profiler_cpu_time_period_ns](/reference/settings/session-settings/query-profiler#query_profiler_cpu_time_period_ns), [memory_profiler_step](/reference/settings/session-settings/memory-profiler#memory_profiler_step),
 [memory_profiler_sample_probability](/reference/settings/session-settings/memory-profiler#memory_profiler_sample_probability), [trace_profile_events](/reference/settings/session-settings/trace-profile-events#trace_profile_events).

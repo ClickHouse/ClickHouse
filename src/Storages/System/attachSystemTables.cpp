@@ -2426,7 +2426,7 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 
 .see_also
 - [Introspection Functions](/reference/functions/regular-functions/introspection) — Which introspection functions are available and how to use them.
-- [system.trace_log](/reference/system-tables/trace_log) — Contains stack traces collected by the sampling query profiler.
+- [system.trace_log](/reference/system-tables/trace_log) — Contains stack traces collected by the sampling query profiler and by the other sources named in the `trace_type` column.
 - [arrayMap](/reference/functions/regular-functions/array-functions#arrayMap) — Description and usage example of the `arrayMap` function.
 - [arrayFilter](/reference/functions/regular-functions/array-functions#arrayFilter) — Description and usage example of the `arrayFilter` function.
 )DOCS_MD");
@@ -3981,7 +3981,6 @@ is_compression:         1
 is_generic_compression: 1
 is_encryption:          0
 is_timeseries_codec:    0
-is_experimental:        0
 tier:                   Production
 description:            Extremely fast; good compression; balanced speed and efficiency.
 ```
