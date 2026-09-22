@@ -754,7 +754,7 @@ def test_classify_null_input(started_cluster):
 
 
 def test_filter_basic(started_cluster):
-    """aiFilter asks the model for a bare true/false response.
+    """aiFilter constrains the model to a JSON-schema boolean `match` field.
     The mock returns true for ordinary messages."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('The package never arrived')")
@@ -809,8 +809,8 @@ def test_filter_truncated_response_graceful(started_cluster):
     assert result.strip() == ""
 
 
-def test_filter_no_response_format(started_cluster):
-    """aiFilter does not send a JSON-schema response_format; it asks for bare true/false."""
+def test_filter_response_format(started_cluster):
+    """aiFilter sends a JSON-schema response_format constraining the model to a boolean `match` field."""
     instance.query("TRUNCATE TABLE test_input")
     instance.query("INSERT INTO test_input VALUES ('hello')")
     instance.query(
@@ -822,9 +822,12 @@ def test_filter_no_response_format(started_cluster):
         )
     )
     body = json.loads(last["body"])
-    assert "response_format" not in body
+    assert body["response_format"]["type"] == "json_schema"
+    schema = body["response_format"]["json_schema"]["schema"]
+    assert schema["properties"]["match"]["type"] == "boolean"
+    assert schema["required"] == ["match"]
     system = next(m["content"] for m in body["messages"] if m["role"] == "system")
-    assert "lowercase text true or false" in system.lower()
+    assert "boolean text filter" in system.lower()
 
 
 def test_filter_null_input(started_cluster):

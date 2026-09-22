@@ -15,9 +15,10 @@ Endpoints:
   POST /v1/embeddings_flaky          — like `/v1/embeddings`, but flaky in the same way as above.
   POST /v1/chat/completions          — returns response based on request content:
       - If response_format with json_schema is present, returns JSON matching the schema
-        with values derived from the user message.
-      - If the system prompt looks like an `aiFilter` boolean filter, returns plain
-        `true` or `false` based on the user message.
+        with values derived from the user message (boolean properties are set from the
+        same true/false heuristic used for the `aiFilter` fallback below).
+      - If the system prompt looks like an `aiFilter` boolean filter but no response_format
+        was sent, returns plain `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
   POST /v1/embeddings                — returns one deterministic embedding per input.
@@ -125,6 +126,9 @@ def build_structured_response(json_schema, user_message):
         if "enum" in prop:
             # For classification: return the first enum value
             result[key] = prop["enum"][0]
+        elif prop.get("type") == "boolean":
+            # For aiFilter: same true/false heuristic as the plain-text fallback below.
+            result[key] = filter_match_response(user_message) == "true"
         else:
             result[key] = user_message
 
