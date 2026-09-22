@@ -946,9 +946,10 @@ ColumnPtr DataTypeObject::extractCombinedSubcolumn(const String & path, const Co
             typed_sub_paths[p.substr(prefix.size())] = type;
     }
 
+    /// Skip rules are only relevant while parsing input. This synthetic type represents descendants
+    /// that are already stored, and the original rules refer to paths relative to the root object.
     auto sub_object_type = std::make_shared<DataTypeObject>(
-        schema_format, typed_sub_paths, paths_to_skip, path_regexps_to_skip,
-        max_dynamic_paths, max_dynamic_types);
+        schema_format, typed_sub_paths, std::unordered_set<String>{}, std::vector<String>{}, max_dynamic_paths, max_dynamic_types);
     auto dynamic_result_type = getDynamicType();
 
     DataTypePtr literal_type;
