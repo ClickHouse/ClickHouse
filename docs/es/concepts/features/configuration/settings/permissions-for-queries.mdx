@@ -25,9 +25,9 @@ La siguiente configuración regula los permisos de los usuarios según el tipo d
 
 ## readonly {#readonly}
 
-Restringe qué consultas puede ejecutar una sesión. Los valores del setting, su valor por defecto y qué settings
+Restringe qué consultas puede ejecutar una sesión. Los valores del SETTING, su valor por defecto y qué SETTINGS
 permite modificar cada valor se describen en la
-[referencia de settings](/es/reference/settings/session-settings/other#readonly); esta sección describe qué
+[referencia de SETTINGS](/es/reference/settings/session-settings/other#readonly); esta sección describe qué
 clases de consulta permite cada valor.
 
 Con el valor 1, se permiten consultas como:
@@ -59,22 +59,24 @@ Conceder un privilegio con `GRANT` también se rechaza, pero no ocurre lo mismo 
 un privilegio que posea con grant option y propagar sus propios grants a otro usuario.
 Revocar un privilegio `ON CLUSTER` sí se rechaza.
 
-Las temporary tables están exentas de ambos settings: una sesión que pueda crear una también puede aplicarle `ALTER`,
+Las temporary tables están exentas de ambos SETTINGS: una sesión que pueda crear una también puede aplicarle `ALTER`,
 insertar en ella y eliminarla.
 
 <Note>
   A través de la [HTTP interface](/es/concepts/features/interfaces/http), una solicitud cuyo método no sea `POST` se ejecuta
   con `readonly = 2` si, de lo contrario, el valor efectivo sería 0. Se conserva cualquier valor más estricto ya establecido por los
-  settings del usuario o por un perfil de configuración. `PUT` y `DELETE` quedan exentos cuando llegan a un
+  SETTINGS del usuario o por un perfil de configuración. `PUT` y `DELETE` quedan exentos cuando llegan a un
   [handler](/es/reference/statements/create/handler) definido mediante SQL que los acepte, de modo que una solicitud así puede
   modificar datos cuando el `readonly` efectivo es 0; en caso contrario, use el método `POST` para modificar datos.
 
   En una solicitud elevada de este modo, un parámetro `readonly` en la query string se rechaza con
   `Cannot modify 'readonly' setting in readonly mode`, salvo que indique el valor que la solicitud ya tiene.
 
-  Existe una forma de impedir que el usuario cambie solo determinados settings, y otra de permitir que cambie
-  solo determinados settings bajo las restricciones de `readonly = 1`. Para más detalles, consulte
-  [constraints on settings](/es/concepts/features/configuration/settings/constraints-on-settings).
+  Existe una forma de impedir que el usuario cambie solo determinados SETTINGS, y otra de permitir que cambie
+  solo determinados SETTINGS bajo las restricciones de `readonly = 1`. Para más detalles, consulte
+  [constraints on SETTINGS](/es/concepts/features/configuration/settings/constraints-on-settings), donde también
+  se desaconseja hacer que el propio SETTING `readonly` sea
+  [modificable en modo de solo lectura](/es/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
 ## allow_ddl {#allow_ddl}

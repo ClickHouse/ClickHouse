@@ -32,21 +32,21 @@ doc_type: 'reference'
 وعند ضبطه على 2، يسمح بما سبق إضافة إلى `SET` و`CREATE TEMPORARY TABLE` و`RESTORE`. وبما أن `RESTORE` يمكنه إنشاء جدول وتحميل البيانات إليه، فإن `readonly = 2` لا يمنع بحد ذاته الجلسة من
 الكتابة، بينما يرفضها `readonly = 1`.
 
-أما `BACKUP` فلا يقيّده `readonly` عند أي قيمة: فالجلسة التي تملك صلاحيات النسخ الاحتياطي لجدول ما يمكنها كتابة نسخة احتياطية حتى عند `readonly = 1`. لذا لا تعتمد على `readonly` لمنع النسخ الاحتياطي.
+أما `BACKUP` فلا يقيّده `readonly` عند أي قيمة: فالجلسة التي تملك امتيازات النسخ الاحتياطي لجدول ما يمكنها كتابة نسخة احتياطية حتى عند `readonly = 1`. لذا لا تعتمد على `readonly` لمنع النسخ الاحتياطي.
 
-تحتاج معظم دوال الجداول إلى صلاحية `CREATE TEMPORARY TABLE`، لذا يُرفض استعلام `SELECT` الذي يقرأ من إحداها عند `readonly = 1` دون `readonly = 2`. وبعضها، مثل `numbers`، مسموح به في وضع
+تحتاج معظم دوال الجداول إلى امتياز `CREATE TEMPORARY TABLE`، لذا يُرفض استعلام `SELECT` الذي يقرأ من إحداها عند `readonly = 1` دون `readonly = 2`. وبعضها، مثل `numbers`، مسموح به في وضع
 القراءة فقط.
 
 عند أي قيمة أكبر من 0، لا يُسمح بأي مما يلي على جدول دائم: استعلامات كتابة البيانات
 (`INSERT` و`OPTIMIZE` و`DELETE` و`UPDATE` و`ALTER TABLE ... DELETE` و`ALTER TABLE ... UPDATE`) أو استعلامات DDL
 (`CREATE` و`ALTER TABLE` و`ALTER VIEW` و`RENAME` و`EXCHANGE` و`ATTACH` و`DETACH` و`DROP`
-و`TRUNCATE TABLE`). كما لا يُسمح بعبارات `SYSTEM` التي تتطلب صلاحية من مجموعة `SYSTEM`، ولا بعمليات `CREATE` و`ALTER`
+و`TRUNCATE TABLE`). كما لا يُسمح بعبارات `SYSTEM` التي تتطلب امتيازًا من مجموعة `SYSTEM`، ولا بعمليات `CREATE` و`ALTER`
 و`DROP` للمستخدمين والأدوار وسياسات الصفوف وسياسات الإخفاء والحصص وملفات تعريف الإعدادات. وتُستثنى من ذلك إدارة المجموعات المسماة، إذ لا يقيّد `readonly`
 `CREATE NAMED COLLECTION` ولا `ALTER NAMED COLLECTION` ولا `DROP NAMED COLLECTION`.
 
-كذلك يُرفض منح صلاحية باستخدام `GRANT`، لكن لا ينطبق ذلك على كل عبارات إدارة الوصول: فعبارتا `REVOKE` المحلية و`GRANT CURRENT GRANTS` غير خاضعتين لـ `readonly`، لذا يمكن لجلسة للقراءة فقط أن تسحب
-صلاحية تملكها مع خيار المنح وأن تنقل صلاحياتها إلى مستخدم آخر.
-أما سحب صلاحية باستخدام `ON CLUSTER` فيُرفض.
+كذلك يُرفض منح امتياز باستخدام `GRANT`، لكن لا ينطبق ذلك على كل عبارات إدارة الوصول: فعبارتا `REVOKE` المحلية و`GRANT CURRENT GRANTS` غير خاضعتين لـ `readonly`، لذا يمكن لجلسة للقراءة فقط أن تسحب
+امتيازًا تملكها مع خيار المنح وأن تنقل صلاحياتها إلى مستخدم آخر.
+أما سحب امتياز باستخدام `ON CLUSTER` فيُرفض.
 
 الجداول المؤقتة مستثناة من كلا الإعدادين: فالجلسة التي يمكنها إنشاء جدول مؤقت يمكنها أيضًا تنفيذ `ALTER` عليه،
 والإدراج فيه وحذفه.
@@ -63,7 +63,9 @@ doc_type: 'reference'
 
   توجد طريقة لمنع المستخدم من تغيير إعدادات محددة فقط، وطريقة للسماح بتغيير
   إعدادات محددة فقط ضمن قيود `readonly = 1`. لمزيد من التفاصيل راجع
-  [القيود على الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings).
+  [القيود على الإعدادات](/ar/concepts/features/configuration/settings/constraints-on-settings)، التي
+  تنصح كذلك بعدم جعل إعداد `readonly` نفسه
+  [قابلًا للتغيير في وضع القراءة فقط](/ar/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 </Note>
 
 ## allow_ddl {#allow_ddl}

@@ -48,7 +48,8 @@ ClickHouse のクエリは、いくつかの種類に分類できます。
   このようにして値が引き上げられたリクエストでは、クエリ文字列内の `readonly` パラメーターは、そのリクエストがすでに持つ値を指定する場合を除き、`Cannot modify 'readonly' setting in readonly mode` というエラーで拒否されます。
 
   特定の設定だけをユーザーが変更できないようにする方法や、`readonly = 1` の制限下で特定の設定だけ変更を許可する方法もあります。詳細は
-  [設定に対する制約](/ja/concepts/features/configuration/settings/constraints-on-settings)を参照してください。
+  [設定に対する制約](/ja/concepts/features/configuration/settings/constraints-on-settings)を参照してください。そこでは、`readonly` 設定自体を
+  [読み取り専用モードで変更可能にする](/ja/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly)ことを推奨しない旨も説明しています。
 </Note>
 
 ## allow_ddl {#allow_ddl}

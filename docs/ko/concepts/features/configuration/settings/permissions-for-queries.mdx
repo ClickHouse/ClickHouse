@@ -47,7 +47,7 @@ ClickHouse의 쿼리는 여러 유형으로 나눌 수 있습니다:
 0보다 큰 값에서는 영속 테이블에 대해 다음 작업이 모두 허용되지 않습니다. 데이터 쓰기 쿼리
 (`INSERT`, `OPTIMIZE`, `DELETE`, `UPDATE`, `ALTER TABLE ... DELETE`, `ALTER TABLE ... UPDATE`) 및 DDL
 쿼리(`CREATE`, `ALTER TABLE`, `ALTER VIEW`, `RENAME`, `EXCHANGE`, `ATTACH`, `DETACH`, `DROP`,
-`TRUNCATE TABLE`). `SYSTEM` 그룹의 권한이 필요한 `SYSTEM` SQL 문과 사용자, 역할, row policies,
+`TRUNCATE TABLE`). `SYSTEM` 그룹의 권한이 필요한 `SYSTEM` SQL 문과 사용자, 역할, ROW POLICY,
 masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` 역시 허용되지 않습니다.
 단, 명명된 컬렉션 관리는 예외입니다. `readonly`는 `CREATE NAMED COLLECTION`, `ALTER NAMED COLLECTION`,
 `DROP NAMED COLLECTION`을 제한하지 않습니다.
@@ -73,6 +73,9 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
   특정 설정만 변경하지 못하도록 금지하는 방법과, `readonly = 1` 제한에서 특정 설정만 변경할 수 있도록 허용하는
   방법도 있습니다. 자세한 내용은
   [설정에 대한 제약 조건](/ko/concepts/features/configuration/settings/constraints-on-settings)을 참조하십시오.
+  이 문서에서는 `readonly` 설정 자체를
+  [읽기 전용 모드에서 변경 가능하게](/ko/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly)
+  만들지 않도록 권장하고 있습니다.
 </Note>
 
 ## allow_ddl {#allow_ddl}

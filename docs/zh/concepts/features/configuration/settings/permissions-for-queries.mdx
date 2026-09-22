@@ -67,7 +67,9 @@ insert 和 drop。
 
   可以只禁止 USER 修改特定 settings，也可以在 `readonly = 1` 的限制下只允许修改
   特定 settings。详见
-  [constraints on settings](/zh/concepts/features/configuration/settings/constraints-on-settings)。
+  [constraints on settings](/zh/concepts/features/configuration/settings/constraints-on-settings)，其中也
+  建议不要将 `readonly` 设置本身
+  [设为可在 read-only 模式下更改](/zh/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly)。
 </Note>
 
 ## allow_ddl {#allow_ddl}
