@@ -345,9 +345,8 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     if (isNamedCollectionName(0))
     {
         /// MongoDB(named_collection, ..., password = '...', uri = 'mongodb://user:password@host/db', ...)
-        /// The parser applies every override in turn, so a repeated key is accepted and the effective
-        /// value is the last one; and it evaluates an override key as a constant expression, so a key
-        /// that is not a plain literal here can still name `uri` or `password`.
+        /// The named collection parser applies every override in turn, so a repeated key is legal and the
+        /// last one wins; it also evaluates the key, so one that is not a plain literal can still name a secret.
         for (size_t i = 1; i < function->arguments->size(); ++i)
         {
             const auto equals_func = function->arguments->at(i)->getFunction();
@@ -382,8 +381,7 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     /// mongodb(uri, collection, structure[, oid_columns])    MongoDB(uri, collection[, oid_columns])
     /// mongodb('host:port', database, collection, user, password, structure[, options[, oid_columns]])
     /// MongoDB('host:port', database, collection, user, password[, options[, oid_columns]])
-    /// Masking a URI password is a no-op on a `host:port`, which has no `://`, so argument 0 can be
-    /// scanned without telling the two forms apart.
+    /// maskURIPassword needs a `scheme://user:password@`, so it is a no-op on a `host:port`.
     String uri;
     if (tryGetStringFromArgument(0, &uri, /* allow_identifier= */ false))
     {
@@ -392,13 +390,11 @@ void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
     }
     else
     {
-        /// A URI built from an expression can embed credentials in its pieces;
-        /// we cannot evaluate it here, so fail closed and hide it whole.
+        /// An unreadable argument 0 can still be a URI carrying credentials, so hide it whole.
         markSecretArgument(0);
     }
 
-    /// The password slot of the `host:port` form; an out-of-range index is ignored, so the URI forms,
-    /// which have at most four arguments, are unaffected.
+    /// The password of the `host:port` form; an out-of-range index is ignored, so the URI forms are unaffected.
     markSecretArgument(4, false);
 }
 
