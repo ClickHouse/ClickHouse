@@ -205,7 +205,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
 
         /// For `Nullable(Tuple(...))` we process tuple members element-by-element:
         /// - to correctly skip unknown enum literals when `validate_enum_literals_in_operators = 0`
-        /// - to implement `transform_null_in = 0` semantics for NULLs inside tuple elements (skip such tuple values)
+        /// - to skip members with a NULL field that the key's non-nullable field cannot hold; a NULL field that the
+        ///   key can hold is part of the key value in either `transform_null_in` mode, as in `Set`
         const auto * lhs_nullable = typeid_cast<const DataTypeNullable *>(lhs_type.get());
         const auto * lhs_tuple = lhs_nullable ? typeid_cast<const DataTypeTuple *>(lhs_nullable->getNestedType().get()) : nullptr;
 
@@ -256,14 +257,8 @@ ColumnsWithTypeAndName createBlockFromCollection(
                         lhs_tuple_element_types[i],
                         params.forbid_unknown_enum_values);
 
+                    /// `convertColumnToTypeOrNull` reports a NULL that the field cannot hold as not representable.
                     if (!converted)
-                    {
-                        skip_tuple_value = true;
-                        break;
-                    }
-
-                    bool need_insert_null = params.transform_null_in && lhs_tuple_element_types[i]->isNullable();
-                    if ((*converted)->isNullAt(0) && !need_insert_null)
                     {
                         skip_tuple_value = true;
                         break;
@@ -654,7 +649,9 @@ DataTypes getInKeyColumnTypes(const DataTypePtr & lhs_type)
 /// Format: lhs IN rhs
 /// Explanation of the setting: `transform_null_in`. First of all, it is only applicable if the lhs is nullable.
 /// Then if lhs is nullable and `transform_null_in` is true, then NULLs from rhs are inserted into the result set as well.
-/// Whereas, if `transform_null_in` is false, we pretend NULLs are not present in rhs at all (at level 1 or at level 2 for Tuple).
+/// Whereas, if `transform_null_in` is false, we pretend NULLs are not present in rhs at all: a NULL member, or a NULL
+/// element of a member of a multi-column key (a plain `Tuple` lhs with several elements is unpacked into one key
+/// column per element). A NULL field of a `Nullable(Tuple)` or single-element tuple key is part of the key value.
 /// If `transform_null_in` is false, then `SELECT NULL IN (NULL, 1)` returns NULL, otherwise it returns true.
 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
@@ -803,7 +800,8 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
                 {
                     /// Tuple literal `(NULL, NULL)` is representable only if all tuple elements are Nullable,
                     /// otherwise it would require NULL -> non-nullable conversion (e.g. `Nullable(Tuple(Int64, Int64))`).
-                    bool all_tuple_elements_nullable = params.transform_null_in;
+                    /// Its NULL fields are part of the key value in either `transform_null_in` mode.
+                    bool all_tuple_elements_nullable = true;
                     for (const auto & element_type : lhs_tuple_type->getElements())
                     {
                         if (!element_type->isNullable())
