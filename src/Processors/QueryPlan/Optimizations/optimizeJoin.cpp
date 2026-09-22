@@ -23,8 +23,8 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/debugHelpers.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -420,10 +420,11 @@ static bool dpsubLeadsJoinOrderChain(const QueryPlanOptimizationSettings & optim
 /// Semi/anti joins can be moved around freely, rather than just swapped, only with a conflict
 /// detector on and DPsub planning. Those joins do not commute, and DPsub with a detector is the
 /// only combination that knows it -- any other algorithm would reorder them into a wrong plan.
+/// A later algorithm in the chain is allowed: a graph that flattened them is marked and only
+/// DPsub will solve it, and the relation count is checked before flattening so DPsub accepts it.
 static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
 {
-    return (optimization_settings.query_plan_optimize_join_order_use_conflict_detector_a
-            || optimization_settings.query_plan_optimize_join_order_use_conflict_detector_c)
+    return optimization_settings.query_plan_optimize_join_order_conflict_detector != JoinOrderConflictDetector::NONE
         && dpsubLeadsJoinOrderChain(optimization_settings);
 }
 
