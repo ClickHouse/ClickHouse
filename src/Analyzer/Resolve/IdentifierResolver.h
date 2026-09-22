@@ -119,6 +119,11 @@ public:
 private:
     QueryTreeNodePtr tryResolveIdentifierFromTableColumns(const IdentifierLookup & identifier_lookup, IdentifierResolveScope & scope);
 
+    static std::shared_ptr<TableNode> tryResolveTableIdentifier(
+        const std::string & database_name,
+        const std::string & table_name,
+        const ContextPtr & context);
+
     IdentifierResolveResult tryResolveIdentifierFromStorage(
         const IdentifierLookup & identifier_lookup,
         const TableExpressionNodePtr & table_expression_node,

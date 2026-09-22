@@ -1,4 +1,5 @@
 #include <Analyzer/IQueryTreeNode.h>
+#include <Analyzer/Identifier.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
@@ -285,34 +286,49 @@ QueryTreeNodePtr IdentifierResolver::tryResolveIdentifierAsNestedPrefix(
 /// Try resolve table identifier from database catalog
 std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const Identifier & table_identifier, const ContextPtr & context)
 {
+    const bool allow_table_namespaces = context->getSettingsRef()[Setting::allow_experimental_table_namespaces];
     size_t parts_size = table_identifier.getPartsSize();
     if (parts_size < 1
-        || (parts_size > 2 && !context->getSettingsRef()[Setting::allow_experimental_table_namespaces]))
+        || (parts_size > 2 && !allow_table_namespaces))
         throw Exception(ErrorCodes::INVALID_IDENTIFIER,
             "Expected table identifier to contain 1 or 2 parts. Actual '{}'",
             table_identifier.getFullName());
 
-    std::string database_name;
-    std::string table_name;
-
     if (table_identifier.isCompound())
     {
-        database_name = table_identifier[0];
-        /// extra parts are a table path inside the database (db.ns1.ns2.table)
-        /// quoted component with dot would alias another path, stay unresolved
-        if (parts_size > 2)
-            for (size_t i = 1; i < parts_size; ++i)
-                if (table_identifier[i].find('.') != String::npos)
-                    return {};
-        table_name = table_identifier[1];
-        for (size_t i = 2; i < parts_size; ++i)
-            table_name += "." + table_identifier[i];
+        if (allow_table_namespaces)
+        {
+            auto current_database_result = tryResolveTableIdentifier("", table_identifier.getFullName(), context);
+
+            IdentifierView table_identifier_view = table_identifier;
+            table_identifier_view.popFirst();
+            auto specified_database_result = tryResolveTableIdentifier(table_identifier[0], std::string(table_identifier_view.getFullName()), context);
+
+            if (specified_database_result && current_database_result)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "Ambiguous table identifier '{}'", table_identifier.getFullName());
+            if (current_database_result)
+                return current_database_result;
+            if (specified_database_result)
+                return specified_database_result;
+            return {};
+        }
+        else
+        {
+            return tryResolveTableIdentifier(table_identifier[0], table_identifier[1], context);
+        }
     }
     else
     {
-        table_name = table_identifier[0];
+        return tryResolveTableIdentifier("", table_identifier[0], context);
     }
+}
 
+std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(
+    const std::string & database_name,
+    const std::string & table_name,
+    const ContextPtr & context)
+{
     StorageID storage_id(database_name, table_name);
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
