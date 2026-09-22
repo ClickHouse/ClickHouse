@@ -552,12 +552,6 @@ public:
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
 
-    QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr query_context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr &,
-        SelectQueryInfo & info) const override;
-
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
     static ReservationPtr reserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
