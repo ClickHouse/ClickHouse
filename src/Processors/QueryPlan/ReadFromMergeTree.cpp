@@ -133,7 +133,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 }
 
 /// check if a DAG node only depends on sorting key columns
-/// (ActionsDAG version of isExpressionOverSortingKey)
+/// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))
@@ -159,6 +159,12 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
         return false;
     if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
+
+    /// a folded lambda hides its body behind a constant column
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column
+        && !allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+        return false;
+
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
@@ -273,7 +279,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
@@ -755,7 +760,8 @@ Pipe ReadFromMergeTree::readFromPool(
       * Because time spend during filling per thread tasks can be greater than whole query
       * execution for big tables with small limit.
       */
-    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && !query_info.small_limit_above_array_join
+        && (allow_prefetched_remote || allow_prefetched_local);
 
     if (use_prefetched_read_pool)
     {
@@ -2315,10 +2321,31 @@ bool ReadFromMergeTree::doNotMergePartsAcrossPartitionsFinal() const
     const auto & primary_key_columns = storage_snapshot->metadata->getPrimaryKey().column_names;
     NameSet primary_key_columns_set(primary_key_columns.begin(), primary_key_columns.end());
 
-    const auto & partition_key_required_columns = partition_key_expression->getRequiredColumns();
-    for (const auto & partition_key_required_column : partition_key_required_columns)
-        if (!primary_key_columns_set.contains(partition_key_required_column))
+    /** The proof above equates "same primary key column values" with "one logical key for the FINAL
+      * merge", but the merge comparator is coarser than value identity for floating-point columns:
+      * `-0.0` compares equal to `0.0`, and every `NaN` bit pattern compares equal to every other. A
+      * partition expression can tell exactly those values apart - `toString(f)` maps `-0.0` and `0.0`
+      * to `'-0'` and `'0'`, `reinterpretAsUInt64(f)` separates `NaN` payloads - so rows the comparator
+      * treats as one key land in different partitions, and skipping the cross-partition merge would
+      * return both of them.
+      */
+    for (const auto & required_column : partition_key_expression->getRequiredColumnsWithTypes())
+    {
+        if (!primary_key_columns_set.contains(required_column.name))
             return false;
+
+        if (isFloat(removeLowCardinalityAndNullable(required_column.type)))
+            return false;
+
+        bool has_float = false;
+        required_column.type->forEachChild([&](const IDataType & child)
+        {
+            if (!has_float && WhichDataType(child).isFloat())
+                has_float = true;
+        });
+        if (has_float)
+            return false;
+    }
 
     return true;
 }
@@ -2909,11 +2936,14 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{
+            KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
                 require_ready_sets};
+            /// The part minmax bound comes from `getExtremes`, which skips NaN.
+            condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
+            return condition;
         };
         indexes.minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
@@ -2977,7 +3007,9 @@ void ReadFromMergeTree::buildIndexes(
         auto key_condition_factory = [query_context, metadata_snapshot](const ActionsDAG *, const ActionsDAG::Node * predicate)
         {
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+            KeyCondition key_condition{wrapped, query_context, metadata_snapshot->getPrimaryKey(), /* single_point_ = */ false, !query_context->getSettingsRef()[Setting::use_primary_key]};
+            key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(metadata_snapshot->getPrimaryKey().data_types);
+            return key_condition;
         };
         auto key_condition_template = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
         indexes.emplace(std::move(key_condition_template));

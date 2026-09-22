@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +13,9 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -170,6 +175,39 @@ def send_test_data():
                     230: 13,
                 },
             )
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "stale_marker_metric"},
+                {
+                    100: 1,
+                    120: 2,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "ordinary_nan_metric"},
+                {
+                    140: float("nan"),
+                },
+            ),
+            (
+                {"__name__": "stale_collision_a", "job": "x"},
+                {
+                    120: 1,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_collision_b", "job": "x"},
+                {
+                    120: 2,
+                    140: 3,
+                },
+            ),
         ]
     )
 
@@ -866,6 +904,67 @@ def test_instant_selectors():
                 "3",
             ]
         ],
+    )
+
+
+def test_stale_markers():
+    # Before the marker, the instant selector returns the newest real sample.
+    do_query_test(
+        "stale_marker_metric",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [125, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:05.000", "2"]],
+    )
+
+    # A stale marker is the end of the series for instant-selector semantics.
+    do_query_test(
+        "stale_marker_metric",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # An ordinary NaN is still a real sample. Only Prometheus's exact stale payload is absent.
+    do_query_test(
+        "ordinary_nan_metric",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "ordinary_nan_metric"}, "value": [145, "NaN"]}]}',
+        [["[('__name__','ordinary_nan_metric')]", "1970-01-01 00:02:25.000", "nan"]],
+    )
+
+    # Downstream presence-based operators must see the stale selector as absent too.
+    do_query_test(
+        "count(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale row must not participate in duplicate detection after a function drops
+    # the metric name. Only the live series remains after both names collapse to {job="x"}.
+    do_query_test(
+        'abs({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "3"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", "3"]],
+    )
+
+    # Range selectors omit stale markers, so range functions can still see older real samples.
+    do_query_test(
+        "last_over_time(stale_marker_metric[1m])",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [145, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:25.000", "2"]],
+    )
+
+    # In a range query, evaluation steps at and after the stale marker are absent.
+    do_range_query_test(
+        "stale_marker_metric",
+        100,
+        160,
+        20,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_marker_metric"}, "values": [[100, "1"], [120, "2"]]}]}',
+        [["[('__name__','stale_marker_metric')]", "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:00.000',2)]"]],
     )
 
 
@@ -4240,7 +4339,7 @@ def test_aggregation_operator_count_values():
     # The sample value is part of the grouping key and therefore changes from one
     # grid point to another. This exercises unroll, regroup, and sparse repacking.
     do_query_test(
-        'count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100)[50:10]',
+        'count_values("value", round(last_over_time(bar[10]), 100))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"value": "100"}, "values": [[130, "2"]]}, {"metric": {"value": "1000"}, "values": [[150, "1"]]}, {"metric": {"value": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -4257,7 +4356,7 @@ def test_aggregation_operator_count_values():
     # The destination label is set before `by`, so it overwrites an input label
     # with the same name and is then used as the value bucket.
     do_query_test(
-        '(count_values("shape", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (shape))[50:10]',
+        '(count_values("shape", round(last_over_time(bar[10]), 100)) by (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"shape": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"shape": "100"}, "values": [[130, "2"]]}, {"metric": {"shape": "1000"}, "values": [[150, "1"]]}, {"metric": {"shape": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -4273,7 +4372,7 @@ def test_aggregation_operator_count_values():
 
     # Independent `by` labels are retained alongside the changing value label.
     do_query_test(
-        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        '(count_values("value", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4329,7 +4428,7 @@ def test_aggregation_operator_count_values():
     # `without` removes only the listed labels and `__name__`, so a destination label
     # which is neither is kept and the result matches the `by (size)` form above.
     do_query_test(
-        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        '(count_values("value", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4420,7 +4519,7 @@ def test_aggregation_operator_count_values():
     # `by` implicitly keeps the destination label, so `__name__` stays in the result
     # and every distinct value remains its own bucket.
     do_query_test(
-        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"__name__": "0", "size": "l"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "s"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "xl"}, "values": [[110, "1"], [150, "1"]]}, {"metric": {"__name__": "100", "size": "l"}, "values": [[130, "2"]]}, {"metric": {"__name__": "1000", "size": "l"}, "values": [[150, "1"]]}, {"metric": {"__name__": "700", "size": "s"}, "values": [[140, "1"]]}]}',
         [
@@ -4454,7 +4553,7 @@ def test_aggregation_operator_count_values():
     # `without` always removes `__name__`, including when it is the destination label,
     # so the value buckets collapse into one count per remaining label set.
     do_query_test(
-        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
         [

@@ -1,7 +1,6 @@
 #include <gtest/gtest.h>
 
 #include <DataTypes/DataTypeDateTime64.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusQueryEvaluationSettings.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
@@ -20,8 +19,7 @@ String getHistogramQuantileSQL(std::string_view compatibility)
 
     PrometheusQueryEvaluationSettings settings;
     settings.time_series_storage_id = StorageID{"default", "prometheus"};
-    settings.timestamp_data_type = std::make_shared<DataTypeDateTime64>(3);
-    settings.scalar_data_type = std::make_shared<DataTypeFloat64>();
+    settings.table_timestamp_type = std::make_shared<DataTypeDateTime64>(3);
     settings.use_current_time = true;
     settings.use_quantile_prometheus_histogram_array = useQuantilePrometheusHistogramArray(compatibility);
 
@@ -32,11 +30,11 @@ String getHistogramQuantileSQL(std::string_view compatibility)
 
 TEST(PrometheusQueryToSQL, HistogramQuantileCompatibility)
 {
-    const auto old_sql = getHistogramQuantileSQL("26.8");
+    const auto old_sql = getHistogramQuantileSQL("26.9");
     EXPECT_NE(old_sql.find("quantilePrometheusHistogramForEach"), String::npos);
     EXPECT_EQ(old_sql.find("quantilePrometheusHistogramArray"), String::npos);
 
-    const auto new_sql = getHistogramQuantileSQL("26.9");
+    const auto new_sql = getHistogramQuantileSQL("26.10");
     EXPECT_NE(new_sql.find("quantilePrometheusHistogramArray"), String::npos);
     EXPECT_EQ(new_sql.find("quantilePrometheusHistogramForEach"), String::npos);
 }

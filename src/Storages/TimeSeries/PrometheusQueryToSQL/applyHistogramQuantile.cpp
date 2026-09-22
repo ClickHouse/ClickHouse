@@ -173,7 +173,7 @@ SQLQueryPiece applyHistogramQuantile(
             }
             else
             {
-                /// Keep the previous lowering for compatibility with servers before 26.9.
+                /// Keep the previous lowering for compatibility with servers before 26.10.
                 auto le_array_expr = makeASTFunction(
                     "arrayResize",
                     makeASTFunction("CAST",

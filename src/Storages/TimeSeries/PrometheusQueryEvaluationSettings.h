@@ -25,40 +25,46 @@ enum class PrometheusQueryEvaluationMode
 };
 
 
-/// The packed aggregate was introduced in 26.9 and is not available on older servers.
+/// The packed aggregate was introduced in 26.10 and is not available on older servers.
 inline bool useQuantilePrometheusHistogramArray(std::string_view compatibility)
 {
-    static const ClickHouseVersion minimum_version{"26.9"};
+    static const ClickHouseVersion minimum_version{"26.10"};
     return compatibility.empty() || ClickHouseVersion(compatibility) >= minimum_version;
 }
 
 
 struct PrometheusQueryEvaluationSettings
 {
-    using TimestampType = DateTime64;
-    using DurationType = Decimal64;
-
     StorageID time_series_storage_id = StorageID::createEmpty();
-
-    /// Data types of the corresponding columns in the TimeSeries table.
-    /// We use these data types for the columns we read from table function prometheusQuery().
-    DataTypePtr timestamp_data_type;
-    DataTypePtr scalar_data_type;
-
-    /// The version of the TimeSeries table.
     UInt64 time_series_version = TimeSeriesVersion::LATEST;
+
+    /// Data type of the timestamp column in the TimeSeries table.
+    DataTypePtr table_timestamp_type;
 
     PrometheusQueryEvaluationMode mode = PrometheusQueryEvaluationMode::QUERY;
 
-    /// Keep the old SQL lowering for compatibility with servers before 26.9.
+    /// Keep the old SQL lowering for compatibility with servers before 26.10.
     bool use_quantile_prometheus_histogram_array = true;
 
     /// Specifies that a prometheus query should be evaluated at the current time.
     bool use_current_time = false;
 
+    /// Scale of all timestamps and durations in these settings (`start_time`, `end_time`, `step`, `instant_selector_window`,
+    /// `default_subquery_step`) and of the parsed PromQL query.
+    /// Should be assigned by calling function getPromQLResultTimestampScale
+    /// because it is also the scale of the timestamps in the query result.
+    UInt32 time_scale = 3;
+
+    /// Time zone of the timestamps in the results of the query.
+    /// Empty means the server's time zone.
+    String time_zone;
+
+    using TimestampType = DateTime64;
+    using DurationType = Decimal64;
+
     /// Specifies that a prometheus query should be evaluated starting with `start_time` and ending with `end_time`
     /// with a specified `step`.
-    /// The scale of these fields is the same as the scale used in `timestamp_data_type`.
+    /// The scale of these fields is `time_scale`.
     std::optional<TimestampType> start_time;
     std::optional<TimestampType> end_time;
     std::optional<DurationType> step;
