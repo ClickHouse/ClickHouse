@@ -5367,6 +5367,11 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                 return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
             };
 
+        /// A `bloom_filter` index tests the `IN` set one value at a time for every granule, and its false positives
+        /// add up over the set (with the default 0.025 rate a few hundred values make every granule test positive),
+        /// so it is only worth it for a small set: 1% of `join_runtime_filter_exact_values_limit`. This cap is part of the documented
+        /// contract of `enable_join_runtime_filters_index_analysis` (see `Settings.cpp`) and is pinned by
+        /// `05248_join_runtime_filter_bloom_filter_index_cap`.
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
         dynamic_skip_index_filter =
             [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, bloom_filter_in_cap]

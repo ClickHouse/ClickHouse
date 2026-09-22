@@ -1,0 +1,10 @@
+results
+50	122500
+500	1247500
+500	1247500
+500	1247500
+granules considered and dropped
+05248_bloom_over_cap	0	0
+05248_bloom_over_cap_raised_limit	1	1
+05248_bloom_under_cap	1	1
+05248_minmax_over_cap	1	1
