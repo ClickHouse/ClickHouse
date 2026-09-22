@@ -14,9 +14,11 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTViewTargets.h>
+#include <Parsers/ASTWithElement.h>
 #include <Parsers/ParserSelectWithUnionQuery.h>
 #include <Parsers/parseQuery.h>
 #include <Common/KnownObjectNames.h>
@@ -42,7 +44,7 @@ namespace
     class DDLDependencyVisitorData
     {
         friend void tryVisitNestedSelect(const String & query, DDLDependencyVisitorData & data);
-        friend void visitExpandedViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data);
+        friend void visitViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data);
     public:
         DDLDependencyVisitorData(const ContextPtr & global_context_, const QualifiedTableName & table_name_, const ASTPtr & ast_, const String & current_database_, bool can_throw_, bool validate_current_database_)
             : create_query(ast_), table_name(table_name_), default_database(global_context_->getCurrentDatabase()), current_database(current_database_), global_context(global_context_), can_throw(can_throw_), validate_current_database(validate_current_database_)
@@ -76,6 +78,17 @@ namespace
             {
                 visitDictionaryDef(*dictionary);
             }
+            else if (const auto * select = ast->as<ASTSelectQuery>())
+            {
+                if (auto with = select->with())
+                {
+                    for (const auto & child : with->children)
+                    {
+                        if (const auto * element = child->as<ASTWithElement>())
+                            cte_names.insert(element->name);
+                    }
+                }
+            }
             else if (auto * expr = ast->as<ASTTableExpression>())
             {
                 visitTableExpression(*expr);
@@ -92,10 +105,8 @@ namespace
     private:
         ASTPtr create_query;
         std::unordered_set<const IAST *> skip_asts;
-        /// The expanded query of a view: the pointer sets of this class point into it.
-        ASTPtr expanded_select;
-        /// Identifiers `ApplyWithSubqueryVisitor` left as references to `MATERIALIZED` CTEs.
-        std::unordered_set<const IAST *> kept_cte_references;
+        /// Names declared by `WITH` lists met in the view's query; a bare identifier with such a name is a CTE reference.
+        std::unordered_set<String> cte_names;
         QualifiedTableName table_name;
         String default_database;
         String current_database;
@@ -173,15 +184,16 @@ namespace
             {
                 if (create.isView())
                 {
-                    /// A name declared by a `WITH` list is not a table, so the dependencies of a view
-                    /// are collected from a copy of its query with the CTE references expanded.
-                    expanded_select = create.select->clone();
-                    kept_cte_references = ApplyWithSubqueryVisitor::visit(expanded_select);
+                    /// CTE names are skipped only inside the query: `storage`/`targets` keep bare table names.
                     skip_asts.insert(create.select);
-                    visitExpandedViewQuery(expanded_select, *this);
+                    visitViewQuery(create.select, *this);
+                    cte_names.clear();
 
                     if (create.is_materialized_view)
                     {
+                        auto select_copy = create.select->clone();
+                        ApplyWithSubqueryVisitor::visit(select_copy);
+
                         /// Use the database where the materialized view is created to resolve nested views.
                         /// The database name can be empty when the AST has been mutated by SharedDatabaseCatalog::serializeCreateQuery
                         /// (which strips the database before serialization). In that case, keep the global context's current database.
@@ -194,7 +206,7 @@ namespace
                             else
                                 mv_db_context->setCurrentDatabaseUnchecked(table_name.database);
                         }
-                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(expanded_select, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
+                        auto select_query = SelectQueryDescription::getSelectQueryFromASTForMatView(select_copy, create.refresh_strategy != nullptr /*refresheable*/, mv_db_context);
                         if (!select_query.select_table_id.empty())
                         {
                             mv_from_dependency = select_query.select_table_id;
@@ -251,10 +263,6 @@ namespace
             if (!expr.database_and_table_name)
                 return;
 
-            /// A reference to a `MATERIALIZED` CTE is not a table.
-            if (kept_cte_references.contains(expr.database_and_table_name.get()))
-                return;
-
             const ASTIdentifier * identifier = dynamic_cast<const ASTIdentifier *>(expr.database_and_table_name.get());
             if (!identifier)
                 return;
@@ -265,6 +273,10 @@ namespace
 
             QualifiedTableName qualified_name{table_identifier->getDatabaseName(), table_identifier->shortName()};
             if (qualified_name.table.empty())
+                return;
+
+            /// A reference to a CTE is not a table.
+            if (qualified_name.database.empty() && cte_names.contains(qualified_name.table))
                 return;
 
             if (qualified_name.database.empty())
@@ -333,6 +345,12 @@ namespace
             else if (functionIsInOrGlobalInOperator(function.name))
             {
                 /// x IN table_name.
+                /// `x IN cte_name` is not a table reference.
+                if (function.arguments && function.arguments->children.size() > 1)
+                {
+                    if (const auto * arg = function.arguments->children[1]->as<ASTIdentifier>(); arg && arg->isShort() && cte_names.contains(arg->shortName()))
+                        return;
+                }
                 /// We set evaluate=false here because we don't want to evaluate a subquery in "x IN subquery".
                 addQualifiedNameFromArgument(function, 1, /* evaluate= */ false);
             }
@@ -479,10 +497,6 @@ namespace
             const auto & arg = args[arg_idx];
             QualifiedTableName qualified_name;
 
-            /// A reference to a `MATERIALIZED` CTE is not a table.
-            if (kept_cte_references.contains(arg.get()))
-                return {};
-
             if (const auto * identifier = dynamic_cast<const ASTIdentifier *>(arg.get()))
             {
                 /// ASTIdentifier or ASTTableIdentifier
@@ -590,8 +604,8 @@ namespace
         static void visit(const ASTPtr & ast, Data & data) { data.visit(ast); }
     };
 
-    /// Visits the query of a view with the `WITH` list applied, see `visitCreateQuery`.
-    void visitExpandedViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data)
+    /// Visits the query of a view, see `visitCreateQuery`.
+    void visitViewQuery(const ASTPtr & select, DDLDependencyVisitorData & data)
     {
         DDLDependencyVisitor::Visitor visitor{data};
         visitor.visit(select);
