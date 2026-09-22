@@ -207,6 +207,8 @@ static Plan getPlan(
         persistent_table_components.table_uuid,
         persistent_table_components.metadata_compression_method);
 
+    /// continue the table's metadata version sequence
+    plan.generator.setVersion(metadata_version + 1);
     Poco::JSON::Object::Ptr initial_metadata_object
         = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
 
