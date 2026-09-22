@@ -22,5 +22,11 @@ ${CLICKHOUSE_CURL} -sS -F "a=@$part" -F "b=@$part" \
 ${CLICKHOUSE_CURL} -sS -F "a=@$part" \
     "${url}&query=SELECT+count()+FROM+a&a_structure=s+String&a_format=TSV"
 
+# A part that ends exactly at the limit is not over it.
+exact="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_exact.tsv"
+python3 -c 'import sys; sys.stdout.write("x\n" * 50)' > "$exact"
+${CLICKHOUSE_CURL} -sS -F "a=@$exact" \
+    "${url}&query=SELECT+count()+FROM+a&a_structure=s+String&a_format=TSV"
+
 ${CLICKHOUSE_CLIENT} -q "DROP USER $user"
-rm -f "$part"
+rm -f "$part" "$exact"

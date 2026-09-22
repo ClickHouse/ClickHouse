@@ -44,7 +44,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
-    extern const int LIMIT_EXCEEDED;
 }
 
 static Block materializeScalar(InputFormatPtr input)
@@ -296,16 +295,12 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
-    form_data_bytes_read += read_buffer->count();
+    /// The limiter checks `expect_eof` in `nextImpl`, which a format that stopped exactly at the
+    /// budget never reached. Ask it, so the check runs whatever the format did with the part.
+    if (form_data_size_limit)
+        read_buffer->eof();
 
-    /// `expect_eof` on the limiter above only fires when the format asks for a byte past the budget, so
-    /// the budget is enforced here as well, whatever the format did with the part.
-    if (form_data_size_limit && !stream.eof())
-        throw Exception(
-            ErrorCodes::LIMIT_EXCEEDED,
-            "Total size of multipart/form-data exceeds the maximum of {} bytes. This limit can be tuned "
-            "by the 'http_max_multipart_form_data_size' setting",
-            form_data_size_limit);
+    form_data_bytes_read += read_buffer->count();
 }
 
 }
