@@ -17,6 +17,7 @@
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnExponentialTimeDecaying.h>
 #include <Common/assert_cast.h>
 
 #include <memory>
@@ -102,11 +103,11 @@ public:
         }
         else if (const auto * decaying = checkAndGetDataType<DataTypeExponentialTimeDecayingFloat64>(input_type))
         {
-            const auto & tuple = assert_cast<const DataTypeTuple &>(*decaying->getLogicalTupleType());
-            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, tuple, number_of_arguments);
+            const auto & logical_tuple = assert_cast<const DataTypeTuple &>(*decaying->getLogicalTupleType());
+            std::optional<size_t> index = getTupleElementIndex(arguments[1].column, logical_tuple, number_of_arguments);
             if (index.has_value())
             {
-                DataTypePtr element_type = tuple.getElements()[index.value()];
+                DataTypePtr element_type = logical_tuple.getElements()[index.value()];
                 if (is_input_type_nullable)
                     element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
                 return wrapInArrays(std::move(element_type), count_arrays);
