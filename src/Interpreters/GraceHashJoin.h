@@ -120,9 +120,6 @@ public:
     ISpillable * getSpillable() override { return this; }
     ProcessorMemoryStats getMemoryStats() const override;
     size_t spill(size_t at_least_bytes) override;
-    bool canSpillToDisk() const override { return true; }
-    size_t getSpillableBytes() const override;
-    void requestSpill() override { force_spill = true; }
 
 private:
     void initBuckets();
@@ -134,7 +131,6 @@ private:
     /// Split the bucket held in memory in two, half of it onto disk. Caller holds `hash_join_mutex`.
     void repartitionCurrentBucket(size_t prev_keys_num, Block leftover);
     bool canForceRepartition() const;
-    bool forcedSpillPending() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;

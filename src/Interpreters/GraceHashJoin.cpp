@@ -399,17 +399,8 @@ bool GraceHashJoin::checkSizeLimits() const
         ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
-bool GraceHashJoin::forcedSpillPending() const
-{
-    /// A spill the scheduler asked for is a hint, so it must never fail the query on the bucket limit.
-    /// The request is kept for later rather than cleared: a bucket too small to split may still grow.
-    return force_spill && canForceRepartition();
-}
-
 bool GraceHashJoin::hasMemoryOverflow(size_t total_rows, size_t total_bytes) const
 {
-    if (forcedSpillPending())
-        return true;
     /// One row can't be split, avoid loop
     if (total_rows < 2)
         return false;
@@ -556,16 +547,6 @@ size_t GraceHashJoin::getTotalRowCount() const
     if (!hash_join)
         return 0;
     return hash_join->getTotalRowCount();
-}
-
-size_t GraceHashJoin::getSpillableBytes() const
-{
-    std::lock_guard lock(hash_join_mutex);
-    /// Offer nothing once this bucket cannot be split any further, so that the scheduler moves on to a
-    /// join that can still free memory instead of asking this one again.
-    if (!canForceRepartition())
-        return 0;
-    return hash_join->getTotalByteCount();
 }
 
 size_t GraceHashJoin::getTotalByteCount() const
@@ -913,7 +894,6 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
     const size_t bucket_index = current_bucket->idx;
     // Must use the latest buckets snapshot in case that it has been rehashed by other threads.
     Buckets buckets_snapshot = rehashBuckets();
-    force_spill = false;
     /// The replacement table reserves only ~half, so capture the peak before the rehash splits it away.
     stats.peak_in_memory_bytes = std::max(stats.peak_in_memory_bytes, hash_join->getPeakBuildBytes());
     /// `releaseJoinedBlocks` resets the join's data before it finishes allocating, so detach
@@ -957,8 +937,14 @@ void GraceHashJoin::repartitionCurrentBucket(size_t prev_keys_num, Block leftove
 
 ProcessorMemoryStats GraceHashJoin::getMemoryStats() const
 {
+    std::lock_guard lock(hash_join_mutex);
+    /// Offer nothing once this bucket cannot be split any further, so that the scheduler moves on to a
+    /// join that can still free memory instead of asking this one again.
+    if (!canForceRepartition())
+        return {};
+
     ProcessorMemoryStats res;
-    res.spillable_memory_bytes = getSpillableBytes();
+    res.spillable_memory_bytes = hash_join->getTotalByteCount();
     // in case the hash table will resize which requires more than 2x additional memory.
     // we must reserve enough memory.
     res.need_reserved_memory_bytes = res.spillable_memory_bytes * 3;
@@ -999,14 +985,7 @@ void GraceHashJoin::addBlockToJoinImpl(Block block)
     }
 
     if (current_block.rows() == 0)
-    {
-        /// No rows for this bucket, but the scheduler asked us to spill: split what is in memory anyway,
-        /// otherwise the request is dropped and it frees nothing.
-        std::lock_guard lock(hash_join_mutex);
-        if (forcedSpillPending())
-            repartitionCurrentBucket(hash_join->getTotalRowCount(), {});
         return;
-    }
 
     // Add block to the in-memory join
     {
@@ -1082,10 +1061,6 @@ void GraceHashJoin::onBuildPhaseFinish()
     // It cannot be called concurrently with other IJoin methods
     if (!hash_join)
         return;
-
-    /// The last spill the scheduler asked for may have arrived after the final block for this bucket.
-    if (current_bucket && forcedSpillPending())
-        repartitionCurrentBucket(hash_join->getTotalRowCount(), {});
 
     hash_join->onBuildPhaseFinish();
 }
