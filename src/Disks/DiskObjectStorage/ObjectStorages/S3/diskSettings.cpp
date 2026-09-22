@@ -266,9 +266,7 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
             {
                 /// GCS Bearer token: replace the Authorization header with the refreshed token.
                 /// no_sign_request is already set from the initial configuration.
-                headers.erase(
-                    std::remove_if(headers.begin(), headers.end(), [](const auto & h) { return h.name == "Authorization"; }),
-                    headers.end());
+                headers.eraseByName("Authorization");
                 headers.push_back({"Authorization", "Bearer " + gcs_creds->getToken()});
             }
             else if (auto s3_creds = std::dynamic_pointer_cast<DataLake::S3Credentials>(updated_credentials))
