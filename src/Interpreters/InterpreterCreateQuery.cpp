@@ -3741,24 +3741,18 @@ BlockIO InterpreterCreateQuery::execute()
             {
                 create.as_database = getContext()->resolveDatabase(create.as_database);
 
-                /// `OLDEST_VERSION` ships no settings, so a worker there would not replace an external
-                /// engine with `Null`, and the authorization below would be for a definition it never
-                /// creates.
-                const auto & settings = getContext()->getSettingsRef();
-                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION
-                    && (settings[Setting::restore_replace_external_engines_to_null]
-                        || settings[Setting::restore_replace_external_table_functions_to_null]))
-                    throw Exception(
-                        ErrorCodes::NOT_IMPLEMENTED,
-                        "CREATE TABLE ... {} ON CLUSTER with restore_replace_external_engines_to_null or "
-                        "restore_replace_external_table_functions_to_null is not supported with "
-                        "distributed_ddl_entry_format_version = {}, which ships no settings to the workers",
-                        create.is_clone_as ? "CLONE AS" : "AS",
-                        on_cluster_version);
+                /// `OLDEST_VERSION` ships no settings, so a worker there replaces nothing with `Null`:
+                /// authorize the definition it will build rather than the one our settings describe.
+                auto preflight_context = Context::createCopy(getContext());
+                if (on_cluster_version == DDLLogEntry::OLDEST_VERSION)
+                {
+                    preflight_context->setSetting("restore_replace_external_engines_to_null", false);
+                    preflight_context->setSetting("restore_replace_external_table_functions_to_null", false);
+                }
 
                 ASTPtr inherited_query = query_ptr->clone();
                 auto & inherited = inherited_query->as<ASTCreateQuery &>();
-                setEngine(inherited);
+                InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
             }

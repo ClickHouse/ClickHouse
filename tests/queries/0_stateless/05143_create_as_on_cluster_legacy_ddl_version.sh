@@ -59,6 +59,11 @@ try_copy copy_legacy "${db}.url_src" "${legacy[@]}"
 try_copy copy_current "${db}.url_src" "${current[@]}"
 try_copy copy_legacy_unqualified url_src "${legacy[@]}"
 
+# The oldest version ships no settings, so the worker replaces nothing: a plain copy is still fine.
+echo "with the oldest version and restore_replace_external_engines_to_null:"
+try_copy copy_oldest_plain "${db}.plain_src" --user "${user}" --distributed_ddl_output_mode throw \
+    --distributed_ddl_entry_format_version 1 --restore_replace_external_engines_to_null 1
+
 # The engine comes along with the source, so it needs the grant for it as well.
 echo "with SELECT but without the grant for the engine:"
 try_copy copy_no_url "${db}.url_src" --user "${no_url}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2
