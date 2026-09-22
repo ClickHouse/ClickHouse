@@ -407,7 +407,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index.index->index.name);
 
     positions_stream = makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
+        *data_part_info_for_read,
         index_name + positions_substream->suffix,
         positions_substream->extension,
         MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
@@ -566,12 +566,12 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
 {
-    auto data_part = getDataPart();
+    const auto index_name = data_part_info_for_read->getAlterConversions()->getIndexOldFileName(
+        index.index->index.name, index.index->index.escape_filenames);
 
     return makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
-        data_part_info_for_read->getAlterConversions()->getIndexOldFileName(
-            index.index->index.name, index.index->index.escape_filenames) + substream.suffix,
+        *data_part_info_for_read,
+        index_name + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));
 }
