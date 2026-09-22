@@ -92,35 +92,37 @@ TEST(ProcessList, MapsMemoryReservationSettingsFromQueryAndServerSettings)
     query_context->getClientInfo().current_user = "process_list_test_user";
     query_context->getClientInfo().current_query_id = "process_list_memory_settings";
 
-    auto query_scope = QueryScope::create(query_context);
-    ProcessList process_list;
-    auto entry = process_list.insert(
-        "SELECT 1",
-        0,
-        nullptr,
-        query_context,
-        /*watch_start_nanoseconds=*/0,
-        /*is_internal=*/false);
+    {
+        auto query_scope = QueryScope::create(query_context);
+        ProcessList process_list;
+        auto entry = process_list.insert(
+            "SELECT 1",
+            0,
+            nullptr,
+            query_context,
+            /*watch_start_nanoseconds=*/0,
+            /*is_internal=*/false);
 
-    auto * reservation = entry->getQueryStatus()->getMemoryReservation();
-    ASSERT_NE(reservation, nullptr);
-    const auto & settings = reservation->getSettings();
+        auto * reservation = entry->getQueryStatus()->getMemoryReservation();
+        ASSERT_NE(reservation, nullptr);
+        const auto & settings = reservation->getSettings();
 
-    EXPECT_TRUE(settings.pressure_policy.protect_from_eviction);
-    EXPECT_TRUE(settings.force_spill_before_eviction);
-    EXPECT_EQ(settings.suction_queue_timeout_ms, 444u);
-    EXPECT_EQ(settings.pressure_policy.max_allocation_before_suction_bytes, 1111u);
-    EXPECT_EQ(settings.pressure_policy.suction_max_allocation_bytes, 2222u);
-    EXPECT_EQ(settings.pressure_policy.suction_reserved_bytes, 3333u);
-    EXPECT_EQ(
-        settings.pressure_policy.suction_queue_policy,
-        ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst);
+        EXPECT_TRUE(settings.pressure_policy.protect_from_eviction);
+        EXPECT_TRUE(settings.force_spill_before_eviction);
+        EXPECT_EQ(settings.suction_queue_timeout_ms, 444u);
+        EXPECT_EQ(settings.pressure_policy.max_allocation_before_suction_bytes, 1111u);
+        EXPECT_EQ(settings.pressure_policy.suction_max_allocation_bytes, 2222u);
+        EXPECT_EQ(settings.pressure_policy.suction_reserved_bytes, 3333u);
+        EXPECT_EQ(
+            settings.pressure_policy.suction_queue_policy,
+            ResourceAllocation::SuctionQueuePolicy::LargestMemoryFirst);
 
-    entry.reset();
+        entry.reset();
+    }
+    query_context.reset();
     storage->removeEntity(global_context, WorkloadEntityType::Workload, "process_list_test", true);
     storage->removeEntity(global_context, WorkloadEntityType::Resource, "memory_for_process_list_test", true);
     storage.reset();
-    query_context.reset();
 }
 
 }
