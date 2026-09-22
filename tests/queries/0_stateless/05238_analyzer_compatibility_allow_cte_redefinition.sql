@@ -1,4 +1,4 @@
--- Compatibility setting `analyzer_compatibility_cte_redefinition`: a CTE name may be defined more than once
+-- Compatibility setting `analyzer_compatibility_allow_cte_redefinition`: a CTE name may be defined more than once
 -- in one WITH clause, a later definition shadowing the earlier ones as the query analysis before v24.3 did.
 -- Expected values come from that analysis (26.8 with enable_analyzer = 0), except where noted.
 
@@ -9,7 +9,7 @@ DROP VIEW IF EXISTS v_cte_redefinition;
 WITH d AS (SELECT 1 AS id), d AS (SELECT 2 AS id) SELECT * FROM d; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 WITH d AS (SELECT 1 AS id), d AS (SELECT 2 AS id) SELECT 1; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
-SET analyzer_compatibility_cte_redefinition = 1;
+SET analyzer_compatibility_allow_cte_redefinition = 1;
 
 SELECT '-- 1 unreferenced duplicates';
 WITH qb AS (SELECT 1 AS Id, 10 AS Shop), qb AS (SELECT 2 AS Id, 20 AS Shop)
@@ -69,7 +69,7 @@ WITH
     enriched AS (SELECT *, if(pct > 50, 'high', 'low') AS tier FROM enriched)
 SELECT * FROM enriched ORDER BY id;
 SELECT * FROM v_cte_redefinition;
-SELECT * FROM v_cte_redefinition SETTINGS analyzer_compatibility_cte_redefinition = 0; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
+SELECT * FROM v_cte_redefinition SETTINGS analyzer_compatibility_allow_cte_redefinition = 0; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
 SELECT '-- 13 MATERIALIZED and RECURSIVE CTEs cannot be redefined';
 SET enable_materialized_cte = 1;

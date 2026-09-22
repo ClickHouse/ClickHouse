@@ -87,7 +87,7 @@ namespace Setting
 {
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
-    extern const SettingsBool analyzer_compatibility_cte_redefinition;
+    extern const SettingsBool analyzer_compatibility_allow_cte_redefinition;
     extern const SettingsBool enable_streaming_queries;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
@@ -1581,7 +1581,7 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromCTE(
     /// To accomplish this behaviour it's not allowed to resolve identifiers to
     /// CTE that is being resolved.
     ///
-    /// With `analyzer_compatibility_cte_redefinition` a name can have several definitions; the latest one
+    /// With `analyzer_compatibility_allow_cte_redefinition` a name can have several definitions; the latest one
     /// not being resolved wins, so a redefinition reads the previous definition and the query body the last one.
     auto & cte_nodes = cte_nodes_it->second;
     /// Every site that marks a scope-map CTE node as being resolved updates both sets. With one definition keep the
@@ -7063,9 +7063,9 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         auto & cte_nodes = scope.cte_name_to_query_node[cte_name];
         if (!cte_nodes.empty())
         {
-            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_cte_redefinition])
+            if (!scope.context->getSettingsRef()[Setting::analyzer_compatibility_allow_cte_redefinition])
                 throw Exception(ErrorCodes::MULTIPLE_EXPRESSIONS_FOR_ALIAS,
-                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_cte_redefinition "
+                    "CTE with name {} already exists. Enable the setting analyzer_compatibility_allow_cte_redefinition "
                     "to let a later definition shadow the earlier one. In scope {}",
                     cte_name,
                     scope.scope_node->formatASTForErrorMessage());
