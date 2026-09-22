@@ -384,8 +384,8 @@ public:
                 {
                     arr_to.getOffsets().resize_assume_reserved(offsets_before);
                     const char * nested_state = data(place).array_of_aggregate_datas;
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
                     throw;
                 }
 
@@ -415,8 +415,8 @@ public:
 
         offsets_to.resize_assume_reserved(offsets_to.size() - 1);
         const char * nested_state = state.array_of_aggregate_datas;
-        for (size_t i = state.dynamic_array_size; i-- > 0;)
-            nested_func->rollbackInsertResult(nested_state + i * nested_size_of_data, arr_to.getData());
+        for (size_t i = state.dynamic_array_size; i > 0; --i)
+            nested_func->rollbackInsertResult(nested_state + (i - 1) * nested_size_of_data, arr_to.getData());
     }
 
     bool allocatesMemoryInArena() const override

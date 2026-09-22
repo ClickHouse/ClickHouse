@@ -408,8 +408,8 @@ public:
                 catch (...)
                 {
                     res_offsets.resize_assume_reserved(offsets_before);
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_func->rollbackInsertResult(merged_maps[keys[i]], val_column);
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_func->rollbackInsertResult(merged_maps[keys[i - 1]], val_column);
                     key_column.rollback(*keys_checkpoint);
                     throw;
                 }

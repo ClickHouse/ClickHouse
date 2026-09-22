@@ -209,8 +209,11 @@ private:
                 }
                 catch (...)
                 {
-                    for (size_t i = transferred; i-- > 0;)
+                    for (size_t j = transferred; j > 0; --j)
+                    {
+                        const size_t i = j - 1;
                         nested_functions[i]->rollbackInsertResult(place + state_offsets[i], tuple_to.getColumn(i));
+                    }
                     throw;
                 }
 
