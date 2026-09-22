@@ -905,7 +905,10 @@
         <!-- By default any user can call any SQL function. To require an explicit
              GRANT FUNCTION ON <name> for selected functions, list their names here: ordinary
              function names from system.functions and user-defined function names.
-             Names are matched after resolving aliases, so listing `hex` also covers `HEX`.
+             Names are matched after resolving aliases, so listing `hex` covers `HEX`, and
+             listing either `isValidASCII` or its `isASCII` alias covers both spellings.
+             The list is read at server start only: like the other settings of this section, it is
+             not picked up by SYSTEM RELOAD CONFIG.
              Aggregate and window functions are not covered and an aggregate name here is an error:
              the server refuses to start rather than pretend that such a function is protected.
              Table functions are not covered either. An unknown name is kept and reported with a

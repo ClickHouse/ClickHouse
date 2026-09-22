@@ -12,7 +12,7 @@ void checkFunctionAccess(const ContextPtr & context, const String & function_nam
     if (!AccessControl::hasFunctionsRequiringGrant() || !context)
         return;
 
-    AccessControl::checkFunctionGrant(context, FunctionFactory::instance().getCanonicalNameIfAny(function_name));
+    AccessControl::checkFunctionGrant(context, FunctionFactory::instance().resolveNameOrAlias(function_name));
 }
 
 }

@@ -217,8 +217,12 @@ public:
     /// when the list is empty, so the function-resolution path pays nothing in the default case.
     static bool hasFunctionsRequiringGrant() noexcept;
     static bool functionRequiresGrant(std::string_view function_name);
-    /// No-op when the list is empty or `context` is null. Call only after the function was found.
+    /// No-op when the list is empty or `context` is null. Call only after the function was found,
+    /// and pass the name the function is registered under: both the configured list and the callers
+    /// resolve aliases with `IFactoryWithAliases::resolveNameOrAlias` before matching.
     static void checkFunctionGrant(const ContextPtr & context, std::string_view function_name);
+    /// Read once at server start; `SYSTEM RELOAD CONFIG` does not re-read it, as for every other
+    /// setting of the `access_control_improvements` section.
     void setFunctionsRequiringGrant(const Strings & function_names);
     void setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config);
 

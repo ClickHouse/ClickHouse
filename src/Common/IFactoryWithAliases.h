@@ -114,6 +114,19 @@ public:
         return getMap().contains(name) || getCaseInsensitiveMap().contains(name) || isAlias(name);
     }
 
+    /// Returns the name the entity is registered under. Resolves a case-insensitive spelling
+    /// (`HEX` -> `hex`) and an alias, both a case-insensitive one (`lcase` -> `lower`) and a
+    /// case-sensitive one (`isASCII` -> `isValidASCII`), which `getCanonicalNameIfAny` leaves
+    /// untouched because it only knows the case-insensitive mapping. Returns `name` unchanged
+    /// when nothing is registered under it.
+    String resolveNameOrAlias(const String & name) const
+    {
+        const String & canonical_name = getCanonicalNameIfAny(name);
+        if (isAlias(canonical_name))
+            return aliasTo(canonical_name);
+        return canonical_name;
+    }
+
     /// Return the canonical name (the name used in registration) if it's different from `name`.
     const String & getCanonicalNameIfAny(const String & name) const
     {

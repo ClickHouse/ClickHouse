@@ -58,8 +58,10 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Process-wide so `FunctionFactory` can skip the grant check with a relaxed atomic load
-    /// and without locking `Context`. There is one `AccessControl` per server process.
+    /// Process-wide, so that `checkFunctionAccess` can skip the whole check with one relaxed
+    /// atomic load on the default empty list: reaching the `AccessControl` instance would mean
+    /// `Context::getAccessControl`, which takes a shared lock on the global context mutex, on
+    /// every function resolution. There is one `AccessControl` per server process.
     std::atomic<bool> functions_requiring_grant_enabled{false};
     std::mutex functions_requiring_grant_mutex;
 
@@ -900,14 +902,14 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         if (name.empty())
             continue;
 
-        /// Store the canonical name, because that is what the resolution paths check against:
-        /// `<function>HEX</function>` protects `hex()`, and `GRANT FUNCTION ON hex` matches it.
         const auto & function_factory = FunctionFactory::instance();
         const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
 
         if (function_factory.hasNameOrAlias(name))
         {
-            names->emplace(function_factory.getCanonicalNameIfAny(name));
+            /// Store the registered name, so that `<function>isValidASCII</function>` also covers
+            /// the `isASCII` alias and `<function>HEX</function>` covers `hex`.
+            names->emplace(function_factory.resolveNameOrAlias(name));
         }
         else if (aggregate_function_factory.isAggregateFunctionName(name))
         {

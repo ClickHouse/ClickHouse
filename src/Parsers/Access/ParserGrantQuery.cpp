@@ -1026,7 +1026,11 @@ The check runs when a call is resolved to that function, not when the name is me
 shadows a protected name (`WITH x -> x + 1 AS hex SELECT arrayMap(hex, [1])`) is unaffected. A SQL
 user-defined function that calls a listed function also requires a grant for that inner function.
 
-Names are matched after resolving aliases, so listing `hex` also covers `HEX`.
+Names are matched after resolving aliases, so listing `hex` covers `HEX`, and listing either
+`isValidASCII` or its `isASCII` alias covers both spellings.
+
+The setting is read when the server starts. Like the other `access_control_improvements` settings,
+it is not re-read by `SYSTEM RELOAD CONFIG`, so changing the list requires a restart.
 
 Aliases: `EXECUTE FUNCTION`, `USE FUNCTION`.
 
