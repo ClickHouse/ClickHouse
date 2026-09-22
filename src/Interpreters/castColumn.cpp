@@ -21,12 +21,10 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Field.h>
 #include <Core/DecimalFunctions.h>
-#include <Core/AccurateComparison.h>
 #include <Core/callOnTypeIndex.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
-#include <cmath>
 #include <limits>
 
 
@@ -106,29 +104,16 @@ ColumnPtr castColumnAccurateSkipNulls(
     return result;
 }
 
-/// Marks the timestamps that a floating-point destination does not hold exactly. A float has no scale to
-/// compare with the source, so the conversion is lossless when the converted value restores the original
-/// ticks. All timestamps within the resolution of the float convert to one value, so at most one of them
-/// survives the round trip. The ticks are restored by rounding to the nearest one rather than by truncating
-/// as the cast to `DateTime64` does: the nearest double to `0.29` lies below it, so truncating its product
-/// with the scale multiplier would restore `0.28` and mark a conversion that the float represents as well
-/// as it can.
+/// Marks the timestamps that `FloatType` does not hold exactly. Of all the timestamps that the cast rounds to
+/// one floating-point value, only the one that the value converts back to stays unmarked.
 template <typename FloatType>
 static ColumnPtr getDateTime64ToFloatLossMap(const ColumnDecimal<DateTime64> & column)
 {
-    const UInt32 scale = column.getScale();
-    const Float64 multiplier = static_cast<Float64>(DecimalUtils::scaleMultiplier<Int64>(scale));
     const auto & values = column.getData();
     auto result = ColumnUInt8::create(values.size(), UInt8(0));
     auto & loss_map = result->getData();
     for (size_t row = 0; row < values.size(); ++row)
-    {
-        /// The same conversion as the cast, so that the checked value is the one the cast produces.
-        const auto converted = DecimalUtils::convertTo<FloatType>(values[row], scale);
-        Int64 restored = 0;
-        loss_map[row] = !accurate::convertNumeric(std::round(static_cast<Float64>(converted) * multiplier), restored)
-            || restored != values[row].value;
-    }
+        loss_map[row] = !DecimalUtils::convertsToFloatExactly<FloatType>(values[row], column.getScale());
     return result;
 }
 

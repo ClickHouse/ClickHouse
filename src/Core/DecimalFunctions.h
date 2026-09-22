@@ -1,10 +1,12 @@
 #pragma once
 
 #include <Core/Types.h>
+#include <Core/AccurateComparison.h>
 #include <Common/Exception.h>
 #include <Common/intExp.h>
 #include <base/arithmeticOverflow.h>
 
+#include <cmath>
 #include <limits>
 #include <type_traits>
 
@@ -434,6 +436,22 @@ template <typename To, typename DecimalType>
 bool tryConvertTo(const DecimalType & decimal, UInt32 scale, To & result)
 {
     return convertToImpl<To, DecimalType, bool>(decimal, scale, result);
+}
+
+/// Whether the conversion of `decimal` to the floating-point type `To` is exact: rounding the converted value
+/// back to the nearest tick of `scale` restores `decimal`. All decimals within the resolution of `To` convert
+/// to the same value, and this holds for exactly one of them. The ticks are restored by rounding rather than
+/// by the truncation of `convertToDecimal`: the nearest double to `0.29` lies below it, so truncating its
+/// product with the multiplier would restore `0.28` and reject a conversion that `To` represents as well as
+/// it can.
+template <is_floating_point To, typename DecimalType>
+bool convertsToFloatExactly(const DecimalType & decimal, UInt32 scale)
+{
+    using NativeType = typename DecimalType::NativeType;
+    const Float64 multiplier = static_cast<Float64>(scaleMultiplier<NativeType>(scale));
+    const Float64 restored_ticks = std::round(static_cast<Float64>(convertTo<To>(decimal, scale)) * multiplier);
+    NativeType restored{};
+    return accurate::convertNumeric(restored_ticks, restored) && restored == decimal.value;
 }
 
 /// Converts a decimal to another decimal.
