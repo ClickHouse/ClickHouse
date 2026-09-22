@@ -56,4 +56,4 @@ A view that is waiting for a [`REFRESH ... DEPENDS ON`](/reference/statements/cr
 
 ## What this means for your automation {#what-this-means-for-your-automation}
 
-While the setting is in place, an unplanned restart leaves every refreshable materialized view stopped, and a newly created view does not begin refreshing until it is started either. `RESTORE` is the exception: it starts every included refreshable materialized view. An uncoordinated view may then be immediately overdue and replay its source. Make whatever automation restarts your servers and creates your views responsible for starting them.
+While the setting is in place, an unplanned restart leaves every refreshable materialized view stopped, and a newly created view does not begin refreshing until it is started either. `RESTORE` is the exception for a view whose refreshes are not coordinated: it starts every such view it includes, and that view may then be immediately overdue and replay its source. A coordinated view is not started by the restore, so it stays stopped until you start it. Make whatever automation restarts your servers and creates your views responsible for starting them.
