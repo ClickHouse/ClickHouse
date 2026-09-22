@@ -50,7 +50,8 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         ByteVector bytes;
         __builtin_memcpy(&bytes, bytes64, sizeof(bytes));
 
-        const BitMask mask = __builtin_convertvector(bytes != 0, BitMask);
+        /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
+        const BitMask mask = __builtin_convertvector(bytes, BitMask);
 
         UInt64 res;
         __builtin_memcpy(&res, &mask, sizeof(res));

@@ -18,6 +18,13 @@ namespace
     /// plus `sub` on NEON.
     using ByteCounters = UInt8 __attribute__((ext_vector_type(64)));
     using WideCounters = UInt16 __attribute__((ext_vector_type(64)));
+    using LaneMask = bool __attribute__((ext_vector_type(64)));
+
+    /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
+    LaneMask isNonZero(ByteCounters bytes)
+    {
+        return __builtin_convertvector(bytes, LaneMask);
+    }
 
     /// A counter is one byte, so it has to be widened before it can overflow.
     constexpr size_t max_blocks_before_widening = 255;
@@ -54,7 +61,7 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
         {
             ByteCounters bytes;
             memcpy(&bytes, pos, sizeof(bytes));
-            counters -= __builtin_convertvector(bytes != 0, ByteCounters);
+            counters += __builtin_convertvector(isNonZero(bytes), ByteCounters);
         }
 
         count += sumCounters(counters);
@@ -99,7 +106,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
             ByteCounters nulls;
             memcpy(&bytes, pos, sizeof(bytes));
             memcpy(&nulls, null_pos, sizeof(nulls));
-            counters -= __builtin_convertvector((bytes != 0) & (nulls == 0), ByteCounters);
+            counters += __builtin_convertvector(isNonZero(bytes) & ~isNonZero(nulls), ByteCounters);
         }
 
         count += sumCounters(counters);
