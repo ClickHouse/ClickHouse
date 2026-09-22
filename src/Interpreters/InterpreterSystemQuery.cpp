@@ -3260,6 +3260,12 @@ void registerSystemCommandLambdas()
                 /// The result contains information about deleted parts as a table. It is for compatibility with ALTER TABLE UNFREEZE query.
                 result = Unfreezer(interpreter.getContext()).systemUnfreeze(query.backup_name);
             }));
+
+    /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
+    /// server that injects nothing, which a build without libfiu already is. Failing
+    /// it would only make every caller - a test harness, above all - special-case a
+    /// build flag to ask for a state that already holds.
+    reg_fn(Type::DISABLE_ALL_FAILPOINTS, with_check_fn(AccessType::SYSTEM_FAILPOINT, []() { FailPointInjection::disableAllFailPoints(); }));
 #if USE_LIBFIU
     reg_fn(
         Type::ENABLE_FAILPOINT,
