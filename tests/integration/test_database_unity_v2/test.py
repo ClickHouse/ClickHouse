@@ -480,29 +480,6 @@ def test_create_and_insert_delta_table(started_cluster):
     assert len(commits) == 2, commits
 
 
-def test_iceberg_create_is_not_supported(started_cluster):
-    """Iceberg writes through the catalog are not implemented yet. `CREATE`
-    must fail with a clean error and write nothing."""
-    node = started_cluster.instances["node1"]
-    db_name = unique_name("v2_iceberg_create_db")
-    table_name = unique_name("v2_iceberg_create")
-    location = f"/var/lib/clickhouse/user_files/tmp/{table_name}"
-
-    create_database(node, db_name, url=PROXY_URL, catalog_credential=PAT_TOKEN)
-
-    error = node.query_and_get_error(
-        f"CREATE TABLE {db_name}.`default.{table_name}` (id Int32)"
-        f" ENGINE = IcebergLocal('{location}')"
-    )
-    assert "NOT_IMPLEMENTED" in error
-    assert "LOGICAL_ERROR" not in error
-
-    exists = node.exec_in_container(
-        ["bash", "-c", f"test -e {location} && echo yes || echo no"]
-    ).strip()
-    assert exists == "no"
-
-
 def test_pat_token_authentication(started_cluster):
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_pat")

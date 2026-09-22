@@ -45,6 +45,9 @@ public:
         const String & table_location,
         Poco::JSON::Object::Ptr metadata_content) const override;
 
+    /// Only checks that the schema exists. Unity schemas carry ownership and grants, so `CREATE TABLE` must not create them.
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+
     void getTableMetadata(
         const std::string & namespace_name,
         const std::string & table_name,
@@ -70,6 +73,24 @@ public:
 
     ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
         const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
+
+    /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
+    /// Without this, a write would leave metadata files in the table location before failing.
+    bool isTransactional() const override { return true; }
+
+    /// Iceberg commits are forwarded to the Iceberg REST endpoint. Delta writes commit through `_delta_log` and never get here.
+    bool updateMetadata(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_snapshot) const override;
+
+    bool updateSchema(
+        const String & namespace_name,
+        const String & table_name,
+        const String & new_metadata_path,
+        Poco::JSON::Object::Ptr new_schema,
+        Int32 previous_schema_id) const override;
 
 private:
     const std::string base_url_str;

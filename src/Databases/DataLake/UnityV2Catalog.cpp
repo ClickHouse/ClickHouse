@@ -28,7 +28,6 @@ namespace DB::ErrorCodes
     extern const int DATALAKE_DATABASE_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
-    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DB::DatabaseDataLakeSetting
@@ -383,12 +382,16 @@ void UnityV2Catalog::createTable(
     const String & table_location,
     Poco::JSON::Object::Ptr metadata_content) const
 {
-    /// Only Delta tables are registered here. An Iceberg `CREATE TABLE` reaches this method with Iceberg
-    /// table metadata (it carries `schemas`, not `fields`) and would need the Unity Iceberg REST endpoint.
+    /// Iceberg metadata carries `schemas`, Delta metadata carries `fields`.
     if (!metadata_content->has("fields"))
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "Creating Iceberg tables in a Unity catalog is not supported, only Delta Lake tables can be created");
+    {
+        /// Registers an external table at the location where `v1.metadata.json` was already written, like the Delta branch below.
+        requestWithRetry([&](bool force_refresh)
+        {
+            getIcebergRestCatalog(force_refresh)->createTable(namespace_name, table_name, table_location, metadata_content);
+        });
+        return;
+    }
 
     auto fields = metadata_content->getArray("fields");
     if (!fields)
@@ -411,6 +414,37 @@ void UnityV2Catalog::createTable(
             "Failed to create table {}.{} in Unity catalog: {}",
             namespace_name, table_name, DB::getCurrentExceptionMessage(/* with_stacktrace */ false));
     }
+}
+
+void UnityV2Catalog::createNamespaceIfNotExists(const String & namespace_name, const String & /* location */) const
+{
+    checkNamespaceExists(namespace_name);
+}
+
+bool UnityV2Catalog::updateMetadata(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr new_snapshot) const
+{
+    /// `false` means a commit conflict (HTTP 409) and the caller retries, so the result is passed through unchanged.
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->updateMetadata(namespace_name, table_name, new_metadata_path, new_snapshot);
+    });
+}
+
+bool UnityV2Catalog::updateSchema(
+    const String & namespace_name,
+    const String & table_name,
+    const String & new_metadata_path,
+    Poco::JSON::Object::Ptr new_schema,
+    Int32 previous_schema_id) const
+{
+    return requestWithRetry([&](bool force_refresh)
+    {
+        return getIcebergRestCatalog(force_refresh)->updateSchema(namespace_name, table_name, new_metadata_path, new_schema, previous_schema_id);
+    });
 }
 
 void UnityV2Catalog::getTableMetadata(
