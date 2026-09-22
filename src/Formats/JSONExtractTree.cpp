@@ -1580,7 +1580,7 @@ public:
 
                 for (const auto & [key, value] : object)
                 {
-                    size_t index;
+                    size_t index = 0;
                     if (matches_expected_name(key))
                     {
                         index = expected_index;
