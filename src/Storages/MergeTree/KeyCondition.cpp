@@ -1280,9 +1280,14 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
-            else if (name == "materialize")
+            else if (name == "materialize" && !isNothing(removeNullable(node.result_type)))
             {
                 /// Remove "materialize" from index analysis.
+                ///
+                /// Except over a `Nothing`, where removing it turns a non-constant argument into a
+                /// constant one and a function above it - `assumeNotNull(materialize(NULL))` - then
+                /// folds and throws while trying to build a non-empty `Nothing` column. Index analysis
+                /// learns nothing from such an argument anyway.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
 
                 /// `need_inversion` was already pushed into the child; avoid adding an extra `not()` wrapper
@@ -1766,6 +1771,57 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
+/// Whether a float is reachable by descending `Tuple` elements and the `Nullable` / `LowCardinality`
+/// wrappers. `Array` and `Map` are not descended: an equal-type comparison of those is `compareAt`-based
+/// and orders a NaN exactly where the index does, so their bounds and their rows already agree.
+static bool floatReachableThroughTupleElements(const DataTypePtr & type)
+{
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    if (WhichDataType(unwrapped).isFloat())
+        return true;
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
+    if (!tuple)
+        return false;
+
+    const auto & elements = tuple->getElements();
+    return std::any_of(elements.begin(), elements.end(), floatReachableThroughTupleElements);
+}
+
+static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && floatReachableThroughTupleElements(unwrapped);
+}
+
+/// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
+/// between two granule bounds that hold none, while every row comparison against it is false, and the
+/// bounds therefore cannot answer `can_be_false` for a range atom over such a key column. Only a range
+/// that reaches the top of the order can hold such a value: one bounded above by an ordinary value
+/// excludes it, because a row whose first differing position holds a NaN compares greater than the
+/// constant. `can_be_true` is left alone, so every pruning decision is unchanged.
+void KeyCondition::relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types)
+{
+    for (auto & element : rpn)
+    {
+        if (element.function != RPNElement::FUNCTION_IN_RANGE || element.key_columns.size() != 1)
+            continue;
+
+        const size_t key_column = element.getKeyColumn();
+        if (key_column >= key_types.size() || !typeCanHideNaNInsideTuple(key_types[key_column]))
+            continue;
+
+        if (element.range.right.isPositiveInfinity())
+            element.relaxed = true;
+    }
+
+    /// The derived condition must reflect the updated exactness of the range atoms.
+    updateExactnessCondition();
+}
+
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
     if (!key_columns.contains(column))
@@ -2091,6 +2147,34 @@ bool KeyCondition::isFunctionReallyMonotonic(const IFunctionBase & func, const I
     return true;
 }
 
+/// Converts a text constant into a `DateTime` or `DateTime64` transform input with no explicit time zone.
+/// Such a type stores its construction-time zone, while comparison parses text through its serialization
+/// using the session's zone. Constants of other types retain their original columns and type information.
+static bool tryNormalizeTextConstantForZonelessDateTimeInput(
+    const DataTypePtr & transform_input_type, ColumnWithTypeAndName & constant)
+{
+    if (!transform_input_type || !isStringOrFixedString(removeLowCardinalityAndNullable(constant.type)))
+        return true;
+
+    const auto input_type = removeLowCardinalityAndNullable(transform_input_type);
+    bool input_time_zone_is_implicit = false;
+    if (const auto * date_time = typeid_cast<const DataTypeDateTime *>(input_type.get()))
+        input_time_zone_is_implicit = !date_time->hasExplicitTimeZone();
+    else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(input_type.get()))
+        input_time_zone_is_implicit = !date_time64->hasExplicitTimeZone();
+
+    if (!input_time_zone_is_implicit)
+        return true;
+
+    Field converted = tryConvertFieldToType((*constant.column)[0], *input_type);
+    if (converted.isNull())
+        return false;
+
+    constant.column = input_type->createColumnConst(1, converted);
+    constant.type = input_type;
+    return true;
+}
+
 /// A `FixedString(N)` constant is stored as a `String` Field of exactly N bytes, right-padded with
 /// '\0', and is compared zero-padded, so when its padding is not empty it matches a whole family of
 /// values rather than a single one: `toFixedString('abc', 257) = p` is true for a `String` `p` equal
@@ -2152,15 +2236,23 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
     for (const auto & chain : chains)
     {
         /// The chain casts the constant to the argument type of its first function.
-        if (!chain.functions_chain.empty() && !chain.functions_chain.front()->getArgumentTypes().empty()
-            && zeroPaddedFixedStringConstantLosesPadding(
-                value, constant.type, getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front())))
+        DataTypePtr transform_input_type;
+        if (!chain.functions_chain.empty() && !chain.functions_chain.front()->getArgumentTypes().empty())
+        {
+            transform_input_type = getArgumentTypeOfMonotonicFunction(*chain.functions_chain.front());
+            if (zeroPaddedFixedStringConstantLosesPadding(value, constant.type, transform_input_type))
+                continue;
+        }
+
+        auto normalized_constant = constant;
+        if (!tryNormalizeTextConstantForZonelessDateTimeInput(transform_input_type, normalized_constant))
             continue;
 
         ColumnPtr transformed_const_column;
         DataTypePtr transformed_const_type;
         if (!applyFunctionChainToColumn(
-                constant.column, constant.type, chain.functions_chain, transformed_const_column, transformed_const_type))
+                normalized_constant.column, normalized_constant.type, chain.functions_chain,
+                transformed_const_column, transformed_const_type))
             continue;
 
         result.push_back(
@@ -2306,6 +2398,19 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
         type = removeNullable(type);
     }
     return true;
+}
+
+
+/// Whether applying the `CAST` of the key DAG straight to a constant of another type gives the same
+/// value as normalizing the constant to the key column's type first and then applying it. A
+/// `Dynamic` value keeps the type it was inserted with, so `CAST(CAST(x, 'Dynamic'), 'String')`
+/// renders `x` the way its own type does and the round trip can be skipped. Every other key type
+/// puts the value into its own value space first - `DateTime64(3)` keeps three fractional digits of a
+/// `DateTime64(6)` constant, and so does `Array(DateTime64(3))` for each element - so the direct
+/// `CAST` would render a value the key space does not hold.
+static bool isDirectCastEquivalentToNormalizedCast(const DataTypePtr & key_input_type)
+{
+    return isDynamic(removeLowCardinality(key_input_type));
 }
 
 
@@ -2462,14 +2567,30 @@ static bool convertColumnForDeterministicDag(
             return finalizeTransformedColumn(out_column, out_type);
         };
 
-        if (try_apply_direct_cast_fast_path())
-        {
-            out_transform_applied = true;
-            return true;
-        }
-
+        /// The constant is normalized through the key column's type first: applying the `CAST` of the
+        /// DAG straight to the constant's own type renders it from a different type space. A
+        /// `DateTime64(6)` constant casts to a `String` with six fractional digits, while the key space
+        /// of `ORDER BY d::String` over a `DateTime64(3)` column holds three of them, and the range
+        /// check then misses the value and prunes the part that holds it.
         if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
+        {
+            /// The round trip is not always possible - `String` -> `Dynamic` -> `String` - and the cast
+            /// above refuses such a target outright. Apply the `CAST` of the DAG directly then, but only
+            /// for a key type where that is known to give the value the normalized round trip would.
+            ///
+            /// For every other key type the constant is either not representable in the key column's
+            /// type or the cast cannot be probed at all (`Array`, `Tuple`). Rendering it from its own
+            /// type instead would put it in a different value space - and this helper also transforms
+            /// whole set columns, where one such element would drag the representable ones along - so
+            /// decline: the caller then reads more instead of pruning by a value the key space does not hold.
+            if (isDirectCastEquivalentToNormalizedCast(dag.input_type) && try_apply_direct_cast_fast_path())
+            {
+                out_transform_applied = true;
+                return true;
+            }
+
             return false;
+        }
     }
 
     out_column = input_column;
@@ -2684,13 +2805,17 @@ std::vector<KeyCondition::TransformedConstant> KeyCondition::transformConstantBy
         if (zeroPaddedFixedStringConstantLosesPadding(value, constant.type, candidate.dag.input_type))
             continue;
 
+        auto normalized_constant = constant;
+        if (!tryNormalizeTextConstantForZonelessDateTimeInput(candidate.dag.input_type, normalized_constant))
+            continue;
+
         /// Conversion to the transform's input type can turn a `String` constant into a NaN.
         /// Inspect that value before applying the key expression.
         ColumnPtr transform_input_column;
         DataTypePtr transform_input_type;
         bool transform_applied = false;
         if (!convertColumnForDeterministicDag(
-                constant.column, constant.type, expr_name, candidate.dag,
+                normalized_constant.column, normalized_constant.type, expr_name, candidate.dag,
                 transform_input_column, transform_input_type, transform_applied))
             continue;
 
@@ -3021,6 +3146,77 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
+namespace
+{
+
+bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    if (field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    if (field.getType() == Field::Types::Array)
+    {
+        for (const auto & element : field.safeGet<Array>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (isFloat(removeLowCardinalityAndNullable(type)))
+        return true;
+
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
+/** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
+  * works with ranges produced by `IColumn::getExtremes`, which deliberately skips `NaN`. A part or
+  * granule that holds `NaN` next to finite values therefore gets a `NaN`-free range, the set-vs-range
+  * intersection finds no overlap, and it is pruned even though row-wise evaluation of the same filter
+  * matches the `NaN` rows. The set atom serves every index at once, so it has to be declined outright;
+  * `has` declines floating-point arrays for a closely related mismatch.
+  */
+bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_types)
+{
+    if (std::none_of(key_types.begin(), key_types.end(), typeContainsFloat))
+        return false;
+
+    for (const auto & column : set_columns)
+    {
+        const size_t size = column->size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            Field field;
+            column->get(i, field);
+            if (fieldContainsNaN(field))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+}
+
 /// `has` compares array elements with the key values as raw `Field`s, whereas `MergeTreeSetIndex`
 /// converts the elements to the key type with an accurate cast. The two agree only when the raw
 /// representation of the set element type carries the same semantics as the key type. Counter-examples
@@ -3302,6 +3498,9 @@ std::optional<KeyCondition::RPNElement> KeyCondition::tryPrepareSetAtom(
             candidate.key_expr_types,
             candidate.indexes_mapping,
             candidate.args_count))
+        return std::nullopt;
+
+    if (setElementsContainNaN(atom_set_columns, candidate.key_expr_types))
         return std::nullopt;
 
     RPNElement element;
@@ -3655,6 +3854,13 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        /// `toDayOfWeek` declares that it is monotonic inside the enclosing Monday-based week: its factor
+        /// transform is `ToMondayImpl`. That holds for the Monday-first modes 0 and 1, but not for the
+        /// Sunday-first modes 2 and 3, where the value drops back at Sunday - in the middle of the factor's
+        /// interval. Pruning a key range with the unsound claim silently loses matching rows.
+        if (kind == Kind::RIGHT_CONST && func->getName() == "toDayOfWeek" && !isMondayFirstDayOfWeekMode())
+            return {};
+
         if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
         {
             if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
@@ -3686,6 +3892,25 @@ public:
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
 
 private:
+    /// Whether the constant argument is a `toDayOfWeek` mode that numbers the week from Monday.
+    /// A mode of an unexpected shape is reported as not Monday-first, which only declines monotonicity.
+    bool isMondayFirstDayOfWeekMode() const
+    {
+        const Field mode = (*const_arg.column)[0];
+
+        UInt64 mode_value = 0;
+        if (mode.getType() == Field::Types::UInt64)
+            mode_value = mode.safeGet<UInt64>();
+        else if (mode.getType() == Field::Types::Int64)
+            mode_value = static_cast<UInt64>(mode.safeGet<Int64>());
+        else
+            return false;
+
+        /// Only the two lowest bits of the mode are significant, see `DateLUTImpl::check_week_day_mode`,
+        /// and the second one selects the Sunday-first numbering.
+        return (mode_value & 2) == 0;
+    }
+
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;

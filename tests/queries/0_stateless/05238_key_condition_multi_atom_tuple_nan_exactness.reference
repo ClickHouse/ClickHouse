@@ -1,0 +1,6 @@
+Condition: and((t in [(5., 3), +Inf)), and((toUInt8(i) in [1, 1]), (i in [257, 257])))
+2
+2
+8
+05238 exact group	0
+05238 tuple NaN filtering	1

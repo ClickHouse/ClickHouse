@@ -4234,7 +4234,7 @@ def test_aggregation_operator_count_values():
     # The sample value is part of the grouping key and therefore changes from one
     # grid point to another. This exercises unroll, regroup, and sparse repacking.
     do_query_test(
-        'count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100)[50:10]',
+        'count_values("value", round(last_over_time(bar[10]), 100))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"value": "100"}, "values": [[130, "2"]]}, {"metric": {"value": "1000"}, "values": [[150, "1"]]}, {"metric": {"value": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -4251,7 +4251,7 @@ def test_aggregation_operator_count_values():
     # The destination label is set before `by`, so it overwrites an input label
     # with the same name and is then used as the value bucket.
     do_query_test(
-        '(count_values("shape", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (shape))[50:10]',
+        '(count_values("shape", round(last_over_time(bar[10]), 100)) by (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"shape": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"shape": "100"}, "values": [[130, "2"]]}, {"metric": {"shape": "1000"}, "values": [[150, "1"]]}, {"metric": {"shape": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -4267,7 +4267,7 @@ def test_aggregation_operator_count_values():
 
     # Independent `by` labels are retained alongside the changing value label.
     do_query_test(
-        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        '(count_values("value", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4323,7 +4323,7 @@ def test_aggregation_operator_count_values():
     # `without` removes only the listed labels and `__name__`, so a destination label
     # which is neither is kept and the result matches the `by (size)` form above.
     do_query_test(
-        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        '(count_values("value", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4414,7 +4414,7 @@ def test_aggregation_operator_count_values():
     # `by` implicitly keeps the destination label, so `__name__` stays in the result
     # and every distinct value remains its own bucket.
     do_query_test(
-        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"__name__": "0", "size": "l"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "s"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "xl"}, "values": [[110, "1"], [150, "1"]]}, {"metric": {"__name__": "100", "size": "l"}, "values": [[130, "2"]]}, {"metric": {"__name__": "1000", "size": "l"}, "values": [[150, "1"]]}, {"metric": {"__name__": "700", "size": "s"}, "values": [[140, "1"]]}]}',
         [
@@ -4448,7 +4448,7 @@ def test_aggregation_operator_count_values():
     # `without` always removes `__name__`, including when it is the destination label,
     # so the value buckets collapse into one count per remaining label set.
     do_query_test(
-        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
