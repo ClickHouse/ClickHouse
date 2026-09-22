@@ -52,7 +52,10 @@ CREATE TABLE set_volatile (k UInt64) ENGINE = Set SETTINGS persistent = 0;
 INSERT INTO set_volatile VALUES (1), (2);
 DETACH TABLE set_volatile;
 ATTACH TABLE set_volatile;
-SELECT count() FROM set_volatile;
+-- Through `system.tables`, because a `Set` table cannot be read: `SELECT count()` answers only where the
+-- trivial count optimization does it from the row count, and the test runner randomizes settings that turn
+-- that optimization off, which made this query fail at random.
+SELECT total_rows FROM system.tables WHERE database = currentDatabase() AND name = 'set_volatile';
 
 SELECT '-- a temporary table reports its definition too';
 CREATE TEMPORARY TABLE set_temporary (k UInt64) ENGINE = Set SETTINGS persistent = 0;
