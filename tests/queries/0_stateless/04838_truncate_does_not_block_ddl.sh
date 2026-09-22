@@ -34,14 +34,14 @@ do
 done
 [[ "$queued" == "1" ]] || echo "TRUNCATE never created its DROP_RANGE entry"
 
-# A queued entry does not prove TRUNCATE is still waiting on it: dropPartitions creates every entry
-# before it waits for any. One sample suffices because the stopped queue cannot execute the entry
-# just observed, so a TRUNCATE seen in flight here stays in flight until the queues start below.
-in_flight=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.processes WHERE query_id = '$truncate_query_id' SETTINGS use_query_cache = 0")
-[[ "$in_flight" == "1" ]] || echo "TRUNCATE was not in flight when its DROP_RANGE was queued"
-
 # TRUNCATE only removes data, so DDL on the table name must not wait for it.
 timeout 30 $CLICKHOUSE_CLIENT -q "RENAME TABLE t TO t2" && echo "RENAME is not blocked"
+
+# dropPartitions creates every entry before it waits for any, so a queued entry does not mean
+# TRUNCATE ever waited. After the RENAME, with the queues still stopped, a TRUNCATE that waited
+# cannot have left the wait, and one that did not would have to outlive a whole RENAME to be here.
+in_flight=$($CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.processes WHERE query_id = '$truncate_query_id' SETTINGS use_query_cache = 0")
+[[ "$in_flight" == "1" ]] || echo "TRUNCATE did not stay in flight across the RENAME"
 
 # Let TRUNCATE finish. Both names are started because the table kept its old name if the RENAME
 # above was blocked, and starting the queues of a table that does not exist is a no-op.
