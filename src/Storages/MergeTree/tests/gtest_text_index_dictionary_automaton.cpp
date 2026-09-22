@@ -79,7 +79,7 @@ TEST(TextIndexDictionaryAutomaton, LiteralAndUnsignedByteOrder)
 TEST(TextIndexDictionaryAutomaton, RegexSemanticsAndSeekSoundness)
 {
     std::set<std::string> words{"", "a", "ab", "abc", "bar", "foo", "foobar", "FOO", "food", "\nfoo\n", "é", "éclair", "Ж", "K", "k"};
-    std::mt19937 random(123);
+    std::mt19937 random(123); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test failures
     const std::string alphabet = std::string("abfoxyz012 \n_") + '\0' + '\xff';
     for (size_t i = 0; i < 3000; ++i)
     {
