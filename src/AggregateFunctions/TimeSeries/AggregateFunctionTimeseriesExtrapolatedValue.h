@@ -175,9 +175,11 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 if (last_removed.has_value())
                 {
                     const auto & prev_summary = last_removed->second;
-                    Int64 sample_ts = static_cast<Int64>(prev_summary.last_timestamp);
-                    Int64 cut_off_ts = static_cast<Int64>(grid_timestamp) - static_cast<Int64>(window);
-                    if (sample_ts <= cut_off_ts && (cut_off_ts - sample_ts) <= static_cast<Int64>(window))
+                    // Subtract in Int128 for the same reason as the boundary arithmetic below.
+                    const Int128 sample_ts = static_cast<Int128>(static_cast<Int64>(prev_summary.last_timestamp));
+                    const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window));
+                    const Int128 cut_off_ts = static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - window_128;
+                    if (sample_ts <= cut_off_ts && (cut_off_ts - sample_ts) <= window_128)
                     {
                         has_prev = true;
                         prev_timestamp = prev_summary.last_timestamp;
