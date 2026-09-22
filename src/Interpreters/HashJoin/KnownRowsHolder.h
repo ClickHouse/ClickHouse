@@ -129,7 +129,7 @@ bool addFoundRowAll(
 
         return any_row_added;
     }
-    else if constexpr (AddedColumns::isLazy())
+    else if constexpr (AddedColumns::appendsWholeKey())
     {
         /// Load-free fast path: the cell word carries the saturating row count, so unique keys
         /// (inline refs) and duplicate keys are both appended without dereferencing the node.

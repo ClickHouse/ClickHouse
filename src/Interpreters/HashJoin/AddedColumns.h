@@ -272,8 +272,8 @@ public:
 
     const IColumn & leftAsofKey() const { return *left_asof_key; }
 
-    /// Unlike `PreSelectedRows`, which needs one ref per row for the per-row additional filter.
-    static constexpr bool isLazy() { return true; }
+    /// `PreSelectedRows` returns false. It keeps one ref per right row for the additional filter.
+    static constexpr bool appendsWholeKey() { return true; }
 
     Block left_block;
     std::vector<JoinOnKeyColumns> join_on_keys;

@@ -983,14 +983,13 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
 
     using FindResult = typename KeyGetter::FindResult;
 
-    /// Adapter class to pass into addFoundRowAll
-    /// We don't want to add rows directly into AddedColumns, because they need to be filtered by additional_filter_expression.
+    /// One ref per right row, so the additional filter can accept or reject each row.
     class PreSelectedRows
     {
     public:
         explicit PreSelectedRows(PODArray<UInt64> & container_) : container(container_) {}
         void appendFromBlock(UInt64 ref_word) { container.push_back(ref_word); }
-        static constexpr bool isLazy() { return false; }
+        static constexpr bool appendsWholeKey() { return false; }
 
         PODArray<UInt64> & container;
     };
