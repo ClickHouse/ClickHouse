@@ -1880,7 +1880,7 @@ private:
             {
                 auto data = element.getString();
 
-                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
+                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings, getJSONSessionTimezone(format_settings)))
                     return type;
 
                 if (format_settings.json.try_infer_numbers_from_strings)
@@ -2405,7 +2405,8 @@ private:
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
                     time_t value = 0;
-                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    if (tryInferDateTimeFromString(
+                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
                         return true;
@@ -2415,7 +2416,8 @@ private:
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
                 {
                     DateTime64 value;
-                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    if (tryInferDateTime64FromString(
+                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                         return true;
@@ -2492,7 +2494,8 @@ private:
                 if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
                 {
                     time_t value = 0;
-                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    if (tryInferDateTimeFromString(
+                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime"), buf);
                         writeBinaryLittleEndian(static_cast<UInt32>(value), buf);
@@ -2503,7 +2506,8 @@ private:
                 if (format_settings.try_infer_datetimes)
                 {
                     DateTime64 value;
-                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
+                    if (tryInferDateTime64FromString(
+                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime64(9)"), buf);
                         writeBinaryLittleEndian(value, buf);
@@ -2581,7 +2585,6 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
-    const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
     enum class JSONElementType

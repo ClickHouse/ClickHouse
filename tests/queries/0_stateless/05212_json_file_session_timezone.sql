@@ -10,6 +10,15 @@ SETTINGS session_timezone = 'Asia/Tokyo';
 SELECT toUnixTimestamp(j.d) FROM json_file_timezone
 SETTINGS session_timezone = 'UTC';
 
+-- Plain `JSON` paths use the reading query's timezone for inference and shared-data values too.
+CREATE TABLE json_file_dynamic_timezone (j JSON(max_dynamic_paths = 0)) ENGINE = File(JSONEachRow);
+INSERT INTO json_file_dynamic_timezone SELECT '{"d":"2024-01-01 12:00:00"}'
+SETTINGS session_timezone = 'UTC';
+SELECT toUnixTimestamp(j.d.:DateTime) FROM json_file_dynamic_timezone
+SETTINGS session_timezone = 'Asia/Tokyo';
+SELECT toUnixTimestamp(j.d.:DateTime) FROM json_file_dynamic_timezone
+SETTINGS session_timezone = 'UTC';
+
 -- `SimdJSON` rejects this nesting and `RapidJSON` accepts it, so this checks `allow_simdjson` without thread reuse.
 INSERT INTO FUNCTION file(currentDatabase(), RawBLOB)
 SELECT concat('{"x":', repeat('[', 1024), '0', repeat(']', 1024), '}\n')
