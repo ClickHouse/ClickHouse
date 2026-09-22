@@ -46,7 +46,7 @@ ASTPtr parseFilter(const String & filter, const String & policy_name)
     }
 }
 
-/// An identifier inside `IN (SELECT ...)` belongs to the subquery's own table, so it is left alone.
+/// Don't touch subqueries, their columns belong to another table.
 void renameOutsideSubqueries(ASTPtr & ast, const RenameColumnData & rename)
 {
     if (ast->as<ASTSubquery>())
@@ -60,7 +60,7 @@ void renameOutsideSubqueries(ASTPtr & ast, const RenameColumnData & rename)
         renameOutsideSubqueries(child, rename);
 }
 
-/// Policies on the table itself and on its database, with every column their filters mention.
+/// Policies on the table and on its database, with the columns they use.
 std::vector<BoundPolicy> collectBoundPolicies(const StorageID & table_id, const AccessControl & access_control)
 {
     std::vector<BoundPolicy> result;
@@ -139,7 +139,7 @@ void renameColumnsInRowPolicies(const StorageID & table_id, const AlterCommands 
     if (renames.empty())
         return;
 
-    /// Access entities are global state, so the query context's constness does not apply to them.
+    /// Access entities are global, a const query context can still change them.
     auto & access_control = context->getGlobalContext()->getAccessControl();
     for (const auto & bound : collectBoundPolicies(table_id, access_control))
     {
@@ -148,7 +148,7 @@ void renameColumnsInRowPolicies(const StorageID & table_id, const AlterCommands 
         if (std::none_of(renames.begin(), renames.end(), [&](const auto & r) { return bound.columns.contains(r.column_name); }))
             continue;
 
-        /// Re-read the entity inside the update so a rename another replica already applied is a no-op.
+        /// Work on the current entity, another replica may have renamed it already.
         access_control.update(bound.id, [&](const AccessEntityPtr & entity, const UUID &) -> AccessEntityPtr
         {
             auto updated = typeid_cast<std::shared_ptr<RowPolicy>>(entity->clone());

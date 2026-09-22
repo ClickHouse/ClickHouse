@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# A row policy mentions columns by name. RENAME COLUMN must carry the policy along; DROP COLUMN of a
-# mentioned column, and RENAME COLUMN under a database-wide policy, must be refused.
+# RENAME COLUMN must follow into row policies; DROP COLUMN of a used column must be refused.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
