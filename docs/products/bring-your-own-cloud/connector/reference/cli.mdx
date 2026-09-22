@@ -18,6 +18,10 @@ The `instances` and `commands` commands, and `executor teardown`, read the execu
 
 ## clicklink clctl init {#init}
 
+<Note>
+The public `v0.16.0` CLI has neither `--managed` nor `--no-managed`. The managed-mode flags and behavior below require a newer build and matching deployment support confirmed by your account team; see [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
+</Note>
+
 Bootstraps the connector from an enrollment token, a saved enrollment bundle, or an out-of-band signed certificate. One invocation stages configuration, provisions ClickHouse access, obtains the mTLS client certificate, deploys (Helm chart or systemd units), and verifies health. With `--managed` it also enables the executor for the EKS cluster it detects and grants the executor's cluster-wide access. Re-running is safe: `init` preserves the config and the cluster UUID, overwrites credentials atomically, and reuses an existing client key unless you pass `--force`. See [onboarding](/products/bring-your-own-cloud/connector/onboarding) for the full flow and [managed services](/products/bring-your-own-cloud/connector/managed-services) for what the executor does.
 
 ### Entry points {#init-entry-points}
@@ -39,8 +43,8 @@ Exactly one of the three entry points is required; they are mutually exclusive.
 | `--env <label>` | Environment label injected into every emitted metric as `scraper.labels.env` (default `production`). Pass `staging` for a staging install. |
 | `--operators <emails>` | Comma-separated operator emails allowed to open support sessions; enables the session gateway and skips the prompt. |
 | `--no-gateway` | Disables the session gateway (no OIDC-managed sessions); skips the prompt. On a VM, root on the host can still manage sessions through the local session file. |
-| `--managed` | Enables managed mode: runs the executor so ClickHouse Cloud manages the lifecycle of ClickHouse services in this cluster; skips the prompt. Requires an Amazon EKS cluster. |
-| `--no-managed` | Leaves managed mode (the executor) off; skips the prompt. |
+| `--managed` | Enables managed mode: runs the executor so ClickHouse Cloud manages the lifecycle of ClickHouse services in this cluster; skips the prompt. Requires an Amazon EKS cluster. Unavailable in public `v0.16.0`; see [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). |
+| `--no-managed` | Leaves managed mode (the executor) off; skips the prompt. Unavailable in public `v0.16.0`; see [availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability). |
 | `--force` | Overwrites an existing config or overlay and regenerates the client key; also acknowledges superseding an unexpired auto-signed certificate. The cluster UUID is preserved even under `--force`. |
 | `--skip-provision` | Stage only: skips per-role ClickHouse access provisioning (and, on the systemd target, the unit enable and verify). Run `clicklink clctl {scraper,troubleshoot} access provision` separately. `--target helm` still applies the executor's grant; a VM skips it too. |
 | `--ch-user-suffix <suffix>` | Optional suffix for the provisioned ClickHouse usernames (`pcm_scraper` becomes `pcm_scraper_<suffix>`), so a second connector deployment can share an instance without colliding on the first one's users. |
@@ -237,6 +241,8 @@ clicklink clctl scraper access provision --target helm \
 
 ## clicklink clctl executor access {#executor-access}
 
+The `init --managed` workflow below requires a [build with managed-mode support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` does not expose that flag.
+
 `init --managed` applies the executor's cluster-wide grant with your credentials. When it cannot, `init` prints the commands to run from a kubeconfig with cluster admin: `access apply` alone on a VM (the bundle is already staged), `access grant` then `access apply` on Kubernetes. See [onboarding](/products/bring-your-own-cloud/connector/onboarding#install-and-enroll).
 
 ### executor access grant {#executor-access-grant}
@@ -320,6 +326,8 @@ Removes what `prepare` created for a service that ClickHouse Cloud has deleted. 
 
 ### instances create {#instances-create}
 
+This customer-create workflow is not yet available in the public release and requires support in the CLI, connector endpoint, and ClickHouse Cloud. Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using it.
+
 Submits a prepared create to ClickHouse Cloud through your connector endpoint, with the connector's own credentials. It prints the spoken name ClickHouse Cloud assigned, the state, and a `watch:` hint that uses your service name. The create body comes from the file `prepare` wrote, or from the four `--deployed-name`, `--data-bucket`, `--backup-bucket`, and `--irsa-role-arn` flags together. A retry with the same inputs returns the first create.
 
 | Flag | Description |
@@ -376,7 +384,11 @@ Prints the commands the executor has recorded, as JSON, newest first. A failed c
 
 ## clicklink clctl platform approve {#platform-approve}
 
-Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. When a chart in the bundle lives in Amazon ECR, it needs AWS credentials that can read it. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+The public `v0.16.0` CLI has no `platform` command, so neither the VM nor the Kubernetes approval workflow is available in that release. Kubernetes approval additionally needs the CLI and chart support for Secret delivery described below. Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) before using either workflow.
+
+Authorizes one platform change with your own cluster credentials. It reads the bundle the executor staged, hashes it, and renders every chart in it exactly as the executor will. It applies the permission half with the kube context you choose, ensures the executor's `pcm-platform` identity, and mints its token. It makes no request to your connector endpoint. The permission half is Namespaces, CustomResourceDefinitions, ServiceAccounts, ClusterRoles and bindings, Roles and bindings, webhook and admission configurations, PriorityClasses, and the StorageClass. The executor then applies only the workload half, and only while that token is valid. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+
+For direct access to ClickHouse's registry, run approval on the connector EC2 VM: the CLI uses its instance profile to assume the read-only pull role, independently of your kubeconfig credentials. Other ECR chart registries use ambient AWS credentials. See [registry credentials](/products/bring-your-own-cloud/connector/platform-updates#registry-credentials).
 
 | Flag | Description |
 |------|-------------|
@@ -391,6 +403,8 @@ Authorizes one platform change with your own cluster credentials. It reads the b
 | `--dry-run` | Renders and lists the permission half without applying or minting. |
 
 ## clicklink clctl platform reset {#platform-reset}
+
+The public `v0.16.0` CLI has no `platform` command, including `platform reset`; see [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability).
 
 For test clusters with no services: uninstalls the platform releases in reverse dependency order and removes the executor's platform token bundle, so the first installation can be exercised again. Before changing anything it lists the ClickHouse clusters in the namespaces this connector owns and refuses if any exist. CustomResourceDefinitions, RBAC, and the StorageClass stay. Run `platform approve` again before the next platform sync.
 
