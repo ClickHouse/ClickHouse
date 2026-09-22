@@ -691,8 +691,10 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
 
     if (!saturate_on_overflow)
     {
-        /// Date32 covers [1900, 2299] here, so a year outside it is a range error; anything else that fails is a calendar-invalid date
-        if (local_date.year() < DATE_LUT_MIN_YEAR || local_date.year() > DATE_LUT_MAX_YEAR)
+        /// Date32 covers [1900, 2299] here: a plausible date with a year outside it is a range error, while anything
+        /// else that fails (month 13, or garbage like 99999999) is a calendar-invalid date, as on master
+        const bool plausible = local_date.month() >= 1 && local_date.month() <= 12 && local_date.day() >= 1 && local_date.day() <= 31;
+        if (plausible && (local_date.year() < DATE_LUT_MIN_YEAR || local_date.year() > DATE_LUT_MAX_YEAR))
         {
             if constexpr (throw_exception)
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year {} is out of bounds of type Date32", local_date.year());

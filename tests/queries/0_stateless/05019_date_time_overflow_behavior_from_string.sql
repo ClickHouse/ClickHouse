@@ -57,6 +57,8 @@ SELECT toDateTime('4294967295'), toDateTime('1700000000'), toDateTimeOrNull('429
 
 SELECT 'throw, Date32 rejects what it cannot represent instead of substituting a default';
 SELECT toDate32('2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
+-- Date32 ends at 2299 on this branch, so a plausible date past it is a range error rather than a parse error
+SELECT toDate32('2400-01-01'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
 SELECT toDate32('99999999'); -- { serverError CANNOT_PARSE_DATE }
 SELECT CAST(materialize('2000-13-01') AS Date32); -- { serverError CANNOT_PARSE_DATE }
 SELECT * FROM format(CSV, 'v Date32', '2000-13-01'); -- { serverError CANNOT_PARSE_DATE }
