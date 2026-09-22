@@ -73,7 +73,12 @@ namespace DB
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
 /// `metrics_perf_events_enabled`) and the `io_uring` family (for
-/// `local_filesystem_read_method = io_uring`).
+/// `local_filesystem_read_method = io_uring`). The filter sees `io_uring_enter` but not the
+/// operations queued in the ring, so whoever can make a ring can reach through it the operations
+/// that `io_uring` implements even where their system calls are refused here - such as the
+/// extended-attribute ones. `IORING_REGISTER_RESTRICTIONS` would not close that, since nothing
+/// stops a second, unrestricted ring from being made; refusing `io_uring_setup` would, at the price
+/// of the read method.
 /// clang-format off
 #define SECCOMP_ALLOWED_SYSCALLS_COMMON(M) \
     /* Reading and writing data. */ \
