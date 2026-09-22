@@ -9,7 +9,8 @@
 -- rewrite every column through the interpreter and record the type in metadata instead, which is the
 -- path 04653 covers. Both thresholds are randomized by the test runner, so pin them here and assert
 -- the resulting shape below.
--- The read reaches the collected-Nested description only when the offsets are shared, so pin that too.
+
+-- `Nested::collect` runs only when `share_nested_offsets` is on, so pin that too.
 
 SET flatten_nested = 1;
 
@@ -44,6 +45,11 @@ WHERE database = currentDatabase() AND table = 't_killed_modify_nested' AND acti
 
 SELECT 'part column type', type FROM system.parts_columns
 WHERE database = currentDatabase() AND table = 't_killed_modify_nested' AND active AND column = 'arr.n';
+
+-- A part cloned unchanged by the mutation would keep `arr.s` and satisfy every assertion above, so
+-- check the dropped member is gone: the column list under test is the one the mutation produced.
+SELECT 'dropped column in part', count() FROM system.parts_columns
+WHERE database = currentDatabase() AND table = 't_killed_modify_nested' AND active AND column = 'arr.s';
 
 SELECT 'metadata column type', type FROM system.columns
 WHERE database = currentDatabase() AND table = 't_killed_modify_nested' AND name = 'arr.n';
