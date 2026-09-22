@@ -41,6 +41,7 @@ public:
     QueryPlanStepPtr clone() const override;
 
     bool hasCorrelatedExpressions() const override { return conditions.hasCorrelatedColumns(); }
+    const ActionsDAG & getConditions() const { return conditions; }
 
 private:
     void updateOutputHeader() override
