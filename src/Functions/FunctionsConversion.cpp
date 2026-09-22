@@ -3470,6 +3470,13 @@ static bool isCompilableNumericConversion(const IDataType * from, const IDataTyp
                     return isBool(right.getPtr());
                 return true;
             }
+            else if constexpr (IsDataTypeNumber<LeftDataType> && IsDataTypeDecimal<RightDataType>)
+                /// The compiled number -> Decimal conversion (`convertCompileImpl`) truncates the source to the
+                /// Decimal's native width and multiplies by the scale without any range check, so a value that does
+                /// not fit the Decimal's precision silently wraps (e.g. `toDecimal32(toInt128(87960930222084), 1)`
+                /// returned 4 instead of raising `DECIMAL_OVERFLOW`, which the interpreter path does). Decline the
+                /// compiled instantiation and let the interpreter perform the checked conversion.
+                return false;
             else if constexpr (IsDataTypeDecimal<LeftDataType> && IsDataTypeNumber<RightDataType>)
             {
                 using RightFieldType = typename RightDataType::FieldType;
