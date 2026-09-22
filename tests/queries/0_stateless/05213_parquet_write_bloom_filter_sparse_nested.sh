@@ -7,11 +7,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # The Parquet writer sizes the initial (not yet folded) bloom filter of a column chunk for the number of
-# values it is going to hash, and clamps it to the 128 MiB that readers accept when that size would exceed
-# the cap. For a repeated or nullable leaf only the entries at the maximum definition level
+# values it is going to hash, and writes no filter at all when that size would exceed the 128 MiB that
+# readers accept. For a repeated or nullable leaf only the entries at the maximum definition level
 # carry a value; the null and empty-array placeholders are never hashed. This checks that the placeholders
 # do not count towards the size: a sparse `Array(Nullable(UInt64))` with one non-null element per row must
-# get exactly the same filter as a plain `UInt64` column holding the same values, instead of a clamped one.
+# get exactly the same filter as a plain `UInt64` column holding the same values, instead of none.
 #
 # 100 definition-level slots per row and a large `bits_per_value` bring the placeholder count past the cap
 # with a small file, standing in for the ~100M placeholders a real column chunk needs at the default setting.
