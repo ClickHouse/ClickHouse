@@ -382,12 +382,15 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
-        else if (ColumnPtr source_null_map = getSourceNullMap(*column_to_cast.column))
+        else if (ColumnPtr source_null_map = getSourceNullMap(*column_to_cast.column);
+                 source_null_map && (column_to_cast.type->isNullable() || !canContainNull(*data_types[i])))
         {
             /// The key stores its NULLs in its own representation, the null map of a `Nullable` or the
             /// discriminators of a `Variant`. Cast only the non-null rows. A nullable key type preserves outer NULLs
             /// for matching with `transform_null_in = 1`; a non-nullable key type excludes them through the combined
             /// null map. Nullable fields inside a non-null tuple remain part of the key value in either mode.
+            /// A `Variant` or `Dynamic` key type stores the NULLs of a `Variant` or `Dynamic` key as its own values,
+            /// the same way a join compares such keys, so those keys convert below as they are.
             result = castColumnAccurateSkipNulls(column_to_cast, target_type_without_nullable, cast_cache.get());
             if (data_types[i]->isNullable())
                 result = ColumnNullable::create(result, source_null_map);

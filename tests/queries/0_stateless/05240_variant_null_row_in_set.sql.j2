@@ -15,4 +15,12 @@ SELECT {{ mode }},
     (n, 1) IN (SELECT toFloat64(0), 1) AS nullable_key_for_reference
 FROM (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)') AS v, CAST(NULL, 'Nullable(UInt8)') AS n)
 SETTINGS transform_null_in = {{ mode }};
+
+-- A `Variant` key type stores the NULL of a `Variant` key as one of its own values, the same way a join compares
+-- such keys, so the NULL row converts as it is and matches a NULL member.
+SELECT {{ mode }},
+    (v, 1) IN (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)'), 1) AS variant_key_null_member,
+    (v, 1) IN (SELECT CAST(7, 'Variant(DateTime64(3, \'UTC\'), UInt8)'), 1) AS variant_key_value_member
+FROM (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)') AS v)
+SETTINGS transform_null_in = {{ mode }};
 {% endfor %}
