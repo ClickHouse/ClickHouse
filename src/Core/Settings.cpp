@@ -3943,7 +3943,7 @@ Possible values:
 
  An experimental variant of `hash` join. The right table is split into partitions that fit the CPU cache. A separate thread inserts each partition into its own range of one shared hash table. The left table is probed against that table and is not partitioned.
 
- The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage. A query with `max_bytes_before_external_join` set also uses the next enabled algorithm, or `hash`.
+ The algorithm supports `INNER`, `LEFT`, `RIGHT` and `FULL` joins with `ALL`, `ANY`, `SEMI` or `ANTI` strictness. It also supports `ASOF` joins, `ON` filters on one side, and several key sets joined by `OR`. With `max_bytes_before_external_join` set, it spills to disk through `grace_hash` like the other hash joins. Other shapes use the next enabled algorithm, or `hash`, at planning time. Examples are an `ON` condition that compares columns of both tables with anything but equality, and a join with a special storage.
 
 - partial_merge
 

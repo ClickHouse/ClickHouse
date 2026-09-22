@@ -40,6 +40,7 @@ extern const Event HashJoinPartitionedBuildHistogramMicroseconds;
 extern const Event HashJoinPartitionedBuildScatterMicroseconds;
 extern const Event HashJoinPartitionedBuildInsertMicroseconds;
 extern const Event HashJoinInsertedRows;
+extern const Event HashJoinScatterGroups;
 extern const Event HashJoinTableResizes;
 }
 
@@ -70,6 +71,12 @@ constexpr size_t max_plan_bits = 15;
 
 constexpr size_t locator_piece_rows = 32768; /// locator synthesis scratch stays L2-resident
 
+size_t ceilDiv(size_t a, size_t b)
+{
+    chassert(b > 0);
+    return a / b + (a % b != 0);
+}
+
 /** Rows an owner's walk reached its range end with: the key (persisted, so the chunk can be freed), its
   * hash and its ref. One buffer per partition, written by the partition's owner, read by the serial
   * drain after the barrier.
@@ -81,6 +88,8 @@ struct OverflowBuffer
     PaddedPODArray<UInt64> refs;
 
     size_t rows() const { return refs.size(); }
+
+    size_t allocatedBytes() const { return keys.allocated_bytes() + hashes.allocated_bytes() + refs.allocated_bytes(); }
 
     template <typename Key>
     void push(const Key & key, UInt64 hash, UInt64 ref)
@@ -774,6 +783,7 @@ struct HashJoinClause::PostBuildContext
     UInt64 drain_claimed = 0;
     UInt64 drain_appended = 0;
     bool drain_all_unique = true;
+    UInt64 rehash_listed = 0;
 
     /// Set for the range currently being scattered. `blockStripe` divides this span among workers.
     size_t block_begin = 0;
@@ -840,12 +850,15 @@ HashJoinClause::HashJoinClause(
     const TableJoin & table_join,
     bool any_take_last_row_,
     size_t num_threads_,
+    size_t max_bytes_before_external_join_,
     std::vector<FillBlock> & build_blocks_,
     std::atomic<size_t> & accumulated_bytes_,
     LoggerPtr log_)
     : hash_join(hash_join_)
     , any_take_last_row(any_take_last_row_)
     , num_threads(num_threads_)
+    , max_bytes_before_external_join(max_bytes_before_external_join_)
+    , grow_budget(max_bytes_before_external_join_)
     , build_blocks(build_blocks_)
     , accumulated_bytes(accumulated_bytes_)
     , maps_variant_index(hash_join.data->maps.empty() ? 1 : hash_join.data->maps.front().index())
@@ -884,12 +897,6 @@ void HashJoinClause::computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) 
 
 bool HashJoinClause::postBuild(size_t rows)
 {
-    /// Typical pipelines deliver blocks under 65536 rows, so the packed encoding usually applies and
-    /// halves the locator transient.
-    narrow_locators = build_blocks.size() <= (1uz << 16);
-    for (const auto & fill : build_blocks)
-        narrow_locators = narrow_locators && fill.block_no < (1u << 16) && fill.rows <= (1uz << 16);
-
     if (bits == 0)
     {
         /// Single-partition has no histogram or scatter stage - every row is inserted straight from the
@@ -1109,6 +1116,38 @@ bool HashJoinClause::growBeforeLastFreeCell(Target & target)
     return true;
 }
 
+/// Read only between block ranges and at a grow, when every scattered chunk has been released, so the
+/// chunks are not counted here.
+size_t HashJoinClause::residentBytes() const
+{
+    /// The join's byte count: the stored blocks and routes, the null maps, the table and the arenas.
+    size_t bytes = accumulated_bytes.load(std::memory_order_relaxed) + hash_join.data->nullmaps_allocated_size + tableAndArenaBytes();
+    if (!post_build_ctx)
+        return bytes;
+    const auto & ctx = *post_build_ctx;
+    for (const auto & overflow : ctx.overflow)
+        bytes += overflow.allocatedBytes();
+    for (const auto & worker : ctx.worker_state)
+        bytes += worker.scratch.allocatedBytes();
+    bytes += ctx.drain_scratch.allocatedBytes();
+    return bytes;
+}
+
+UInt64 HashJoinClause::boundaryProjection(
+    UInt64 claimed_total, UInt64 rows_inserted, UInt64 insertable, double hll_estimate, double reserve_safety)
+{
+    /// The sketch saw every build row, so it is the projection while the exact count is inside its safety
+    /// band. Once keys repeat, a linear extrapolation of the exact count overshoots badly. With 8 rows per
+    /// key, every key has appeared after the first half of the rows, and the linear term would double a
+    /// table whose sketch was right. So the linear term is used only after the exact count has refuted the
+    /// sketch; then nothing better is known.
+    const UInt64 sketch = static_cast<UInt64>(std::ceil(hll_estimate * reserve_safety));
+    if (claimed_total <= sketch)
+        return sketch;
+    const UInt64 extrapolated = rows_inserted > 0 ? claimed_total * insertable / rows_inserted : 0;
+    return std::max(claimed_total, extrapolated);
+}
+
 namespace
 {
 
@@ -1121,7 +1160,7 @@ void placeMapped(Mapped & dest, Mapped && src)
 }
 
 template <typename Table>
-void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason)
+void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
 {
     using Cell = typename Table::cell_type;
     using Key = typename Table::key_type;
@@ -1136,23 +1175,33 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
     }
 
     const size_t need = (1uz << new_degree) * sizeof(Cell);
-    if (new_degree > 32)
+    const size_t entry_bytes = sizeof(Key) + sizeof(size_t) + sizeof(Mapped);
+    /// The rehash lists hold the keys outside their partition's range (every drain claim, an upper bound)
+    /// plus the crossings of the rehash walks. Real builds overflow a few hundred rows; 64 per partition
+    /// is a loose allowance that costs 2 MiB of budget at 1024 partitions.
+    const size_t allowance = entry_bytes * (ctx.drain_claimed + ctx.rehash_listed + 64 * partitions);
+    const bool refused
+        = new_degree > 32 || (grow_budget != 0 && residentBytes() + need + allowance + extra_reserved > grow_budget);
+    if (refused)
     {
         if (reason == GrowReason::LastFreeCell)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "PartitionedHashJoin: the shared hash table of {} cells cannot grow to hold a projection of {} distinct keys "
-                "(need {}); the size estimate that created it was too low",
+                "(need {}, resident {}); the size estimate that created it was too low",
                 table.cellCount(),
                 projected,
-                ReadableSize(need));
-        /// A table at the degree cap keeps its fill; the walks go on until it is full.
+                ReadableSize(need),
+                ReadableSize(residentBytes()));
+        /// A skipped quality grow is expected under a tight budget; it is not a user-facing warning.
         LOG_DEBUG(
             log,
-            "PartitionedHashJoin: skipping a load-factor grow past 2^32 cells; projection {}, current fill {}/{}",
+            "PartitionedHashJoin: skipping a load-factor grow; projection {}, current fill {}/{}, need {}",
             projected,
             occupied,
-            table.cellCount());
+            table.cellCount(),
+            ReadableSize(need));
+        ++stats.load_factor_grow_skipped;
         return;
     }
 
@@ -1222,6 +1271,9 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
             unused_us);
     }
 
+    for (const auto & list : lists)
+        ctx.rehash_listed += list.size();
+
     for (auto & list : lists)
     {
         for (auto & entry : list)
@@ -1259,16 +1311,16 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
     decideAmacEngagement();
 }
 
-void HashJoinClause::grow(UInt64 occupied, UInt64 projected, GrowReason reason)
+void HashJoinClause::grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
 {
     if (!table_maps || !post_build_ctx)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: grow called without a table");
 
     forHashJoinTable(
-        *table_maps, hash_join.data->type, [&](auto & table) { growHashJoinTable(table, occupied, projected, reason); });
+        *table_maps, hash_join.data->type, [&](auto & table) { growHashJoinTable(table, occupied, projected, reason, extra_reserved); });
 }
 
-void HashJoinClause::maybeGrowForLoadFactor(UInt64 projected)
+void HashJoinClause::maybeGrowForLoadFactor(UInt64 projected, size_t extra_reserved)
 {
     const UInt64 occupied = claimedBufferCells();
     forHashJoinTable(
@@ -1277,13 +1329,21 @@ void HashJoinClause::maybeGrowForLoadFactor(UInt64 projected)
         [&](auto & table)
         {
             if (projected > table.maxFill())
-                grow(occupied, projected, GrowReason::LoadFactor);
+                grow(occupied, projected, GrowReason::LoadFactor, extra_reserved);
         });
 }
 
 void HashJoinClause::decidePartitionPlan(size_t rows)
 {
     const HashJoin::Type type = hash_join.data->type;
+    total_rows = rows;
+
+    /// Typical pipelines deliver blocks under 65536 rows, so the packed encoding usually applies and
+    /// halves the locator transient. Decided here because the memory gate and the partition floor's
+    /// guard size the scatter chunk from it before the post-build phase.
+    narrow_locators = build_blocks.size() <= (1uz << 16);
+    for (const auto & fill : build_blocks)
+        narrow_locators = narrow_locators && fill.block_no < (1u << 16) && fill.rows <= (1uz << 16);
 
     /// The table is sized from the sketch over the whole input at the standard 50% max fill; it may
     /// grow during post-build when the estimate was low.
@@ -1339,9 +1399,15 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
                 floor_bits = std::min(floor_bits, *descriptor_cap_bits);
             /// Every range keeps at least 2^10 cells. The table widens for that floor when the
             /// estimate alone sized it smaller (2^12 cells over 1024 keys become 2^13 for 8 workers).
+            /// The scatter the floor introduces holds a locator and the keys of every row at once; a
+            /// memory budget that cannot absorb that keeps the serial insert instead.
             constexpr size_t min_range_bits = 10;
-            bits = floor_bits;
-            size_degree = std::max(size_degree, floor_bits + min_range_bits);
+            const size_t floor_degree = std::max(size_degree, floor_bits + min_range_bits);
+            if (partitionFloorFitsMemory(floor_bits, floor_degree, rows))
+            {
+                bits = floor_bits;
+                size_degree = floor_degree;
+            }
         }
 
         if (forced_bits_for_tests)
@@ -1387,6 +1453,37 @@ void HashJoinClause::createHashJoinTable()
     decideAmacEngagement();
 }
 
+bool HashJoinClause::partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree, size_t rows) const
+{
+    /// Without a memory budget nothing bounds the peak but the query's own memory limit, as for
+    /// `parallel_hash`, whose per-slot tables are never budgeted either.
+    if (max_bytes_before_external_join == 0)
+        return true;
+
+    const HashJoin::Type type = hash_join.data->type;
+    const size_t tables = HashJoinTableMaps::bufferBytesForDegree(maps_variant_index, type, floor_degree);
+
+    /// The ungrouped scatter chunk as `chunkBytesForBlockRange` will size it: the scattered key width,
+    /// one locator per row, the variable-length key bytes and the duplicate scratch.
+    const KeyLayout layout = keyLayout();
+    const size_t locator_width = narrow_locators ? sizeof(UInt32) : sizeof(UInt64);
+    const size_t generic_key_bytes_est = layout.generic ? keyColumnBytes() : 0;
+    const size_t transient = rows * (layout.scatteredKeyWidth() + locator_width) + generic_key_bytes_est
+        + duplicateScratchBytesForRows(rows, /*first_group=*/true);
+
+    /// What is resident whatever the plan: the stored blocks, their null maps and routes, and the
+    /// duplicate spans. Then the post-build gate's ungrouped peak, where the chunk and the table trade
+    /// off range by range.
+    const size_t distinct = distinctEstimate();
+    const size_t tables_and_spans = predictedTableAndArenaBytes(rows, distinct, /*grouped=*/false);
+    const size_t predicted_tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, type, reserveFor(rows, static_cast<double>(distinct)));
+    const size_t spans = tables_and_spans > predicted_tables ? tables_and_spans - predicted_tables : 0;
+    const size_t floor_bytes = hash_join.data->allocated_size + hash_join.data->nullmaps_allocated_size + routeBytes() + spans + generic_key_bytes_est;
+    const size_t floor_partitions = 1uz << floor_bits;
+    const size_t peak = floor_bytes + std::max(transient + tables / floor_partitions, tables + transient / floor_partitions);
+    return peak <= max_bytes_before_external_join;
+}
+
 size_t HashJoinClause::sizeDegreeFor(size_t reserve) const
 {
     const size_t degree = HashJoinTableMaps::sizeDegree(maps_variant_index, hash_join.data->type, reserve);
@@ -1404,6 +1501,14 @@ UInt64 HashJoinClause::insertableRows() const
     for (UInt64 partition_rows : total_bucket_rows)
         rows += partition_rows;
     return rows;
+}
+
+size_t HashJoinClause::routeBytes() const
+{
+    size_t bytes = 0;
+    for (const auto & fill : build_blocks)
+        bytes += fill.routes.allocated_bytes();
+    return bytes;
 }
 
 size_t HashJoinClause::KeyLayout::scatteredKeyWidth() const
@@ -1481,6 +1586,7 @@ bool HashJoinClause::postBuildSinglePartition(size_t rows)
 void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, bool grow_at_max_fill_)
 {
     grow_at_max_fill = grow_at_max_fill_;
+    total_rows = rows;
     /// The barrier's plan already derived these for the post-build path. The single fill thread has no
     /// plan and derives them here, from the hint, before its first block.
     size_degree = sizeDegreeFor(reserve);
@@ -1500,7 +1606,7 @@ void HashJoinClause::beginSinglePartitionInsert(size_t reserve, size_t rows, boo
     createHashJoinTable();
     measureGenericKeyBytes();
     chassert(build_arenas.empty());
-    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(rows));
+    emplaceSizedBuildArena(build_arenas, predictedArenaBytes(rows, post_build_plan == PostBuildPlan::Grouped));
     emplaceSizedBuildArena(build_arenas, 0);
     ctx.worker_state[0].writer.emplace(build_arenas[0]);
     ctx.drain_writer.emplace(build_arenas[1]);
@@ -1619,7 +1725,7 @@ void HashJoinClause::verifyPublishedTable(const Table & table) const
 #endif
 }
 
-size_t HashJoinClause::predictedTableAndArenaBytes(size_t rows, size_t distinct) const
+size_t HashJoinClause::predictedTableAndArenaBytes(size_t rows, size_t distinct, bool grouped, size_t groups_est_) const
 {
     const size_t distinct_keys = std::max(distinct, 1uz);
     const size_t reserve = reserveFor(rows, static_cast<double>(distinct_keys));
@@ -1634,7 +1740,8 @@ size_t HashJoinClause::predictedTableAndArenaBytes(size_t rows, size_t distinct)
     /// Multiplicity inside `reserve_safety` is treated as unique for the arena term. A fill-phase
     /// distinct estimate that lags the row count by a sixteenth, or a HyperLogLog that undershoots
     /// by a percent, would otherwise look like `m > 1`. That would charge every row of a unique build
-    /// to the arena. Real duplicate builds (m=5, m=8) sit far above the band. The factor already
+    /// to the arena, enough to spill a build that fits. Real duplicate builds (m=5, m=8) sit far above
+    /// the band. The factor already
     /// covers sketch error for the table reserve; reusing it here keeps the unique/duplicate decision on
     /// the same inputs.
     if (maps_variant_index == 1)
@@ -1644,27 +1751,140 @@ size_t HashJoinClause::predictedTableAndArenaBytes(size_t rows, size_t distinct)
         {
             /// Every row of a duplicated key lives in the arena, the once-inline row included.
             bytes += sizeof(UInt64) * rows;
+            /// A grouped scatter writes a span header for every key appended in a later group.
+            /// `groups_est_` is computed from the ungrouped floor so this term cannot feed back into itself.
+            if (grouped && groups_est_ > 1)
+            {
+                const size_t dup_rows = rows > distinct_keys ? rows - distinct_keys : 0;
+                const size_t dup_keys = std::min(distinct_keys, dup_rows);
+                const size_t extra_groups = groups_est_ - 1;
+                size_t headers = dup_rows;
+                if (dup_keys != 0 && extra_groups <= std::numeric_limits<size_t>::max() / dup_keys)
+                    headers = std::min(dup_rows, dup_keys * extra_groups);
+                bytes += SpanWriter::span_header_bytes * headers;
+            }
         }
     }
     return bytes;
 }
 
-size_t HashJoinClause::predictedArenaBytes(size_t insertable_rows) const
+size_t HashJoinClause::predictedArenaBytes(size_t insertable_rows, bool grouped) const
 {
-    /// Variable-length keys are copied into the arena; that total is measured once before the
+    /// Duplicate-span bytes come from the shared helper so the fill-phase prediction and the gate cannot
+    /// drift. Variable-length keys are copied into the arena; that total is measured once before the
     /// first range is scattered, because a consumed range has dropped its key columns.
     const size_t distinct = distinctEstimate();
-    const size_t tables_and_spans = predictedTableAndArenaBytes(insertable_rows, distinct);
+    const size_t tables_and_spans = predictedTableAndArenaBytes(insertable_rows, distinct, grouped, grouped ? groups_est : 1uz);
     const size_t tables = HashJoinTableMaps::predictedBufferBytes(maps_variant_index, hash_join.data->type, reserveFor(insertable_rows, static_cast<double>(distinct)));
     chassert(tables_and_spans >= tables);
     return tables_and_spans - tables + generic_key_bytes;
 }
 
+size_t HashJoinClause::duplicateScratchBytesForRows(size_t rows_in_range, bool first_group) const
+{
+    if (total_rows == 0 || hll_estimate >= static_cast<double>(total_rows) || rows_in_range == 0)
+        return 0;
+    const double f = 1.0 - hll_estimate / static_cast<double>(total_rows);
+    const size_t rows_dup = static_cast<size_t>(std::ceil(std::min(1.0, 2.0 * f) * static_cast<double>(rows_in_range)));
+    /// The keys a range appends to are at most the build's distinct keys, which the sketch bounds; the
+    /// duplicate rows do not. Charging every duplicate row as a new key overcharges a range by up to a
+    /// quarter and cuts the groups short.
+    const size_t distinct = static_cast<size_t>(std::ceil(hll_estimate * reserve_safety));
+    if (first_group)
+    {
+        const size_t dup_keys = static_cast<size_t>(std::ceil(f * static_cast<double>(rows_in_range)));
+        return PassScratch::bytes_per_item * rows_dup + PassScratch::bytes_per_key * std::min(distinct, dup_keys);
+    }
+    /// In a later group every appended key already has a span, so its first duplicate also stores the
+    /// previous word as an item.
+    return PassScratch::bytes_per_item * rows_dup + (PassScratch::bytes_per_item + PassScratch::bytes_per_key) * std::min(distinct, rows_dup);
+}
+
+size_t HashJoinClause::predictedArenaBytesForTests(bool grouped) const
+{
+    return predictedArenaBytes(total_rows, grouped);
+}
+
+size_t HashJoinClause::predictedDuplicateScratchBytesForTests(size_t rows_in_range, bool first_group) const
+{
+    return duplicateScratchBytesForRows(rows_in_range, first_group);
+}
+
 /// Variable-length keys are copied into the arena, so their bytes join the arena term. Measured while
-/// every block still holds its keys.
+/// every block still holds its keys, so the gate and the group-boundary re-checks agree on it.
 void HashJoinClause::measureGenericKeyBytes()
 {
     generic_key_bytes = keyLayout().generic ? keyColumnBytes() : 0;
+}
+
+size_t HashJoinClause::chunkBytesForBlockRange(size_t b0, size_t b1) const
+{
+    chassert(post_build_ctx);
+    const auto & ctx = *post_build_ctx;
+    const size_t locator_width = narrow_locators ? sizeof(UInt32) : sizeof(UInt64);
+    size_t bytes = 0;
+    size_t rows_in_range = 0;
+    for (size_t b = b0; b < b1; ++b)
+    {
+        const FillBlock & fill = build_blocks[b];
+        rows_in_range += fill.rows;
+        if (ctx.generic_mode)
+        {
+            size_t key_bytes = 0;
+            for (const auto * column : fill.key_columns)
+                key_bytes += column->byteSize();
+            bytes += key_bytes + fill.rows * (sizeof(UInt64) * ctx.num_key_columns + locator_width);
+        }
+        else
+        {
+            size_t key_width = 0;
+            for (size_t w : ctx.fixed_widths)
+                key_width += w;
+            bytes += fill.rows * (key_width + locator_width);
+        }
+        if (ctx.multi_pass)
+            bytes += fill.rows * sizeof(UInt16);
+    }
+
+    bytes += duplicateScratchBytesForRange(rows_in_range, /*first_group=*/b0 == 0);
+    return bytes;
+}
+
+size_t HashJoinClause::duplicateScratchBytesForRange(size_t rows_in_range, bool first_group) const
+{
+    if (rows_in_range == 0)
+        return 0;
+
+    /// An owner finishes its scratch after every partition it claims, so at most `workers` partitions of
+    /// scratch are live at once: the largest ones, in the worst case. A partition's rows in this range are
+    /// estimated from its share of the whole build (`total_bucket_rows`, sorted largest first in
+    /// `partition_order`) at twice the range's row fraction, capped by its total. Charging the whole range's
+    /// duplicate rows overcharges by an order of magnitude; charging `workers` times the largest partition's
+    /// total makes a Zipf build plan dozens of groups.
+    const auto & ctx = *post_build_ctx;
+    const UInt64 insertable = insertableRows();
+    UInt64 top_rows = 0;
+    const size_t live = std::min<size_t>(ctx.workers, ctx.partition_order.size());
+    for (size_t i = 0; i < live; ++i)
+        top_rows += total_bucket_rows[ctx.partition_order[i]];
+    size_t live_rows = top_rows;
+    if (insertable > 0)
+    {
+        const double share = 2.0 * static_cast<double>(rows_in_range) / static_cast<double>(insertable);
+        live_rows = std::min<size_t>(top_rows, static_cast<size_t>(std::ceil(static_cast<double>(top_rows) * share)));
+    }
+    size_t bytes = duplicateScratchBytesForRows(std::min(live_rows, live * rows_in_range), first_group);
+
+    /// The drain's scratch is finished once per group and holds the rows whose owner walk reached its range
+    /// end. Charged at twice the rate seen so far; one row in 1024 before anything was inserted.
+    const UInt64 rows_so_far = ctx.insertedRows();
+    const UInt64 overflow_so_far = ctx.drain_claimed + ctx.drain_appended;
+    size_t drain_rows = rows_in_range / 1024;
+    if (rows_so_far > 0)
+        drain_rows = static_cast<size_t>(std::ceil(
+            2.0 * static_cast<double>(overflow_so_far) / static_cast<double>(rows_so_far) * static_cast<double>(rows_in_range)));
+    bytes += duplicateScratchBytesForRows(std::min(drain_rows, rows_in_range), /*first_group=*/false);
+    return bytes;
 }
 
 void HashJoinClause::reduceWorkerHistogram()
@@ -1763,12 +1983,83 @@ void HashJoinClause::preparePostBuildContext()
     createHashJoinTable();
 
     measureGenericKeyBytes();
-    const size_t arena_pred = predictedArenaBytes(insertableRows());
+    const size_t arena_pred = predictedArenaBytes(insertableRows(), post_build_plan == PostBuildPlan::Grouped);
     const size_t per_worker = arena_pred / ctx.workers;
     chassert(build_arenas.empty());
     for (size_t w = 0; w < ctx.workers; ++w)
         emplaceSizedBuildArena(build_arenas, per_worker);
     emplaceSizedBuildArena(build_arenas, /*predicted_bytes=*/0); /// the drain's arena
+}
+
+HashJoinClause::PostBuildPlan HashJoinClause::planPostBuild(size_t rows)
+{
+    if (max_bytes_before_external_join == 0)
+    {
+        post_build_plan = PostBuildPlan::Fits;
+        return post_build_plan;
+    }
+
+    const size_t row_store = hash_join.data->allocated_size + hash_join.data->nullmaps_allocated_size;
+    const size_t routes = routeBytes();
+    measureGenericKeyBytes();
+
+    if (bits == 0)
+    {
+        const size_t insertable = rows;
+        const size_t distinct = distinctEstimate();
+        /// The single-partition path inserts straight from the stored blocks, so there is no transient
+        /// to bound and grouping has nothing to do. Table and duplicate runs go through the shared
+        /// helper so this verdict cannot drift from the fill-phase prediction.
+        const size_t resident
+            = row_store + routes + predictedTableAndArenaBytes(insertable, distinct, /*grouped=*/false) + generic_key_bytes;
+        post_build_plan = resident <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
+        return post_build_plan;
+    }
+
+    preparePostBuildContext();
+    const UInt64 insertable = insertableRows();
+
+    /// What must be resident whatever the scatter schedule is. The grouped arena term needs `groups_est`;
+    /// it is computed from this ungrouped floor, so the header charge cannot feed back into itself.
+    const size_t floor_bytes = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/false);
+    const size_t tables = ht_total_bytes;
+    const size_t chunk_all = chunkBytesForBlockRange(0, build_blocks.size());
+    const size_t headroom_for_groups
+        = max_bytes_before_external_join > floor_bytes + tables ? max_bytes_before_external_join - floor_bytes - tables : 1;
+    groups_est = std::max(1uz, ceilDiv(chunk_all, headroom_for_groups));
+    const size_t floor_bytes_grouped = row_store + routes + predictedArenaBytes(insertable, /*grouped=*/true);
+
+    /// The ungrouped scatter never holds the whole chunk next to the whole table: an owner commits its
+    /// range and frees that partition's chunk in the same claim, so the peak sits at one end of the wave.
+    const size_t peak_ungrouped = floor_bytes + std::max(chunk_all + tables / partitions, tables + chunk_all / partitions);
+
+    /// Grouping holds the full table from the first range (every realistic range touches every partition)
+    /// plus one range's chunk. It lowers the peak only while the chunk dominates the table; when the table
+    /// dominates, grouping adds `chunk / g` on top and is strictly worse. Its floor, as ranges get finer,
+    /// is one block's chunk.
+    const size_t grouped_floor = floor_bytes_grouped + tables + chunkBytesForBlockRange(0, 1);
+
+    if (peak_ungrouped <= max_bytes_before_external_join)
+        post_build_plan = PostBuildPlan::Fits;
+    else if (grouped_floor <= max_bytes_before_external_join && grouped_floor < peak_ungrouped)
+        post_build_plan = PostBuildPlan::Grouped;
+    else
+        post_build_plan = PostBuildPlan::MustSpill;
+
+    LOG_TRACE(
+        log,
+        "Post-build gate: budget {}, row store + routes + arena {}, table {}, full chunk {}; predicted peak without grouping "
+        "{}, floor with grouping {} -> {}",
+        ReadableSize(max_bytes_before_external_join),
+        ReadableSize(floor_bytes),
+        ReadableSize(tables),
+        ReadableSize(chunk_all),
+        ReadableSize(peak_ungrouped),
+        ReadableSize(grouped_floor),
+        post_build_plan == PostBuildPlan::Fits ? "ungrouped scatter"
+            : post_build_plan == PostBuildPlan::Grouped ? "grouped scatter"
+                                                        : "over budget");
+    return post_build_plan;
 }
 
 void HashJoinClause::runGroupStages(size_t block_begin, size_t block_end)
@@ -1850,7 +2141,9 @@ void HashJoinClause::runGroupStages(size_t block_begin, size_t block_end)
     UInt64 group_overflow = 0;
     for (const auto & overflow : ctx.overflow)
         group_overflow += overflow.rows();
-    maybeGrowForLoadFactor(claimedTotal() + group_overflow);
+    maybeGrowForLoadFactor(
+        claimedTotal() + group_overflow,
+        ctx.block_end < build_blocks.size() ? chunkBytesForBlockRange(ctx.block_end, ctx.block_end + 1) : 0);
     drainOverflow(ctx);
     const UInt64 drain_wall_us = stage_watch.elapsedMicroseconds();
 
@@ -1894,13 +2187,75 @@ bool HashJoinClause::postBuildPartitioned()
         ctx.worker_state[w].writer.emplace(build_arenas[w]);
     ctx.drain_writer.emplace(build_arenas[ctx.workers]);
 
-    runGroupStages(0, build_blocks.size());
+    size_t groups = 0;
+    size_t b = 0;
+    while (b < build_blocks.size())
+    {
+        if (groups > 0)
+        {
+            const UInt64 projected
+                = boundaryProjection(claimedTotal(), ctx.insertedRows(), insertableRows(), hll_estimate, reserve_safety);
+            maybeGrowForLoadFactor(projected, chunkBytesForBlockRange(b, b + 1));
+        }
 
-    /// Ranges no owner claimed are committed now, so the whole table is accounted and the probe never
+        size_t end = b + 1;
+        size_t chunk = 0;
+        size_t one_block = 0;
+        size_t resident_at_plan = 0;
+        if (max_bytes_before_external_join == 0 || post_build_plan == PostBuildPlan::Fits)
+        {
+            end = build_blocks.size();
+        }
+        else
+        {
+            /// `residentBytes` is actuals (row store, remaining routes, committed table, arenas,
+            /// overflow buffers, scratch capacity). Uncommitted ranges and the still-unallocated
+            /// duplicate runs are charged from the gate's predictions so the first range is not sized
+            /// as if those bytes were free.
+            resident_at_plan = residentBytes();
+            size_t used = resident_at_plan;
+            const size_t committed = table_maps->getBufferSizeInBytes(hash_join.data->type);
+            if (ht_total_bytes > committed)
+                used += ht_total_bytes - committed;
+            size_t arena_actual = 0;
+            for (const auto & arena : build_arenas)
+                arena_actual += arena.allocatedBytes();
+            const size_t arena_pred = predictedArenaBytes(insertableRows(), post_build_plan == PostBuildPlan::Grouped);
+            if (arena_pred > arena_actual)
+                used += arena_pred - arena_actual;
+
+            const size_t headroom = used < max_bytes_before_external_join ? max_bytes_before_external_join - used : 0;
+            while (end < build_blocks.size() && chunkBytesForBlockRange(b, end + 1) <= headroom)
+                ++end;
+            /// A range is never empty: the loop has to make progress, and a single block's chunk is
+            /// bounded by its row count, so the overshoot is at most that block. The budget is a
+            /// target, `max_memory_usage` is the cap. This path is only for when the actuals drifted
+            /// past the gate's prediction.
+            chunk = chunkBytesForBlockRange(b, end);
+            one_block = chunkBytesForBlockRange(b, b + 1);
+            if (chunk > headroom)
+                LOG_DEBUG(
+                    log,
+                    "Grouped scatter: one block's chunk ({}) exceeds the remaining headroom ({}); scattering it anyway, because a "
+                    "range cannot be empty",
+                    ReadableSize(chunk),
+                    ReadableSize(headroom));
+        }
+        runGroupStages(b, end);
+        stats.scatter_group_ranges.push_back(
+            {.begin = b, .end = end, .chunk_bytes = chunk, .one_block_chunk_bytes = one_block, .resident_bytes = resident_at_plan});
+        b = end;
+        ++groups;
+    }
+
+    /// Ranges no group touched are committed now, so the whole table is accounted and the probe never
     /// reads an uncommitted page.
     for (size_t partition = 0; partition < partitions; ++partition)
         if (!ctx.range_committed[partition])
             commitRange(partition);
+
+    stats.scatter_groups = std::max<size_t>(groups, 1);
+    ProfileEvents::increment(ProfileEvents::HashJoinScatterGroups, stats.scatter_groups);
 
     bool all_values_unique = ctx.drain_all_unique;
     for (const auto & worker : ctx.worker_state)
@@ -1949,6 +2304,9 @@ UInt64 HashJoinClause::claimedTotal() const
 
 void HashJoinClause::drainOverflow(PostBuildContext & ctx)
 {
+    if (grow_budget_for_drain_for_tests)
+        grow_budget = *grow_budget_for_drain_for_tests;
+
     const HashJoin::Type type = hash_join.data->type;
     UInt64 drained = 0;
     for (size_t partition = 0; partition < partitions; ++partition)
