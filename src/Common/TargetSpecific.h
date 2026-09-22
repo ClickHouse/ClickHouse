@@ -227,7 +227,7 @@ END_TARGET_SPECIFIC_CODE
  */
 #define DECLARE_ARM_SVE_SPECIFIC_CODE(...)
 
-#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 
 #define USE_MULTITARGET_CODE 0
 #define USE_ARM_MULTITARGET_CODE 1
@@ -402,7 +402,7 @@ DECLARE_ARM_SVE_SPECIFIC_CODE(
 
 #define MULTITARGET_FUNCTION_X86_V4_V3_ARM_SVE MULTITARGET_FUNCTION_X86_V4_V3
 
-#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__)
+#elif ENABLE_MULTITARGET_CODE && defined(__GNUC__) && defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 
 #define MULTITARGET_FUNCTION_X86_V4(FUNCTION_HEADER, name, FUNCTION_BODY) \
 FUNCTION_HEADER \

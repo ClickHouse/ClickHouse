@@ -6,9 +6,13 @@
 #include <cpuid.h>
 #endif
 
-#if defined(__aarch64__) && defined(__linux__)
+#if defined(__aarch64__) && (defined(__linux__) || defined(__FreeBSD__))
 #include <sys/auxv.h>
+/// FreeBSD's <sys/auxv.h> pulls in <machine/elf.h>, which already defines HWCAP_SVE
+/// with the same bit value as Linux, so <asm/hwcap.h> is Linux-only.
+#if defined(__linux__) && !defined(HWCAP_SVE)
 #include <asm/hwcap.h>
+#endif
 #endif
 
 #include <cstring>
@@ -404,6 +408,11 @@ inline bool haveSVE() noexcept
       */
     const UInt64 hwcap = getauxval(AT_HWCAP);
     return (hwcap & HWCAP_SVE) != 0;
+#elif defined(__aarch64__) && defined(__FreeBSD__)
+    /// FreeBSD has no getauxval(); elf_aux_info() is the portable equivalent (see elf_aux_info(3)).
+    /// AT_HWCAP / HWCAP_SVE share the same values as Linux.
+    unsigned long hwcap = 0;
+    return elf_aux_info(AT_HWCAP, &hwcap, sizeof(hwcap)) == 0 && (hwcap & HWCAP_SVE) != 0;
 #else
     return false;
 #endif
