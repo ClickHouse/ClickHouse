@@ -793,7 +793,10 @@ DataTypePtr typeFromStorageClass(int storage_class)
 
 /// Whether the value of this storage class is read into the ClickHouse type mapped from a declared SQLite
 /// type without being coerced into another value. `String` is read from the text rendering of the cell, so
-/// every storage class agrees with it; a `NULL` cell carries no type information at all.
+/// every storage class agrees with it. A `NULL` cell carries no type information at all, so it cannot
+/// contradict the declared type either: it leaves the declared type in place, exactly like an empty result
+/// does, instead of widening a declared `INTEGER` column whose first value happens to be `NULL` to `String`.
+/// A later row of another storage class is caught by the fail-closed read path of a query-backed source.
 bool declaredTypeAgreesWithStorageClass(const IDataType & declared_type, int storage_class)
 {
     if (storage_class == SQLITE_NULL || isString(declared_type))
@@ -826,7 +829,8 @@ ColumnsDescription doQueryResultStructure(sqlite3 * sqlite_db, const String & qu
     /// `sqlite3_column_int64` and silently turn them into `0`. So whenever a declared type maps to a numeric
     /// ClickHouse type - the only case with a coercing accessor to guard - the first row is fetched and the
     /// declared type is used only if the storage class of that row agrees with it; otherwise the column is
-    /// typed from the storage class, exactly like an undeclared one. This only ever widens the inferred type
+    /// typed from the storage class, exactly like an undeclared one. A `NULL` first value and an empty result
+    /// are no evidence against the declared type, so both keep it. This only ever widens the inferred type
     /// (to `Float64`, or to `String`), never narrows it. Later rows are covered by the read path, which is
     /// fail-closed for every column of a query-backed read.
     const auto wrapped = "SELECT * FROM (" + query + ") AS __subquery";
