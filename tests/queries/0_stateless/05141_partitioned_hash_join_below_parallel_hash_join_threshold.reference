@@ -13,6 +13,14 @@ right nullable	34103	1
 any	50000	1
 semi	38000	1
 anti	12000	1
+spill switch during the one-thread build	50000	1
+-- right and full joins under a spill budget, with several probe streams and with one
+spill right	38000	1
+spill right one stream	38000	1
+spill full one stream	50000	1
+-- the spilling wrapper keeps the shape: one filling transform below the threshold, delayed ports
+1	1
+4	1
 -- asof, a one-row build and a 50000-row build, all below the threshold
 asof	20000	1
 one row	13	1
@@ -21,22 +29,28 @@ one row right	13	1
 50k full	96000	1
 -- a planner estimate far below the real row count only makes the table grow
 low hint	50000	1
--- inner again with the threshold off (parallel build, one partition per thread)
+-- inner and spill again with the threshold off (parallel build, one partition per thread)
 parallel inner	38000	1
--- one partition, rows inserted, table growth only for the low hint
-05141 50k	1	1	0
-05141 50k full	1	1	0
-05141 anti	1	1	0
-05141 any	1	1	0
-05141 asof	1	1	0
-05141 full	1	1	0
-05141 inner	1	1	0
-05141 left	1	1	0
-05141 low hint	1	1	1
-05141 one row	1	1	0
-05141 one row right	1	1	0
-05141 parallel inner	4	1	0
-05141 right	1	1	0
-05141 right nullable	1	1	0
-05141 semi	1	1	0
-05141 string	1	1	0
+parallel spill	50000	1
+-- one partition, rows inserted, table growth only for the low hint, the spill queries switched to grace
+05141 50k	1	1	0	0
+05141 50k full	1	1	0	0
+05141 anti	1	1	0	0
+05141 any	1	1	0	0
+05141 asof	1	1	0	0
+05141 full	1	1	0	0
+05141 inner	1	1	0	0
+05141 left	1	1	0	0
+05141 low hint	1	1	1	0
+05141 one row	1	1	0	0
+05141 one row right	1	1	0	0
+05141 parallel inner	4	1	0	0
+05141 parallel spill	0	0	0	1
+05141 right	1	1	0	0
+05141 right nullable	1	1	0	0
+05141 semi	1	1	0	0
+05141 spill	0	1	0	1
+05141 spill full one stream	0	1	0	1
+05141 spill right	0	1	0	1
+05141 spill right one stream	0	1	0	1
+05141 string	1	1	0	0

@@ -8,8 +8,11 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
+#include <Common/CurrentThread.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadPool.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
@@ -79,11 +82,13 @@ PartitionedHashJoin::PartitionedHashJoin(
     size_t num_threads_,
     bool any_take_last_row_,
     const HashJoinStatsCollectingParams & stats_collecting_params_,
+    size_t max_bytes_before_external_join_,
     std::optional<size_t> build_rows_hint_)
     : table_join(std::move(table_join_))
     , right_sample_block(std::move(right_sample_block_))
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
+    , max_bytes_before_external_join(max_bytes_before_external_join_)
     , hash_join(
           std::make_unique<HashJoin>(
               table_join,
@@ -101,7 +106,7 @@ PartitionedHashJoin::PartitionedHashJoin(
     , stats_collecting_params(stats_collecting_params_.build)
     , match_stats_collecting_params(stats_collecting_params_.match)
     , log(getLogger("PartitionedHashJoin"))
-    , clause(*hash_join, *table_join, any_take_last_row, num_threads, build_blocks, accumulated_bytes, log)
+    , clause(*hash_join, *table_join, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log)
 {
     if (!HashJoinTableMaps::isSupportedType(hash_join->data->type))
         throw Exception(
@@ -159,6 +164,7 @@ bool PartitionedHashJoin::isSupported(const TableJoin & table_join)
     /// ON-constant joins. Those are routed before the algorithm loop. Also out: mixed non-equi ON
     /// conditions. The parallel `hash` layout serves those better than a delegated single-threaded
     /// build would.
+    /// A memory limit is no reason to decline: the planner wraps this join in `SpillingHashJoin` instead.
     const JoinKind kind = table_join.kind();
     const JoinStrictness strictness = table_join.strictness();
 
@@ -237,7 +243,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     /// `num_rows` only matters for the columnless CROSS blocks this algorithm never plans.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
-    if (build_phase_finished)
+    if (build_phase_finished || stored_blocks_released)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: addBlockToJoin called after the build phase finished");
 
     if (delegate_mode)
@@ -447,8 +453,8 @@ void PartitionedHashJoin::onBuildPhaseFinish()
 
     /// Run once by the last fill thread, and deliberately cheap: concatenate the lanes, number the
     /// row-store blocks, merge the sketches, pick the plan. The scatter, allocation and inserts are
-    /// `runPostBuildPhase`'s work. The lock is taken exclusively, so the merge cannot race a fill
-    /// thread's `add`.
+    /// `runPostBuildPhase`'s work. The lock is taken exclusively, as `liveDistinctEstimate` takes it, so
+    /// the merge cannot race a fill thread's `add`.
     DenseHyperLogLog merged;
     size_t total_blocks = 0;
     {
@@ -472,6 +478,18 @@ void PartitionedHashJoin::onBuildPhaseFinish()
         storeBlockInRowStore(fill);
     clause.decidePartitionPlan(accumulated_rows.load(std::memory_order_relaxed));
     ProfileEvents::increment(ProfileEvents::HashJoinPartitions, clause.partitionCount());
+}
+
+PartitionedHashJoin::PostBuildPlan PartitionedHashJoin::planPostBuild()
+{
+    if (max_bytes_before_external_join == 0 || delegate_mode)
+        return PostBuildPlan::Fits;
+
+    /// Everything is already resident: the stored blocks, the table and the duplicate runs.
+    if (single_fill_thread)
+        return getTotalByteCount() <= max_bytes_before_external_join ? PostBuildPlan::Fits : PostBuildPlan::MustSpill;
+
+    return clause.planPostBuild(accumulated_rows.load(std::memory_order_relaxed));
 }
 
 void PartitionedHashJoin::runPostBuildPhase()
@@ -600,6 +618,65 @@ size_t PartitionedHashJoin::getTotalByteCount() const
     return accumulated_bytes.load(std::memory_order_relaxed) + storedData().nullmaps_allocated_size + clause.tableAndArenaBytes();
 }
 
+size_t PartitionedHashJoin::liveDistinctEstimate() const
+{
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t last_rows = distinct_estimate_at_rows.load(std::memory_order_acquire);
+    const size_t cached = cached_distinct_estimate.load(std::memory_order_relaxed);
+
+    if (cached != 0 && rows <= last_rows + last_rows / 16)
+        return cached;
+
+    std::lock_guard lock(fill_mutex);
+    const size_t last_rows_locked = distinct_estimate_at_rows.load(std::memory_order_relaxed);
+    const size_t cached_locked = cached_distinct_estimate.load(std::memory_order_relaxed);
+    if (cached_locked != 0 && rows <= last_rows_locked + last_rows_locked / 16)
+        return cached_locked;
+
+    DenseHyperLogLog merged;
+    for (const auto & lane : lanes)
+        merged.merge(lane.hll);
+
+    /// Floor at 1 so a still-empty sketch does not size the prediction as a zero-byte table. The
+    /// post-build gate uses the same floor on `hll_estimate`. The value is not kept monotone: an
+    /// early small-sample HyperLogLog can overshoot, and locking that in would charge duplicate-run
+    /// bytes for keys that do not exist.
+    const size_t estimate = std::max(static_cast<size_t>(std::llround(merged.estimate())), 1uz);
+    cached_distinct_estimate.store(estimate, std::memory_order_relaxed);
+    distinct_estimate_at_rows.store(rows, std::memory_order_release);
+    return estimate;
+}
+
+size_t PartitionedHashJoin::predictedResidentBytes(bool at_barrier) const
+{
+    if (delegate_mode)
+        return hash_join->getTotalByteCount();
+
+    if (single_fill_thread)
+    {
+        /// The table already exists and doubles in place while the old buffer is still alive, so the
+        /// peak ahead is the resident set plus two more table buffers. At the barrier every row is in,
+        /// and only a table past its maximum fill still has that doubling ahead of it.
+        const HashJoin::Type type = hash_join->data->type;
+        const size_t table_bytes = clause.hasTable() ? clause.tableMaps().getBufferSizeInBytes(type) : 0;
+        if (at_barrier && (!clause.hasTable() || clause.claimedTotal() <= clause.tableMaps().maxFill(type)))
+            return getTotalByteCount();
+        return getTotalByteCount() + 2 * table_bytes;
+    }
+
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    const size_t bytes = accumulated_bytes.load(std::memory_order_relaxed);
+    return bytes + clause.predictedTableAndArenaBytes(rows, liveDistinctEstimate(), /*grouped=*/false);
+}
+
+size_t PartitionedHashJoin::graceInMemoryEstimateBytes() const
+{
+    const auto & data = storedData();
+    const size_t rows = accumulated_rows.load(std::memory_order_relaxed);
+    return data.allocated_size + data.nullmaps_allocated_size
+        + clause.predictedTableAndArenaBytes(rows, clause.distinctEstimate(), /*grouped=*/false);
+}
+
 StepAnalysisReport PartitionedHashJoin::getAnalysisReport() const
 {
     if (delegate_mode)
@@ -692,6 +769,7 @@ PartitionedHashJoin::clone(const std::shared_ptr<TableJoin> & table_join_, Share
         num_threads,
         any_take_last_row,
         HashJoinStatsCollectingParams{.build = stats_collecting_params, .match = match_stats_collecting_params},
+        max_bytes_before_external_join,
         build_rows_hint);
 }
 
@@ -712,6 +790,126 @@ PartitionedHashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_jo
 void PartitionedHashJoin::setEnableLazyColumnsIndexing(bool value)
 {
     hash_join->setEnableLazyColumnsIndexing(value);
+}
+
+size_t PartitionedHashJoin::getNumFillLanes() const
+{
+    return lanes.size();
+}
+
+void PartitionedHashJoin::dropFillAuxiliary()
+{
+    for (auto & lane : lanes)
+        for (auto & fill : lane.blocks)
+            accumulated_bytes.fetch_sub(fill.releaseInputs(), std::memory_order_relaxed);
+    for (auto & fill : build_blocks)
+        accumulated_bytes.fetch_sub(fill.releaseInputs(), std::memory_order_relaxed);
+}
+
+Block PartitionedHashJoin::releaseNextFillLaneBlock(size_t lane)
+{
+    chassert(lane < lanes.size());
+    auto & blocks = lanes[lane].blocks;
+    if (blocks.empty())
+        return {};
+
+    FillBlock fill = std::move(blocks.back());
+    blocks.pop_back();
+    if (blocks.empty())
+        blocks.shrink_to_fit();
+
+    /// `dropFillAuxiliary` has usually released the routes already and left an empty array. Its
+    /// `allocated_bytes` still reports the padding, so count only what is really held.
+    const size_t route_bytes = fill.routes.empty() ? 0 : fill.routes.allocated_bytes();
+    accumulated_bytes.fetch_sub(fill.stored.allocatedBytes() + route_bytes, std::memory_order_relaxed);
+    return storedBlockToBlock(std::move(fill.stored));
+}
+
+Block PartitionedHashJoin::storedBlockToBlock(StoredBlock && stored) const
+{
+    const auto & data = *hash_join->data;
+    return data.sample_block.cloneWithColumns(HashJoin::materializeStoredBlock(stored, data.column_access_indexes));
+}
+
+void PartitionedHashJoin::beginStoredBlockDrain()
+{
+    stored_blocks_released = true;
+    build_blocks.clear();
+    build_blocks.shrink_to_fit();
+    clause.releaseTable();
+}
+
+Block PartitionedHashJoin::releaseNextStoredBlock()
+{
+    if (!hash_join->data)
+        return {};
+    if (storedBlocks().empty())
+    {
+        hash_join->data.reset();
+        return {};
+    }
+
+    auto & data = *hash_join->data;
+    auto & blocks = storedBlocks();
+    StoredBlock stored = std::move(blocks.front());
+    blocks.pop_front();
+    data.subBytes(data.allocated_size, stored.allocatedBytes());
+
+    Block out = storedBlockToBlock(std::move(stored));
+
+    if (blocks.empty())
+        hash_join->data.reset();
+    return out;
+}
+
+void PartitionedHashJoin::drainStoredBlocksInto(IJoin & target)
+{
+    chassert(stored_blocks_released);
+
+    const size_t blocks = hash_join->data ? storedBlocks().size() : 0;
+    const size_t workers = std::min(num_threads, blocks);
+    if (workers <= 1)
+    {
+        for (Block block = releaseNextStoredBlock(); !block.empty(); block = releaseNextStoredBlock())
+            target.addBlockToJoin(block, block.rows(), /*worker_id=*/0, /*check_limits=*/false);
+        return;
+    }
+
+    /// The pop is a list front and a few counters, so one mutex serializes it cheaply; the scatter,
+    /// compression and write inside `target.addBlockToJoin` run in parallel, one target worker each.
+    std::mutex pop_mutex;
+    auto drain = [&](size_t worker_id)
+    {
+        while (true)
+        {
+            Block block;
+            {
+                std::lock_guard lock(pop_mutex);
+                block = releaseNextStoredBlock();
+            }
+            if (block.empty())
+                return;
+            target.addBlockToJoin(block, block.rows(), worker_id, /*check_limits=*/false);
+        }
+    };
+
+    auto pool = HashJoinClause::makePostBuildPool(workers);
+    try
+    {
+        for (size_t w = 0; w < workers; ++w)
+            pool->scheduleOrThrow(
+                [&drain, w, thread_group = CurrentThread::getGroup()]
+                {
+                    ThreadGroupSwitcher switcher(thread_group, ThreadName::PARTITIONED_JOIN);
+                    drain(w);
+                });
+        pool->wait();
+    }
+    catch (...)
+    {
+        pool->wait();
+        throw;
+    }
 }
 
 }

@@ -74,7 +74,37 @@ SELECT 'inner all, zipf build probed by a zipf sample', h.1, h = pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.v, b.v))) FROM (SELECT * FROM t_ird_zipf WHERE v % 1000 = 0) AS p INNER JOIN t_ird_zipf AS b ON p.k = b.k SETTINGS join_algorithm = 'hash') AS h,
     (SELECT (count(), sum(cityHash64(p.v, b.v))) FROM (SELECT * FROM t_ird_zipf WHERE v % 1000 = 0) AS p INNER JOIN t_ird_zipf AS b ON p.k = b.k SETTINGS join_algorithm = 'partitioned_hash') AS pa);
 
+-- The scatter split into block ranges with one key of about 40000 rows: each block range appends one more
+-- run of that key's duplicates, and the probe reads the runs in range order. The budget lies between the
+-- memory the gate predicts with the split and without it. The two keys pack into `keys128`. The same budget
+-- for a RIGHT and a FULL join with non-joined rows, and for a build whose hot key is the zero key.
+SELECT 'inner all, grouped scatter with a hot key', h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number AS k, number + 1 AS k2, number AS v FROM numbers(300000)) AS p INNER JOIN (SELECT if(number % 37 = 0, 7, number % 300000) AS k, if(number % 37 = 0, 8, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'hash', max_threads = 8, max_block_size = 4096) AS h,
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number AS k, number + 1 AS k2, number AS v FROM numbers(300000)) AS p INNER JOIN (SELECT if(number % 37 = 0, 7, number % 300000) AS k, if(number % 37 = 0, 8, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'partitioned_hash', max_threads = 8, max_block_size = 4096, max_bytes_before_external_join = 84000000) AS pa)
+SETTINGS log_comment = '05112 grouped hot key';
+
+SELECT 'right all, grouped scatter with a hot key, non-joined build rows', h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number AS k, number + 1 AS k2, number AS v FROM numbers(200000)) AS p RIGHT JOIN (SELECT if(number % 37 = 0, 7, number % 300000) AS k, if(number % 37 = 0, 8, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'hash', max_threads = 8, max_block_size = 4096) AS h,
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number AS k, number + 1 AS k2, number AS v FROM numbers(200000)) AS p RIGHT JOIN (SELECT if(number % 37 = 0, 7, number % 300000) AS k, if(number % 37 = 0, 8, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'partitioned_hash', max_threads = 8, max_block_size = 4096, max_bytes_before_external_join = 84000000) AS pa)
+SETTINGS log_comment = '05112 grouped hot key';
+
+SELECT 'full all, grouped scatter with a hot key, non-joined rows on both sides', h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number + 100000 AS k, number + 100001 AS k2, number AS v FROM numbers(300000)) AS p FULL JOIN (SELECT if(number % 37 = 0, 7, number % 300000) AS k, if(number % 37 = 0, 8, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'hash', max_threads = 8, max_block_size = 4096) AS h,
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number + 100000 AS k, number + 100001 AS k2, number AS v FROM numbers(300000)) AS p FULL JOIN (SELECT if(number % 37 = 0, 7, number % 300000) AS k, if(number % 37 = 0, 8, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'partitioned_hash', max_threads = 8, max_block_size = 4096, max_bytes_before_external_join = 84000000) AS pa)
+SETTINGS log_comment = '05112 grouped hot key';
+
+SELECT 'inner all, grouped scatter with a hot zero key', h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number AS k, if(number = 0, 0, number + 1) AS k2, number AS v FROM numbers(300000)) AS p INNER JOIN (SELECT if(number % 37 = 0, 0, number % 300000) AS k, if(number % 37 = 0, 0, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'hash', max_threads = 8, max_block_size = 4096) AS h,
+    (SELECT (count(), sum(cityHash64(p.v, b.k))) FROM (SELECT number AS k, if(number = 0, 0, number + 1) AS k2, number AS v FROM numbers(300000)) AS p INNER JOIN (SELECT if(number % 37 = 0, 0, number % 300000) AS k, if(number % 37 = 0, 0, (number % 300000) + 1) AS k2 FROM numbers(1500000)) AS b ON p.k = b.k AND p.k2 = b.k2 SETTINGS join_algorithm = 'partitioned_hash', max_threads = 8, max_block_size = 4096, max_bytes_before_external_join = 84000000) AS pa)
+SETTINGS log_comment = '05112 grouped hot key';
+
 SYSTEM FLUSH LOGS query_log;
+
+SELECT
+    'grouped hot key: at least one build split its scatter and stayed in memory',
+    countIf(ProfileEvents['HashJoinScatterGroups'] > 1 AND ProfileEvents['JoinSpillingHashJoinSwitchedToGraceJoin'] = 0) > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05112 grouped hot key' AND type = 'QueryFinish';
 
 SELECT
     'saturated build: every row inserted, duplicate storage used',
