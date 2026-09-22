@@ -4,6 +4,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -23,6 +24,7 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/ProfileEvents.h>
+#include <Common/config_version.h>
 
 #include <array>
 #include <string_view>
@@ -110,6 +112,16 @@ static auto getQueryInterpreter(const ASTSubquery & subquery, ExecuteScalarSubqu
     /// `Planner`'s constructor inspects the subquery tree for parallel replica candidates.
     subquery_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
     subquery_context->setSettings(subquery_settings);
+
+    /// A standalone expression - a `CHECK` constraint, a `TTL` expression - is analysed with the global
+    /// context: `StorageFactory` hands the storage `args.getContext()`, which never went through
+    /// `makeQueryContext` and so carries a zero client version. This server is the real initiator of the
+    /// subquery, so fill in its own version, exactly as `Context::makeQueryContext` does for the other
+    /// server-initiated queries. Otherwise reading a `Distributed` table here sends a shard query that
+    /// `RemoteQueryExecutor::sendQueryUnlocked` rejects. A context of a real query keeps its client info.
+    const auto & client_info = subquery_context->getClientInfo();
+    if (client_info.client_version_major == 0 && client_info.client_version_minor == 0 && client_info.client_version_patch == 0)
+        subquery_context->setClientVersion(VERSION_MAJOR, VERSION_MINOR, VERSION_PATCH, DBMS_TCP_PROTOCOL_VERSION);
 
     if (subquery_context->hasQueryContext())
     {
