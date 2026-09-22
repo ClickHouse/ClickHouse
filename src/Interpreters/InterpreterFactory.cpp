@@ -66,9 +66,7 @@
 #include <Parsers/ASTDescribeCacheQuery.h>
 
 #include <Interpreters/InterpreterFactory.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/Context.h>
 
@@ -93,7 +91,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
 }
 
@@ -144,25 +141,16 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     if (query->as<ASTSelectQuery>())
     {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            interpreter_name = "InterpreterSelectQueryAnalyzer";
-        /// This is internal part of ASTSelectWithUnionQuery.
-        /// Even if there is SELECT without union, it is represented by ASTSelectWithUnionQuery with single ASTSelectQuery as a child.
-        else
-            interpreter_name = "InterpreterSelectQuery";
+        interpreter_name = "InterpreterSelectQueryAnalyzer";
     }
     else if (query->as<ASTSelectWithUnionQuery>())
     {
         ProfileEvents::increment(ProfileEvents::SelectQuery);
-
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            interpreter_name = "InterpreterSelectQueryAnalyzer";
-        else
-            interpreter_name = "InterpreterSelectWithUnionQuery";
+        interpreter_name = "InterpreterSelectQueryAnalyzer";
     }
     else if (query->as<ASTSelectIntersectExceptQuery>())
     {
-        interpreter_name = "InterpreterSelectIntersectExceptQuery";
+        interpreter_name = "InterpreterSelectQueryAnalyzer";
     }
     else if (query->as<ASTInsertQuery>())
     {
@@ -246,10 +234,6 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     }
     else if (query->as<ASTExplainQuery>())
     {
-        const auto kind = query->as<ASTExplainQuery>()->getKind();
-        if (kind == ASTExplainQuery::ParsedAST)
-            context->setSetting("allow_experimental_analyzer", false);
-
         interpreter_name = "InterpreterExplainQuery";
     }
     else if (query->as<ASTShowProcesslistQuery>())
