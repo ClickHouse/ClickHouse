@@ -378,12 +378,14 @@ namespace
             out << ",\"database_name\":";
             writeJSONString(e.database_name, out, fs);
         }
-        if (!e.new_table_name.empty())
+        /// The reader defaults a missing new name to the old one, so a new name is written whenever it
+        /// differs, including the empty database of `TABLE db.t AS t` (the current database at execution).
+        if (e.new_table_name != e.table_name)
         {
             out << ",\"new_table_name\":";
             writeJSONString(e.new_table_name, out, fs);
         }
-        if (!e.new_database_name.empty())
+        if (e.new_database_name != e.database_name)
         {
             out << ",\"new_database_name\":";
             writeJSONString(e.new_database_name, out, fs);
