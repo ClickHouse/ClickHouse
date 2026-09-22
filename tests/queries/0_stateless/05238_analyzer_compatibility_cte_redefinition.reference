@@ -27,3 +27,6 @@
 1	80	high
 2	30	low
 -- 13 MATERIALIZED and RECURSIVE CTEs cannot be redefined
+-- 14 identical redefinitions are distinct definitions
+20
+6

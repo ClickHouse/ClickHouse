@@ -80,5 +80,17 @@ SET enable_materialized_cte = 0;
 WITH m AS MATERIALIZED (SELECT 1 AS x), m AS (SELECT 2 AS x) SELECT 1; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 WITH RECURSIVE r AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM r WHERE n < 3), r AS (SELECT 10 AS n) SELECT * FROM r; -- { serverError MULTIPLE_EXPRESSIONS_FOR_ALIAS }
 
+SELECT '-- 14 identical redefinitions are distinct definitions';
+WITH
+    t_cte_redefinition AS (SELECT x * 2 AS x FROM t_cte_redefinition),
+    t_cte_redefinition AS (SELECT x * 2 AS x FROM t_cte_redefinition)
+SELECT x FROM t_cte_redefinition;
+WITH
+    d AS (SELECT 1 AS x),
+    d AS (SELECT x + 1 AS x FROM d),
+    d AS (SELECT x + 1 AS x FROM d),
+    d AS (SELECT l.x + r.x AS x FROM d AS l CROSS JOIN d AS r)
+SELECT x FROM d;
+
 DROP VIEW v_cte_redefinition;
 DROP TABLE t_cte_redefinition;
