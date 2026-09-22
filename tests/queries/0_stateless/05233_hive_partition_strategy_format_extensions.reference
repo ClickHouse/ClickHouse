@@ -21,6 +21,8 @@ gzipped jsonl lake with an explicit compression method:
 12	9
 gzipped jsonl lake with autodetection:
 11	8
+gzipped csv lake with an explicit compression method and a CSVWithNames sibling:
+13	10
 gzipped jsonl lake with compression_method = none:
 0
 jsonl lake after insert:

@@ -127,6 +127,20 @@ SELECT id, key FROM 05233_gz_explicit ORDER BY id;
 SELECT 'gzipped jsonl lake with autodetection:';
 SELECT id, key FROM 05233_gz ORDER BY id;
 
+-- The suffix is arbitrary, but it has to be a suffix: a sibling lake of .csvwithnames.gz files under
+-- the same prefix must stay invisible to a CSV table, because the reader trusts the explicit codec
+-- and never looks at the name, so a prefix match on the extension would hand the header row of
+-- those files to the CSV parser as data.
+INSERT INTO FUNCTION s3('$path/csv_gz_lake/key=10/data.csv.custom', 'test', 'testtest', format = 'CSV', compression_method = 'gzip') SELECT 13 AS id;
+INSERT INTO FUNCTION s3('$path/csv_gz_lake/key=11/data.csvwithnames.gz', 'test', 'testtest', 'CSVWithNames') SELECT 14 AS id;
+
+CREATE TABLE 05233_csv_gz_explicit (id UInt64, key UInt64)
+ENGINE = S3('$path/csv_gz_lake', 'test', 'testtest', format = 'CSV', compression_method = 'gzip', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'gzipped csv lake with an explicit compression method and a CSVWithNames sibling:';
+SELECT id, key FROM 05233_csv_gz_explicit ORDER BY id;
+
 -- With compression_method = 'none' the files carry no compression layer: a suffix after the
 -- format extension is foreign data, not an alternative spelling, and only the bare extensions
 -- match.
@@ -154,6 +168,7 @@ DROP TABLE 05233_jsonlines_lake;
 DROP TABLE 05233_tsvwithnames_lake;
 DROP TABLE 05233_gz;
 DROP TABLE 05233_gz_explicit;
+DROP TABLE 05233_csv_gz_explicit;
 DROP TABLE 05233_gz_none;
 "
 

@@ -384,7 +384,6 @@ std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefi
     ///    not a compression spelling to accept but foreign data (`.parquet.crc` sidecars and the
     ///    like), and only the bare extensions match.
     Strings alternatives = extensions;
-    std::string tail;
 
     std::string compression_hint = compression_method;
     boost::algorithm::to_lower(compression_hint);
@@ -401,16 +400,18 @@ std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefi
         /// glob without suffixes: table reads set `throw_on_zero_files_match = false`, so that would
         /// turn an invalid codec into a silently empty table.
         ///
-        /// `*` is not allowed inside a `{...}` alternation, so the optional suffix cannot be spelled
-        /// as `{jsonl,jsonl.*}`; `.jsonl*` is the closest glob, and under an explicit codec the
-        /// reader does not look at the name anyway.
-        tail = "*";
+        /// The suffix is arbitrary, but it has to be a suffix: `.csv.*` and not `.csv*`, which is a
+        /// prefix match on the extension and would hand the `data.csvwithnames.gz` files of a sibling
+        /// `CSVWithNames` lake to the `CSV` parser (the reader trusts the explicit codec and never looks
+        /// at the name). The format boundary is the `.` after the extension.
+        for (const auto & extension : extensions)
+            alternatives.push_back(extension + ".*");
     }
 
     if (alternatives.size() == 1)
-        return prefix + "**." + alternatives.front() + tail;
+        return prefix + "**." + alternatives.front();
 
-    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}" + tail;
+    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}";
 }
 
 std::string HiveStylePartitionStrategy::getPathForWrite(
