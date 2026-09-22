@@ -14,7 +14,6 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
@@ -67,7 +66,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -162,25 +160,8 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
-            SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-
-            if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            {
-                header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
-            }
-            else
-            {
-                ASTPtr input_function;
-                query.tryFindInputFunction(input_function);
-                if (input_function)
-                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with allow_experimental_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
-
-                InterpreterSelectWithUnionQuery interpreter_select{
-                    query.select, current_context, select_query_options};
-                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
-                header_block = tmp_pipeline.getSharedHeader();
-            }
+            auto header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
 
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
@@ -631,18 +612,8 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-
-        const Settings & settings = select_context->getSettingsRef();
-        if (settings[Setting::allow_experimental_analyzer])
-        {
-            InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-            return interpreter_select_analyzer.buildQueryPipeline();
-        }
-        else
-        {
-            InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
-            return interpreter_select.buildQueryPipeline();
-        }
+        InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
+        return interpreter_select_analyzer.buildQueryPipeline();
     }();
 
     /// ORDER BY ALL should produce a single globally-sorted stream.
@@ -703,6 +674,8 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
             && !select_query->orderBy()
             && !select_query->limitBy()
             && !select_query->limitLength()
+            && !select_query->limitAfter()
+            && !select_query->limitUntil()
             && !hasAggregateFunctions(select_query));
     }
     return false;
@@ -712,9 +685,6 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
-    if (!settings[Setting::allow_experimental_analyzer])
-        return {};
-
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
@@ -743,16 +713,33 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
         && settings[Setting::parallel_replicas_prefer_local_replica])
     {
-        auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
-        auto coordinator = parallel_replicas_info.coordinator;
-        auto local_replica_index = parallel_replicas_info.local_replica_index;
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(
-            query,
-            context,
-            std::move(local_pipeline),
-            std::move(coordinator),
-            std::move(parallel_replicas_info.connection_pools),
-            local_replica_index);
+        /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
+        /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
+        /// 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
+        /// settings). Skip the local pipeline when the leaf timeout contract differs from the initiator's timeout
+        /// contract so that all leaf reading happens on remote replicas — the same approach as for SELECT in
+        /// 'updateContextForParallelReplicas'.
+        if (ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        {
+            LOG_TRACE(
+                logger,
+                "Not using the local insert select pipeline because the leaf timeout contract differs from the "
+                "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
+                "timeout separately");
+        }
+        else
+        {
+            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+            auto coordinator = parallel_replicas_info.coordinator;
+            auto local_replica_index = parallel_replicas_info.local_replica_index;
+            return ClusterProxy::executeInsertSelectWithParallelReplicas(
+                query,
+                context,
+                std::move(local_pipeline),
+                std::move(coordinator),
+                std::move(parallel_replicas_info.connection_pools),
+                local_replica_index);
+        }
     }
 
     return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);
@@ -1107,12 +1094,30 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
-    /// Actually the query doesn't change, we just serialize it to string. Strip the initiator-only
-    /// settings from the forwarded query text (both `changes` and `default_settings`, across the INSERT
-    /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
-    /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
+    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
+
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+    const auto src_snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
+
+    /// Strip the initiator-only settings from the forwarded query text (both `changes` and `default_settings`,
+    /// across the INSERT and its source SELECT) so those names — including the new HTTP table-as-file settings —
+    /// do not reach the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is
+    /// stripped below.
     auto query_to_send = query.clone();
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
+    /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
+    /// function (`url`, `s3`, ...), while the query text still names that plain function. A node that runs
+    /// the forwarded query as a secondary query does not convert it again: it creates a plain storage that
+    /// expands the globs and reads every file on its own instead of taking its share of the read tasks from
+    /// the initiator, so N nodes insert the data N times. Rewrite the source the same way `IStorageCluster::read`
+    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument, and the
+    /// structure and format arguments are added so that the nodes do not infer the schema again.
+    {
+        auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
+        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
+    }
+
     String query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1134,19 +1139,14 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         query_context->setSettings(stripped_settings);
     }
 
-    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
-
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-
     std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate = nullptr;
     if (select_query && (select_query->prewhere() || select_query->where()))
     {
         /// The metadata and the snapshot are acquired outside of the `try` block below:
-        /// a failure here is a real storage-side problem rather than an expected miss of
+        /// a failure there is a real storage-side problem rather than an expected miss of
         /// the best-effort condition analysis, so it has to propagate.
-        const auto snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
-        const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        const auto columns = src_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
 
         try
         {

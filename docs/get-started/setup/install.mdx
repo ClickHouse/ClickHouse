@@ -7,12 +7,6 @@ title: 'Installation instructions'
 doc_type: 'guide'
 ---
 
-export const withDocsBase = (href) => {
-  if (!href || !href.startsWith('/')) return href;
-  const base = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-  return base + href;
-};
-
 <div className="ch-install-cloud-card">
   <span className="ch-install-cloud-badge">Recommended</span>
   <span className="ch-install-cloud-icon" aria-hidden="true"></span>
@@ -25,7 +19,7 @@ export const withDocsBase = (href) => {
     <a className="ch-install-cloud-cta" href="https://clickhouse.cloud/signUp?loc=docs-install-page-banner">
       Get started free
     </a>
-    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href={withDocsBase('/get-started/setup/cloud')}>
+    <a className="ch-install-cloud-cta ch-install-cloud-cta-secondary" href="/get-started/setup/cloud">
       Read the quickstart tutorial
     </a>
   </div>

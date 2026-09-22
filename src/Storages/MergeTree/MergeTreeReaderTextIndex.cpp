@@ -142,16 +142,16 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     /// - Pattern queries (LIKE): fallback when dictionary scan is abandoned.
     /// - Phrase queries (hasPhrase with Exact mode): fallback when estimated cardinality is too high
     ///   and reading position data would be slower than evaluating directly.
-    bool has_fallback_candidates = condition_text->hasSearchPatterns()
-        || std::ranges::any_of(
-            search_queries,
-            [](const auto & search_query)
-            {
-                return search_query && search_query->getSearchMode() == TextSearchMode::Phrase
-                    && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
-            });
+    /// Only exact direct read needs it: a hint keeps the original predicate, so it can just be always true.
+    auto needs_fallback_for_query = [](const auto & search_query)
+    {
+        if (!search_query || search_query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
+            return false;
 
-    if (!has_fallback_candidates)
+        return !search_query->getPatterns().empty() || search_query->getSearchMode() == TextSearchMode::Phrase;
+    };
+
+    if (std::ranges::none_of(search_queries, needs_fallback_for_query))
         return;
 
     /// Build a fallback evaluation path. Compile each virtual column's default expression
@@ -175,12 +175,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     {
         const auto & column = columns_to_read[i];
         const auto & search_query = search_queries[i];
-        if (!search_query)
-            continue;
-
-        bool needs_fallback = !search_query->getPatterns().empty()
-            || (search_query->getSearchMode() == TextSearchMode::Phrase && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact);
-        if (!needs_fallback)
+        if (!needs_fallback_for_query(search_query))
             continue;
 
         /// Compile the virtual column's default expression (the original search predicate).
@@ -408,7 +403,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index.index->index.name);
 
     positions_stream = makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
+        *data_part_info_for_read,
         index.index->getFileName() + positions_substream->suffix,
         positions_substream->extension,
         MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
@@ -567,10 +562,8 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
 {
-    auto data_part = getDataPart();
-
     return makeTextIndexInputStream(
-        data_part->getDataPartStoragePtr(),
+        *data_part_info_for_read,
         index.index->getFileName() + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));

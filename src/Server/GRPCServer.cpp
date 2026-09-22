@@ -36,7 +36,6 @@
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Sinks/SinkToStorage.h>
@@ -433,6 +432,9 @@ namespace
             grpc_context.set_compression_algorithm(transport_compression.algorithm);
             grpc_context.set_compression_level(transport_compression.level);
         }
+
+        /// Makes the pending operations of this call complete (with `ok` set to false).
+        void cancel() { grpc_context.TryCancel(); }
 
     protected:
         CompletionCallback * getCallbackPtr(const CompletionCallback & callback)
@@ -1542,6 +1544,17 @@ namespace
 
     void Call::close()
     {
+        /// A speculative read started by `readQueryInfo` may still be in flight. Its completion
+        /// handler writes into `next_query_info_while_reading` and is dispatched through a tag
+        /// owned by the responder, so both have to outlive it.
+        if (reading_query_info.get())
+        {
+            /// If the call has not been finished, nothing would complete that read on its own.
+            if (!responder_finished)
+                responder->cancel();
+            reading_query_info.wait(false);
+        }
+
         responder.reset();
         pipeline_executor.reset();
         pipeline = nullptr;

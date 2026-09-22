@@ -46,6 +46,15 @@ class Info:
         return self.env.EVENT_TIME
 
     @property
+    def workflow_start_time(self):
+        """When this workflow run started, as a Unix timestamp.
+
+        The same value in every job of the run, and a rerun keeps it, unlike
+        the per-job start time.
+        """
+        return self.env.WORKFLOW_START_TIME
+
+    @property
     def event_action(self):
         return self.env.EVENT_ACTION
 
@@ -56,6 +65,11 @@ class Info:
     @property
     def job_name(self):
         return self.env.JOB_NAME
+
+    @property
+    def rerun_count(self):
+        """How many times this job was manually re-run (0 = first attempt)."""
+        return self.env.RERUN_COUNT
 
     @property
     def pr_body(self):
@@ -128,6 +142,10 @@ class Info:
     @property
     def pr_labels(self):
         return self.env.PR_LABELS
+
+    @property
+    def pr_is_draft(self):
+        return self.env.PR_IS_DRAFT
 
     @property
     def instance_type(self):
@@ -276,6 +294,12 @@ class Info:
 
     def get_changed_files(self):
         return self.get_kv_data().get("changed_files", None)
+
+    def get_changed_file_statuses(self):
+        return self.get_kv_data().get("changed_file_statuses", None)
+
+    def get_added_files(self):
+        return self.get_kv_data().get("added_files", None)
 
     def store_traceback(self):
         self.env.TRACEBACKS.append(traceback.format_exc())

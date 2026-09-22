@@ -249,20 +249,25 @@ ColumnPtr makePresenceColumnFromMap(const ColumnMap & column_map, const IColumn 
 /// Resolves a dynamic subcolumn like `map['key']` / `map.exists_key` by parsing the key
 /// from the subcolumn name. Per-key serialization reads only that key's value or presence
 /// stream; `basic` / `with_buckets` keep using `SerializationMapKeyValue`.
-std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
+///
+/// The returned path identifies the substream. `basic` / `with_buckets` use `MapKeyValue`
+/// so `m['key']` still rewrites to the key subcolumn. `with_key_columns` uses `MapKey`
+/// or `MapKeyPresence`, which name the per-key streams.
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
     /// Must run before the `key_` prefix check: `keys_presence` starts with `key_`.
     /// Always expose the type so `hasSubcolumn` / sample blocks resolve it even when
     /// the current serialization is not `with_key_columns` (the part's info is used later).
     if (subcolumn_name == KEYS_PRESENCE_SUBCOLUMN)
     {
-        auto res = std::make_unique<SubstreamData>(data.serialization);
-        res->type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
+        auto res = std::make_unique<SubcolumnInfo>();
+        res->data = SubstreamData(data.serialization);
+        res->data.type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt8>());
         auto serialization = removeNamedSerialization(data.serialization);
         if (typeid_cast<const SerializationMapWithKeyColumns *>(serialization.get()))
-            res->serialization = SerializationMapKeyPresenceMerge::create(serialization);
+            res->data.serialization = SerializationMapKeyPresenceMerge::create(serialization);
         else
-            res->serialization = res->type->getDefaultSerialization();
+            res->data.serialization = res->data.type->getDefaultSerialization();
 
         if (data.column)
         {
@@ -304,8 +309,11 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
                 }
                 offs.push_back(presence.size());
             }
-            res->column = ColumnArray::create(std::move(presence_nested), std::move(offsets));
+            res->data.column = ColumnArray::create(std::move(presence_nested), std::move(offsets));
         }
+
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyPresence);
+        res->substreams_path.back().name_of_substream = String(KEYS_PRESENCE_SUBCOLUMN);
         return res;
     }
 
@@ -334,27 +342,33 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
         SerializationPtr exists_serialization = key_columns
             ? SerializationMapKeyPresence::create(serialization, key)
             : DataTypeUInt8().getDefaultSerialization();
-        auto res = std::make_unique<SubstreamData>(exists_serialization);
-        res->type = std::make_shared<DataTypeUInt8>();
+        auto res = std::make_unique<SubcolumnInfo>();
+        res->data = SubstreamData(exists_serialization).withType(std::make_shared<DataTypeUInt8>());
         if (data.column)
-            res->column = makePresenceColumnFromMap(assert_cast<const ColumnMap &>(*data.column), *key_column);
+            res->data.column = makePresenceColumnFromMap(assert_cast<const ColumnMap &>(*data.column), *key_column);
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyPresence);
+        res->substreams_path.back().name_of_substream = String(key_string);
         return res;
     }
 
     if (key_columns)
     {
-        auto res = std::make_unique<SubstreamData>(
-            SerializationMapWithKeyColumnsValue::create(key_columns->getValueSerialization(), value_type, serialization, key));
-        res->type = value_type;
+        auto res = std::make_unique<SubcolumnInfo>();
+        res->data = SubstreamData(
+            SerializationMapWithKeyColumnsValue::create(key_columns->getValueSerialization(), value_type, serialization, key))
+            .withType(value_type);
         if (data.column)
         {
             auto value_column = value_type->createColumn();
             extractKeyValueFromMap(*assert_cast<const ColumnMap &>(*data.column).getNestedColumnPtr(), *key_column, *value_column, 0, data.column->size());
-            res->column = std::move(value_column);
+            res->data.column = std::move(value_column);
         }
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKey);
+        res->substreams_path.back().name_of_substream = String(key_string);
         return res;
     }
 
+    /// `basic` / `with_buckets`: read only the bucket that contains the requested key.
     const auto & map_serialization = assert_cast<const SerializationMap &>(*serialization);
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
@@ -362,15 +376,18 @@ std::unique_ptr<IDataType::SubstreamData> DataTypeMap::getDynamicSubcolumnData(s
         map_serialization.getMapSerializationVersion(),
         key_column->getPtr(),
         nested);
-    std::unique_ptr<SubstreamData> res = std::make_unique<SubstreamData>(key_value_serialization);
-    res->type = value_type;
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data = SubstreamData(key_value_serialization).withType(value_type);
+
+    res->substreams_path.emplace_back(ISerialization::Substream::MapKeyValue);
+    res->substreams_path.back().name_of_substream = subcolumn_name;
 
     if (data.column)
     {
         const auto & column_map = assert_cast<const ColumnMap &>(*data.column);
         auto value_column = value_type->createColumn();
         extractKeyValueFromMap(*column_map.getNestedColumnPtr(), *key_column->getPtr(), *value_column, 0, data.column->size());
-        res->column = std::move(value_column);
+        res->data.column = std::move(value_column);
     }
 
     return res;
@@ -535,11 +552,11 @@ The serialization layer computes which bucket the requested key belongs to and r
 
 When the full map is read (e.g., `SELECT m`), all buckets are read and reassembled into the original map. This is slower than `basic` serialization due to the overhead of reading and merging multiple substreams.
 
-:::note
+<Note>
 Since version 26.8, `with_buckets` serialization preserves the original key order: an additional `bucket_indexes` substream records which bucket every key-value pair was taken from, so the map is reassembled in the order it was written instead of in bucket order.
 
 Parts written by earlier versions do not contain that substream. Their maps are still reassembled in bucket order, and the original key order cannot be restored for them because it was never stored on disk — rewriting such a part (by a merge or `OPTIMIZE FINAL`) freezes the bucket order it currently has instead of recovering the insertion order. With `basic` serialization, the key order from inserted maps has always been preserved.
-:::
+</Note>
 
 The bucket count can vary between parts. When parts with different bucket counts are merged, the new part's bucket count is recalculated from the merged statistics. Parts with `basic` and `with_buckets` serialization can coexist in the same table and are merged transparently.
 

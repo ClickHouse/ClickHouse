@@ -1,10 +1,23 @@
 #pragma once
 
+#include <Access/Common/AccessRightsElement.h>
 #include <Parsers/IParserBase.h>
 
 
 namespace DB
 {
+
+/** Parses the `VALID UNTIL <datetime>` / `VALID FOR <interval>` clause of an authentication method.
+  * `is_interval` is set to true for the `VALID FOR` form, whose deadline is resolved as `now` plus
+  * the parsed interval when the query is executed. Shared with `CREATE TOKEN`.
+  */
+bool parseAuthenticationValidUntil(IParserBase::Pos & pos, Expected & expected, ASTPtr & valid_until, bool & is_interval);
+
+/** Parses the `GRANTS (privilege ON object [,...])` clause of an authentication method,
+  * which limits the access rights of the sessions authenticated with it. Shared with `CREATE TOKEN`.
+  */
+bool parseAuthenticationGrants(IParserBase::Pos & pos, Expected & expected, AccessRightsElements & grants);
+
 /** Parses queries like
   * CREATE USER [IF NOT EXISTS | OR REPLACE] name
   *     [NOT IDENTIFIED | IDENTIFIED {[WITH {no_password|plaintext_password|sha256_password|sha256_hash|double_sha1_password|double_sha1_hash}] BY {'password'|'hash'}}|{WITH ldap SERVER 'server_name'}|{WITH kerberos [REALM 'realm']}]
