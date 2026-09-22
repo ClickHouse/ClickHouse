@@ -420,6 +420,13 @@ SignalListener::SignalListener(BaseDaemon * daemon_, LoggerPtr log_, TerminateRe
 void SignalListener::run()
 {
     setThreadName(ThreadName::SIGNAL_LISTENER);
+    /// Pre-warm the symbol index and this thread's compact-name workspace so symbolizing a fatal signal
+    /// performs no allocations on the signal path. The guard is ELF-only because Mach-O binaries never carry
+    /// the compact section, so on Darwin the index stays lazily initialized.
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    if (daemon)
+        SymbolIndex::instance().warmUp();
+#endif
 
     if (daemon)
     {
