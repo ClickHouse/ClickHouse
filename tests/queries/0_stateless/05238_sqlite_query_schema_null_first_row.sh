@@ -32,12 +32,12 @@ SELECT '-- an undeclared column with a NULL first value is String, there is noth
 DESCRIBE TABLE sqlite('${DB}', query('SELECT score + 0 AS s FROM t ORDER BY id'));
 SELECT s FROM sqlite('${DB}', query('SELECT score + 0 AS s FROM t ORDER BY id'));
 
-SELECT '-- a compound whose first row is NULL keeps the declared INTEGER; the TEXT row of the other arm then fails the read';
-DESCRIBE TABLE sqlite('${DB}', query('SELECT score FROM t WHERE id = 1 UNION ALL SELECT name FROM t WHERE id = 2'));
-SELECT score FROM sqlite('${DB}', query('SELECT score FROM t WHERE id = 1 UNION ALL SELECT name FROM t WHERE id = 2')); -- { serverError INCORRECT_DATA }
+SELECT '-- a compound SELECT reports the declared type of its last arm (INTEGER here) and returns a NULL first: the type is kept, and the TEXT row of the middle arm then fails the read';
+DESCRIBE TABLE sqlite('${DB}', query('SELECT score FROM t WHERE id = 1 UNION ALL SELECT name FROM t WHERE id = 2 UNION ALL SELECT score FROM t WHERE id = 3'));
+SELECT score FROM sqlite('${DB}', query('SELECT score FROM t WHERE id = 1 UNION ALL SELECT name FROM t WHERE id = 2 UNION ALL SELECT score FROM t WHERE id = 3')); -- { serverError INCORRECT_DATA }
 
 SELECT '-- the same values are read as text on request';
-SELECT x FROM sqlite('${DB}', query('SELECT CAST(score AS TEXT) AS x FROM t WHERE id = 1 UNION ALL SELECT name FROM t WHERE id = 2'));
+SELECT x FROM sqlite('${DB}', query('SELECT CAST(score AS TEXT) AS x FROM t WHERE id = 1 UNION ALL SELECT name FROM t WHERE id = 2 UNION ALL SELECT CAST(score AS TEXT) FROM t WHERE id = 3'));
 "
 
 rm -f "$DB"
