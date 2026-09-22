@@ -1,0 +1,110 @@
+---
+description: 'Consultez les soldes de crédits prépayés et transférez les crédits de contrats d’engagement entre organizations ClickHouse.'
+sidebarTitle: 'Gestion en self-service des crédits prépayés'
+slug: /cloud/manage/billing/self-service-prepaid-credit-management
+title: 'Gestion en self-service des crédits prépayés'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Si vous achetez des crédits prépayés dans le cadre d&#39;un contrat d&#39;engagement, vous pouvez gérer la répartition de ces crédits entre vos organisations ClickHouse.
+Utilisez la page **Prepaid credits** pour consulter les soldes et transférer des crédits d&#39;une organisation à une autre.
+
+## Accéder aux crédits prépayés {#access-prepaid-credits}
+
+Dans la console ClickHouse Cloud, ouvrez **Settings**, puis sélectionnez **Prepaid credits** sous **Account**.
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Crédits prépayés sous Account dans la barre latérale Settings" size="sm" />
+
+Pour consulter les soldes de crédits prépayés, vous devez disposer d&#39;au moins l&#39;un des rôles suivants dans une organisation à laquelle des crédits de contrat engagé ont été alloués :
+
+* [Admin](/fr/products/cloud/reference/security/console-roles#organization-roles)
+* [Billing](/fr/products/cloud/reference/security/console-roles#organization-roles)
+* Un [rôle personnalisé](/fr/products/cloud/guides/security/cloud-access-management/manage-custom-roles#create-custom-role) accordant la permission de [consulter ou gérer les détails de facturation](/fr/products/cloud/reference/security/console-roles#console-permissions)
+
+La page affiche toutes les organisations dans lesquelles vous disposez de l&#39;un de ces rôles ou permissions, y compris celles qui n&#39;ont pas de crédits prépayés.
+
+<Note>
+  Si aucune de vos organisations ne dispose de crédits prépayés, l&#39;onglet affiche un état vide comportant des liens vers le calculateur de prix et un formulaire de contact du service commercial.
+</Note>
+
+## Consulter les soldes de crédits {#view-credit-balances}
+
+Le récapitulatif affiche les totaux de crédits prépayés pour l&#39;ensemble des organisations auxquelles vous avez accès, comme décrit ci-dessus.
+
+| Metric                         | Description                                                                                     |
+| ------------------------------ | ----------------------------------------------------------------------------------------------- |
+| **Total des crédits accordés** | Tous les crédits prépayés alloués à ces organisations, y compris les crédits actifs et expirés. |
+| **Crédits expirés**            | Tous les crédits prépayés expirés de ces organisations.                                         |
+| **Crédits utilisés**           | Tous les crédits prépayés consommés par ces organisations.                                      |
+| **Crédits disponibles**        | Tous les crédits prépayés actifs que ces organisations n&#39;ont pas encore consommés.          |
+
+<Note>
+  Si vous n&#39;avez pas accès à toutes les organisations auxquelles des crédits ont été alloués dans le cadre d&#39;un contrat prépayé, les totaux peuvent être inférieurs au pool de crédits total du contrat.
+</Note>
+
+Tous les montants sont exprimés en ClickHouse Credits (CHC), où 1 CHC équivaut à $1 d&#39;utilisation. Si vous avez acheté des crédits à prix réduit, vous pouvez recevoir davantage de CHC que le montant payé en dollars.
+
+### Soldes par organisation {#organization-balances}
+
+Chaque ligne du tableau situé sous le récapitulatif correspond à une organisation, les données reflétant l&#39;ensemble des soldes prépayés de cette organisation.
+
+* **Organization** affiche le nom de l&#39;organisation, un identifiant d&#39;organisation partiellement masqué et un lien vers sa page de facturation permettant d&#39;obtenir le détail des soldes de crédits.
+* **Credits granted**, **Expired credits**, **Credits used** et **Credits available** reposent sur les mêmes définitions que dans le récapitulatif, mais s&#39;appliquent aux crédits prépayés de cette organisation.
+* **Credit status** affiche l&#39;état des soldes prépayés de l&#39;organisation, comme décrit ci-dessous.
+* **Expiration Date** affiche la date d&#39;expiration du solde prépayé. S&#39;il existe plusieurs soldes, la date d&#39;expiration la plus tardive est affichée.
+
+| Statut                 | Description                                                                                                                                                                    |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Active**             | L&#39;organisation dispose d&#39;un ou plusieurs soldes de crédits prépayés non expirés.                                                                                       |
+| **Expires soon**       | L&#39;organisation ne dispose que d&#39;un seul solde prépayé actif, et celui-ci expire dans moins de 60 jours. Ce statut reste affiché jusqu&#39;à l&#39;expiration du solde. |
+| **Expired**            | Tous les soldes prépayés de l&#39;organisation ont une date de fin dans le passé.                                                                                              |
+| **Spent**              | Tous les soldes prépayés de l&#39;organisation ont été consommés mais ne sont pas expirés. Ce statut a préséance sur **Active**.                                               |
+| **No Prepaid Credits** | L&#39;organisation ne dispose d&#39;aucun crédit prépayé.                                                                                                                      |
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Métriques récapitulatives et soldes des crédits prépayés par organisation" size="lg" />
+
+## Transférer des crédits {#transfer-credits}
+
+Un transfert de crédits, également appelé split, déplace des crédits prépayés d&#39;une organisation source vers une organisation cible.
+
+Pour transférer des crédits, vous devez disposer de la permission [Manage billing details](/fr/products/cloud/reference/security/console-roles#console-permissions). La permission View billing details permet de consulter les soldes, mais n&#39;autorise pas les transferts.
+
+1. Cliquez sur **Transfer** dans la ligne de l&#39;organisation source.
+2. Sélectionnez une allocation de crédits active. Le panneau répertorie les allocations actives de l&#39;organisation source ainsi que leurs dates d&#39;expiration.
+3. Sélectionnez une organisation cible parmi celles auxquelles vous avez accès.
+4. Saisissez le montant à transférer.
+5. Vérifiez les soldes obtenus, puis cliquez sur **Transfer credits**.
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Panneau de transfert de crédits avec l'allocation source, l'organisation cible, le montant du transfert et les soldes obtenus" size="md" />
+
+### Règles de transfert {#transfer-rules}
+
+* Vous pouvez transférer uniquement des **crédits prépayés actifs**. Les crédits d&#39;essai ne sont pas transférables.
+* Un transfert de crédits modifie les crédits prépayés disponibles pour les organisations source et destination, mais ne change pas le total des crédits actifs accordés au titre de votre contrat d’engagement.
+* Le transfert de crédits prépayés vers une organisation en période d&#39;essai ou en période de grâce pour défaut de paiement la convertit en organisation prépayée : elle commence alors à consommer ces crédits.
+* Vous ne pouvez transférer la totalité des crédits prépayés restants hors d&#39;une organisation source que si celle-ci dispose d&#39;un [payment method de secours](/fr/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org) ou ne possède aucun service. Sinon, le transfert est limité à 75 % du solde de crédits de l&#39;organisation source.
+* Vous ne pouvez pas transférer de crédits entre des organisations ClickHouse Cloud et [Bring Your Own Cloud (BYOC)](/fr/products/cloud/guides/infrastructure/deployment-options/byoc/overview).
+* Vous ne pouvez pas transférer de crédits entre des organisations facturées via des places de marché cloud différentes, telles qu&#39;AWS Marketplace et Google Cloud Marketplace.
+
+### Facturation via une marketplace après un transfert {#marketplace-billing-after-a-transfer}
+
+Si l&#39;organisation source est facturée via un contrat actif sur la marketplace AWS, Google Cloud ou Azure, c&#39;est la configuration de facturation de l&#39;organisation cible qui détermine le résultat :
+
+| Configuration de facturation de l&#39;organisation cible | Résultat                                                                                                                                                                                                          |
+| -------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Aucun abonnement marketplace**                         | L&#39;organisation cible est automatiquement rattachée à l&#39;abonnement de l&#39;organisation source. Une fois tous les credits consommés ou expirés, les dépassements sont facturés sur ce compte marketplace. |
+| **Un abonnement sur la même marketplace**                | Le transfert aboutit et l&#39;organisation cible conserve son abonnement existant pour les dépassements. L&#39;abonnement de l&#39;organisation source n&#39;est pas copié.                                       |
+| **Un abonnement sur une marketplace différente**         | Le transfert est bloqué.                                                                                                                                                                                          |
+
+Pour facturer les dépassements des deux organisations via le même abonnement marketplace, consultez [comment utiliser l&#39;abonnement marketplace d&#39;une autre organisation](/fr/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org).
+
+## Consulter l&#39;historique des transferts et les notifications {#review-transfer-history-and-notifications}
+
+Une fois le transfert terminé :
+
+* Une nouvelle entrée apparaît dans la table **Transfer History**, sous la table des organisations.
+* L&#39;organisation source et l&#39;organisation cible reçoivent toutes deux des notifications dans l&#39;UI, par e-mail et sur Slack. Seuls les utilisateurs disposant de l&#39;[accès aux notifications de facturation](/fr/products/cloud/features/monitoring/notifications#customizing-notifications) reçoivent ces notifications.
+
+Si une étape quelconque du transfert échoue, l&#39;ensemble de la transaction est bloqué et une erreur s&#39;affiche. Aucune modification partielle n&#39;est appliquée.

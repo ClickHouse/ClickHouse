@@ -341,6 +341,7 @@
         "ko/products/cloud/reference/billing/payment-thresholds",
         "ko/products/cloud/reference/billing/spend-alerts",
         "ko/products/cloud/reference/billing/managing-payment-methods",
+        "ko/products/cloud/reference/billing/self-service-prepaid-credit-management",
         "ko/products/cloud/reference/billing/billing-compliance"
       ]
     },
