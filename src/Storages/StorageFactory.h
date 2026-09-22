@@ -38,6 +38,9 @@ public:
     /// The settings this engine has, for `system.engine_settings`. The same enumeration
     /// `IStorage::getTableSettings` reports per table, from a server-level instance instead of a
     /// table's - so the two tables describe a setting identically.
+    /// An engine whose settings a server-level instance decides - or whose creator fills some of them from
+    /// the server's core settings, as `Distributed` does - needs a function that reads that instance.
+    /// `enumerateCompiledDefaults` would compile and describe values no table of that engine ever has.
     /// Engines that share a settings struct but draw on different server-level instances register
     /// different functions - see the replicated `MergeTree` variants.
     using EnumerateEngineSettingsFn = SettingDescriptions(ContextPtr context);

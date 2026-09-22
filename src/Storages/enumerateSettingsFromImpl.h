@@ -23,8 +23,10 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<T
     {
         SettingDescription described;
         described.name = setting.getName();
-        /// The real value, which `masked_value` below hides when the reader may not see it. A
-        /// default is compiled in and holds no credential, so it needs no such treatment.
+        /// The real value, which `masked_value` below hides when the reader may not see it. The flag on the
+        /// default is defence in depth and nothing more: `getDefaultValueString` honours it for a custom
+        /// setting only, and a built-in one holding a secret has an empty default anyway, which
+        /// `05214_engine_settings_secrets_have_empty_default` asserts for every engine.
         described.value = setting.getValueString(/* show_secrets */ true);
         described.default_value = setting.getDefaultValueString(/* show_secrets */ false);
         described.type = setting.getTypeName();

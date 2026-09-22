@@ -1,12 +1,12 @@
 #pragma once
 
 #include <Columns/IColumn.h>
-#include <Common/Exception.h>
 #include <Core/Field.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SettingDescription.h>
 
-#include <optional>
+#include <base/defines.h>
+
 #include <string_view>
 #include <vector>
 
@@ -14,14 +14,14 @@ namespace DB
 {
 
 /// The columns `system.engine_settings`, `system.merge_tree_settings` and `system.table_settings` all carry,
-/// declared and written in one place so the three cannot drift.
+/// declared and written in one place so those three cannot drift. The settings tables built on other paths -
+/// `system.settings`, `system.object_storage_queue_settings`, `system.filesystem_cache_settings` - still
+/// declare their own columns, and `system.object_storage_queue_settings` renders a settings struct this code
+/// also renders.
 ///
 /// The descriptions say what is true of a *setting*, not of a *table*, because the same text has to
 /// read correctly in a table describing one engine family and in one describing every engine.
 ColumnsDescription sharedSettingColumns();
-
-/// The type of the `source` column: every value `SettingOrigin` declares.
-DataTypePtr settingOriginEnum();
 
 /// Writes the rows of a settings table one column at a time, skipping the columns the query does not read.
 class SettingRowWriter

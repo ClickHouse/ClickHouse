@@ -13,7 +13,8 @@
 namespace DB
 {
 
-DataTypePtr settingOriginEnum()
+/// The type of the `source` column: every value `SettingOrigin` declares.
+static DataTypePtr settingOriginEnum()
 {
     DataTypeEnum8::Values values;
     for (const auto origin : magic_enum::enum_values<SettingOrigin>())
