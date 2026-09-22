@@ -2841,7 +2841,10 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// scalar subquery. Such nodes are re-resolved below and do not support direct
                 /// Nullable conversion.
                 auto node_to_convert = node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second;
-                if (!nodeSupportsConvertToNullable(node_to_convert))
+                const auto node_to_convert_type = node_to_convert->getNodeType();
+                if (node_to_convert_type != QueryTreeNodeType::COLUMN
+                    && node_to_convert_type != QueryTreeNodeType::CONSTANT
+                    && node_to_convert_type != QueryTreeNodeType::FUNCTION)
                     continue;
 
                 /// Look up the projection name before the clone replaces the node: the map is keyed
