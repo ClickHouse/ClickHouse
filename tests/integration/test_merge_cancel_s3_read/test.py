@@ -17,6 +17,12 @@ ATTEMPTS_TO_ACCRUE = 20
 # The window oracle (b) must observe in full before it may pass.
 SETTLED_WINDOW_SECONDS = 15
 
+# A cancellation reaching the retry loop is observed after at most the remaining backoff
+# (`DEFAULT_RETRY_MAX_DELAY_MS`, `IO/S3Defines.h`), so within seconds, while the retry budget it
+# replaces is tens of minutes. Past this budget `stop_clickhouse` escalates to SIGKILL and reports
+# the stop as not graceful, which is what the shutdown arm keys on.
+SHUTDOWN_BUDGET_SECONDS = 60
+
 
 @pytest.fixture(scope="module")
 def cluster():
@@ -481,4 +487,88 @@ def test_stop_ttl_merges_cancels_regular_merge_removing_expired_values(
         optimize.get_answer_and_error()
         assert int(node.query(f"SELECT count() FROM {table}")) == 80000
     finally:
+        drop_table_stopping_any_merge(node, table)
+
+
+def test_shutdown_cancels_s3_read(cluster, broken_s3):
+    """Shutdown must interrupt a background merge stuck retrying an S3 read.
+
+    A different branch of the predicate from the arms above, and the only one shutdown can reach
+    while it matters: `Context::shutdown` cancels through `MergeList::cancelAll`, which sets the
+    merge list entry's own flag, and then waits for the merge executor, whereas the per-storage
+    `merges_blocker` is cancelled only later, in `DatabaseCatalog::shutdown`
+    (`Interpreters/Context.cpp`). That wait has no timeout: `Server.cpp`'s `safeExit` path is
+    registered in a later scope guard, so it runs first and covers only connections, refresh
+    tasks, background queries and backups.
+
+    The merge is left to the background assignee. An `OPTIMIZE` would hold a client connection
+    open across the shutdown, and `waitServersToFinish` would then reach that forced exit after
+    `shutdown_wait_unfinished`, passing this arm with the merge never cancelled at all.
+    """
+    node = cluster.instances["node"]
+    table = "t_shutdown"
+
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    # `min_age_to_force_merge_seconds` because the selector declines two parts of this size on its
+    # own heuristic ("no need to merge parts according to merge selector algorithm"), and the
+    # merge has to come from the assignee rather than from `OPTIMIZE`. The short selecting sleep
+    # keeps the wait for it inside `wait_for`'s window.
+    node.query(
+        f"""
+        CREATE TABLE {table} (id UInt64, s String) ENGINE = MergeTree ORDER BY id
+        SETTINGS storage_policy = 'broken_s3', min_bytes_for_wide_part = 0,
+                 min_age_to_force_merge_seconds = 1, merge_selecting_sleep_ms = 1000
+        """
+    )
+    node.query(f"SYSTEM STOP MERGES {table}")
+    node.query(
+        f"INSERT INTO {table} SELECT number, repeat('x', 200) FROM numbers(200000)"
+    )
+    node.query(
+        f"INSERT INTO {table} SELECT number + 200000, repeat('y', 200) FROM numbers(200000)"
+    )
+
+    # The merge must read the parts from the mock, not out of memory.
+    node.query("SYSTEM DROP MARK CACHE")
+    node.query("SYSTEM DROP UNCOMPRESSED CACHE")
+
+    broken_s3.setup_at_object_get(count=1000000, action="slow_down")
+
+    try:
+        before = get_attempts(node)
+        node.query(f"SYSTEM START MERGES {table}")
+
+        in_merges = (
+            f"SELECT count() FROM system.merges "
+            f"WHERE database = currentDatabase() AND table = '{table}'"
+        )
+        assert wait_for(
+            node, in_merges, lambda v: int(v) >= 1
+        ), "the assignee never started the merge, so the assertions below would be vacuous"
+
+        assert wait_for(
+            node,
+            ATTEMPTS_QUERY,
+            lambda v: int(v or 0) - before >= ATTEMPTS_TO_ACCRUE,
+        ), "the merge is not retrying the read, so there is nothing to cancel"
+
+        # And it is still retrying as the shutdown starts: otherwise a prompt shutdown could be
+        # granted by a merge that had already finished, or that something else had cancelled.
+        assert (
+            int(node.query(in_merges)) >= 1
+        ), "the merge left system.merges before the shutdown, so this arm would be vacuous"
+
+        # The oracle: SIGTERM completes on its own. `stop_clickhouse` returns True only when the
+        # process is gone within the budget, and force-kills past it.
+        assert node.stop_clickhouse(stop_wait_sec=SHUTDOWN_BUDGET_SECONDS) is True, (
+            f"the server did not shut down within {SHUTDOWN_BUDGET_SECONDS}s and had to be "
+            f"killed: the merge kept retrying the read after MergeList::cancelAll"
+        )
+    finally:
+        # The mock must stop failing before the server reads these parts back on startup. The
+        # stop is a no-op after the oracle and stops a still-running server after an earlier
+        # failure, so the restart is deterministic either way.
+        broken_s3.reset()
+        node.stop_clickhouse()
+        node.start_clickhouse()
         drop_table_stopping_any_merge(node, table)
