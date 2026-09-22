@@ -77,6 +77,69 @@ def started_cluster():
             """
         )
         initiator.query("SYSTEM RELOAD DICTIONARY c")
+        # A one-row table holding the dictionary name, for the scalar-subquery form of `assignCentroid`. Replicated: the
+        # scalar subquery is a unit of its own and has no dictionary, so it distributes and reads the table on the worker.
+        for node in (initiator, worker):
+            node.query(
+                """
+                CREATE TABLE cfg (nm String)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/cfg', '{replica}') ORDER BY nm
+                """
+            )
+        initiator.query("INSERT INTO cfg SELECT 'default.c'")
+        worker.query("SYSTEM SYNC REPLICA cfg")
+        # A `Join` table on the initiator only: `joinGet` resolves it by name on the executing server, like a dictionary.
+        initiator.query("CREATE TABLE jt (k UInt64, name String) ENGINE = Join(ANY, LEFT, k)")
+        initiator.query("INSERT INTO jt SELECT number, concat('j', toString(number)) FROM numbers(1000)")
+        assert worker.query("SELECT count() FROM system.tables WHERE name = 'jt'").strip() == "0"
+        # A table whose `DEFAULT` / `MATERIALIZED` columns were added after the insert, so the only part lacks them and a
+        # reader has to compute them from the metadata. Separate from `t`: the `count()` controls pick the smallest column.
+        for node in (initiator, worker):
+            node.query(
+                """
+                CREATE TABLE t_dflt (k UInt64, v String)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_dflt', '{replica}') ORDER BY k
+                """
+            )
+        initiator.query("INSERT INTO t_dflt SELECT number, toString(number) FROM numbers(1000)")
+        initiator.query(
+            "ALTER TABLE t_dflt ADD COLUMN nm String DEFAULT dictGet(d, 'name', k), "
+            "ADD COLUMN mt String MATERIALIZED dictGet(d, 'name', k), "
+            "ADD COLUMN via String DEFAULT concat(nm, '!'), "
+            "ADD COLUMN via2 String DEFAULT upper(via), "
+            "ADD COLUMN lam Array(String) DEFAULT arrayMap(x -> dictGet(d, 'name', x), [k]), "
+            "ADD COLUMN cid UInt32 DEFAULT assignCentroid([toFloat32(k % 2), toFloat32(1 - k % 2)], 'default.c'), "
+            "ADD COLUMN cid_inline UInt32 DEFAULT assignCentroid([toFloat32(k % 2), toFloat32(1 - k % 2)], "
+            "[[1.0, 0.0], [0.0, 1.0]]::Array(Array(Float32))), "
+            "ADD COLUMN cid_inline_literal UInt32 DEFAULT assignCentroid([toFloat32(k % 2), toFloat32(1 - k % 2)], [[1.0, 0.0], [0.0, 1.0]]), "
+            "ADD COLUMN plain String DEFAULT concat('p', toString(k))"
+        )
+        worker.query("SYSTEM SYNC REPLICA t_dflt")
+        # A materialized default whose dictionary was dropped afterwards: the parts hold the values, but the default
+        # expression in the metadata no longer resolves. The dictionary has to exist on both replicas while the
+        # materialization runs (each replica executes the mutation itself), and is dropped on both afterwards.
+        for node in (initiator, worker):
+            node.query(
+                """
+                CREATE TABLE t_gone (k UInt64)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_gone', '{replica}') ORDER BY k
+                """
+            )
+            node.query("CREATE TABLE src_gone (k UInt64, name String) ENGINE = MergeTree ORDER BY k")
+            node.query("INSERT INTO src_gone SELECT number, concat('n', toString(number)) FROM numbers(100)")
+            node.query(
+                """
+                CREATE DICTIONARY d_gone (k UInt64, name String) PRIMARY KEY k
+                SOURCE(CLICKHOUSE(TABLE 'src_gone' DB 'default')) LAYOUT(FLAT()) LIFETIME(0)
+                """
+            )
+        initiator.query("INSERT INTO t_gone SELECT number FROM numbers(100)")
+        initiator.query("ALTER TABLE t_gone ADD COLUMN gone String DEFAULT dictGet(d_gone, 'name', k)")
+        initiator.query("ALTER TABLE t_gone MATERIALIZE COLUMN gone SETTINGS mutations_sync = 2")
+        worker.query("SYSTEM SYNC REPLICA t_gone")
+        # The dependency tracking refuses the drop (the default of `gone` uses the dictionary); forced here on purpose.
+        for node in (initiator, worker):
+            node.query("DROP DICTIONARY d_gone SETTINGS check_table_dependencies = 0")
         yield cluster
     finally:
         cluster.shutdown()
@@ -121,7 +184,7 @@ def test_dict_get_falls_back(started_cluster):
     _flush_logs()
     assert _remote_tasks(query_id) == 0
     assert _worker_tasks(query_id) == 0
-    assert "does not support the dictionary function dictGet" in _fallback_reasons(query_id)
+    assert "does not support dictionary default.d" in _fallback_reasons(query_id)
 
 
 def test_dict_get_in_filter_falls_back(started_cluster):
@@ -135,7 +198,7 @@ def test_dict_get_in_filter_falls_back(started_cluster):
     _flush_logs()
     assert _remote_tasks(query_id) == 0
     assert _worker_tasks(query_id) == 0
-    assert "does not support the dictionary function dictHas" in _fallback_reasons(query_id)
+    assert "does not support dictionary default.d" in _fallback_reasons(query_id)
 
 
 def test_dict_get_inside_lambda_falls_back(started_cluster):
@@ -150,7 +213,7 @@ def test_dict_get_inside_lambda_falls_back(started_cluster):
     _flush_logs()
     assert _remote_tasks(query_id) == 0
     assert _worker_tasks(query_id) == 0
-    assert "does not support the dictionary function dictGet" in _fallback_reasons(query_id)
+    assert "does not support dictionary default.d" in _fallback_reasons(query_id)
 
     # The lambda captures `k`, so it stays a `FunctionCapture` node whose body holds the call.
     query_id = str(uuid.uuid4())
@@ -162,7 +225,7 @@ def test_dict_get_inside_lambda_falls_back(started_cluster):
     _flush_logs()
     assert _remote_tasks(query_id) == 0
     assert _worker_tasks(query_id) == 0
-    assert "does not support the dictionary function dictHas" in _fallback_reasons(query_id)
+    assert "does not support dictionary default.d" in _fallback_reasons(query_id)
 
 
 def test_assign_centroid_dictionary_form_falls_back(started_cluster):
@@ -178,7 +241,7 @@ def test_assign_centroid_dictionary_form_falls_back(started_cluster):
     _flush_logs()
     assert _remote_tasks(query_id) == 0
     assert _worker_tasks(query_id) == 0
-    assert "does not support the dictionary function assignCentroid" in _fallback_reasons(query_id)
+    assert "does not support dictionary default.c" in _fallback_reasons(query_id)
 
     query_id = str(uuid.uuid4())
     result = initiator.query(
@@ -190,6 +253,98 @@ def test_assign_centroid_dictionary_form_falls_back(started_cluster):
     _flush_logs()
     assert _remote_tasks(query_id) > 0
     assert _fallback_reasons(query_id) == ""
+
+
+def test_assign_centroid_wrapped_name_falls_back(started_cluster):
+    """The function sees the dictionary name unwrapped, but the plan node keeps the type as written: `Nullable(String)`
+    from a scalar subquery, `LowCardinality(String)` from `toLowCardinality`. Issue 121486."""
+    # The scalar subquery is a unit of its own: it has no dictionary, so it distributes and spawns tasks of its own while
+    # the outer plan falls back. Only the outer plan's decision is asserted for it.
+    for name_expression, outer_plan_only in [
+        ("toLowCardinality('default.c')", False),
+        ("CAST('default.c', 'Nullable(String)')", False),
+        ("(SELECT nm FROM cfg LIMIT 1)", True),
+    ]:
+        query_id = str(uuid.uuid4())
+        result = initiator.query(
+            f"SELECT assignCentroid([toFloat32(k % 2), toFloat32(1 - k % 2)], {name_expression}) AS cid, count() "
+            f"FROM t GROUP BY cid ORDER BY cid SETTINGS {DISTRIBUTED_SETTINGS}",
+            query_id=query_id,
+        )
+        assert result == "0\t500\n1\t500\n", name_expression
+        _flush_logs()
+        if not outer_plan_only:
+            assert _remote_tasks(query_id) == 0, name_expression
+            assert _worker_tasks(query_id) == 0, name_expression
+        assert "does not support dictionary default.c" in _fallback_reasons(query_id), name_expression
+
+
+def test_join_get_falls_back(started_cluster):
+    """`joinGet` resolves its `Join` table in the catalog of the executing server when the function is built, exactly
+    like a dictionary function does. Issue 121487."""
+    for query, expected in [
+        ("SELECT k, joinGet(jt, 'name', k) AS name FROM t ORDER BY k LIMIT 3", "0\tj0\n1\tj1\n2\tj2\n"),
+        ("SELECT k, joinGetOrNull('default.jt', 'name', k) AS name FROM t ORDER BY k LIMIT 3", "0\tj0\n1\tj1\n2\tj2\n"),
+        ("SELECT count() FROM t WHERE joinGet(jt, 'name', k) = 'j5'", "1\n"),
+        ("SELECT k, arrayMap(x -> joinGet(jt, 'name', x), [k]) AS names FROM t ORDER BY k LIMIT 2", "0\t['j0']\n1\t['j1']\n"),
+    ]:
+        query_id = str(uuid.uuid4())
+        result = initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
+        assert result == expected, query
+        _flush_logs()
+        assert _remote_tasks(query_id) == 0, query
+        assert _worker_tasks(query_id) == 0, query
+        assert "does not support Join table default.jt" in _fallback_reasons(query_id), query
+
+
+def test_dict_get_in_column_default_falls_back(started_cluster):
+    """The plan carries only `INPUT nm`; the worker's reader would compute the default from the metadata, on the worker,
+    with a dictionary it does not have. A default reading another defaulted column is followed. Issue 121489."""
+    # `via` reads `nm`, `via2` reads `via`: the reader would compute the whole chain, so the check follows it. `lam` hides
+    # the call in a lambda body. `cid` is the dictionary form of `assignCentroid` spelled in a default.
+    # The reason names the function and the selected column whose resolved default contains it: for `via` and `via2` the
+    # analyzer substitutes `nm` by its own default, so the call is found in their expressions.
+    for query, expected, reason in [
+        ("SELECT k, nm FROM t_dflt ORDER BY k LIMIT 3", "0\tn0\n1\tn1\n2\tn2\n", "dictionary default.d"),
+        ("SELECT k, mt FROM t_dflt ORDER BY k LIMIT 3", "0\tn0\n1\tn1\n2\tn2\n", "dictionary default.d"),
+        ("SELECT k, via FROM t_dflt ORDER BY k LIMIT 3", "0\tn0!\n1\tn1!\n2\tn2!\n", "dictionary default.d"),
+        ("SELECT k, via2 FROM t_dflt ORDER BY k LIMIT 3", "0\tN0!\n1\tN1!\n2\tN2!\n", "dictionary default.d"),
+        ("SELECT k, lam FROM t_dflt ORDER BY k LIMIT 2", "0\t['n0']\n1\t['n1']\n", "dictionary default.d"),
+        ("SELECT k, cid FROM t_dflt ORDER BY k LIMIT 3", "0\t1\n1\t0\n2\t1\n", "dictionary default.c"),
+    ]:
+        query_id = str(uuid.uuid4())
+        result = initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
+        assert result == expected, query
+        _flush_logs()
+        assert _remote_tasks(query_id) == 0, query
+        assert _worker_tasks(query_id) == 0, query
+        assert f"does not support {reason}: it is an object of the initiator, used by a column default of table default.t_dflt" in _fallback_reasons(query_id), query
+
+    # Defaults without an object of the initiator still distribute: a plain expression, and the inline form of `assignCentroid`.
+    for query, expected in [
+        ("SELECT k, plain FROM t_dflt ORDER BY k LIMIT 2", "0\tp0\n1\tp1\n"),
+        ("SELECT k, cid_inline FROM t_dflt ORDER BY k LIMIT 3", "0\t1\n1\t0\n2\t1\n"),
+        ("SELECT k, cid_inline_literal FROM t_dflt ORDER BY k LIMIT 3", "0\t1\n1\t0\n2\t1\n"),
+    ]:
+        query_id = str(uuid.uuid4())
+        result = initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
+        assert result == expected, query
+        _flush_logs()
+        assert _remote_tasks(query_id) > 0, query
+        assert _fallback_reasons(query_id) == "", query
+
+
+def test_unresolvable_column_default_falls_back(started_cluster):
+    """The default expression of `gone` names a dictionary that no longer exists. The check cannot resolve it and treats
+    that as a reference, so the query runs locally, where the reader finds the column in every part and never evaluates
+    the default. Distributing would have been fine here; failing at planning would not."""
+    query_id = str(uuid.uuid4())
+    result = initiator.query(f"SELECT k, gone FROM t_gone ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
+    assert result == "0\tn0\n1\tn1\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    assert _worker_tasks(query_id) == 0
+    assert "a column default of table default.t_gone does not resolve" in _fallback_reasons(query_id)
 
 
 def test_dict_in_limit_range_and_interpolate_falls_back(started_cluster):
@@ -206,7 +361,33 @@ def test_dict_in_limit_range_and_interpolate_falls_back(started_cluster):
         _flush_logs()
         assert _remote_tasks(query_id) == 0, query
         assert _worker_tasks(query_id) == 0, query
-        assert f"does not support the dictionary function {function}" in _fallback_reasons(query_id), query
+        assert "does not support dictionary default.d" in _fallback_reasons(query_id), query
+
+
+def test_scalar_subquery_with_dictionary_disables_the_query(started_cluster):
+    """The record is per query: a dictionary resolved while a scalar subquery is evaluated on the initiator makes the
+    outer plan fall back too, although only its constant result would have shipped. Accepted while dictionaries are
+    disabled for distributed plans."""
+    query_id = str(uuid.uuid4())
+    result = initiator.query(
+        f"SELECT k, (SELECT dictGet(d, 'name', toUInt64(1))) AS s FROM t ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}",
+        query_id=query_id,
+    )
+    assert result == "0\tn1\n1\tn1\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    assert _worker_tasks(query_id) == 0
+    assert "does not support dictionary default.d" in _fallback_reasons(query_id)
+
+
+def test_record_does_not_depend_on_query_logging(started_cluster):
+    """`system.query_log` bookkeeping is gated on `log_queries`; the record the decision reads is not."""
+    error = initiator.query_and_get_error(
+        f"SELECT k, dictGet(d, 'name', k) FROM t ORDER BY k LIMIT 3 "
+        f"SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_fallback_to_local_execution = 0, log_queries = 0"
+    )
+    assert "SUPPORT_IS_DISABLED" in error
+    assert "does not support dictionary default.d" in error
 
 
 def test_strict_mode_throws(started_cluster):
@@ -215,4 +396,4 @@ def test_strict_mode_throws(started_cluster):
         f"SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_fallback_to_local_execution = 0"
     )
     assert "SUPPORT_IS_DISABLED" in error
-    assert "does not support the dictionary function dictGet" in error
+    assert "does not support dictionary default.d" in error
