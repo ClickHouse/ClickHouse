@@ -1068,6 +1068,12 @@ VALUES ('http_request_duration_seconds', {'job': 'api'},
 ```
 
 A row may carry both float samples in `samples` and histogram samples in `histograms.*` for the same time series.
+
+The Prometheus remote-write protocol fills the group from the native histograms of a request when the sender is configured
+with `send_native_histograms: true`: the integer bucket deltas are decoded to absolute counts, everything else is stored as sent.
+A table of a version before 6 has no histograms table, so it stores the float samples of a request and drops its native
+histograms with a warning, counting them in the `PrometheusRemoteWriteDroppedHistograms` profile event.
+
 Reading the group returns the histogram samples of every time series, for example the buckets of every histogram:
 
 ```sql
