@@ -1424,19 +1424,6 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (!supported_tokenizers.contains(tokenizer->getTokenizerExternalName()))
             return false;
 
-        /// The postprocessor in `optimizeDirectReadFromTextIndex` rejoins the normalized tokens with a
-        /// space and re-tokenizes them, and validates each token with the `splitByNonAlpha` separator rule.
-        /// Both assumptions are wrong for `splitByRegexp`: its separator need not be whitespace (so the rejoin
-        /// would collapse tokens, causing false negatives) and its tokens may contain characters such as `#` or
-        /// `+` (which the validation would reject). Rather than bypassing the index - which would silently fall
-        /// back to the default `splitByNonAlpha` and produce false positives - reject this combination
-        /// explicitly. `splitByRegexp` + `hasPhrase` without a postprocessor is fully supported. This also
-        /// covers `match_tokens` mode, where adjacency is even less reliable.
-        if (tokenizer->getType() == ITokenizer::Type::SplitByRegexp && has_postprocessor)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Function 'hasPhrase' is not supported on a text index that uses the 'splitByRegexp' tokenizer and a postprocessor");
-
         /// An Array phrase carries the tokens verbatim: neither the tokenizer nor the preprocessor applies.
         if (value_field.getType() == Field::Types::Array)
         {
