@@ -97,12 +97,22 @@ send "$(payload "CREATE TABLE pr_wth (a UInt8, PROJECTION p (WITH rand(14) AS n 
 # A projection sorting key may not be constant, so this payload's well-formed twin is refused by that
 # rule; the screen still has to act before it, and the round-trip below covers a legal ORDER BY.
 send "$(payload "CREATE TABLE pr_ord (a UInt8, PROJECTION p (SELECT a ORDER BY now64(3))) ${PROJ}" "$ARGS_3")"
+# An `INDEX ... TYPE ...` projection reaches the same interpreter without an `ASTProjectionSelectQuery`
+# existing in the payload at all: `ProjectionIndexBasic`/`ProjectionIndexCommitOrder` build that node in
+# C++ and clone the restored `index` list into its SELECT slot, so the slot screen above never runs on
+# it and the declaration has to screen `index` itself. The projection TYPE stays unscreened on purpose:
+# `commit_order` is a parser-produced argument-less function, exactly like a table engine.
+send "$(payload "CREATE TABLE pr_ic (a UInt64, PROJECTION p INDEX now64(3) TYPE commit_order) ENGINE = MergeTree ORDER BY a" "$ARGS_3")"
+send "$(payload "CREATE TABLE pr_ib (a UInt64, PROJECTION p INDEX rand(12) TYPE basic) ENGINE = MergeTree ORDER BY a" "$ARGS_12")"
 # Rejected at the boundary means no table was created, so no later failure can stand in for the screen.
 ${CLICKHOUSE_CLIENT} --query "EXISTS TABLE pr_sel"
 
 # Well-formed projection bodies still round-trip through all five slots, and the stored definition is
 # asserted rather than only the absence of an error.
 proj_roundtrip() {
+    # Dropped before as well as after: a run that stops between the CREATE and the final DROP would
+    # otherwise leave the table behind and the next run would print TABLE_ALREADY_EXISTS here.
+    ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS $2"
     ${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
         "$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('$1') FORMAT TSVRaw")"
     ${CLICKHOUSE_CLIENT} --query "SELECT query FROM system.projections
@@ -111,6 +121,13 @@ proj_roundtrip() {
 }
 proj_roundtrip "CREATE TABLE pr_ok (a UInt8, PROJECTION p (WITH rand(14) AS n SELECT count(), n WHERE rand(12) > 0 GROUP BY a)) ${PROJ}" pr_ok
 proj_roundtrip "CREATE TABLE pr_ok2 (a UInt8, PROJECTION p (SELECT a, length(toString(a)) ORDER BY a)) ${PROJ}" pr_ok2
+# The `INDEX` form carries no projection SELECT, so its round-trip is asserted on the stored definition:
+# an index projection leaves `system.projections.query` empty.
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS pr_ok3"
+${CLICKHOUSE_CURL} -sS "$JSON_URL" --data-binary \
+    "$(${CLICKHOUSE_CLIENT} --query "SELECT parseQueryToJSON('CREATE TABLE pr_ok3 (a UInt64, b UInt64, PROJECTION p INDEX a, b + 1 TYPE basic) ENGINE = MergeTree ORDER BY a') FORMAT TSVRaw")"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE TABLE pr_ok3" | grep -oE "PROJECTION p INDEX [^)]*TYPE [a-z_]+"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS pr_ok3"
 
 # Well-formed payloads still round-trip through every screened slot, including the nullary `count()`,
 # the `numbers` table function and both transformer members, whose `arguments` lists the parser leaves
