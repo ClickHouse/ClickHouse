@@ -640,7 +640,6 @@ void RestorerFromBackup::createDatabase(const String & database_name) const
         /// Execute CREATE DATABASE query.
         InterpreterCreateQuery interpreter{create_database_query, create_query_context};
         interpreter.setInternal(true);
-        /// The query is a definition read back from the backup, not one stated now.
         interpreter.setIsRestoreFromBackup(true);
         interpreter.execute();
     }

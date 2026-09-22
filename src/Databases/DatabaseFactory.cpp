@@ -89,9 +89,8 @@ void checkDatabaseSettingNames(
     if (!storage || !storage->engine || !storage->settings)
         return;
 
-    /// A stored database definition is replayed at plain `ATTACH`, the mode a user's own full-definition
-    /// `ATTACH DATABASE` also carries, so the replay flag is what tells them apart; a backup holds a
-    /// `CREATE DATABASE`, so its restore is a replay at `CREATE`.
+    /// Plain `ATTACH` is the mode of both a stored-definition replay and a user's own `ATTACH DATABASE`, so
+    /// the replay flag tells them apart; a backup holds a `CREATE DATABASE`, so its restore replays at `CREATE`.
     /// A Shared Catalog secondary re-executes the initiator's `CREATE DATABASE`, so it states nothing new.
 #if CLICKHOUSE_CLOUD
     const bool is_shared_catalog_replay
@@ -115,8 +114,7 @@ void checkDatabaseSettingNames(
             ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for database engine {}", name, storage->engine->name);
     };
 
-    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the
-    /// stored definition.
+    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and round-trips into the stored definition.
     for (const auto & name : storage->settings->default_settings)
         if (!features->has_builtin_setting_fn(name) && !query_settings.has(name))
             reject(name);
