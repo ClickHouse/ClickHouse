@@ -483,6 +483,7 @@
     M(HashJoinPartitionOverflowRows, "Number of right-side rows of a `partitioned_hash` join that did not fit in their partition's range of the hash table. One thread inserts those rows later.", ValueType::Number) \
     M(HashJoinDuplicateRunBytes, "Bytes a `partitioned_hash` join allocated to store the row references of keys that occur more than once.", ValueType::Bytes) \
     M(HashJoinTeardownMicroseconds, "Time spent freeing the hash table, the build buffers and the stored right-side blocks of a `partitioned_hash` join.", ValueType::Microseconds) \
+    M(HashJoinScatterGroups, "Number of groups of right-side blocks a `partitioned_hash` join partitioned separately to limit its peak memory. 1 means all blocks were partitioned at once.", ValueType::Number) \
     M(HashJoinTableResizes, "Number of times the hash table of a `partitioned_hash` join grew after inserting started.", ValueType::Number) \
     M(HashJoinRowStoreBlocks, "Number of right-side blocks a `partitioned_hash` join stored in row-major form (`RowDataStore`). The `hash` join stores the same way when the row store is enabled.", ValueType::Number) \
     M(JoinReorderMicroseconds, "Total time spent executing JOIN reordering algorithm.", ValueType::Microseconds) \

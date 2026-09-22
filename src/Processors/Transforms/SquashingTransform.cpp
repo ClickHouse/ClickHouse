@@ -1,5 +1,6 @@
 #include <utility>
 #include <Processors/Transforms/SquashingTransform.h>
+#include <Interpreters/IJoin.h>
 #include <Interpreters/Squashing.h>
 #include <Processors/Chunk.h>
 
@@ -94,6 +95,59 @@ bool SimpleSquashingChunksTransform::canGenerate()
 
 Chunk SimpleSquashingChunksTransform::getRemaining()
 {
+    return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
+}
+
+JoinOutputSquashingTransform::JoinOutputSquashingTransform(
+    SharedHeader header, size_t min_block_size_rows, size_t min_block_size_bytes, std::shared_ptr<IJoin> join_)
+    : IInflatingTransform(header, header)
+    , join(std::move(join_))
+    , squashing(header, min_block_size_rows, min_block_size_bytes)
+{
+}
+
+void JoinOutputSquashingTransform::consume(Chunk chunk)
+{
+    if (!pass_through)
+        pass_through = join->emitsSizedOutputBlocks();
+
+    if (*pass_through)
+    {
+        if (!chunk.hasRows())
+            return;
+        passed_chunk = std::move(chunk);
+        return;
+    }
+    squashing.add(std::move(chunk));
+}
+
+bool JoinOutputSquashingTransform::canGenerate()
+{
+    if (pass_through && *pass_through)
+        return passed_chunk.hasRows();
+    return squashing.canGenerate();
+}
+
+Chunk JoinOutputSquashingTransform::generate()
+{
+    Chunk result;
+    if (pass_through && *pass_through)
+    {
+        result.swap(passed_chunk);
+        return result;
+    }
+
+    squashed_chunk = Squashing::squash(squashing.generate(), getOutputPort().getSharedHeader());
+    if (squashed_chunk.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in JoinOutputSquashingTransform");
+    result.swap(squashed_chunk);
+    return result;
+}
+
+Chunk JoinOutputSquashingTransform::getRemaining()
+{
+    if (pass_through && *pass_through)
+        return {};
     return Squashing::squash(squashing.flush(), getOutputPort().getSharedHeader());
 }
 

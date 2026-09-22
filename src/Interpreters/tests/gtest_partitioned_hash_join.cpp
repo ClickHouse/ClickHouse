@@ -14,6 +14,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
@@ -135,6 +136,9 @@ struct BuildOptions
     JoinStrictness strictness = JoinStrictness::All;
     std::optional<AsofKey> asof;
     size_t build_block_rows = block_rows;
+    /// One copy of every key per round of blocks, instead of a key's rows adjacent. A grouped scatter
+    /// then puts a key's rows in different groups and writes chains.
+    bool duplicate_major = false;
     /// `parallel_hash_join_threshold`; unset keeps the default (100000 rows).
     std::optional<size_t> parallel_hash_join_threshold;
     /// `partitioned_hash_join_max_fanout_per_pass`, lowered to force refine passes without a 500M-key
@@ -145,9 +149,15 @@ struct BuildOptions
     /// here, enough for a row store.
     bool enable_row_store = false;
     const StatsCollectingParams * stats_collecting_params = nullptr;
+    /// The post-build memory gate: zero disables grouping.
+    size_t max_bytes_before_external_join = 0;
     /// A factor below 1 sizes the table under the key count, so the build has to grow it.
     double reserve_safety_for_tests = 0;
     std::optional<size_t> reserve_override_for_tests;
+    /// `0` means grows are always allowed. Unset leaves the constructor budget (the grouping cap).
+    std::optional<size_t> grow_budget_for_tests;
+    /// The grow budget from the overflow drain on; unset keeps `grow_budget_for_tests`.
+    std::optional<size_t> grow_budget_for_drain_for_tests;
     /// Pins the build and the probe onto the sequential loops instead of the AMAC ring, the
     /// prefetching insert and probe loop of `AmacRing.h`.
     bool disable_amac = false;
@@ -199,6 +209,7 @@ struct BuiltJoin
 {
     std::shared_ptr<TableJoin> table_join;
     std::shared_ptr<PartitionedHashJoin> join;
+    PartitionedHashJoin::PostBuildPlan post_build_plan = PartitionedHashJoin::PostBuildPlan::Fits;
 };
 
 /// Empty join with test hooks from `options` applied.
@@ -215,11 +226,16 @@ BuiltJoin makeJoin(
         options.num_threads,
         /*any_take_last_row_=*/false,
         HashJoinStatsCollectingParams{
-            .build = options.stats_collecting_params ? *options.stats_collecting_params : StatsCollectingParams{}, .match = {}});
+            .build = options.stats_collecting_params ? *options.stats_collecting_params : StatsCollectingParams{}, .match = {}},
+        options.max_bytes_before_external_join);
     if (options.reserve_safety_for_tests > 0)
         result.join->setReserveSafetyFactorForTests(options.reserve_safety_for_tests);
     if (options.reserve_override_for_tests)
         result.join->setReserveOverrideForTests(*options.reserve_override_for_tests);
+    if (options.grow_budget_for_tests)
+        result.join->setGrowBudgetForTests(*options.grow_budget_for_tests);
+    if (options.grow_budget_for_drain_for_tests)
+        result.join->setGrowBudgetForDrainForTests(*options.grow_budget_for_drain_for_tests);
     if (options.disable_amac)
         result.join->setAmacEnabledForTests(false);
     if (options.partition_bits_for_tests)
@@ -230,7 +246,9 @@ BuiltJoin makeJoin(
 }
 
 /// The blocks `buildJoin` feeds, as key indexes and row ids, `options.build_block_rows` rows each.
-/// Key-major: a key's rows are adjacent. Row `d` of key `i` has id `i * duplicates + d`.
+/// Key-major by default: a key's rows are adjacent. With `duplicate_major` every round of blocks
+/// holds one row of every key and ends on a block boundary. Row `d` of key `i` has id
+/// `i * duplicates + d` in both layouts.
 template <typename Sink>
 void forEachBuildBlock(size_t distinct_keys, size_t duplicates, const BuildOptions & options, Sink && sink)
 {
@@ -253,10 +271,22 @@ void forEachBuildBlock(size_t distinct_keys, size_t duplicates, const BuildOptio
         if (key_indexes.size() == options.build_block_rows)
             flush();
     };
-    for (size_t i = 0; i < distinct_keys; ++i)
+    if (options.duplicate_major)
+    {
         for (size_t d = 0; d < duplicates; ++d)
-            push(i, d);
-    flush();
+        {
+            for (size_t i = 0; i < distinct_keys; ++i)
+                push(i, d);
+            flush();
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < distinct_keys; ++i)
+            for (size_t d = 0; d < duplicates; ++d)
+                push(i, d);
+        flush();
+    }
 }
 
 std::vector<UInt64> keysOf(const std::vector<size_t> & key_indexes)
@@ -292,9 +322,12 @@ void addBlock(PartitionedHashJoin & join, const std::vector<UInt64> & keys, UInt
     EXPECT_TRUE(addBuildBlock(join, twoColumnBlock("rk", "build_id", keys, ids)));
 }
 
-void finishBuild(BuiltJoin & built)
+/// The barrier and the post-build phase; records the memory verdict when a budget is set.
+void finishBuild(BuiltJoin & built, const BuildOptions & options)
 {
     built.join->onBuildPhaseFinish();
+    if (options.max_bytes_before_external_join)
+        built.post_build_plan = built.join->planPostBuild();
     built.join->runPostBuildPhase();
 }
 
@@ -305,8 +338,35 @@ BuiltJoin buildJoin(size_t distinct_keys, size_t duplicates, const BuildOptions 
 {
     BuiltJoin result = makeJoin(options);
     addBuildBlocks(*result.join, distinct_keys, duplicates, options);
-    finishBuild(result);
+    finishBuild(result, options);
     return result;
+}
+
+/// The memory verdict for this build under `budget`, without running the post-build phase.
+PartitionedHashJoin::PostBuildPlan planUnderBudget(size_t distinct_keys, size_t duplicates, BuildOptions options, size_t budget)
+{
+    options.max_bytes_before_external_join = budget;
+    BuiltJoin built = makeJoin(options);
+    addBuildBlocks(*built.join, distinct_keys, duplicates, options);
+    built.join->onBuildPhaseFinish();
+    return built.join->planPostBuild();
+}
+
+/// The smallest budget, to 1 MiB, that `planPostBuild` does not answer with `MustSpill`: the grouped
+/// memory floor when a grouped band exists, else the ungrouped peak. Found by bisection over rebuilds.
+size_t smallestBudgetNotSpilling(size_t distinct_keys, size_t duplicates, const BuildOptions & options)
+{
+    size_t low = 1uz << 20;
+    size_t high = 4096uz << 20;
+    while (high - low > (1uz << 20))
+    {
+        const size_t mid = low + (high - low) / 2;
+        if (planUnderBudget(distinct_keys, duplicates, options, mid) == PartitionedHashJoin::PostBuildPlan::MustSpill)
+            low = mid;
+        else
+            high = mid;
+    }
+    return high;
 }
 
 /// Probes `keys` in blocks of `block_rows`, with `probe_id` the key's index, and returns every joined
@@ -367,7 +427,8 @@ void probeAndCheck(BuiltJoin & built, size_t distinct_keys, size_t duplicates, s
 void expectTableInvariants(const PartitionedHashJoin::BuildStats & stats, size_t distinct_keys, size_t rows)
 {
     EXPECT_EQ(stats.table_cells, 1uz << stats.table_size_degree);
-    EXPECT_GE(stats.table_cells, 2 * distinct_keys) << "the table must keep at most 50% fill";
+    if (stats.load_factor_grow_skipped == 0)
+        EXPECT_GE(stats.table_cells, 2 * distinct_keys) << "the table must keep at most 50% fill when a load-factor grow was affordable";
     EXPECT_EQ(stats.inserted_rows, rows);
     EXPECT_EQ(stats.distinct_keys, distinct_keys);
     EXPECT_TRUE(stats.predictions_exact || stats.table_resizes > 0)
@@ -399,6 +460,45 @@ String expectThrowsCode(int code, std::string_view what, F && fn)
     }
     ADD_FAILURE() << what;
     return {};
+}
+
+/// The key indexes of every block `buildJoin` fed, for `expectedHeadersFromGroups`.
+std::vector<std::vector<size_t>> buildBlockLayout(size_t distinct_keys, size_t duplicates, const BuildOptions & options)
+{
+    std::vector<std::vector<size_t>> blocks;
+    forEachBuildBlock(
+        distinct_keys,
+        duplicates,
+        options,
+        [&](const std::vector<size_t> & key_indexes, const std::vector<UInt64> &) { blocks.push_back(key_indexes); });
+    return blocks;
+}
+
+/// Walks the block layout group by group and counts the keys that already had two or more rows when
+/// a group brought another: each of those gets a range header.
+size_t expectedHeadersFromGroups(
+    size_t distinct,
+    const std::vector<std::vector<size_t>> & blocks,
+    const std::vector<PartitionedHashJoin::BuildStats::BlockRange> & groups)
+{
+    std::vector<size_t> cumulative(distinct, 0);
+    size_t headers = 0;
+    for (const auto & range : groups)
+    {
+        std::vector<size_t> in_group(distinct, 0);
+        for (size_t b = range.begin; b < range.end && b < blocks.size(); ++b)
+            for (size_t k : blocks[b])
+                ++in_group[k];
+        for (size_t k = 0; k < distinct; ++k)
+        {
+            const size_t before = cumulative[k];
+            const size_t now = in_group[k];
+            cumulative[k] += now;
+            if (now >= 1 && before >= 2)
+                ++headers;
+        }
+    }
+    return headers;
 }
 
 /// A build whose special keys all have their home cell in the last `window` cells of the last
@@ -486,7 +586,7 @@ CrossingBuild buildCrossing(size_t num_threads, bool disable_amac, size_t bits)
     }
     result.special_rows = dups.size();
     add_block(dups);
-    finishBuild(result.built);
+    finishBuild(result.built, options);
 
     /// Every distinct key probed once; the expected multiset has one tuple per build row.
     std::vector<UInt64> distinct;
@@ -541,7 +641,7 @@ TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
             const Block block = twoColumnBlock("rk", "build_id", keysOf(key_indexes), ids);
             EXPECT_TRUE(addBuildBlock(*built.join, block, /*worker_id=*/build_block_index++ % 9));
         });
-    finishBuild(built);
+    finishBuild(built, options);
 
     expectTableInvariants(built.join->getBuildStats(), distinct_keys, distinct_keys * duplicates);
     probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100, /*rotate_lanes=*/true);
@@ -565,19 +665,89 @@ TEST(PartitionedHashJoin, PartitionFloorNeverExceedsDistinctKeys)
     probeAndCheck(built, distinct_keys, duplicates, /*misses=*/10);
 }
 
-/// A table sized far below the key count grows until the build fits.
+/// A spill budget that covers the single-partition build but not the scatter transient of one partition per worker keeps one partition.
+TEST(PartitionedHashJoin, RowsFloorDeclinedUnderBudget)
+{
+    /// The one-partition-per-worker plan scatters every row's position and key at once. The first
+    /// build, under a budget far above any peak, takes that plan; its final byte count is the row
+    /// store, the table and the duplicate runs. The routes, 2 bytes per row, are gone by then but are
+    /// still resident when the plan is decided, so they go back in. That total plus 1 MiB covers the
+    /// single-partition build and falls short of the transient by the whole scatter chunk.
+    constexpr size_t distinct_keys = 1024;
+    constexpr size_t duplicates = 2048;
+    constexpr size_t rows = distinct_keys * duplicates;
+    BuildOptions options;
+    options.num_threads = 4;
+    options.parallel_hash_join_threshold = 1000;
+
+    size_t resident_bytes = 0;
+    {
+        options.max_bytes_before_external_join = 4096uz << 20;
+        auto floor_built = buildJoin(distinct_keys, duplicates, options);
+        ASSERT_EQ(floor_built.join->getBuildStats().partitions, 4u) << "a budget far above the peak takes one partition per worker";
+        resident_bytes = floor_built.join->getTotalByteCount() + rows * sizeof(UInt16);
+    }
+
+    options.max_bytes_before_external_join = resident_bytes + (1uz << 20);
+    auto built = buildJoin(distinct_keys, duplicates, options);
+    EXPECT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Fits) << "the budget must cover the single-partition build";
+    const auto stats = built.join->getBuildStats();
+    EXPECT_EQ(stats.partitions, 1u) << "one partition per worker must not blow the spill budget";
+    expectTableInvariants(stats, distinct_keys, rows);
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
+}
+
+/// A table sized far below the key count grows until the build fits, on the ungrouped and on the grouped scatter alike.
 TEST(PartitionedHashJoin, UndersizedTableGrows)
 {
     /// A safety factor of 0.25 reserves a quarter of the keys. Growth restores the fill; the build
     /// must not throw and the probe must still be an identity.
-    constexpr size_t distinct_keys = 50000;
+    {
+        constexpr size_t distinct_keys = 50000;
+        BuildOptions options;
+        options.reserve_safety_for_tests = 0.25;
+        auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
+        const auto stats = built.join->getBuildStats();
+        EXPECT_GE(stats.table_resizes, 1u);
+        expectTableInvariants(stats, distinct_keys, distinct_keys);
+        probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+    }
+    {
+        constexpr size_t distinct_keys = 200000;
+        constexpr size_t duplicates = 8;
+        BuildOptions options;
+        options.duplicate_major = true;
+        options.max_bytes_before_external_join = 55u << 20;
+        options.reserve_safety_for_tests = 0.25;
+        options.grow_budget_for_tests = 0;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
+        const auto stats = built.join->getBuildStats();
+        EXPECT_GE(stats.table_resizes, 1u);
+        EXPECT_GT(stats.scatter_groups, 1u);
+        expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+        probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
+    }
+}
+
+/// Releasing every fill lane block before the barrier, as the spill switch does, hands over every row and leaves the join holding no bytes.
+TEST(PartitionedHashJoin, FillLaneDrainLeavesNoBytes)
+{
+    constexpr size_t distinct_keys = 100000;
+    constexpr size_t duplicates = 2;
     BuildOptions options;
-    options.reserve_safety_for_tests = 0.25;
-    auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
-    const auto stats = built.join->getBuildStats();
-    EXPECT_GE(stats.table_resizes, 1u);
-    expectTableInvariants(stats, distinct_keys, distinct_keys);
-    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+    options.kind = JoinKind::Right;
+    options.enable_row_store = true;
+    BuiltJoin built = makeJoin(options);
+    addBuildBlocks(*built.join, distinct_keys, duplicates, options);
+
+    built.join->dropFillAuxiliary();
+    size_t drained = 0;
+    for (size_t lane = 0; lane < built.join->getNumFillLanes(); ++lane)
+        for (Block block = built.join->releaseNextFillLaneBlock(lane); !block.empty(); block = built.join->releaseNextFillLaneBlock(lane))
+            drained += block.rows();
+    EXPECT_EQ(drained, distinct_keys * duplicates);
+    EXPECT_EQ(built.join->getTotalByteCount(), 0u);
 }
 
 /// The L1 descriptor cap bounds the partition count to what a quarter of L1 holds. It does so only
@@ -681,6 +851,78 @@ TEST(PartitionedHashJoin, RangeCrossingWraparound)
         }
 }
 
+/// Each later scatter group that meets a key again writes exactly one header for it, on the AMAC ring and the sequential loops alike.
+TEST(PartitionedHashJoin, GroupedScatterExactSpans)
+{
+    /// A budget between the grouped memory floor and the ungrouped peak splits the scatter into block
+    /// ranges. The duplicate-major layout puts a key's rows one per block, so they arrive in different
+    /// groups: the first writes a headerless run, and each later group adds a range with a header. The
+    /// header count is predicted from the group block ranges the budget chose. The probe walks the
+    /// newest range first.
+    /// `amac` is the expected `amac_build_engaged`: `true` demands the ring, `false` switches it off.
+    /// Unset leaves it to the L2 rule, since a 4 MiB table may still fit L2.
+    struct Case
+    {
+        size_t distinct_keys;
+        size_t duplicates;
+        size_t budget;
+        std::optional<bool> amac;
+    };
+    for (const auto & [distinct_keys, duplicates, budget, amac] :
+         {Case{200000, 8, 55u << 20, true}, Case{100000, 24, 75u << 20, std::nullopt}, Case{200000, 8, 55u << 20, false}})
+    {
+        BuildOptions options;
+        options.duplicate_major = true;
+        options.max_bytes_before_external_join = budget;
+        options.disable_amac = amac.has_value() && !*amac;
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped)
+            << "test setup: the budget must fall between the grouped floor and the ungrouped peak";
+
+        const auto stats = built.join->getBuildStats();
+        ASSERT_GT(stats.scatter_groups, 1u);
+        EXPECT_GT(stats.partitions, 1u);
+        if (amac)
+            EXPECT_EQ(stats.amac_build_engaged, *amac);
+        expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+        const auto dup = totalDuplicates(stats);
+        const size_t expected_headers
+            = expectedHeadersFromGroups(distinct_keys, buildBlockLayout(distinct_keys, duplicates, options), stats.scatter_group_ranges);
+        EXPECT_GT(dup.headers, 0u) << "the budget must split some key's rows across groups";
+        EXPECT_EQ(dup.headers, expected_headers) << "headers predicted from the actual group block ranges";
+        EXPECT_EQ(dup.headers, dup.spanning_keys) << "each spanning key has one later-group range and no split";
+        EXPECT_EQ(dup.ranges, distinct_keys + dup.headers) << "one headerless first run per key, then one range per header";
+        EXPECT_EQ(dup.arena_bytes, 8 * distinct_keys * duplicates + 16 * dup.headers);
+
+        probeAndCheck(built, distinct_keys, duplicates, /*misses=*/1000);
+    }
+}
+
+/// The arena and scratch predictions cover what a build of two rows per key actually uses.
+TEST(PartitionedHashJoin, ArenaAndScratchPredictionsCoverActuals)
+{
+    /// Every key twice, one group: 16 arena bytes per key, and the first-group scratch bound is 28
+    /// bytes per key.
+    constexpr size_t distinct_keys = 2000;
+    constexpr size_t duplicates = 2;
+    auto built = buildJoin(distinct_keys, duplicates, BuildOptions{});
+    const auto stats = built.join->getBuildStats();
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+    const auto dup = totalDuplicates(stats);
+    EXPECT_EQ(dup.headers, 0u);
+    EXPECT_EQ(dup.ranges, distinct_keys);
+    EXPECT_EQ(dup.arena_bytes, 16u * distinct_keys);
+    EXPECT_GE(built.join->predictedArenaBytesForTests(/*grouped=*/false), dup.arena_bytes);
+
+    const size_t predicted_tail = built.join->predictedDuplicateScratchBytesForTests(distinct_keys * duplicates, /*first_group=*/true);
+    EXPECT_GE(predicted_tail, stats.scratch_used_high_water);
+    EXPECT_GE(predicted_tail, 28u * distinct_keys);
+    if (stats.partitions == 1)
+        EXPECT_EQ(stats.scratch_used_high_water, 28u * distinct_keys);
+}
+
 /// The statistics cache receives every build's exact distinct count. No later build under the same
 /// key sizes its table from that count.
 TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
@@ -713,6 +955,62 @@ TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
     const auto republished = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(republished.has_value());
     EXPECT_EQ(republished->ht_size, large_keys);
+}
+
+/// When the owner inserts fill their ranges under a budget that refused the load-factor grow, the drain grows the table
+/// once and finishes exactly.
+TEST(PartitionedHashJoin, FullRangesGrowInDrain)
+{
+    /// The estimate is off by more than 2x, so the load-factor grow before the drain is refused under
+    /// a budget of one byte. Lifting the budget for the drain lets the grow at the last free cell run
+    /// once. The table ends one doubling above the undersized plan, and the partitions' claims sum to
+    /// the distinct keys. Two plans: the default one and two forced partitions.
+    constexpr size_t distinct_keys = 131072;
+    for (const std::optional<size_t> bits : {std::optional<size_t>{}, std::optional<size_t>{1}})
+    {
+        BuildOptions options;
+        options.reserve_safety_for_tests = 0.4;
+        options.partition_bits_for_tests = bits;
+        options.grow_budget_for_tests = 1;
+        options.grow_budget_for_drain_for_tests = 0;
+        auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
+        const auto stats = built.join->getBuildStats();
+        if (bits)
+            EXPECT_EQ(stats.partitions, 1uz << *bits);
+        EXPECT_EQ(stats.table_resizes, 1u);
+        EXPECT_EQ(stats.table_size_degree, Key64Table::degreeFor(static_cast<size_t>(std::ceil(distinct_keys * 0.4))) + 1);
+        UInt64 claimed = 0;
+        for (const UInt64 partition_claims : stats.claimed_per_partition)
+            claimed += partition_claims;
+        EXPECT_EQ(claimed, distinct_keys) << "the drain's claims must fold into the partition counts as a delta";
+        expectTableInvariants(stats, distinct_keys, distinct_keys);
+        probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+    }
+}
+
+/// A grow at the last free cell that the budget cannot pay for throws `LOGICAL_ERROR` instead of hanging or overfilling the table.
+TEST(PartitionedHashJoin, GrowRefusedThrows)
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "a refused grow raises LOGICAL_ERROR, which aborts instead of throwing in debug and sanitizer builds";
+#else
+    /// The estimate is off by more than 2x and the budget is one byte, so the owner inserts fill every
+    /// cell. The capacity guard must fire before the drain's first walk and throw. A hang means the
+    /// guard is only reached from the empty-cell branch, which a full table never takes.
+    constexpr size_t distinct_keys = 131072;
+    for (const std::optional<size_t> bits : {std::optional<size_t>{}, std::optional<size_t>{1}})
+    {
+        BuildOptions options;
+        options.reserve_safety_for_tests = 0.4;
+        options.partition_bits_for_tests = bits;
+        options.grow_budget_for_tests = 1;
+        const String message = expectThrowsCode(
+            ErrorCodes::LOGICAL_ERROR,
+            "a grow refused by the budget must throw",
+            [&] { buildJoin(distinct_keys, /*duplicates=*/1, options); });
+        EXPECT_TRUE(message.contains("cannot grow") || message.contains("distinct keys")) << message;
+    }
+#endif
 }
 
 /// A single-partition insert grows its table mid-way. Growth happens at the last free cell and at
@@ -750,16 +1048,115 @@ TEST(PartitionedHashJoin, SinglePartitionGrowsMidPass)
     probeAndCheck(load_factor_built, less_than_2x_keys, /*duplicates=*/1, /*misses=*/100);
 }
 
+/// `RightAny` over a build whose keys chain across scatter groups emits each key's first-inserted row, although the
+/// probe walks the newest range first.
+TEST(PartitionedHashJoin, HeadRowOfChainIsFirstInserted)
+{
+    /// RIGHT and FULL `RightAny` keep `MapsAll` and emit one row per probe row: the head of the key's
+    /// chain. The budget sits at the grouped memory floor, so the duplicate-major layout writes chains.
+    constexpr size_t distinct_keys = 100000;
+    constexpr size_t duplicates = 8;
+    for (const JoinKind kind : {JoinKind::Right, JoinKind::Full})
+    {
+        BuildOptions options;
+        options.kind = kind;
+        options.strictness = JoinStrictness::RightAny;
+        options.duplicate_major = true;
+        options.max_bytes_before_external_join = smallestBudgetNotSpilling(distinct_keys, duplicates, options);
+        auto built = buildJoin(distinct_keys, duplicates, options);
+        ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped) << "test setup: the budget must group the scatter";
+        const auto stats = built.join->getBuildStats();
+        ASSERT_GT(stats.scatter_groups, 1u);
+        ASSERT_GT(totalDuplicates(stats).headers, 0u) << "an ungrouped scatter never writes a chain";
+        expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+
+        std::vector<UInt64> keys(distinct_keys);
+        for (size_t i = 0; i < distinct_keys; ++i)
+            keys[i] = keyOf(i);
+        const JoinedRows actual = probeKeys(*built.join, keys);
+        ASSERT_EQ(actual.size(), distinct_keys) << "RightAny emits one right row per probe row";
+        for (const auto & [k, probe_id, rk, build_id] : actual)
+        {
+            EXPECT_EQ(rk, k);
+            EXPECT_EQ(build_id, probe_id * duplicates) << "first-inserted row of key " << k;
+        }
+    }
+}
+
+/// A grouped scatter whose first group holds only NULL keys, so inserts nothing, sizes the later groups without
+/// dividing by zero and builds exactly.
+TEST(PartitionedHashJoin, FirstGroupOfSkippedRowsOnly)
+{
+    /// A first block of 65536 NULL keys, then the duplicate-major layout under a grouping budget. The
+    /// projection at the first group boundary sees zero rows inserted;
+    /// `BoundaryProjectionSkippedFirstGroup` pins that helper on its own.
+    constexpr size_t distinct_keys = 200000;
+    constexpr size_t duplicates = 8;
+    BuildOptions options;
+    options.duplicate_major = true;
+    options.max_bytes_before_external_join = 55u << 20;
+
+    const auto nullable_block = [](const std::vector<UInt64> & keys, const std::vector<UInt64> & ids, bool is_null)
+    {
+        auto nested = ColumnUInt64::create();
+        nested->getData().assign(keys.begin(), keys.end());
+        auto null_map = ColumnUInt8::create();
+        null_map->getData().assign(keys.size(), is_null ? UInt8(1) : UInt8(0));
+        auto id_column = ColumnUInt64::create();
+        id_column->getData().assign(ids.begin(), ids.end());
+        Block block;
+        block.insert(
+            {ColumnNullable::create(std::move(nested), std::move(null_map)),
+             std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
+             "rk"});
+        block.insert({std::move(id_column), std::make_shared<DataTypeUInt64>(), "build_id"});
+        return block;
+    };
+    BuiltJoin built = makeJoin(options, twoColumnBlock("k", "probe_id", {}, {}), nullable_block({}, {}, /*is_null=*/false));
+    EXPECT_TRUE(addBuildBlock(
+        *built.join, nullable_block(std::vector<UInt64>(block_rows, 0), std::vector<UInt64>(block_rows, 0), /*is_null=*/true)));
+    forEachBuildBlock(
+        distinct_keys,
+        duplicates,
+        options,
+        [&](const std::vector<size_t> & key_indexes, const std::vector<UInt64> & ids)
+        {
+            EXPECT_TRUE(addBuildBlock(*built.join, nullable_block(keysOf(key_indexes), ids, /*is_null=*/false)));
+        });
+    finishBuild(built, options);
+    ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
+    const auto stats = built.join->getBuildStats();
+    EXPECT_GT(stats.scatter_groups, 1u);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
+}
+
+/// `boundaryProjection` answers the sketch term for an empty first group and switches to the linear extrapolation only
+/// once the exact count leaves the sketch's band.
+TEST(PartitionedHashJoin, BoundaryProjectionSkippedFirstGroup)
+{
+    /// A first group of only skipped rows inserts nothing: the load-factor projection is the sketch
+    /// term, not a division by zero. `FirstGroupOfSkippedRowsOnly` is the real case; this pins the helper.
+    EXPECT_EQ(HashJoinClause::boundaryProjection(0, 0, 1000, 10.0, 1.2), static_cast<UInt64>(std::ceil(12.0)));
+    /// Inside the sketch's band the sketch is the projection: 50 keys after half the rows do not become 100.
+    EXPECT_EQ(HashJoinClause::boundaryProjection(50, 100, 200, 80.0, 1.2), static_cast<UInt64>(std::ceil(96.0)));
+    /// Once the exact count has passed the band, the linear extrapolation takes over.
+    EXPECT_EQ(HashJoinClause::boundaryProjection(120, 100, 200, 80.0, 1.2), UInt64{240});
+    EXPECT_EQ(HashJoinClause::boundaryProjection(120, 0, 200, 80.0, 1.2), UInt64{120});
+}
+
 /// Rows of a key already in the table are not projected as new keys. 100000 more rows of one key
 /// therefore force no grow.
 TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
 {
-    /// 1000 unique keys, then 100000 rows of the first key, over sixteen partitions. A wanted grow
-    /// would double the table. The build must want none and still hold every row.
+    /// 1000 unique keys, then 100000 rows of the first key, over sixteen partitions under a one-byte
+    /// grow budget. A wanted grow would be refused and counted, or throw at the last free cell. The
+    /// build must want none and still hold every row.
     constexpr size_t distinct_keys = 1000;
     constexpr size_t duplicate_rows = 100000;
     BuildOptions options;
     options.partition_bits_for_tests = 4;
+    options.grow_budget_for_tests = 1;
     BuiltJoin built = makeJoin(options);
 
     UInt64 next_id = 0;
@@ -772,10 +1169,11 @@ TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
         keys.assign(std::min(block_rows, duplicate_rows - done), keyOf(0));
         addBlock(*built.join, keys, next_id);
     }
-    finishBuild(built);
+    finishBuild(built, options);
 
     const auto stats = built.join->getBuildStats();
-    EXPECT_EQ(stats.table_resizes, 0u) << "no grow may even be wanted";
+    EXPECT_EQ(stats.table_resizes, 0u);
+    EXPECT_EQ(stats.load_factor_grow_skipped, 0u) << "no grow may even be wanted";
     expectTableInvariants(stats, distinct_keys, distinct_keys + duplicate_rows);
 
     keys.clear();
@@ -785,6 +1183,55 @@ TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
     EXPECT_EQ(rows.size(), distinct_keys + duplicate_rows);
     const auto first_key_rows = std::count_if(rows.begin(), rows.end(), [](const JoinedRow & row) { return std::get<0>(row) == keyOf(0); });
     EXPECT_EQ(static_cast<size_t>(first_key_rows), duplicate_rows + 1);
+}
+
+/// A load-factor grow the budget cannot pay for is skipped and counted, and the build still completes exactly.
+TEST(PartitionedHashJoin, LoadFactorGrowSkippedUnderBudget)
+{
+    /// At safety 0.6 the cells outnumber the keys but the fill would pass 50%; a one-byte budget
+    /// refuses the doubling, so the table stays as planned and the probe still finds every row.
+    constexpr size_t distinct_keys = 200000;
+    BuildOptions options;
+    options.reserve_safety_for_tests = 0.6;
+    options.grow_budget_for_tests = 1;
+    auto built = buildJoin(distinct_keys, /*duplicates=*/1, options);
+    const auto stats = built.join->getBuildStats();
+    EXPECT_GE(stats.load_factor_grow_skipped, 1u);
+    EXPECT_EQ(stats.table_resizes, 0u);
+    probeAndCheck(built, distinct_keys, /*duplicates=*/1, /*misses=*/100);
+}
+
+/// A grouped scatter whose table grows mid-way keeps sizing later groups against the budget: within budget plus one
+/// block, or exactly one block once the resident set alone exceeds it.
+TEST(PartitionedHashJoin, GroupSizedAfterGrowth)
+{
+    /// 55 MiB groups this layout but cannot pay for a 4 MiB doubling on a ~53 MiB resident set; 80 MiB
+    /// already fits ungrouped. 62 MiB is still grouped and leaves headroom for the doubling the group
+    /// sizing reserves.
+    constexpr size_t distinct_keys = 200000;
+    constexpr size_t duplicates = 8;
+    constexpr size_t budget = 62u << 20;
+    BuildOptions options;
+    options.duplicate_major = true;
+    options.max_bytes_before_external_join = budget;
+    options.reserve_safety_for_tests = 0.25;
+    auto built = buildJoin(distinct_keys, duplicates, options);
+    ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
+    const auto stats = built.join->getBuildStats();
+    ASSERT_GE(stats.scatter_group_ranges.size(), 2u);
+    EXPECT_GE(stats.table_resizes, 1u);
+    expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
+    for (size_t i = 1; i < stats.scatter_group_ranges.size(); ++i)
+    {
+        const auto & g = stats.scatter_group_ranges[i];
+        /// With headroom, a group stays within the budget plus one block. Once the arenas and a
+        /// load-factor grow have pushed `residentBytes` past the budget, the sizing loop takes exactly
+        /// one block: the baseline overshoot, not a multi-block range.
+        EXPECT_TRUE(g.resident_bytes + g.chunk_bytes <= budget + g.one_block_chunk_bytes || g.end == g.begin + 1)
+            << "group " << i << " resident " << g.resident_bytes << " chunk " << g.chunk_bytes << " one_block " << g.one_block_chunk_bytes
+            << " blocks [" << g.begin << ", " << g.end << ")";
+    }
+    probeAndCheck(built, distinct_keys, duplicates, /*misses=*/100);
 }
 
 /// A table past 2^32 cells is refused at the plan. The degree constructor throws. A reserve that
@@ -835,7 +1282,7 @@ TEST(PartitionedHashJoin, SinglePartitionAsofGrows)
                 ids.clear();
             }
         }
-        finishBuild(built);
+        finishBuild(built, options);
         return built;
     };
 
@@ -866,6 +1313,76 @@ TEST(PartitionedHashJoin, SinglePartitionAsofGrows)
         EXPECT_EQ(probe_rows(control, i), 1u) << "one build row at `ts = i`";
         EXPECT_EQ(probe_rows(grown, i), probe_rows(control, i));
     }
+}
+
+/// A key the drain creates in one group and extends in a later one gets exactly one header and one more range. Every row of it is found.
+TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
+{
+    /// The unique padding never creates spans, so the drain stats count only A and B. Both hash into
+    /// the full window of the last range, so every row of theirs overflows. In group 1 the drain
+    /// creates A with three rows and B with one; a later group appends more. A gets one header; B
+    /// stays a single run.
+    constexpr size_t bits = 2;
+    constexpr size_t size_degree = 19;
+    constexpr size_t padding_keys = 200000;
+    constexpr size_t window = 64;
+    constexpr size_t fillers = window + 192;
+
+    Key64Table geometry(size_degree, bits);
+    const size_t range_end = geometry.rangeEnd(geometry.partitions() - 1);
+    const size_t window_begin = range_end - window;
+    std::vector<UInt64> window_keys;
+    for (UInt64 candidate = 2; window_keys.size() < fillers + 2; candidate += key_step)
+    {
+        const size_t home = geometry.place(geometry.hash(candidate));
+        if (home >= window_begin && home < range_end)
+            window_keys.push_back(candidate);
+    }
+    const UInt64 key_a = window_keys[fillers];
+    const UInt64 key_b = window_keys[fillers + 1];
+
+    BuildOptions options;
+    options.max_bytes_before_external_join = 8u << 20;
+    options.partition_bits_for_tests = bits;
+    /// `reserve` is a 50% fill target, so `2^(degree-1)` keys produce a table of `2^degree` cells.
+    options.reserve_override_for_tests = 1uz << (size_degree - 1);
+    options.grow_budget_for_tests = 1;
+    BuiltJoin built = makeJoin(options);
+
+    UInt64 next_id = 0;
+    addBlock(*built.join, std::vector<UInt64>(window_keys.begin(), window_keys.begin() + fillers), next_id);
+    addBlock(*built.join, {key_a, key_a, key_a, key_b}, next_id);
+    std::vector<UInt64> keys;
+    for (size_t i = 0; i < padding_keys; ++i)
+    {
+        const UInt64 key = keyOf(i);
+        const size_t home = geometry.place(geometry.hash(key));
+        if (home >= window_begin && home < range_end)
+            continue;
+        keys.push_back(key);
+        if (keys.size() == block_rows)
+        {
+            addBlock(*built.join, keys, next_id);
+            keys.clear();
+        }
+    }
+    if (!keys.empty())
+        addBlock(*built.join, keys, next_id);
+    addBlock(*built.join, {key_a, key_a, key_b, key_b}, next_id);
+    finishBuild(built, options);
+    ASSERT_NE(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Fits)
+        << "test setup: the budget must split the unique padding across groups";
+
+    const auto stats = built.join->getBuildStats();
+    ASSERT_GT(stats.scatter_groups, 1u);
+    EXPECT_EQ(stats.table_resizes, 0u) << "a grow would move later A/B rows onto the owner path";
+    EXPECT_EQ(stats.drain_duplicates.headers, 1u) << "only A already had a range when the later group ran";
+    EXPECT_EQ(stats.drain_duplicates.ranges, 3u) << "A's headerless run plus its later range, and B's run";
+    EXPECT_EQ(stats.drain_duplicates.arena_bytes, 8u * (5 + 3) + 16u);
+    EXPECT_EQ(stats.owner_duplicates.arena_bytes, 0u);
+
+    EXPECT_EQ(probeKeys(*built.join, {key_a}).size(), 5u);
+    EXPECT_EQ(probeKeys(*built.join, {key_b}).size(), 3u);
 }
 
 namespace
@@ -923,7 +1440,7 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
     std::atomic<size_t> accumulated_bytes{0};
     size_t a_destructions = 0;
     size_t b_destructions = 0;
-    HashJoinClause clause(schema, *table_join, false, 1, build_blocks, accumulated_bytes, getLogger("AsofGrowthCleanup"));
+    HashJoinClause clause(schema, *table_join, false, 1, 0, build_blocks, accumulated_bytes, getLogger("AsofGrowthCleanup"));
     clause.beginSinglePartitionInsert(1, 129, false);
     auto & table = *std::get<HashJoinTableMapsAsof>(clause.tableMaps().maps).key64;
     using Table = std::remove_reference_t<decltype(table)>;
