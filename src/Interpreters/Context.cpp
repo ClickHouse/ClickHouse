@@ -8894,30 +8894,29 @@ ReadSettings Context::getReadSettings() const
     res.reader_executor.window_size = settings_ref[Setting::reader_executor_window_size];
     res.reader_executor.block_size = settings_ref[Setting::reader_executor_block_size];
     res.reader_executor.plan_look_ahead = settings_ref[Setting::reader_executor_plan_look_ahead];
-    /// Below this the executor would serve near-empty windows / stall on tiny source reads.
+    /// Below the floor the executor serves near-empty windows and stalls on tiny source reads; above
+    /// the ceiling one reader holds that much in buffers and cache pins. One band for the three sizes
+    /// keeps `plan_look_ahead >= block_size` satisfiable at every legal `block_size`.
     static constexpr UInt64 min_reader_executor_size = MIN_READER_EXECUTOR_SIZE;
-    if (res.reader_executor.window_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_window_size: must be at least {} bytes",
-            res.reader_executor.window_size, min_reader_executor_size);
-    if (res.reader_executor.block_size < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_block_size: must be at least {} bytes",
-            res.reader_executor.block_size, min_reader_executor_size);
-    if (res.reader_executor.plan_look_ahead < min_reader_executor_size)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for reader_executor_plan_look_ahead: must be at least {} bytes",
-            res.reader_executor.plan_look_ahead, min_reader_executor_size);
+    static constexpr UInt64 max_reader_executor_size = MAX_READER_EXECUTOR_SIZE;
+    auto validate_reader_executor_size = [](std::string_view name, UInt64 value)
+    {
+        if (value < min_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at least {} bytes",
+                value, name, min_reader_executor_size);
+        if (value > max_reader_executor_size)
+            throw Exception(ErrorCodes::INVALID_SETTING_VALUE, "Invalid value {} for {}: must be at most {} bytes",
+                value, name, max_reader_executor_size);
+    };
+    validate_reader_executor_size("reader_executor_window_size", res.reader_executor.window_size);
+    validate_reader_executor_size("reader_executor_block_size", res.reader_executor.block_size);
+    validate_reader_executor_size("reader_executor_plan_look_ahead", res.reader_executor.plan_look_ahead);
     /// Looking ahead less than one source block is meaningless, so reject the combination rather than
     /// silently run at `block_size` and let the setting report a value the executor ignores.
     if (res.reader_executor.plan_look_ahead < res.reader_executor.block_size)
         throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
             "Invalid value {} for reader_executor_plan_look_ahead: must be at least reader_executor_block_size ({} bytes)",
             res.reader_executor.plan_look_ahead, res.reader_executor.block_size);
-    static constexpr UInt64 max_reader_executor_plan_look_ahead = MAX_READER_EXECUTOR_PLAN_LOOK_AHEAD;
-    if (res.reader_executor.plan_look_ahead > max_reader_executor_plan_look_ahead)
-        throw Exception(ErrorCodes::INVALID_SETTING_VALUE,
-            "Invalid value {} for reader_executor_plan_look_ahead: must be at most {} bytes. "
-            "The read plan pins every cache cell it resolved until the cursor passes it, so this span drives "
-            "how much memory and how much unevictable cache each concurrent reader holds",
-            res.reader_executor.plan_look_ahead, max_reader_executor_plan_look_ahead);
     res.reader_executor.min_bytes_for_seek = settings_ref[Setting::reader_executor_min_bytes_for_seek];
     res.reader_executor.max_tail_for_drain = settings_ref[Setting::reader_executor_max_tail_for_drain];
     res.page_cache_settings.read_if_exists_otherwise_bypass
