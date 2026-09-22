@@ -16,3 +16,6 @@ state_intact_rename	2	20
 clear_after_add_rejected
 state_intact_add	1
 state_intact_add	2
+clear_after_add_nested_child_rejected
+state_intact_add_nested	1
+state_intact_add_nested	2

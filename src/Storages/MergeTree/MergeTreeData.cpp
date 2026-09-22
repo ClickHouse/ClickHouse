@@ -5279,6 +5279,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         NameSet uk_set(uk_columns.begin(), uk_columns.end());
         /// Same-statement `RENAME COLUMN` / `ADD COLUMN` is replayed into the mutation
         /// stream, so `CLEAR COLUMN` of the new name still rewrites stored data.
+        /// `ADD COLUMN` is expanded the same way as `prepare` (`Nested` `n` becomes `n.x`, ...).
         ColumnsDescription working_columns = old_metadata.columns;
         const bool share_nested_offsets_for_uk = (*settings_from_storage)[MergeTreeSetting::share_nested_offsets];
 
@@ -5355,7 +5356,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 && working_columns.has(command.column_name))
                 working_columns.rename(command.column_name, command.rename_to);
             else if (!command.ignore && command.type == AlterCommand::ADD_COLUMN && command.data_type)
-                working_columns.addIfNotExists(ColumnDescription(command.column_name, command.data_type));
+                command.addColumnsFromAlter(working_columns, local_context, share_nested_offsets_for_uk);
         }
     }
 

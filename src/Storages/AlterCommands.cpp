@@ -791,11 +791,11 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
-static void addColumnsFromAlter(
-    ColumnsDescription & columns, const AlterCommand & command, ContextPtr context, bool share_nested_offsets)
+void AlterCommand::addColumnsFromAlter(
+    ColumnsDescription & columns, ContextPtr context, bool share_nested_offsets) const
 {
     for (auto & col : columnsAddedByAlter(
-             columns, columnDescriptionFromAddAlter(command), context, command.if_not_exists, share_nested_offsets))
+             columns, columnDescriptionFromAddAlter(*this), context, if_not_exists, share_nested_offsets))
         columns.add(std::move(col));
 }
 
@@ -2095,7 +2095,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
             }
             else
             {
-                addColumnsFromAlter(columns, command, context, share_nested_offsets);
+                command.addColumnsFromAlter(columns, context, share_nested_offsets);
             }
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
@@ -2247,7 +2247,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     codec_validation_settings);
             }
 
-            addColumnsFromAlter(all_columns, command, context, share_nested);
+            command.addColumnsFromAlter(all_columns, context, share_nested);
         }
         else if (command.type == AlterCommand::MODIFY_COLUMN)
         {

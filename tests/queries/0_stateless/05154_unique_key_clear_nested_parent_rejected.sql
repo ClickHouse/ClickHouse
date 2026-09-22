@@ -100,3 +100,19 @@ ALTER TABLE uk_clear_after_add
 SELECT 'state_intact_add', * FROM uk_clear_after_add ORDER BY id;
 
 DROP TABLE uk_clear_after_add;
+
+-- Flattened `ADD COLUMN n Nested(...)` then `CLEAR COLUMN n.x` still rewrites the part.
+DROP TABLE IF EXISTS uk_clear_after_add_nested;
+CREATE TABLE uk_clear_after_add_nested (id UInt32)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id);
+
+INSERT INTO uk_clear_after_add_nested VALUES (1), (2);
+
+SELECT 'clear_after_add_nested_child_rejected' AS step;
+ALTER TABLE uk_clear_after_add_nested
+    ADD COLUMN n Nested(x UInt32),
+    CLEAR COLUMN `n.x` IN PARTITION ID 'all'; -- { serverError SUPPORT_IS_DISABLED }
+
+SELECT 'state_intact_add_nested', * FROM uk_clear_after_add_nested ORDER BY id;
+
+DROP TABLE uk_clear_after_add_nested;

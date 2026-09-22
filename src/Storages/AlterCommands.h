@@ -191,6 +191,10 @@ struct AlterCommand
     /// resets and the changes of one command are applied in.
     std::optional<AlterCommand> extractSettingsResets();
 
+    /// Materialize this `ADD COLUMN` into `columns` the same way `prepare` / `validate` / `apply` do
+    /// (`flatten_nested` and `IF NOT EXISTS`). A flattened `Nested` add becomes `n.x`, `n.y`, ...
+    void addColumnsFromAlter(ColumnsDescription & columns, ContextPtr context, bool share_nested_offsets) const;
+
     /// share_nested_offsets mirrors prepare()/validate(): when true, `n` and `n.*` are treated as
     /// the same logical column for IF NOT EXISTS existence checks; when false they are independent.
     /// `columns_before_alter` are the columns of the table before the whole ALTER (of which this command
