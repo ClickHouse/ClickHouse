@@ -717,13 +717,12 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 }
 
 
-/// Exact name, or a Nested parent stored as flattened `name.*` when offsets are shared.
+/// Exact name, or flattened `name.*` when offsets are shared.
 static bool columnExists(const ColumnsDescription & columns, const String & name, bool share_nested_offsets)
 {
     return columns.has(name) || (share_nested_offsets && columns.hasNested(name));
 }
 
-/// Full `ADD COLUMN` definition, shared by `apply`/`prepare`/`validate`.
 static ColumnDescription columnDescriptionFromAddAlter(const AlterCommand & command)
 {
     ColumnDescription column(command.column_name, command.data_type);
@@ -746,8 +745,6 @@ static ColumnDescription columnDescriptionFromAddAlter(const AlterCommand & comm
         column.settings = command.settings_changes;
     }
 
-    /// The declared statistics are transferred like in CREATE (the types are validated against the
-    /// column data type by the storage in `checkAlterIsPossible`).
     if (command.column_statistics_decl)
         column.statistics = ColumnStatisticsDescription::fromStatisticsDescriptionAST(command.column_statistics_decl, command.column_name, command.data_type);
 
@@ -755,8 +752,7 @@ static ColumnDescription columnDescriptionFromAddAlter(const AlterCommand & comm
 }
 
 
-/// Columns an `ADD COLUMN` materializes (`flatten_nested` + `IF NOT EXISTS`).
-/// Empty means a whole-command no-op. Shared by `apply`/`prepare`/`validate`.
+/// Empty when `IF NOT EXISTS` makes the whole `ADD COLUMN` a no-op.
 static std::vector<ColumnDescription> columnsAddedByAlter(
     const ColumnsDescription & existing_columns,
     ColumnDescription column,
@@ -782,8 +778,6 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
         columns_to_add.push_back(std::move(column));
     }
 
-    /// Skip only the EXACT transformed names that already exist (not an `n.*` prefix), so a repeated
-    /// flattened `n.a` add is a no-op while a genuinely new distinct column is never dropped.
     if (if_not_exists)
         std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return existing_columns.has(c.name); });
 
@@ -854,8 +848,7 @@ void AlterCommand::apply(
     }
     else if (type == DROP_COLUMN)
     {
-        /// `CLEAR COLUMN` keeps the definition and its implicit index; only a metadata drop removes them.
-        /// `getNested` is the range `remove` deletes (the column itself, or flattened `n.*`).
+        /// `CLEAR COLUMN` and `DROP ... IN PARTITION` keep the column and its implicit index.
         if (!clear && !partition)
         {
             if (if_exists && !columnExists(metadata.columns, column_name, share_nested_offsets))
@@ -1973,8 +1966,7 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, ContextPtr
     for (size_t i = 0; i < size(); ++i)
     {
         auto & command = (*this)[i];
-        /// Nested `n`/`n.*` existence is ADD/DROP-only. MODIFY/COMMENT/RENAME stay exact-name
-        /// so `MODIFY COLUMN IF EXISTS n` on a flattened group is a no-op, not `columns.get(n)`.
+        /// Nested parents exist only for `ADD`/`DROP`. `MODIFY COLUMN IF EXISTS n` stays a no-op.
         const bool has_column = (command.type == AlterCommand::ADD_COLUMN || command.type == AlterCommand::DROP_COLUMN)
             ? columnExists(columns, command.column_name, share_nested_offsets)
             : columns.has(command.column_name);

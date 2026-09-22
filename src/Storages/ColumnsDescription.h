@@ -223,7 +223,6 @@ public:
     bool hasNotAlias(const String & column_name) const;
     bool hasAlias(const String & column_name) const;
     bool hasColumnOrSubcolumn(GetColumnsOptions::Kind kind, const String & column_name) const;
-    /// Exact `column_name`, or any flattened `column_name.*` member matching `kind`.
     bool hasColumnOrNested(GetColumnsOptions::Kind kind, const String & column_name) const;
 
     bool hasOnlyOrdinary() const;

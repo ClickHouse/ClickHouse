@@ -278,9 +278,7 @@ static void splitAndModifyMutationCommands(
             name = alter_conversions->getColumnOldName(name);
         return name;
     };
-    /// Same-batch DROP/CLEAR after RENAME: `AlterConversions` records the drop under the
-    /// source-part name and erases the map, so walk `renamed_in_batch` before `nameInPart`.
-    /// Skip `nameInPart` while the part still has this name (`DROP a, RENAME b TO a`).
+    /// Source-part name, including a rename earlier in this command batch.
     auto nameStoredInPart = [&](const String & name, const NameToNameMap & renamed_in_batch) -> String
     {
         if (auto it = renamed_in_batch.find(name); it != renamed_in_batch.end())
