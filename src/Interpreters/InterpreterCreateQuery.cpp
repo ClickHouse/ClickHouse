@@ -3735,10 +3735,8 @@ BlockIO InterpreterCreateQuery::execute()
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
 
-            /// The worker materializes `AS src` with no user and resolves it in its own database, so
-            /// pin ours like the UUIDs above and authorize here what it will inherit: the source table
-            /// and the engine that comes with it. `getRequiredAccess` cannot see that engine, because
-            /// this query has none of its own.
+            /// The worker materializes `AS src` with no user, so pin our database like the UUIDs above
+            /// and authorize what it inherits: the source, and its engine, which this query has none of.
             if (!create.as_table.empty())
             {
                 create.as_database = getContext()->resolveDatabase(create.as_database);
