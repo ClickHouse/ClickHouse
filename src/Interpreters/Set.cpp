@@ -382,17 +382,17 @@ ColumnPtr Set::execute(const ColumnsWithTypeAndName & columns, bool negative) co
         {
             result = castColumnAccurateOrNull(column_to_cast, data_types[i], cast_cache.get());
         }
-        else if (column_to_cast.type->isNullable())
+        else if (ColumnPtr source_null_map = getSourceNullMap(*column_to_cast.column))
         {
-            /// Cast only non-null rows. A nullable key type preserves outer NULLs for matching with
-            /// `transform_null_in = 1`; a non-nullable key type excludes them through the combined null map.
-            /// Nullable fields inside a non-null tuple remain part of the key value in either mode.
-            const auto & column_nullable = assert_cast<const ColumnNullable &>(*column_to_cast.column);
+            /// The key stores its NULLs in its own representation, the null map of a `Nullable` or the
+            /// discriminators of a `Variant`. Cast only the non-null rows. A nullable key type preserves outer NULLs
+            /// for matching with `transform_null_in = 1`; a non-nullable key type excludes them through the combined
+            /// null map. Nullable fields inside a non-null tuple remain part of the key value in either mode.
             result = castColumnAccurateSkipNulls(column_to_cast, target_type_without_nullable, cast_cache.get());
             if (data_types[i]->isNullable())
-                result = ColumnNullable::create(result, column_nullable.getNullMapColumnPtr());
+                result = ColumnNullable::create(result, source_null_map);
             else
-                null_map_holder = mergeNullMaps(std::move(null_map_holder), column_nullable.getNullMapColumnPtr());
+                null_map_holder = mergeNullMaps(std::move(null_map_holder), source_null_map);
         }
         else
         {

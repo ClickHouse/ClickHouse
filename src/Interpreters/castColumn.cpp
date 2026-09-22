@@ -80,29 +80,33 @@ ColumnPtr castColumnAccurateOrNull(const ColumnWithTypeAndName & arg, const Data
 ColumnPtr castColumnAccurateSkipNulls(
     const ColumnWithTypeAndName & arg, const DataTypePtr & type, InternalCastFunctionCache * cache)
 {
-    const auto & column = assert_cast<const ColumnNullable &>(*arg.column);
-    const auto & nested_type = assert_cast<const DataTypeNullable &>(*arg.type).getNestedType();
     chassert(!type->isNullable());
 
-    const ColumnPtr & nested_column = column.getNestedColumnPtr();
-    if (nested_type->equals(*type))
-        return nested_column;
+    /// A `Nullable` column converts through its nested column. A `Variant` keeps its NULLs in the discriminators
+    /// and converts as it is once the NULL rows are filtered out.
+    ColumnWithTypeAndName values = arg;
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(arg.column.get()))
+        values = {column_nullable->getNestedColumnPtr(), removeNullable(arg.type), arg.name};
 
-    const size_t rows = column.size();
-    const NullMap & null_map = column.getNullMapData();
+    if (values.type->equals(*type))
+        return values.column;
+
+    const ColumnPtr null_map_column = getSourceNullMap(*arg.column);
+    const NullMap & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+    const size_t rows = arg.column->size();
     const size_t not_null_rows = rows - countBytesInFilter(null_map);
     if (not_null_rows == 0)
         return type->createColumn()->cloneResized(rows);
 
     if (not_null_rows == rows)
-        return castColumnAccurate({nested_column, nested_type, arg.name}, type, cache);
+        return castColumnAccurate(values, type, cache);
 
     IColumn::Filter not_null(rows);
     for (size_t i = 0; i < rows; ++i)
         not_null[i] = !null_map[i];
 
     auto result = IColumn::mutate(castColumnAccurate(
-        {nested_column->filter(not_null, not_null_rows), nested_type, arg.name}, type, cache));
+        {values.column->filter(not_null, not_null_rows), values.type, arg.name}, type, cache));
     result->expand(not_null, false);
     return result;
 }
