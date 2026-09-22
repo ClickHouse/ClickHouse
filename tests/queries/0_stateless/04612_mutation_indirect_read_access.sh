@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 
 # Tests that a mutation requires access to what it reads indirectly - through a subquery, a table on
-# the right of `IN`, `dictGet`, `joinGet` or a SQL UDF body - on every entry point, and that the
-# requirement does not depend on `validate_mutation_query`. A background mutation runs with no user
-# and therefore full access, and `validate_mutation_query = 0` skips the submission-time validation
-# that would otherwise check these reads, so without the requirement an unprivileged user can read a
-# table it has no `SELECT` on (https://github.com/ClickHouse/ClickHouse/issues/107588).
+# the right of `IN`, `dictGet` or a SQL UDF body - on every entry point, and that the requirement
+# does not depend on `validate_mutation_query`. A background mutation runs with no user and therefore
+# full access, and `validate_mutation_query = 0` skips the submission-time validation that would
+# otherwise check these reads, so without the requirement an unprivileged user can read a table it
+# has no `SELECT` on (https://github.com/ClickHouse/ClickHouse/issues/107588).
+#
+# The object named by `dictGet` / `joinGet`, the reads through a table function and the binding of an
+# unqualified name to the mutated table's database are covered by 05238, 05239 and 05240.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -13,43 +16,34 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 user_name="${CLICKHOUSE_DATABASE}_user_04612"
 udf_name="${CLICKHOUSE_DATABASE}_leak_04612"
-# A second database, to be the session's current database while the mutated table is in another.
-other_db="${CLICKHOUSE_DATABASE}_other_04612"
 
 $CLICKHOUSE_CLIENT -q "
-DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src, xdb_tab;
+DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, dict_src;
 DROP DICTIONARY IF EXISTS dict;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
-DROP DATABASE IF EXISTS $other_db;
-CREATE DATABASE $other_db;
 
--- The column 'dict' is named after the dictionary below on purpose: a carrier of that name must be
--- denied even under the grant on the dictionary, or the grant on it is a way to read any other one.
-CREATE TABLE tab (id UInt32, name String, hidden UInt32, dict String) ENGINE = MergeTree ORDER BY id
+CREATE TABLE tab (id UInt32, name String, hidden UInt32) ENGINE = MergeTree ORDER BY id
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO tab VALUES (1, 'a', 7, ''), (42, 'b', 8, '');
+INSERT INTO tab VALUES (1, 'a', 7), (42, 'b', 8);
 
 -- A table of its own for the cases whose mutation cannot execute, so that a mutation left behind
 -- does not merge into the predicates of the other cases.
 CREATE TABLE arr_tab (id UInt32, arr Array(UInt32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO arr_tab VALUES (1, [1]), (42, [42]);
 
--- A table the user may read some of, to be the FROM of a subquery that reads more than that.
+-- The tables the user may read, with a column it may not, for the subqueries.
 CREATE TABLE readable (id UInt32, arr Array(UInt32), hidden_arr Array(UInt32)) ENGINE = MergeTree ORDER BY id;
 INSERT INTO readable VALUES (1, [1], [7]);
 CREATE TABLE dim (id UInt32) ENGINE = MergeTree ORDER BY id;
 INSERT INTO dim VALUES (1);
 
--- The tables, set, dictionary and Join table the user has no access to.
+-- The tables, set and dictionary the user has no access to.
 CREATE TABLE secret_tab (secret UInt32, payload String) ENGINE = MergeTree ORDER BY secret;
 INSERT INTO secret_tab VALUES (42, 'TOP-SECRET');
 
 CREATE TABLE secret_set (secret UInt32) ENGINE = Set;
 INSERT INTO secret_set VALUES (42);
-
-CREATE TABLE join_tab (id UInt32, payload String) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO join_tab VALUES (1, 'joined');
 
 CREATE TABLE dict_src (key UInt64, payload String) ENGINE = MergeTree ORDER BY key;
 INSERT INTO dict_src VALUES (1, 'from-dict');
@@ -69,20 +63,13 @@ GRANT SELECT(id, name) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 GRANT SELECT(id, arr) ON $CLICKHOUSE_DATABASE.arr_tab TO $user_name;
 GRANT SELECT(id, arr) ON $CLICKHOUSE_DATABASE.readable TO $user_name;
 GRANT SELECT ON $CLICKHOUSE_DATABASE.dim TO $user_name;
--- The user may read tables of these names in the other database - where none of them exists.
-GRANT SELECT ON $other_db.secret_tab TO $user_name;
-GRANT SELECT ON $other_db.secret_set TO $user_name;
 "
 
-# Runs a query as the user, from a session whose current database is the second argument when given.
+# Runs a query as the user.
 function check_access()
 {
-    local client="$CLICKHOUSE_CLIENT"
-    if [ -n "${2:-}" ]; then
-        client="${CLICKHOUSE_CLIENT/--database=$CLICKHOUSE_DATABASE/--database=$2}"
-    fi
     local output
-    output=$($client --user "$user_name" --password "password" -q "$1" 2>&1)
+    output=$($CLICKHOUSE_CLIENT --user "$user_name" --password "password" -q "$1" 2>&1)
     local rc=$?
     if [ $rc -eq 0 ]; then
         echo "OK"
@@ -91,17 +78,6 @@ function check_access()
     else
         echo "$output"
     fi
-}
-
-# Prints the error a query is refused with (`OK` when it is not), for the cases refused for a reason
-# other than access. Runs as the test's own user when the second argument is `admin`.
-function check_refusal()
-{
-    local client="$CLICKHOUSE_CLIENT"
-    [ "${2:-}" = "admin" ] || client="$client --user $user_name --password password"
-    local output
-    output=$($client -q "$1" 2>&1) && { echo "OK"; return; }
-    echo "$output" | grep -oE "\([A-Z_]+\)$" | head -1
 }
 
 # Prints whether access control rejected the query, for the cases whose mutation cannot run to
@@ -161,104 +137,6 @@ $CLICKHOUSE_CLIENT -q "GRANT CREATE TEMPORARY TABLE ON *.*, TABLE ENGINE ON Memo
 check_access "CREATE TEMPORARY TABLE secret_set (secret UInt32); SELECT count() FROM secret_set"
 check_access "CREATE TEMPORARY TABLE secret_set (secret UInt32); ALTER TABLE tab DELETE WHERE id IN secret_set SETTINGS $off"
 
-# A table function names the data it reads in its arguments instead of naming an object to grant on,
-# and the instance of it that checks the source access is built only when the set is built - for a
-# mutation, in the background, under full access. So the access its call requires is required here.
-$CLICKHOUSE_CLIENT -q "
-CREATE TABLE tf_tab (id UInt32) ENGINE = MergeTree ORDER BY id;
-INSERT INTO tf_tab VALUES (1);
-GRANT ALTER DELETE, SELECT ON $CLICKHOUSE_DATABASE.tf_tab TO $user_name;
-"
-echo "-- A table function read requires the source access of its call, on the right of IN and in a FROM"
-check_access "ALTER TABLE tf_tab DELETE WHERE id IN file('04612_no_such_file.tsv', 'TSV', 'id UInt32') SETTINGS validate_mutation_query = 0"
-check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM file('04612_no_such_file.tsv', 'TSV', 'id UInt32')) SETTINGS validate_mutation_query = 0"
-echo "-- A read-only table function with no source of its own needs no grant, as in a plain SELECT"
-check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN numbers(2) AND 0 SETTINGS validate_mutation_query = 0"
-# `view(SELECT ...)` carries its query as a bare argument rather than as a parenthesised subquery,
-# and the tables that query reads are read all the same when the mutation runs.
-echo "-- A table function that takes a query reads the tables of that query"
-check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) SETTINGS validate_mutation_query = 0"
-check_access "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM view(SELECT secret FROM secret_tab))) SETTINGS validate_mutation_query = 0"
-check_access "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) SETTINGS validate_mutation_query = 0"
-# What `viewIfPermitted` or `mergeTreeTextIndex` reads is decided by the grants of the user it runs
-# for, and a mutation runs it later, in the background, for no user at all - so there is no grant to
-# require at submission that would keep the meaning it was checked with, and the function is refused
-# in a mutation for every user, as it is in a persisted `CREATE TABLE ... AS`.
-echo "-- A table function whose reads depend on the current user's grants cannot be stored in a mutation, for any user"
-check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32'))) SETTINGS validate_mutation_query = 0"
-check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM view(SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32')))) SETTINGS validate_mutation_query = 0"
-check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT 1 FROM mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tf_tab', 'idx')) SETTINGS validate_mutation_query = 0"
-check_refusal "DELETE FROM tf_tab WHERE id IN (SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32'))) SETTINGS validate_mutation_query = 0"
-echo "-- Also with validation on, and for a user with every grant"
-check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM viewIfPermitted(SELECT id FROM tf_tab ELSE null('id UInt32')))" admin
-check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT 1 FROM mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tf_tab', 'idx')) SETTINGS validate_mutation_query = 0" admin
-echo "-- The same query as a plain view is not refused for that user"
-check_refusal "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM view(SELECT id FROM tf_tab WHERE 0)) SETTINGS validate_mutation_query = 0" admin
-echo "-- With the source grant the same mutations are accepted"
-$CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO $user_name"
-check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN file('04612_no_such_file.tsv', 'TSV', 'id UInt32') AND 0 SETTINGS validate_mutation_query = 0"
-check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT id FROM file('04612_no_such_file.tsv', 'TSV', 'id UInt32')) AND 0 SETTINGS validate_mutation_query = 0"
-echo "-- With SELECT on the table the query of the table function reads, the same mutations are accepted"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_tab TO $user_name"
-check_not_denied "ALTER TABLE tf_tab DELETE WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) AND 0 SETTINGS validate_mutation_query = 0"
-check_not_denied "DELETE FROM tf_tab WHERE id IN (SELECT secret FROM view(SELECT secret FROM secret_tab)) AND 0 SETTINGS validate_mutation_query = 0"
-$CLICKHOUSE_CLIENT -q "REVOKE SELECT ON $CLICKHOUSE_DATABASE.secret_tab FROM $user_name"
-$CLICKHOUSE_CLIENT -q "DROP TABLE tf_tab SYNC"
-
-# The mutation expression is qualified with the database of the mutated table before it is stored,
-# so an unqualified table in it is read from that database - not from the session's current one,
-# where the user may read a table of the same name (here, one that does not even exist).
-echo "-- An unqualified table is read from the mutated table's database, not the session's"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN secret_set SETTINGS $off" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN (SELECT secret FROM secret_tab) SETTINGS $off" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off" "$other_db"
-check_access "DELETE FROM $CLICKHOUSE_DATABASE.tab WHERE id IN (SELECT secret FROM secret_tab) SETTINGS $off" "$other_db"
-check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 1 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
-
-# `dictGet` and `joinGet` name their object by an unqualified name as well, and the same visitor
-# qualifies that name with the database of the mutated table, so the object read is that database's
-# one - not the same-named one the session's current database may hold.
-echo "-- An unqualified dictGet / joinGet object is read from the mutated table's database too"
-$CLICKHOUSE_CLIENT -q "
-GRANT dictGet ON $other_db.dict TO $user_name;
-GRANT SELECT ON $other_db.join_tab TO $user_name;
-"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = joinGet('join_tab', 'payload', id) WHERE 0 SETTINGS $off" "$other_db"
-
-# The stored mutation is bound to the very object the check required. The session's database now
-# holds a dictionary and a Join table of the same names with other values, and the user holds the
-# grants on the mutated table's database's ones: every mutation path reads those, and none of the
-# session's - which the user may read too, so a mismatch would show in the values, not as a denial.
-# The table is its own, so that a mutation left behind cannot fail the other cases.
-echo "-- ... and the stored mutation reads that database's object, not the session's same-named one"
-$CLICKHOUSE_CLIENT -q "
-CREATE TABLE $other_db.dict_src (key UInt64, payload String) ENGINE = MergeTree ORDER BY key;
-INSERT INTO $other_db.dict_src VALUES (1, 'from-other-dict'), (2, 'from-other-dict');
-CREATE DICTIONARY $other_db.dict (key UInt64, payload String) PRIMARY KEY key
-SOURCE(CLICKHOUSE(TABLE 'dict_src' DB '$other_db')) LAYOUT(FLAT()) LIFETIME(0);
-CREATE TABLE $other_db.join_tab (id UInt32, payload String) ENGINE = Join(ANY, LEFT, id);
-INSERT INTO $other_db.join_tab VALUES (1, 'joined-other'), (2, 'joined-other');
-INSERT INTO dict_src VALUES (2, 'from-dict');
-SYSTEM RELOAD DICTIONARY dict;
-INSERT INTO join_tab VALUES (2, 'joined');
-CREATE TABLE xdb_tab (id UInt32, name String, name2 String) ENGINE = MergeTree ORDER BY id
-SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO xdb_tab VALUES (1, '', ''), (2, '', ''), (3, '', '');
-GRANT ALTER UPDATE, ALTER DELETE, UPDATE, DELETE, SELECT ON $CLICKHOUSE_DATABASE.xdb_tab TO $user_name;
-GRANT dictGet ON $CLICKHOUSE_DATABASE.dict TO $user_name;
-GRANT SELECT ON $CLICKHOUSE_DATABASE.join_tab TO $user_name;
-"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.xdb_tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)), name2 = joinGet('join_tab', 'payload', id) WHERE id = 1 SETTINGS $off" "$other_db"
-check_access "UPDATE $CLICKHOUSE_DATABASE.xdb_tab SET name = dictGet('dict', 'payload', toUInt64(id)), name2 = joinGet('join_tab', 'payload', id) WHERE id = 2 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.xdb_tab DELETE WHERE dictGet('dict', 'payload', toUInt64(id)) = 'from-other-dict' OR joinGet('join_tab', 'payload', id) = 'joined-other' SETTINGS $off" "$other_db"
-check_access "DELETE FROM $CLICKHOUSE_DATABASE.xdb_tab WHERE dictGet('dict', 'payload', toUInt64(id)) = 'from-other-dict' OR joinGet('join_tab', 'payload', id) = 'joined-other' SETTINGS $off" "$other_db"
-$CLICKHOUSE_CLIENT -q "SELECT id, name, name2 FROM xdb_tab ORDER BY id"
-$CLICKHOUSE_CLIENT -q "
-REVOKE dictGet ON $CLICKHOUSE_DATABASE.dict FROM $user_name;
-REVOKE SELECT ON $CLICKHOUSE_DATABASE.join_tab FROM $user_name;
-"
-
 # A read named inside a subquery, or inside a `JOIN ... ON` condition, is invisible to a walk that
 # only looks at the subquery's `FROM` tables and at the clauses of its `SELECT`.
 echo "-- A named read below the top level is a read too, in a subquery and in a JOIN condition"
@@ -290,50 +168,6 @@ check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT 3 AS secret_set FROM di
 echo "-- A virtual column of a subquery's table needs no grant"
 check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable WHERE _part != '') AND 0 SETTINGS $off"
 
-echo "-- dictGet and joinGet name their object instead of reading it as a column"
-check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
-
-# `dictGet` and `joinGet` take the name of their object from a `WITH` alias too - the analyzer
-# resolves the identifier as an expression first - so such a name is not a reference to a CTE.
-echo "-- The object of dictGet and joinGet named through a WITH alias is read as well"
-check_access "ALTER TABLE tab UPDATE name = (WITH '$CLICKHOUSE_DATABASE.dict' AS d SELECT dictGet(d, 'payload', toUInt64(1))) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (WITH '$CLICKHOUSE_DATABASE.join_tab' AS j SELECT joinGet(j, 'payload', toUInt32(1))) WHERE 0 SETTINGS $off"
-echo "-- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object"
-check_access "ALTER TABLE tab UPDATE name = (WITH materialize('$CLICKHOUSE_DATABASE.dict') AS d SELECT dictGet(d, 'payload', toUInt64(1))) WHERE 0 SETTINGS $off"
-
-# The name of the object is taken from any constant `String` expression when the function is built,
-# so an argument that names no one object here has to be treated as naming every one of them.
-echo "-- An object named by an expression that is not one name is not one object either"
-check_access "ALTER TABLE tab UPDATE name = dictGet(concat('$CLICKHOUSE_DATABASE', '.dict'), 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = joinGet(concat('$CLICKHOUSE_DATABASE', '.join_tab'), 'payload', id) WHERE 0 SETTINGS $off"
-
-# An ordinary query alias carries the name as well as a `WITH` one does.
-echo "-- An object named through a query alias is read as well"
-check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(d, 'payload', toUInt64(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.dict' AS d) != '') WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(j, 'payload', toUInt32(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.join_tab' AS j) != '') WHERE 0 SETTINGS $off"
-
-# `resolveFunction.cpp` resolves the first argument through the expression scope of the query, not
-# only through the aliases of the level it is written at, so a column a subquery below projects, and
-# a column of the mutated table, carry the name just as well. Their value is not on the AST here, so
-# such a carrier names every object and not an object of its own name. Each carrier below is named
-# after an object the user is granted on further down, so taking it for that object - which is what
-# reading the name off the AST does - would let it read any other object instead.
-echo "-- An object named by a column a subquery below projects is not one name here"
-check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) s) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet($CLICKHOUSE_DATABASE.dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) AS $CLICKHOUSE_DATABASE) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(join_tab, 'payload', toUInt32(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.join_tab' AS join_tab) s) WHERE 0 SETTINGS $off"
-echo "-- A column of the mutated table does not name one object either"
-check_access "ALTER TABLE tab UPDATE name = dictGet(dict, 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
-
-# `joinGet` probes the key columns of the `Join` table, not only the attribute it names, and
-# `FunctionJoinGet::prepare` requires `SELECT` on both.
-echo "-- joinGet reads the key columns of the Join table too"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT(payload) ON $CLICKHOUSE_DATABASE.join_tab TO $user_name"
-check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
-$CLICKHOUSE_CLIENT -q "GRANT SELECT(id) ON $CLICKHOUSE_DATABASE.join_tab TO $user_name"
-check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
-
 echo "-- A UDF body reading a column the user cannot read, on every entry point"
 check_access "ALTER TABLE tab DELETE WHERE $udf_name() SETTINGS $off"
 check_access "DELETE FROM tab WHERE $udf_name() SETTINGS $off"
@@ -346,7 +180,6 @@ check_access "ALTER TABLE tab DELETE WHERE $udf_name() SETTINGS mutations_sync =
 $CLICKHOUSE_CLIENT -q "
 GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_tab TO $user_name;
 GRANT SELECT ON $CLICKHOUSE_DATABASE.secret_set TO $user_name;
-GRANT SELECT ON $CLICKHOUSE_DATABASE.join_tab TO $user_name;
 GRANT dictGet ON $CLICKHOUSE_DATABASE.dict TO $user_name;
 GRANT SELECT(hidden) ON $CLICKHOUSE_DATABASE.tab TO $user_name;
 "
@@ -357,42 +190,17 @@ check_access "ALTER TABLE tab UPDATE name = (SELECT max(payload) FROM secret_tab
 check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT secret FROM secret_tab) AND 0 SETTINGS $off"
 check_access "DELETE FROM tab WHERE id IN (SELECT secret FROM secret_tab) AND 0 SETTINGS $off"
 check_access "ALTER TABLE tab DELETE WHERE id IN secret_set AND 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = dictGet('$CLICKHOUSE_DATABASE.dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = joinGet('$CLICKHOUSE_DATABASE.join_tab', 'payload', id) WHERE 0 SETTINGS $off"
-# The grants are on the objects the aliases name, and never on an object of the alias' own name, so
-# these pass only because the alias is followed to the object it stands for.
-check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(d, 'payload', toUInt64(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.dict' AS d) != '') WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(j, 'payload', toUInt32(1)) FROM dim WHERE ('$CLICKHOUSE_DATABASE.join_tab' AS j) != '') WHERE 0 SETTINGS $off"
 check_access "ALTER TABLE tab DELETE WHERE id IN (SELECT id FROM readable WHERE id IN secret_set) AND 0 SETTINGS $off"
 check_access "ALTER TABLE tab DELETE WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "DELETE FROM tab WHERE $udf_name() AND 0 SETTINGS $off"
 check_access "UPDATE tab SET name = name WHERE $udf_name() AND 0 SETTINGS $off, enable_lightweight_update = 1"
-
-echo "-- Including from another current database: the mutation runs, so it does read the mutated table's database"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN secret_set AND 0 SETTINGS $off" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab DELETE WHERE id IN (SELECT secret FROM secret_tab) AND 0 SETTINGS $off" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off" "$other_db"
-check_access "UPDATE $CLICKHOUSE_DATABASE.tab SET name = (SELECT max(payload) FROM secret_tab) WHERE 0 SETTINGS $off, enable_lightweight_update = 1" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = dictGet('dict', 'payload', toUInt64(id)) WHERE 0 SETTINGS $off" "$other_db"
-check_access "ALTER TABLE $CLICKHOUSE_DATABASE.tab UPDATE name = joinGet('join_tab', 'payload', id) WHERE 0 SETTINGS $off" "$other_db"
-
-# A carrier that names no one object requires the access on every object, which the grants above -
-# `dictGet` on the dictionary and `SELECT` on the `Join` table each carrier is named after - do not
-# give. Reading the name off the AST instead would let every one of these read another object.
-echo "-- A carrier that names no one object stays denied under the grants on the object it is named after"
-check_access "ALTER TABLE tab UPDATE name = dictGet(concat('$CLICKHOUSE_DATABASE', '.dict'), 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet(dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) s) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT dictGet($CLICKHOUSE_DATABASE.dict, 'payload', toUInt64(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.dict' AS dict) AS $CLICKHOUSE_DATABASE) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = (SELECT joinGet(join_tab, 'payload', toUInt32(1)) FROM (SELECT '$CLICKHOUSE_DATABASE.join_tab' AS join_tab) s) WHERE 0 SETTINGS $off"
-check_access "ALTER TABLE tab UPDATE name = dictGet(dict, 'payload', toUInt64(id)) WHERE 0 SETTINGS $off"
 
 echo "-- The value of an unreadable table never reached a readable column"
 $CLICKHOUSE_CLIENT -q "SELECT count() FROM tab WHERE name = 'TOP-SECRET'"
 
 $CLICKHOUSE_CLIENT -q "
 DROP DICTIONARY IF EXISTS dict;
-DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, join_tab, dict_src, xdb_tab;
+DROP TABLE IF EXISTS tab, arr_tab, readable, dim, secret_tab, secret_set, dict_src;
 DROP FUNCTION IF EXISTS $udf_name;
 DROP USER IF EXISTS $user_name;
-DROP DATABASE IF EXISTS $other_db;
 "

@@ -1,0 +1,26 @@
+-- An unqualified table is read from the mutated table's database, not the session's
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- An unqualified dictGet / joinGet object is read from the mutated table's database too
+ACCESS_DENIED
+ACCESS_DENIED
+-- ... and the stored mutation reads that database's object, not the session's same-named one
+OK
+OK
+OK
+OK
+1	from-dict	joined
+2	from-dict	joined
+3		
+-- With the grants on the mutated table's database the mutations run, so they do read that database
+OK
+OK
+OK
+OK
+OK
+OK
+-- The value of an unreadable table never reached a readable column
+0

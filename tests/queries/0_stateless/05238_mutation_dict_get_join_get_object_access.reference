@@ -1,0 +1,43 @@
+-- dictGet and joinGet name their object instead of reading it as a column
+ACCESS_DENIED
+ACCESS_DENIED
+-- The object of dictGet and joinGet named through a WITH alias is read as well
+ACCESS_DENIED
+ACCESS_DENIED
+-- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object
+ACCESS_DENIED
+-- An object named by an expression that is not one name is not one object either
+ACCESS_DENIED
+ACCESS_DENIED
+-- An object named through a query alias is read as well
+ACCESS_DENIED
+ACCESS_DENIED
+-- An object named by a column a subquery below projects is not one name here
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- A column of the mutated table does not name one object either
+ACCESS_DENIED
+-- joinGet reads the key columns of the Join table too
+ACCESS_DENIED
+OK
+-- With the grants, the same mutations are allowed
+OK
+OK
+OK
+OK
+-- A carrier that names no one object stays denied under the grants on the object it is named after
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- The stored mutation reads the object the alias names, not a dictionary of the alias' own name
+OK
+OK
+OK
+1	from-dict
+2	from-dict
+3	from-dict
+-- A dictionary of the alias' own name is still one the user may not read by its name
+ACCESS_DENIED

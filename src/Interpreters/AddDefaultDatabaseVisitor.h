@@ -264,11 +264,15 @@ private:
         if (auto * identifier = arguments[0]->as<ASTIdentifier>())
         {
             /// A compound identifier is already qualified, and a parameterized name is only
-            /// known when the view is called, so there is nothing to qualify.
+            /// known when the view is called, so there is nothing to qualify. An alias of an
+            /// expression of this select query is not a dictionary name either: the analyzer
+            /// resolves the first argument through the expression scope first, so
+            /// `WITH 'db.dict' AS d SELECT dictGet(d, ...)` reads `db.dict`, and qualifying `d`
+            /// here would bind the stored call to a dictionary `d` of `database_name` instead.
             /// The name is resolved against `database_name` and not against the current database
             /// of `context`: on the metadata-load paths the context is the loading context, whose
             /// current database is unrelated to the database owning the definition.
-            if (!identifier->compound() && !identifier->isParam())
+            if (!identifier->compound() && !identifier->isParam() && !expression_aliases.contains(identifier->name()))
             {
                 auto qualified_dictionary_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(identifier->name(), database_name);
                 arguments[0] = make_intrusive<ASTIdentifier>(qualified_dictionary_name.getParts());

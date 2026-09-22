@@ -321,8 +321,24 @@ private:
                     "or in a subquery",
                     function.name);
 
+            bool reads_a_source = false;
             for (auto & element : table_function->getRequiredAccessForRead())
+            {
+                reads_a_source |= element.access_flags.contains(AccessType::READ);
                 required_access.emplace_back(std::move(element));
+            }
+
+            /// What the call requires is not all a wrapper over ordinary tables reads: `merge(db, '^t')`
+            /// requires nothing of its own, and `SELECT` on every table it matches is checked only
+            /// when it is read - for a mutation, in the background, under full access. The tables
+            /// are not known here (the arguments are not evaluated), so the read is taken for a read
+            /// of every table the arguments can name: the database when it is named by a literal,
+            /// every database otherwise. A function reading a source of its own (`file`, `s3`,
+            /// `remote`, ...) reads no table of the server and is covered by the source grant above;
+            /// of the others only the ones known to read no table, or only the tables of a query
+            /// walked here, are exempt.
+            if (!reads_a_source && !readsNoTableOfItsOwn(table_function->getName()))
+                required_access.emplace_back(wrapperTableFunctionReadAccess(table_function->getName(), function));
         }
 
         if (!function.arguments)
@@ -337,6 +353,52 @@ private:
             else
                 visitExpression(argument.get());
         }
+    }
+
+    /// The table functions without a source of their own that read no table of the server by
+    /// themselves: their rows come from their arguments or from nowhere, and whatever a call of them
+    /// requires is all in `getRequiredAccessForRead` - or, for `view`, the tables of the query it
+    /// carries, which are walked here like any subquery. Everything else without a source - a
+    /// function over the tables of the server (`merge`, `mergeTreeIndex`, `dictionary`, `loop`, one
+    /// executing a query given as text like `eval`, ...) and any function added later - is taken for
+    /// a read of the tables it can name, so that a function whose reads are checked only when it is
+    /// read fails closed here rather than open.
+    static bool readsNoTableOfItsOwn(const String & name)
+    {
+        static const NameSet functions_reading_no_table{
+            "numbers",
+            "numbers_mt",
+            "zeros",
+            "zeros_mt",
+            "primes",
+            "generateRandom",
+            "generate_series",
+            "generateSeries",
+            "null",
+            "values",
+            "SQLStandardValues",
+            "format",
+            "input",
+            "fuzzJSON",
+            "fuzzQuery",
+            "view",
+        };
+        return functions_reading_no_table.contains(name);
+    }
+
+    /// The `SELECT` a wrapper table function's read of the tables it names comes down to. For
+    /// `merge('db', '^t')` the tables are the ones of `db` whose name matches, which is not known
+    /// without running the regular expression against the catalog, so `SELECT` on every table of
+    /// `db` is required; for any other spelling or function, on every table there is.
+    static AccessRightsElement wrapperTableFunctionReadAccess(const String & name, const ASTFunction & function)
+    {
+        if (name == "merge" && function.arguments && function.arguments->children.size() == 2)
+        {
+            if (const auto * database = function.arguments->children[0]->as<ASTLiteral>();
+                database && database->value.getType() == Field::Types::String && !database->value.safeGet<String>().empty())
+                return AccessRightsElement(AccessType::SELECT, database->value.safeGet<String>());
+        }
+        return AccessRightsElement(AccessType::SELECT);
     }
 
     /// A table named by an identifier (`x IN other`, `dictGet(db.dict, ...)`) or by a string

@@ -19,48 +19,6 @@ ACCESS_DENIED
 -- A session temporary table does not make a name grant-free in a mutation
 OK
 ACCESS_DENIED
--- A table function read requires the source access of its call, on the right of IN and in a FROM
-ACCESS_DENIED
-ACCESS_DENIED
--- A read-only table function with no source of its own needs no grant, as in a plain SELECT
-NOT_DENIED
--- A table function that takes a query reads the tables of that query
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
--- A table function whose reads depend on the current user's grants cannot be stored in a mutation, for any user
-(BAD_ARGUMENTS)
-(BAD_ARGUMENTS)
-(BAD_ARGUMENTS)
-(BAD_ARGUMENTS)
--- Also with validation on, and for a user with every grant
-(BAD_ARGUMENTS)
-(BAD_ARGUMENTS)
--- The same query as a plain view is not refused for that user
-OK
--- With the source grant the same mutations are accepted
-NOT_DENIED
-NOT_DENIED
--- With SELECT on the table the query of the table function reads, the same mutations are accepted
-NOT_DENIED
-NOT_DENIED
--- An unqualified table is read from the mutated table's database, not the session's
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
--- An unqualified dictGet / joinGet object is read from the mutated table's database too
-ACCESS_DENIED
-ACCESS_DENIED
--- ... and the stored mutation reads that database's object, not the session's same-named one
-OK
-OK
-OK
-OK
-1	from-dict	joined
-2	from-dict	joined
-3		
 -- A named read below the top level is a read too, in a subquery and in a JOIN condition
 ACCESS_DENIED
 ACCESS_DENIED
@@ -75,29 +33,6 @@ OK
 -- That alias is out of scope in a nested SELECT and after its own level
 ACCESS_DENIED
 -- A virtual column of a subquery's table needs no grant
-OK
--- dictGet and joinGet name their object instead of reading it as a column
-ACCESS_DENIED
-ACCESS_DENIED
--- The object of dictGet and joinGet named through a WITH alias is read as well
-ACCESS_DENIED
-ACCESS_DENIED
--- A WITH alias that is not a string names an object that cannot be told, so the access is required on every object
-ACCESS_DENIED
--- An object named by an expression that is not one name is not one object either
-ACCESS_DENIED
-ACCESS_DENIED
--- An object named through a query alias is read as well
-ACCESS_DENIED
-ACCESS_DENIED
--- An object named by a column a subquery below projects is not one name here
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
--- A column of the mutated table does not name one object either
-ACCESS_DENIED
--- joinGet reads the key columns of the Join table too
-ACCESS_DENIED
 OK
 -- A UDF body reading a column the user cannot read, on every entry point
 ACCESS_DENIED
@@ -115,22 +50,5 @@ OK
 OK
 OK
 OK
-OK
-OK
-OK
-OK
--- Including from another current database: the mutation runs, so it does read the mutated table's database
-OK
-OK
-OK
-OK
-OK
-OK
--- A carrier that names no one object stays denied under the grants on the object it is named after
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
-ACCESS_DENIED
 -- The value of an unreadable table never reached a readable column
 0

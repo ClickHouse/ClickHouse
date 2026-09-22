@@ -1,0 +1,38 @@
+-- A table function read requires the source access of its call, on the right of IN and in a FROM
+ACCESS_DENIED
+ACCESS_DENIED
+-- A read-only table function with no source of its own needs no grant, as in a plain SELECT
+NOT_DENIED
+-- A table function that takes a query reads the tables of that query
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- A table function over the tables of the server requires SELECT on every table it can name
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+-- SELECT on the very table it matches is not enough: the tables matched are not known when the mutation is checked
+ACCESS_DENIED
+-- A table function whose reads depend on the current user's grants cannot be stored in a mutation, for any user
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- Also with validation on, and for a user with every grant
+(BAD_ARGUMENTS)
+(BAD_ARGUMENTS)
+-- The same query as a plain view is not refused for that user
+OK
+-- With the source grant the same mutations are accepted
+NOT_DENIED
+NOT_DENIED
+-- With SELECT on the table the query of the table function reads, the same mutations are accepted
+NOT_DENIED
+NOT_DENIED
+-- With SELECT on every table of the database, merge over a literal database is accepted
+NOT_DENIED
+NOT_DENIED
+NOT_DENIED
+-- ... but not one whose database is not a literal, which can name a table of any database
+ACCESS_DENIED
