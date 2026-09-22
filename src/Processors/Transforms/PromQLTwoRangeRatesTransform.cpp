@@ -46,7 +46,7 @@ std::optional<PromQLTwoRangeRatesGroupState::Match> PromQLTwoRangeRatesGroupStat
 {
     std::lock_guard lock(mutex);
 
-    auto index_it = group_indices.find(join_group);
+    auto * index_it = group_indices.find(join_group);
     if (!index_it)
     {
         if (pending_groups.size() >= max_join_groups)

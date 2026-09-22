@@ -1,8 +1,8 @@
 SET allow_experimental_time_series_table = 1;
 SET enable_alp_codec = 0;
 
--- Generated samples and recent samples use `ALP` without enabling it for the session.
-CREATE TABLE ts_alp64 ENGINE = TimeSeries;
+-- Generated version 5 row samples and recent samples use `ALP` without enabling it for the session.
+CREATE TABLE ts_alp64 ENGINE = TimeSeries SETTINGS version = 5;
 SELECT type, compression_codec, count()
 FROM system.columns
 WHERE database = currentDatabase() AND name = 'value'
@@ -22,7 +22,7 @@ SELECT arraySort(groupArray(reinterpretAsUInt64(value))) FROM merge(currentDatab
 DROP TABLE ts_alp64;
 
 -- The codec also applies when the outer column selects `Float32` values.
-CREATE TABLE ts_alp32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE = TimeSeries;
+CREATE TABLE ts_alp32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE = TimeSeries SETTINGS version = 5;
 SELECT type, compression_codec, count()
 FROM system.columns
 WHERE database = currentDatabase() AND name = 'value'

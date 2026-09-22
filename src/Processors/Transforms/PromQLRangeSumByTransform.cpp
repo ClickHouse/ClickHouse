@@ -209,7 +209,7 @@ PromQLRangeSumByTransform::Group PromQLRangeSumByTransform::projectGroup(Group f
 
 AggregateDataPtr PromQLRangeSumByTransform::getOrCreateGroupState(Group group)
 {
-    if (auto it = group_states.find(group); it != group_states.end())
+    if (auto * it = group_states.find(group); it != group_states.end())
         return it->getMapped();
 
     if (!group_limit && group_states.size() >= max_output_groups)

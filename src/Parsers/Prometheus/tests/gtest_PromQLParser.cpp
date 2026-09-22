@@ -1758,7 +1758,7 @@ TEST(PromQLClassifier, SupportedRangeAggregation)
 
     for (const auto * const query : {
              "sum by (job) (rate({job=\"api\"}[5m]))",
-             "sum by (job) (rate({__name__=~\"http_.+\",job=\"api\"}[5m]))",
+             R"(sum by (job) (rate({__name__=~"http_.+",job="api"}[5m])))",
              "sum without (job) (rate(http_requests_total[5m]))",
              "sum by (job) (rate(http_requests_total[5m] offset 1m))",
              "sum by (job) (rate(http_requests_total[5m] @ 123))",
@@ -1857,11 +1857,11 @@ TEST(PromQLClassifier, RejectsTwoRateHybridWithoutExactlyOneEqualityMetricMatche
     { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
 
     for (const auto * const query : {
-             "ceil(sum by (job) (rate({job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
-             "ceil(sum by (job) (rate({__name__=\"reads_total\",__name__=\"reads_total\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
-             "ceil(sum by (job) (rate({__name__=~\"reads_.*\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
-             "ceil(sum by (job) (rate({__name__!=\"reads_total\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
-             "ceil(sum by (job) (rate({__name__=\"\",job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[5m])))",
+             R"(ceil(sum by (job) (rate({job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__="reads_total",__name__="reads_total",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__=~"reads_.*",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__!="reads_total",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate({__name__="",job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[5m]))))",
          })
     {
         EXPECT_FALSE(classify(query)) << query;
@@ -1874,8 +1874,8 @@ TEST(PromQLClassifier, RejectsTwoRateHybridWithSameMetricOrDifferentWindows)
     { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
 
     for (const auto * const query : {
-             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(reads_total{job=\"cadvisor\"}[5m])))",
-             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\"}[10m])))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(reads_total{job="cadvisor"}[5m]))))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor"}[10m]))))",
          })
     {
         EXPECT_FALSE(classify(query)) << query;
@@ -1888,9 +1888,9 @@ TEST(PromQLClassifier, RejectsTwoRateHybridWithDifferentCommonMatchers)
     { return extractPromQLTwoRangeRatesSumByQuery(PrometheusQueryTree{query}, true).has_value(); };
 
     for (const auto * const query : {
-             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"other\"}[5m])))",
-             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\"}[5m]) + rate(writes_total{job=\"cadvisor\",instance=\"one\"}[5m])))",
-             "ceil(sum by (job) (rate(reads_total{job=\"cadvisor\",instance!=\"one\"}[5m]) + rate(writes_total{job=\"cadvisor\",instance=\"one\"}[5m])))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(writes_total{job="other"}[5m]))))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor"}[5m]) + rate(writes_total{job="cadvisor",instance="one"}[5m]))))",
+             R"(ceil(sum by (job) (rate(reads_total{job="cadvisor",instance!="one"}[5m]) + rate(writes_total{job="cadvisor",instance="one"}[5m]))))",
          })
     {
         EXPECT_FALSE(classify(query)) << query;
