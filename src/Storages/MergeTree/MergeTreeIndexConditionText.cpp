@@ -2162,22 +2162,28 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     size_t total_row_count = prepared_set->getTotalRowCount();
     const bool set_is_fixed_string = WhichDataType(set_column.getDataType()).isFixedString();
+    /// `IN` casts the value to the set's type, so a `FixedString` on either side drops trailing zero bytes like `equals`.
+    const bool has_fixed_string = set_is_fixed_string || indexed_fixed_string_size.has_value();
     const FixedStringNeedleContext context{
         .semantics = FixedStringPaddingSemantics::BothStripped,
         .indexed_fixed_string_size = indexed_fixed_string_size,
         .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
-    String element;
+    String normalized;
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
-        element.assign(set_column.getDataAt(row));
+        std::string_view element = set_column.getDataAt(row);
 
-        /// `IN` casts the value to the set's type, so a `FixedString` on either side drops trailing zero bytes like `equals`.
-        if (!tryNormalizeNeedlePadding(element, set_is_fixed_string, context))
+        if (has_fixed_string)
         {
-            out.text_search_queries.clear();
-            return false;
+            normalized.assign(element);
+            if (!tryNormalizeNeedlePadding(normalized, set_is_fixed_string, context))
+            {
+                out.text_search_queries.clear();
+                return false;
+            }
+            element = normalized;
         }
 
         /// Reject the index usage when there is an empty string in the set.
@@ -2192,7 +2198,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         /// Apply preprocessor + tokenizer + postprocessor so set elements use the same
         /// tokens that were stored in the index. Skipping the postprocessor here would
         /// produce false negatives for postprocessors like lower(), stem(), etc.
-        VectorWithMemoryTracking<String> tokens = stringToTokens(std::string_view(element));
+        VectorWithMemoryTracking<String> tokens = stringToTokens(element);
 
         /// An element that tokenizes to nothing cannot be proven present by the index.
         /// Bail out to keep the original predicate.
