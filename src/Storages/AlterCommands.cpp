@@ -423,7 +423,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
             command.codec = ast_col_decl.getCodec();
 
         if (ast_col_decl.getSettings())
-            command.settings_changes = ast_col_decl.getSettings()->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                ast_col_decl.getSettings()->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
 
         if (ast_col_decl.getStatisticsDesc())
             command.column_statistics_decl = ast_col_decl.getStatisticsDesc()->clone();
@@ -431,7 +432,8 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         /// At most only one of ast_col_decl.settings or command_ast->settings_changes is non-null
         if (command_ast->settings_changes)
         {
-            command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+            parseSettingsChangesAndResets(
+                command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
             command.append_column_setting = true;
         }
 
@@ -709,7 +711,15 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_DATABASE_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        const auto & set_query = command_ast->settings_changes->as<ASTSetQuery &>();
+        /// Databases have no `RESET SETTING`: an engine applies only the changes, so the reset would be
+        /// silently dropped and would also skip the engine checks on the setting it removes.
+        if (!set_query.default_settings.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot reset setting {}: ALTER DATABASE does not support resetting a setting to DEFAULT",
+                backQuote(set_query.default_settings.front()));
+        command.settings_changes = set_query.changes;
         return command;
     }
     if (command_ast->type == ASTAlterCommand::RESET_SETTING)
@@ -814,6 +824,26 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
         std::erase_if(columns_to_add, [&](const ColumnDescription & c) { return existing_columns.has(c.name); });
 
     return columns_to_add;
+}
+
+
+std::optional<AlterCommand> AlterCommand::extractSettingsResets()
+{
+    if (type != MODIFY_SETTING || settings_resets.empty())
+        return {};
+
+    if (settings_changes.empty())
+    {
+        type = RESET_SETTING;
+        return {};
+    }
+
+    AlterCommand reset_command;
+    reset_command.ast = ast;
+    reset_command.type = RESET_SETTING;
+    reset_command.settings_resets = std::move(settings_resets);
+    settings_resets.clear();
+    return reset_command;
 }
 
 
@@ -1897,8 +1927,10 @@ void AlterCommands::apply(
     auto metadata_copy = metadata;
 
     for (const AlterCommand & command : *this)
+    {
         if (!command.ignore)
             command.apply(metadata_copy, context, share_nested_offsets, &metadata.columns, default_merge_tree_settings);
+    }
 
     /// Changes in columns may lead to changes in keys expression.
     metadata_copy.sorting_key.recalculateWithNewAST(metadata_copy.sorting_key.definition_ast, metadata_copy.columns, metadata_copy.virtuals, context);
