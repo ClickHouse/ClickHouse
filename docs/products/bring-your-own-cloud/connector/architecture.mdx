@@ -11,6 +11,10 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <PrivatePreviewBadge />
 
+<Note>
+The managed-mode enrollment, customer-create, and platform-approval workflows described here require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team. Public `v0.16.0` has neither the managed-mode init flags nor the `platform` command, and does not ship the customer-create workflow.
+</Note>
+
 ## Components {#components}
 
 The ClickHouse Connector runs three daemons, all built into the `clicklink` binary:
@@ -25,6 +29,8 @@ On Kubernetes, the `clicklink-connector` Helm chart deploys the daemons in a nam
 
 ## Connections {#connections}
 
+The customer-create and platform-approval connections below apply to [supported managed-mode deployments](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); those workflows are unavailable in public `v0.16.0`.
+
 Every connection the connector makes is outbound. The complete list:
 
 | Destination | Direction | Protocol | Authentication | Purpose |
@@ -36,8 +42,8 @@ Every connection the connector makes is outbound. The complete list:
 | Your enrollment endpoint | Outbound | HTTPS | Single-use enrollment token (redeem) or HMAC (first certificate signing); no mTLS | Token redemption and first certificate issuance during setup |
 | Your ClickHouse clusters | Outbound, inside your environment | ClickHouse native protocol | Dedicated read-only users `pcm_scraper` and `pcm_troubleshooter`, stored as bcrypt hashes | System-table reads for scraping and session diagnostics, plus the scraper's log-table flush. The executor opens no ClickHouse connection |
 | Kubernetes API server (every provisioned deployment, both install targets) | Outbound, inside your environment | HTTPS | ServiceAccounts bound to Roles; in managed mode the `pcm-executor` ServiceAccount, confined by an admission policy | Read-only workload views for the troubleshooter; the executor's lifecycle writes inside service namespaces and, during an approved platform update, workload writes inside the platform namespaces; on Kubernetes installs the daemons also persist the automatically renewed client certificate back to the mTLS Secret |
-| Amazon ECR (executor, managed mode only) | Outbound | HTTPS | The executor's ambient AWS identity, or the read-only pull role it assumes for the image check | Registry login to pull a chart for a platform sync or create; `DescribeImages` during a platform update to confirm the images exist |
-| AWS STS (executor, managed mode only) | Outbound | HTTPS | The ambient AWS identity of the executor's node or host | Credentials for the ECR login, and the assume-role into the read-only pull role you registered for the image check. ECR and STS are the executor's only cloud API calls |
+| Amazon ECR (executor, managed mode only) | Outbound | HTTPS | For direct platform access, the read-only pull role assumed using the connector EC2 VM's instance profile; ambient AWS credentials for other ECR chart registries | Registry login to pull a chart for a platform sync or create; `DescribeImages` during a platform update to confirm the images exist |
+| AWS STS (executor, managed mode only) | Outbound | HTTPS | The connector EC2 VM's instance profile for direct platform access; the configured AWS credential chain for other ECR chart registries | Assumes the read-only pull role for direct platform chart login and image checks; may also supply credentials for other ECR logins. ECR and STS are the executor's only cloud API calls |
 | Container registry | Outbound, from your cluster nodes | HTTPS | Your node identity: a read-only pull role that ClickHouse grants to the node roles you registered, or your own registry after you import the images | Image pulls for managed services and platform components. Your cluster pulls; ClickHouse pushes nothing into it |
 | Your identity provider's JWKS endpoint (only when the gateway is enabled) | Outbound | HTTPS | None (public signing keys) | Validates the OIDC ID tokens presented to the session gateway |
 
@@ -76,6 +82,8 @@ The connector verifies your endpoint's server certificate against the system tru
 - **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
 
 ## Trust boundaries {#trust-boundaries}
+
+The service-creation and platform-approval workflows require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` does not ship them.
 
 - **Your environment is the boundary.** ClickHouse Cloud receives only what the connector sends: scrapes, heartbeats and status, command results, and what an active support session returns. It never initiates a connection inward.
 - **The session gateway is yours.** It is reachable only inside your environment (over `kubectl port-forward` on Kubernetes, or locally on a VM) unless you opt into exposing it through an Ingress. ClickHouse Cloud never connects to it.
