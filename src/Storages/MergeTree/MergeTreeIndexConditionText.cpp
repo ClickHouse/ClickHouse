@@ -144,9 +144,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    NameSet columns_shadowing_map_subcolumns_)
+    NameSet columns_shadowing_map_subcolumns_,
+    JSONIndexArgumentTypes json_argument_types_)
     : WithContext(context_)
     , header(index_sample_block)
+    , json_argument_types(std::move(json_argument_types_))
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
@@ -1125,7 +1127,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         direct_read_mode = getHintOrNoneMode();
         candidate_for_exact_mode = false;
     }
-    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues"))
+    else if (tryMatchNodeToJSONIndex(index_column_node, header, "JSONAllValues", json_argument_types))
     {
         has_index_column = true;
         direct_read_mode = getHintOrNoneMode();
@@ -1999,7 +2001,7 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     auto output_column_name = outputs.front()->result_name;
 
     /// Try to match the required column to a JSON subcolumn with JSONAllPaths index.
-    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths");
+    auto json_info = tryMatchJSONSubcolumnToIndex(required_column.name, header, "JSONAllPaths", json_argument_types);
     if (!json_info)
         return false;
 
@@ -2037,7 +2039,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     {
         return hasIndexForColumn(node.getColumnName())
             || hasIndexForMapElementValue(node)
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues");
+            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
     };
 
     if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
