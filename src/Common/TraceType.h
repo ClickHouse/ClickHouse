@@ -26,7 +26,8 @@ enum class TraceType : uint8_t
     ProfileEvent,
     JemallocSample,
     MemoryAllocatedWithoutCheck,
-    Instrumentation
+    Instrumentation,
+    MemoryLargeAllocation
 };
 
 }

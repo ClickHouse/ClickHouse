@@ -44,6 +44,9 @@ public:
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
 
+    /// True when a TraceCollector is running, i.e. when `send()` can deliver rather than discard.
+    static bool isCollecting() { return pipe.fds_rw[1] >= 0 && !shutdown.load(); }
+
 private:
     friend class TraceCollector;
     static LazyPipeFDs pipe;
