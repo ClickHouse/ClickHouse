@@ -743,9 +743,9 @@ struct JSONSchema
 {
     struct Leaf
     {
-        String path;              /// The full dotted path from the root of the object.
-        DynamicSchema types;      /// One type, or two when the key drifts between types.
-        UInt32 absent_threshold;  /// Probability out of 65536 that the key is missing from a row.
+        String path;                  /// The full dotted path from the root of the object.
+        DynamicSchema types;          /// One type, or two when the key drifts between types.
+        UInt32 absent_threshold = 0;  /// Probability out of 65536 that the key is missing from a row.
     };
 
     /// The leading `num_dynamic_leaves` leaves become the dynamic paths of the column and the rest,
@@ -1098,7 +1098,7 @@ struct GenerateRandomContext
     GenerateRandomOptions options;
     const RandomSchemas & schemas;   /// Immutable, shared by all streams of one query.
     pcg64 & rng;                     /// The value generator of one stream.
-    UInt64 schema_seed;              /// Identifies the position in the type tree.
+    UInt64 schema_seed = 0;          /// Identifies the position in the type tree.
 
     GenerateRandomContext child(UInt64 salt) const
     {
