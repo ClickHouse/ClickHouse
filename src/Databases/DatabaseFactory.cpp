@@ -16,6 +16,10 @@
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
+
 
 namespace fs = std::filesystem;
 
@@ -88,7 +92,15 @@ void checkDatabaseSettingNames(
     /// A stored database definition is replayed at plain `ATTACH`, the mode a user's own full-definition
     /// `ATTACH DATABASE` also carries, so the replay flag is what tells them apart; a backup holds a
     /// `CREATE DATABASE`, so its restore is a replay at `CREATE`.
-    if (create.attach_short_syntax || (is_metadata_replay && mode >= LoadingStrictnessLevel::ATTACH) || is_restore_from_backup)
+    /// A Shared Catalog secondary re-executes the initiator's `CREATE DATABASE`, so it states nothing new.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay
+        = context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(context);
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+    if (create.attach_short_syntax || (is_metadata_replay && mode >= LoadingStrictnessLevel::ATTACH) || is_restore_from_backup
+        || is_shared_catalog_replay)
         return;
 
     /// An unregistered engine, and one that accepts no settings at all, are both reported by `validate`.

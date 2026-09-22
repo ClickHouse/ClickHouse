@@ -60,3 +60,27 @@ CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary
 SETTINGS max_tables = DEFAULT;
 SELECT engine_full FROM system.databases WHERE name = {CLICKHOUSE_DATABASE_1:String};
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
+
+SELECT '--- every other engine that accepts settings behaves the same ---';
+
+-- The check runs before the creator, so none of these hosts or paths is ever contacted; an acceptance
+-- control for them would need the real service, so only the rejection is asserted here. A `{...}` in a
+-- `Replicated` path is expanded as a macro rather than as a query parameter, so this one stays a literal.
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/clickhouse/databases/probe_br', 's1', 'r1')
+SETTINGS not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Replicated('/clickhouse/databases/probe_br', 's1', 'r1')
+SETTINGS param_not_a_setting = 1; -- { serverError UNKNOWN_SETTING }
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = MySQL('h:3306', 'd', 'u', 'p')
+SETTINGS not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = DataLakeCatalog('http://h:8181/v1')
+SETTINGS not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
+
+-- The experimental gate (`InterpreterCreateQuery.cpp:411-417`) fires before the check, so it has to be
+-- opened for this arm to reach it at all.
+SET allow_experimental_database_materialized_postgresql = 1;
+
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = MaterializedPostgreSQL('h:5432', 'd', 'u', 'p')
+SETTINGS not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }

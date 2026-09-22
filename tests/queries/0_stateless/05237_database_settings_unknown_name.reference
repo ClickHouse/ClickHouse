@@ -7,3 +7,4 @@ Atomic SETTINGS max_tables = DEFAULT
 Atomic
 --- the second engine that accepts these settings behaves the same ---
 Ordinary SETTINGS max_tables = DEFAULT
+--- every other engine that accepts settings behaves the same ---
