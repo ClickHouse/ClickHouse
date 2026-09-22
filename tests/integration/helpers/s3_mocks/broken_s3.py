@@ -73,6 +73,9 @@ class MockControl:
     def setup_at_create_multi_part_upload(self, **kwargs):
         self.setup_action("at_create_multi_part_upload", **kwargs)
 
+    def setup_at_complete_multi_part_upload(self, **kwargs):
+        self.setup_action("at_complete_multi_part_upload", **kwargs)
+
     def setup_fake_puts(self, part_length):
         self._apply(
             f"http://localhost:{self._port}/mock_settings/fake_puts?when_length_bigger={part_length}"
@@ -228,6 +231,21 @@ class _ServerRuntime:
                 "</Error>"
             )
             request_handler.write_error(500, data)
+
+    class NoSuchUploadAction:
+        # Answers directly instead of redirecting, so the upload is never completed upstream and
+        # whatever object the key already holds stays in place.
+        def inject_error(self, request_handler):
+            data = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                "<Error>"
+                "<Code>NoSuchUpload</Code>"
+                "<Message>The specified upload does not exist. The upload ID may be invalid, "
+                "or the upload may have been aborted or completed.</Message>"
+                "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
+                "</Error>"
+            )
+            request_handler.write_error(404, data)
 
     class SlowDownAction:
         def inject_error(self, request_handler):
@@ -396,6 +414,8 @@ class _ServerRuntime:
                 )
             elif self.action == "timeout":
                 self.error_handler = _ServerRuntime.TimeoutAction()
+            elif self.action == "no_such_upload":
+                self.error_handler = _ServerRuntime.NoSuchUploadAction()
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 
@@ -434,6 +454,7 @@ class _ServerRuntime:
         self.slow_get = None
         self.fake_multipart_upload = None
         self.at_create_multi_part_upload = None
+        self.at_complete_multi_part_upload = None
 
     def register_fake_upload(self, upload_id, key):
         with self.lock:
@@ -455,6 +476,7 @@ class _ServerRuntime:
             self.slow_get = None
             self.fake_multipart_upload = None
             self.at_create_multi_part_upload = None
+            self.at_complete_multi_part_upload = None
             self.at_listing = None
 
 
@@ -643,6 +665,17 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
             )
             return self._ok()
 
+        if path[1] == "at_complete_multi_part_upload":
+            params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
+            _runtime.at_complete_multi_part_upload = (
+                _ServerRuntime.CountAfter.from_cgi_params(_runtime.lock, params)
+            )
+            self.log_message(
+                "set at_complete_multi_part_upload %s",
+                _runtime.at_complete_multi_part_upload,
+            )
+            return self._ok()
+
         if path[1] == "at_listing":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_listing = _ServerRuntime.CountAfter.from_cgi_params(
@@ -749,6 +782,11 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 return self._fake_uploads(parts.path, upload_id)
 
         upload_id = params.get("uploadId", [None])[0]
+        if upload_id is not None:
+            if _runtime.at_complete_multi_part_upload is not None:
+                if _runtime.at_complete_multi_part_upload.has_effect():
+                    return _runtime.at_complete_multi_part_upload.inject_error(self)
+
         if _runtime.is_fake_upload(upload_id, parts.path):
             return self._fake_post_ok(parts.path)
 

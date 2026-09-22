@@ -95,13 +95,13 @@ def setup():
         for _ in range(2):
             send_test_metadata()
             node.query(
-                "INSERT INTO TABLE FUNCTION timeSeriesMetrics(prometheus_multi) "
+                "INSERT INTO TABLE FUNCTION timeSeriesMetricFamilies(prometheus_multi) "
                 "(metric_family_name, type, unit, help) VALUES "
                 "('multi_metric', 'counter', '', 'The first help text'), "
                 "('multi_metric', 'counter', '', 'The second help text')"
             )
         assert_eq_with_retry(
-            node, "SELECT count() > 0 FROM timeSeriesMetrics(prometheus)", "1"
+            node, "SELECT count() > 0 FROM timeSeriesMetricFamilies(prometheus)", "1"
         )
         yield cluster
     finally:

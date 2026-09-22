@@ -173,7 +173,7 @@ Using `Nullable` almost always negatively affects performance, keep this in mind
 
 ## Finding NULL {#finding-null}
 
-It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns `1` if the corresponding value is `NULL` and `0` otherwise.
+It is possible to find `NULL` values in a column by using `null` subcolumn without reading the whole column. It returns the stored `NULL` mask byte: `0` if the corresponding value is present, and a non-zero byte, canonically `1`, if it is `NULL`. Use `isNull` where a strict `0` or `1` is needed.
 
 **Example**
 
