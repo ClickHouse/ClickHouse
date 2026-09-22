@@ -2840,6 +2840,12 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// The stored key can be a query node when an early RENAME alias points to a
                 /// scalar subquery. Such nodes are re-resolved below and do not support direct
                 /// Nullable conversion.
+                const auto node_type = node->getNodeType();
+                if (node_type != QueryTreeNodeType::COLUMN
+                    && node_type != QueryTreeNodeType::CONSTANT
+                    && node_type != QueryTreeNodeType::FUNCTION)
+                    continue;
+
                 auto node_to_convert = node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second;
                 const auto node_to_convert_type = node_to_convert->getNodeType();
                 if (node_to_convert_type != QueryTreeNodeType::COLUMN
@@ -4246,6 +4252,12 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// in value and type but with different source expressions share a single map entry,
                         /// and the source expression determines the action node name (hence which aggregation
                         /// key column the projection reads), so the matched node's own one must be preserved.
+                        const auto node_type = node->getNodeType();
+                        if (node_type != QueryTreeNodeType::COLUMN
+                            && node_type != QueryTreeNodeType::CONSTANT
+                            && node_type != QueryTreeNodeType::FUNCTION)
+                            break;
+
                         auto node_to_convert = node->getNodeType() == QueryTreeNodeType::CONSTANT ? node : it->second;
                         const auto node_to_convert_type = node_to_convert->getNodeType();
                         if (node_to_convert_type == QueryTreeNodeType::COLUMN
