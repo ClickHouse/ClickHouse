@@ -1,18 +1,11 @@
-#include <Columns/ColumnReplicated.h>
 #include <Processors/Transforms/MergeSortingTransform.h>
 #include <Processors/IAccumulatingTransform.h>
 #include <Processors/Merges/MergingSortedTransform.h>
+#include <Common/Exception.h>
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
-#include <IO/WriteBufferFromFile.h>
-#include <IO/ReadBufferFromFile.h>
-#include <Compression/CompressedReadBuffer.h>
-#include <Compression/CompressedWriteBuffer.h>
-#include <Formats/NativeReader.h>
-#include <Formats/NativeWriter.h>
-#include <Disks/IVolume.h>
 
 
 namespace ProfileEvents
@@ -28,6 +21,9 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
 }
+
+namespace
+{
 
 /// Reads back a sorted part written by `dumpToTemporaryFile`.
 class BufferingFromFileSource : public ISource
@@ -66,6 +62,8 @@ private:
     std::optional<TemporaryBlockStreamReaderHolder> tmp_read_stream;
     LoggerPtr log;
 };
+
+}
 
 MergeSortingTransform::MergeSortingTransform(
     SharedHeader header,

@@ -37,6 +37,7 @@ namespace ErrorCodes
 {
     extern const int MEMORY_RESERVATION_KILLED;
     extern const int MEMORY_RESERVATION_FAILED;
+    extern const int MEMORY_RESERVATION_ACQUISITION_TIMEOUT;
 }
 
 namespace
@@ -45,7 +46,8 @@ namespace
     constexpr ResourceCost RECLAIMABLE_REPORT_RATIO = 8;
 }
 
-MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, ResourceCost min_bytes_to_spill_)
+MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_, ResourceCost min_bytes_to_spill_,
+                                     std::chrono::steady_clock::time_point admission_deadline_)
     : ResourceAllocation(*link.allocation_queue, id_)
     , reserved_size(reserved_size_)
     , min_bytes_to_spill(min_bytes_to_spill_)
@@ -68,14 +70,18 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
     if (reserved_size > 0)
     {
         bool admitted = false;
+        bool timed_out = false;
         {
             std::unique_lock lock(mutex);
             auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
-            cv.wait(lock, [this] { return kill_reason || fail_reason || actual_size <= allocated_size; });
+            auto admitted_pred = [this] { return kill_reason || fail_reason || actual_size <= allocated_size; };
+            // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time
+            // and blocks until the reservation is admitted, killed, or failed.
+            timed_out = !cv.wait_until(lock, admission_deadline_, admitted_pred);
             // Flush deferred profile-event counters before potentially throwing,
             // so failure metrics (e.g. MemoryReservationFailed) are not lost.
             metrics.apply();
-            admitted = !kill_reason && !fail_reason;
+            admitted = !kill_reason && !fail_reason && actual_size <= allocated_size;
         }
 
         if (!admitted)
@@ -83,10 +89,18 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
             // `insertAllocation` above linked this object into the scheduler. Throwing straight
             // from the constructor would skip `~MemoryReservation`, so `removeAllocation` would
             // never run and the scheduler would keep a dangling pointer to a destroyed object
-            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first, then
-            // report the failure.
+            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first, then report
+            // the failure.
             detachFromQueue();
             std::unique_lock lock(mutex);
+            // A timeout takes precedence over the generic failure. Cancelling a still-pending
+            // reservation in `detachFromQueue` routes through `AllocationQueue::processActivation`,
+            // which fails it with a generic cancellation error; so when we stopped waiting because the
+            // deadline passed, report that as the admission timeout instead of letting `throwIfNeeded`
+            // surface the cancellation as `MEMORY_RESERVATION_FAILED`.
+            if (timed_out)
+                throw Exception(ErrorCodes::MEMORY_RESERVATION_ACQUISITION_TIMEOUT,
+                    "Timed out waiting to acquire a memory reservation for workload scheduling (exceeded workload_admission_timeout_ms)");
             throwIfNeeded();
         }
     }
