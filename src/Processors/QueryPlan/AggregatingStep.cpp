@@ -1147,6 +1147,12 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
             "The merge-only aggregation flag in a version {} query plan stream; it requires version >= {}",
             ctx.version, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION);
 
+    /// Aggregation in order never emits the `is_overflows` chunk that carries the overflow row, so the
+    /// two are mutually exclusive. A peer's plan is not planned here, so reject rather than execute it.
+    if (overflow_row && has_in_order)
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "A query plan stream with both aggregation in order and the aggregation overflow row");
+
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
     if (has_in_order)
