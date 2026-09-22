@@ -63,6 +63,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
+    extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace DB::Setting
@@ -106,6 +107,30 @@ static constexpr auto ONELAKE_DFS_HOST_SUFFIX = ".dfs.fabric.microsoft.com";
 
 namespace
 {
+
+/// The container (or bucket) and the object path of a location URI, which is all that
+/// identifies the object across the scheme and authority spellings the same storage has:
+/// ClickHouse writes `azure://container/path`, OneLake reports it back as
+/// `abfss://container@account.dfs.fabric.microsoft.com/path`.
+std::pair<std::string_view, std::string_view> splitLocationURI(std::string_view uri)
+{
+    const auto scheme_end = uri.find("://");
+    if (scheme_end != std::string_view::npos)
+        uri.remove_prefix(scheme_end + std::string_view("://").size());
+
+    const auto authority_end = uri.find('/');
+    auto authority = uri.substr(0, authority_end);
+    auto path = authority_end == std::string_view::npos ? std::string_view{} : uri.substr(authority_end + 1);
+
+    const auto account_start = authority.find('@');
+    if (account_start != std::string_view::npos)
+        authority = authority.substr(0, account_start);
+
+    while (!path.empty() && path.back() == '/')
+        path.remove_suffix(1);
+
+    return {authority, path};
+}
 
 std::pair<std::string, std::string> parseCatalogCredential(const std::string & catalog_credential)
 {
@@ -1891,7 +1916,8 @@ std::optional<std::string> RestCatalog::getNamespaceLocation(const std::string &
     String json_str;
     try
     {
-        auto buf = createReadBuffer(*state_snapshot, state_snapshot->config.prefix / endpoint);
+        auto buf = createReadBuffer(
+            *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
         readJSONObjectPossiblyInvalid(json_str, *buf);
     }
     catch (const DB::HTTPException & ex)
@@ -1935,7 +1961,7 @@ std::optional<std::string> RestCatalog::getDefaultTableLocation(
     return std::string(std::filesystem::path(*namespace_location) / table_name);
 }
 
-void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
+void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
@@ -1975,12 +2001,33 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     {
         /// A catalog that registers tables from object storage (e.g. Fabric discovers them in
         /// the lakehouse) has already picked up the initial metadata written just before this
-        /// call, so it reports the identifier as taken.
+        /// call, so it reports the identifier as taken. Accept the conflict only if the
+        /// registered table is the one we have just written; anything else is a real name
+        /// collision, and returning from it would report a successful `CREATE TABLE` while
+        /// the catalog keeps pointing at someone else's table.
         if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
         {
+            TableMetadata existing_table;
+            existing_table.withDataLakeSpecificProperties();
+            const bool exists = tryGetTableMetadata(namespace_name, table_name, existing_table);
+            const auto existing_properties = existing_table.getDataLakeSpecificProperties();
+            const std::string registered_metadata_path
+                = existing_properties ? existing_properties->iceberg_metadata_file_location : std::string{};
+
+            if (!exists || splitLocationURI(registered_metadata_path) != splitLocationURI(new_metadata_path))
+            {
+                throw DB::Exception(
+                    DB::ErrorCodes::TABLE_ALREADY_EXISTS,
+                    "Table {}.{} already exists in the catalog and points at {}, not at the metadata file {} "
+                    "written for this table: {}",
+                    namespace_name, table_name,
+                    registered_metadata_path.empty() ? std::string("an unknown metadata file") : registered_metadata_path,
+                    new_metadata_path, ex.displayText());
+            }
+
             LOG_DEBUG(
-                log, "Table {}.{} is already registered in the catalog: {}",
-                namespace_name, table_name, ex.displayText());
+                log, "Table {}.{} is already registered in the catalog with the metadata file {}: {}",
+                namespace_name, table_name, registered_metadata_path, ex.displayText());
             return;
         }
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Failed to create table {}", ex.displayText());
