@@ -238,9 +238,24 @@ namespace Net
         /// Returns true iff the given host name is the local host
         /// (either "localhost" or "127.0.0.1").
 
-        /// `blocking_caller` is what the caller's socket mode is, which differs from the socket's
-        /// own mode while `completeHandshakeImpl` drives the handshake non-blocking.
-        bool mustRetry(int rc, Poco::Timespan & remaining_time, bool blocking_caller);
+        bool mustRetry(int rc, Poco::Timespan & remaining_time);
+
+        /// Whether waiting for the peer is this class's job rather than the caller's.
+        bool waitHere() const { return _drivingHandshake || _pSocket->getBlocking(); }
+
+        /// Makes the socket non-blocking for one handshake, so that OpenSSL yields instead of
+        /// reading in its own loop, and restores the mode afterwards.
+        class HandshakeDriver
+        {
+        public:
+            explicit HandshakeDriver(SecureSocketImpl & impl_);
+            ~HandshakeDriver();
+            bool waitsHere() const { return waits_here; }
+
+        private:
+            SecureSocketImpl & impl;
+            bool waits_here;
+        };
         /// Returns true if the last operation should be retried,
         /// otherwise false.
         ///
@@ -288,6 +303,9 @@ namespace Net
         Poco::AutoPtr<SocketImpl> _pSocket;
         Context::Ptr _pContext;
         bool _needHandshake;
+        /// Set while completeHandshakeImpl runs the handshake on a socket it made non-blocking, so
+        /// that waiting for the peer stays this class's job rather than the caller's.
+        bool _drivingHandshake = false;
         std::string _peerHostName;
         Session::Ptr _pSession;
         const BIO_METHOD * _bioMethod = nullptr;

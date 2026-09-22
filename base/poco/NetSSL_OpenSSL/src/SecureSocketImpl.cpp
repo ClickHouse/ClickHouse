@@ -74,28 +74,6 @@ private:
 	Poco::Timestamp start;
 };
 
-/// Puts the socket back into blocking mode, whatever leaves the scope that made it non-blocking.
-struct BlockingRestorer
-{
-	BlockingRestorer(Poco::Net::SocketImpl & socket_, bool restore_) : socket(socket_), restore(restore_) {}
-	~BlockingRestorer()
-	{
-		if (restore)
-		{
-			try
-			{
-				socket.setBlocking(true);
-			}
-			catch (...)
-			{
-			}
-		}
-	}
-private:
-	Poco::Net::SocketImpl & socket;
-	bool restore;
-};
-
 /// Accounts one TLS handshake in profile events, separately for incoming (server) and
 /// outgoing (client) connections.
 ///
@@ -302,7 +280,7 @@ void SecureSocketImpl::connectSSL(bool performHandshake)
 					RemainingTimeCounter counter(remaining_time);
 					ret = SSL_connect(_pSSL);
 				}
-				while (mustRetry(ret, remaining_time, _pSocket->getBlocking()));
+				while (mustRetry(ret, remaining_time));
 				handleError(ret);
 				verifyPeerCertificate();
 			}
@@ -412,7 +390,7 @@ int SecureSocketImpl::sendBytes(const void* buffer, int length, int flags)
 		RemainingTimeCounter counter(remaining_time);
 		rc = SSL_write(_pSSL, buffer, length);
 	}
-	while (mustRetry(rc, remaining_time, _pSocket->getBlocking()));
+	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
 		// At this stage we still can have last not yet received SSL message containing SSL error
@@ -464,7 +442,7 @@ int SecureSocketImpl::receiveBytes(void* buffer, int length, int flags)
 		RemainingTimeCounter counter(remaining_time);
 		rc = SSL_read(_pSSL, buffer, length);
 	}
-	while (mustRetry(rc, remaining_time, _pSocket->getBlocking()));
+	while (mustRetry(rc, remaining_time));
 	if (rc <= 0)
 	{
 		rc = handleError(rc);
@@ -494,6 +472,33 @@ int SecureSocketImpl::completeHandshake()
 }
 
 
+SecureSocketImpl::HandshakeDriver::HandshakeDriver(SecureSocketImpl & impl_)
+	: impl(impl_), waits_here(impl_._pSocket->getBlocking())
+{
+	if (waits_here)
+	{
+		impl._pSocket->setBlocking(false);
+		impl._drivingHandshake = true;
+	}
+}
+
+
+SecureSocketImpl::HandshakeDriver::~HandshakeDriver()
+{
+	if (!waits_here)
+		return;
+
+	impl._drivingHandshake = false;
+	try
+	{
+		impl._pSocket->setBlocking(true);
+	}
+	catch (...)
+	{
+	}
+}
+
+
 int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 {
 	ScopedLock lock(*_mutex);
@@ -506,11 +511,8 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 	/// On a blocking socket OpenSSL reads inside its own state machine, where only SO_RCVTIMEO
 	/// applies and only per read, so a peer that dribbles a byte before each timeout keeps the
 	/// handshake alive for as long as it likes. Drive it non-blocking instead: OpenSSL then hands
-	/// control back with WANT_READ/WANT_WRITE and the wait below is charged against the budget.
-	const bool was_blocking = _pSocket->getBlocking();
-	BlockingRestorer blocking_restorer(*_pSocket, was_blocking);
-	if (was_blocking)
-		_pSocket->setBlocking(false);
+	/// control back with WANT_READ/WANT_WRITE and the wait in mustRetry is charged against the budget.
+	HandshakeDriver handshake_driver(*this);
 
 	try
 	{
@@ -521,11 +523,11 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 			rc = SSL_do_handshake(_pSSL);
 		}
 		/// `mustRetry` itself throws `Poco::TimeoutException` when the budget runs out.
-		while (mustRetry(rc, remaining_time, was_blocking));
+		while (mustRetry(rc, remaining_time));
 		if (rc <= 0)
 		{
 			rc = handleError(rc);
-			if (rc < 0 && was_blocking)
+			if (rc < 0 && handshake_driver.waitsHere())
 				throw Poco::TimeoutException("SSL handshake timed out");
 			/// A negative `rc` on a non-blocking socket means the handshake wants more data and will be
 			/// resumed by the next read or write, so it has neither succeeded nor failed yet. Zero means
@@ -648,7 +650,7 @@ Poco::Timespan SecureSocketImpl::getMaxTimeoutOrLimit()
 	return remaining_time;
 }
 
-bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time, bool blocking_caller)
+bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time)
 {
 	if (remaining_time == 0)
 		return false;
@@ -660,7 +662,7 @@ bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time, bool bl
 		switch (sslError)
 		{
 		case SSL_ERROR_WANT_READ:
-			if (blocking_caller)
+			if (waitHere())
 			{
 				/// Charge the wait, not only the time spent inside SSL_do_handshake: otherwise a peer
 				/// that sends a byte before every timeout never depletes `remaining_time`, and the
@@ -673,7 +675,7 @@ bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time, bool bl
 			}
 			break;
 		case SSL_ERROR_WANT_WRITE:
-			if (blocking_caller)
+			if (waitHere())
 			{
 				RemainingTimeCounter counter(remaining_time);
 				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_WRITE))
