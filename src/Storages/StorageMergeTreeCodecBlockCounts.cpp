@@ -361,7 +361,7 @@ void StorageMergeTreeCodecBlockCounts::read(
     /// The other columns are metadata that `system.parts_columns` reports regardless of row policies.
     if (sample_block->has(CODEC_BLOCK_COUNTS_COLUMN))
     {
-        if (getEffectiveRowPolicyFilter(*source_table, context))
+        if (getEffectiveRowPolicyFilter(*merge_tree, context))
             throw Exception(
                 ErrorCodes::ACCESS_DENIED,
                 "Cannot read column `{}` from `mergeTreeCodecBlockCounts` because a row policy is applied on table {}. "
