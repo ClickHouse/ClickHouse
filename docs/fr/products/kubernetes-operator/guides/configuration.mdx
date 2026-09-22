@@ -139,11 +139,9 @@ Les nœuds Keeper utilisent les noms de pods via leur Service headless : `<pod>
   ## Configuration du pod {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### Répartition topologique et affinité automatiques {#automatic-topology-spread-and-affinity}
-</div>
+### Répartition topologique et affinité automatiques {#automatic-topology-spread-and-affinity}
 
-Répartissez les pods sur plusieurs zones de disponibilité :
+Répartissez les pods sur plusieurs zones de disponibilité :
 
 ```yaml
 spec:
@@ -154,6 +152,22 @@ spec:
 
 <Note>
   Assurez-vous que votre cluster Kubernetes dispose d’un nombre suffisant de nœuds répartis sur différentes zones pour respecter les contraintes de répartition.
+</Note>
+
+Avec un autoscaler de nœuds (Karpenter, Cluster Autoscaler), la contrainte de répartition seule ne suffit pas à
+provisionner une zone dépourvue de nœuds — le scheduler se contente des zones qu’il peut voir.
+Définissez `topologyMinDomains` sur le nombre de zones de disponibilité pour forcer la répartition :
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` nécessite `topologyZoneKey`. Les pods restent à l’état `Pending` tant que le nombre de zones disponibles est inférieur à celui
+  demandé ; restez donc dans les limites des zones que votre cluster peut fournir.
 </Note>
 
 <div id="manual-configuration">

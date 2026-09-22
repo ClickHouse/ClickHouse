@@ -1,25 +1,55 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Changelog do Cloud - 2026'
+title: 'Cloud changelog - 2026'
 description: 'Changelog do ClickHouse Cloud com descrições das novidades de cada lançamento do ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['changelog', 'notas de lançamento', 'atualizações', 'novos recursos', 'alterações no Cloud']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
-Além deste changelog do ClickHouse Cloud, consulte a página de [Compatibilidade da Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+Além deste changelog do ClickHouse Cloud, consulte também a página [Compatibilidade do Cloud](/pt-BR/products/cloud/guides/cloud-compatibility).
+
+<Update label="2026-09-22">
+  As atualizações desta semana ampliam a cobertura de compliance do ClickHouse Cloud para novas regiões da APAC, adicionam roteamento com reconhecimento de réplicas em beta pública e trazem novos recursos para metrics, compute e dbt. As cells reguladas por HIPAA e PCI já estão disponíveis em AWS Seoul e Sydney; clientes elegíveis podem avaliar cargas de trabalho de metrics compatíveis com Prometheus e o On-Demand Compute; e o ClickHouse está disponível por meio do dbt Core v2 e do dbt Platform.
+
+  ## Security {#security}
+
+  ### Suporte a HIPAA e PCI em AWS Seoul e Sydney {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+  As cells reguladas por HIPAA e PCI já estão disponíveis nas regiões AWS Seoul (`ap-northeast-2`) e AWS Sydney (`ap-southeast-2`). Selecione HIPAA ou PCI na criação do serviço para executar cargas de trabalho em conformidade nessas regiões; consulte a [visão geral de compliance](/pt-BR/products/cloud/reference/security/compliance-overview#hipaa-since-2024) e as [regiões compatíveis](/pt-BR/products/cloud/reference/supported-regions) para mais detalhes.
+
+  ## Novos recursos {#new-features}
+
+  ### Roteamento com reconhecimento de réplicas agora em beta pública {#replica-aware-routing-now-in-public-beta}
+
+  O [roteamento com reconhecimento de réplicas](/pt-BR/products/cloud/features/infrastructure/replica-aware-routing) está disponível em beta pública para clientes Enterprise, com suporte a implantações nativas do ClickHouse Cloud e BYOC. Depois de habilitado em sua conta, você pode ativá-lo diretamente nas configurações do serviço. Veja o [anúncio](https://clickhouse.com/blog/replica-aware-routing-public-beta).
+
+  ### Suporte a PromQL em prévia privada {#promql-support-in-private-preview}
+
+  Agora você pode armazenar metrics do Prometheus no motor de tabela `TimeSeries` e consultá-las com PromQL diretamente no seu ClickHouse service — sem transpilador nem proxy, de modo que coletores, painéis do Grafana e ferramentas Prometheus já existentes continuam funcionando sem nenhuma alteração. Escreva com o Prometheus remote-write v1 e leia pela Prometheus HTTP API, ou execute PromQL em uma sessão SQL usando as funções de tabela `prometheusQuery` e `prometheusQueryRange`. Disponível para clientes selecionados do ClickHouse Cloud e BYOC por meio da [lista de espera da prévia privada](https://clickhouse.com/cloud/promql-support-waitlist) na AWS, GCP e Azure. Consulte a [documentação da interface Prometheus](/pt-BR/concepts/features/interfaces/prometheus) e o [anúncio](https://clickhouse.com/blog/introducing-promql).
+
+  ### On-Demand Compute agora em prévia privada {#on-demand-compute-now-in-private-preview}
+
+  O On-Demand Compute permite que consultas `SELECT` elegíveis e intensivas em compute utilizem workers adicionais do ClickHouse por meio do serviço e do endpoint que você já usa — sem necessidade de redimensionamento ou provisionamento extra. Você habilita consultas individuais pelas configurações de consulta, enquanto seu serviço continua responsável por autenticação, planejamento, coordenação e resultados; nos bastidores, o recurso introduz um cost-based optimizer e a execução de consultas em múltiplos estágios. É indicado para leituras ad hoc pesadas e ocasionais, grandes varreduras, junções e agregações sobre dados em `SharedMergeTree`, Apache Iceberg ou Delta Lake. Está disponível para clientes selecionados por meio da [lista de espera da prévia privada](https://clickhouse.com/cloud/on-demand-compute-waitlist). Consulte a [documentação do On-Demand Compute](/pt-BR/products/cloud/features/infrastructure/on-demand-compute) e o [anúncio](https://clickhouse.com/blog/on-demand-compute).
+
+  ## Integrações {#integrations}
+
+  ### Adaptador ClickHouse para dbt v2 e ClickHouse no dbt Platform {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+  Agora você pode executar o dbt com o ClickHouse no novo motor Core v2 baseado em Rust, usando o adaptador dbt v2, disponível em beta pública. Pela primeira vez, o ClickHouse também está disponível como conexão no dbt Platform (Studio, jobs e ambientes), em private beta e habilitado por conta. O adaptador v1 existente (`dbt-clickhouse`) continua com manutenção completa em paralelo. Veja o [dbt Core](https://github.com/dbt-labs/dbt), o [pull request do adaptador dbt-clickhouse](https://github.com/ClickHouse/dbt-clickhouse/pull/739) e o [pull request da documentação do dbt Platform](https://github.com/dbt-labs/docs.getdbt.com/pull/9975).
+</Update>
 
 <Update label="2026-09-08">
-  Esta semana traz melhorias de segurança e de integração de dados prontas para produção no ClickHouse Cloud. A autenticação JWT agora está disponível de forma geral para serviços Enterprise, e o conector MySQL CDC do ClickPipes chegou ao estágio GA, com snapshots mais rápidos, padrões mais seguros e melhor observabilidade.
+  Esta semana traz melhorias de segurança e de integração de dados prontas para produção no ClickHouse Cloud. A autenticação JWT agora está geralmente disponível para serviços Enterprise, e o conector MySQL CDC do ClickPipes chegou ao estágio GA, com snapshots mais rápidos, padrões mais seguros e melhor observabilidade.
 
-  ### A autenticação JWT para serviços ClickHouse agora está disponível de forma geral {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+  ### A autenticação JWT para serviços ClickHouse agora está geralmente disponível {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
 
   Agora você pode se autenticar no seu serviço ClickHouse usando JWTs emitidos pelo seu próprio identity provider, incluindo Okta, Auth0, Microsoft Entra ID, Keycloak ou qualquer provider que publique um JWKS endpoint. A autenticação JWT permite governar o acesso por meio do seu identity provider existente, com expiração de token aplicada por política — eliminando senhas separadas do ClickHouse e segredos compartilhados que precisam ser rotacionados. Este recurso está disponível no Enterprise plan para serviços que executam o ClickHouse 26.4 ou posterior. Configure-o em **Service → Settings → Security → JWT authentication**. Consulte o [guia de configuração da autenticação JWT](/pt-BR/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 
-  ### O conector MySQL CDC do ClickPipes agora está disponível de forma geral {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+  ### O conector MySQL CDC do ClickPipes agora está geralmente disponível {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
 
   O conector MySQL CDC do ClickPipes agora está pronto para produção. Este lançamento adiciona snapshot paralelo automático, com carregamentos iniciais até 27× mais rápidos, além de padrões mais seguros para implantações em produção, incluindo replicação baseada em GTID e um binlog retention period mínimo de 72 horas. Novas métricas de utilização de recursos e de lag também facilitam o monitoramento dos pipelines. O connector está disponível para todos os clientes do ClickHouse Cloud por meio da ClickPipes UI, da OpenAPI e do Terraform. Consulte a [documentação do ClickPipes do MySQL](/pt-BR/integrations/clickpipes/mysql) e o [anúncio do lançamento GA](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available).
 </Update>

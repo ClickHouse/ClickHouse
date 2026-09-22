@@ -4,13 +4,43 @@ sidebarTitle: '2026'
 title: 'Cloud 更新日志 - 2026'
 description: 'ClickHouse Cloud 更新日志，介绍每个 ClickHouse Cloud 版本的新增内容'
 doc_type: 'changelog'
-keywords: ['更新日志', '发布说明', '更新', '新功能', 'Cloud 变更']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-除本 ClickHouse Cloud 更新日志外，请参阅 [Cloud Compatibility](/zh/products/cloud/guides/cloud-compatibility) 页面。
+除本 ClickHouse Cloud 更新日志外，另请参阅 [Cloud 兼容性](/zh/products/cloud/guides/cloud-compatibility)页面。
+
+<Update label="2026-09-22">
+  本周更新将 ClickHouse Cloud 的 compliance 覆盖范围扩展至新的亚太区域，新增处于 public beta 阶段的 replica-aware routing，并为指标、compute 和 dbt 带来了新能力。受 HIPAA 和 PCI 监管的 cell 现已在 AWS 首尔和悉尼上线；符合条件的客户可试用兼容 Prometheus 的指标工作负载与按需计算；此外，ClickHouse 现已通过 dbt Core v2 与 dbt Platform 提供。
+
+  ## 安全 {#security}
+
+  ### AWS 首尔与悉尼支持 HIPAA 和 PCI {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+  受 HIPAA 和 PCI 监管的 cell 现已在 AWS 首尔 (`ap-northeast-2`) 和 AWS 悉尼 (`ap-southeast-2`) 区域上线。创建服务时选择 HIPAA 或 PCI，即可在这些区域中运行合规工作负载；详情请参阅 [compliance 概览](/zh/products/cloud/reference/security/compliance-overview#hipaa-since-2024)和[支持区域](/zh/products/cloud/reference/supported-regions)。
+
+  ## 新功能 {#new-features}
+
+  ### Replica-aware routing 进入 public beta {#replica-aware-routing-now-in-public-beta}
+
+  [Replica-aware routing](/zh/products/cloud/features/infrastructure/replica-aware-routing) 现已面向 Enterprise 客户进入 public beta，支持原生 ClickHouse Cloud 与 BYOC 部署。在你的 account 上启用该功能后，即可直接在服务设置中开启。详见[通知](https://clickhouse.com/blog/replica-aware-routing-public-beta)。
+
+  ### PromQL 支持进入私有预览 {#promql-support-in-private-preview}
+
+  现在，你可以将 Prometheus 指标存储在 `TimeSeries` table 引擎中，并直接针对 ClickHouse 服务使用 PromQL 查询——无需转译器或代理，现有的采集器、Grafana 仪表板和 Prometheus 工具链无需改动即可继续使用。可通过 Prometheus 远程写入 v1 写入数据，并通过 Prometheus HTTP API 读取；也可以在 SQL 会话中使用 `prometheusQuery` 和 `prometheusQueryRange` table 函数运行 PromQL。该功能通过[私有预览等待名单](https://clickhouse.com/cloud/promql-support-waitlist)向 AWS、GCP 和 Azure 上的部分 ClickHouse Cloud 与 BYOC 客户开放。请参阅 [Prometheus interface 文档](/zh/concepts/features/interfaces/prometheus)和[通知](https://clickhouse.com/blog/introducing-promql)。
+
+  ### 按需计算进入私有预览 {#on-demand-compute-now-in-private-preview}
+
+  按需计算让符合条件的计算密集型 `SELECT` 查询能够通过现有服务和端点调用额外的 ClickHouse worker——无需调整规模或额外置备资源。你可以通过 query settings 为单个查询启用该能力，服务本身则继续负责身份验证、计划、协调与结果返回；其底层引入了 cost-based optimizer 与多阶段查询执行。该能力适用于偶发的重度即席读取、大规模扫描，以及针对 `SharedMergeTree`、Apache Iceberg 或 Delta Lake 数据的 join 与聚合。目前通过[私有预览等待名单](https://clickhouse.com/cloud/on-demand-compute-waitlist)向部分客户开放。请参阅[按需计算文档](/zh/products/cloud/features/infrastructure/on-demand-compute)和[通知](https://clickhouse.com/blog/on-demand-compute)。
+
+  ## 集成 {#integrations}
+
+  ### 适用于 dbt v2 的 ClickHouse 适配器，以及 dbt Platform 中的 ClickHouse {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+  现在，你可以借助处于 public beta 的 dbt v2 adapter，在基于 Rust 的全新 Core v2 引擎上针对 ClickHouse 运行 dbt。ClickHouse 也首次作为一种连接方式出现在 dbt Platform (Studio、作业和环境) 中，目前处于私有 beta 阶段，按 account 启用。现有的 v1 adapter (`dbt-clickhouse`) 仍会并行获得完整维护。请参阅 [dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse adapter 拉取请求](https://github.com/ClickHouse/dbt-clickhouse/pull/739)以及 [dbt Platform 文档拉取请求](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)。
+</Update>
 
 <Update label="2026 年 9 月 8 日">
   本周为 ClickHouse Cloud 带来了可用于生产环境的安全与数据集成改进。JWT 身份验证现已面向 Enterprise 服务正式可用，ClickPipes 的 MySQL CDC 连接器也已达到 GA 阶段，具备更快的快照速度、更安全的默认设置以及更好的可观测性。
@@ -21,7 +51,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   ### ClickPipes 的 MySQL CDC 连接器现已正式可用 {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
 
-  ClickPipes 的 MySQL CDC 连接器现已可用于生产环境。本次发布新增了自动并行快照功能，使初始加载速度最高提升 27 倍，同时为生产部署提供了更安全的默认设置，包括基于 GTID 的复制和至少 72 小时的 binlog 保留期。新增的资源利用率和延迟指标也让管道监控更加轻松。所有 ClickHouse Cloud 客户均可通过 ClickPipes UI、OpenAPI 和 Terraform 使用该连接器。请参阅 [MySQL ClickPipes 文档](/zh/integrations/clickpipes/mysql)和 [GA 发布公告](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)。
+  ClickPipes 的 MySQL CDC 连接器现已可用于生产环境。本次发布新增了自动并行快照功能，使初始加载速度最高提升 27 倍，同时为生产部署提供了更安全的默认设置，包括基于 GTID 的复制和至少 72 小时的 binlog 保留期。新增的资源利用率和延迟指标也让管道监控更加轻松。所有 ClickHouse Cloud 客户均可通过 ClickPipes UI、OpenAPI 和 Terraform 使用该连接器。请参阅 [MySQL ClickPipes 文档](/zh/integrations/clickpipes/mysql)和 [GA 发布通知](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available)。
 </Update>
 
 <Update label="2026 年 8 月 31 日">

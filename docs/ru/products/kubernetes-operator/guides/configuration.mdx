@@ -138,9 +138,7 @@ spec:
   ## Настройка пода {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### Автоматическое топологическое распределение и аффинность {#automatic-topology-spread-and-affinity}
-</div>
+### Автоматическое топологическое распределение и аффинность {#automatic-topology-spread-and-affinity}
 
 Распределите поды по зонам доступности:
 
@@ -153,6 +151,22 @@ spec:
 
 <Note>
   Убедитесь, что в вашем кластере Kubernetes достаточно узлов в разных зонах, чтобы выполнить требования к распределению.
+</Note>
+
+При использовании автомасштабировщика узлов (Karpenter, Cluster Autoscaler) одно лишь ограничение на распределение по топологии не может
+создать зону, в которой ещё нет узлов, — планировщик ограничивается теми зонами, которые ему доступны.
+Задайте `topologyMinDomains` равным количеству зон доступности, чтобы принудительно обеспечить распределение:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  Для `topologyMinDomains` требуется `topologyZoneKey`. Поды остаются в состоянии `Pending`, пока
+  доступно меньше зон, чем запрошено, поэтому указывайте значение в пределах числа зон, которое может предоставить ваш кластер.
 </Note>
 
 <div id="manual-configuration">

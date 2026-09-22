@@ -1,23 +1,53 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'Журнал изменений Cloud — 2026'
-description: 'Журнал изменений ClickHouse Cloud с описанием нововведений в каждом выпуске ClickHouse Cloud'
+title: 'Cloud changelog — 2026'
+description: 'Cloud changelog ClickHouse Cloud с описанием нововведений каждого выпуска ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['журнал изменений', 'примечания к выпуску', 'обновления', 'новые возможности', 'изменения в Cloud']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/ru/components/Image.jsx";
 
-Помимо этого журнала изменений Cloud, ознакомьтесь со страницей [совместимости с Cloud](/ru/products/cloud/guides/cloud-compatibility).
+Помимо этого журнала изменений ClickHouse Cloud, см. страницу [Совместимость с Cloud](/ru/products/cloud/guides/cloud-compatibility).
+
+<Update label="2026-09-22">
+  Обновления этой недели расширяют охват соответствия требованиям в ClickHouse Cloud на новые регионы APAC, добавляют маршрутизацию с учетом реплик в публичной бета-версии и вводят новые возможности для метрик, вычислительных ресурсов и dbt. Ячейки, регулируемые требованиями HIPAA и PCI, теперь доступны в AWS Seoul и Sydney; клиенты, отвечающие условиям, могут опробовать рабочие нагрузки метрик, совместимые с Prometheus, и On-Demand Compute; а ClickHouse доступен через dbt Core v2 и dbt Platform.
+
+  ## Безопасность {#security}
+
+  ### Поддержка HIPAA и PCI в AWS Seoul и Sydney {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+  Ячейки, регулируемые требованиями HIPAA и PCI, теперь доступны в регионах AWS Seoul (`ap-northeast-2`) и AWS Sydney (`ap-southeast-2`). Выберите HIPAA или PCI при создании сервиса, чтобы запускать в этих регионах рабочие нагрузки, соответствующие требованиям; подробности см. в [обзоре соответствия требованиям](/ru/products/cloud/reference/security/compliance-overview#hipaa-since-2024) и [поддерживаемых регионах](/ru/products/cloud/reference/supported-regions).
+
+  ## Новые возможности {#new-features}
+
+  ### Маршрутизация с учетом реплик теперь в публичной бета-версии {#replica-aware-routing-now-in-public-beta}
+
+  [Маршрутизация с учетом реплик](/ru/products/cloud/features/infrastructure/replica-aware-routing) доступна в публичной бета-версии для клиентов Enterprise с поддержкой нативных развертываний ClickHouse Cloud и BYOC. После включения для вашего аккаунта вы можете активировать ее прямо в настройках сервиса. См. [анонс](https://clickhouse.com/blog/replica-aware-routing-public-beta).
+
+  ### Поддержка PromQL в закрытой предварительной версии {#promql-support-in-private-preview}
+
+  Теперь вы можете хранить метрики Prometheus в движке таблиц `TimeSeries` и обращаться к ним через PromQL напрямую к вашему сервису ClickHouse — без транспилятора и прокси, поэтому существующие сборщики, дашборды Grafana и инструменты Prometheus продолжают работать без изменений. Записывайте данные через Prometheus remote-write v1 и читайте через Prometheus HTTP API либо выполняйте PromQL из SQL-сессии с помощью табличных функций `prometheusQuery` и `prometheusQueryRange`. Доступно избранным клиентам ClickHouse Cloud и BYOC через [лист ожидания закрытой предварительной версии](https://clickhouse.com/cloud/promql-support-waitlist) в AWS, GCP и Azure. См. [документацию по интерфейсу Prometheus](/ru/concepts/features/interfaces/prometheus) и [анонс](https://clickhouse.com/blog/introducing-promql).
+
+  ### On-Demand Compute теперь в закрытой предварительной версии {#on-demand-compute-now-in-private-preview}
+
+  On-Demand Compute позволяет подходящим ресурсоемким запросам `SELECT` задействовать дополнительные воркеры ClickHouse через ваш существующий сервис и конечную точку — без изменения размера сервиса и без дополнительного выделения ресурсов. Вы включаете эту возможность для отдельных запросов через настройки запроса, при этом ваш сервис по-прежнему отвечает за аутентификацию, планирование, координацию и выдачу результатов; под капотом задействуются cost-based optimizer и многоэтапное выполнение запросов. Такой подход хорошо подходит для нерегулярных тяжелых ad hoc чтений, больших сканирований, соединений и агрегаций по данным `SharedMergeTree`, Apache Iceberg или Delta Lake. Доступно избранным клиентам через [лист ожидания закрытой предварительной версии](https://clickhouse.com/cloud/on-demand-compute-waitlist). См. [документацию по On-Demand Compute](/ru/products/cloud/features/infrastructure/on-demand-compute) и [анонс](https://clickhouse.com/blog/on-demand-compute).
+
+  ## Интеграции {#integrations}
+
+  ### ClickHouse adapter для dbt v2 и ClickHouse в dbt Platform {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+  Теперь вы можете запускать dbt с ClickHouse на новом движке Core v2 на Rust с помощью adapter dbt v2, доступного в публичной бета-версии. ClickHouse также впервые доступен как подключение в dbt Platform (Studio, задания и окружения) — в закрытой бета-версии и с включением отдельно для каждого аккаунта. Существующий adapter v1 (`dbt-clickhouse`) продолжает параллельно полностью поддерживаться. См. [dbt Core](https://github.com/dbt-labs/dbt), [pull request для dbt-clickhouse adapter](https://github.com/ClickHouse/dbt-clickhouse/pull/739) и [pull request для документации dbt Platform](https://github.com/dbt-labs/docs.getdbt.com/pull/9975).
+</Update>
 
 <Update label="8 сентября 2026 г.">
   На этой неделе в ClickHouse Cloud появились готовые к продакшену улучшения в области безопасности и интеграции данных. JWT-аутентификация теперь общедоступна для сервисов Enterprise, а коннектор MySQL CDC для ClickPipes перешёл в статус GA: он получил более быстрое создание снимков, более безопасные значения по умолчанию и улучшенную обсервабилити.
 
   ### JWT-аутентификация для сервисов ClickHouse теперь общедоступна {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
 
-  Теперь вы можете аутентифицироваться в своём сервисе ClickHouse с помощью JWT, выпущенных вашим собственным провайдером идентификации — Okta, Auth0, Microsoft Entra ID, Keycloak или любым провайдером, публикующим JWKS endpoint. JWT-аутентификация позволяет управлять доступом через существующий провайдер идентификации, а срок действия токенов регулируется политиками, — это избавляет от отдельных паролей ClickHouse и общих секретов, требующих ротации. Возможность доступна на плане Enterprise для сервисов, работающих на ClickHouse 26.4 или новее. Настроить её можно в разделе **Service → Settings → Security → JWT authentication**. См. [руководство по настройке JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  Теперь вы можете аутентифицироваться в своём сервисе ClickHouse с помощью JWT, выпущенных вашим собственным провайдером идентификации — Okta, Auth0, Microsoft Entra ID, Keycloak или любым провайдером, публикующим JWKS конечную точку. JWT-аутентификация позволяет управлять доступом через существующий провайдер идентификации, а срок действия токенов регулируется политиками, — это избавляет от отдельных паролей ClickHouse и общих секретов, требующих ротации. Возможность доступна на плане Enterprise для сервисов, работающих на ClickHouse 26.4 или новее. Настроить её можно в разделе **Service → Settings → Security → JWT authentication**. См. [руководство по настройке JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 
   ### Коннектор MySQL CDC для ClickPipes теперь общедоступен {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
 

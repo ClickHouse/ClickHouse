@@ -137,9 +137,7 @@ Keeper 노드는 헤드리스 Service를 통해 파드 이름을 사용합니다
   ## 파드 구성 {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### 토폴로지 분산 및 어피니티 자동 설정 {#automatic-topology-spread-and-affinity}
-</div>
+### 토폴로지 분산 및 어피니티 자동 설정 {#automatic-topology-spread-and-affinity}
 
 가용 영역에 걸쳐 파드를 분산합니다:
 
@@ -152,6 +150,22 @@ spec:
 
 <Note>
   분산 제약 조건을 충족할 수 있도록 Kubernetes 클러스터에 서로 다른 zone에 걸쳐 충분한 수의 노드가 있는지 확인하세요.
+</Note>
+
+노드 자동 스케일러(Karpenter, Cluster Autoscaler)를 사용하는 경우, 분산 제약 조건만으로는
+아직 노드가 없는 zone을 프로비저닝할 수 없습니다. 스케줄러는 인식 가능한 zone 범위 내에서만 배치를 결정하기 때문입니다.
+분산을 강제하려면 `topologyMinDomains`를 가용 영역 수로 설정하세요:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains`를 사용하려면 `topologyZoneKey`가 필요합니다. 요청한 수보다 적은 zone만 사용할 수 있는 동안에는
+  파드가 `Pending` 상태로 남아 있으므로, 클러스터가 제공할 수 있는 zone 범위 내에서 설정하세요.
 </Note>
 
 <div id="manual-configuration">

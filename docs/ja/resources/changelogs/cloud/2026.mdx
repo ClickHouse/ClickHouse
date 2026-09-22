@@ -2,22 +2,52 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud changelog - 2026'
-description: '各 ClickHouse Cloud リリースの新機能を説明する ClickHouse Cloud changelog'
+description: '各 ClickHouse Cloud リリースの新機能を紹介する ClickHouse Cloud changelog'
 doc_type: 'changelog'
-keywords: ['changelog', 'リリースノート', '更新', '新機能', 'Cloud の変更']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-この ClickHouse Cloud changelog に加えて、[Cloud Compatibility](/ja/products/cloud/guides/cloud-compatibility) ページもご覧ください。
+この ClickHouse Cloud changelog に加えて、[Cloud 互換性](/ja/products/cloud/guides/cloud-compatibility)ページも参照してください。
+
+<Update label="2026-09-22">
+  今週の更新では、ClickHouse Cloud のコンプライアンス対応範囲を新たな APAC リージョンへ拡大し、レプリカ対応ルーティングをパブリックベータとして追加、さらにメトリクス、コンピュート、dbt に関する新機能を導入しました。HIPAA および PCI 規制対応の cell が AWS ソウルおよびシドニーで利用可能になりました。対象のお客様は Prometheus 互換のメトリクスワークロードと On-Demand Compute を評価でき、ClickHouse は dbt Core v2 および dbt Platform から利用できます。
+
+  ## セキュリティ {#security}
+
+  ### AWS ソウルおよびシドニーでの HIPAA および PCI サポート {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+  HIPAA および PCI 規制対応の cell が AWS ソウル (`ap-northeast-2`) および AWS シドニー (`ap-southeast-2`) リージョンで利用可能になりました。これらのリージョンでコンプライアンス準拠のワークロードを実行するには、サービス作成時に HIPAA または PCI を選択してください。詳細は[コンプライアンス概要](/ja/products/cloud/reference/security/compliance-overview#hipaa-since-2024)および[サポート対象リージョン](/ja/products/cloud/reference/supported-regions)を参照してください。
+
+  ## 新機能 {#new-features}
+
+  ### レプリカ対応ルーティングがパブリックベータに {#replica-aware-routing-now-in-public-beta}
+
+  [レプリカ対応ルーティング](/ja/products/cloud/features/infrastructure/replica-aware-routing)が Enterprise のお客様向けにパブリックベータとして利用可能になり、ネイティブの ClickHouse Cloud および BYOC デプロイメントに対応しました。アカウントで有効化された後は、サービス設定から直接オンにできます。詳しくは[announcement](https://clickhouse.com/blog/replica-aware-routing-public-beta)を参照してください。
+
+  ### PromQL サポートがプライベートプレビューに {#promql-support-in-private-preview}
+
+  Prometheus のメトリクスを `TimeSeries` テーブルエンジンに保存し、PromQL で ClickHouse サービスに対して直接クエリできるようになりました。トランスパイラやプロキシは不要なため、既存のコレクター、Grafana ダッシュボード、Prometheus ツールはそのまま動作し続けます。Prometheus remote-write v1 で書き込み、Prometheus HTTP API 経由で読み取るほか、`prometheusQuery` および `prometheusQueryRange` テーブル関数を使って SQL セッションから PromQL を実行することもできます。AWS、GCP、Azure 上の一部の ClickHouse Cloud および BYOC のお客様に、[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/promql-support-waitlist)経由で提供されます。[Prometheus インターフェイスのドキュメント](/ja/concepts/features/interfaces/prometheus)および[announcement](https://clickhouse.com/blog/introducing-promql)を参照してください。
+
+  ### On-Demand Compute がプライベートプレビューに {#on-demand-compute-now-in-private-preview}
+
+  On-Demand Compute では、対象となるコンピュート負荷の高い `SELECT` クエリが、既存のサービスとエンドポイントを通じて追加の ClickHouse ワーカーを利用できます。リサイズや追加のプロビジョニングは不要です。オプトインはクエリ設定によりクエリ単位で行い、認証、プランニング、調整、結果の返却は引き続きサービスが担います。内部的には、オプティマイザと多段階クエリ実行を導入しています。頻度は高くないものの負荷の大きいアドホック読み取りや、大規模スキャン、`SharedMergeTree`、Apache Iceberg、Delta Lake データに対する結合や集計に適しています。[プライベートプレビューの順番待ちリスト](https://clickhouse.com/cloud/on-demand-compute-waitlist)経由で、一部のお客様にご利用いただけます。[On-Demand Compute のドキュメント](/ja/products/cloud/features/infrastructure/on-demand-compute)および[announcement](https://clickhouse.com/blog/on-demand-compute)を参照してください。
+
+  ## 統合 {#integrations}
+
+  ### dbt v2 向け ClickHouse アダプターと dbt Platform での ClickHouse {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+  パブリックベータで提供される dbt v2 アダプターにより、新しい Rust ベースの Core v2 エンジン上で ClickHouse に対して dbt を実行できるようになりました。また、ClickHouse が初めて dbt Platform (Studio、ジョブ、環境) の接続先として利用可能になり、プライベートベータとしてアカウント単位で有効化されます。既存の v1 アダプター (`dbt-clickhouse`) も引き続き並行して完全にメンテナンスされます。[dbt Core](https://github.com/dbt-labs/dbt)、[dbt-clickhouse アダプターのプルリクエスト](https://github.com/ClickHouse/dbt-clickhouse/pull/739)、および [dbt Platform ドキュメントのプルリクエスト](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)を参照してください。
+</Update>
 
 <Update label="2026-09-08">
   今週は、ClickHouse Cloud に本番環境で利用できるセキュリティおよびデータ統合の改善が加わりました。JWT authentication が Enterprise サービスで一般提供となり、ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが GA に到達し、スナップショットの高速化、より安全なデフォルト、オブザーバビリティの向上が実現しました。
 
   ### ClickHouse サービス向けの JWT authentication が一般提供になりました {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
 
-  Okta、Auth0、Microsoft Entra ID、Keycloak、あるいは JWKS endpoint を公開している任意の provider を含む、独自の identity provider が発行した JWT を使用して ClickHouse service に認証できるようになりました。JWT authentication を使用すると、既存の identity provider を通じてアクセスを管理でき、ポリシーによってトークンの有効期限が強制されます。これにより、ClickHouse の個別のパスワードやローテーションが必要な共有シークレットが不要になります。この機能は、ClickHouse 26.4 以降を実行しているサービスの Enterprise plan で利用できます。**Service → Settings → Security → JWT authentication** から設定してください。[JWT authentication のセットアップガイド](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)をご覧ください。
+  Okta、Auth0、Microsoft Entra ID、Keycloak、あるいは JWKS endpoint を公開している任意の provider を含む、独自の identity provider が発行した JWT を使用して ClickHouse サービスに認証できるようになりました。JWT authentication を使用すると、既存の identity provider を通じてアクセスを管理でき、ポリシーによってトークンの有効期限が強制されます。これにより、ClickHouse の個別のパスワードやローテーションが必要な共有シークレットが不要になります。この機能は、ClickHouse 26.4 以降を実行しているサービスの Enterprise plan で利用できます。**Service → Settings → Security → JWT authentication** から設定してください。[JWT authentication のセットアップガイド](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)をご覧ください。
 
   ### ClickPipes の MySQL CDC (変更データキャプチャ) コネクタが一般提供になりました {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
 

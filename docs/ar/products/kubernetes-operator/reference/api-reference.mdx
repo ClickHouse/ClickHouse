@@ -10,9 +10,7 @@ sidebarTitle: 'مرجع واجهة برمجة التطبيقات'
 
 يوفر هذا المستند مرجعًا تفصيليًا لواجهة برمجة تطبيقات الموارد المخصصة في ClickHouse Operator.
 
-<div id="additionalport">
-  ## AdditionalPort
-</div>
+## AdditionalPort {#additionalport}
 
 يحدّد AdditionalPort منفذ TCP إضافيًا واحدًا لكشفه على كبسولة ClickHouse والخدمة العامة عديمة الرأس.
 
@@ -25,9 +23,7 @@ sidebarTitle: 'مرجع واجهة برمجة التطبيقات'
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="cabundleselector">
-  ## CABundleSelector
-</div>
+## CABundleSelector {#cabundleselector}
 
 يختار CABundleSelector مفتاحًا يحتوي على حزمة CA من Secret ضمن مساحة اسم العنقود.
 
@@ -40,15 +36,11 @@ sidebarTitle: 'مرجع واجهة برمجة التطبيقات'
 
 * [ClusterTLSSpec](#clustertlsspec)
 
-<div id="clickhousecluster">
-  ## ClickHouseCluster
-</div>
+## ClickHouseCluster {#clickhousecluster}
 
 ClickHouseCluster هو المخطط الخاص بواجهة برمجة تطبيقات `clickhouseclusters`.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### إصدار واجهة برمجة التطبيقات وKind
-</div>
+### إصدار واجهة برمجة التطبيقات وKind {#clickhousecluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -64,15 +56,11 @@ kind: ClickHouseCluster
 
 * [ClickHouseClusterList](#clickhouseclusterlist)
 
-<div id="clickhouseclusterlist">
-  ## ClickHouseClusterList
-</div>
+## ClickHouseClusterList {#clickhouseclusterlist}
 
 يتضمن ClickHouseClusterList قائمةً من عناصر ClickHouseCluster.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### إصدار واجهة برمجة التطبيقات وKind
-</div>
+### إصدار واجهة برمجة التطبيقات وKind {#clickhouseclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -83,9 +71,7 @@ kind: ClickHouseClusterList
 | ------- | ---------------------------------------------- | ----- | ----- | --------- |
 | `items` | [ClickHouseCluster](#clickhousecluster) مصفوفة |       | true  |           |
 
-<div id="clickhouseclusterspec">
-  ## ClickHouseClusterSpec
-</div>
+## ClickHouseClusterSpec {#clickhouseclusterspec}
 
 يحدّد ClickHouseClusterSpec الحالة المطلوبة لـ ClickHouseCluster.
 
@@ -113,9 +99,7 @@ kind: ClickHouseClusterList
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhouseclusterstatus">
-  ## ClickHouseClusterStatus
-</div>
+## ClickHouseClusterStatus {#clickhouseclusterstatus}
 
 يحدّد ClickHouseClusterStatus الحالة المرصودة لـ ClickHouseCluster.
 
@@ -135,9 +119,7 @@ kind: ClickHouseClusterList
 
 * [ClickHouseCluster](#clickhousecluster)
 
-<div id="clickhousenetworkpolicyspec">
-  ## ClickHouseNetworkPolicySpec
-</div>
+## ClickHouseNetworkPolicySpec {#clickhousenetworkpolicyspec}
 
 يُهيّئ ClickHouseNetworkPolicySpec مورد NetworkPolicy الذي يديره مشغّل عنقود ClickHouse.
 تغطي السياسة المُدارة حركة المرور الداخلية ضمن العنقود:
@@ -154,9 +136,7 @@ kind: ClickHouseClusterList
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clickhousesettings">
-  ## ClickHouseSettings
-</div>
+## ClickHouseSettings {#clickhousesettings}
 
 يعرّف ClickHouseSettings خيارات إعدادات خادم ClickHouse.
 
@@ -174,9 +154,7 @@ kind: ClickHouseClusterList
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="clustertlsspec">
-  ## ClusterTLSSpec
-</div>
+## ClusterTLSSpec {#clustertlsspec}
 
 يحدّد ClusterTLSSpec تهيئة TLS للمجموعة.
 
@@ -192,9 +170,7 @@ kind: ClickHouseClusterList
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="configmapkeyselector">
-  ## ConfigMapKeySelector
-</div>
+## ConfigMapKeySelector {#configmapkeyselector}
 
 يحدِّد ConfigMapKeySelector مفتاحًا من ConfigMap.
 
@@ -207,9 +183,7 @@ kind: ClickHouseClusterList
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="containerimage">
-  ## ContainerImage
-</div>
+## ContainerImage {#containerimage}
 
 يُعرِّف ContainerImage صورة حاوية تتضمن repository وtag أو hash.
 
@@ -223,9 +197,7 @@ kind: ClickHouseClusterList
 
 * [ContainerTemplateSpec](#containertemplatespec)
 
-<div id="containertemplatespec">
-  ## ContainerTemplateSpec
-</div>
+## ContainerTemplateSpec {#containertemplatespec}
 
 يصف `ContainerTemplateSpec` تجاوزات تهيئة الحاوية الخاصة بحاويات المجموعة.
 
@@ -245,9 +217,7 @@ kind: ClickHouseClusterList
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="defaultpasswordselector">
-  ## DefaultPasswordSelector
-</div>
+## DefaultPasswordSelector {#defaultpasswordselector}
 
 يحدّد DefaultPasswordSelector مصدر كلمة مرور المستخدم `default`.
 
@@ -261,9 +231,7 @@ kind: ClickHouseClusterList
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="encryptionsettings">
-  ## EncryptionSettings
-</div>
+## EncryptionSettings {#encryptionsettings}
 
 يتيح EncryptionSettings تشفير بيانات الجداول أثناء التخزين. عند تحديده، ينشئ المشغّل
 سياسة تخزين مشفّرة في ClickHouse تغلّف كل قرص بيانات؛ ويمكن للجداول تفعيلها عبر `SETTINGS storage_policy`.
@@ -277,9 +245,7 @@ kind: ClickHouseClusterList
 
 * [ClickHouseSettings](#clickhousesettings)
 
-<div id="externalsecret">
-  ## ExternalSecret
-</div>
+## ExternalSecret {#externalsecret}
 
 ExternalSecret هو مرجع إلى كائن Secret في مساحة الاسم نفسها.
 
@@ -292,9 +258,7 @@ ExternalSecret هو مرجع إلى كائن Secret في مساحة الاسم �
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="externalsecretpolicy">
-  ## ExternalSecretPolicy
-</div>
+## ExternalSecretPolicy {#externalsecretpolicy}
 
 يتحكم ExternalSecretPolicy في كيفية تعامل المشغّل مع محتوى الـ Secret الخارجي.
 
@@ -307,15 +271,11 @@ ExternalSecret هو مرجع إلى كائن Secret في مساحة الاسم �
 
 * [ExternalSecret](#externalsecret)
 
-<div id="keepercluster">
-  ## KeeperCluster
-</div>
+## KeeperCluster {#keepercluster}
 
 يمثل KeeperCluster مخطط واجهة برمجة تطبيقات `keeperclusters`.
 
-<div id="keepercluster-api-version-and-kind">
-  ### إصدار واجهة برمجة تطبيقات وKind
-</div>
+### إصدار واجهة برمجة تطبيقات وKind {#keepercluster-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -331,15 +291,11 @@ kind: KeeperCluster
 
 * [KeeperClusterList](#keeperclusterlist)
 
-<div id="keeperclusterlist">
-  ## KeeperClusterList
-</div>
+## KeeperClusterList {#keeperclusterlist}
 
 يحتوي KeeperClusterList على قائمة بـ KeeperCluster.
 
-<div id="clickhousecluster-api-version-and-kind">
-  ### إصدار واجهة برمجة التطبيقات وKind
-</div>
+### إصدار واجهة برمجة التطبيقات وKind {#keeperclusterlist-api-version-and-kind}
 
 ```yaml
 apiVersion: clickhouse.com/v1alpha1
@@ -350,9 +306,7 @@ kind: KeeperClusterList
 | ------- | -------------------------------------- | ----- | ----- | ----------------- |
 | `items` | [KeeperCluster](#keepercluster) مصفوفة |       | true  |                   |
 
-<div id="keeperclusterreference">
-  ## KeeperClusterReference
-</div>
+## KeeperClusterReference {#keeperclusterreference}
 
 يُعرِّف KeeperClusterReference مورد KeeperCluster الذي يستخدمه ClickHouseCluster.
 
@@ -365,9 +319,7 @@ kind: KeeperClusterList
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="keeperclusterspec">
-  ## KeeperClusterSpec
-</div>
+## KeeperClusterSpec {#keeperclusterspec}
 
 يحدّد KeeperClusterSpec الحالة المطلوبة لـ KeeperCluster.
 
@@ -390,9 +342,7 @@ kind: KeeperClusterList
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keeperclusterstatus">
-  ## KeeperClusterStatus
-</div>
+## KeeperClusterStatus {#keeperclusterstatus}
 
 يحدّد KeeperClusterStatus الحالة المرصودة لـ KeeperCluster.
 
@@ -412,9 +362,7 @@ kind: KeeperClusterList
 
 * [KeeperCluster](#keepercluster)
 
-<div id="keepernetworkpolicyspec">
-  ## KeeperNetworkPolicySpec
-</div>
+## KeeperNetworkPolicySpec {#keepernetworkpolicyspec}
 
 تُهيّئ KeeperNetworkPolicySpec مورد NetworkPolicy المُدار لعنقود Keeper.
 تغطي السياسة المُدارة حركة المرور الداخلية للعنقود:
@@ -432,9 +380,7 @@ kind: KeeperClusterList
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="keepersettings">
-  ## KeeperSettings
-</div>
+## KeeperSettings {#keepersettings}
 
 تُعرّف KeeperSettings إعدادات خادم ClickHouse Keeper.
 
@@ -448,9 +394,7 @@ kind: KeeperClusterList
 
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="loggerconfig">
-  ## LoggerConfig
-</div>
+## LoggerConfig {#loggerconfig}
 
 يحدّد LoggerConfig إعدادات تسجيل الخادم.
 
@@ -467,9 +411,7 @@ kind: KeeperClusterList
 * [ClickHouseSettings](#clickhousesettings)
 * [KeeperSettings](#keepersettings)
 
-<div id="namedtemplatemeta">
-  ## NamedTemplateMeta
-</div>
+## NamedTemplateMeta {#namedtemplatemeta}
 
 يحدّد NamedTemplateMeta إعدادات البيانات الوصفية المدعومة لكائنات القوالب التي تتطلب اسمًا.
 
@@ -483,9 +425,7 @@ kind: KeeperClusterList
 
 * [PersistentVolumeClaimTemplate](#persistentvolumeclaimtemplate)
 
-<div id="networkpolicypolicy">
-  ## NetworkPolicyPolicy
-</div>
+## NetworkPolicyPolicy {#networkpolicypolicy}
 
 يتحكم NetworkPolicyPolicy في ما إذا كان المشغّل يدير NetworkPolicy للعنقود.
 
@@ -499,9 +439,7 @@ kind: KeeperClusterList
 * [ClickHouseNetworkPolicySpec](#clickhousenetworkpolicyspec)
 * [KeeperNetworkPolicySpec](#keepernetworkpolicyspec)
 
-<div id="pdbpolicy">
-  ## PDBPolicy
-</div>
+## PDBPolicy {#pdbpolicy}
 
 تتحكم PDBPolicy في ما إذا كان سيتم إنشاء PodDisruptionBudgets.
 
@@ -515,9 +453,7 @@ kind: KeeperClusterList
 
 * [PodDisruptionBudgetSpec](#poddisruptionbudgetspec)
 
-<div id="persistentvolumeclaimtemplate">
-  ## PersistentVolumeClaimTemplate
-</div>
+## PersistentVolumeClaimTemplate {#persistentvolumeclaimtemplate}
 
 PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeClaim لكل نسخة متماثلة.
 
@@ -530,9 +466,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 
-<div id="poddisruptionbudgetspec">
-  ## PodDisruptionBudgetSpec
-</div>
+## PodDisruptionBudgetSpec {#poddisruptionbudgetspec}
 
 يُهيّئ PodDisruptionBudgetSpec مورد PDB الذي يتم إنشاؤه للعنقود.
 يمكن تعيين واحد فقط من MinAvailable أو MaxUnavailable.
@@ -550,38 +484,35 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="podtemplatespec">
-  ## PodTemplateSpec
-</div>
+## PodTemplateSpec {#podtemplatespec}
 
 يصف PodTemplateSpec تجاوزات إعدادات الكبسولات الخاصة بالعنقود.
 
 | الحقل                           | النوع                                                                                                                                    | الوصف                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | مطلوب | القيمة الافتراضية |
 | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ----------------- |
-| `terminationGracePeriodSeconds` | عدد صحيح                                                                                                                                 | مدة اختيارية بالثواني تحتاجها الكبسولة لإنهاء التشغيل بشكل سليم. ويمكن تقليلها في طلب الحذف.<br />يجب أن تكون القيمة عددًا صحيحًا غير سالب. وتشير القيمة صفر إلى التوقف الفوري عبر<br />إشارة kill (من دون إتاحة فرصة لإيقاف التشغيل).<br />إذا كانت هذه القيمة nil، فستُستخدم فترة السماح الافتراضية بدلًا منها.<br />وفترة السماح هي المدة بالثواني بين إرسال<br />إشارة إنهاء إلى العمليات التي تعمل داخل الكبسولة وبين الوقت الذي تُوقَف فيه هذه العمليات قسرًا بإشارة kill.<br />اضبط هذه القيمة بحيث تكون أطول من وقت التنظيف المتوقع لعمليتك.<br />القيمة الافتراضية هي 30 ثانية.                                                                                                                                                                                                                                                                                                                                               | لا    |                   |
-| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) مصفوفة | يصف TopologySpreadConstraints كيفية توزيع مجموعة من الكبسولات عبر نطاقات<br />الطوبولوجيا. سيُجدول المُجدول الكبسولات بطريقة تلتزم بالقيود.<br />تُطبَّق جميع topologySpreadConstraints بعامل AND.<br />تُدمَج مع القيم الافتراضية الخاصة بالمُشغِّل بحسب `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | لا    |                   |
-| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) مصفوفة         | ImagePullSecrets هي قائمة اختيارية من المراجع إلى الأسرار الموجودة في مساحة الاسم نفسها، تُستخدم لسحب أي صور يستخدمها PodSpec هذا.<br />عند تحديدها، تُمرَّر هذه الأسرار إلى كل آلية سحب على حدة لاستخدامها.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />تُدمج مع القيم الافتراضية للمُشغِّل حسب الاسم.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false |                   |
-| `nodeSelector`                  | كائن (المفاتيح:string, القيم:string)                                                                                                     | NodeSelector هو محدِّد يجب أن يتحقق لكي يمكن وضع الجراب على عقدة.<br />محدِّد يجب أن يطابق تسميات العقدة لكي تتم جدولة الجراب على تلك العقدة.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false |                   |
-| `affinity`                      | [التقارب](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                         | إذا تم تحديدها، فهي قيود جدولة الكبسولة.<br />تُلحَق بالقيم الافتراضية للمُشغِّل: تُدمَج قوائم شروط الجدولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | false |                   |
+| `terminationGracePeriodSeconds` | عدد صحيح                                                                                                                                 | مدة اختيارية بالثواني تحتاجها الكبسولة لإنهاء التشغيل بشكل سليم. ويمكن تقليلها في طلب الحذف.<br />يجب أن تكون القيمة عددًا صحيحًا غير سالب. وتشير القيمة صفر إلى التوقف الفوري عبر<br />إشارة kill (من دون إتاحة فرصة لإيقاف التشغيل).<br />إذا كانت هذه القيمة nil، فستُستخدم فترة السماح الافتراضية بدلًا منها.<br />وفترة السماح هي المدة بالثواني بين إرسال<br />إشارة إنهاء إلى العمليات التي تعمل داخل الكبسولة وبين الوقت الذي تُوقَف فيه هذه العمليات قسرًا بإشارة kill.<br />اضبط هذه القيمة بحيث تكون أطول من وقت التنظيف المتوقع لعمليتك.<br />القيمة الافتراضية هي 30 ثانية.                                                                                                                                                                                                                                                                                                                                               | false |                   |
+| `topologySpreadConstraints`     | [TopologySpreadConstraint](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#topologyspreadconstraint-v1-core) مصفوفة | يصف TopologySpreadConstraints كيفية توزيع مجموعة من الكبسولات عبر نطاقات<br />الطوبولوجيا. سيُجدول المُجدول الكبسولات بطريقة تلتزم بالقيود.<br />تُطبَّق جميع topologySpreadConstraints بعامل AND.<br />تُدمَج مع القيم الافتراضية الخاصة بالمُشغِّل بحسب `topologyKey`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false |                   |
+| `imagePullSecrets`              | [LocalObjectReference](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#localobjectreference-v1-core) مصفوفة         | ImagePullSecrets هي قائمة اختيارية من المراجع إلى الأسرار الموجودة في مساحة الاسم نفسها، تُستخدم لسحب أي صور يستخدمها PodSpec هذا.<br />عند تحديدها، تُمرَّر هذه الأسرار إلى كل آلية سحب على حدة لاستخدامها.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/containers/images#specifying-imagepullsecrets-on-a-pod<br />تُدمج مع القيم الافتراضية للمُشغِّل حسب الاسم.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | false |                   |
+| `nodeSelector`                  | كائن (المفاتيح:string, القيم:string)                                                                                                     | NodeSelector هو محدِّد يجب أن يتحقق لكي يمكن وضع الجراب على عقدة.<br />محدِّد يجب أن يطابق تسميات العقدة لكي تتم جدولة الجراب على تلك العقدة.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/configuration/assign-pod-node/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | false |                   |
+| `affinity`                      | [ألفة](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#affinity-v1-core)                                            | إذا تم تحديدها، فهي قيود جدولة الكبسولة.<br />تُلحَق بالقيم الافتراضية للمُشغِّل: تُدمَج قوائم شروط الجدولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | false |                   |
 | `tolerations`                   | مصفوفة من [Toleration](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#toleration-v1-core)                          | إذا تم تحديدها، فهي قيم Tolerations الخاصة بالكبسولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | false |                   |
 | `schedulerName`                 | string                                                                                                                                   | إذا تم تحديده، فستُسنَد الكبسولة إلى المُجدول المحدد.<br />إذا لم يتم تحديده، فستُسنَد الكبسولة إلى المُجدول الافتراضي.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | false |                   |
 | `serviceAccountName`            | string                                                                                                                                   | ServiceAccountName هو اسم ServiceAccount المستخدم لتشغيل هذا الجراب.<br />مزيد من المعلومات: https://kubernetes.io/docs/tasks/configure-pod-container/configure-service-account/                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | false |                   |
 | `priorityClassName`             | string                                                                                                                                   | PriorityClassName هو اسم PriorityClass المُراد استخدامه للكبسولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | خطأ   |                   |
 | `runtimeClassName`              | سلسلة نصية                                                                                                                               | RuntimeClassName هو اسم RuntimeClass المُراد استخدامه للكبسولة.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | خطأ   |                   |
 | `volumes`                       | [Volume](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#volume-v1-core) مصفوفة                                     | يحدّد Volumes قائمة وحدات التخزين التي يمكن للحاويات التابعة للكبسولة ربطها.<br />مزيد من المعلومات: https://kubernetes.io/docs/concepts/storage/volumes<br />تُدمج مع القيم الافتراضية للمشغّل حسب الاسم؛ وتستبدل أي وحدة تخزين يضيفها المستخدم أي وحدة تخزين للمشغّل تحمل الاسم نفسه.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | false |                   |
-| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                    | يحتوي SecurityContext على سمات الأمان على مستوى الـ pod وإعدادات الحاويات المشتركة.<br />يستبدل SecurityContext غير المعيَّن بالقيمة nil الإعدادات الافتراضية للمشغّل بالكامل؛ ويكون المستخدم مسؤولًا عن<br />البنية بالكامل. وعند تعيينه بالقيمة nil، تُحفَظ الإعدادات الافتراضية للمشغّل.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false |                   |
-| `topologyZoneKey`               | String                                                                                                                                   | TopologyZoneKey هو مفتاح وسوم العُقد.<br />تُعدّ العُقد التي تحمل وسمًا بهذا المفتاح وقيمًا متطابقة ضمن النطاق الطوبولوجي نفسه،<br />مثل منطقة التوافر نفسها بالنسبة إلى &quot;topology.kubernetes.io/zone&quot; أو العقدة نفسها بالنسبة إلى &quot;kubernetes.io/hostname&quot;.<br />اضبطه لتحقيق توازن بين الكبسولات التي تحتفظ بالبيانات نفسها (النسخ المتماثلة لجزء واحد في ClickHouse، وجميع النسخ المتماثلة في Keeper)<br />عبر النطاقات: قيد TopologySpreadConstraint مطلوب (بقيمتَي maxSkew=1 وDoNotSchedule) بالإضافة إلى قاعدة PodAntiAffinity مُفضَّلة.<br />قد تتشارك كبسولات الأجزاء المختلفة نطاقًا واحدًا، لذا يُسمح بوجود عدة كبسولات في كل نطاق.<br />عند وجود نطاقات أقل من النسخ المتماثلة، ستتشارك عدة نسخ متماثلة نطاقًا واحدًا، مع بقاء التوازن متساويًا.<br />تُفضِّل كبسولات ClickHouse أيضًا النطاقات التي تستضيف كبسولات Keeper التي تستخدمها.<br />يُوصى بضبطه على &quot;topology.kubernetes.io/zone&quot;. | false |                   |
+| `securityContext`               | [PodSecurityContext](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#podsecuritycontext-v1-core)                    | يحتوي SecurityContext على سمات الأمان على مستوى الـ pod وإعدادات الحاويات المشتركة.<br />يستبدل SecurityContext غير المعيَّن بالقيمة nil الإعدادات الافتراضية للمشغّل بالكامل؛ ويكون المستخدم مسؤولًا عن<br />البنية بالكامل. وعند تعيينه بالقيمة nil، تُحفَظ الإعدادات الافتراضية للمشغّل.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | false |                   |
+| `topologyZoneKey`               | String                                                                                                                                   | TopologyZoneKey هو مفتاح وسوم العُقد.<br />تُعدّ العُقد التي تحمل وسمًا بهذا المفتاح وقيمًا متطابقة ضمن النطاق الطوبولوجي نفسه،<br />مثل منطقة التوافر نفسها بالنسبة إلى &quot;topology.kubernetes.io/zone&quot; أو العقدة نفسها بالنسبة إلى &quot;kubernetes.io/hostname&quot;.<br />اضبطه لتحقيق توازن بين الكبسولات التي تحتفظ بالبيانات نفسها (النسخ المتماثلة لجزء واحد في ClickHouse، وجميع النسخ المتماثلة في Keeper)<br />عبر النطاقات: قيد TopologySpreadConstraint مطلوب (بقيمتَي maxSkew=1 وDoNotSchedule) بالإضافة إلى قاعدة PodAntiAffinity مُفضَّلة.<br />قد تتشارك كبسولات الأجزاء المختلفة نطاقًا واحدًا، لذا يُسمح بوجود عدة كبسولات في كل نطاق.<br />عند وجود نطاقات أقل من النسخ المتماثلة، ستتشارك عدة نسخ متماثلة نطاقًا واحدًا، مع بقاء التوازن متساويًا.<br />تُفضِّل كبسولات ClickHouse أيضًا النطاقات التي تستضيف كبسولات Keeper التي تستخدمها.<br />يُوصى بضبطه على &quot;topology.kubernetes.io/zone&quot;. | false |                   |
+| `topologyMinDomains`            | عدد صحيح                                                                                                                                 | يضبط TopologyMinDomains الحقل minDomains في TopologySpreadConstraint المُولَّد عن طريق TopologyZoneKey.<br />لا يحتسب مُجدول Kubernetes كنطاقات طوبولوجيا إلا المناطق التي تتوفر فيها بالفعل عُقد مؤهلة.<br />ومع أدوات التوسيع التلقائي المدفوعة بالطلب (مثل Karpenter وCluster Autoscaler) يعني ذلك أنه إذا كانت العُقد<br />موجودة في منطقتَي توافر فقط وقت الجدولة، فسيُستوفى قيد maxSkew:1/DoNotSchedule بتوزيع<br />2/1 ولن تجهّز أداة التوسيع التلقائي أي عقدة في منطقة التوافر الثالثة.<br />وضبط TopologyMinDomains على العدد المتوقع من المناطق (3 عادةً) يُخبر المُجدول بأن<br />يتعامل مع هذا العدد من المناطق كنطاقات بغض النظر عن وجود عُقد فيها جميعًا، مما يُجبر<br />أداة التوسيع التلقائي على التجهيز في المنطقة الناقصة.<br />يتطلب ضبط TopologyZoneKey. أغفِله (nil) للحفاظ على السلوك الافتراضي<br />للمُجدول الذي يحتسب المناطق التي توجد فيها عُقد مؤهلة فقط.                                                   | false |                   |
 | `nodeHostnameKey`               | String                                                                                                                                   | NodeHostnameKey هو مفتاح وسوم العقد.<br />تُعدّ العقد التي تحمل وسمًا بهذا المفتاح وبالقيمة نفسها موجودة على العقدة نفسها.<br />اضبطه لفرض إشغال حصري للعقدة: قاعدة PodAntiAffinity مطلوبة على مستوى جميع الكبسولات في العنقود،<br />بحيث لا توجد أكثر من كبسولة واحدة لكل عقدة بغض النظر عن الجزء. ويتطلب ذلك عددًا من العقد لا يقل عن عدد الكبسولات؛<br />ومع وجود عدد أقل من العقد، تبقى الكبسولات الزائدة في حالة Pending.<br />ولتوزيع النسخ المتماثلة للجزء نفسه عبر العقد مع وضع عدة كبسولات في كل عقدة،<br />اضبط TopologyZoneKey على &quot;kubernetes.io/hostname&quot; بدلًا من ذلك.<br />يُنصح بضبطه على &quot;kubernetes.io/hostname&quot;.                                                                                                                                                                                                                                                                                | false |                   |
-| `initContainers`                | مصفوفة من [حاوية](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core)                                | InitContainers هي قائمة حاويات التهيئة التي تُشغَّل قبل بدء تشغيل حاوية الخادم الرئيسية.<br />وتُدمَج مع الإعدادات الافتراضية الخاصة بالمُشغِّل بحسب الاسم،<br />إذا كان الاسم نفسه.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | false |                   |
+| `initContainers`                | مصفوفة من [حاوية](https://kubernetes.io/docs/reference/generated/kubernetes-api/v1.28/#container-v1-core)                                | InitContainers هي قائمة حاويات التهيئة التي تُشغَّل قبل بدء تشغيل حاوية الخادم الرئيسية.<br />وتُدمَج مع الإعدادات الافتراضية الخاصة بالمُشغِّل بحسب الاسم،<br />إذا كان الاسم نفسه.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | false |                   |
 
 يرد في:
 
 * [ClickHouseClusterSpec](#clickhouseclusterspec)
 * [KeeperClusterSpec](#keeperclusterspec)
 
-<div id="secretkeyselector">
-  ## SecretKeySelector
-</div>
+## SecretKeySelector {#secretkeyselector}
 
 يحدّد SecretKeySelector مفتاحًا من مورد Secret.
 
@@ -594,9 +525,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 
 * [DefaultPasswordSelector](#defaultpasswordselector)
 
-<div id="templatemeta">
-  ## TemplateMeta
-</div>
+## TemplateMeta {#templatemeta}
 
 يحدّد TemplateMeta إعدادات البيانات الوصفية المدعومة لكائنات القوالب.
 
@@ -610,9 +539,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobecontainer">
-  ## VersionProbeContainer
-</div>
+## VersionProbeContainer {#versionprobecontainer}
 
 يحدّد VersionProbeContainer عمليات تجاوز على مستوى الحاوية لمسبار الإصدار.
 تتطابق أسماء الحقول ووسوم JSON مع corev1.Container لكي تُجري SMP عمليات الدمج حسب الاسم.
@@ -627,9 +554,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 
 * [VersionProbePodSpec](#versionprobepodspec)
 
-<div id="versionprobejobspec">
-  ## VersionProbeJobSpec
-</div>
+## VersionProbeJobSpec {#versionprobejobspec}
 
 يحدّد VersionProbeJobSpec عمليات التجاوز على مستوى Job لمسبار الإصدار.
 
@@ -642,9 +567,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 
 * [VersionProbeTemplate](#versionprobetemplate)
 
-<div id="versionprobepodspec">
-  ## VersionProbePodSpec
-</div>
+## VersionProbePodSpec {#versionprobepodspec}
 
 يحدّد VersionProbePodSpec التجاوزات على مستوى الكبسولة لمسبار الإصدار.
 تتطابق أسماء الحقول ووسوم JSON مع corev1.PodSpec لضمان التوافق مع strategic merge patch.
@@ -660,9 +583,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 
 * [VersionProbePodTemplate](#versionprobepodtemplate)
 
-<div id="versionprobepodtemplate">
-  ## VersionProbePodTemplate
-</div>
+## VersionProbePodTemplate {#versionprobepodtemplate}
 
 يصف VersionProbePodTemplate إعدادات التجاوز الخاصة بكبسولة مسبار الإصدار.
 
@@ -675,9 +596,7 @@ PersistentVolumeClaimTemplate هو قالب مُسمّى لـ PersistentVolumeCl
 
 * [VersionProbeJobSpec](#versionprobejobspec)
 
-<div id="versionprobetemplate">
-  ## VersionProbeTemplate
-</div>
+## VersionProbeTemplate {#versionprobetemplate}
 
 يحدّد VersionProbeTemplate التجاوزات الخاصة بـ Job اكتشاف الإصدار.
 ويحاكي هذا التركيب batchv1.JobTemplateSpec، مع إتاحة الحقول المدعومة فقط.

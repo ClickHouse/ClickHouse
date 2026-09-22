@@ -139,11 +139,9 @@ spec:
   ## إعدادات الكبسولة {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### التوزيع الطوبولوجي والتقارب التلقائيان {#automatic-topology-spread-and-affinity}
-</div>
+### التوزيع الطوبولوجي والتقارب التلقائيان {#automatic-topology-spread-and-affinity}
 
-وزّع الكبسولات عبر مناطق التوافر:
+وزّع pod عبر مناطق التوافر:
 
 ```yaml
 spec:
@@ -154,6 +152,21 @@ spec:
 
 <Note>
   تأكد من أن عنقود Kubernetes لديك يضم عددًا كافيًا من العقد عبر مناطق مختلفة لاستيفاء قيود التوزيع.
+</Note>
+
+عند استخدام مُوسّع تلقائي للعقد (Karpenter أو Cluster Autoscaler)، لا يمكن لقيد التوزيع وحده
+تجهيز منطقة لا تحتوي على أي عقد بعد — إذ يكتفي المُجدول بالمناطق المرئية له.
+اضبط `topologyMinDomains` على عدد مناطق التوافر لفرض التوزيع:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  يتطلب `topologyMinDomains` وجود `topologyZoneKey`. تبقى pod في حالة `Pending` ما دام عدد المناطق المتاحة أقل من المطلوب، لذا أبقِ القيمة ضمن المناطق التي يستطيع عنقودك توفيرها.
 </Note>
 
 <div id="manual-configuration">

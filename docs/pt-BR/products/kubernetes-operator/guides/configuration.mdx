@@ -138,9 +138,7 @@ Os nós do Keeper usam nomes de pod por meio de seu headless Service: `<pod>.<he
   ## Configuração do pod do Kubernetes {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### Distribuição automática por topologia e afinidade {#automatic-topology-spread-and-affinity}
-</div>
+### Distribuição automática por topologia e afinidade {#automatic-topology-spread-and-affinity}
 
 Distribua os pods entre zonas de disponibilidade:
 
@@ -153,6 +151,22 @@ spec:
 
 <Note>
   Garanta que seu cluster do Kubernetes tenha nós suficientes em zonas diferentes para atender às restrições de distribuição.
+</Note>
+
+Com um autoscaler de nós (Karpenter, Cluster Autoscaler), a restrição de distribuição por si só não consegue
+provisionar uma zona que ainda não tenha nós — o scheduler se limita às zonas que consegue ver.
+Defina `topologyMinDomains` com o número de zonas de disponibilidade para forçar a distribuição:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` requer `topologyZoneKey`. Os pods permanecem em `Pending` enquanto houver menos zonas
+  disponíveis do que o solicitado, portanto mantenha o valor dentro das zonas que seu cluster consegue oferecer.
 </Note>
 
 <div id="manual-configuration">

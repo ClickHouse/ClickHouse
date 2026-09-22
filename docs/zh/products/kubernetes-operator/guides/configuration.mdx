@@ -135,9 +135,7 @@ Keeper 节点会通过其无头 Service 使用 pod 名称：`<pod>.<headless-ser
   ## pod (容器组)  配置 {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### 自动拓扑分散与亲和性 {#automatic-topology-spread-and-affinity}
-</div>
+### 自动拓扑分散与亲和性 {#automatic-topology-spread-and-affinity}
 
 将 Pod (容器组) 分散到各可用区：
 
@@ -149,7 +147,22 @@ spec:
 ```
 
 <Note>
-  确保您的 Kubernetes 集群在不同可用区中具备足够的节点，以满足分布约束要求。
+  确保您的 Kubernetes 集群在不同可用区中具备足够的节点，以满足拓扑分布约束条件。
+</Note>
+
+在使用节点自动扩缩器 (Karpenter、Cluster Autoscaler) 时，仅靠拓扑分布约束条件无法
+为尚无节点的可用区置备节点——调度器只会在它能看到的可用区之间进行分配。
+将 `topologyMinDomains` 设置为可用区的数量，以强制分散：
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` 需要配合 `topologyZoneKey` 使用。当可用的可用区数量少于所请求的数量时，Pod (容器组) 会持续处于 `Pending` 状态，因此请将其控制在集群实际能提供的可用区数量范围内。
 </Note>
 
 <div id="manual-configuration">

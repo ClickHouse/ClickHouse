@@ -2,15 +2,45 @@
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
 title: 'Cloud 변경 로그 - 2026'
-description: '각 ClickHouse Cloud 릴리스의 새로운 내용을 제공하는 ClickHouse Cloud 변경 로그'
+description: '각 ClickHouse Cloud 릴리스의 새로운 기능을 설명하는 ClickHouse Cloud 변경 로그'
 doc_type: 'changelog'
-keywords: ['변경 로그', '릴리스 노트', '업데이트', '새 기능', 'Cloud 변경 사항']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-이 ClickHouse Cloud 변경 로그와 함께 [Cloud Compatibility](/ko/products/cloud/guides/cloud-compatibility) 페이지도 참조하십시오.
+이 ClickHouse Cloud 변경 로그와 함께 [Cloud 호환성](/ko/products/cloud/guides/cloud-compatibility) 페이지도 참고하십시오.
+
+<Update label="2026-09-22">
+  이번 주 업데이트에서는 ClickHouse Cloud의 컴플라이언스 적용 범위를 새로운 APAC 리전으로 확장하고, Replica-aware 라우팅을 공개 베타로 추가했으며, 메트릭, 컴퓨트, dbt와 관련된 새로운 기능을 선보입니다. HIPAA 및 PCI 규제 대응 셀이 이제 AWS 서울과 시드니에서 제공됩니다. 또한 대상 고객은 Prometheus 호환 메트릭 워크로드와 On-Demand Compute를 평가해 볼 수 있으며, ClickHouse는 dbt Core v2 및 dbt Platform을 통해 사용할 수 있습니다.
+
+  ## 보안 {#security}
+
+  ### AWS 서울 및 시드니의 HIPAA 및 PCI 지원 {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+  HIPAA 및 PCI 규제 대응 셀이 이제 AWS 서울(`ap-northeast-2`) 및 AWS 시드니(`ap-southeast-2`) 리전에서 제공됩니다. 해당 리전에서 컴플라이언스를 준수하는 워크로드를 실행하려면 서비스 생성 시 HIPAA 또는 PCI를 선택하십시오. 자세한 내용은 [컴플라이언스 개요](/ko/products/cloud/reference/security/compliance-overview#hipaa-since-2024) 및 [지원 리전](/ko/products/cloud/reference/supported-regions)을 참고하십시오.
+
+  ## 새로운 기능 {#new-features}
+
+  ### Replica-aware 라우팅 공개 베타 제공 {#replica-aware-routing-now-in-public-beta}
+
+  [Replica-aware 라우팅](/ko/products/cloud/features/infrastructure/replica-aware-routing)이 Enterprise 고객을 대상으로 공개 베타로 제공되며, 네이티브 ClickHouse Cloud 및 BYOC 배포를 지원합니다. 계정에서 활성화된 후에는 서비스 설정에서 바로 켤 수 있습니다. [발표 내용](https://clickhouse.com/blog/replica-aware-routing-public-beta)을 참고하십시오.
+
+  ### PromQL 지원 비공개 프리뷰 {#promql-support-in-private-preview}
+
+  이제 Prometheus 메트릭을 `TimeSeries` 테이블 엔진에 저장하고 ClickHouse 서비스에 대해 PromQL로 직접 쿼리할 수 있습니다. 트랜스파일러나 프록시가 필요 없으므로 기존 수집기, Grafana 대시보드, Prometheus 도구를 변경 없이 그대로 사용할 수 있습니다. Prometheus remote-write v1으로 쓰고 Prometheus HTTP API를 통해 읽거나, `prometheusQuery` 및 `prometheusQueryRange` 테이블 함수를 사용해 SQL 세션에서 PromQL을 실행할 수 있습니다. AWS, GCP, Azure에서 [비공개 프리뷰 대기 목록](https://clickhouse.com/cloud/promql-support-waitlist)을 통해 선정된 ClickHouse Cloud 및 BYOC 고객에게 제공됩니다. [Prometheus 인터페이스 문서](/ko/concepts/features/interfaces/prometheus) 및 [발표 내용](https://clickhouse.com/blog/introducing-promql)을 참고하십시오.
+
+  ### On-Demand Compute 비공개 프리뷰 제공 {#on-demand-compute-now-in-private-preview}
+
+  On-Demand Compute를 사용하면 대상이 되는 컴퓨트 집약적 `SELECT` 쿼리가 기존 서비스와 엔드포인트를 통해 추가 ClickHouse 워커를 활용할 수 있으며, 리사이징이나 별도의 프로비저닝이 필요하지 않습니다. 쿼리 설정을 통해 개별 쿼리 단위로 적용할 수 있으며, 인증, 계획 수립, 조정, 결과 처리는 서비스가 계속 담당합니다. 내부적으로는 비용 기반 옵티마이저와 다단계 쿼리 실행을 도입했습니다. 간헐적으로 발생하는 대규모 애드혹 읽기, 대용량 스캔, `SharedMergeTree`, Apache Iceberg 또는 Delta Lake 데이터에 대한 조인 및 집계에 적합합니다. [비공개 프리뷰 대기 목록](https://clickhouse.com/cloud/on-demand-compute-waitlist)을 통해 선정된 고객에게 제공됩니다. [On-Demand Compute 문서](/ko/products/cloud/features/infrastructure/on-demand-compute) 및 [발표 내용](https://clickhouse.com/blog/on-demand-compute)을 참고하십시오.
+
+  ## 통합 {#integrations}
+
+  ### dbt v2용 ClickHouse 어댑터 및 dbt Platform의 ClickHouse {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+  이제 공개 베타로 제공되는 dbt v2 어댑터를 사용해 새로운 Rust 기반 Core v2 엔진에서 ClickHouse를 대상으로 dbt를 실행할 수 있습니다. 또한 ClickHouse를 dbt Platform(Studio, 작업, 환경)의 연결로 처음 사용할 수 있게 되었으며, 비공개 베타로 계정별로 활성화됩니다. 기존 v1 어댑터(`dbt-clickhouse`)도 병행하여 계속 완전하게 유지 관리됩니다. [dbt Core](https://github.com/dbt-labs/dbt), [dbt-clickhouse 어댑터 풀 리퀘스트](https://github.com/ClickHouse/dbt-clickhouse/pull/739), [dbt Platform 문서 풀 리퀘스트](https://github.com/dbt-labs/docs.getdbt.com/pull/9975)를 참고하십시오.
+</Update>
 
 <Update label="2026-09-08">
   이번 주에는 ClickHouse Cloud에 프로덕션 환경에 바로 사용할 수 있는 보안 및 데이터 통합 개선 사항이 추가되었습니다. JWT authentication이 Enterprise 서비스에서 일반 제공되며, ClickPipes용 MySQL CDC 커넥터는 더 빠른 스냅샷, 더 안전한 기본값, 향상된 관측성과 함께 일반 제공 단계로 전환되었습니다.

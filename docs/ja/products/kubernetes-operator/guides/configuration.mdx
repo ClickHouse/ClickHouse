@@ -137,9 +137,7 @@ Keeper ノードは、ヘッドレス Service を介してポッド名を使用�
   ## ポッドの設定 {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### トポロジースプレッドとアフィニティの自動設定 {#automatic-topology-spread-and-affinity}
-</div>
+### トポロジースプレッドとアフィニティの自動設定 {#automatic-topology-spread-and-affinity}
 
 ポッドをアベイラビリティゾーン間に分散します:
 
@@ -152,6 +150,20 @@ spec:
 
 <Note>
   Kubernetesクラスターに、分散制約を満たせるだけのノードが異なるゾーンに十分にあることを確認してください。
+</Note>
+
+ノードのオートスケーラー (Karpenter、Cluster Autoscaler) を使用している場合、分散制約だけでは、まだノードが存在しないゾーンをプロビジョニングすることはできません。スケジューラーは認識できるゾーンの範囲で妥協してしまいます。
+分散を強制するには、`topologyMinDomains` にアベイラビリティゾーンの数を設定します:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` には `topologyZoneKey` が必要です。要求した数よりも利用可能なゾーンが少ない間、ポッドは `Pending` のままになるため、クラスターが提供できるゾーン数の範囲内に収めてください。
 </Note>
 
 <div id="manual-configuration">

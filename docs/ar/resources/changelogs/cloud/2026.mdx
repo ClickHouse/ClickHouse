@@ -1,25 +1,55 @@
 ---
 slug: /whats-new/changelog/cloud
 sidebarTitle: '2026'
-title: 'سجل تغييرات Cloud لعام 2026'
-description: 'سجل تغييرات ClickHouse Cloud الذي يصف المستجدات في كل إصدار من ClickHouse Cloud'
+title: 'سجل تغييرات Cloud - 2026'
+description: 'سجل تغييرات ClickHouse Cloud الذي يقدّم وصفًا لكل ما هو جديد في كل إصدار من ClickHouse Cloud'
 doc_type: 'changelog'
-keywords: ['سجل التغييرات', 'ملاحظات الإصدار', 'تحديثات', 'ميزات جديدة', 'تغييرات Cloud']
+keywords: ['changelog', 'release notes', 'updates', 'new features', 'cloud changes']
 rss: true
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-بالإضافة إلى سجل تغييرات ClickHouse Cloud هذا، يُرجى الاطلاع على صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
+بالإضافة إلى سجل التغييرات هذا الخاص بـ ClickHouse Cloud، يُرجى الاطلاع على صفحة [توافق Cloud](/ar/products/cloud/guides/cloud-compatibility).
+
+<Update label="2026-09-22">
+  توسّع تحديثات هذا الأسبوع نطاق امتثال ClickHouse Cloud ليشمل مناطق جديدة في آسيا والمحيط الهادئ، وتضيف التوجيه المراعي للنسخ المتماثلة في مرحلة بيتا عامة، وتقدّم قدرات جديدة للمقاييس والحوسبة وdbt. فقد أصبحت الخلايا الخاضعة لتنظيمات HIPAA وPCI متاحة الآن في منطقتي AWS سيول وسيدني؛ ويمكن للعملاء المؤهلين تقييم أعباء عمل المقاييس المتوافقة مع Prometheus والحوسبة عند الطلب؛ كما أصبح ClickHouse متاحًا عبر dbt Core v2 وdbt Platform.
+
+  ## الأمان {#security}
+
+  ### دعم HIPAA وPCI في AWS سيول وسيدني {#hipaa-and-pci-support-in-aws-seoul-and-sydney}
+
+  أصبحت الخلايا الخاضعة لتنظيمات HIPAA وPCI متاحة الآن في منطقتي AWS سيول (`ap-northeast-2`) وAWS سيدني (`ap-southeast-2`). اختر HIPAA أو PCI عند إنشاء الخدمة لتشغيل أعباء عمل متوافقة في هاتين المنطقتين؛ راجع [نظرة عامة على الامتثال](/ar/products/cloud/reference/security/compliance-overview#hipaa-since-2024) و[المناطق المدعومة](/ar/products/cloud/reference/supported-regions) لمزيد من التفاصيل.
+
+  ## ميزات جديدة {#new-features}
+
+  ### التوجيه المراعي للنسخ المتماثلة متاح الآن في بيتا عامة {#replica-aware-routing-now-in-public-beta}
+
+  [التوجيه المراعي للنسخ المتماثلة](/ar/products/cloud/features/infrastructure/replica-aware-routing) متاح الآن في بيتا عامة لعملاء Enterprise، مع دعم عمليات النشر الأصلية على ClickHouse Cloud وBYOC. وبمجرد تفعيله على حسابك، يمكنك تشغيله مباشرةً من إعدادات الخدمة. راجع [الإعلان](https://clickhouse.com/blog/replica-aware-routing-public-beta).
+
+  ### دعم PromQL في المعاينة الخاصة {#promql-support-in-private-preview}
+
+  يمكنك الآن تخزين مقاييس Prometheus في محرك الجداول `TimeSeries` والاستعلام عنها باستخدام PromQL مباشرةً على خدمة ClickHouse الخاصة بك—دون الحاجة إلى مُحوِّل أو وكيل، بحيث تستمر أدوات الجمع الحالية ولوحات معلومات Grafana وأدوات Prometheus في العمل دون أي تغيير. اكتب البيانات باستخدام Prometheus remote-write v1 واقرأها عبر واجهة برمجة تطبيقات HTTP لـ Prometheus، أو شغّل PromQL من جلسة SQL باستخدام دالتي الجدول `prometheusQuery` و`prometheusQueryRange`. وهذه الميزة متاحة لعملاء مختارين من ClickHouse Cloud وBYOC عبر [قائمة انتظار المعاينة الخاصة](https://clickhouse.com/cloud/promql-support-waitlist) على AWS وGCP وAzure. راجع [توثيق واجهة Prometheus](/ar/concepts/features/interfaces/prometheus) و[الإعلان](https://clickhouse.com/blog/introducing-promql).
+
+  ### الحوسبة عند الطلب متاحة الآن في المعاينة الخاصة {#on-demand-compute-now-in-private-preview}
+
+  تتيح الحوسبة عند الطلب لاستعلامات `SELECT` المؤهلة وكثيفة الحوسبة الاستفادة من عاملي ClickHouse إضافيين عبر خدمتك ونقطة النهاية الحالية—دون الحاجة إلى تغيير الحجم أو توفير موارد إضافية. ويمكنك تفعيلها لاستعلامات مفردة عبر إعدادات الاستعلام، بينما تواصل خدمتك التعامل مع المصادقة والتخطيط والتنسيق والنتائج؛ وتعتمد في عملها على مُحسِّن قائم على التكلفة وتنفيذ متعدد المراحل للاستعلامات. وهي مناسبة لعمليات القراءة الثقيلة العَرَضية غير المخطط لها، وعمليات المسح الكبيرة، وعمليات الربط، والتجميعات على بيانات `SharedMergeTree` أو Apache Iceberg أو Delta Lake. وهي متاحة لعملاء مختارين عبر [قائمة انتظار المعاينة الخاصة](https://clickhouse.com/cloud/on-demand-compute-waitlist). راجع [توثيق الحوسبة عند الطلب](/ar/products/cloud/features/infrastructure/on-demand-compute) و[الإعلان](https://clickhouse.com/blog/on-demand-compute).
+
+  ## عمليات التكامل {#integrations}
+
+  ### ClickHouse adapter لـ dbt v2 وClickHouse في dbt Platform {#clickhouse-adapter-for-dbt-v2-and-clickhouse-in-dbt-platform}
+
+  يمكنك الآن تشغيل dbt على ClickHouse باستخدام محرك Core v2 الجديد المبني على Rust مع adapter الإصدار v2 من dbt، المتاح في بيتا عامة. كما أصبح ClickHouse متاحًا لأول مرة كاتصال في dbt Platform (Studio والمهام والبيئات)، في إصدار تجريبي خاص يُفعَّل لكل حساب على حدة. ويبقى adapter الإصدار v1 الحالي (`dbt-clickhouse`) مدعومًا بالكامل بالتوازي. راجع [dbt Core](https://github.com/dbt-labs/dbt)، و[طلب سحب dbt-clickhouse adapter](https://github.com/ClickHouse/dbt-clickhouse/pull/739)، و[طلب سحب توثيق dbt Platform](https://github.com/dbt-labs/docs.getdbt.com/pull/9975).
+</Update>
 
 <Update label="8 سبتمبر 2026">
-  يجلب هذا الأسبوع تحسينات جاهزة للإنتاج في الأمان وتكامل البيانات إلى ClickHouse Cloud. أصبحت مصادقة JWT متاحة بشكل عام لخدمات Enterprise، وانتقل موصّل MySQL CDC الخاص بـ ClickPipes إلى مرحلة GA مع لقطات أسرع وإعدادات افتراضية أكثر أمانًا وobservability أفضل.
+  يجلب هذا الأسبوع تحسينات جاهزة للإنتاج في الأمان وتكامل البيانات إلى ClickHouse Cloud. أصبحت مصادقة JWT متاحة عمومًا لخدمات Enterprise، وانتقل موصّل MySQL CDC الخاص بـ ClickPipes إلى مرحلة GA مع لقطات أسرع وإعدادات افتراضية أكثر أمانًا وobservability أفضل.
 
-  ### أصبحت مصادقة JWT لخدمات ClickHouse متاحة بشكل عام {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
+  ### أصبحت مصادقة JWT لخدمات ClickHouse متاحة عمومًا {#jwt-authentication-for-clickhouse-services-is-now-generally-available}
 
   يمكنك الآن المصادقة على خدمة ClickHouse الخاصة بك باستخدام رموز JWT الصادرة من مزوّد الهوية الخاص بك، بما في ذلك Okta أو Auth0 أو Microsoft Entra ID أو Keycloak أو أي مزوّد ينشر نقطة نهاية JWKS. تتيح لك مصادقة JWT إدارة الوصول من خلال مزوّد الهوية الحالي لديك، مع انتهاء صلاحية للرموز تفرضه السياسات — مما يلغي الحاجة إلى كلمات مرور ClickHouse منفصلة وإلى أسرار مشتركة يجب تدويرها. تتوفر هذه الميزة في خطة Enterprise للخدمات التي تعمل بإصدار ClickHouse 26.4 أو أحدث. اضبطها من **Service → Settings → Security → JWT authentication**. راجع [دليل إعداد مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 
-  ### أصبح موصّل MySQL CDC الخاص بـ ClickPipes متاحًا بشكل عام {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
+  ### أصبح موصّل MySQL CDC الخاص بـ ClickPipes متاحًا عمومًا {#mysql-cdc-connector-for-clickpipes-is-now-generally-available}
 
   أصبح موصّل MySQL CDC الخاص بـ ClickPipes جاهزًا للإنتاج الآن. يضيف هذا الإصدار أخذ لقطات متوازية تلقائيًا، مما يوفّر عمليات تحميل أولي أسرع بما يصل إلى 27 مرة، إلى جانب إعدادات افتراضية أكثر أمانًا لعمليات النشر في الإنتاج، بما في ذلك النسخ المتماثل المعتمد على GTID وفترة استبقاء binlog لا تقل عن 72 ساعة. كما تُسهّل المقاييس الجديدة لاستخدام الموارد والتأخر مراقبة خطوط الأنابيب. والموصّل متاح لجميع عملاء ClickHouse Cloud من خلال ClickPipes UI وOpenAPI وTerraform. راجع [وثائق MySQL ClickPipes](/ar/integrations/clickpipes/mysql) و[إعلان إصدار GA](https://clickhouse.com/blog/mysql-cdc-connector-for-clickpipes-is-now-generally-available).
 </Update>

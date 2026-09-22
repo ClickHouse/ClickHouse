@@ -138,9 +138,7 @@ Los nodos de Keeper usan nombres de pods de Kubernetes a través de su Service h
   ## Configuración del pod de Kubernetes {#pod-configuration}
 </div>
 
-<div id="automatic-topology-spread-and-affinity">
-  ### Dispersión de topología y afinidad automáticas {#automatic-topology-spread-and-affinity}
-</div>
+### Distribución topológica y afinidad automáticas {#automatic-topology-spread-and-affinity}
 
 Distribuya los pods entre las zonas de disponibilidad:
 
@@ -153,6 +151,22 @@ spec:
 
 <Note>
   Asegúrese de que su clúster de Kubernetes tenga suficientes nodos en distintas zonas para cumplir las restricciones de distribución.
+</Note>
+
+Con un autoescalador de nodos (Karpenter, Cluster Autoscaler), la restricción de distribución por sí sola no puede
+aprovisionar una zona que aún no tiene nodos: el planificador se conforma con las zonas que puede ver.
+Establezca `topologyMinDomains` en el número de zonas de disponibilidad para forzar la distribución:
+
+```yaml
+spec:
+  podTemplate:
+    topologyZoneKey: topology.kubernetes.io/zone
+    topologyMinDomains: 3   # number of availability zones
+```
+
+<Note>
+  `topologyMinDomains` requiere `topologyZoneKey`. Los pods permanecen en `Pending` mientras haya menos zonas
+  disponibles de las solicitadas, así que manténgalo dentro de las zonas que su clúster pueda proporcionar.
 </Note>
 
 <div id="manual-configuration">
