@@ -3208,7 +3208,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-Returns the rows from the first row where `start_expr` is true, or from the start of the stream when `AFTER` is omitted, up to but excluding the first row where `end_expr` is true; `n` caps the length of that range. `AFTER start_expr ALL` opens a range at every matching row. See [LIMIT ... AFTER ... UNTIL](#limit-after-until) below.
+Returns the rows from the first row where `start_expr` is true, or from the start of the stream when `AFTER` is omitted, up to but excluding the first row at or after that start where `end_expr` is true; `n` caps the length of that range. `AFTER start_expr ALL` opens a range at every matching row. See [LIMIT ... AFTER ... UNTIL](#limit-after-until) below.
 
 ## Negative limits {#negative-limits}
 
@@ -3344,12 +3344,16 @@ LIMIT [n] UNTIL end_expr
 
 - `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
 - `AFTER start_expr ALL`: Output the union of all matching ranges that start where `start_expr` is true, without duplicating rows when ranges overlap.
-- `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
+- `UNTIL end_expr`: End each range before the first row at or after its start where `end_expr` is true (that row is excluded).
 - `n`: Optional row count. Without `ALL` it is the maximum length of the single opened range. With `AFTER ... ALL` it is the length of *each* opened range, so the total result can exceed `n` (for example, `LIMIT 2 AFTER number IN (2, 6) ALL` can return up to four rows). To cap the total number of result rows, use the `limit` setting, which is applied as a global limit after the range.
 
 Stream order (the order rows are read) defines “first” match; use `ORDER BY` to control it.
 
-Without `ALL`, if the first `UNTIL` match appears before the first `AFTER` match, the result is empty. With `AFTER ... ALL`, later `AFTER` matches can still open new ranges.
+`UNTIL` matches before a range starts have no effect. If both conditions match the starting row, the range is empty. If no `UNTIL` match occurs at or after the start, the range continues to its row count `n` or the end of the stream. With `AFTER ... ALL`, later `AFTER` matches can open new ranges after an earlier range ends.
+
+With `AFTER` and without `ALL`, the range step evaluates `AFTER` until it finds a chunk containing a start match. It then evaluates `UNTIL` in that chunk and subsequent chunks while the range remains open. Expressions are evaluated over whole chunks, so `UNTIL` can still be evaluated for rows before the start within the starting chunk.
+
+If `UNTIL` contains stateful functions such as `rowNumberInAllBlocks`, or functions that are non-deterministic within the query, it is evaluated from the first chunk to preserve those functions' behavior. Without `ALL`, `AFTER` is evaluated only through the starting chunk; subsequent chunks evaluate only `UNTIL`. End matches before the start still have no effect.
 
 **Examples:**
 
@@ -3396,7 +3400,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-Without `n` but with `UNTIL`, the range runs from the first `AFTER` match up to the first `UNTIL` match:
+Without `n` but with `UNTIL`, the range runs from the first `AFTER` match up to the first `UNTIL` match at or after it:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -3405,6 +3409,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+An `UNTIL` match before the start is ignored; here `number = 1` has no effect, and the range ends before `number = 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
