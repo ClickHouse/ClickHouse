@@ -171,18 +171,12 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
 
 void MergeTreeCommitOrderSource::startRound()
 {
-    chassert(pending_round.has_value());
-    chassert(!current_round.has_value());
-
     current_round = std::exchange(pending_round, std::nullopt);
     read_state.startReadRound(current_round->partitions);
 }
 
 void MergeTreeCommitOrderSource::finishRound()
 {
-    chassert(current_round.has_value());
-    chassert(!finished_round.has_value());
-
     read_state.finishReadRound(current_round->partitions, current_round->safe_block_numbers);
     finished_rounds += 1;
 
