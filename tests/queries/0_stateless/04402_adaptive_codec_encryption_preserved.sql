@@ -23,7 +23,7 @@ OPTIMIZE TABLE t_enc FINAL;
 
 -- Every block must be the encrypting codec.
 SELECT 'encrypted', column,
-       mapContains(codec_block_counts, 'T64') AS has_t64,
+       mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain,
        mapContains(codec_block_counts, 'NONE') AS has_none,
        arrayExists(k -> position(k, 'AES') > 0, mapKeys(codec_block_counts)) AS has_encryption
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_enc) ORDER BY column;
@@ -46,7 +46,7 @@ INSERT INTO t_plain SELECT cityHash64(number), number FROM numbers(1000000, 1000
 OPTIMIZE TABLE t_plain FINAL;
 
 SELECT 'plain', column,
-       mapContains(codec_block_counts, 'T64') AS has_t64,
+       mapContains(codec_block_counts, 'T64, LZ4') AS has_t64_chain,
        mapContains(codec_block_counts, 'NONE') AS has_none
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_plain) ORDER BY column;
 
