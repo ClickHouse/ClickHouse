@@ -12,6 +12,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Common/Macros.h>
 #include <Common/filesystemHelpers.h>
 
@@ -32,6 +33,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE_ENGINE;
     extern const int CANNOT_CREATE_DATABASE;
     extern const int LOGICAL_ERROR;
+    extern const int UNKNOWN_SETTING;
 }
 
 static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const String & metadata_path)
@@ -70,6 +72,45 @@ static void cckMetadataPathForOrdinary(const ASTCreateQuery & create, const Stri
                     metadata_path, database_name, target_path,
                     quoteString(path_to_remove.string()), quoteString(target_path), quoteString(path_to_remove.string()));
 
+}
+
+void checkDatabaseSettingNames(
+    const ASTCreateQuery & create,
+    ContextPtr context,
+    LoadingStrictnessLevel mode,
+    bool is_metadata_replay,
+    bool is_restore_from_backup)
+{
+    const auto * storage = create.storage;
+    if (!storage || !storage->engine || !storage->settings)
+        return;
+
+    /// A stored database definition is replayed at plain `ATTACH`, the mode a user's own full-definition
+    /// `ATTACH DATABASE` also carries, so the replay flag is what tells them apart; a backup holds a
+    /// `CREATE DATABASE`, so its restore is a replay at `CREATE`.
+    if (create.attach_short_syntax || (is_metadata_replay && mode >= LoadingStrictnessLevel::ATTACH) || is_restore_from_backup)
+        return;
+
+    /// An unregistered engine, and one that accepts no settings at all, are both reported by `validate`.
+    const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(storage->engine->name);
+    if (!features || !features->supports_settings)
+        return;
+
+    const Settings & query_settings = context->getSettingsRef();
+    auto reject = [&](std::string_view name)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}': for database engine {}", name, storage->engine->name);
+    };
+
+    /// `name = DEFAULT` is parsed into `default_settings`, not `changes`, and is serialized back into the
+    /// stored definition.
+    for (const auto & name : storage->settings->default_settings)
+        if (!features->has_builtin_setting_fn(name) && !query_settings.has(name))
+            reject(name);
+    /// `param_x = ...` lands in `query_parameters` with the prefix stripped, and nothing hoists a name out of it.
+    for (const auto & parameter : storage->settings->query_parameters)
+        reject(QUERY_PARAMETER_NAME_PREFIX + parameter.first);
 }
 
 void DatabaseFactory::validate(const ASTCreateQuery & create_query) const

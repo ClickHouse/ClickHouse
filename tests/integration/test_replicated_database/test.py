@@ -12,7 +12,11 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
 from helpers.test_tools import TSV, assert_eq_with_retry, assert_logs_contain
-from helpers.database_disk import get_database_disk_name, replace_text_in_metadata
+from helpers.database_disk import (
+    get_database_disk_name,
+    read_metadata,
+    replace_text_in_metadata,
+)
 
 test_recover_staled_replica_run = 1
 
@@ -2579,3 +2583,68 @@ def test_mixed_alter_races_replicated_alter_metadata(started_cluster):
     )
     main_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
     competing_node.query("DROP DATABASE IF EXISTS mixed_race SYNC")
+
+
+def test_database_settings_unknown_name_stored(started_cluster):
+    # A `SETTINGS` name that is not a setting at all is refused when a database definition is
+    # stated, but a `Replicated` database whose stored definition already names one must keep
+    # loading on every replica and its DDL queue must keep draining: refusing it at load would
+    # strand the whole cluster, not just the one query.
+    db = "dbs_unknown_setting"
+    replicas = [(main_node, "replica1"), (dummy_node, "replica2")]
+    metadata_path = f"metadata/{db}.sql"
+
+    for node, _ in replicas:
+        node.query(f"DROP DATABASE IF EXISTS {db} SYNC")
+    for node, replica in replicas:
+        node.query(
+            f"CREATE DATABASE {db} ENGINE = Replicated('/clickhouse/databases/{db}', 'shard1', '{replica}') "
+            f"SETTINGS logs_to_keep = DEFAULT"
+        )
+
+    main_node.query(
+        f"CREATE TABLE {db}.t1 (n int) ENGINE=ReplicatedMergeTree ORDER BY n"
+    )
+    for node, _ in replicas:
+        node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+
+    # A definition stated now is judged, including one naming a setting of no database engine.
+    assert "UNKNOWN_SETTING" in main_node.query_and_get_error(
+        f"CREATE DATABASE {db}_fresh ENGINE = Replicated('/clickhouse/databases/{db}_fresh', 'shard1', 'replica1') "
+        f"SETTINGS not_a_setting_at_all = DEFAULT"
+    )
+
+    for node, _ in replicas:
+        node.stop_clickhouse(kill=True)
+    try:
+        for node, _ in replicas:
+            # Fail closed: the replay assertions below only mean something if the stored
+            # definition actually changed, and `str.replace` is a silent no-op otherwise.
+            assert "logs_to_keep" in read_metadata(node, metadata_path)
+            replace_text_in_metadata(
+                node, metadata_path, "logs_to_keep", "not_a_setting_at_all"
+            )
+        for node, _ in replicas:
+            node.start_clickhouse()
+
+        for node, _ in replicas:
+            assert node.query(f"EXISTS TABLE {db}.t1") == "1\n"
+            assert "not_a_setting_at_all" in node.query(
+                f"SELECT engine_full FROM system.databases WHERE name = '{db}'"
+            )
+
+        # The DDL queue is not stuck: a new entry written by one replica reaches the other.
+        main_node.query(
+            f"CREATE TABLE {db}.t2 (n int) ENGINE=ReplicatedMergeTree ORDER BY n"
+        )
+        dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db}")
+        assert dummy_node.query(f"EXISTS TABLE {db}.t2") == "1\n"
+    finally:
+        # The edited definition needs no restoring: dropping the database removes the file it
+        # lives in. Every node has to be back up first, including when an assertion above left
+        # one stopped, or the rest of the module runs against a dead replica.
+        for node, _ in replicas:
+            if node.get_process_pid("clickhouse server") is None:
+                node.start_clickhouse()
+        for node, _ in replicas:
+            node.query(f"DROP DATABASE IF EXISTS {db} SYNC")

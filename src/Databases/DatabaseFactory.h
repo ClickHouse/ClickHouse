@@ -125,4 +125,13 @@ private:
     void validate(const ASTCreateQuery & create_query) const;
 };
 
+/// Rejects a `SETTINGS` name that is neither a setting of this database engine nor a query setting, and
+/// every `param_name` entry, which no database engine reads. Judges only a definition stated now.
+void checkDatabaseSettingNames(
+    const ASTCreateQuery & create,
+    ContextPtr context,
+    LoadingStrictnessLevel mode,
+    bool is_metadata_replay,
+    bool is_restore_from_backup);
+
 }

@@ -1,0 +1,9 @@
+--- a full-definition ATTACH states its settings, so they are checked ---
+UNKNOWN_SETTING
+--- a stored definition naming a non-setting still loads ---
+1
+7
+not_a_setting_at_all
+--- a RESTORE of such a definition still succeeds ---
+7
+not_a_setting_at_all

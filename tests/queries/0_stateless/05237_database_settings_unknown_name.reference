@@ -1,0 +1,9 @@
+--- a name that is not a setting at all is rejected ---
+--- a setting of a different database engine is rejected ---
+0
+--- a setting of the engine is still accepted in the reset form ---
+Atomic SETTINGS max_tables = DEFAULT
+--- a query setting is still accepted in the reset form ---
+Atomic
+--- the second engine that accepts these settings behaves the same ---
+Ordinary SETTINGS max_tables = DEFAULT
