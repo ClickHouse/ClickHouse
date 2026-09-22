@@ -320,11 +320,8 @@ JoinAnalysisCounters JoinStep::collectMergeJoinCounters(StepProcessors step_proc
 
 StepAnalysisReport JoinStep::getAnalysisReport(StepProcessors step_processors) const
 {
-    /// A join gathers these metrics only when the query runs with the analyze mode on, which
-    /// EXPLAIN ANALYZE turns on for the whole query. Any other reader of the statistics — such as
-    /// the query plan profiler, which renders the plan of an ordinary query — finds nothing to
-    /// read: the counters were never incremented, and some algorithms do not even allocate the
-    /// object holding them. Report no metrics at all, rather than zeros that look measured.
+    /// A join gathers these metrics only when the query runs with the analyze mode on.
+    /// Report no metrics at all, rather than zeros that look measured.
     if (!join->getTableJoin().collectAnalyzeStats())
         return {};
 
@@ -563,7 +560,6 @@ void FilledJoinStep::updateOutputHeader()
 
 StepAnalysisReport FilledJoinStep::getAnalysisReport(StepProcessors /*step_processors*/) const
 {
-    /// See JoinStep::getAnalysisReport: without the analyze mode there is nothing to report.
     if (!join->getTableJoin().collectAnalyzeStats())
         return {};
 

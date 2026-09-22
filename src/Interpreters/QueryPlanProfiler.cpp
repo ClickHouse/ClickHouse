@@ -314,6 +314,10 @@ void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
             stats,
             &pretty_names);
 
+        /// `captureSubPlan` already refused a plan without a root, so a rooted plan serializing to
+        /// nothing means the walk and the plan disagree. The return keeps a release build from
+        /// storing an entry whose `Root` names a node the document does not contain.
+        chassert(!serialized.nodes.empty());
         if (serialized.nodes.empty())
             return;
 

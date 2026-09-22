@@ -19,16 +19,7 @@ namespace DB
 namespace
 {
 
-/// What the step says about itself, as EXPLAIN ANALYZE prints it: `Filter column: ...`,
-/// `Sort description: ...`, `Limit ...`. One array entry per line.
-///
-/// The structured form, describeActions(JSONBuilder::JSONMap &), is not an option: it rebuilds its
-/// output from the step's ActionsDAG, and buildQueryPipeline has moved that out of every
-/// ExpressionStep by the time an executed plan is serialized. Compact and pretty are pinned rather
-/// than taken from the caller: they are the only settings under which the describe methods do not
-/// read the DAG at all, and FilterStep would otherwise look its filter column up with
-/// ActionsDAG::findInOutputs, which throws UNKNOWN_IDENTIFIER on the empty remains. Under pretty
-/// the expressions come from the names captured while the DAGs were still intact.
+/// Adds description to the task. Like: `Filter column: ...`, `Sort description: ...`, `Limit ...`.
 void addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, const PrettyNames * plan_pretty_names)
 {
     PrettyNames empty_pretty_names;
@@ -38,6 +29,7 @@ void addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, con
         .out = out,
         .header_prefix = "",
         .detail_prefix = "",
+        /// Compact and pretty are needed to avoid UNKNOWN_IDENTIFIER throw when using describeActions.
         .compact = true,
         .pretty = true,
         .pretty_names = plan_pretty_names ? plan_pretty_names->pretty_names : empty_pretty_names.pretty_names,
@@ -65,6 +57,8 @@ void addStepDetails(const IQueryPlanStep & step, JSONBuilder::JSONMap & map, con
 }
 
 /// The names are scoped per plan: a sub-plan is its own naming scope and has its own entry.
+/// A miss is not a mistake: `ReadFromMerge` builds its child plans in `initializePipeline`, which
+/// runs after `buildPrettyNamesPerPlan`, so a child plan reached here may have no entry.
 const PrettyNames * findPrettyNames(const PrettyNamesPerPlan * pretty_names, const QueryPlan * plan)
 {
     if (!pretty_names)
@@ -288,9 +282,6 @@ JSONBuilder::ItemPtr queryPlanToJSON(
         // result and releases the plan afterwards, so nothing serializes these a second time.
         for (auto & sub_plan : *sub_plans)
         {
-            if (sub_plan.nodes.empty())
-                continue;
-
             // Shaped like the root of the document, one level down: same keys, same meanings, for
             // the pipeline this subquery ran in. `ExecutionTimeNs` is that pipeline's own -- it ran
             // before the main one existed, so it is not part of the query's and the two do not sum.
