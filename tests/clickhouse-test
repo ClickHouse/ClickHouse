@@ -1964,7 +1964,6 @@ class SettingsRandomizer:
         "enable_reads_from_columns_cache": lambda: random.randint(0, 1),
         "enable_writes_to_columns_cache": lambda: random.randint(0, 1),
         # More query plan optimizations
-        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
