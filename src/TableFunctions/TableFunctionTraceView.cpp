@@ -46,6 +46,7 @@ namespace
 /// Arguments are positional (trace_id, timeline_width, cluster), and any of them can instead
 /// be given as `name = value`. `query_id` exists only in the named form: a query id cannot be
 /// told apart from a trace id positionally, because server-generated query ids are UUIDs too.
+/// `since` and `until` are named only as well: a date has no natural position.
 constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
 
 /// `name = value` -> (name, value); anything else -> (the name of the position, the argument).
@@ -53,7 +54,13 @@ std::pair<String, ASTPtr> splitNamedArgument(const ASTPtr & arg, size_t position
 {
     const auto * equals = arg->as<ASTFunction>();
     if (!equals || equals->name != "equals")
+    {
+        if (position >= positional_names.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table function 'traceView': argument {} must be given by name (`name = value`), got '{}'",
+                position + 1, arg->formatForErrorMessage());
         return {String(positional_names[position]), arg};
+    }
 
     const auto * identifier = equals->arguments->children.at(0)->as<ASTIdentifier>();
     if (!identifier)
@@ -87,6 +94,19 @@ UUID parseTraceId(const ASTPtr & value)
         "Table function 'traceView' requires a String or UUID trace_id, got '{}'", value->formatForErrorMessage());
 }
 
+/// A `YYYY-MM-DD` date, returned as written once it is known to parse.
+String parseDate(const ASTPtr & value, const String & arg_name)
+{
+    const auto text = checkAndGetLiteralArgument<String>(value, arg_name);
+    ReadBufferFromString buf(text);
+    LocalDate date;
+    readDateText(date, buf);
+    if (!buf.eof())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Table function 'traceView': cannot parse '{}' as a YYYY-MM-DD date for {}", text, arg_name);
+    return text;
+}
+
 }
 
 void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, ContextPtr context)
@@ -96,10 +116,10 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function '{}' must have arguments", getName());
 
     const auto & args = function->arguments->children;
-    if (args.empty() || args.size() > positional_names.size())
+    if (args.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "Table function '{}' requires 1 to {} arguments: trace_id|query_id [, timeline_width [, cluster]], got {}",
-            getName(), positional_names.size(), args.size());
+            "Table function '{}' requires arguments: trace_id|query_id [, timeline_width [, cluster]] [, since = date] [, until = date]",
+            getName());
 
     bool has_trace_id = false;
 
@@ -131,6 +151,8 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
             /// Fail early with a clear error instead of a confusing one from the internal query.
             context->getCluster(cluster);
         }},
+        {"since", [&](const ASTPtr & value) { since = parseDate(value, "since"); }},
+        {"until", [&](const ASTPtr & value) { until = parseDate(value, "until"); }},
     };
 
     UnorderedSetWithMemoryTracking<String> seen;
@@ -141,7 +163,7 @@ void TableFunctionTraceView::parseArguments(const ASTPtr & ast_function, Context
         auto parser = parsers.find(param_name);
         if (parser == parsers.end())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Table function '{}': unknown argument '{}'; expected trace_id, query_id, timeline_width or cluster",
+                "Table function '{}': unknown argument '{}'; expected trace_id, query_id, timeline_width, cluster, since or until",
                 getName(), param_name);
 
         if (!seen.insert(param_name).second)
@@ -214,7 +236,8 @@ Block executeInternalQuery(const String & query, ContextPtr context)
 }
 
 /// The spans of one trace, ordered by (start_time_us, span_id) so that sibling order is deterministic.
-Block loadSpans(const String & source, const UUID & trace_id, ContextPtr context)
+/// `time_filter` is an extra condition on the span log (possibly empty), see `spanLogTimeFilter`.
+Block loadSpans(const String & source, const String & time_filter, const UUID & trace_id, ContextPtr context)
 {
     /// LowCardinality columns are converted to plain types so that the rendering code and the
     /// declared structure of the `attribute` result column need no special cases.
@@ -225,14 +248,15 @@ Block loadSpans(const String & source, const UUID & trace_id, ContextPtr context
             " start_time_us, finish_time_us,"
             " toString(attribute['clickhouse.shard_num']) AS shard_num,"
             " CAST(attribute, 'Map(String, String)') AS attribute"
-            " FROM {} WHERE trace_id = toUUID('{}') ORDER BY start_time_us, span_id",
-            source, toString(trace_id)),
+            " FROM {} WHERE trace_id = toUUID('{}'){} ORDER BY start_time_us, span_id",
+            source, toString(trace_id), time_filter),
         context);
 
     if (spans.rows() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No spans found for trace_id '{}'. Spans are flushed to the log in background:"
-            " run SYSTEM FLUSH LOGS opentelemetry_span_log and retry", toString(trace_id));
+            "No spans found for trace_id '{}'{}. Spans are flushed to the log in background:"
+            " run SYSTEM FLUSH LOGS opentelemetry_span_log and retry",
+            toString(trace_id), time_filter.empty() ? "" : " within the since/until window");
 
     return spans;
 }
@@ -489,7 +513,19 @@ String TableFunctionTraceView::spanLogSource() const
     return fmt::format("clusterAllReplicas({}, system.opentelemetry_span_log)", quoteString(cluster));
 }
 
-UUID TableFunctionTraceView::resolveTraceId(const String & source, ContextPtr context) const
+String TableFunctionTraceView::spanLogTimeFilter() const
+{
+    /// The span log is partitioned and ordered by `finish_date`, and neither `trace_id` nor the
+    /// attributes are in the key: without this window every call scans the whole log.
+    String filter;
+    if (!since.empty())
+        filter += fmt::format(" AND finish_date >= {}", quoteString(since));
+    if (!until.empty())
+        filter += fmt::format(" AND finish_date <= {}", quoteString(until));
+    return filter;
+}
+
+UUID TableFunctionTraceView::resolveTraceId(const String & source, const String & time_filter, ContextPtr context) const
 {
     if (query_id.empty())
         return trace_id;
@@ -500,16 +536,16 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, ContextPtr co
     Block lookup = executeInternalQuery(
         fmt::format(
             "SELECT trace_id FROM {} WHERE operation_name = 'query'"
-            " AND attribute['clickhouse.query_id'] = {} ORDER BY finish_time_us DESC LIMIT 1",
-            source, quoteString(query_id)),
+            " AND attribute['clickhouse.query_id'] = {}{} ORDER BY finish_time_us DESC LIMIT 1",
+            source, quoteString(query_id), time_filter),
         context);
 
     if (lookup.rows() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "No trace found for query_id '{}'. The query must run with tracing enabled"
+            "No trace found for query_id '{}'{}. The query must run with tracing enabled"
             " (a traceparent or opentelemetry_start_trace_probability); spans are flushed"
             " to the log in background: run SYSTEM FLUSH LOGS opentelemetry_span_log and retry",
-            query_id);
+            query_id, time_filter.empty() ? "" : " within the since/until window");
 
     return (*lookup.getByPosition(0).column)[0].safeGet<UUID>();
 }
@@ -518,8 +554,9 @@ StoragePtr TableFunctionTraceView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
     const String source = spanLogSource();
-    const UUID effective_trace_id = resolveTraceId(source, context);
-    const Block spans = loadSpans(source, effective_trace_id, context);
+    const String time_filter = spanLogTimeFilter();
+    const UUID effective_trace_id = resolveTraceId(source, time_filter, context);
+    const Block spans = loadSpans(source, time_filter, effective_trace_id, context);
 
     const ColumnsDescription structure = getActualTableStructure(context, is_insert_query);
     Block rendered = renderTrace(SpanColumns(spans), timeline_width, structure.getAllPhysical());
@@ -544,6 +581,8 @@ Returns one row per span of the trace, in depth-first tree order:
 - `attribute` - the span attributes.
 
 Arguments: `trace_id` (String or UUID), optional `timeline_width` (default 40, at most 1024), optional `cluster` - read `clusterAllReplicas(cluster, system.opentelemetry_span_log)` instead of the local span log, because in a cluster every node writes its spans to its own log. Arguments can also be passed by name (`name = value`). Instead of `trace_id`, the named argument `query_id` selects the most recent trace of that query - named only, because a server-generated query id is itself a UUID and cannot be told apart from a trace id positionally: `traceView(query_id = '<query id>')`.
+
+The named arguments `since` and `until` (`'YYYY-MM-DD'` strings, e.g. `since = toString(today() - 7)`) restrict the search to spans whose `finish_date` is within the window, inclusive. The span log is partitioned and ordered by `finish_date` and has no TTL by default, so without a window every call scans the whole log, and the cost grows with the age of the server. The `event_date` of the query in `system.query_log` is a good value for both.
 
 Spans are flushed to the log in background: run `SYSTEM FLUSH LOGS opentelemetry_span_log` first.
 Example:

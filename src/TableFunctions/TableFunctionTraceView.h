@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// traceView(trace_id [, timeline_width [, cluster]]) - renders the spans of one trace from
+/// traceView(trace_id [, timeline_width [, cluster]] [, since = date] [, until = date]) - renders the spans of one trace from
 /// `system.opentelemetry_span_log` as a call tree with a timeline: one row per span, the tree
 /// on the left (`span`), and a fixed-width bar (`timeline`) whose position is the span's start
 /// offset within the trace and whose length is proportional to its duration. Made for debugging
@@ -36,8 +36,11 @@ private:
     /// The table the spans are read from: the local span log, or the span log of every replica of `cluster`.
     String spanLogSource() const;
 
+    /// The `finish_date` window of `since` and `until` as an ` AND ...` condition on the span log, or empty.
+    String spanLogTimeFilter() const;
+
     /// The trace to render: `trace_id`, or the most recent trace of `query_id` looked up in `source`.
-    UUID resolveTraceId(const String & source, ContextPtr context) const;
+    UUID resolveTraceId(const String & source, const String & time_filter, ContextPtr context) const;
 
     /// Exactly one of trace_id and query_id is set; a query_id is resolved to the
     /// most recent trace of that query when the function executes.
@@ -45,6 +48,9 @@ private:
     String query_id;
     UInt64 timeline_width = default_timeline_width;
     String cluster;
+    /// `YYYY-MM-DD` bounds on `finish_date`, inclusive; empty means unbounded.
+    String since;
+    String until;
 };
 
 }
