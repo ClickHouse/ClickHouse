@@ -6793,7 +6793,7 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
 
     /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
     /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
-    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// mirroring the legacy `splitConjunctionsAst` helper.
     /// Without this, a nested `and` containing an aggregate is classified as a single
     /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
     QueryTreeNodes conjuncts;
