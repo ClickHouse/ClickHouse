@@ -1121,58 +1121,41 @@ For the settings in effect for one table, rather than for the engine, see [`syst
 
 .examples
 ```sql
-SELECT * FROM system.merge_tree_settings LIMIT 3 FORMAT Vertical;
+SELECT name, value, `default`, changed, source, alias_for
+FROM system.merge_tree_settings
+WHERE name IN ('min_compress_block_size', 'index_granularity') OR alias_for != ''
+ORDER BY name
+LIMIT 3
+FORMAT Vertical;
 ```
 
 ```response
-SELECT *
-FROM system.merge_tree_settings
-LIMIT 3
-FORMAT Vertical
-
-Query id: 2580779c-776e-465f-a90c-4b7630d0bb70
-
 Row 1:
 ──────
-name:        min_compress_block_size
-value:       0
-default:     0
-changed:     0
-description: When granule is written, compress the data in buffer if the size of pending uncompressed data is larger or equal than the specified threshold. If this setting is not set, the corresponding global setting is used.
-min:         ᴺᵁᴸᴸ
-max:         ᴺᵁᴸᴸ
-readonly:    0
-type:        UInt64
-is_obsolete: 0
-tier:        Production
+name:      allow_experimental_block_number_column
+value:     0
+default:   0
+changed:   0
+source:    default
+alias_for: enable_block_number_column
 
 Row 2:
 ──────
-name:        max_compress_block_size
-value:       0
-default:     0
-changed:     0
-description: Compress the pending uncompressed data in buffer if its size is larger or equal than the specified threshold. Block of data will be compressed even if the current granule is not finished. If this setting is not set, the corresponding global setting is used.
-min:         ᴺᵁᴸᴸ
-max:         ᴺᵁᴸᴸ
-readonly:    0
-type:        UInt64
-is_obsolete: 0
-tier:        Production
+name:      index_granularity
+value:     8192
+default:   8192
+changed:   0
+source:    default
+alias_for:
 
 Row 3:
 ──────
-name:        index_granularity
-value:       8192
-default:     8192
-changed:     0
-description: How many rows correspond to one primary key value.
-min:         ᴺᵁᴸᴸ
-max:         ᴺᵁᴸᴸ
-readonly:    0
-type:        UInt64
-is_obsolete: 0
-tier:        Production
+name:      min_compress_block_size
+value:     0
+default:   0
+changed:   0
+source:    default
+alias_for:
 
 3 rows in set. Elapsed: 0.001 sec.
 ```
