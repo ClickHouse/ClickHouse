@@ -4,6 +4,10 @@ UNKNOWN_SETTING
 1
 7
 not_a_setting_at_all
+--- a short ATTACH of such a definition still succeeds ---
+1
+7
+not_a_setting_at_all
 --- a RESTORE of such a definition still succeeds ---
 7
 not_a_setting_at_all

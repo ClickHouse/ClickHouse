@@ -52,6 +52,18 @@ SELECT * FROM db.t;
 SELECT extract(engine_full, 'not_a_setting_at_all') FROM system.databases WHERE name = 'db';
 "
 
+echo '--- a short ATTACH of such a definition still succeeds ---'
+# The short spelling states nothing itself: it reads the stored clause back, so `attach_short_syntax`
+# is the only thing that exempts it. Re-assert the stored name first, so a definition rewritten by the
+# load above cannot make this arm pass vacuously.
+grep -c -m 1 -F 'not_a_setting_at_all' "${metadata_file}"
+$CLICKHOUSE_LOCAL --path "${WORK_DIR}/data" -q "
+DETACH DATABASE db;
+ATTACH DATABASE db;
+SELECT * FROM db.t;
+SELECT extract(engine_full, 'not_a_setting_at_all') FROM system.databases WHERE name = 'db';
+"
+
 echo '--- a RESTORE of such a definition still succeeds ---'
 # The backup stores a `CREATE DATABASE`, so the restore carries neither the short-ATTACH nor the
 # metadata-replay marker that exempt the two arms above.
