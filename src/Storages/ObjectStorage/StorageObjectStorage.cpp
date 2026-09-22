@@ -294,6 +294,12 @@ StorageObjectStorage::StorageObjectStorage(
         }
         catch (...)
         {
+            /// A path the reader refuses - a malformed or an unbounded `{a,b,c}` glob - fails the
+            /// same way whenever the table is read, so it is reported here as well instead of being
+            /// downgraded to a listing failure that only leaves the hive columns unresolved.
+            if (getCurrentExceptionCode() == ErrorCodes::BAD_ARGUMENTS)
+                throw;
+
             LOG_WARNING(
                 log,
                 "Failed to list object storage, cannot use hive partitioning. "
@@ -543,6 +549,11 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
     {
         /// A query running without hive partitioning may silently return different results.
         if (query_context->getSettingsRef()[Setting::throw_on_hive_partitioning_resolution_failure])
+            throw;
+
+        /// A path the reader refuses is not an endpoint failure: reading the table fails the same
+        /// way, so the refusal is reported here rather than retried by every next query.
+        if (getCurrentExceptionCode() == ErrorCodes::BAD_ARGUMENTS)
             throw;
 
         /// An endpoint failure degrades only the triggering query and is retried by the next one.

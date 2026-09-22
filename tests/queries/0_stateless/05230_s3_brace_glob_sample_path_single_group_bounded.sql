@@ -10,20 +10,24 @@
 
 SET use_hive_partitioning = 1;
 
--- The `-Cluster` implementation reports the refusal of an unbounded pattern directly, where the
--- plain one leaves the hive column unresolved instead, so pin which of the two is used.
-SET parallel_replicas_for_cluster_engines = 0;
-
 -- Several groups: the reader matches them as a regexp whatever they multiply out to, so the sample
 -- path is taken from them and the `date` hive column is there.
 SELECT count()
 FROM (SELECT date FROM s3('http://localhost:11111/test/date=2020-01-01/{a,b}{a,b}{a,b}.tsv',
                           'test', 'testtest', 'TSV', 'c1 UInt64'));
 
--- One group asking for more paths than the reader will ever enumerate: no hive column is inferred.
+-- One group asking for more paths than the reader will ever enumerate: the refusal is reported while
+-- resolving the path, the same as it is when reading it - not swallowed as a listing failure that
+-- would only leave the `date` hive column unresolved. Both the plain table function and its
+-- `-Cluster` alternative report it the same way.
 SELECT date
 FROM s3('http://localhost:11111/test/date=2020-01-01/{' || repeat('a,', 1000000) || 'a}.tsv',
-        'test', 'testtest', 'TSV', 'c1 UInt64'); -- { serverError UNKNOWN_IDENTIFIER }
+        'test', 'testtest', 'TSV', 'c1 UInt64'); -- { serverError BAD_ARGUMENTS }
+
+SELECT date
+FROM s3Cluster('test_shard_localhost',
+               'http://localhost:11111/test/date=2020-01-01/{' || repeat('a,', 1000000) || 'a}.tsv',
+               'test', 'testtest', 'TSV', 'c1 UInt64'); -- { serverError BAD_ARGUMENTS }
 
 -- And a table definition does not keep hive partition columns for such a path either: resolving it
 -- is refused exactly like reading it.
@@ -33,6 +37,10 @@ ENGINE = S3('http://localhost:11111/test/date=2020-01-01/{' || repeat('a,', 1000
 
 DESC t_glob_huge; -- { serverError BAD_ARGUMENTS }
 SELECT count() FROM t_glob_huge; -- { serverError BAD_ARGUMENTS }
+
+-- Tolerating a listing failure does not tolerate a refused path: it is not an endpoint problem that
+-- the next query might not hit, so it is reported rather than retried by every query.
+DESC t_glob_huge SETTINGS throw_on_hive_partitioning_resolution_failure = 0; -- { serverError BAD_ARGUMENTS }
 
 DROP TABLE t_glob_huge;
 
