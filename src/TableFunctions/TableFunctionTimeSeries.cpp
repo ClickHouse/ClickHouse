@@ -306,7 +306,7 @@ Unary operators `+` and `-`.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`
 
 ## Example {#example}
 
@@ -389,7 +389,7 @@ Unary operators `+` and `-`.
 
 ### Not yet supported {#not-yet-supported}
 
-- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`, `first_over_time`, `ts_of_last_over_time`, `ts_of_first_over_time`
+- Range functions `stddev_over_time`, `stdvar_over_time`, `mad_over_time`
 
 ## Example {#example}
 

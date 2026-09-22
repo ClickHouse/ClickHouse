@@ -104,30 +104,29 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
         }
     };
 
-    /// Sliding aggregator: the result at a grid point is the earliest sample inside its window. Buckets are added in
-    /// time order, so the in-window buckets form a queue: the oldest bucket holds the result until the window passes
-    /// it, then the next bucket takes over. A sliding sum doesn't fit here because a bucket added at the back never
-    /// changes the result, so the queue just keeps the earliest sample of every in-window bucket.
+    /// Sliding aggregator: the result at a grid point is the earliest sample inside its window. Buckets arrive in time
+    /// order, so the in-window buckets form a queue whose front holds the result; a `SlidingSum` is not needed because
+    /// a bucket added at the back never changes the result and the front is dropped in O(1) when it leaves the window.
     struct Aggregator
     {
-        /// A bucket of the queue: its end timestamp (in the grid scale, to compare with the window's cutoff) and its earliest sample.
-        struct Entry
+        DequeWithMemoryTracking<Summary> window;
+        Int64 column_to_grid_multiplier;
+
+        explicit Aggregator(Int64 column_to_grid_multiplier_)
+            : column_to_grid_multiplier(column_to_grid_multiplier_)
         {
-            GridScaleTimestampType bucket_end_timestamp;
-            Summary earliest;
-        };
+        }
 
-        DequeWithMemoryTracking<Entry> window;
-
-        void add(const Summary & bucket, GridScaleTimestampType bucket_end_timestamp)
+        void add(const Summary & bucket, GridScaleTimestampType /*bucket_end_timestamp*/)
         {
             if (!bucket.empty())
-                window.push_back(Entry{bucket_end_timestamp, bucket});
+                window.push_back(bucket);
         }
 
         void removeBefore(GridScaleTimestampType cut_off)
         {
-            while (!window.empty() && window.front().bucket_end_timestamp <= cut_off)
+            /// A bucket is fully in or out of the window, so its earliest sample decides.
+            while (!window.empty() && static_cast<Int64>(window.front().timestamp) * column_to_grid_multiplier <= cut_off)
                 window.pop_front();
         }
 
@@ -135,7 +134,7 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
         {
             if (window.empty())
                 return std::nullopt;
-            const Summary & earliest = window.front().earliest;
+            const Summary & earliest = window.front();
             if constexpr (return_timestamp)
                 return earliest.timestamp;
             else
@@ -168,7 +167,7 @@ public:
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return {};
+        return Aggregator{Base::column_to_grid_multiplier};
     }
 };
 

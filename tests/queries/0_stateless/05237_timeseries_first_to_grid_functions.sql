@@ -41,8 +41,10 @@ SELECT timeSeriesTimestampOfFirstToGrid(90, 210, 15, 45)(timestamp, value) FROM 
 
 -- Samples passed as an array of (timestamp, value) pairs.
 SELECT 'array_of_pairs';
-SELECT timeSeriesFirstToGrid(90, 210, 15, 45)(groupArray((timestamp, value))) FROM ts_first_data;
-SELECT timeSeriesTimestampOfFirstToGrid(90, 210, 15, 45)(groupArray((timestamp, value))) FROM ts_first_data;
+SELECT timeSeriesFirstToGrid(90, 210, 15, 45)(samples)
+FROM (SELECT groupArray((timestamp, value)) AS samples FROM ts_first_data);
+SELECT timeSeriesTimestampOfFirstToGrid(90, 210, 15, 45)(samples)
+FROM (SELECT groupArray((timestamp, value)) AS samples FROM ts_first_data);
 
 -- Partial aggregation: merging two -State halves must give the same result as the direct query.
 SELECT 'state_merge';
@@ -107,6 +109,18 @@ WITH
 SELECT
     timeSeriesFirstToGrid(100, 100, 0, 15)(timestamps, values),
     timeSeriesTimestampOfFirstToGrid(100, 100, 0, 15)(timestamps, values);
+
+-- The -If combinator and Nullable arguments: the sample at 110 is excluded by the condition or hidden by a NULL,
+-- so the window (105, 120] starts with the sample at 120.
+SELECT 'if_and_nullable';
+SELECT
+    timeSeriesFirstToGridIf(100, 120, 10, 15)(timestamp, value, value != 2),
+    timeSeriesTimestampOfFirstToGridIf(100, 120, 10, 15)(timestamp, value, value != 2)
+FROM (SELECT arrayJoin([(100, 1.), (110, 2.), (120, 3.)]) AS sample, sample.1::DateTime AS timestamp, sample.2 AS value);
+SELECT
+    timeSeriesFirstToGrid(100, 120, 10, 15)(if(value = 2, NULL, timestamp), value),
+    timeSeriesTimestampOfFirstToGrid(100, 120, 10, 15)(timestamp, if(value = 2, NULL, value))
+FROM (SELECT arrayJoin([(100, 1.), (110, 2.), (120, 3.)]) AS sample, sample.1::DateTime AS timestamp, sample.2 AS value);
 
 -- A step larger than the window: some buckets are never in any window and are skipped.
 SELECT 'step_larger_than_window';
