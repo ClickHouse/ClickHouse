@@ -137,7 +137,7 @@ void checkResponseIsComplete(const AIResponse & response)
 
 /// The attempt loop every request kind shares: reserve an API-call slot, run one attempt, retry a
 /// transient failure after a backoff. Returns nothing when the API-call quota is exhausted, or when
-/// the request failed for good and `throw_on_error` is disabled.
+/// the request failed (after all retries) and `throw_on_error` is disabled.
 template <typename Response, typename Attempt>
 std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracker & quota, Attempt && attempt_fn)
 {
@@ -239,7 +239,7 @@ std::future<std::optional<AIEmbeddingResponse>> AIRequestExecutor::submitEmbeddi
             AIEmbeddingResponse response;
 
             SCOPE_EXIT({
-                my_quota->recordTokens(response.input_tokens, 0);
+                my_quota->recordTokens(response.input_tokens, 0 /*output_tokens*/);
                 ProfileEvents::increment(ProfileEvents::AIInputTokens, response.input_tokens);
             });
 

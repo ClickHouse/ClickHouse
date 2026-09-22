@@ -24,18 +24,14 @@ struct AIRequestPolicy
     UInt64 max_retries = 0;
     UInt64 retry_initial_delay_ms = 0;
 
-    /// `ai_function_throw_on_error`. When disabled, a request that failed for good produces no
-    /// response instead of throwing, and the caller leaves the row at its default value.
+    /// `ai_function_throw_on_error`. When disabled, a request that failed (after retries) does not
+    /// throw, and the caller outputs a default value.
     bool throw_on_error = true;
 };
 
 /// Server-wide component that issues AI provider requests on its own worker threads.
-///
-/// AI functions submit requests and wait for the returned futures; they never create threads of
-/// their own. Retries with backoff, API-call reservation and token accounting happen here, so they
-/// are uniform across functions, and the pool size caps how many provider requests the whole server
-/// has in flight at once. Request batching, a result cache and a server-wide quota belong here too
-/// and can be added behind the same submission API.
+/// AI functions submit requests and wait for the returned futures. This class also handles
+/// retries with backoff, API-call reservation, and token accounting.
 class AIRequestExecutor
 {
 public:
@@ -43,11 +39,6 @@ public:
     ~AIRequestExecutor();
 
     /// Issue one chat-completion request and check that the model produced a complete answer.
-    ///
-    /// The future holds the response, or nothing when no usable response was produced: the
-    /// per-query API-call quota was exhausted, or the request failed and `throw_on_error` is
-    /// disabled. `get` rethrows when the request failed and `throw_on_error` is enabled, and always
-    /// rethrows a quota exception, which `ai_function_throw_on_quota_exceeded` governs instead.
     std::future<std::optional<AIResponse>> submit(
         std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 
