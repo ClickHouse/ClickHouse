@@ -1358,7 +1358,7 @@ Entries for finished mutations are not deleted right away (the number of preserv
 
 ## Execution cost and completion {#execution-cost-and-completion}
 
-When planning an `ALTER TABLE`, distinguish a metadata change from the work required for existing data parts. Whether the client waits for completion is controlled by [`alter_sync`](/reference/settings/session-settings/alter#alter_sync) for metadata operations and by [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) for mutation-producing operations. Do not use fixed durations as operational guidance: the cost depends on the amount of metadata, the affected parts and bytes, conversion cost, and current background load.
+When planning an `ALTER TABLE`, distinguish a metadata change from the work required for existing data parts. Whether the client waits for completion depends on the operation: [`alter_sync`](/reference/settings/session-settings/alter#alter_sync) controls metadata operations and `MODIFY COLUMN`, including type conversions that rewrite data; [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) controls background mutations such as `UPDATE`, `DELETE`, and `MATERIALIZE ...`. Do not use fixed durations as operational guidance: the cost depends on the amount of metadata, the affected parts and bytes, conversion cost, and current background load.
 
 | Operation | Existing-data work | Default completion behavior | Main cost drivers |
 |---|---|---|---|
@@ -1366,7 +1366,7 @@ When planning an `ALTER TABLE`, distinguish a metadata change from the work requ
 | `RENAME COLUMN` | No row rewrite, but it is an ordering barrier after earlier mutations. | Metadata wait follows `alter_sync`. | Earlier mutations and replica availability. |
 | `DROP COLUMN` | Removes column files; this is not purely a metadata change. | Metadata and mutation ordering apply. | Number and size of column files. |
 | `MODIFY COLUMN` default, comment, or representation-preserving type | No immediate rewrite. | Metadata wait follows `alter_sync`. | Metadata size and replica availability. |
-| Other `MODIFY COLUMN` type changes | A `READ_COLUMN` mutation rewrites the affected column in existing parts. | Asynchronous by default; `mutations_sync` controls waiting. | Affected parts and bytes, conversion cost, and background load. |
+| Other `MODIFY COLUMN` type changes | A `READ_COLUMN` mutation rewrites the affected column in existing parts. | Asynchronous by default; `alter_sync` controls waiting. | Affected parts and bytes, conversion cost, and background load. |
 | `UPDATE`, `DELETE`, and `MATERIALIZE ...` | Background mutations rewrite affected parts. | Asynchronous by default; `mutations_sync` controls waiting. | Affected parts and bytes, and background load. |
 
 ## Synchronicity of ALTER Queries {#synchronicity-of-alter-queries}
@@ -1596,7 +1596,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Some type changes are metadata-only because their on-disk representation is unchanged. These include extending an enum and conversions between `Date` and `UInt16` or between `DateTime` and `UInt32`; the same rule applies recursively inside `Array` and `Nullable` types. Some JSON type-hint changes and named-tuple additions can also avoid an immediate rewrite when the corresponding settings are enabled.
 
-Other type changes create a `READ_COLUMN` mutation that rewrites the affected column in existing parts. Mutations run asynchronously by default. Use [`mutations_sync`](/reference/settings/session-settings/mutations#mutations_sync) when the client must wait, and monitor progress in [`system.mutations`](/reference/system-tables/mutations).
+Other type changes create a `READ_COLUMN` mutation that rewrites the affected column in existing parts. The mutation runs asynchronously by default. Use [`alter_sync`](/reference/settings/session-settings/alter#alter_sync) when the client must wait, and monitor progress in [`system.mutations`](/reference/system-tables/mutations).
 
 The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#add-column) description, but column type is mandatory in this case.
 
