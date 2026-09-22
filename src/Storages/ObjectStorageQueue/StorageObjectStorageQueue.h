@@ -208,6 +208,10 @@ private:
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;
+    /// Whether the insert into the dependent materialized views deduplicates blocks: `deduplication_v2`
+    /// is set, the insert deduplicates in dependent views, and some dependent target actually
+    /// consults the block ids. Decides whether a partially processed file may be aborted and replayed.
+    bool dependentViewsDeduplicateBlocks(const ContextPtr & context) const;
     /// A background thread function,
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.
