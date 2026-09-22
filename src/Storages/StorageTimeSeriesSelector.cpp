@@ -238,41 +238,6 @@ namespace
         return res;
     }
 
-    ASTPtr makeWhereFilterForTagsTable(
-        const PrometheusQueryTree::MatcherList & matchers,
-        const std::unordered_map<String, String> & column_name_by_tag_name,
-        const std::optional<DateTime64> & min_time,
-        const std::optional<DateTime64> & max_time,
-        const DataTypePtr & timestamp_data_type)
-    {
-        ASTs asts;
-        for (const auto & matcher : matchers)
-            asts.push_back(matcherToAST(matcher, column_name_by_tag_name));
-
-        if (asts.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
-
-        if (min_time)
-        {
-            /// tags_table.max_time >= min_time
-            asts.push_back(makeASTFunction(
-                "greaterOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
-                timeSeriesTimestampToAST(*min_time, timestamp_data_type)));
-        }
-
-        if (max_time)
-        {
-            /// tags_table.min_time <= max_time
-            asts.push_back(makeASTFunction(
-                "lessOrEquals",
-                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
-                timeSeriesTimestampToAST(*max_time, timestamp_data_type)));
-        }
-
-        return makeASTForLogicalAnd(std::move(asts));
-    }
-
     ASTPtr makeSelectQueryFromTagsTable(
         const StorageID & tags_table_id,
         const PrometheusQueryTree::MatcherList & matchers,
@@ -321,7 +286,8 @@ namespace
 
         /// WHERE <filter>
         {
-            auto where_filter = makeWhereFilterForTagsTable(matchers, column_name_by_tag_name, min_time, max_time, timestamp_data_type);
+            auto where_filter = StorageTimeSeriesSelector::makeWhereFilterForTagsTable(
+                matchers, column_name_by_tag_name, min_time, max_time, timestamp_data_type);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -517,21 +483,6 @@ namespace
         return select_with_union_query;
     }
 
-    /// Makes a mapping from a tag name to a column name.
-    std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & storage_settings)
-    {
-        std::unordered_map<String, String> res;
-        const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
-        for (const auto & tag_name_and_column_name : tags_to_columns)
-        {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-            const auto & tag_name = tuple.at(0).safeGet<String>();
-            const auto & column_name = tuple.at(1).safeGet<String>();
-            res[tag_name] = column_name;
-        }
-        return res;
-    }
-
     /// Constant ASTs for the minimum and the maximum value of one component of a multi-component
     /// series id. The supported types are the ones `TimeSeriesIDGenerator` can generate hashes for.
     std::optional<std::pair<ASTPtr, ASTPtr>> makeMinMaxLiteralsForIDComponent(const IDataType & type)
@@ -711,7 +662,8 @@ namespace
 
             PrometheusQueryTree::MatcherList name_matcher_only{*name_matcher};
             ASTPtr probe_where = makeASTForLogicalAnd(
-                {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, timestamp_data_type),
+                {StorageTimeSeriesSelector::makeWhereFilterForTagsTable(
+                     name_matcher_only, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, timestamp_data_type),
                  std::move(counterexample)});
 
             auto probe_select = make_intrusive<ASTSelectQuery>();
@@ -793,6 +745,57 @@ namespace
 }
 
 
+std::unordered_map<String, String> StorageTimeSeriesSelector::makeColumnNameByTagNameMap(const TimeSeriesSettings & time_series_settings)
+{
+    std::unordered_map<String, String> res;
+    const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
+    for (const auto & tag_name_and_column_name : tags_to_columns)
+    {
+        const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
+        const auto & tag_name = tuple.at(0).safeGet<String>();
+        const auto & column_name = tuple.at(1).safeGet<String>();
+        res[tag_name] = column_name;
+    }
+    return res;
+}
+
+
+ASTPtr StorageTimeSeriesSelector::makeWhereFilterForTagsTable(
+    const PrometheusQueryTree::MatcherList & matchers,
+    const std::unordered_map<String, String> & column_name_by_tag_name,
+    const std::optional<DateTime64> & min_time,
+    const std::optional<DateTime64> & max_time,
+    const DataTypePtr & timestamp_data_type)
+{
+    ASTs asts;
+    for (const auto & matcher : matchers)
+        asts.push_back(matcherToAST(matcher, column_name_by_tag_name));
+
+    if (asts.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
+
+    if (min_time)
+    {
+        /// tags_table.max_time >= min_time
+        asts.push_back(makeASTFunction(
+            "greaterOrEquals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime),
+            timeSeriesTimestampToAST(*min_time, timestamp_data_type)));
+    }
+
+    if (max_time)
+    {
+        /// tags_table.min_time <= max_time
+        asts.push_back(makeASTFunction(
+            "lessOrEquals",
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime),
+            timeSeriesTimestampToAST(*max_time, timestamp_data_type)));
+    }
+
+    return makeASTForLogicalAnd(std::move(asts));
+}
+
+
 ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     const StorageID & tags_table_id,
     const PrometheusQueryTree::MatcherList & matchers,
@@ -802,7 +805,7 @@ ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     const DataTypePtr & timestamp_data_type)
 {
     auto select_query = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), min_time, max_time, timestamp_data_type);
+        tags_table_id, matchers, StorageTimeSeriesSelector::makeColumnNameByTagNameMap(time_series_settings), min_time, max_time, timestamp_data_type);
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
@@ -852,7 +855,7 @@ void StorageTimeSeriesSelector::readImpl(
     auto samples_table_id = time_series_storage->getTargetTableID(samples_table_kind, context);
     auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, context);
 
-    auto column_name_by_tag_name = makeColumnNameByTagNameMap(*time_series_settings);
+    auto column_name_by_tag_name = StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_settings);
 
     std::optional<DateTime64> min_time_to_filter_ids;
     std::optional<DateTime64> max_time_to_filter_ids;
