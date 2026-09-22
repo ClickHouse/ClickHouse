@@ -1,21 +1,21 @@
 SET allow_experimental_time_decay_aggregate_functions = 1;
 SET exponential_time_decay_significance_cutoff = 5;
 
--- The constructor alias accepts indexed values too. Persisted states must keep
+-- The sum aggregate accepts finalized values directly. Persisted states must keep
 -- their small contributions even when the query enables the finalized-value cutoff.
 DROP TABLE IF EXISTS time_decay_reconstruction;
 CREATE TABLE time_decay_reconstruction
 (
     key UInt8,
-    state AggregateFunction(exponentialTimeDecaying, ExponentialTimeDecaying(10))
+    state AggregateFunction(exponentialTimeDecayedSum, ExponentialTimeDecaying(10))
 )
 ENGINE = AggregatingMergeTree
 ORDER BY key;
 
 INSERT INTO time_decay_reconstruction
-SELECT 1, exponentialTimeDecayingState(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'));
+SELECT 1, exponentialTimeDecayedSumState(CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)'));
 INSERT INTO time_decay_reconstruction
-SELECT 1, exponentialTimeDecayingState(CAST((1., 100., 10.), 'ExponentialTimeDecaying(10)'));
+SELECT 1, exponentialTimeDecayedSumState(CAST((1., 100., 10.), 'ExponentialTimeDecaying(10)'));
 
 OPTIMIZE TABLE time_decay_reconstruction FINAL;
 SELECT round(exponentialTimeDecayingValueAt(finalizeAggregation(state), 100.), 6)
@@ -23,7 +23,7 @@ FROM time_decay_reconstruction;
 DROP TABLE time_decay_reconstruction;
 
 -- Ordinary query execution still honors the explicitly requested cutoff.
-SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecaying(value), 100.), 6)
+SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayedSum(value), 100.), 6)
 FROM
 (
     SELECT CAST((1., 0., 10.), 'ExponentialTimeDecaying(10)') AS value
