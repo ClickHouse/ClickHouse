@@ -46,6 +46,7 @@ inline UInt64 bytes64MaskToBits64Mask(const UInt8 * bytes64)
         /// plus `kmovq` at `x86-64-v4`.
         using ByteVector = UInt8 __attribute__((ext_vector_type(64)));
         using BitMask = bool __attribute__((ext_vector_type(64)));
+        static_assert(sizeof(BitMask) == sizeof(UInt64), "A lane of `BitMask` must be one bit");
 
         ByteVector bytes;
         __builtin_memcpy(&bytes, bytes64, sizeof(bytes));

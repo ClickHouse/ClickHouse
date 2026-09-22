@@ -254,6 +254,10 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
     /// comparison itself.
     static constexpr size_t block_size = 64;
 
+    /// Checked on its own, so a permutation that does not start at zero costs one load.
+    if (size != 0 && permutation[0] != 0)
+        return false;
+
     size_t i = 0;
     for (; i + block_size <= size; i += block_size)
     {

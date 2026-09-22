@@ -21,7 +21,7 @@ namespace
     using LaneMask = bool __attribute__((ext_vector_type(64)));
 
     /// Converting to `bool` lanes is `!= 0`; a comparison would depend on `-faltivec-src-compat` on PowerPC.
-    LaneMask isNonZero(ByteCounters bytes)
+    ALWAYS_INLINE LaneMask isNonZero(ByteCounters bytes)
     {
         return __builtin_convertvector(bytes, LaneMask);
     }
@@ -30,7 +30,7 @@ namespace
     constexpr size_t max_blocks_before_widening = 255;
 
     /// At most 64 * 255 = 16320, so the 16-bit sum cannot overflow either.
-    size_t sumCounters(ByteCounters counters)
+    ALWAYS_INLINE size_t sumCounters(ByteCounters counters)
     {
         return __builtin_reduce_add(__builtin_convertvector(counters, WideCounters));
     }
@@ -52,7 +52,7 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
     const UInt8 * pos = filt + start;
     const UInt8 * end_pos = filt + end;
 
-    while (pos + 64 <= end_pos)
+    while (static_cast<size_t>(end_pos - pos) >= 64)
     {
         const size_t blocks = std::min(max_blocks_before_widening, static_cast<size_t>(end_pos - pos) / 64);
 
@@ -95,7 +95,7 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
     const UInt8 * null_pos = null_map + start;
     const UInt8 * end_pos = filt.data() + end;
 
-    while (pos + 64 <= end_pos)
+    while (static_cast<size_t>(end_pos - pos) >= 64)
     {
         const size_t blocks = std::min(max_blocks_before_widening, static_cast<size_t>(end_pos - pos) / 64);
 
