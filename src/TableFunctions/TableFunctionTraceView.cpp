@@ -100,8 +100,7 @@ String parseDate(const ASTPtr & value, const String & arg_name)
     const auto text = checkAndGetLiteralArgument<String>(value, arg_name);
     ReadBufferFromString buf(text);
     LocalDate date;
-    readDateText(date, buf);
-    if (!buf.eof())
+    if (!tryReadDateText(date, buf) || !buf.eof())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table function 'traceView': cannot parse '{}' as a YYYY-MM-DD date for {}", text, arg_name);
     return text;
