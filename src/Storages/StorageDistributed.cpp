@@ -122,8 +122,6 @@
 #include <memory>
 #include <filesystem>
 
-#include <boost/algorithm/string/find_iterator.hpp>
-#include <boost/algorithm/string/finder.hpp>
 
 
 namespace fs = std::filesystem;
@@ -1602,13 +1600,13 @@ StoragePolicyPtr StorageDistributed::getStoragePolicy() const
     return storage_policy;
 }
 
-/// A queue directory is named after its destinations, comma separated
+/// A queue directory is named after its single destination: `shardN_replicaM` or `shardN_all_replicas`,
+/// exactly what `DistributedSink` writes. Anything looser (for example, several names joined with a
+/// comma, which no writer produces) is treated as unrecognized, so a stray directory cannot make the
+/// queue send its files to a destination the sink never chose.
 static bool isDirectoryQueueName(const std::string & name)
 {
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
-        if (!Cluster::Address::tryParseFullString(boost::copy_range<std::string>(*it)))
-            return false;
-    return true;
+    return Cluster::Address::tryParseFullString(name).has_value();
 }
 
 void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem::path & dir_path) const
@@ -1717,47 +1715,43 @@ Cluster::Addresses StorageDistributed::parseAddresses(const std::string & name) 
     const auto & shards_info = cluster->getShardsInfo();
     const auto & shards_addresses = cluster->getShardsAddresses();
 
-    for (auto it = boost::make_split_iterator(name, boost::first_finder(",")); it != decltype(it){}; ++it)
+    auto address = Cluster::Address::tryParseFullString(name);
+
+    /// Unreachable: initializeDirectoryQueuesForDisk() renames a name it does not recognize
+    /// instead of starting a queue for it, and DistributedSink generates the name it passes.
+    /// Returned empty rather than thrown on so a stray name cannot keep the table from attaching.
+    if (!address)
     {
-        const std::string & dirname = boost::copy_range<std::string>(*it);
-        auto address = Cluster::Address::tryParseFullString(dirname);
-
-        /// Unreachable: initializeDirectoryQueuesForDisk() renames a name it does not recognize
-        /// instead of starting a queue for it, and DistributedSink generates the name it passes.
-        /// Skipped rather than thrown on so a stray name cannot keep the table from attaching.
-        if (!address)
-        {
-            LOG_ERROR(log, "Unrecognized entry in the name of a directory queue of {}", getStorageID().getNameForLogs());
-            continue;
-        }
-
-        if (address->shard_index > shards_info.size())
-        {
-            LOG_ERROR(log, "No shard with shard_index={} ({})", address->shard_index, name);
-            continue;
-        }
-
-        const auto & replicas_addresses = shards_addresses[address->shard_index - 1];
-        size_t replicas = replicas_addresses.size();
-
-        /// shardN_all_replicas
-        if (address->replica_index == 0)
-        {
-            for (const auto & replica_address : replicas_addresses)
-                addresses.push_back(replica_address);
-            continue;
-        }
-
-        if (address->replica_index > replicas)
-        {
-            LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
-                           "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
-                            address->replica_index, dirname, replicas, address->shard_index);
-            continue;
-        }
-
-        addresses.push_back(replicas_addresses[address->replica_index - 1]);
+        LOG_ERROR(log, "Unrecognized name of a directory queue of {}", getStorageID().getNameForLogs());
+        return addresses;
     }
+
+    if (address->shard_index > shards_info.size())
+    {
+        LOG_ERROR(log, "No shard with shard_index={} ({})", address->shard_index, name);
+        return addresses;
+    }
+
+    const auto & replicas_addresses = shards_addresses[address->shard_index - 1];
+    size_t replicas = replicas_addresses.size();
+
+    /// shardN_all_replicas
+    if (address->replica_index == 0)
+    {
+        for (const auto & replica_address : replicas_addresses)
+            addresses.push_back(replica_address);
+        return addresses;
+    }
+
+    if (address->replica_index > replicas)
+    {
+        LOG_ERROR(log, "Invalid replica_index={} for directory '{}' (cluster has {} replicas for shard {}). "
+                       "Expected directory format: 'shardN_replicaM' or 'shardN_all_replicas'",
+                        address->replica_index, name, replicas, address->shard_index);
+        return addresses;
+    }
+
+    addresses.push_back(replicas_addresses[address->replica_index - 1]);
     return addresses;
 }
 
