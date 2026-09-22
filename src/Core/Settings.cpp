@@ -8999,7 +8999,7 @@ Maximum number of texts to include in a single HTTP request made by the embeddin
     DECLARE(NonZeroUInt64, ai_function_max_concurrent_requests, 1, R"(
 Maximum number of provider requests one AI function call has in flight at the same time, within one block of rows. The default `1` issues them one at a time.
 
-AI function calls are network-bound, so throughput is `concurrency / request latency` rather than a function of CPU. The requests are issued by the server-wide AI service, whose thread pool (`ai_service_threadpool_pool_size`) caps the total across all queries; this setting bounds a single function call's share of it. It applies identically to a function evaluated in an `INSERT ... SELECT` and to one evaluated inside a materialized view, and does not depend on how the data happens to be laid out in parts, on block sizes, or on `parallel_view_processing`.
+AI function calls are network-bound, so throughput is `concurrency / request latency` rather than a function of CPU. The requests are issued from a server-wide thread pool (`ai_request_threadpool_pool_size`) that caps the total across all queries; this setting bounds a single function call's share of it. It applies identically to a function evaluated in an `INSERT ... SELECT` and to one evaluated inside a materialized view, and does not depend on how the data happens to be laid out in parts, on block sizes, or on `parallel_view_processing`.
 
 The limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than this. Use a settings profile constraint (`<constraints><ai_function_max_concurrent_requests><max>...</max></...>`) to put a ceiling on it that a query cannot raise.
 

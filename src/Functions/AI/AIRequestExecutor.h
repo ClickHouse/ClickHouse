@@ -36,11 +36,11 @@ struct AIRequestPolicy
 /// are uniform across functions, and the pool size caps how many provider requests the whole server
 /// has in flight at once. Request batching, a result cache and a server-wide quota belong here too
 /// and can be added behind the same submission API.
-class AIService
+class AIRequestExecutor
 {
 public:
-    AIService(size_t pool_size, size_t queue_size);
-    ~AIService();
+    AIRequestExecutor(size_t pool_size, size_t queue_size);
+    ~AIRequestExecutor();
 
     /// Issue one chat-completion request and check that the model produced a complete answer.
     ///

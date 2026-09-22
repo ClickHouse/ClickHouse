@@ -290,7 +290,7 @@ using ReverseLookupCachePtr = std::shared_ptr<ReverseLookupCache>;
 
 class AIQuotaTracker;
 using AIQuotaTrackerPtr = std::shared_ptr<AIQuotaTracker>;
-class AIService;
+class AIRequestExecutor;
 
 /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles under (random) names.
 /// Runtime filters optimize some JOINs by building a filter from the right side and pre-filtering the left side.
@@ -2090,7 +2090,7 @@ public:
     AIQuotaTrackerPtr getAIQuotaTracker() const;
 
     /// Server-wide component the AI functions submit their provider requests to.
-    AIService & getAIService() const;
+    AIRequestExecutor & getAIRequestExecutor() const;
 
     /// IRuntimeFilterLookup stores and finds per-query join runtime-filter handles by (random) names,
     /// used to optimize some JOINs by early pre-filtering the left side with a filter built from the right.

@@ -4,7 +4,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/AI/IAIProvider.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIService.h>
+#include <Functions/AI/AIRequestExecutor.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Core/Field.h>
@@ -153,7 +153,7 @@ public:
     /// up to `max_concurrent_requests` of those calls are in flight at once.
     /// Accumulates into `result`, so the waves completed before a throw stay visible to the caller.
     static void embedTexts(
-        AIService & ai_service,
+        AIRequestExecutor & ai_request_executor,
         const std::shared_ptr<IAIProvider> & provider,
         const String & model,
         UInt64 dimensions,

@@ -118,7 +118,7 @@ public:
         /// Shared across every AI function call in the query
         auto quota_tracker = getContext()->getAIQuotaTracker();
 
-        auto & ai_service = getContext()->getAIService();
+        auto & ai_request_executor = getContext()->getAIRequestExecutor();
         const auto policy = FunctionBaseAI::makeRequestPolicy(getContext());
 
         /// `isNullAt` and `getDataAt` are virtual on `IColumn`, so a single path covers `ColumnString`,
@@ -159,7 +159,7 @@ public:
         });
 
         FunctionBaseAI::embedTexts(
-            ai_service, provider, model, dimensions, getName(), inputs, max_batch_size, max_concurrent_requests, policy,
+            ai_request_executor, provider, model, dimensions, getName(), inputs, max_batch_size, max_concurrent_requests, policy,
             quota_tracker, embedding_result);
 
         auto data_col = ColumnVector<Float32>::create(); /// float32 is standard embedding API output

@@ -109,7 +109,7 @@
 #include <Interpreters/EmbeddedDictionaries.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Functions/AI/AIQuotaTracker.h>
-#include <Functions/AI/AIService.h>
+#include <Functions/AI/AIRequestExecutor.h>
 #include <Functions/UserDefined/ExternalUserDefinedExecutableFunctionsLoader.h>
 #include <Functions/UserDefined/IUserDefinedSQLObjectsStorage.h>
 #include <Functions/UserDefined/createUserDefinedSQLObjectsStorage.h>
@@ -452,8 +452,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 threadpool_writer_queue_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_pool_size;
     extern const ServerSettingsUInt64 iceberg_catalog_threadpool_queue_size;
-    extern const ServerSettingsNonZeroUInt64 ai_service_threadpool_pool_size;
-    extern const ServerSettingsUInt64 ai_service_threadpool_queue_size;
+    extern const ServerSettingsNonZeroUInt64 ai_request_threadpool_pool_size;
+    extern const ServerSettingsUInt64 ai_request_threadpool_queue_size;
     extern const ServerSettingsBool dictionaries_lazy_load;
     extern const ServerSettingsInt32 os_threads_nice_value_zookeeper_client_send_receive;
     extern const ServerSettingsBool enforce_keeper_component_tracking;
@@ -640,8 +640,8 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<ThreadPool> prefetch_threadpool;    /// Threadpool for loading marks cache.
     mutable std::unique_ptr<ThreadPool> iceberg_catalog_threadpool;
     mutable OnceFlag iceberg_catalog_threadpool_initialized;
-    mutable OnceFlag ai_service_initialized;
-    mutable std::unique_ptr<AIService> ai_service;             /// Issues the AI functions' provider requests.
+    mutable OnceFlag ai_request_executor_initialized;
+    mutable std::unique_ptr<AIRequestExecutor> ai_request_executor;             /// Issues the AI functions' provider requests.
     mutable OnceFlag build_vector_similarity_index_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> build_vector_similarity_index_threadpool; /// Threadpool for vector-similarity index creation.
     mutable UncompressedCachePtr index_uncompressed_cache TSA_GUARDED_BY(mutex);      /// The cache of decompressed blocks for MergeTree indices.
@@ -974,13 +974,13 @@ struct ContextSharedPart : boost::noncopyable
             }
         }
 
-        if (ai_service)
+        if (ai_request_executor)
         {
             try
             {
-                LOG_DEBUG(log, "Destructing AI service");
-                ai_service->wait();
-                ai_service.reset();
+                LOG_DEBUG(log, "Destructing AI request executor");
+                ai_request_executor->wait();
+                ai_request_executor.reset();
             }
             catch (...)
             {
@@ -9141,16 +9141,16 @@ AIQuotaTrackerPtr Context::getAIQuotaTracker() const
     return query_context->ai_quota_tracker;
 }
 
-AIService & Context::getAIService() const
+AIRequestExecutor & Context::getAIRequestExecutor() const
 {
-    callOnce(shared->ai_service_initialized, [&]
+    callOnce(shared->ai_request_executor_initialized, [&]
     {
-        shared->ai_service = std::make_unique<AIService>(
-            shared->server_settings[ServerSetting::ai_service_threadpool_pool_size],
-            shared->server_settings[ServerSetting::ai_service_threadpool_queue_size]);
+        shared->ai_request_executor = std::make_unique<AIRequestExecutor>(
+            shared->server_settings[ServerSetting::ai_request_threadpool_pool_size],
+            shared->server_settings[ServerSetting::ai_request_threadpool_queue_size]);
     });
 
-    return *shared->ai_service;
+    return *shared->ai_request_executor;
 }
 
 void Context::setRuntimeFilterLookup(const RuntimeFilterLookupPtr & filter_lookup)

@@ -327,7 +327,7 @@ AIParamSpecs FunctionBaseAI::embeddingParams()
 }
 
 void FunctionBaseAI::embedTexts(
-    AIService & ai_service,
+    AIRequestExecutor & ai_request_executor,
     const std::shared_ptr<IAIProvider> & provider,
     const String & model,
     UInt64 dimensions,
@@ -392,7 +392,7 @@ void FunctionBaseAI::embedTexts(
             for (size_t k = begin; k < end; ++k)
                 ai_embedding_request.inputs.emplace_back(inputs[k]);
 
-            wave.push_back(ai_service.submitEmbedding(provider, std::move(ai_embedding_request), policy, quota));
+            wave.push_back(ai_request_executor.submitEmbedding(provider, std::move(ai_embedding_request), policy, quota));
         }
 
         for (size_t k = 0; k < wave.size(); ++k)
@@ -459,7 +459,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
     /// Shared across every AI function call in the query
     auto quota_tracker = getContext()->getAIQuotaTracker();
 
-    auto & ai_service = getContext()->getAIService();
+    auto & ai_request_executor = getContext()->getAIRequestExecutor();
     const auto policy = makeRequestPolicy(getContext());
 
     auto result_col = removeNullable(result_type)->createColumn();
@@ -519,7 +519,7 @@ ColumnPtr FunctionBaseAI::executeImpl(const ColumnsWithTypeAndName & arguments, 
             ai_request.max_tokens = max_tokens;
             ai_request.function_name = getName();
 
-            wave.push_back(ai_service.submit(provider, std::move(ai_request), policy, quota_tracker));
+            wave.push_back(ai_request_executor.submit(provider, std::move(ai_request), policy, quota_tracker));
         }
 
         for (size_t k = 0; k < wave.size(); ++k)

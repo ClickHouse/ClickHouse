@@ -1,4 +1,4 @@
-#include <Functions/AI/AIService.h>
+#include <Functions/AI/AIRequestExecutor.h>
 
 #include <Functions/AI/AIQuotaTracker.h>
 #include <Common/CurrentMetrics.h>
@@ -19,9 +19,9 @@
 
 namespace CurrentMetrics
 {
-    extern const Metric AIServiceThreads;
-    extern const Metric AIServiceThreadsActive;
-    extern const Metric AIServiceThreadsScheduled;
+    extern const Metric AIRequestThreads;
+    extern const Metric AIRequestThreadsActive;
+    extern const Metric AIRequestThreadsScheduled;
 }
 
 namespace ProfileEvents
@@ -173,11 +173,11 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
 
 }
 
-AIService::AIService(size_t pool_size, size_t queue_size)
+AIRequestExecutor::AIRequestExecutor(size_t pool_size, size_t queue_size)
     : pool(std::make_unique<ThreadPool>(
-        CurrentMetrics::AIServiceThreads,
-        CurrentMetrics::AIServiceThreadsActive,
-        CurrentMetrics::AIServiceThreadsScheduled,
+        CurrentMetrics::AIRequestThreads,
+        CurrentMetrics::AIRequestThreadsActive,
+        CurrentMetrics::AIRequestThreadsScheduled,
         pool_size,
         /*max_free_threads=*/ 0,
         queue_size))
@@ -188,14 +188,14 @@ AIService::AIService(size_t pool_size, size_t queue_size)
     /// thread pool slots for the rest of the server's life.
 }
 
-AIService::~AIService() = default;
+AIRequestExecutor::~AIRequestExecutor() = default;
 
-void AIService::wait()
+void AIRequestExecutor::wait()
 {
     pool->wait();
 }
 
-std::future<std::optional<AIResponse>> AIService::submit(
+std::future<std::optional<AIResponse>> AIRequestExecutor::submit(
     std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
     /// Everything the worker touches is owned by the task, so a caller that stops waiting on the
@@ -223,10 +223,10 @@ std::future<std::optional<AIResponse>> AIService::submit(
         });
     };
 
-    return scheduleFromThreadPoolUnsafe<std::optional<AIResponse>>(std::move(task), *pool, ThreadName::AI_SERVICE_REQUEST);
+    return scheduleFromThreadPoolUnsafe<std::optional<AIResponse>>(std::move(task), *pool, ThreadName::AI_REQUEST);
 }
 
-std::future<std::optional<AIEmbeddingResponse>> AIService::submitEmbedding(
+std::future<std::optional<AIEmbeddingResponse>> AIRequestExecutor::submitEmbedding(
     std::shared_ptr<IAIProvider> provider, AIEmbeddingRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
     auto task = [my_provider = std::move(provider),
@@ -249,7 +249,7 @@ std::future<std::optional<AIEmbeddingResponse>> AIService::submitEmbedding(
     };
 
     return scheduleFromThreadPoolUnsafe<std::optional<AIEmbeddingResponse>>(
-        std::move(task), *pool, ThreadName::AI_SERVICE_REQUEST);
+        std::move(task), *pool, ThreadName::AI_REQUEST);
 }
 
 }
