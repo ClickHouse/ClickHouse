@@ -28,7 +28,6 @@ namespace ErrorCodes
 
 #if defined(OS_LINUX)
 
-/// epoll imposes no nesting precondition, so the reservation is unused here.
 Epoll::Epoll(EpollNesting) : events_count(0)
 {
     epoll_fd = epoll_create1(0);
@@ -145,9 +144,7 @@ void nestKqueue(int parent, int child)
         throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot nest kqueue {} in kqueue {}", child, parent);
 }
 
-/// Nesting bottom-up into fresh kqueues climbs exactly one level per link, so a chain of `level - 1`
-/// of them tops out at `level - 1` and raising `kq` by it leaves `kq` at `level`. Only a level-0
-/// parent could adopt a level this way, which is why it has to happen before anything else nests `kq`.
+/// Only a level-0 parent can adopt a level, so this must run before anything else nests `kq`.
 void reserveKqueueNestingLevel(int kq, int level)
 {
     std::vector<int> chain;
