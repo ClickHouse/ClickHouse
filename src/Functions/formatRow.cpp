@@ -93,7 +93,16 @@ public:
             row_output_format->finalize();
             if (no_newline)
             {
-                if (buffer.position() != buffer.buffer().begin() && buffer.position()[-1] == '\n')
+                /// Strip a single trailing newline, but only when this row actually emitted at least one byte.
+                /// `buffer.count()` is the absolute number of bytes written; the current row starts at the
+                /// previous row's end offset (0 for the first row). Comparing against it prevents rewinding into
+                /// the previous row when this row is empty, which would make `offsets` non-monotonic and cause a
+                /// `size_t` underflow in `ColumnString::sizeAt`. The check against `buffer.buffer().begin()`
+                /// additionally keeps the position within the current working buffer so `--buffer.position()`
+                /// never moves the cursor before it.
+                const size_t row_start = i == 0 ? 0 : offsets[i - 1];
+                if (buffer.count() > row_start && buffer.position() > buffer.buffer().begin()
+                    && buffer.position()[-1] == '\n')
                     --buffer.position();
             }
 
@@ -164,10 +173,10 @@ REGISTER_FUNCTION(FormatRow)
     FunctionDocumentation::Description formatRow_description = R"(
 Converts arbitrary expressions into a string via given format.
 
-:::note
+<Note>
 If the format contains a suffix/prefix, it will be written in each row.
 Only row-based formats are supported in this function.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax formatRow_syntax = "formatRow(format, x, y, ...)";
     FunctionDocumentation::Arguments formatRow_arguments =
@@ -186,12 +195,9 @@ FROM numbers(3)
         )",
         R"(
 ┌─formatRow('CSV', number, 'good')─┐
-│ 0,"good"
-                         │
-│ 1,"good"
-                         │
-│ 2,"good"
-                         │
+│ 0,"good"                        ↴│
+│ 1,"good"                        ↴│
+│ 2,"good"                        ↴│
 └──────────────────────────────────┘
         )"
     },
@@ -202,19 +208,19 @@ SELECT formatRow('CustomSeparated', number, 'good')
 FROM numbers(3)
 SETTINGS format_custom_result_before_delimiter='<prefix>\n', format_custom_result_after_delimiter='<suffix>'
         )",
-        R"(
+        R"DOCS_MD(
 ┌─formatRow('CustomSeparated', number, 'good')─┐
-│ <prefix>
-0    good
-<suffix>                   │
-│ <prefix>
-1    good
-<suffix>                   │
-│ <prefix>
-2    good
-<suffix>                   │
+│ <prefix>                                    ↴│
+│↳0	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳1	good                                     ↴│
+│↳<suffix>                                     │
+│ <prefix>                                    ↴│
+│↳2	good                                     ↴│
+│↳<suffix>                                     │
 └──────────────────────────────────────────────┘
-        )"
+        )DOCS_MD"
     }
     };
     FunctionDocumentation::IntroducedIn formatRow_introduced_in = {20, 7};

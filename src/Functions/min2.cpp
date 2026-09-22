@@ -26,8 +26,8 @@ REGISTER_FUNCTION(Min2)
     Returns the smaller of two numeric values `x` and `y`.
     )";
     FunctionDocumentation::Syntax syntax = "min2(x, y)";
-    FunctionDocumentation::Argument argument1 = {"x", "First value", {"(U)Int8/16/32/64", "Float*", "Decimal"}};
-    FunctionDocumentation::Argument argument2 = {"y", "Second value", {"(U)Int8/16/32/64", "Float*", "Decimal"}};
+    FunctionDocumentation::Argument argument1 = {"x", "First value", {"(U)Int8/16/32/64", "Float*", "BFloat16", "Decimal"}};
+    FunctionDocumentation::Argument argument2 = {"y", "Second value", {"(U)Int8/16/32/64", "Float*", "BFloat16", "Decimal"}};
     FunctionDocumentation::Arguments arguments = {argument1, argument2};
     FunctionDocumentation::ReturnedValue returned_value = {"Returns the smaller value of `x` and `y`.", {"Float64"}};
     FunctionDocumentation::Example example1 = {"Usage example", "SELECT min2(-1, 2)", "-1"};

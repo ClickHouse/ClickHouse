@@ -345,7 +345,7 @@ class EventFeed:
             max_retries: Maximum retry attempts on conflicts (default: 3)
 
         Implements exponential backoff retry logic for handling concurrent updates.
-        On PreconditionFailed (ETag mismatch), retries with exponentially increasing delays.
+        On a lost race (PreconditionFailed / ConditionalRequestConflict), retries with exponentially increasing delays.
         """
         from botocore.exceptions import ClientError
 
@@ -357,7 +357,10 @@ class EventFeed:
                 break
             except ClientError as e:
                 error_code = e.response.get("Error", {}).get("Code")
-                if error_code == "PreconditionFailed" and attempt < max_retries - 1:
+                if (
+                    error_code in ("PreconditionFailed", "ConditionalRequestConflict")
+                    and attempt < max_retries - 1
+                ):
                     time.sleep(0.1 * (2**attempt))
                     continue
                 raise

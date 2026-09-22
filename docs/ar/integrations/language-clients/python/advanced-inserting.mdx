@@ -1,0 +1,332 @@
+---
+sidebarTitle: 'الإدراج المتقدم'
+keywords: ['ClickHouse', 'بايثون', 'إدراج', 'متقدم']
+description: 'الإدراج المتقدم باستخدام ClickHouse Connect'
+slug: /integrations/language-clients/python/advanced-inserting
+title: 'الإدراج المتقدم'
+doc_type: 'reference'
+---
+
+<div id="inserting-data-with-clickhouse-connect--advanced-usage">
+  ## إدراج البيانات باستخدام ClickHouse Connect: الاستخدام المتقدم
+</div>
+
+<div id="insertcontexts">
+  ### سياقات الإدراج
+</div>
+
+ينفّذ ClickHouse Connect عمليات الإدراج بتنسيق Native، والطريقتين `insert` و`insert_df`، ضمن `InsertContext`. أما الطرائق `insert_arrow` و`insert_df_arrow` و`raw_insert` فترسل الحمولات مباشرة ولا تستخدمه. يتضمّن `InsertContext` جميع القيم المُرسلة كوسيطات إلى الطريقة `insert` الخاصة بالعميل. بالإضافة إلى ذلك، عند إنشاء `InsertContext` لأول مرة، يسترجع ClickHouse Connect أنواع البيانات لأعمدة الإدراج المطلوبة لتنفيذ عمليات الإدراج بكفاءة باستخدام تنسيق Native. ومن خلال إعادة استخدام `InsertContext` في عمليات إدراج متعددة، يمكن تجنّب هذا &quot;الاستعلام التمهيدي&quot;، وتُنَفَّذ عمليات الإدراج بسرعة وكفاءة أكبر.
+
+يمكن الحصول على `InsertContext` باستخدام الطريقة `create_insert_context` الخاصة بالعميل. تأخذ هذه الطريقة الوسيطات نفسها التي تأخذها الدالة `insert`، باستثناء `context` نفسه. لاحظ أنه يجب تعديل الخاصية `data` فقط في `InsertContext` عند إعادة الاستخدام. وهذا يتوافق مع الغرض المقصود منه، وهو توفير كائن قابل لإعادة الاستخدام لعمليات الإدراج المتكررة لبيانات جديدة في الجدول نفسه.
+
+```python
+test_data = [[13, "v1", "v2"], [79, "v3", "v4"]]
+ic = client.create_insert_context(table="test_table", data=test_data)
+client.insert(context=ic)
+assert client.command("SELECT count() FROM test_table") == 2
+
+new_data = [[101, "v5", "v6"], [113, "v7", "v8"]]
+ic.data = new_data
+client.insert(context=ic)
+qr = client.query("SELECT * FROM test_table ORDER BY key DESC")
+assert qr.row_count == 4
+assert qr.first_row[0] == 113
+```
+
+تتضمن `InsertContext`s حالة قابلة للتغيير تُحدَّث أثناء عملية الإدراج، لذا فهي غير آمنة للاستخدام من عدة خيوط.
+
+<div id="write-formats">
+  ### تنسيقات الكتابة
+</div>
+
+تُطبَّق تنسيقات الكتابة على عدد محدود من الأنواع. وفي معظم الحالات، يحدِّد ClickHouse Connect تلقائيًا تنسيق الكتابة الصحيح للعمود بالاستناد إلى أول قيمة بيانات غير NULL فيه. على سبيل المثال، عندما تكون أول قيمة في عمود `DateTime` عددًا صحيحًا، يتعامل العميل معها على أنها ثانية `الحقبة`.
+
+وعادةً لا تكون هناك حاجة إلى تجاوز تنسيق الكتابة، لكن يمكن للطرق الموجودة في `clickhouse_connect.datatypes.format` تعيين تنسيق على مستوى عام. كما تحافظ أغلفة الحاويات مثل `Array` و`Nullable` و`LowCardinality` على سلوك تنسيق نوع العنصر.
+
+<div id="write-format-options">
+  #### خيارات تنسيقات الكتابة
+</div>
+
+| ClickHouse Type       | نوع بايثون الأصلي       | تنسيقات الكتابة   | التعليقات                                                                                                                                  |
+| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                            |
+| UInt64                | int                     |                   |                                                                                                                                            |
+| [U]Int[128,256]       | int                     |                   |                                                                                                                                            |
+| BFloat16              | float                   |                   |                                                                                                                                            |
+| Float32               | float                   |                   |                                                                                                                                            |
+| Float64               | float                   |                   |                                                                                                                                            |
+| Decimal               | decimal.Decimal         |                   |                                                                                                                                            |
+| String                | str or bytes            |                   | يجب أن يحتوي العمود دائمًا على نص أو bytes فقط.                                                                                            |
+| FixedString           | bytes                   | string            | تُملأ قيم String ببايتات صفرية. وتُكتب البايتات الفارغة على هيئة بايتات صفرية بالكامل.                                                     |
+| Enum[8,16]            | str or int              |                   | أدرِج labels كسلاسل نصية أو كقيمها الصحيحة الأساسية.                                                                                       |
+| Date                  | datetime.date           | int               | تُفسَّر القيم الصحيحة على أنها عدد الأيام منذ 1970-01-01.                                                                                  |
+| Date32                | datetime.date           | int               | تُفسَّر القيم الصحيحة على أنها إزاحات أيام موقَّعة.                                                                                        |
+| DateTime              | datetime.datetime       | int               | تُفسَّر القيم الصحيحة على أنها ثوانٍ منذ الحقبة.                                                                                           |
+| DateTime64            | datetime.datetime       | int               | تُفسَّر القيم الصحيحة على أنها tick وفق دقة العمود.                                                                                        |
+| Time                  | datetime.timedelta      | int, string, time | تُفسَّر القيم الصحيحة على أنها ثوانٍ.                                                                                                      |
+| Time64                | datetime.timedelta      | int, string, time | تُفسَّر القيم الصحيحة على أنها tick وفق دقة العمود.                                                                                        |
+| IPv4                  | `ipaddress.IPv4Address` | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كعناوين IPv4                                                                                 |
+| IPv6                  | `ipaddress.IPv6Address` | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كعناوين IPv6                                                                                 |
+| Tuple                 | dict or tuple           |                   |                                                                                                                                            |
+| Map                   | dict                    |                   |                                                                                                                                            |
+| Nested                | Sequence[dict]          |                   |                                                                                                                                            |
+| UUID                  | uuid.UUID               | string            | يمكن إدراج السلاسل النصية المنسَّقة بشكل صحيح كمعرّفات UUID في ClickHouse                                                                  |
+| JSON                  | dict                    | string            | القواميس وسلاسل كائنات JSON النصية مدعومة. النوع legacy `Object('json')` غير مدعوم.                                                        |
+| Variant               | object                  |                   | تستخدم القيم آلية serialization الأصلية للعضو. استخدم `clickhouse_connect.datatypes.dynamic.typed_variant` عندما تكون أنواع بايثون ملتبسة. |
+| Dynamic               | object                  |                   | تُدرَج القيم حاليًا من خلال string representation الخاص بها.                                                                               |
+| QBit                  | Sequence[float]         |                   | يُستخدم NumPy تلقائيًا لإجراء تبديل البتات بسرعة أكبر عند تثبيته.                                                                          |
+
+<div id="specialized-insert-methods">
+  ### طرق `insert` المتخصصة
+</div>
+
+يوفّر ClickHouse Connect طرق `insert` متخصصة لتنسيقات البيانات الشائعة:
+
+* `insert_df` -- إدراج Pandas DataFrame كبيانات Native موجّهة حسب الأعمدة. كما تدعم أسماء/أنواع الأعمدة الصريحة أو `InsertContext` قابلًا لإعادة الاستخدام.
+* `insert_arrow` -- إدراج PyArrow Table باستخدام تنسيق الإدخال Arrow في ClickHouse.
+* `insert_df_arrow` -- إدراج Pandas DataFrame مدعوم بـ Arrow أو Polars DataFrame. يجب أن تستخدم جميع أعمدة Pandas أنواع بيانات مدعومة بـ Arrow.
+
+تقبل الطرق الثلاث جميعًا `database` و`settings` و`transport_settings` الخاصة بنقل HTTP لكل طلب.
+
+<Note>
+  تُعد مصفوفة NumPy من نوع Sequence of Sequences صالحة، ويمكن استخدامها باعتبارها الوسيط `data` في طريقة `insert` الرئيسية، لذلك لا حاجة إلى طريقة متخصصة.
+</Note>
+
+<div id="pandas-dataframe-insert">
+  #### إدراج DataFrame من Pandas
+</div>
+
+```python
+import clickhouse_connect
+import pandas as pd
+
+client = clickhouse_connect.get_client()
+
+df = pd.DataFrame({
+    "id": [13, 79],
+    "name": ["user_1", "user_2"],
+    "age": [25, 30],
+})
+
+client.insert_df("users", df)
+```
+
+<div id="pyarrow-table-insert">
+  #### إدراج جدول PyArrow
+</div>
+
+```python
+import clickhouse_connect
+import pyarrow as pa
+
+client = clickhouse_connect.get_client()
+
+arrow_table = pa.table({
+    "id": [13, 79],
+    "name": ["user_1", "user_2"],
+    "age": [25, 30],
+})
+
+client.insert_arrow("users", arrow_table)
+```
+
+<div id="arrow-backed-dataframe-insert-pandas-2">
+  #### إدراج DataFrame مدعوم بـ Arrow ‏(pandas 2.x)
+</div>
+
+```python
+import clickhouse_connect
+import pandas as pd
+
+client = clickhouse_connect.get_client()
+
+# Convert to Arrow-backed dtypes for better performance
+df = pd.DataFrame({
+    "id": [13, 79],
+    "name": ["user_1", "user_2"],
+    "age": [25, 30],
+}).convert_dtypes(dtype_backend="pyarrow")
+
+client.insert_df_arrow("users", df)
+```
+
+<div id="create-table-from-pyarrow-schema">
+  ### إنشاء جدول من مخطط PyArrow
+</div>
+
+تُنشئ `create_table_from_arrow_schema` تعليمة `CREATE TABLE` من حقول Arrow القياسية أحادية القيمة. ويغطي هذا الربط الأعداد الصحيحة الموقعة وغير الموقعة، والقيم ذات الفاصلة العائمة، والقيم المنطقية، والسلاسل النصية، والتواريخ، والطوابع الزمنية. كما أنها تُنشئ عمدًا أعمدة ClickHouse غير قابلة لـ NULL وتُطلق `TypeError` لأنواع Arrow غير المدعومة، لذا راجع عبارة DDL المُولَّدة قبل تنفيذها.
+
+```python
+import clickhouse_connect
+import pyarrow as pa
+
+from clickhouse_connect.driver.ddl import create_table_from_arrow_schema
+
+client = clickhouse_connect.get_client()
+schema = pa.schema(
+    [
+        ("id", pa.uint32()),
+        ("name", pa.string()),
+        ("event_time", pa.timestamp("ms", tz="UTC")),
+    ]
+)
+ddl = create_table_from_arrow_schema(
+    table_name="arrow_events",
+    schema=schema,
+    engine="MergeTree",
+    engine_params={"ORDER BY": "id"},
+)
+client.command(ddl)
+```
+
+<div id="time-zones">
+  ### المناطق الزمنية
+</div>
+
+عند إدراج كائنات `datetime` من بايثون في أعمدة `DateTime` أو `DateTime64`، يحوّلها ClickHouse Connect إلى قيم محسوبة منذ الحقبة.
+
+<div id="timezone-aware-datetime-objects">
+  #### كائنات datetime المزوّدة بمعلومات المنطقة الزمنية
+</div>
+
+تحافظ الكائنات المزوّدة بمعلومات المنطقة الزمنية على اللحظة الزمنية التي تمثلها. ولا يلزم أن تتطابق المنطقة الزمنية للمصدر مع المنطقة الزمنية المحددة في عمود ClickHouse.
+
+```python
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+client.command("CREATE TABLE events (event_time DateTime) ENGINE Memory")
+
+data = [
+    [datetime(2023, 6, 15, 10, 30, tzinfo=timezone.utc)],
+    [datetime(2023, 6, 15, 10, 30, tzinfo=ZoneInfo("America/Denver"))],
+    [datetime(2023, 6, 15, 10, 30, tzinfo=ZoneInfo("Asia/Tokyo"))],
+]
+
+client.insert("events", data, column_names=["event_time"])
+results = client.query(
+    "SELECT event_time FROM events ORDER BY event_time",
+    query_tz="UTC",
+    tz_mode="aware",
+)
+assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
+```
+
+<Note>
+  تستخدم ClickHouse Connect وحدة `zoneinfo` من المكتبة القياسية. ولم يعد المشغّل يعتمد على `pytz`.
+</Note>
+
+<div id="timezone-naive-datetime-objects">
+  #### كائنات datetime غير المزوّدة بمنطقة زمنية
+</div>
+
+يتحكم الإعداد العام `naive_datetime_insert` في عمليات الإدراج الأصلية لكائنات `datetime` غير المزوّدة بمنطقة زمنية في بايثون. وينطبق أيضًا على سلاسل ISO غير المزوّدة بمنطقة زمنية التي تقبلها أعمدة `DateTime64`.
+
+* تكون `"local"` القيمة الافتراضية في الإصدار 1.x. تفسّر بايثون القيمة وفق المنطقة الزمنية للعملية عند استدعاء `.timestamp()`. ويحافظ ذلك على السلوك الحالي.
+* تفسّر `"server"` القيمة باعتبارها وقت الساعة الفعلي ضمن المنطقة الزمنية المعلنة للعمود `DateTime` أو `DateTime64`. وإذا لم تكن للعمود منطقة زمنية، فتستخدم المنطقة الزمنية للخادم التي أُبلغ عنها عند اتصال العميل.
+
+اضبط الخيار قبل إجراء عملية إدراج. تُقرأ قيمته عند إجراء تسلسل لكل عمود إدراج أصلي يحتوي على كائنات `datetime` من بايثون أو سلاسل ISO لـ `DateTime64`، لذا ينطبق التغيير على العملاء الحاليين وسياقات الإدراج القابلة لإعادة الاستخدام.
+
+```python
+from datetime import datetime
+
+from clickhouse_connect import common
+
+common.set_setting("naive_datetime_insert", "server")
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+client.insert("events", [[naive_time]], column_names=["event_time"])
+```
+
+مع `"server"`، يربط ClickHouse Connect قيمة `tzinfo` المستهدفة قبل تحويل القيمة إلى حقبة زمنية. بالنسبة إلى المناطق الزمنية التابعة لـ IANA، يتبع قواعد المكتبة القياسية لانتقالات التوقيت الصيفي. في التداخل الخريفي، تُستخدم قيمة `fold` الخاصة بـ `datetime`. تحدد القيمة الافتراضية `fold=0` الإزاحة قبل الانتقال، بينما تحدد `fold=1` الإزاحة بعده. أما الفجوة الربيعية فتستخدم اختيار الإزاحة نفسه، ولا تُرفض أو تُطبَّع.
+
+قد لا تحتفظ أوقات الساعة غير الموجودة ضمن الفجوة الربيعية بالقيمة نفسها بعد المرور بمعامل استعلام وضع الساعة، لأن محلل النصوص في ClickHouse قد يختار إزاحة مختلفة. استخدم `datetime` مدركًا للمنطقة الزمنية أو وقت ساعة صالحًا عندما تكون اللحظة الدقيقة مهمة.
+
+لا ينطبق هذا الخيار إلا على إدراج كائنات بايثون الأصلية لقيم `datetime` وسلاسل ISO غير المدركة للمنطقة الزمنية التي يقبلها `DateTime64`. تحتفظ أعمدة NumPy وPandas غير المدركة للمنطقة الزمنية من نوع `datetime64` بتحويلها الحالي لوقت الساعة بتوقيت UTC.
+
+لتمثيل لحظة محددة بصورة مستقلة عن أي من الوضعين، أرفق المنطقة الزمنية المطلوبة أو وفّر عددًا صحيحًا للحقبة الزمنية صراحةً.
+
+```python
+from datetime import datetime, timezone
+
+utc_time = datetime(2023, 6, 15, 10, 30, tzinfo=timezone.utc)
+client.insert("events", [[utc_time]], column_names=["event_time"])
+
+naive_time = datetime(2023, 6, 15, 10, 30)
+epoch_timestamp = int(naive_time.replace(tzinfo=timezone.utc).timestamp())
+client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
+```
+
+تستخدم معاملات الاستعلام `datetime` غير المرتبطة بمنطقة زمنية إعداد `naive_datetime_binding` المنفصل. يرسل الوضع الافتراضي `"wall"` حقول الوقت كما هي دون تحويل وفق المنطقة الزمنية المحلية للمضيف. راجع قسم [وسيطة Parameters](/ar/integrations/language-clients/python/driver-api#parameters-argument).
+
+<div id="datetime-columns-with-timezone-metadata">
+  #### أعمدة DateTime ذات البيانات الوصفية للمنطقة الزمنية
+</div>
+
+يمكن لأعمدة ClickHouse تحديد بيانات وصفية للمنطقة الزمنية، على سبيل المثال `DateTime('America/Denver')` أو `DateTime64(3, 'Asia/Tokyo')`. وتتحكم هذه البيانات الوصفية في كيفية عرض القيم عند الاستعلام عنها.
+
+عند إدراج قيمة مدركة للمنطقة الزمنية، يحافظ ClickHouse Connect على اللحظة الزمنية التي تمثلها. أما القيمة غير المدركة للمنطقة الزمنية، فيتحكم إعداد `naive_datetime_insert` في تحديد ما إذا كانت المنطقة الزمنية للعملية أو المنطقة الزمنية للعمود هي المستخدمة. وعند الاستعلام، تستخدم النتيجة المنطقة الزمنية للعمود ما لم يتم توفير تجاوز لكل عمود باستخدام وسيطة `column_tzs`. ولا تتجاوز وسيطة `query_tz` المنطقة الزمنية المعلنة للعمود.
+
+```python
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+client.command(
+    "CREATE TABLE events_with_timezone "
+    "(event_time DateTime('America/Los_Angeles')) "
+    "ENGINE Memory"
+)
+
+data = datetime(2023, 6, 15, 10, 30, tzinfo=ZoneInfo("America/New_York"))
+client.insert("events_with_timezone", [[data]], column_names=["event_time"])
+
+result = client.query("SELECT event_time FROM events_with_timezone")
+returned = result.first_row[0]
+assert returned.hour == 7
+assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
+```
+
+<div id="file-inserts">
+  ## إدراج الملفات
+</div>
+
+يقوم `clickhouse_connect.driver.tools.insert_file` بتمرير ملف محلي إلى جدول موجود، ويوكل عملية التحليل إلى ClickHouse.
+
+| المعامل        | النوع         | الافتراضي                   | الوصف                                                                                                                   |
+| -------------- | ------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `client`       | `Client`      | مطلوب                       | عميل متزامن يُستخدم لعملية الإدراج.                                                                                     |
+| `table`        | str           | مطلوب                       | الجدول الهدف، سواء كان بسيطًا أو مؤهلًا باسم قاعدة البيانات.                                                            |
+| `file_path`    | str           | مطلوب                       | المسار المحلي إلى ملف الإدخال.                                                                                          |
+| `fmt`          | str           | `"CSV"` أو `"CSVWithNames"` | تنسيق الإدخال. تكون القيمة الافتراضية `"CSV"` عند توفير `column_names`، و`"CSVWithNames"` بخلاف ذلك.                    |
+| `column_names` | Sequence[str] | `None`                      | الأعمدة التي يمثلها الملف. ولا تكون مطلوبة للتنسيقات التي تتضمن أسماء الأعمدة.                                          |
+| `database`     | str           | `None`                      | قاعدة البيانات الهدف عندما لا يكون الجدول مؤهلًا باسم قاعدة البيانات.                                                   |
+| `settings`     | dict          | `None`                      | راجع [وسيط Settings](/ar/integrations/language-clients/python/driver-api#settings-argument-1).                             |
+| `compression`  | str           | `None`                      | ضغط الملف الحالي، مثل `"zstd"` أو `"lz4"` أو `"gzip"`. ويُستدل على gzip من أسماء الملفات ذات الامتدادين `.gz` و`.gzip`. |
+
+يمكن تمرير إعدادات تنسيق الإدخال، مثل `input_format_allow_errors_ratio` و`input_format_allow_errors_num`، عبر `settings`.
+
+```python
+import clickhouse_connect
+from clickhouse_connect.driver.tools import insert_file
+
+client = clickhouse_connect.get_client()
+insert_file(
+    client,
+    "example_table",
+    "my_data.csv",
+    settings={
+        "input_format_allow_errors_ratio": 0.2,
+        "input_format_allow_errors_num": 5,
+    },
+)
+```
+
+مع `AsyncClient`، استخدم `await` مع `insert_file_async` بالوسائط نفسها:
+
+```python
+from clickhouse_connect.driver.tools import insert_file_async
+
+await insert_file_async(async_client, "example_table", "my_data.csv")
+```
+
+يقرأ المساعد غير المتزامن الملف في خيط تنفيذ عامل قبل انتظار اكتمال `raw_insert`، لذا تبقى محتويات الملف مخزنة في الذاكرة.

@@ -1,0 +1,97 @@
+---
+title: إعداد ClickHouse MySQL محليًا
+---
+
+يُرجى الرجوع إلى [الوثائق الرسمية](/ar/concepts/features/interfaces/mysql)
+للتعرّف على كيفية إعداد خادم ClickHouse مع تمكين واجهة MySQL.
+
+إلى جانب إضافة إدخال إلى ملف `config.xml` الخاص بالخادم
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+من *الضروري* أيضًا استخدام
+[تشفير كلمة المرور باستخدام Double SHA1](/ar/concepts/features/configuration/settings/settings-users#user-namepassword)
+للمستخدم الذي سيستخدم واجهة MySQL.
+
+إنشاء كلمة مرور عشوائية مُشفّرة باستخدام Double SHA1 من سطر الأوامر:
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+يجب أن تكون المخرجات كما يلي:
+
+```
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+السطر الأول هو كلمة المرور المُولَّدة، والسطر الثاني هو قيمة `hash` التي يمكن استخدامها لإعداد ClickHouse.
+
+فيما يلي مثال على إعداد `mysql_user` يستخدم قيمة `hash` المُولَّدة:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+استبدل الإدخال `password_double_sha1_hex` بقيمة Double SHA1 hash التي تولّدها بنفسك.
+
+بالإضافة إلى ذلك، يُوصى باستخدام `use_mysql_types_in_show_columns`
+لعرض أنواع MySQL الأصلية بدلًا من أنواع ClickHouse في نتائج الاستعلام `SHOW [FULL] COLUMNS`،
+مما يتيح لأدوات BI فحص مخطط قاعدة البيانات بشكل صحيح عند استخدام موصلات MySQL.
+
+على سبيل المثال:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <use_mysql_types_in_show_columns>1</use_mysql_types_in_show_columns>
+    </default>
+</profiles>
+```
+
+أو أسنده إلى ملف تعريف مختلف بدلًا من الملف الافتراضي.
+
+إذا كان البرنامج التنفيذي `mysql` متاحًا لديك، يمكنك اختبار الاتصال من سطر الأوامر.
+وباستخدام اسم المستخدم المثال (`mysql_user`) وكلمة المرور (`LZOQYnqQN4L/T6L0`) المذكورين أعلاه، سيكون الأمر في سطر الأوامر كما يلي:
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4 rows in set (0.00 sec)
+Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
+```
+
+أخيرًا، اضبط خادم ClickHouse للاستماع على عنوان IP أو العناوين المطلوبة. على سبيل المثال، في `config.xml`، أزل التعليق عن التالي للاستماع على جميع العناوين:
+
+```bash
+<listen_host>::</listen_host> 
+```

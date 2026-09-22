@@ -1,0 +1,6 @@
+-- default_format=CSV wins over the local display default
+"hello"
+-- default_format=JSONEachRow is honored too
+{"s":"hello"}
+-- no override: the local display default (TSV) is still the fallback
+hello

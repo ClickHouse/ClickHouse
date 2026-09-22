@@ -1,4 +1,5 @@
--- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage
+-- Tags: no-ordinary-database, no-replicated-database, no-shared-merge-tree, no-object-storage, no-s3-storage, no-fasttest
+-- no-fasttest: UNIQUE KEY INSERT writes the dense-index SST, which needs RocksDB.
 -- Merges are disabled for UNIQUE KEY tables (interim, until merge-side bitmap
 -- forwarding + late-kill lands), so an explicit OPTIMIZE is rejected with
 -- SUPPORT_IS_DISABLED. Background merges are gated at the same chokepoint;

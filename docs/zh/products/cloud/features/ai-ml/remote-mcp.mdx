@@ -1,0 +1,138 @@
+---
+sidebarTitle: '远程 MCP 服务器'
+slug: /cloud/features/ai-ml/remote-mcp
+title: 'Cloud 中的远程 MCP'
+description: 'ClickHouse Cloud 中远程 MCP 功能的说明'
+keywords: ['AI', 'ClickHouse Cloud', 'MCP', 'Model Context Protocol', '远程 MCP']
+doc_type: 'reference'
+---
+
+并非所有用户都通过 Cloud Console 与 ClickHouse 交互。
+例如，许多开发者直接在自己偏好的代码编辑器、CLI 智能体中工作，或通过自定义方式连接到数据库；还有一些人则在大多数探索过程中依赖 Anthropic Claude 这类通用 AI 助手。
+这些用户以及代表他们执行操作的智能体工作负载，需要一种无需复杂配置或自建基础设施、即可安全访问和查询 ClickHouse Cloud 的方式。
+
+ClickHouse Cloud 的远程 MCP 服务器能力正是为此而设计，它提供了一个标准接口，供外部智能体获取分析上下文。
+MCP (即 Model Context Protocol) 是供基于 LLM 的 AI 应用访问结构化数据的标准。
+借助这一集成，外部智能体可以列出数据库和表、检查 schema，并运行有范围限制的只读 SELECT 查询。
+身份验证通过 OAuth 处理。该服务器由 ClickHouse Cloud 完全托管，因此无需任何设置或维护。
+
+这让智能体工具更容易接入 ClickHouse 并获取所需数据，无论是用于分析、摘要、代码生成还是探索。
+
+<div id="remote-vs-oss">
+  ## 远程 MCP 服务器 与开源 MCP 服务器 对比
+</div>
+
+ClickHouse 提供两种 MCP 服务器。
+
+|          | Remote MCP 服务器 (Cloud)                            | 开源 MCP 服务器                                                            |
+| -------- | ---------------------------------------------------- | ------------------------------------------------------------------------ |
+| **来源**   | 由 ClickHouse Cloud 完全托管                              | GitHub 上的 [mcp-clickhouse](https://github.com/ClickHouse/mcp-clickhouse) |
+| **传输方式** | Streamable HTTP (`https://mcp.clickhouse.cloud/mcp`) | 本地 stdio                                                                 |
+| **适用范围** | ClickHouse Cloud 服务                                  | 任何 ClickHouse instance (自托管或 Cloud)                                      |
+| **身份验证** | 使用你的 Cloud credentials 进行 OAuth 2.0 身份验证             | 环境变量                                                                     |
+| **工具**   | 13 个工具，涵盖查询、schema 探索、服务管理、备份、ClickPipes 和计费         | 3 个工具：`run_select_query`、`list_databases`、`list_tables`                  |
+| **设置**   | 无需安装。将你的 MCP 客户端 指向该端点并完成身份验证即可。                     | 在本地安装并运行 server                                                          |
+
+远程 MCP 服务器为 ClickHouse Cloud 提供最完整的集成能力，包括服务管理、备份监控、ClickPipe 可见性和计费数据，且无需管理任何基础设施。
+如需用于自托管 ClickHouse instance，请参阅[开源 MCP 服务器 指南](/zh/guides/use-cases/ai-ml/MCP/index)。
+
+<div id="enabling">
+  ## 启用远程 MCP 服务器
+</div>
+
+远程 MCP 服务器必须按服务分别启用，启用后才能接受连接。
+在 ClickHouse Cloud 控制台中，打开你的服务，点击 **Connect** 按钮，选择 **MCP**，然后将其启用。
+如需查看带截图的详细步骤，请参阅[设置指南](/zh/products/cloud/features/ai-ml/mcp/remote-mcp#enable-remote-mcp-server)。
+
+<div id="endpoint">
+  ## 端点
+</div>
+
+启用后，可通过以下地址访问远程 MCP 服务器：
+
+```text
+https://mcp.clickhouse.cloud/mcp
+```
+
+<div id="authentication">
+  ## 身份验证
+</div>
+
+对远程 MCP 服务器的所有访问均通过 OAuth 2.0 进行身份验证。
+当 MCP 客户端首次连接时，会启动 OAuth 流程，并打开浏览器窗口，让用户使用其 ClickHouse Cloud 凭据登录。
+访问范围仅限于该已通过身份验证的用户有权访问的组织和服务。无需额外配置 API 密钥。
+
+<div id="safety">
+  ## 安全性
+</div>
+
+远程 MCP 服务器提供的所有工具均为**只读**。每个工具在其 MCP 元数据中都标注了 `readOnlyHint: true`。没有任何工具可以修改数据、更改服务配置或执行任何破坏性操作。
+
+<div id="available-tools">
+  ## 可用工具
+</div>
+
+远程 MCP 服务器提供了 13 个工具，分为以下几类。
+
+<div id="query-and-schema">
+  ### 查询与 schema 探索
+</div>
+
+这些工具允许智能体发现有哪些可用数据，并运行分析查询。
+
+| 工具                 | 描述                             | 参数                                                                  |
+| ------------------ | ------------------------------ | ------------------------------------------------------------------- |
+| `run_select_query` | 对 ClickHouse 服务执行只读 SELECT 查询。 | `query`：有效的 ClickHouse SQL SELECT 查询；`serviceId`                    |
+| `list_databases`   | 列出 ClickHouse 服务中所有可用的数据库。     | `serviceId`                                                         |
+| `list_tables`      | 列出数据库中的所有表，包括列定义。              | `serviceId`；`database`；可选 `like` 或 `notLike` (用于过滤表名的 SQL LIKE 模式)  |
+
+<div id="organizations">
+  ### 组织
+</div>
+
+| Tool                       | 描述                                   | 参数               |
+| -------------------------- | ------------------------------------ | ---------------- |
+| `get_organizations`        | 获取经身份验证用户可访问的所有 ClickHouse Cloud 组织。 | 无                |
+| `get_organization_details` | 返回单个组织的详细信息。                         | `organizationId` |
+
+<div id="services">
+  ### 服务
+</div>
+
+| Tool                  | Description                   | Parameters                    |
+| --------------------- | ----------------------------- | ----------------------------- |
+| `get_services_list`   | 列出 ClickHouse Cloud 组织中的所有服务。 | `organizationId`              |
+| `get_service_details` | 返回特定服务的详细信息。                  | `organizationId`; `serviceId` |
+
+<div id="backups">
+  ### 备份
+</div>
+
+| 工具                                 | 说明                             | 参数                                        |
+| ---------------------------------- | ------------------------------ | ----------------------------------------- |
+| `list_service_backups`             | 列出某个 service 的所有备份，最新的排在最前面。   | `organizationId`; `serviceId`             |
+| `get_service_backup_details`       | 返回单个备份的详细信息。                   | `organizationId`; `serviceId`; `backupId` |
+| `get_service_backup_configuration` | 返回某个 service 的备份配置 (计划和保留设置) 。 | `organizationId`; `serviceId`             |
+
+<div id="clickpipes">
+  ### ClickPipes
+</div>
+
+| 工具                | 描述                       | 参数                                           |
+| ----------------- | ------------------------ | -------------------------------------------- |
+| `list_clickpipes` | 列出某个服务已配置的所有 ClickPipes。 | `organizationId`; `serviceId`                |
+| `get_clickpipe`   | 返回指定 ClickPipe 的详细信息。    | `organizationId`; `serviceId`; `clickPipeId` |
+
+<div id="billing">
+  ### 计费
+</div>
+
+| 工具                      | 说明                                 | 参数                                                                |
+| ----------------------- | ---------------------------------- | ----------------------------------------------------------------- |
+| `get_organization_cost` | 获取组织的计费和使用成本数据。返回总计以及按天统计的各实体成本记录。 | `organizationId`；可选 `from_date` 和 `to_date` (YYYY-MM-DD，最长 31 天)  |
+
+<div id="getting-started">
+  ## 快速入门
+</div>
+
+有关如何启用远程 MCP 服务器并将其连接到 MCP 客户端的分步说明，请参阅[设置指南](/zh/products/cloud/features/ai-ml/mcp/remote-mcp)。

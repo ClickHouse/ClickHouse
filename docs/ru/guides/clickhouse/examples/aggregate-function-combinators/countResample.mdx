@@ -1,0 +1,69 @@
+---
+slug: '/examples/aggregate-function-combinators/countResample'
+title: 'countResample'
+description: 'Пример использования комбинатора Resample с функцией count'
+keywords: ['count', 'Resample', 'комбинатор', 'примеры', 'countResample']
+sidebarTitle: 'countResample'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Описание
+</div>
+
+Комбинатор [`Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)
+можно применять к агрегатной функции [`count`](/ru/reference/functions/aggregate-functions/count)
+для подсчета значений в указанном ключевом столбце в фиксированном числе
+интервалов (`N`).
+
+<div id="example-usage">
+  ## Пример использования
+</div>
+
+<div id="basic-example">
+  ### Базовый пример
+</div>
+
+Рассмотрим пример. Мы создадим таблицу со столбцами `name`, `age` и
+`wage` для данных о сотрудниках и вставим в неё несколько записей:
+
+```sql
+CREATE TABLE employee_data 
+(
+    name String,
+    age UInt8,
+    wage Float32
+) 
+ENGINE = MergeTree()
+ORDER BY tuple()
+
+INSERT INTO employee_data (name, age, wage) VALUES
+    ('John', 16, 10.0),
+    ('Alice', 30, 15.0),
+    ('Mary', 35, 8.0),
+    ('Evelyn', 48, 11.5),
+    ('David', 62, 9.9),
+    ('Brian', 60, 16.0);
+```
+
+Давайте посчитаем всех людей, чей возраст попадает в интервалы `[30,60)`
+и `[60,75)`. Поскольку возраст представлен целыми числами, получаем значения в
+интервалах `[30, 59]` и `[60,74]`. Для этого применим комбинатор `Resample`
+к `count`
+
+```sql
+SELECT countResample(30, 75, 30)(name, age) AS amount FROM employee_data
+```
+
+```response
+┌─amount─┐
+│ [3,2]  │
+└────────┘
+```
+
+<div id="see-also">
+  ## См. также
+</div>
+
+* [`count`](/ru/reference/functions/aggregate-functions/count)
+* [`Комбинатор Resample`](/ru/reference/functions/aggregate-functions/combinators#-resample)

@@ -1,0 +1,358 @@
+---
+slug: /guides/developer/time-series-filling-gaps
+sidebarTitle: 'Séries temporais - preenchimento de lacunas'
+description: 'Preenchimento de lacunas em dados de séries temporais.'
+keywords: ['séries temporais', 'preenchimento de lacunas']
+title: 'Preenchimento de lacunas em dados de séries temporais'
+doc_type: 'guide'
+---
+
+Ao trabalhar com dados de séries temporais, pode haver lacunas causadas pela falta de dados ou por inatividade.
+Em geral, não queremos que essas lacunas existam ao consultar os dados. Nesse caso, a cláusula `WITH FILL` pode ser útil.
+Este guia mostra como usar `WITH FILL` para preencher lacunas nos seus dados de séries temporais.
+
+<div id="setup">
+  ## Configuração
+</div>
+
+Imagine que temos a tabela a seguir, que armazena metadados de imagens geradas por um serviço de imagens com GenAI:
+
+```sql
+CREATE TABLE images
+(
+    `id` String,
+    `timestamp` DateTime64(3),
+    `height` Int64,
+    `width` Int64,
+    `size` Int64
+)
+ENGINE = MergeTree
+ORDER BY (size, height, width);
+```
+
+Vamos importar alguns registros:
+
+```sql
+INSERT INTO images VALUES (1088619203512250448, '2023-03-24 00:24:03.684', 1536, 1536, 2207289);
+INSERT INTO images VALUES (1088619204040736859, '2023-03-24 00:24:03.810', 1024, 1024, 1928974);
+INSERT INTO images VALUES (1088619204749561989, '2023-03-24 00:24:03.979', 1024, 1024, 1275619);
+INSERT INTO images VALUES (1088619206431477862, '2023-03-24 00:24:04.380', 2048, 2048, 5985703);
+INSERT INTO images VALUES (1088619206905434213, '2023-03-24 00:24:04.493', 1024, 1024, 1558455);
+INSERT INTO images VALUES (1088619208524431510, '2023-03-24 00:24:04.879', 1024, 1024, 1494869);
+INSERT INTO images VALUES (1088619208425437515, '2023-03-24 00:24:05.160', 1024, 1024, 1538451);
+```
+
+<div id="querying-by-bucket">
+  ## Consultando por bucket
+</div>
+
+Vamos explorar as imagens criadas entre `00:24:03` e `00:24:04` em 24 de março de 2023, então vamos criar alguns parâmetros para esses instantes:
+
+```sql
+SET param_start = '2023-03-24 00:24:03',
+    param_end = '2023-03-24 00:24:04';
+```
+
+Em seguida, vamos escrever uma consulta que agrupa os dados em buckets de 100 ms e retorna a contagem de imagens criadas nesse bucket:
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+```
+
+```response
+┌──────────────────bucket─┬─count─┐
+│ 2023-03-24 00:24:03.600 │     1 │
+│ 2023-03-24 00:24:03.800 │     1 │
+│ 2023-03-24 00:24:03.900 │     1 │
+│ 2023-03-24 00:24:04.300 │     1 │
+│ 2023-03-24 00:24:04.400 │     1 │
+│ 2023-03-24 00:24:04.800 │     1 │
+└─────────────────────────┴───────┘
+```
+
+O conjunto de resultados inclui apenas os buckets em que uma imagem foi criada, mas, para análise de séries temporais, talvez seja interessante retornar cada bucket de 100 ms, mesmo que não tenha nenhum registro.
+
+<div id="with-fill">
+  ## WITH FILL
+</div>
+
+Podemos usar a cláusula `WITH FILL` para preencher essas lacunas.
+Também vamos especificar o `STEP`, que é o tamanho das lacunas que serão preenchidas.
+O padrão é 1 segundo para tipos `DateTime`, mas queremos preencher lacunas de 100 ms de duração, então vamos usar um intervalo de 100 ms como valor de passo:
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+WITH FILL
+STEP toIntervalMillisecond(100);
+```
+
+```response
+┌──────────────────bucket─┬─count─┐
+│ 2023-03-24 00:24:03.600 │     1 │
+│ 2023-03-24 00:24:03.700 │     0 │
+│ 2023-03-24 00:24:03.800 │     1 │
+│ 2023-03-24 00:24:03.900 │     1 │
+│ 2023-03-24 00:24:04.000 │     0 │
+│ 2023-03-24 00:24:04.100 │     0 │
+│ 2023-03-24 00:24:04.200 │     0 │
+│ 2023-03-24 00:24:04.300 │     1 │
+│ 2023-03-24 00:24:04.400 │     1 │
+│ 2023-03-24 00:24:04.500 │     0 │
+│ 2023-03-24 00:24:04.600 │     0 │
+│ 2023-03-24 00:24:04.700 │     0 │
+│ 2023-03-24 00:24:04.800 │     1 │
+└─────────────────────────┴───────┘
+```
+
+Podemos ver que os intervalos foram preenchidos com valores 0 na coluna `count`.
+
+<div id="with-fillfrom">
+  ## WITH FILL...FROM
+</div>
+
+No entanto, ainda há uma lacuna no início do intervalo de tempo, que podemos corrigir especificando `FROM`:
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+WITH FILL
+FROM toDateTime64({start:String}, 3)
+STEP toIntervalMillisecond(100);
+```
+
+```response
+┌──────────────────bucket─┬─count─┐
+│ 2023-03-24 00:24:03.000 │     0 │
+│ 2023-03-24 00:24:03.100 │     0 │
+│ 2023-03-24 00:24:03.200 │     0 │
+│ 2023-03-24 00:24:03.300 │     0 │
+│ 2023-03-24 00:24:03.400 │     0 │
+│ 2023-03-24 00:24:03.500 │     0 │
+│ 2023-03-24 00:24:03.600 │     1 │
+│ 2023-03-24 00:24:03.700 │     0 │
+│ 2023-03-24 00:24:03.800 │     1 │
+│ 2023-03-24 00:24:03.900 │     1 │
+│ 2023-03-24 00:24:04.000 │     0 │
+│ 2023-03-24 00:24:04.100 │     0 │
+│ 2023-03-24 00:24:04.200 │     0 │
+│ 2023-03-24 00:24:04.300 │     1 │
+│ 2023-03-24 00:24:04.400 │     1 │
+│ 2023-03-24 00:24:04.500 │     0 │
+│ 2023-03-24 00:24:04.600 │     0 │
+│ 2023-03-24 00:24:04.700 │     0 │
+│ 2023-03-24 00:24:04.800 │     1 │
+└─────────────────────────┴───────┘
+```
+
+Podemos ver nos resultados que agora todos os buckets de `00:24:03.000` a `00:24:03.500` aparecem.
+
+<div id="with-fillto">
+  ## WITH FILL...TO
+</div>
+
+Ainda faltam alguns buckets no fim do período, mas podemos preenchê-los informando um valor `TO`.
+`TO` não inclui o valor final, então vamos adicionar um pequeno incremento ao horário de término para garantir que ele seja incluído:
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+WITH FILL
+FROM toDateTime64({start:String}, 3)
+TO toDateTime64({end:String}, 3) + INTERVAL 1 millisecond
+STEP toIntervalMillisecond(100);
+```
+
+```response
+┌──────────────────bucket─┬─count─┐
+│ 2023-03-24 00:24:03.000 │     0 │
+│ 2023-03-24 00:24:03.100 │     0 │
+│ 2023-03-24 00:24:03.200 │     0 │
+│ 2023-03-24 00:24:03.300 │     0 │
+│ 2023-03-24 00:24:03.400 │     0 │
+│ 2023-03-24 00:24:03.500 │     0 │
+│ 2023-03-24 00:24:03.600 │     1 │
+│ 2023-03-24 00:24:03.700 │     0 │
+│ 2023-03-24 00:24:03.800 │     1 │
+│ 2023-03-24 00:24:03.900 │     1 │
+│ 2023-03-24 00:24:04.000 │     0 │
+│ 2023-03-24 00:24:04.100 │     0 │
+│ 2023-03-24 00:24:04.200 │     0 │
+│ 2023-03-24 00:24:04.300 │     1 │
+│ 2023-03-24 00:24:04.400 │     1 │
+│ 2023-03-24 00:24:04.500 │     0 │
+│ 2023-03-24 00:24:04.600 │     0 │
+│ 2023-03-24 00:24:04.700 │     0 │
+│ 2023-03-24 00:24:04.800 │     1 │
+│ 2023-03-24 00:24:04.900 │     0 │
+│ 2023-03-24 00:24:05.000 │     0 │
+└─────────────────────────┴───────┘
+```
+
+Agora, todas as lacunas foram preenchidas, e temos entradas a cada 100 ms de `00:24:03.000` a `00:24:05.000`.
+
+<div id="cumulative-count">
+  ## Contagem acumulada
+</div>
+
+Digamos que agora queremos manter uma contagem acumulada do número de imagens criadas em todos os buckets.
+Podemos fazer isso adicionando uma coluna `cumulative`, como mostrado abaixo:
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count,
+    sum(count) OVER (ORDER BY bucket) AS cumulative
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+WITH FILL
+FROM toDateTime64({start:String}, 3)
+TO toDateTime64({end:String}, 3) + INTERVAL 1 millisecond
+STEP toIntervalMillisecond(100);
+```
+
+```response
+┌──────────────────bucket─┬─count─┬─cumulative─┐
+│ 2023-03-24 00:24:03.000 │     0 │          0 │
+│ 2023-03-24 00:24:03.100 │     0 │          0 │
+│ 2023-03-24 00:24:03.200 │     0 │          0 │
+│ 2023-03-24 00:24:03.300 │     0 │          0 │
+│ 2023-03-24 00:24:03.400 │     0 │          0 │
+│ 2023-03-24 00:24:03.500 │     0 │          0 │
+│ 2023-03-24 00:24:03.600 │     1 │          1 │
+│ 2023-03-24 00:24:03.700 │     0 │          0 │
+│ 2023-03-24 00:24:03.800 │     1 │          2 │
+│ 2023-03-24 00:24:03.900 │     1 │          3 │
+│ 2023-03-24 00:24:04.000 │     0 │          0 │
+│ 2023-03-24 00:24:04.100 │     0 │          0 │
+│ 2023-03-24 00:24:04.200 │     0 │          0 │
+│ 2023-03-24 00:24:04.300 │     1 │          4 │
+│ 2023-03-24 00:24:04.400 │     1 │          5 │
+│ 2023-03-24 00:24:04.500 │     0 │          0 │
+│ 2023-03-24 00:24:04.600 │     0 │          0 │
+│ 2023-03-24 00:24:04.700 │     0 │          0 │
+│ 2023-03-24 00:24:04.800 │     1 │          6 │
+│ 2023-03-24 00:24:04.900 │     0 │          0 │
+│ 2023-03-24 00:24:05.000 │     0 │          0 │
+└─────────────────────────┴───────┴────────────┘
+```
+
+Os valores na coluna cumulativa não estão se comportando como gostaríamos.
+
+<div id="with-fillinterpolate">
+  ## WITH FILL...INTERPOLATE
+</div>
+
+Todas as linhas que têm `0` na coluna `count` também têm `0` na coluna `cumulative`, mas o ideal é que ela use o valor anterior da coluna `cumulative`.
+Podemos fazer isso usando a cláusula `INTERPOLATE`, como mostrado abaixo:
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count,
+    sum(count) OVER (ORDER BY bucket) AS cumulative
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+WITH FILL
+FROM toDateTime64({start:String}, 3)
+TO toDateTime64({end:String}, 3) + INTERVAL 100 millisecond
+STEP toIntervalMillisecond(100)
+INTERPOLATE (cumulative);
+```
+
+```response
+┌──────────────────bucket─┬─count─┬─cumulative─┐
+│ 2023-03-24 00:24:03.000 │     0 │          0 │
+│ 2023-03-24 00:24:03.100 │     0 │          0 │
+│ 2023-03-24 00:24:03.200 │     0 │          0 │
+│ 2023-03-24 00:24:03.300 │     0 │          0 │
+│ 2023-03-24 00:24:03.400 │     0 │          0 │
+│ 2023-03-24 00:24:03.500 │     0 │          0 │
+│ 2023-03-24 00:24:03.600 │     1 │          1 │
+│ 2023-03-24 00:24:03.700 │     0 │          1 │
+│ 2023-03-24 00:24:03.800 │     1 │          2 │
+│ 2023-03-24 00:24:03.900 │     1 │          3 │
+│ 2023-03-24 00:24:04.000 │     0 │          3 │
+│ 2023-03-24 00:24:04.100 │     0 │          3 │
+│ 2023-03-24 00:24:04.200 │     0 │          3 │
+│ 2023-03-24 00:24:04.300 │     1 │          4 │
+│ 2023-03-24 00:24:04.400 │     1 │          5 │
+│ 2023-03-24 00:24:04.500 │     0 │          5 │
+│ 2023-03-24 00:24:04.600 │     0 │          5 │
+│ 2023-03-24 00:24:04.700 │     0 │          5 │
+│ 2023-03-24 00:24:04.800 │     1 │          6 │
+│ 2023-03-24 00:24:04.900 │     0 │          6 │
+│ 2023-03-24 00:24:05.000 │     0 │          6 │
+└─────────────────────────┴───────┴────────────┘
+```
+
+Isso ficou muito melhor.
+E agora, para finalizar, vamos adicionar um gráfico de barras usando a função `bar`, sem esquecer de incluir nossa nova coluna na cláusula `INTERPOLATE`.
+
+```sql
+SELECT
+    toStartOfInterval(timestamp, toIntervalMillisecond(100)) AS bucket,
+    count() AS count,
+    sum(count) OVER (ORDER BY bucket) AS cumulative,
+    bar(cumulative, 0, 10, 10) AS barChart
+FROM MidJourney.images
+WHERE (timestamp >= {start:String}) AND (timestamp <= {end:String})
+GROUP BY ALL
+ORDER BY bucket ASC
+WITH FILL
+FROM toDateTime64({start:String}, 3)
+TO toDateTime64({end:String}, 3) + INTERVAL 100 millisecond
+STEP toIntervalMillisecond(100)
+INTERPOLATE (cumulative, barChart);
+```
+
+```response
+┌──────────────────bucket─┬─count─┬─cumulative─┬─barChart─┐
+│ 2023-03-24 00:24:03.000 │     0 │          0 │          │
+│ 2023-03-24 00:24:03.100 │     0 │          0 │          │
+│ 2023-03-24 00:24:03.200 │     0 │          0 │          │
+│ 2023-03-24 00:24:03.300 │     0 │          0 │          │
+│ 2023-03-24 00:24:03.400 │     0 │          0 │          │
+│ 2023-03-24 00:24:03.500 │     0 │          0 │          │
+│ 2023-03-24 00:24:03.600 │     1 │          1 │ █        │
+│ 2023-03-24 00:24:03.700 │     0 │          1 │ █        │
+│ 2023-03-24 00:24:03.800 │     1 │          2 │ ██       │
+│ 2023-03-24 00:24:03.900 │     1 │          3 │ ███      │
+│ 2023-03-24 00:24:04.000 │     0 │          3 │ ███      │
+│ 2023-03-24 00:24:04.100 │     0 │          3 │ ███      │
+│ 2023-03-24 00:24:04.200 │     0 │          3 │ ███      │
+│ 2023-03-24 00:24:04.300 │     1 │          4 │ ████     │
+│ 2023-03-24 00:24:04.400 │     1 │          5 │ █████    │
+│ 2023-03-24 00:24:04.500 │     0 │          5 │ █████    │
+│ 2023-03-24 00:24:04.600 │     0 │          5 │ █████    │
+│ 2023-03-24 00:24:04.700 │     0 │          5 │ █████    │
+│ 2023-03-24 00:24:04.800 │     1 │          6 │ ██████   │
+│ 2023-03-24 00:24:04.900 │     0 │          6 │ ██████   │
+│ 2023-03-24 00:24:05.000 │     0 │          6 │ ██████   │
+└─────────────────────────┴───────┴────────────┴──────────┘
+```

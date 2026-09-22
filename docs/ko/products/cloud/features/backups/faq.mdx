@@ -1,0 +1,60 @@
+---
+slug: /cloud/features/backups/faq
+sidebarTitle: 'Backup FAQ'
+title: 'Backup 청구 금액 차이 FAQ'
+description: 'ClickHouse Cloud Backup 청구 및 보존에 관한 자주 묻는 질문'
+keywords: ['Backup', '클라우드 Backup', '청구', '보존', 'FAQ']
+doc_type: '참고'
+---
+
+<div id="why-bill-going-up">
+  ### Backup 스토리지 인보이스 금액이 왜 증가하나요?
+</div>
+
+ClickHouse Cloud는 안정적인 복구를 위해 전체 Backup과 증분 Backup을 조합해 데이터의 Backup 버전을 최대 8개까지 보관합니다. 기존에는 인보이스에 이 데이터의 일부만 반영되었습니다. 2026년 7월 1일부터는 청구 금액이 실제 보관 중인 스토리지와 일치하도록 이를 바로잡습니다.
+
+<Note>
+  Backup 스토리지의 GB당 가격은 변경되지 않았습니다. 이번 수정은 인보이스에 표시되는 Backup 버전 수를 서비스에 대해 실제로 보관되는 수량과 일치하도록 조정하는 것입니다.
+</Note>
+
+<div id="is-this-a-price-increase">
+  ### 가격이 인상되나요?
+</div>
+
+아니요. GB당 가격은 변경되지 않았습니다. 인보이스에 포함되는 Backup 버전 수를 바로잡고 있습니다.
+
+<div id="past-undercharges">
+  ### 과거에 과소 청구된 금액이 나중에 청구되나요?
+</div>
+
+아니요. 이전 청구 기간의 요금을 소급 적용하거나 추가로 청구하지 않습니다. 이번 수정은 2026년 7월 1일 이후의 청구에만 적용됩니다.
+
+<div id="see-backup-versions">
+  ### 유지되는 모든 Backup 버전은 어디에서 확인할 수 있나요?
+</div>
+
+유지되는 모든 Backup 버전은 4월 23일부터 ClickHouse Cloud 콘솔에서 확인할 수 있습니다. 또한 특정 버전에 현재 요금이 부과되고 있는지, 아니면 유지되고 있지만 아직 요금이 부과되지 않았는지도 확인할 수 있습니다. 업데이트된 [요금 계산기](https://clickhouse.com/pricing)에도 이러한 비용이 반영되어 있습니다.
+
+<div id="contact">
+  ### 질문이 있으면 누구에게 문의해야 하나요?
+</div>
+
+[ClickHouse 지원팀](https://clickhouse.com/support/program)에 문의하십시오. 계정 담당 팀에서도 개별 상황에 대해 상담해 드릴 수 있습니다.
+
+<div id="reliability">
+  ### 이로 인해 Backup의 신뢰성이나 가용성에 영향이 있습니까?
+</div>
+
+아니요. Backup 범위, 보존 기간, 복구 기능은 변경되지 않습니다. 변경되는 것은 Backup의 저장 또는 관리 방식이 아니라 Backup에 대한 과금 방식뿐입니다.
+
+<div id="more-details">
+  ### 자세한 내용은 어디에서 확인할 수 있나요?
+</div>
+
+자세한 내용이 담긴 안내 이메일이 4월 23일에 발송됩니다. 실제 Backup 비용을 더 정확하게 예상하려면 [요금 계산기](https://clickhouse.com/pricing)를 활용할 수 있습니다.
+
+<div id="when-changes-go-live">
+  ### 청구 변경 사항은 언제 시행되나요?
+</div>
+
+청구 변경 사항은 최초 안내 후 60일이 지난 2026년 7월 1일부터 시행됩니다.

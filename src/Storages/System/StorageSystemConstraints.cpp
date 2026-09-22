@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemConstraints.h>
+#include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnString.h>
@@ -7,6 +8,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -64,9 +66,8 @@ public:
         : ISource(header)
         , column_mask(std::move(columns_mask_))
         , max_block_size(max_block_size_)
-        , databases(std::move(databases_))
+        , databases_cursor(std::move(databases_))
         , context(Context::createCopy(context_))
-        , database_idx(0)
     {
     }
 
@@ -75,9 +76,6 @@ public:
 protected:
     Chunk generate() override
     {
-        if (database_idx > databases->size())
-            return {};
-
         MutableColumns res_columns = getPort().getHeader().cloneEmptyColumns();
 
         const auto access = context->getAccess();
@@ -87,6 +85,10 @@ protected:
 
         auto add_constraints = [&](const String & db_name, const String & tbl_name, const StoragePtr & table)
         {
+            if (const auto * alias = table->as<StorageAlias>();
+                alias && !alias->isTargetTableGranted(context, AccessType::SHOW_TABLES, {}))
+                return;
+
             const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
             if (!metadata_snapshot)
                 return;
@@ -119,46 +121,36 @@ protected:
         };
 
         /// Phase 1: catalog databases
-        while (database_idx < databases->size() && rows_count < max_block_size)
+        while (rows_count < max_block_size)
         {
-            if (!tables_it || !tables_it->isValid())
-            {
-                while (database_idx < databases->size())
-                {
-                    database_name = databases->getDataAt(database_idx);
-                    database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-                    if (database)
-                    {
-                        tables_it = database->getTablesIterator(context);
-                        break;
-                    }
-                    ++database_idx;
-                }
-                if (database_idx == databases->size())
-                    break;
-            }
+            if (!databases_cursor.advanceToNextDatabase())
+                break;
+
+            const String & database_name = databases_cursor.getDatabaseName();
+
+            if (!databases_cursor.hasTablesIterator())
+                databases_cursor.setTablesIterator(databases_cursor.getDatabase()->getTablesIterator(context));
 
             const bool check_access_for_tables = check_access_for_databases && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-            for (; rows_count < max_block_size && tables_it->isValid(); tables_it->next())
+            auto & tables_it = databases_cursor.getTablesIterator();
+            for (; rows_count < max_block_size && tables_it.isValid(); tables_it.next())
             {
-                auto table_name = tables_it->name();
+                auto table_name = tables_it.name();
                 if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
                     continue;
 
-                const auto table = tables_it->table();
+                const auto table = tables_it.table();
                 if (!table)
                     continue;
 
                 add_constraints(database_name, table_name, table);
             }
-
-            if (!tables_it->isValid())
-                ++database_idx;
         }
 
-        /// Phase 2: session temporary tables
-        if (database_idx == databases->size() && rows_count < max_block_size)
+        /// Phase 2: session temporary tables, once all catalog databases are consumed. Phase 1 only
+        /// leaves room here when the cursor is exhausted, so this never runs while databases remain.
+        if (rows_count < max_block_size)
         {
             if (!external_tables_initialized)
             {
@@ -170,10 +162,10 @@ protected:
 
             for (; rows_count < max_block_size && external_tables_it != external_tables.end(); ++external_tables_it)
                 add_constraints("", external_tables_it->first, external_tables_it->second);
-
-            if (external_tables_it == external_tables.end())
-                ++database_idx;
         }
+
+        if (rows_count == 0)
+            return {};
 
         return Chunk(std::move(res_columns), rows_count);
     }
@@ -181,12 +173,8 @@ protected:
 private:
     std::vector<UInt8> column_mask;
     UInt64 max_block_size;
-    ColumnPtr databases;
+    DatabaseTablesCursor databases_cursor;
     ContextPtr context;
-    size_t database_idx;
-    DatabasePtr database;
-    std::string database_name;
-    DatabaseTablesIteratorPtr tables_it;
     Tables external_tables;
     Tables::const_iterator external_tables_it;
     bool external_tables_initialized = false;
@@ -273,7 +261,7 @@ void ReadFromSystemConstraints::initializePipeline(QueryPipelineBuilder & pipeli
 {
     MutableColumnPtr column = ColumnString::create();
 
-    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false});
+    const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & [database_name, database] : databases)
     {
         if (database_name == DatabaseCatalog::TEMPORARY_DATABASE)

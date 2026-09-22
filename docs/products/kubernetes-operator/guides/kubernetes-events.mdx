@@ -1,0 +1,190 @@
+---
+position: 8
+slug: /clickhouse-operator/guides/kubernetes-events
+title: Kubernetes events
+keywords: ['kubernetes', 'events', 'troubleshooting', 'reconcile', 'system.warnings']
+description: 'How the operator reports reconcile failures, scaling progress, version checks, and ClickHouse server warnings as Kubernetes events on ClickHouseCluster and KeeperCluster objects, how to view them, and what each event reason means.'
+doc_type: 'guide'
+---
+
+The operator records Kubernetes events on the `ClickHouseCluster` and
+`KeeperCluster` objects it manages. These events trace what the operator did
+during reconciliation — where resource changes failed, when a cluster became
+ready, why scaling was blocked — and surface failures that never reach a log a
+user normally reads. They complement the [metrics](/products/kubernetes-operator/guides/monitoring)
+by attaching a human-readable history directly to the custom resource.
+
+The `clickhouse-controller` reports events on `ClickHouseCluster` objects and the
+`keeper-controller` reports them on `KeeperCluster` objects. The resource
+lifecycle failure events also reference the owned object they concern (a
+StatefulSet, Service, ConfigMap, Secret, PodDisruptionBudget,
+PersistentVolumeClaim, or version-probe Job); other events reference only the
+cluster itself.
+
+<Note>
+The Kubernetes API server expires events after a TTL — one hour by default
+(`--event-ttl`). Events are therefore a short-lived signal for recent activity,
+not a durable audit trail.
+</Note>
+
+## Viewing events {#viewing-events}
+
+The quickest view is `kubectl describe` on the custom resource, which lists the
+most recent events at the bottom:
+
+```bash
+NS=<your-namespace>
+
+kubectl -n $NS describe clickhousecluster <name>
+kubectl -n $NS describe keepercluster <name>
+```
+
+To list events directly — for example to watch them live or filter to failures —
+query the `events` resource and filter by the involved object or by type:
+
+```bash
+# All events for one cluster, newest last
+kubectl -n $NS get events \
+  --field-selector involvedObject.name=<name> \
+  --sort-by=.lastTimestamp
+
+# Only warnings across the namespace
+kubectl -n $NS get events --field-selector type=Warning
+
+# Follow events as they arrive
+kubectl -n $NS get events --watch
+```
+
+The reporting controller appears in the event source, so you can tell a
+`ClickHouseCluster` event (`clickhouse-controller`) from a `KeeperCluster` event
+(`keeper-controller`).
+
+## Event reasons reference {#event-reasons}
+
+The operator emits a fixed set of reasons, grouped by what they describe. `Normal`
+events report expected progress; `Warning` events report a failure or a state a
+user should act on.
+
+### Resource lifecycle {#resource-lifecycle}
+
+Emitted on both `ClickHouseCluster` and `KeeperCluster` when the operator fails to
+apply an owned resource during reconciliation.
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `FailedCreate` | Warning | The operator could not create an owned resource (e.g. StatefulSet, Service, ConfigMap, Secret, PodDisruptionBudget, or Job). |
+| `FailedUpdate` | Warning | The operator could not update a resource. |
+| `FailedDelete` | Warning | The operator could not delete an owned resource during reconcile or scale-down. |
+
+### Cluster readiness {#cluster-readiness}
+
+Emitted on both kinds when the cluster crosses a readiness boundary.
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `ClusterReady` | Normal | The cluster became ready: every ClickHouse shard has at least one ready replica, or the Keeper quorum has a leader and enough followers (or its single standalone replica is up). |
+| `ClusterNotReady` | Warning | The cluster left the ready state — a ClickHouse shard has no ready replica left, or the Keeper quorum lost its leader or too many followers. |
+
+### Scaling {#scaling}
+
+Emitted on `KeeperCluster` as the operator changes the replica count.
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `HorizontalScaleStarted` | Normal | The operator began adding or removing replicas. |
+| `HorizontalScaleCompleted` | Normal | The scaling operation finished. |
+| `ReplicaCreated` | Normal | The operator added a replica to the cluster. |
+| `ReplicaDeleted` | Normal | The operator removed a replica during scale-down. |
+| `HorizontalScaleBlocked` | Warning | The operator refused to scale because the current Keeper state is not safe to scale yet. |
+
+<Note>
+`HorizontalScaleBlocked` is the event to watch when a Keeper scale request seems
+to do nothing: the operator deliberately holds the change and keeps the existing
+quorum rather than risk a split. The event message states the constraint that
+blocked the change.
+</Note>
+
+### External secret {#external-secret}
+
+Emitted on `ClickHouseCluster` when the cluster references an external Secret that
+the operator cannot use. See the External Secret feature in the
+[configuration guide](/products/kubernetes-operator/guides/configuration).
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `ExternalSecretNotFound` | Warning | The referenced Secret does not exist in the cluster's namespace. |
+| `ExternalSecretInvalid` | Warning | The Secret exists but is missing required keys (only reported under the `Observe` policy). |
+
+### Version checks {#version-checks}
+
+Emitted by the version checks for `ClickHouseCluster` and `KeeperCluster`.
+`VersionProbeFailed` is specific to the ClickHouse version-probe Job.
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `VersionProbeFailed` | Warning | The version-probe Job could not detect the running ClickHouse version. |
+| `VersionDiverge` | Warning | A replica's detected version differs from the version the operator detected for the cluster. Suppressed during rolling updates. |
+| `VersionUpgradeAvailable` | Warning | A newer version is available on the configured upgrade channel, the running version is not on that channel, or it is out of support. The operator never upgrades on its own — this event only informs. |
+
+### ClickHouse server warnings {#clickhouse-warnings}
+
+| Reason | Type | Meaning |
+|---|---|---|
+| `ClickHouseWarning` | Warning | A warning reported by the ClickHouse server itself, republished from `system.warnings`. |
+
+This last reason is distinct: it does not describe the operator's own actions. On
+each ready replica the operator periodically queries the server's
+[`system.warnings`](https://clickhouse.com/docs/operations/system-tables/system_warnings) table and
+republishes every row as a `Warning` event on the cluster, prefixed with the
+replica it came from. That turns ClickHouse's own configuration and runtime
+warnings — obsolete settings, low limits, unsafe options — into events you can see
+with `kubectl` without opening a `clickhouse-client` session against each replica.
+
+```bash
+kubectl -n $NS get events \
+  --field-selector reason=ClickHouseWarning,involvedObject.name=<name>
+```
+
+## Events, metrics, and conditions {#events-vs-metrics}
+
+The operator exposes three observability surfaces; use each for what it does best:
+
+- **Events** (this guide) — recent, human-readable, attached to the object. Best
+  for "what just happened to this cluster" and interactive troubleshooting with
+  `kubectl describe`. They expire.
+- **`status.conditions`** on the custom resource — the current, persistent truth
+  (ready, external secret valid, scale allowed, version in sync). Best for
+  scripts and GitOps health gates. Read them with
+  `kubectl get clickhousecluster <name> -o jsonpath='{.status.conditions}'`.
+- **[Metrics](/products/kubernetes-operator/guides/monitoring)** — durable and
+  numeric. Best for dashboards and for alerting on a sustained reconcile error
+  rate.
+
+A `Warning` event and a `False` condition often describe the same problem from two
+angles: the event captures the moment and the message, the condition reflects the
+state until it clears.
+
+## Troubleshooting with events {#troubleshooting}
+
+A few common signals and where they point:
+
+- **`FailedCreate` / `FailedUpdate` repeating** — the operator cannot apply a
+  resource. The event message carries the API error (admission rejection, quota,
+  invalid spec). Reconciliation retries, so a transient cause clears on its own; a
+  persistent one needs a spec or cluster fix.
+- **`ClusterNotReady` without a matching `ClusterReady`** — the cluster is not
+  recovering. The event message names the not-ready shards or the quorum
+  problem; check the pods behind them.
+- **`HorizontalScaleBlocked`** — an intended scale is being held for safety. Read
+  the message for the exact constraint before forcing anything.
+- **`ExternalSecretNotFound` / `ExternalSecretInvalid`** — fix the Secret name or
+  its keys; the matching `ExternalSecretValid` condition flips to `True` once the
+  operator can use it.
+- **`ClickHouseWarning`** — the problem is inside ClickHouse, not the operator.
+  Treat the message as you would a row from `system.warnings`.
+
+## Related guides {#related-guides}
+
+- [Monitoring the operator](/products/kubernetes-operator/guides/monitoring) — metrics and health probes, the durable counterpart to events.
+- [Scaling](/products/kubernetes-operator/guides/scaling) — what `HorizontalScaleBlocked` protects and how Keeper quorum bounds scaling.
+- [Configuration](/products/kubernetes-operator/guides/configuration) — the External Secret feature behind the external-secret events.

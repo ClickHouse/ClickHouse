@@ -1,0 +1,874 @@
+---
+slug: /changelogs/26.4
+title: 'Cloud 向け v26.4 変更履歴'
+description: 'v26.4 の変更履歴'
+keywords: ['変更履歴', 'クラウド']
+sidebarTitle: '26.4'
+doc_type: 'changelog'
+---
+
+<div id="backward-incompatible-changes">
+  ## 後方互換性を持たない変更
+</div>
+
+<div id="query-and-syntax-changes">
+  ### クエリおよび構文の変更
+</div>
+
+* `IN` 演算子は、`Bool` 型に対して厳密な値のセマンティクスを使用するようになりました。つまり、集合内の `0` と `1` のみが `Bool` 値に一致します。以前は、`IN` 集合内の `255` を超える数値が誤って true に丸め込まれていたため、`SELECT CAST(1, 'Bool') IN (256)` は `1` を返していました。現在は正しく `0` を返します。 [#93115](https://github.com/ClickHouse/ClickHouse/pull/93115) ([Ashrith Bandla](https://github.com/ashrithb)).
+* `NOT` 演算子の優先順位を SQL 標準に合わせて修正しました。これにより、`NOT` は `IS NULL`、`BETWEEN`、`LIKE`、および算術演算子よりも弱く結合するようになりました。たとえば、`NOT (x) IS NULL` は、以前の `(NOT x) IS NULL` ではなく、現在は `NOT (x IS NULL)` として解析されます。これにより、従来の (標準に準拠しない) 動作に依存していたクエリの結果が変わる可能性があります。 [#97680](https://github.com/ClickHouse/ClickHouse/pull/97680) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `SELECT` は、`WITH` 式リスト要素内で識別子を裸のまま記述する場合には使用できなくなりました。 [#101059](https://github.com/ClickHouse/ClickHouse/pull/101059) ([Aruj Bansal](https://github.com/arujbansal)).
+* `IN` 演算子は、複合型 (`Tuple`、`Array`、`Map`) 内で精度が失われる `Decimal` 変換を拒否するようになり、トップレベルの scalar 比較と一貫した動作になりました。以前は、精度チェックはトップレベルの scalar 値に対してのみ行われていました。たとえば、`CAST('33.3', 'Decimal64(1)') IN (33.33)` は正しく `0` を返していましたが、`CAST(['33.3'], 'Array(Decimal64(1))') IN ([33.33])` は誤って `1` を返していました。現在は、どちらの場合も正しく `0` を返します。 [#101812](https://github.com/ClickHouse/ClickHouse/pull/101812) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+<div id="data-type-changes">
+  ### データ型の変更
+</div>
+
+* データ型のシリアル化バージョンが、ネストしたデータ型にも伝播されるようになりました。たとえば、String のシリアル化バージョン `with_size_stream` は、以前は最上位の String カラムと Tuple の要素にのみ適用されていましたが、現在は Array、Map、Variant、JSON などのネストした型内にあるあらゆる String 型にも適用されます。これは MergeTree 設定 `propagate_types_serialization_versions_to_nested_types` で制御されており、現在はデフォルトで有効です。この変更後、新しく作成されたデータパーツは古いバージョンでは読み取れませんが、古いパーツは新しいバージョンで読み取ることができます。アップグレードは安全ですが、ダウングレードは安全ではありません。[#94859](https://github.com/ClickHouse/ClickHouse/pull/94859) ([Pavel Kruglov](https://github.com/Avogar)).
+* `QBit` のバイナリシリアライゼーションのエンディアンを修正し、リトルエンディアン形式を使用するようにしました。[#101378](https://github.com/ClickHouse/ClickHouse/pull/101378) ([Raufs Dunamalijevs](https://github.com/rienath)).
+
+<div id="storage-and-index-changes">
+  ### ストレージと索引の変更
+</div>
+
+* 複数カラムのソートキーを持つプロジェクションが正しく認識されるよう、通常のプロジェクションのメタデータを修正しました。[#91352](https://github.com/ClickHouse/ClickHouse/pull/91352) ([Amos Bird](https://github.com/amosbird)).
+* スキップ索引ファイルで `replace_long_file_name_to_hash` 設定が考慮されていなかった問題を修正しました。この問題により、名前の長い索引で &quot;File name too long&quot; エラーが発生し、索引の読み取りが壊れることがありました。スキップ索引のファイル名は、カラムファイルと同様に、`max_file_name_length` を超える場合はハッシュ化されるようになりました。これは後方互換性があります (新しいサーバーは古いパーツを読み取れます) が、ダウングレード時 (またはローリングアップグレード中の古いサーバー) には、名前の長い索引が無視される可能性があります。[#97128](https://github.com/ClickHouse/ClickHouse/pull/97128) ([Raúl Marín](https://github.com/Algunenano)).
+
+<div id="removed-features">
+  ### 削除された機能
+</div>
+
+* `hypothesis` スキップ索引タイプを削除しました。これはあまり知られておらず、実用性も限られた実験的な機能でした。現在、`INDEX ... TYPE hypothesis` を指定してテーブルを作成するとエラーになります。[#96874](https://github.com/ClickHouse/ClickHouse/pull/96874) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 実験的な `detectProgrammingLanguage` 関数を削除しました。[#99567](https://github.com/ClickHouse/ClickHouse/pull/99567) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="settings-and-configuration-changes">
+  ### 設定および構成の変更
+</div>
+
+* `mysql_datatypes_support_level` のデフォルト値が空から `decimal,datetime64,date2Date32` に変更され、MySQL の `DATE` は `Date32` に、`DECIMAL`/`NUMERIC` は `Decimal` に、精度付きの `DATETIME`/`TIMESTAMP` は `DateTime64` に、それぞれデフォルトで適切にマッピングされるようになりました。以前は MySQL の `DATE` カラムは `Date` にマッピングされていましたが、`Date` では 1970-01-01 より前の日付を表現できないため、データ破損の原因となっていました。[#97716](https://github.com/ClickHouse/ClickHouse/pull/97716) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+
+<div id="insert-and-deduplication-changes">
+  ### INSERT と重複排除に関する変更
+</div>
+
+* 非同期 INSERT はデフォルトで有効になりました — ClickHouse はデフォルトですべての小さな INSERT をバッチ処理します。これは `compatibility` 設定で制御されます。`compatibility` を 26.2 未満のバージョンに設定すると、以前のデフォルト値である `false` に戻ります。非同期 INSERT は、config の users プロファイル、セッション、クエリ、または MergeTree テーブルの各レベルでオンまたはオフにできます。[#97590](https://github.com/ClickHouse/ClickHouse/pull/97590) ([Sema Checherinda](https://github.com/CheSema)).
+
+<div id="system-table-changes">
+  ### システムテーブルの変更
+</div>
+
+* `system.query_log` の `skip_indexes` カラムを復元しました。[#101018](https://github.com/ClickHouse/ClickHouse/pull/101018) ([Alexey Milovidov](https://github.com/alexey-milovidov)) 。
+
+<div id="other-breaking-changes">
+  ### その他の後方互換性のない変更
+</div>
+
+* `mergeTreeAnalyzeIndexes{,UUID}` は、正規表現ではなくパート名の配列を受け取るようになりました。正規表現は低速なためです (実験的機能) 。[#98474](https://github.com/ClickHouse/ClickHouse/pull/98474) ([Azat Khuzhin](https://github.com/azat)).
+* H3 ライブラリが v4 に更新され、長さや面積などの計算精度が向上しました。新しい結果は以前のものと異なるため、この変更には後方互換性がありません。[#100348](https://github.com/ClickHouse/ClickHouse/pull/100348) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `Merge` テーブルにおける仮想カラムの扱いが変更されました。基になるテーブルに `_table` または `_database` がある場合、これらのカラムはストレージから読み取られます。そうでない場合は、読み取りステップの後に expression ステップで補完されます。[#101742](https://github.com/ClickHouse/ClickHouse/pull/101742) ([Mikhail Artemenko](https://github.com/Michicosun)).
+
+<div id="new-features">
+  ## 新機能
+</div>
+
+<div id="functions">
+  ### 関数
+</div>
+
+* 自然順ソートキー用の `naturalSortKey(s)` 関数を追加しました。[#90322](https://github.com/ClickHouse/ClickHouse/pull/90322) ([Nazarii Piontko](https://github.com/nazarii-piontko)).
+* `arrayAutocorrelation(arr [, max_lag])` 関数を追加しました。これは、数値 Array の各ラグに対する正規化自己相関を計算します。整数、浮動小数点、Decimal の Array 型をサポートします。[#94776](https://github.com/ClickHouse/ClickHouse/pull/94776) ([Wenyu Chen](https://github.com/wenyuchen96)).
+* `Map` と同様に、JSON type でもパスの存在確認に `has()` 関数を使用できるようになりました。[#96927](https://github.com/ClickHouse/ClickHouse/pull/96927) ([DQ](https://github.com/il9ue)).
+* `mergeTreeTextIndex(database, table, index)` テーブル関数を追加しました。これはテキスト索引からデータを直接読み取ります。イントロスペクションや、テキスト索引データに対する集計の実行に使用できます。[#97003](https://github.com/ClickHouse/ClickHouse/pull/97003) ([Anton Popov](https://github.com/CurtizJ)).
+* `obfuscateQuery` SQL 関数を追加しました。[#98305](https://github.com/ClickHouse/ClickHouse/pull/98305) ([Xuewei Wang](https://github.com/Sallery-X)).
+* Unicode の case folding とダイアクリティカルマーク除去のための `caseFoldUTF8` および `removeDiacriticsUTF8` 関数を追加しました。[#98973](https://github.com/ClickHouse/ClickHouse/pull/98973) ([George Larionov](https://github.com/george-larionov)).
+* `printf` 関数が非定数の format string をサポートするようになり、カラムの値に応じて行ごとに異なる format pattern を使用できるようになりました。[#98991](https://github.com/ClickHouse/ClickHouse/pull/98991) ([Yash](https://github.com/Onyx2406)).
+* `highlight()` 関数を追加しました。これは、テキスト文字列内で検索語が出現した箇所を HTML タグ (デフォルトは `<em>`/`</em>`) で囲みます。ASCII の大文字・小文字を区別しないマッチング、重複する一致箇所の自動マージ、カスタムの開始/終了タグをサポートします。[#99131](https://github.com/ClickHouse/ClickHouse/pull/99131) ([Peng](https://github.com/fastio)).
+* NFKC&#95;Casefold Unicode 正規化用の文字列関数 `normalizeUTF8NFKCCasefold` を追加しました。これは NFKC 正規化と case folding を組み合わせたものです。[#99276](https://github.com/ClickHouse/ClickHouse/pull/99276) ([George Larionov](https://github.com/george-larionov)).
+* 全文索引および `tokens` 関数向けに `unicode_word` トークナイザーを追加しました。これは Unicode の単語境界規則に従ってテキストを分割します。ASCII の単語は connector characters (アンダースコア、コロン、ドット、シングルクォート) を含めて構成され、非 ASCII の Unicode 文字は 1 文字のトークンになります。設定可能な stop words のデフォルト値は一般的な CJK 句読点です。[#99357](https://github.com/ClickHouse/ClickHouse/pull/99357) ([Amos Bird](https://github.com/amosbird)).
+* `arrayTranspose` 関数を追加しました。これは二次元 Array (行列) を受け取り、転置します。[#101214](https://github.com/ClickHouse/ClickHouse/pull/101214) ([Vitaly Baranov](https://github.com/vitlibar)).
+* フレーズ検索 (連続するトークン列) 用の `hasPhrase` 関数 (別名 `matchPhrase`) を追加しました。検索はブルートフォースで行われ、テキスト索引ではまだサポートされていません。[#101997](https://github.com/ClickHouse/ClickHouse/pull/101997) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* ベクトル類似度索引でサポートされる距離関数として `dotProduct` を追加しました。誤った結果が黙って返されるのを防ぐため、すべての距離関数でソート方向が検証されるようになりました。[#102254](https://github.com/ClickHouse/ClickHouse/pull/102254) ([Renzo](https://github.com/RenzoMXD)).
+* `stem` 関数が、`String`、`FixedString`、`Array([Fixed]String)`、`Nullable`、`LowCardinality`、`Const` カラム内のすべての単語/トークンをステミングできるようになりました。[#99137](https://github.com/ClickHouse/ClickHouse/pull/99137) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+* `stem` 関数は実験的機能ではなくなりました (以前は `allow_experimental_nlp_functions` を有効にする必要がありました) 。 [#102399](https://github.com/ClickHouse/ClickHouse/pull/102399) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+* `JSONAllValues` 関数が追加されました。この関数は、`JSON` カラム内のすべての値を `Array(String)` として返します。値はテキスト表現でシリアライズされ、パス名順に並べられます。さらに、`JSON` カラム上の `JSONAllValues` 式に対するテキスト索引のサポートも追加されました。`JSONAllValues(json_column)` にテキスト索引を作成すると、`JSON` サブカラムに対するクエリのフィルタリング (たとえば `json_column.key1 = 'value'`) に自動的に使用されます。 [#100730](https://github.com/ClickHouse/ClickHouse/pull/100730) ([Anton Popov](https://github.com/CurtizJ)).
+* `EXTRACT` 演算子に PostgreSQL 互換の単位 `EPOCH`、`DOW`、`DOY`、`ISODOW`、`ISOYEAR`、`WEEK`、`CENTURY`、`DECADE`、`MILLENNIUM` が追加されました。あわせて、以前はエラーになっていた `EXTRACT(WEEK FROM date)` も修正されました。 [#100274](https://github.com/ClickHouse/ClickHouse/pull/100274) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* SQL 標準の `OVERLAY` 関数構文に対する、パーサーのシンタックスシュガー経由での `toDaysInMonth()` 関数サポートが追加されました。`overlay` 関数自体はすでに存在していましたが、今回の追加により、`PLACING`、`FROM`、`FOR` を区切りとして使うキーワードベースの形式がサポートされます。 [#101681](https://github.com/ClickHouse/ClickHouse/pull/101681) ([Desel72](https://github.com/Desel72)).
+* `Date` および `Date32` の値に `+` 演算子を使って `Time` および `Time64` の値を加算できるようになり、`DateTime` または `DateTime64` の結果が得られるようになりました。たとえば、`SELECT toDate('2024-01-15') + toTime('14:30:25')` は `2024-01-15 14:30:25` を返します。結果はセッションタイムゾーンで計算され、範囲外の結果は `date_time_overflow_behavior` 設定に従って処理されます。 [#102421](https://github.com/ClickHouse/ClickHouse/pull/102421) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+<div id="sql-and-query-features">
+  ### SQL とクエリ機能
+</div>
+
+* パラメーターが `Nullable` 型で、かつ値が指定されていない場合、その値は `NULL` とみなされるようになりました。[#93869](https://github.com/ClickHouse/ClickHouse/pull/93869) ([Vikash Kumar](https://github.com/vikashkumar2020)).
+* ClickHouse で、`SELECT` クエリにおいて min/max 統計に基づいてデータパーツ全体をプルーニングできるようになりました。[#94140](https://github.com/ClickHouse/ClickHouse/pull/94140) ([zoomxi](https://github.com/zoomxi)).
+* マテリアライズド CTE のサポートが追加されました。これにより、CTE はクエリ実行中に一度だけ評価され、その結果は一時テーブルに格納されます。[#94849](https://github.com/ClickHouse/ClickHouse/pull/94849) ([Dmitry Novik](https://github.com/novikd)).
+* 一部の関数を、SQL で括弧なしで使用できるようになりました。[#95949](https://github.com/ClickHouse/ClickHouse/pull/95949) ([Aly Kafoury](https://github.com/AlyHKafoury)).
+* `JSON` 型に対して、複合サブカラム構文 `json.@path` が追加されました。パスが scalar を保持している場合はリテラル値を `Dynamic` として返し、パスがネストされた object を保持している場合は sub-object を `Dynamic` として返し、パスが存在しない場合は `NULL` を返します。[#98788](https://github.com/ClickHouse/ClickHouse/pull/98788) ([Pavel Kruglov](https://github.com/Avogar)).
+* サブクエリ式向けの `SOME` キーワードが追加されました。動作は `ANY` と同一です。[#99842](https://github.com/ClickHouse/ClickHouse/pull/99842) ([Artem Kytkin](https://github.com/Vinceent)).
+* `SET session_timezone` の別名として `SET TIME ZONE 'tz'` をサポートしました。[#99883](https://github.com/ClickHouse/ClickHouse/pull/99883) ([phulv94](https://github.com/phulv94)).
+* `FROM` 句内のテーブル式として、SQL 標準の `VALUES` 句のサポートが追加されました。例: `SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(id, val)`。[#100143](https://github.com/ClickHouse/ClickHouse/pull/100143) ([Desel72](https://github.com/Desel72)).
+* `TO` 範囲修飾子を持つ SQL 標準の複合インターバルリテラルのサポートが追加されました。例: `INTERVAL '1:30' HOUR TO MINUTE`。内部的には複数のインターバルの合計に分解されます。[#100453](https://github.com/ClickHouse/ClickHouse/pull/100453) ([Desel72](https://github.com/Desel72)).
+* 順序付きモードおよび順不同モード向けに、`SYSTEM FLUSH OBJECT STORAGE QUEUE db.table PATH 'x'` コマンドが追加されました。[#100709](https://github.com/ClickHouse/ClickHouse/pull/100709) ([Bharat Nallan](https://github.com/bharatnc)).
+
+<div id="table-engines-and-storage">
+  ### テーブルエンジンとストレージ
+</div>
+
+* `Paimon` テーブルエンジンでインクリメンタル読み取りをサポートしました。Keeper を利用したスナップショット進捗の追跡に加え、`paimon_target_snapshot_id` による対象スナップショットの差分読み取りにも対応しています。 [#93655](https://github.com/ClickHouse/ClickHouse/pull/93655) ([XiaoBinMu](https://github.com/Binnn-MX)).
+* `DatabaseReplicated` で補助的な ZooKeeper をサポートしました。 [#95590](https://github.com/ClickHouse/ClickHouse/pull/95590) ([RinChanNOW](https://github.com/RinChanNOWWW)).
+* Iceberg v3 のナノ秒タイムスタンプ型 (`timestamp_ns` および `timestamptz_ns`) の読み取りをサポートし、それぞれ `DateTime64(9)` および `DateTime64(9, 'UTC')` にマッピングされるようになりました。これにより、ClickHouse はスキーマにこれらの型を含む Iceberg データを読み取れるようになります。ただし、これは Iceberg v3 全体の完全サポートを意味するものではなく、これらの型を使った Iceberg v3 への書き込みにも対応していません。 [#97132](https://github.com/ClickHouse/ClickHouse/pull/97132) ([Dmitry Kovalev](https://github.com/dk-github)).
+* Iceberg テーブル向けに `ALTER TABLE ... EXECUTE expire_snapshots('<timestamp>')` を追加しました。 [#97904](https://github.com/ClickHouse/ClickHouse/pull/97904) ([murphy-4o](https://github.com/murphy-4o)).
+* Parquet メタデータ向けの新しい SLRU キャッシュを追加しました。これにより、メタデータを読むためだけにファイルを再ダウンロードする必要がなくなり、読み取り性能が向上します。 [#98140](https://github.com/ClickHouse/ClickHouse/pull/98140) ([Grant Holly](https://github.com/grantholly-clickhouse)).
+* `JSONAllPaths` を使用した JSON カラム向けの MergeTree スキップ索引を追加しました。`bloom_filter`、`tokenbf_v1`、`ngrambf_v1`、および `text` (転置) 索引型に対応し、各グラニュールに含まれる JSON パスの集合に基づいてグラニュールをスキップできるようになります。 [#98886](https://github.com/ClickHouse/ClickHouse/pull/98886) ([Pavel Kruglov](https://github.com/Avogar)).
+* 挿入順にデータを再編成する `commit_order` projection index を追加しました。 [#99004](https://github.com/ClickHouse/ClickHouse/pull/99004) ([Mikhail Artemenko](https://github.com/Michicosun)).
+* MergeTree の `Map` カラムに bucketed serialization を追加しました (`map_serialization_version = 'with_buckets'`) 。キーはハッシュベースの buckets に分割されるため、単一キー (`m['key']`) の読み取りではカラム全体ではなく 1 つの bucket のみを読み取ります。これにより、map のサイズに応じて単一キーのルックアップが 2～49 倍高速化されます。bucket の数と bucketing 戦略は、新しい MergeTree settings `map_serialization_version`、`max_buckets_in_map`、`map_buckets_strategy`、`map_buckets_coefficient`、`map_buckets_min_avg_size` で制御できます。設定 `map_serialization_version_for_zero_level_parts` では、書き込みオーバーヘッドを避けるため inserts では基本的なシリアライゼーションを維持しつつ、マージ済みパーツでは buckets を使用します。bucketed serialization では `mapKeys`/`mapValues` に対するスキップ索引がサポートされており、`optimize_functions_to_subcolumns` は buckets が利用可能な場合に `m['key']` をキーごとの サブカラム 読み取りに Rewrite します。 [#99200](https://github.com/ClickHouse/ClickHouse/pull/99200) ([Pavel Kruglov](https://github.com/Avogar)).
+
+<div id="insert-and-deduplication">
+  ### 挿入と重複排除
+</div>
+
+* 互換性設定 `use_strict_insert_block_limits` で制御される、`max_insert_block_size_rows`、`max_insert_block_size_bytes`、`min_insert_block_size_rows`、`min_insert_block_size_bytes` のブロックをまとめる処理における新しい動作を実装しました。[#94207](https://github.com/ClickHouse/ClickHouse/pull/94207) ([Kirill Kopnev](https://github.com/Fgrtue)).
+
+<div id="settings-and-configuration">
+  ### 設定と構成
+</div>
+
+* テーブルを読み取り専用としてマークし、insert や変更を防ぐための `table_readonly` MergeTree setting を追加しました。 [#97652](https://github.com/ClickHouse/ClickHouse/pull/97652) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `use_partition_pruning` setting (別名 `use_partition_key`) を追加しました。`false` に設定すると、パーティションキーに基づくパーティション pruning を無効にできます。 [#97888](https://github.com/ClickHouse/ClickHouse/pull/97888) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `<protocols>` 内の各 `type=http` エントリで、別個の `<http_handlers_*>` config セクションを指すカスタムの `<handlers>` key を指定できるようになり、ポートごとに異なる HTTP ルーティングルールを設定できるようになりました。 [#98414](https://github.com/ClickHouse/ClickHouse/pull/98414) ([Amos Bird](https://github.com/amosbird)).
+* 2 つの MergeTree settings、`replicated_fetches_min_part_level` と `replicated_fetches_min_part_level_timeout_seconds` を追加しました。これにより、レプリカは新たに挿入されたばかりの (merge されていない) パーツの、他のノードからの fetch をスキップでき、負荷の高いインジェスト時のレプリケーション overhead を削減できます。 [#98625](https://github.com/ClickHouse/ClickHouse/pull/98625) ([tanner-bruce](https://github.com/tanner-bruce)).
+* `restore_access_entities_with_current_grants` server setting を追加しました。有効にすると、復元されたユーザー/ロールの grant は、復元を実行するユーザーが付与可能な範囲に制限されます (`GRANT CURRENT GRANTS` と同じ意味) 。これまでのように `ACCESS_DENIED` で失敗することはありません。 [#98795](https://github.com/ClickHouse/ClickHouse/pull/98795) ([pufit](https://github.com/pufit)).
+* `skip_unavailable_shards` が有効な場合に、警告なしでスキップできる分片の数を制限するための `max_skip_unavailable_shards_num` と `max_skip_unavailable_shards_ratio` settings を追加しました。利用不能な分片の数または比率が設定された threshold を超えると、不完全な結果をそのまま返す代わりに例外がスローされます。 [#99369](https://github.com/ClickHouse/ClickHouse/pull/99369) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 公開 ClickHouse service を悪用から保護するため、正規化クエリ hash による quota を実装しました。`NORMALIZED_QUERY_HASH` は quota key type としてサポートされ、各一意の正規化クエリごとに個別の quota bucket を持つため、`CREATE QUOTA q KEYED BY normalized_query_hash` ではそれぞれの異なるクエリが個別に追跡されます。`QUERIES_PER_NORMALIZED_HASH` は quota resource type としてサポートされ、interval 内で任意の単一の正規化クエリの最大実行回数を制限できるため、`MAX queries_per_normalized_hash = 100` により、1 つの query pattern が 100 回を超えて実行されるのを防ぎます。 [#99586](https://github.com/ClickHouse/ClickHouse/pull/99586) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `auto_statistics_types` MergeTree setting のデフォルトが `minmax, uniq` になり、新しいテーブルでは適切なすべてのカラムに対して minmax および uniq 統計が自動的に作成されるようになりました。`materialize_statistics_on_insert` のデフォルトは `false` になり、統計は insert time ではなく merge 時に構築されるため、insert overhead が軽減されます。以前の動作に戻すには、`materialize_statistics_on_insert = 1` を設定してください。 [#101275](https://github.com/ClickHouse/ClickHouse/pull/101275) ([Han Fei](https://github.com/hanfei1991)).
+* レプリカ間のレプリケーションラグによるデータ欠落を減らすため、materialized view の依存チェーン向けに `prefer_dependency_replica` refresh setting を追加しました。 [#101591](https://github.com/ClickHouse/ClickHouse/pull/101591) ([Seva Potapov](https://github.com/seva-potapov)).
+
+<div id="authentication">
+  ### 認証
+</div>
+
+* LDAP クライアントがリファラルをたどるかどうかを制御する、サーバーごとの LDAP 設定オプション `<follow_referrals>` (デフォルトは `false`) を追加しました。リファラル追跡を無効にすると、Active Directory のドメインルートであるベース DN から検索する際のタイムアウトやハングを回避でき、ログのノイズも軽減されます。[#96765](https://github.com/ClickHouse/ClickHouse/pull/96765) ([paf91](https://github.com/paf91)).
+
+<div id="system-tables">
+  ### システムテーブル
+</div>
+
+* `system.histogram_metric_log` を追加しました。これは、すべてのヒストグラムメトリクス (例: S3/Azure のレイテンシ、Keeper リクエスト処理ステージの所要時間) を定期的にスナップショットとして保存する新しいシステムテーブルです。`system.histogram_metrics` の `value` カラムは、柔軟性と Prometheus のデータモデルとの互換性を高めるため、`Float64` になりました。[#103046](https://github.com/ClickHouse/ClickHouse/pull/103046) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+
+<div id="experimental-features">
+  ## 実験的機能
+</div>
+
+* ALP 浮動小数点圧縮コーデックを追加しました (圧縮できない倍精度浮動小数点数に対する ALP&#95;rd フォールバックなし) 。[#91362](https://github.com/ClickHouse/ClickHouse/pull/91362) ([Nazarii Piontko](https://github.com/nazarii-piontko)).
+* JSON カラム向けの実験的な遅延実行型ヒントを追加しました。`allow_experimental_json_lazy_type_hints` で有効にすると、型ヒントの追加または変更だけを行う `ALTER TABLE ... MODIFY COLUMN json JSON(path TypeName)` は、過去のデータを書き換えることなく、メタデータのみの操作として即座に完了します。型ヒントは古いパーツにはクエリ時に適用され、`INSERT` 時およびバックグラウンドマージ時に実体化されます。[#97412](https://github.com/ClickHouse/ClickHouse/pull/97412) ([tanner-bruce](https://github.com/tanner-bruce)).
+* `polyglot` ライブラリを使用した外部 SQL方言のサポートを追加しました。[#99496](https://github.com/ClickHouse/ClickHouse/pull/99496) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `query_plan_optimize_join_order_randomize` 設定を追加しました。これは JOIN の並べ替えに使われる統計情報をランダム化するもので、テストに役立ちます。[#100643](https://github.com/ClickHouse/ClickHouse/pull/100643) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* ClickHouse に AI 関数のサポートを追加し、ユーザーが SQL を使って OpenAI と Anthropic のエンドポイントを呼び出せるようにしました。最初の関数として `aiGenerate` が含まれています。[#100831](https://github.com/ClickHouse/ClickHouse/pull/100831) ([George Larionov](https://github.com/george-larionov)).
+* ClickHouse で LLM API を利用するための AI 関数 `aiClassify`、`aiExtract`、`aiTranslate` を追加しました。[#100832](https://github.com/ClickHouse/ClickHouse/pull/100832) ([George Larionov](https://github.com/george-larionov)).
+* Delta Kernel を利用した Azure 上のデータレイクのサポートを追加しました。[#102202](https://github.com/ClickHouse/ClickHouse/pull/102202) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+
+<div id="performance-improvements">
+  ## パフォーマンス改善
+</div>
+
+<div id="join-performance">
+  ### JOIN のパフォーマンス
+</div>
+
+* `HashJoin` と `ConcurrentHashJoin` に対して、いくつかの小規模な改善を行いました。[#96663](https://github.com/ClickHouse/ClickHouse/pull/96663) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* オプティマイザの統計情報に基づいて、`ANTI`、`SEMI`、`FULL` JOIN の左右を入れ替えられるようにしました。[#97498](https://github.com/ClickHouse/ClickHouse/pull/97498) ([Hechem Selmi](https://github.com/m-selmi)).
+* 書き込み前に `JoinUsedFlags` が設定されているかを確認することで、`RIGHT` および `FULL` JOIN における cache の競合を軽減しました。[#99274](https://github.com/ClickHouse/ClickHouse/pull/99274) ([Hechem Selmi](https://github.com/m-selmi)).
+* direct-index hash table を使用することで、範囲が小さい `Int32` および `Int64` キーでのハッシュ結合を高速化しました。[#99275](https://github.com/ClickHouse/ClickHouse/pull/99275) ([Hechem Selmi](https://github.com/m-selmi)).
+
+<div id="query-optimization">
+  ### クエリ最適化
+</div>
+
+* 大きな Polygon に対する `pointInPolygon` の granule skipping を最適化し、主キーのプルーニング中に `pointInPolygon` の索引解析で例外が発生する問題を修正しました。[#91633](https://github.com/ClickHouse/ClickHouse/pull/91633) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `optimize_read_in_order` が、projections の読み取り時にも適用されるようになりました。[#95885](https://github.com/ClickHouse/ClickHouse/pull/95885) ([Andrey Zvonov](https://github.com/zvonand)).
+* テキスト索引 Dictionary からの読み取りをわずかに最適化し、テキスト索引解析全体のパフォーマンスを向上させました。[#97519](https://github.com/ClickHouse/ClickHouse/pull/97519) ([Anton Popov](https://github.com/CurtizJ)).
+* 索引付きカラムと索引なしカラムの両方を含む複合条件を持つクエリにおける、テキスト索引解析のパフォーマンスを改善しました。従来、このようなケースでは索引解析中の早期終了最適化が誤って無効化されていました。[#98096](https://github.com/ClickHouse/ClickHouse/pull/98096) ([Anton Popov](https://github.com/CurtizJ)).
+* 非常に長い配列や Map を生成する定数式を含むクエリのパフォーマンスを改善しました。[#98287](https://github.com/ClickHouse/ClickHouse/pull/98287) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `DateTime64` の主キーを整数定数と比較した際のキー条件解析を修正しました。従来は、その結果 granule pruning が行われていませんでした。[#98410](https://github.com/ClickHouse/ClickHouse/pull/98410) ([Amos Bird](https://github.com/amosbird)).
+* `optimize_syntax_fuse_functions` 設定がデフォルトで有効になりました。[#98424](https://github.com/ClickHouse/ClickHouse/pull/98424) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* predicate に任意の比較演算子 (`=`, `<`, `>`, `!=`) が含まれ、かつ partition key が決定論的な function chain でラップされている場合に、partition pruning が可能になりました (たとえば `PARTITION BY x` の場合、`cityHash64(x) % 5 > 2`、`toYYYYMM(x) < 2026`、`toYYYYMM(x) = 2026`、`toYYYYMM(x) != 2026` のような predicates は、いずれも pruning に partition key を利用します) 。[#98432](https://github.com/ClickHouse/ClickHouse/pull/98432) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `CAST` の対象型が `Nullable` で、かつ変換が monotonic な場合に、read-in-order 最適化と主キーのプルーニングが可能になりました。たとえば `PRIMARY KEY x` の場合、ClickHouse は `ORDER BY x::Nullable(UInt64)` に対して read-in-order 最適化を使用でき、`WHERE x::Nullable(UInt64) > 500000` のような predicates に対して主キーのプルーニングを使用できます。[#98482](https://github.com/ClickHouse/ClickHouse/pull/98482) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* 整数カラムを浮動小数点リテラルと比較する場合に、index pruning と filter pushdown が可能になりました。たとえば `WHERE x < 10.5` のような predicates で主キーを pruning に使用できるようになり、`prime < 1e9` や `number < 1e5` のような filters も、無制限に実行される代わりに `primes()` および `numbers()` の table functions へ pushed down されるようになりました。[#98516](https://github.com/ClickHouse/ClickHouse/pull/98516) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `^(abc-1|abc-2)` のように、リテラル文字列に対する正規表現の選択肢を使って MergeTree の主キーカラムをフィルタするクエリで、選択肢が共通のプレフィックスを持つ場合に主キーのプルーニングを使用できるようになりました。[#98988](https://github.com/ClickHouse/ClickHouse/pull/98988) ([Yash](https://github.com/Onyx2406)).
+* `INTERSECT ALL` と `EXCEPT ALL` を最適化しました。[#99097](https://github.com/ClickHouse/ClickHouse/pull/99097) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* 逆順読み取りに対する `read_in_order_use_virtual_row` 最適化のサポートを追加しました。[#99198](https://github.com/ClickHouse/ClickHouse/pull/99198) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* 単一の Dictionary を持つ `LowCardinality` カラムに対する非連続なクエリが高速化されました。[#99285](https://github.com/ClickHouse/ClickHouse/pull/99285) ([Ivan Babrou](https://github.com/bobrik)).
+* 多数のコアを持つマシンで、集約を伴う短いクエリのスケーリング悪化を修正しました。クエリが少数のマークしか読み取らない場合、集約後にパイプラインが `max_threads` まで拡張されなくなり、ほぼ空のストリームによるオーバーヘッドを回避します。[#99493](https://github.com/ClickHouse/ClickHouse/pull/99493) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 読み取りタスクサイズを適切に選択することで、並列レプリカを使用するクエリの性能を向上させました。[#99801](https://github.com/ClickHouse/ClickHouse/pull/99801) ([Nikita Taranov](https://github.com/nickitat)).
+* `ORDER BY` プレフィックスで `GROUP BY` のすべてのキーがカバーされている場合、末尾の冗長な `ORDER BY` 要素を削除するようになりました。[#100157](https://github.com/ClickHouse/ClickHouse/pull/100157) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `LIMIT` 句を `UNION ALL` にプッシュダウンすることで、クエリを最適化しました。[#100364](https://github.com/ClickHouse/ClickHouse/pull/100364) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `ORDER BY` における `String` および `FixedString` カラム比較で JIT コンパイルのサポートを追加し、文字列主体のソートキーに対するマージフェーズのソート性能を 6～17% 向上させました。[#100577](https://github.com/ClickHouse/ClickHouse/pull/100577) ([Raúl Marín](https://github.com/Algunenano)).
+* 新しい `read_in_order_use_virtual_row_per_block` 設定とともに `read_in_order_use_virtual_row` が有効な場合、MergeTree から各 block を読み取るたびに virtual row の境界情報が出力されるようになりました。これにより、`WHERE`/`PREWHERE`/`JOIN` によってデータが完全に絞り込まれるパーツについて、マージ処理がストリームの途中でソースの優先順位を付け替えられるようになります。[#100603](https://github.com/ClickHouse/ClickHouse/pull/100603) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* 並列レプリカで実行されるシンプルなビュー (基盤となる MergeTree テーブル上) に対するクエリの並列化を改善しました。[#100815](https://github.com/ClickHouse/ClickHouse/pull/100815) ([Igor Nikonov](https://github.com/devcrafter)).
+* `parallel_replicas_allow_view_over_mergetree=1` の場合、シンプルなビュー (`MergeTree` テーブル上の対象となる `UNION ALL` ビューを含む) に対する並列レプリカのサポートを追加しました。これにより、内側のクエリではなくビューの外側のクエリが並列化され、ノード間でのクエリ並列性が向上します。[#100958](https://github.com/ClickHouse/ClickHouse/pull/100958) ([Igor Nikonov](https://github.com/devcrafter)).
+* クエリプランに `IN` を含むフィルターがある場合の、`full_sorting_merge` における主キー順の読み取りを最適化しました。[#101261](https://github.com/ClickHouse/ClickHouse/pull/101261) ([Nikita Taranov](https://github.com/nickitat)).
+* 値がエスケープされた文字列 (例: `'{\'key\':1}'`) として渡される場合の `Map`、`Array`、`Tuple` カラムに対する `INSERT VALUES` の性能を改善し、SQL 式パーサーへの不要な fallback を回避するようにしました。[#102119](https://github.com/ClickHouse/ClickHouse/pull/102119) ([Joanna Hulboj](https://github.com/jh0x)).
+
+<div id="function-and-aggregation-performance">
+  ### 関数と集約のパフォーマンス
+</div>
+
+* `levenshteinDistance` 関数のパフォーマンスを改善しました。[#94543](https://github.com/ClickHouse/ClickHouse/pull/94543) ([Joanna Hulboj](https://github.com/jh0x)).
+* 要素ごとの関数呼び出しを避けることで、Decimal 型のバッチ変換を最適化しました。[#95923](https://github.com/ClickHouse/ClickHouse/pull/95923) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+* `LIKE` クエリのパフォーマンスを改善しました。[#98149](https://github.com/ClickHouse/ClickHouse/pull/98149) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* 行ごとに aggregate state を介して store-forwarding する代わりにローカルアキュムレータを使用することで、`avgWeighted` 集約関数を最適化し、`Nullable` 入力で最大 27% の性能向上を実現しました。[#98793](https://github.com/ClickHouse/ClickHouse/pull/98793) ([Antonio Andelic](https://github.com/antonio2368)).
+* 内部ループの devirtualization により、`Float64` カラムに対する `var*Stable` および `stddev*Stable` 関数を高速化しました。これによりコンパイラ最適化 (FMA/レジスタ) が有効になり、浮動小数点の結果が ULP レベルで変化します。[#99460](https://github.com/ClickHouse/ClickHouse/pull/99460) ([Riyane El Qoqui](https://github.com/riyaneel)).
+* 32/64 バイトの入力では最適化された Firedancer の base58 エンコードを使用するようにし (`base58Encode` では自動適用) 、デコード結果が 32/64 バイトの場合は最適化された base58 デコードも使えるようにしました (`base58Decode('...', 32)` で明示指定) 。[#99461](https://github.com/ClickHouse/ClickHouse/pull/99461) ([Joanna Hulboj](https://github.com/jh0x)).
+* 不要なメモリシフトを排除することで、`cutURLParameter` 関数を最適化しました。[#100218](https://github.com/ClickHouse/ClickHouse/pull/100218) ([Nikita Semenov](https://github.com/leftmain)).
+* `itoa` の高速パスを dragonbox 互換の rounding に対応させることで、大きな整数値に対する float から文字列への変換を高速化しました。[#100649](https://github.com/ClickHouse/ClickHouse/pull/100649) ([Raúl Marín](https://github.com/Algunenano)).
+* float から文字列への変換を 1.5～3 倍高速化するため、dragonbox を zmij に置き換えました。[#100650](https://github.com/ClickHouse/ClickHouse/pull/100650) ([Raúl Marín](https://github.com/Algunenano)).
+* ソフトウェア除算を Barrett reduction に置き換え、変換ループをアンロールすることで、`Int128`/`UInt128` から文字列への変換を高速化しました。[#100671](https://github.com/ClickHouse/ClickHouse/pull/100671) ([Raúl Marín](https://github.com/Algunenano)).
+* `UniqExactSet` の並列マージで冗長なスレッド生成を回避しました。[#100686](https://github.com/ClickHouse/ClickHouse/pull/100686) ([Jiebin Sun](https://github.com/jiebinn)).
+* `UniqExactSet` にバッチ並列マージを追加しました。[#100687](https://github.com/ClickHouse/ClickHouse/pull/100687) ([Jiebin Sun](https://github.com/jiebinn)).
+
+<div id="storage-and-io-performance">
+  ### ストレージと I/O のパフォーマンス
+</div>
+
+* 完了済みのミューテーションがある ReplicatedMergeTree テーブルにおいて、読み取り専用の操作中のロック競合を削減しました。[#95771](https://github.com/ClickHouse/ClickHouse/pull/95771) ([Eduard Karacharov](https://github.com/korowa)).
+* Iceberg で、テーブル作成時に `iceberg_metadata_async_prefetch_period_ms` を設定することで、メタデータを非同期に cache へ事前投入できるようになりました。Iceberg テーブルに対する `SELECT` クエリでは、`iceberg_metadata_staleness_ms` パラメータを指定できるようになり、これにより、メタデータが指定した staleness より新しい場合は ClickHouse が cache 内のメタデータを利用し、そうでない場合は最新のメタデータを取得するためにリモートの Iceberg カタログに問い合わせます。これにより、リクエスト処理中の Iceberg カタログへの問い合わせを不要にでき、目に見える性能向上が得られます。[#96191](https://github.com/ClickHouse/ClickHouse/pull/96191) ([Arsen Muk](https://github.com/arsenmuk)).
+* S3Queue の ordered モードで、S3 の `ListObjectsV2` `StartAfter` を使用してプレフィックス履歴全体の再一覧取得を回避するようになり、`ListObjects` の呼び出し回数を削減しました。[#96370](https://github.com/ClickHouse/ClickHouse/pull/96370) ([Venkata Vineel](https://github.com/vyalamar)).
+* YTsaurus テーブルエンジンで並列読み取りを有効にしました。[#97343](https://github.com/ClickHouse/ClickHouse/pull/97343) ([MikhailBurdukov](https://github.com/MikhailBurdukov)).
+* データレイクの性能を改善しました。以前のバージョンでは、オブジェクトストレージから読み取る際に、処理スレッド数に合わせてパイプラインのサイズが調整されていませんでした。[#99548](https://github.com/ClickHouse/ClickHouse/pull/99548) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* ユーザー空間 page cache を介してリモートファイルを読み取る際に、プリフェッチを許可しました。[#99919](https://github.com/ClickHouse/ClickHouse/pull/99919) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* `deduplicate_insert=enable` (26.2 以降のデフォルト設定) で発生していた大幅な INSERT 性能低下を修正しました。これは、データ hash の計算を squashing から sink に遅らせ、`updateHashWithValueRange` によるバッチ単位のカラムハッシュ計算を使用することで実現しており、22 カラム・500 万行での overhead を約 2.5 秒から約 0.5 秒に削減します。[#101494](https://github.com/ClickHouse/ClickHouse/pull/101494) ([Sema Checherinda](https://github.com/CheSema)).
+
+<div id="memory-optimization">
+  ### メモリ最適化
+</div>
+
+* 同期 insert で、メモリを節約するために、元の block (重複排除に必要) を省略できるようになりました。[#96661](https://github.com/ClickHouse/ClickHouse/pull/96661) ([Sema Checherinda](https://github.com/CheSema)).
+* 特定のシナリオにおける並列ウィンドウ関数と、大きな配列を含む `arrayFold` ワークロードで、パフォーマンスを改善し、メモリ使用量を削減しました。これにより、影響を受けるクエリでは、ページフォールトの負荷が軽減され、厳しいメモリ制限下での安定性も向上する場合があります。[#98892](https://github.com/ClickHouse/ClickHouse/pull/98892) ([filimonov](https://github.com/filimonov)).
+
+<div id="improvements">
+  ## 改善
+</div>
+
+<div id="query-and-sql-improvements">
+  ### クエリとSQL
+</div>
+
+* 集約プロジェクションがビューで正しくサポートされるようになりました。[#88798](https://github.com/ClickHouse/ClickHouse/pull/88798) ([Amos Bird](https://github.com/amosbird)).
+* `optimize_aggregators_of_group_by_keys` が `GROUPING SETS` クエリ内の集約関数を正しく最適化するようになりました。[#93935](https://github.com/ClickHouse/ClickHouse/pull/93935) ([Xiaozhe Yu](https://github.com/wudidapaopao)).
+* `join_use_nulls` 使用時に、`OUTER` JOIN を `INNER` JOIN に変換する最適化をサポートしました。[#95968](https://github.com/ClickHouse/ClickHouse/pull/95968) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* `cast_keep_nullable` を `Dynamic`/`JSON` 型でも動作するように拡張しました。これを設定すると、`Nullable` にできる型から `NULL` をキャストした場合は `NULL` が返されます。設定しない場合、`NULL` は `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` エラーをスローします。[#96504](https://github.com/ClickHouse/ClickHouse/pull/96504) ([Seva Potapov](https://github.com/seva-potapov)).
+* `CREATE USER` に `ROLE` 句を追加しました。[#97074](https://github.com/ClickHouse/ClickHouse/pull/97074) ([Vitaly Baranov](https://github.com/vitlibar)).
+* 遅延フィルターに関する情報を、`EXPLAIN` クエリ出力に個別項目として追加しました (行ポリシー/PREWHERE と FINAL を使用する場合) 。[#97374](https://github.com/ClickHouse/ClickHouse/pull/97374) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* `FROM` 句で、かっこ付きのテーブル JOIN 式をサポートしました。たとえば `SELECT * FROM (t1 CROSS JOIN t2)` のように使用できます。[#97650](https://github.com/ClickHouse/ClickHouse/pull/97650) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 分散索引解析でデータスキッピングインデックスを適用するようになりました。[#97767](https://github.com/ClickHouse/ClickHouse/pull/97767) ([Azat Khuzhin](https://github.com/azat)).
+* テーブルのソートキーに `toDate(time)` のような式を使用できるようになり、そのような式を遅延させないかどうかは、それらがフィルターの一部である場合に判断されるようになりました。[#98237](https://github.com/ClickHouse/ClickHouse/pull/98237) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* JOIN 順序オプティマイザーが、既存の JOIN 条件から推移的な等値 JOIN 述語を推論するようになりました。たとえば `A.x = B.x AND B.x = C.x` が与えられた場合、`A.x = C.x` という等価関係が認識され、推移的につながったテーブル間の直接 JOIN をオプティマイザーが検討できるようになります。これにより、スターおよびスノーフレークのスキーマで実行計画の品質が向上する可能性があります。この機能は、新しい `enable_join_transitive_predicates` 設定で制御されます (デフォルトでは無効) 。[#98479](https://github.com/ClickHouse/ClickHouse/pull/98479) ([Alexander Gololobov](https://github.com/davenger)).
+* `apply_row_policy_after_final` または `apply_prewhere_after_final` が有効な場合、行ポリシーおよび `PREWHERE` の複合 `AND` 条件が分解され、主キー索引解析のためにソートキーの要素を抽出するようになりました。以前は、遅延フィルターにソートキーの述語と非ソートキーの述語が混在している場合 (たとえば `x > 1 AND y != 'foo'`) 、式全体が索引解析から除外されていました。[#98513](https://github.com/ClickHouse/ClickHouse/pull/98513) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* 分散索引解析には、&quot;alive&quot; (接続可能な) レプリカのみが参加するようになりました。[#98521](https://github.com/ClickHouse/ClickHouse/pull/98521) ([Azat Khuzhin](https://github.com/azat)).
+* 自動 並列レプリカ ヒューリスティックで使用されるノード数を、`max_parallel_replicas` 設定だけでなく、クラスター内の実際のノード数に合わせて上限設定するようにしました。[#98668](https://github.com/ClickHouse/ClickHouse/pull/98668) ([Nikita Taranov](https://github.com/nickitat)).
+* 分散索引解析向けに、ヘッジドリクエストと非同期読み取りを実装しました。[#98724](https://github.com/ClickHouse/ClickHouse/pull/98724) ([Azat Khuzhin](https://github.com/azat)).
+* 分散索引解析で `SAMPLE` 句をサポートしました。[#98931](https://github.com/ClickHouse/ClickHouse/pull/98931) ([Azat Khuzhin](https://github.com/azat)).
+* multiply の単調性をサポートし、`key * constant` 式に対する主キー pruning を有効にしました。[#98983](https://github.com/ClickHouse/ClickHouse/pull/98983) ([Amos Bird](https://github.com/amosbird)).
+* アナライザのエラーメッセージで、テーブルのすべてのカラムをダンプしなくなりました (これまでは 150KB 超の例外が発生する可能性がありました) 。カラム一覧は現在 10 件に制限されています。[#99002](https://github.com/ClickHouse/ClickHouse/pull/99002) ([Yash](https://github.com/Onyx2406)).
+* join を含むサブクエリからの列統計が正しく返されるようになり、親クエリがそれを join の並べ替えに利用できるようになりました。[#99096](https://github.com/ClickHouse/ClickHouse/pull/99096) ([Alexander Gololobov](https://github.com/davenger)).
+* `ALTER TABLE MODIFY COLUMN x TTL ...` で、カラム型を指定しなくても許可されるようになりました。[#99208](https://github.com/ClickHouse/ClickHouse/pull/99208) ([Nikolay Degterinsky](https://github.com/evillique)).
+* `EXPLAIN PLAN pretty=1` の出力を改善しました。最上位クエリの出力カラムを表示し、join relation のラベル/シンボルに推定結果行数と locality を表示し、join/source ステップごとの出力カラムも含まれるようになりました。[#99462](https://github.com/ClickHouse/ClickHouse/pull/99462) ([Kirill Kopnev](https://github.com/Fgrtue)).
+* すべての基盤となる distributed/remote テーブルに存在しないカラムをクエリした際に、`merge()` table function が `UNKNOWN_IDENTIFIER` エラーで失敗する問題を修正しました。[#99833](https://github.com/ClickHouse/ClickHouse/pull/99833) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* 条件が CNF でない場合、optimizer で `ConditionSelectivityEstimator` を使用しないようになりました (たとえば `where a = 0` のように、統計情報が役に立たない単一条件の場合) 。[#100110](https://github.com/ClickHouse/ClickHouse/pull/100110) ([Han Fei](https://github.com/hanfei1991)).
+* `distributed_index_analysis_min_indexes_bytes_to_activate` をパーティション pruning の後に適用するようになりました。[#100477](https://github.com/ClickHouse/ClickHouse/pull/100477) ([Azat Khuzhin](https://github.com/azat)).
+* `EXPLAIN PIPELINE` で `distributed=1` setting をサポートし、リモートのパイプラインフラグメントを含められるようになりました。[#100513](https://github.com/ClickHouse/ClickHouse/pull/100513) ([Nikita Taranov](https://github.com/nickitat)).
+* `use_partition_pruning = 0` は、パーティションキーに基づく pruning を無効化するだけでなく、パーティションキー カラムに対する `MinMax` index pruning と count 最適化も無効化するようになりました。[#100904](https://github.com/ClickHouse/ClickHouse/pull/100904) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `EXPLAIN [PLAN] pretty=1` で、expression を人が読める形式で表示するようになりました。[#100927](https://github.com/ClickHouse/ClickHouse/pull/100927) ([Kirill Kopnev](https://github.com/Fgrtue)).
+* `accurateCastOrNull` と `accurateCastOrDefault` が `Tuple` の target type をサポートするようになり、`Nullable` 要素を含むネストされた `Tuples` も対象になりました。これまでは `Tuple` を `Nullable` の内側に置けなかったため、これらの function は `Tuple` target を拒否していました。[#100942](https://github.com/ClickHouse/ClickHouse/pull/100942) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `SELECT` クエリの前の `WITH` 句で、末尾のカンマを使用できるようになりました。[#101093](https://github.com/ClickHouse/ClickHouse/pull/101093) ([Aruj Bansal](https://github.com/arujbansal)).
+* predicate の選択性が十分に高い場合、FINAL を伴う ReplacingMergeTree 向けにカラムの遅延 materialization を実装しました。[#101647](https://github.com/ClickHouse/ClickHouse/pull/101647) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+* 統計情報がない条件に対するデフォルトの選択率推定を、業界標準のヒューリスティクスに合わせて改善しました。`LIKE` 条件の選択率は 0.1、不明な条件の選択率は 0.33 です。[#101653](https://github.com/ClickHouse/ClickHouse/pull/101653) ([Alexander Gololobov](https://github.com/davenger)).
+* VIEW に対してさらに多くの最適化を適用できるよう、クエリツリー内で VIEW サブクエリをインライン展開するようにしました。[#100830](https://github.com/ClickHouse/ClickHouse/pull/100830) ([Dmitry Novik](https://github.com/novikd)).
+
+<div id="functions">
+  ### 関数
+</div>
+
+* `JSONExtract` 関数で native JSON/Object 入力を使用できるようになりました。[#96711](https://github.com/ClickHouse/ClickHouse/pull/96711) ([Fisnik Kastrati](https://github.com/fkastrati)).
+* ワイルドカードの意味を踏まえて `LIKE` パターンをトークン化する `tokensForLikePattern` SQL 関数を導入しました。`%` と `_` はワイルドカードとして扱われ、エスケープされたワイルドカード (`\%`、`\_`) はリテラルとして扱われ、エスケープされていないワイルドカードに隣接するトークンは破棄されます。[#97872](https://github.com/ClickHouse/ClickHouse/pull/97872) ([Amos Bird](https://github.com/amosbird)).
+* 指定した日付の属する月の日数を返す `toDaysInMonth()` 関数を実装しました。[#99227](https://github.com/ClickHouse/ClickHouse/pull/99227) ([Vitaly Baranov](https://github.com/vitlibar)).
+* `unicodeWord` トークナイザーを `asciiCJK` にリネームしました。[#100956](https://github.com/ClickHouse/ClickHouse/pull/100956) ([George Larionov](https://github.com/george-larionov)).
+* SQL 標準の `OVERLAY` 関数構文に対する、パーサーレベルの糖衣構文を追加しました。`overlay` 関数自体はすでに存在しており、今回の追加により、`PLACING`、`FROM`、`FOR` を区切りとして使うキーワードベースの形式がサポートされます。[#101681](https://github.com/ClickHouse/ClickHouse/pull/101681) ([Desel72](https://github.com/Desel72)).
+* `ngrams` 関数は、無効な N-gram 長を受け付けないようになりました。たとえば、`SELECT ngrams('abc', 0)` はエラーを返すようになりました。[#101922](https://github.com/ClickHouse/ClickHouse/pull/101922) ([Robert Schulze](https://github.com/rschu1ze)).
+* `LIKE` 最適化で `array` トークナイザーがサポートされるようになりました。[#102880](https://github.com/ClickHouse/ClickHouse/pull/102880) ([Elmi Ahmadov](https://github.com/ahmadov)).
+
+<div id="table-engines-and-storage">
+  ### テーブルエンジンとストレージ
+</div>
+
+* マージ負荷が高い場合のクリーンアップ遅延を防ぐため、MergeTree に専用のクリーンアップスレッドを追加しました。[#91574](https://github.com/ClickHouse/ClickHouse/pull/91574) ([Amos Bird](https://github.com/amosbird)).
+* `DELETE TTL` ルールを持つテーブルで、Vertical merge アルゴリズムを使用できるようになりました。[#97332](https://github.com/ClickHouse/ClickHouse/pull/97332) ([murphy-4o](https://github.com/murphy-4o)).
+* `prewarm_mark_cache` 設定が有効な場合、セカンダリ索引のマークがプリウォームされるようになりました (データパーツのフェッチ時およびテーブル起動時に、マークキャッシュへ読み込まれます) 。[#97772](https://github.com/ClickHouse/ClickHouse/pull/97772) ([Anton Popov](https://github.com/CurtizJ)).
+* `Nullable([Fixed]String)` および `Array(Nullable([Fixed]String))` のカラム上にテキスト索引を構築できるようになりました。[#98118](https://github.com/ClickHouse/ClickHouse/pull/98118) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+* 通常の shared merge tree で、`DROP DATABASE` 実行時にバックグラウンドマージを早い段階でキャンセルするようにしました。[#98161](https://github.com/ClickHouse/ClickHouse/pull/98161) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* INSERT 中に projection parts を同期的に finalize できる `finalize_projection_parts_synchronously` 設定を追加しました。これにより、多数の projections を持つテーブルでピークメモリ使用量を削減しつつ、既存の非同期動作はデフォルトで維持されます。[#98228](https://github.com/ClickHouse/ClickHouse/pull/98228) ([Amos Bird](https://github.com/amosbird)).
+* `share_nested_offsets` MergeTree 設定 (デフォルトは `true`) を追加しました。`false` に設定すると、ドット付きの名前 (例: `n.a`, `n.b`) を持つ Array カラムは、オフセットファイルを共有したり、従来の Nested セマンティクスの一部として配列サイズの一致を検証したりせず、独立したカラムとして扱われます。[#98416](https://github.com/ClickHouse/ClickHouse/pull/98416) ([Amos Bird](https://github.com/amosbird)).
+* マージを並列に事前キャンセルすることで、`TRUNCATE DATABASE TABLES LIKE` を最適化しました。[#98597](https://github.com/ClickHouse/ClickHouse/pull/98597) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* ロックを取得せずにタスクリソースを解放することで、`MergeTreeBackgroundExecutor` のロック競合を削減しました。[#98604](https://github.com/ClickHouse/ClickHouse/pull/98604) ([Dmitry Novik](https://github.com/novikd)).
+* `TRUNCATE DATABASE` がクエリのキャンセルに応答するようになりました。[#98828](https://github.com/ClickHouse/ClickHouse/pull/98828) ([Shaohua Wang](https://github.com/tiandiwonder)).
+* MergeTree 設定の変更後に statistics cache を再起動するようにしました。[#98520](https://github.com/ClickHouse/ClickHouse/pull/98520) ([Han Fei](https://github.com/hanfei1991)).
+* compact パーツ内で圧縮ブロックをどのように構成するかを制御する `compress_per_column_in_compact_parts` MergeTree 設定を追加しました。`true` の場合 (デフォルトで、現在の動作を維持) 、各カラムが新しい圧縮ブロックを開始するため、必要なカラムだけを展開できます。`false` の場合は、granule 内のすべてのカラムが同じ圧縮ブロックにまとめられるため、常に全カラムを読み取る workload で compression ratio と読み取り性能が向上します。[#101114](https://github.com/ClickHouse/ClickHouse/pull/101114) ([Amos Bird](https://github.com/amosbird)).
+* テキスト索引は GA となり、`compatibility` 設定にかかわらず常に有効のままになりました。これにより、バックアップの復元時や互換性モードでの実行時に予期せず無効化されるのを防ぎます。[#101518](https://github.com/ClickHouse/ClickHouse/pull/101518) ([Nikita Fomichev](https://github.com/fm4v)).
+* `IN` 演算子で `mapValues(map)` 上に構築されたテキスト索引をサポートしました。[#99286](https://github.com/ClickHouse/ClickHouse/pull/99286) ([Anton Popov](https://github.com/CurtizJ)).
+* 同じクエリ内で同時に使用される複数のテキスト索引の解析を改善しました。テキスト索引の direct read 最適化では、`use_skip_indexes_on_data_read` 設定が不要になりました。[#102255](https://github.com/ClickHouse/ClickHouse/pull/102255) ([Anton Popov](https://github.com/CurtizJ)).
+* `HINT` モードを通じて、`hasPhrase` 関数でのテキスト索引解析のサポートを追加しました。[#102438](https://github.com/ClickHouse/ClickHouse/pull/102438) ([Elmi Ahmadov](https://github.com/ahmadov)).
+* MinMax カラム STATISTICS では、最小値と最大値を `Float64` ではなく `Field` (型付き) として保存するようになりました。シリアライズされたフォーマットには、値に加えてカラムの型名も含まれます。STATISTICS ファイルのバージョンは V2 に更新されており、旧バージョンで書き込まれたファイルは再マテリアライズが必要です (`ALTER TABLE ... MATERIALIZE STATISTICS ALL`) 。[#100605](https://github.com/ClickHouse/ClickHouse/pull/100605) ([Han Fei](https://github.com/hanfei1991)).
+
+<div id="data-lakes-improvements">
+  ### データレイク
+</div>
+
+* `DataLakeCatalog` の正常性を確認するための新しいクエリを追加しました。[#94690](https://github.com/ClickHouse/ClickHouse/pull/94690) ([Smita Kulkarni](https://github.com/SmitaRKulkarni)).
+* Unity Catalog 向けの Iceberg への書き込みを改善しました。[#98162](https://github.com/ClickHouse/ClickHouse/pull/98162) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* コード保守時にエラーが発生しにくくなるよう、`IcebergManifestFile` 内のエンティティを再構築しました (あわせて、一部のマニフェストファイルのキャッシュに関する問題も修正しています) 。[#98231](https://github.com/ClickHouse/ClickHouse/pull/98231) ([Daniil Ivanik](https://github.com/divanik)).
+* Iceberg `ALTER TABLE ... EXECUTE expire_snapshots(...)` を強化し、より多くの引数をサポートするようにしました。[#99130](https://github.com/ClickHouse/ClickHouse/pull/99130) ([murphy-4o](https://github.com/murphy-4o)).
+* カタログと連携する Iceberg の insert 用インターフェイスを変更しました。`storage_catalog_type`、`storage_aws_access_key_id` などの設定は非推奨になりました。[#100334](https://github.com/ClickHouse/ClickHouse/pull/100334) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* ストレージパスとメタデータパスの混在使用によって発生していた Iceberg の一貫性のないパス処理を修正しました。また、Iceberg テーブルが書き込むテーブルロケーションは URL または絶対パスのいずれかでなければならないようにし、Azure でファイルサイズを数える際のフォールバックを追加し、Spark と互換性のある方法で `version-hint.txt` を処理し、パスタイプを混同しにくくする型レベルの抽象化を導入し、position deletes の使用を修正しました。[#100420](https://github.com/ClickHouse/ClickHouse/pull/100420) ([Daniil Ivanik](https://github.com/divanik)).
+* `show_data_lake_catalogs_in_system_tables` が無効な場合、「Maybe you meant ...」のテーブルヒントのためにリモートのデータレイクカタログ全体をスキャンしないようにしました。[#100452](https://github.com/ClickHouse/ClickHouse/pull/100452) ([Alsu Giliazova](https://github.com/alsugiliazova)).
+* Iceberg の data files のパースに使用される object 情報に、マニフェストファイルからパースされたファイルの行数とバイト単位のファイルサイズが含まれるようになりました。[#100645](https://github.com/ClickHouse/ClickHouse/pull/100645) ([Daniil Ivanik](https://github.com/divanik)).
+* 仮想カラムを備えた Delta Lake pruner を追加しました。[#101634](https://github.com/ClickHouse/ClickHouse/pull/101634) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+
+<div id="s3-and-object-storage-improvements">
+  ### S3 とオブジェクトストレージ
+</div>
+
+* S3 テーブルエンジン 向けに、テーブルのカラム定義のハッシュを S3 パスに挿入する `{_schema_hash}` プレースホルダーを追加しました。[#98265](https://github.com/ClickHouse/ClickHouse/pull/98265) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+* S3 endpoint に対して virtual/path style を強制する新しいオプションを追加しました。[#102378](https://github.com/ClickHouse/ClickHouse/pull/102378) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+
+<div id="settings-and-configuration">
+  ### 設定と構成
+</div>
+
+* `users_xml` 設定で複数の認証方式を指定できるようになりました。 [#91998](https://github.com/ClickHouse/ClickHouse/pull/91998) ([Flip-Liquid](https://github.com/Flip-Liquid)).
+* Replicated database で作成されたクラスターに対して、`internal_replication` 設定を指定できるようになりました。 [#97228](https://github.com/ClickHouse/ClickHouse/pull/97228) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+* `allow_nullable_tuple_in_extracted_subcolumns` 設定が追加されました。これは、`Tuple`、`Variant`、`Dynamic`、`JSON` から抽出された `Tuple(...)` サブカラムを、`Nullable(Tuple(...))` (欠損行では `NULL`) として返すか、`Tuple(...)` (欠損行ではデフォルトのタプル値) として返すかを制御します。デフォルトでは無効で、変更するには server の再起動が必要です。 [#97299](https://github.com/ClickHouse/ClickHouse/pull/97299) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* `type_json_allow_duplicated_key_with_literal_and_nested_object` がデフォルトで有効になり、ClickHouse が元データ `{"a" : 42, "a.b" : 42}` から生成する可能性のある `{"a" : 42, "a" : {"b" : 42}}` のような JSON をパースする際に、重複キーに関するエラーを回避できるようになりました。 [#97423](https://github.com/ClickHouse/ClickHouse/pull/97423) ([Pavel Kruglov](https://github.com/Avogar)).
+* 列統計が GA になりました。設定 `allow_experimental_statistics` (デフォルト `false`) は `allow_statistics` (デフォルト `true`) に置き換えられて廃止され、`allow_statistics_optimize` は beta から GA に昇格しました。さらに、ClickHouse は新しいカラムに対して `minmax` と `uniq` の統計を作成するようになり (MergeTree setting `auto_statistics_types`) 、INSERT の速度低下を避けるため、`materialize_statistics_on_insert` はデフォルトで無効になりました。 [#97487](https://github.com/ClickHouse/ClickHouse/pull/97487) ([Han Fei](https://github.com/hanfei1991)).
+* `enable_parallel_replicas` と `automatic_parallel_replicas_mode` の関係が明確化されました。クエリが並列レプリカを使用できるのは、`enable_parallel_replicas > 0` の場合のみです。`automatic_parallel_replicas_mode=1` では、収集された統計に基づいてプランニング時に判断されます。`automatic_parallel_replicas_mode=0` では、統計に関係なく、サポートされているすべてのクエリで並列レプリカが使用されます。並列レプリカを使用する Distributed insert-select は、常に `automatic_parallel_replicas_mode=0` であるかのように動作します。 [#97517](https://github.com/ClickHouse/ClickHouse/pull/97517) ([Nikita Taranov](https://github.com/nickitat)).
+* impersonate 機能 ([EXECUTE AS target&#95;user](/ja/reference/statements/execute_as)) がデフォルトで有効になりました。 [#97870](https://github.com/ClickHouse/ClickHouse/pull/97870) ([Vitaly Baranov](https://github.com/vitlibar)).
+* `access_control_improvements.disallow_config_defined_profiles_for_sql_defined_users` 設定が追加されました (デフォルトで許可) 。この設定により、SQL で定義されたユーザーでは、config で定義された settings profiles (`default` profile を除く) を使用できなくなります。 [#98662](https://github.com/ClickHouse/ClickHouse/pull/98662) ([Alexander Tokmakov](https://github.com/tavplubix)).
+* `Variant` および `Dynamic` の型不一致時の動作 (throw するか null を返すか) を制御する設定が追加されました。 [#99085](https://github.com/ClickHouse/ClickHouse/pull/99085) ([Bharat Nallan](https://github.com/bharatnc)).
+* 実行可能 UDF のデフォルト `stderr_reaction` が `throw` から `log_last` に変更されました。stderr に警告を書き込む UDF は、終了コードが 0 であれば失敗しなくなり、終了コードによる例外には stderr の内容が含まれるようになりました。 [#99232](https://github.com/ClickHouse/ClickHouse/pull/99232) ([Xu Jia](https://github.com/XuJia0210)).
+* `input_format_column_name_matching_mode` 設定が追加され、入力フォーマットごとに異なる大文字・小文字の区別を使用できるようになりました。 [#99346](https://github.com/ClickHouse/ClickHouse/pull/99346) ([manerone](https://github.com/Manerone)).
+* システムテーブルでは自動統計が有効にならなくなりました。恩恵を受けることがほとんどないためです。 [#102862](https://github.com/ClickHouse/ClickHouse/pull/102862) ([Han Fei](https://github.com/hanfei1991)).
+
+<div id="system-tables-and-monitoring-improvements">
+  ### システムテーブルと監視
+</div>
+
+* クエリ実行時に使用されたデータスキッピングインデックスが、新しい `skip_indices` カラムとして `system.query_log` に記録されるようになりました。 [#99793](https://github.com/ClickHouse/ClickHouse/pull/99793) ([Grant Holly](https://github.com/grantholly-clickhouse)).
+* `system.part_log` に `projections_duration_ms` カラムが追加され、各プロジェクションのマージ/再構築にかかった時間がミリ秒単位で記録されるようになりました。 [#98292](https://github.com/ClickHouse/ClickHouse/pull/98292) ([Amos Bird](https://github.com/amosbird)).
+* `information_schema.tables` にカラムエイリアス `INDEX_LENGTH` が追加されました。 [#101705](https://github.com/ClickHouse/ClickHouse/pull/101705) ([Robert Schulze](https://github.com/rschu1ze)).
+* `information_schema.tables` では非アクティブなテーブルパーツが無視されるようになり、表示されるテーブルサイズの値がより実態に近くなりました。 [#101706](https://github.com/ClickHouse/ClickHouse/pull/101706) ([Robert Schulze](https://github.com/rschu1ze)).
+
+<div id="clickhouse-keeper-improvements">
+  ### ClickHouse Keeper
+</div>
+
+* `find_super_nodes` が最初の super node の子要素の走査で止まらなくなり、複数の super node を見つけられるようになりました。 [#97819](https://github.com/ClickHouse/ClickHouse/pull/97819) ([pufit](https://github.com/pufit)).
+* ZooKeeper セッションは、送信スレッドの終了を待つのではなく、終了処理の開始時に直ちに期限切れとしてマークされるようになりました。これにより、ほかのスレッドは遅延なく新しいセッションを確立できます。 [#99102](https://github.com/ClickHouse/ClickHouse/pull/99102) ([Raúl Marín](https://github.com/Algunenano)).
+* すでに切断済みのセッションに対する古い Keeper リクエストをスキップし、不要な Raft の往復を回避するようになりました。追跡する完了済みセッション数の上限は、協調設定 `max_finished_sessions_cache_size` で制御されます。 [#99246](https://github.com/ClickHouse/ClickHouse/pull/99246) ([Antonio Andelic](https://github.com/antonio2368)).
+* ロック競合によって Keeper の `mntr` コマンドが停止することを防ぐようになりました。 [#99472](https://github.com/ClickHouse/ClickHouse/pull/99472) ([Antonio Andelic](https://github.com/antonio2368)).
+* コールバックの呼び出しと read request のディスパッチを mutex のスコープ外で行うことで、Keeper dispatcher でのロック競合を低減し、あわせてオブザーバビリティのためのプロファイル付きロックガードを追加しました。 [#99751](https://github.com/ClickHouse/ClickHouse/pull/99751) ([Antonio Andelic](https://github.com/antonio2368)).
+
+<div id="memory-management-improvements">
+  ### メモリ管理
+</div>
+
+* cache アリーナの分離を制御する `use_separate_cache_arena` 設定パラメータを追加しました。[#100664](https://github.com/ClickHouse/ClickHouse/pull/100664) ([Seva Potapov](https://github.com/seva-potapov)) 。
+
+<div id="data-formats-improvements">
+  ### データフォーマット
+</div>
+
+* テキスト出力フォーマットで `FixedString` 値の末尾にある null byte を取り除くための `output_format_trim_fixed_string` 設定を追加しました。 [#97558](https://github.com/ClickHouse/ClickHouse/pull/97558) ([NeedmeFordev](https://github.com/spider-yamet)).
+* 同じカラム内に異なる Geo 型を含む GeoParquet ファイルを解析できるようになりました。 [#97851](https://github.com/ClickHouse/ClickHouse/pull/97851) ([Mark Needham](https://github.com/mneedham)).
+* バイナリ `AggregateFunction` state のデシリアライゼーションでは、入力全体を完全に消費することが必要になりました。余分な末尾バイトがある場合、ClickHouse は不正な state データを受け入れるのではなく、例外をスローするようになりました。 [#98786](https://github.com/ClickHouse/ClickHouse/pull/98786) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+* ClickHouse の interval データ型を Arrow format に書き込めるようになりました。 [#99519](https://github.com/ClickHouse/ClickHouse/pull/99519) ([Peter Nguyen](https://github.com/petern48)).
+* Arrow および Parquet フォーマットで UUID データ型をインポートおよびエクスポートするネイティブサポートを追加しました。これには、トップレベル UUID の自動推論と、ネストされた UUID に対する明示的なスキーマヒントのサポートが含まれます。 [#99521](https://github.com/ClickHouse/ClickHouse/pull/99521) ([Ivan](https://github.com/ivanmantova)).
+* Parquet files の最後の block の末尾でパディングが欠けていても許容するようになりました。 [#99857](https://github.com/ClickHouse/ClickHouse/pull/99857) ([Seva Potapov](https://github.com/seva-potapov)).
+* Arrow encoder 経由で UUIDs を Parquet にエクスポートする際、正しい UUID 型アノテーションが含まれるようになり、ファイルを再度読み込むときに `FixedString(16)` データを手動で cast する必要がなくなりました。 [#100150](https://github.com/ClickHouse/ClickHouse/pull/100150) ([Ivan](https://github.com/ivanmantova)).
+* Apache Arrow の `StringView` および `BinaryView` データ型を ClickHouse の `String` カラムにインポートするネイティブサポートを追加し、Arrow ベースのインジェストとの互換性を向上させました。 [#100762](https://github.com/ClickHouse/ClickHouse/pull/100762) ([Ivan](https://github.com/ivanmantova)).
+* `Arrow`、`ArrowStream`、`ORC`、および従来の `Parquet` フォーマットで `Nullable(Tuple)` をサポートしました。 [#101272](https://github.com/ClickHouse/ClickHouse/pull/101272) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+
+<div id="named-collections-and-dictionaries">
+  ### 名前付きコレクションとディクショナリ
+</div>
+
+* PostgreSQL の Dictionary ソースで許可されるキーに `sslmode` を追加し、PostgreSQL の Dictionary 接続で SSL モードを設定できるようにしました (AWS RDS など、デフォルトで SSL を必須としている環境に対応) 。 [#98014](https://github.com/ClickHouse/ClickHouse/pull/98014) ([mcalfin](https://github.com/mcalfin)).
+* Dictionary ソースが依存している名前付きコレクションを削除しないようにしました。 [#98127](https://github.com/ClickHouse/ClickHouse/pull/98127) ([Pablo Marcos](https://github.com/pamarcos)).
+* Dictionary 属性として `Map` および `JSON`/`Object` 型をサポートしました。これにより、ディクショナリで `Map(String, String)`、`Map(String, Array(String))`、`JSON`、`Nullable(JSON)` などの複雑な型を、FLAT レイアウトと HASHED レイアウトの両方で保存および取得できるようになりました。 [#98627](https://github.com/ClickHouse/ClickHouse/pull/98627) ([yanglongwei](https://github.com/ylw510)).
+* `SYSTEM RELOAD DICTIONARIES` がディクショナリをトポロジカル順で再読み込みするようになり、ほかのディクショナリをソースとするディクショナリでも、再読み込み後に最新データを参照できるようになりました。 [#98356](https://github.com/ClickHouse/ClickHouse/pull/98356) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* cache ディクショナリは `hasKeys` で排他ロックを取得しなくなり、cache 読み取りに共有ロックを使用することでロック競合を軽減しました。 [#100796](https://github.com/ClickHouse/ClickHouse/pull/100796) ([liuguangliang](https://github.com/sourcelliu)).
+
+<div id="other-improvements">
+  ### その他の改善
+</div>
+
+* `ACCESS_DENIED` のヒントで、ユーザーが必要なすべてのカラムを表示できない場合は、カラム名が表示されなくなりました。データベース名とテーブル名は引き続きヒント内に表示されます。 [#91067](https://github.com/ClickHouse/ClickHouse/pull/91067) ([filimonov](https://github.com/filimonov)).
+* 任意の host の IP ではなく、ローカル server の hostname に対応する IP が変更された場合にクラスター構成を再読み込みするようになりました。 [#93726](https://github.com/ClickHouse/ClickHouse/pull/93726) ([Zhigao Hong](https://github.com/zghong)).
+* クラッシュ時に非同期ロギングのバッファをフラッシュするようにしました。 [#97836](https://github.com/ClickHouse/ClickHouse/pull/97836) ([Azat Khuzhin](https://github.com/azat)).
+* アクセス制御中のロックを削減しました。 [#97894](https://github.com/ClickHouse/ClickHouse/pull/97894) ([Nikita Taranov](https://github.com/nickitat)).
+* ClickStack をバージョン 2.20.0 に更新しました。 [#98252](https://github.com/ClickHouse/ClickHouse/pull/98252) ([Aaron Knudtson](https://github.com/knudtty)).
+* server の環境変数へのアクセスを防ぐため、埋め込みクライアント (SSH および WebSocket プロトコル) で AI SQL generation (`??` コマンド) を無効にしました。 [#100290](https://github.com/ClickHouse/ClickHouse/pull/100290) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* RabbitMQ storage 使用時に破損したメッセージを NACK するようにしました。 [#102157](https://github.com/ClickHouse/ClickHouse/pull/102157) ([Seva Potapov](https://github.com/seva-potapov)).
+
+<div id="bug-fixes">
+  ## バグ修正
+</div>
+
+<Accordion title="すべてのバグ修正（クリックして展開）">
+  ### JOINの修正
+
+  * 旧アナライザで、非標準の識別子の別名を使用した JOIN においてカラムが欠落する問題を修正しました。[#95679](https://github.com/ClickHouse/ClickHouse/pull/95679) ([Zhigao Hong](https://github.com/zghong)).
+  * 非等値 JOIN で `grace_hash` アルゴリズムを使用し、JOIN結果のサイズ制約により左側のブロックを完全に処理できなかった場合に、誤った結果が返る問題を修正しました。[#97866](https://github.com/ClickHouse/ClickHouse/pull/97866) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  * `analyzer_compatibility_join_using_top_level_identifier` と `ARRAY JOIN` に関する論理エラーを修正しました。[#98179](https://github.com/ClickHouse/ClickHouse/pull/98179) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  * レガシーな join step のコードパスで、`CROSS JOIN` でラップされた `RIGHT JOIN` が `query_plan_join_swap_table` 最適化によって入れ替えられた際に発生する `LOGICAL_ERROR` 例外を修正しました。[#98279](https://github.com/ClickHouse/ClickHouse/pull/98279) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `FilterBySetOnTheFly` 最適化によって `MergeJoinTransform` との循環依存が作られ、`PingPongProcessor` でデッドロックが発生することで、`full_sorting_merge` join で `&quot;Pipeline stuck&quot;` 例外が発生する問題を修正しました。[#98454](https://github.com/ClickHouse/ClickHouse/pull/98454) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `CROSS JOIN` と `INNER JOIN USING` を併用したときに発生する論理エラー例外を修正しました。[#98459](https://github.com/ClickHouse/ClickHouse/pull/98459) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `OUTER JOIN` で `join_use_nulls` が有効な状態で、`arrayJoin` をフィルタ式内で使用したときに発生する `LOGICAL_ERROR` 例外を修正しました。[#98464](https://github.com/ClickHouse/ClickHouse/pull/98464) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * JOIN とともに `WHERE` と `SELECT` の両方で非ブール値の式 (例: `sin(col)`) が使用された場合に、フィルタ push-down 最適化が共有 DAG ノードを破壊することで発生していた `BAD_GET` 例外と誤ったクエリ結果を修正しました。[#98681](https://github.com/ClickHouse/ClickHouse/pull/98681) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 並列レプリカで `read_in_order_through_join` を使用した際に発生する `LOGICAL_ERROR` `&quot;Replica decided to read in Default mode, not in WithOrder&quot;` を修正しました。[#98685](https://github.com/ClickHouse/ClickHouse/pull/98685) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 複数の join key カラムを持つ `LEFT ANTI JOIN` で、`enable_join_runtime_filters=1` (デフォルト) 時に誤った結果が返る問題を修正しました。[#98871](https://github.com/ClickHouse/ClickHouse/pull/98871) ([Alexander Gololobov](https://github.com/davenger)).
+  * 一致しない行に対して誤った結果を返していた `query_plan_convert_any_join_to_semi_or_anti_join` 最適化のバグを修正しました。[#99112](https://github.com/ClickHouse/ClickHouse/pull/99112) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * JOIN によって生成された未参照の行を含む `ColumnReplicated` に対して動作する関数で発生する例外を修正しました。[#99564](https://github.com/ClickHouse/ClickHouse/pull/99564) ([Hechem Selmi](https://github.com/m-selmi)).
+  * 並べ替えを伴う join が、まれに誤った結果を返す問題を修正しました。[#100790](https://github.com/ClickHouse/ClickHouse/pull/100790) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * shard-by-PK 最適化を使用する JOIN が query condition cache を使用し、一部のパーツがキャッシュされた条件によって除外された場合に誤った結果が返る問題を修正しました。[#100926](https://github.com/ClickHouse/ClickHouse/pull/100926) ([Groene AI](https://github.com/groeneai)).
+  * `ARRAY JOIN` を `JOIN USING` と併用し、`analyzer_compatibility_join_using_top_level_identifier` が有効な場合に発生していた `NOT_FOUND_COLUMN_IN_BLOCK` 例外を修正しました。[#101507](https://github.com/ClickHouse/ClickHouse/pull/101507) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  * `grace_hash` join algorithm で `ORDER BY` を使用するクエリで、行の並び順が誤る不具合を修正しました。この不具合により、誤った出力が気付かれないまま生成される可能性がありました。[#102036](https://github.com/ClickHouse/ClickHouse/pull/102036) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  * `max_bytes_in_join` が設定されている場合に、`RIGHT JOIN` および `FULL JOIN` クエリで発生する可能性があった `LOGICAL_ERROR` (Unexpected size of index type) を修正しました。[#102042](https://github.com/ClickHouse/ClickHouse/pull/102042) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+
+  ### クエリとアナライザの修正
+
+  * 完全修飾されていない場合に Alias table のターゲットが DDL 依存関係として保存される際、session database ではなく Alias table database に保存されるよう修正しました。[#95175](https://github.com/ClickHouse/ClickHouse/pull/95175) ([Enric Calabuig](https://github.com/eclbg)).
+  * 遅延マテリアライゼーションによって返される不要なカラムが原因で発生していた `Block structure mismatch in stream` エラーを修正しました。[#96682](https://github.com/ClickHouse/ClickHouse/pull/96682) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+  * `GROUPING SETS` および `ORDER BY` と組み合わせて使用した際に、`Nothing` 型の要素を含む Tuple の比較 (例: `NULL` の Tuple 要素との比較) で発生していた例外を修正しました。[#97509](https://github.com/ClickHouse/ClickHouse/pull/97509) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `url()` などの table function を含む相関サブクエリで発生していた &quot;Context has expired&quot; 例外を修正しました。[#97544](https://github.com/ClickHouse/ClickHouse/pull/97544) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 集計 projections、Date types、カラム名の保持に関して、`optimize_syntax_fuse_functions` で発生していた例外と不正な動作を修正しました。[#97545](https://github.com/ClickHouse/ClickHouse/pull/97545) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * regexp が一致しない場合に誤った結果を返していた、`replaceRegexpOne` から `extract` への誤ったクエリの書き換えを削除しました。あわせて、`replaceRegexpOne` を `GROUP BY ... WITH CUBE` および `group_by_use_nulls=1` とともに使用した際に発生していた例外も修正しました。[#97546](https://github.com/ClickHouse/ClickHouse/pull/97546) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `concatWithSeparator`、`format`、`IN` サブクエリ、`GLOBAL IN`、およびランタイムフィルタを伴う join において、複合型 (`Variant`、`Dynamic`、`Tuple`) 内の `LowCardinality` が原因で発生していた `LOGICAL_ERROR` 例外を修正しました。[#97831](https://github.com/ClickHouse/ClickHouse/pull/97831) ([Raúl Marín](https://github.com/Algunenano)).
+  * 複数の Distributed tables に対する `merge()` table function を `GROUP BY` と組み合わせた `ARRAY JOIN` で発生していた `LOGICAL_ERROR` 例外 &quot;Chunk info was not set for chunk in MergingAggregatedTransform&quot; を修正しました。[#97838](https://github.com/ClickHouse/ClickHouse/pull/97838) ([Raúl Marín](https://github.com/Algunenano)).
+  * 分散 insert-select で CTE を使用できなかった不具合を修正しました。[#97889](https://github.com/ClickHouse/ClickHouse/pull/97889) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * カラムの不一致を修正しました。[#97921](https://github.com/ClickHouse/ClickHouse/pull/97921) ([Kai Zhu](https://github.com/nauu)).
+  * フィルタ式内で `arrayJoin` を使用して outer join を inner join に変換する際のクエリプラン最適化で発生していた segfault を修正しました。[#98147](https://github.com/ClickHouse/ClickHouse/pull/98147) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `arrayMap` などのラムダ関数内で外側のクエリの相関カラムを参照した際に発生していた `LOGICAL_ERROR` &quot;Trying to execute PLACEHOLDER action&quot; を修正しました。[#98285](https://github.com/ClickHouse/ClickHouse/pull/98285) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `CASE` 式に `materialize(NULL)` またはその他の `Nullable(Nothing)` argument が含まれる場合に、`caseWithExpression` で発生していた論理エラー例外を修正しました。[#98290](https://github.com/ClickHouse/ClickHouse/pull/98290) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `merge` table function で `_table` 仮想カラムをフィルタする際に発生していた不正なキャスト例外を修正しました。[#98291](https://github.com/ClickHouse/ClickHouse/pull/98291) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `ORDER BY ... WITH FILL` を `LIMIT BY` と併用した際に発生していた例外を修正しました。[#98361](https://github.com/ClickHouse/ClickHouse/pull/98361) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `Merge` テーブル (`Distributed` テーブルをラップしたもの) を別のテーブルと join した際に発生していた例外 &quot;Column ... query tree node does not have valid source node&quot; を修正しました。[#98376](https://github.com/ClickHouse/ClickHouse/pull/98376) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `count_distinct_optimization` を `QUALIFY` 句とともに使用した際に発生していた例外 &quot;Column identifier is already registered&quot; を修正しました。[#98433](https://github.com/ClickHouse/ClickHouse/pull/98433) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `IN`/`NOT IN` を `LowCardinality` カラム引数とともに使用した際に発生していた例外 &quot;cannot be inside Nullable type&quot; を修正しました (例: `a` が `LowCardinality(String)` の場合の `a NOT IN (b)`) 。[#98443](https://github.com/ClickHouse/ClickHouse/pull/98443) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * すべての行を削除する有効期限 (TTL) と、定数の `GROUP BY` キーを持つ集約 projection を使用してパーツをマージする際に発生していた `LOGICAL_ERROR` 例外 &quot;Projection cannot increase the number of rows in a block&quot; を修正しました。[#98458](https://github.com/ClickHouse/ClickHouse/pull/98458) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 集約 projection の使用時に、`materialize` によってクエリと projection の間で `LowCardinality` 型の差異が生じた場合の `DISTINCT` クエリで発生していた例外を修正しました。[#98462](https://github.com/ClickHouse/ClickHouse/pull/98462) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 並列レプリカで `optimize_aggregation_in_order` を使用した際に発生していた論理エラー例外 &quot;Replica decided to read in WithOrder mode, not in ReverseOrder&quot; を修正しました。[#98467](https://github.com/ClickHouse/ClickHouse/pull/98467) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `read_in_order_use_virtual_row` と単調関数の使用時に発生していた予期しない結果を修正しました。[#98514](https://github.com/ClickHouse/ClickHouse/pull/98514) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  * MergeTree テーブルで `IN` サブクエリを含む `PREWHERE` を使用した際に発生していた `LOGICAL_ERROR: Not-ready Set is passed as the second argument for function 'in'` を修正しました。[#98522](https://github.com/ClickHouse/ClickHouse/pull/98522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `query_plan_merge_expressions = 0` の状態で `query_plan_convert_join_to_in` が有効な場合に発生していた例外 &quot;Sorting column wasn&#39;t found in the ActionsDAG&#39;s outputs&quot; を修正しました。[#98526](https://github.com/ClickHouse/ClickHouse/pull/98526) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * パラメータ substitution の後に `Identifier` が空になった場合の `LOGICAL_ERROR` を修正しました。[#98530](https://github.com/ClickHouse/ClickHouse/pull/98530) ([Pervakov Grigorii](https://github.com/GrigoryPervakov)).
+  * 主キーに expression (カラムだけでなく) が含まれている場合の分散索引解析を修正しました。これにより、リモートレプリカ上で不要な granule がまったくフィルタリングされない問題が発生していました。[#98561](https://github.com/ClickHouse/ClickHouse/pull/98561) ([Azat Khuzhin](https://github.com/azat)).
+  * 同じクエリスコープ内で alias 付きの table function が複数回現れた場合 (たとえば `PREWHERE` 句と `QUALIFY` 句の両方) に発生していた論理エラー &quot;TABLE&#95;FUNCTION is not allowed in expression context&quot; を修正しました。[#98557](https://github.com/ClickHouse/ClickHouse/pull/98557) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `input` テーブル関数を `remote` の引数として使用した際に発生していた例外 &quot;Bad cast from type `DB::TableFunctionNode` to `DB::QueryNode`&quot; を修正しました。 [#98694](https://github.com/ClickHouse/ClickHouse/pull/98694) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `equals` 比較でブール値関数が `Variant` 型を返した場合に `LogicalExpressionOptimizerPass` で発生していた例外を修正しました。 [#98712](https://github.com/ClickHouse/ClickHouse/pull/98712) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 新しいアナライザが有効な状態で、異なるパラメータを持つ JSON カラムと JSON サブパスを参照する ALIAS カラムを含むテーブルに対して `merge()` テーブル関数または `Merge` engine をクエリした際に発生していた `UNKNOWN_IDENTIFIER` 例外を修正しました。 [#98753](https://github.com/ClickHouse/ClickHouse/pull/98753) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `View` で `Distributed` storage が使用されている場合の、アナライザにおける `optimize_skip_unused_shards` の最適化を修正しました。 [#98754](https://github.com/ClickHouse/ClickHouse/pull/98754) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+  * `FINAL` + `PREWHERE` + 定数 `WHERE` 式 + `count()` のようなカラムに依存しない集約で発生し得た `LOGICAL_ERROR` 例外 (`removeUnusedColumns` における Block structure mismatch) を修正しました。 [#98778](https://github.com/ClickHouse/ClickHouse/pull/98778) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * JOIN を含む `view()` テーブル関数を別の JOIN 内で使用した際に発生していた例外 &quot;Inconsistent table names&quot; を修正しました (旧アナライザのみ) 。 [#98809](https://github.com/ClickHouse/ClickHouse/pull/98809) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `loop` を cluster table function と組み合わせた際に発生していた例外を修正しました。 [#98860](https://github.com/ClickHouse/ClickHouse/pull/98860) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * &quot;RPNBuilderFunctionTreeNode has A arguments, attempted to get argument at index B&quot; という `LOGICAL_ERROR` を修正しました。 [#98900](https://github.com/ClickHouse/ClickHouse/pull/98900) ([Azat Khuzhin](https://github.com/azat)).
+  * `optimize_const_name_size` を設定し、`enable_scalar_subquery_optimization = 0` とした状態でリモート分片をクエリした際に発生していた例外 &quot;Scalar doesn&#39;t exist&quot; を修正しました。 [#98979](https://github.com/ClickHouse/ClickHouse/pull/98979) ([andriibeee](https://github.com/andriibeee)).
+  * 逆方向の Dictionary ルックアップ、`Date`/`DateTime` 変換の比較、タプル比較を含む式を含む `GROUP BY` を使用した一部のクエリで発生していた `NOT_FOUND_COLUMN_IN_BLOCK` を修正しました。 [#98980](https://github.com/ClickHouse/ClickHouse/pull/98980) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * `EXISTS` がサブクエリ内の `LIMIT` 句および `OFFSET` 句を無視し、オフセットまたは `LIMIT 0` によってサブクエリが行を返さない場合に誤った結果を返していたバグを修正しました。 [#99005](https://github.com/ClickHouse/ClickHouse/pull/99005) ([andriibeee](https://github.com/andriibeee)).
+  * filter push-down 最適化が、`GROUPING SETS` 使用時に定数へ短絡評価される `AND` 式に遭遇した際に発生していた &quot;Block structure mismatch&quot; 例外を修正しました。 [#99010](https://github.com/ClickHouse/ClickHouse/pull/99010) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 新しいアナライザで、ALIAS カラムの解決中に table expression へ早期アクセスしていたことが原因で、ROW POLICY と `dictGet` を使用する ALIAS カラムの両方を持つテーブルをクエリした際に発生していた `LOGICAL_ERROR` を修正しました。 [#99065](https://github.com/ClickHouse/ClickHouse/pull/99065) ([Peng](https://github.com/fastio)).
+  * `remote()` + `view()` を使用する再帰 CTE で発生していた segfault を修正しました。[#99081](https://github.com/ClickHouse/ClickHouse/pull/99081) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * read-in-order 最適化が適用されている場合に、不要な追加の索引解析をスキップするようにしました。[#99084](https://github.com/ClickHouse/ClickHouse/pull/99084) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  * 最適化パスの実行前にアクセス確認を 1 回だけ行うようにし、`InverseDictionaryLookupPass` 実行時のアクセスチェックを修正しました。[#99210](https://github.com/ClickHouse/ClickHouse/pull/99210) ([Mikhail Artemenko](https://github.com/Michicosun)).
+  * `IN` サブクエリ内で `Distributed` テーブルが使用された場合の、新しいアナライザにおける `optimize_skip_unused_shards` を修正しました。[#99436](https://github.com/ClickHouse/ClickHouse/pull/99436) ([Nikolai Kochetov](https://github.com/KochetovNicolai)).
+  * クエリが重複したカラム名を生成した場合の `INTERSECT`/`EXCEPT` における heap-use-after-free を修正しました。[#99471](https://github.com/ClickHouse/ClickHouse/pull/99471) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * パーツ名に型付きクエリパラメータを使用した場合の `ALTER TABLE ... DROP PART` における論理エラーを修正しました。[#99489](https://github.com/ClickHouse/ClickHouse/pull/99489) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * HTTP interface 経由で Pretty フォーマットを使って空のシステムテーブルをクエリした際に発生していた `std::length_error` 例外を修正しました。[#99541](https://github.com/ClickHouse/ClickHouse/pull/99541) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `ARRAY JOIN` から未使用のカラムを削減することで、アナライザの性能低下を修正しました。[#99587](https://github.com/ClickHouse/ClickHouse/pull/99587) ([Dmitry Novik](https://github.com/novikd)).
+  * カラム統計があり、かつ `use_statistics` が有効なテーブルに対して、クエリが単一のスカラークエリパラメータを使った `IN` (例: `WHERE col IN ({p:String})`) を含む場合に、`ConditionSelectivityEstimator` で発生していた例外 (`Bad get: has Tuple, actual type String`) を修正しました。[#99614](https://github.com/ClickHouse/ClickHouse/pull/99614) ([Ilya Yatsishin](https://github.com/qoega)).
+  * `HAVING` 句を含むクエリで、フィルタ式に NULL を生成する関数でラップされた集約と `materialize(0)` の両方が含まれていた場合に発生していた &quot;Block structure mismatch&quot; 例外を修正しました。[#99915](https://github.com/ClickHouse/ClickHouse/pull/99915) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `untuple` の引数内にある相関サブクエリに関する論理エラーを修正しました。[#99917](https://github.com/ClickHouse/ClickHouse/pull/99917) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  * 入れ子のサブクエリに `SETTINGS` が含まれ、さらに `ALTER` 自体にも `SETTINGS` がある場合の `ALTER TABLE ... MODIFY QUERY` で発生していた &quot;Inconsistent AST formatting&quot; 例外を修正しました。[#99938](https://github.com/ClickHouse/ClickHouse/pull/99938) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+  * `convertAnyJoinToSemiOrAntiJoin` を使ったクエリプラン最適化中に `IN` 関数で発生していた `LOGICAL_ERROR` 例外 &quot;Not-ready Set&quot; を修正しました。[#99939](https://github.com/ClickHouse/ClickHouse/pull/99939) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 未解決のテーブル関数の引数内でスカラーサブクエリが使用された場合に発生していた `LOGICAL_ERROR` 例外 &quot;Unexpected node type for table expression ... Actual IDENTIFIER&quot; を修正しました。[#100014](https://github.com/ClickHouse/ClickHouse/pull/100014) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `IN` サブクエリを含む述語で `distributed_index_analysis` を使用した際に、実行されるクエリ数が二次的に増加していた問題を修正しました。[#100287](https://github.com/ClickHouse/ClickHouse/pull/100287) ([Anton Popov](https://github.com/CurtizJ)).
+  * `UNION DISTINCT` と Nullable 式を組み合わせた `GROUP BY ... WITH TOTALS HAVING` の使用時に発生していた &quot;Block structure mismatch&quot; 例外を修正しました。[#100293](https://github.com/ClickHouse/ClickHouse/pull/100293) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `GROUP BY CUBE(...) WITH ROLLUP` などの組み合わせを使用した際に、デバッグビルドで発生していた &quot;Inconsistent AST formatting&quot; 例外を修正しました。[#100376](https://github.com/ClickHouse/ClickHouse/pull/100376) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * カラム別名と `SELECT *`、または `EXCEPT`/`INTERSECT` クエリを含むビューの作成時に発生していた例外を修正しました。[#100386](https://github.com/ClickHouse/ClickHouse/pull/100386) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * データが granule 境界のそろっていない複数のパーツに分割されていた場合に、`max_rows_to_read` / `force_primary_key` を指定した `SELECT count()` クエリで発生していた `TOO_MANY_ROWS` 例外を修正しました。[#100408](https://github.com/ClickHouse/ClickHouse/pull/100408) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * projection の `SELECT` 部分に、クエリの元の `SELECT` 部分には存在しないカラムが含まれていた場合に発生する `NOT_FOUND_COLUMN_IN_BLOCK` を修正しました。[#100623](https://github.com/ClickHouse/ClickHouse/pull/100623) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * ソースとしてテーブル関数を使用する場合に、`cluster()` および `clusterAllReplicas()` テーブル関数にシャーディングキーを渡せるようにしました (例: `cluster('name', view(...), sharding_key)`) 。[#100665](https://github.com/ClickHouse/ClickHouse/pull/100665) ([Sergey Veletskiy](https://github.com/velom)).
+  * 最適化された trivial count における `AggregateFunction` の argument 型の誤りを修正しました。これにより、分散テーブル上で `count(v0 + v1)` のような式をクエリした際に `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` 例外が発生していました。[#100794](https://github.com/ClickHouse/ClickHouse/pull/100794) ([YjyJeff](https://github.com/YjyJeff)).
+  * 定数畳み込みされた式とともに `INTERSECT ALL` / `UNION ALL` を使用した際に発生していた論理エラー &quot;Invalid action query tree node&quot; を修正しました。[#100977](https://github.com/ClickHouse/ClickHouse/pull/100977) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `SELECT` で同じ別名が複数の式に使用されていた場合に、誤って `UNKNOWN_IDENTIFIER` エラーが出ていた問題を修正しました。現在は正しい `MULTIPLE_EXPRESSIONS_FOR_ALIAS` エラーが報告されます。[#101040](https://github.com/ClickHouse/ClickHouse/pull/101040) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * pipeline の block に通常のカラムとマージされた `ColumnConst` カラムが含まれていた場合に、`DirectJoinMergeTreeEntity` で発生していた例外を修正しました。[#101046](https://github.com/ClickHouse/ClickHouse/pull/101046) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * CTE のカラム別名のフォーマットにおける余分な空白を修正しました (`WITH t (a, b)` → `WITH t(a, b)`) 。[#101049](https://github.com/ClickHouse/ClickHouse/pull/101049) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * アナライザが有効な場合に、`merge` のようなネストされたテーブル関数を含む `remote`/`cluster` テーブル関数が失敗していた問題を修正しました。[#101055](https://github.com/ClickHouse/ClickHouse/pull/101055) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `prefer_localhost_replica=1` のとき、分散クエリで `OFFSET` が 2 回適用され、想定より少ない行数になっていた問題を修正しました。[#101071](https://github.com/ClickHouse/ClickHouse/pull/101071) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * 並列レプリカとともに `serialize_query_plan=1` を使用した際に、時系列の集約関数で発生していた &quot;Illegal type Decimal64 of start parameter&quot; エラーを修正しました。[#101083](https://github.com/ClickHouse/ClickHouse/pull/101083) ([Groene AI](https://github.com/groeneai)).
+  * MergeTree テーブルで、`WHERE` 句内の `AND` を伴うブール述語として大きな整数定数 (例: 256、2147483648) を使用した場合に、誤ったクエリ結果が返される問題を修正しました。[#101287](https://github.com/ClickHouse/ClickHouse/pull/101287) ([Groene AI](https://github.com/groeneai)).
+  * スカラーサブクエリが依存関係のあるマテリアライズド CTE の連鎖を参照した際に発生していた、&quot;Logical error: Reading from materialized CTE before materialization&quot; を伴うクラッシュを修正しました。[#101305](https://github.com/ClickHouse/ClickHouse/pull/101305) ([Groene AI](https://github.com/groeneai)).
+  * 末尾に余分なデータを含む文字列を空の `Tuple()` 型にキャストした際に発生していた例外を修正しました。[#102011](https://github.com/ClickHouse/ClickHouse/pull/102011) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 不正な空のタプル文字列のパース時に発生していた論理エラーを修正しました。[#102289](https://github.com/ClickHouse/ClickHouse/pull/102289) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * テーブルのソートキーと異なる順序で `GROUP BY` カラムを並べた状態で `optimize_aggregation_in_order=1` を使用した際に、集約結果が不正 (重複行) になる問題を修正しました。[#102299](https://github.com/ClickHouse/ClickHouse/pull/102299) ([Groene AI](https://github.com/groeneai)).
+  * 同時実行 DDL によりローカル分片が空のカラムを返した場合に、`getStructureOfRemoteTable` で発生していた例外を修正しました。[#102604](https://github.com/ClickHouse/ClickHouse/pull/102604) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 新しいアナライザで、ROW POLICY の OR 連鎖を `IN` に最適化しました。[#102915](https://github.com/ClickHouse/ClickHouse/pull/102915) ([Azat Khuzhin](https://github.com/azat)).
+  * `N` が `UInt8` より大きい整数型 (例: `256`、`65535`、`2147483648`、または任意の負の整数) である場合に、`MergeTree` テーブル上の `WHERE x AND toNullable(N)` が誤った結果を返す問題を修正しました。[#103077](https://github.com/ClickHouse/ClickHouse/pull/103077) ([Groene AI](https://github.com/groeneai)).
+
+  ### MergeTree とストレージの修正
+
+  * detaching と attaching の間に複数の連続したリネームがある場合に、MergeTree でパーツをアタッチすると論理エラーが発生していた問題を修正しました。 [#96351](https://github.com/ClickHouse/ClickHouse/pull/96351) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 複数の圧縮コーデックを使用した際に、compact な MergeTree パーツで `uncompressed_hash` の計算が非決定論的になり、不正な重複排除動作を引き起こす可能性があった問題を修正しました。 [#97522](https://github.com/ClickHouse/ClickHouse/pull/97522) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * SummingMergeTree および CoalescingMergeTree のマージ中に、`MEMORY_LIMIT_EXCEEDED` 例外が誤って `CORRUPTED_DATA` として報告されていた問題を修正しました。 [#97537](https://github.com/ClickHouse/ClickHouse/pull/97537) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  * データパーツセット内に、より大きいパーティション ID を持つ別のパーティションが存在する場合、`hasPartitionId` は false を返すようになりました。 [#97748](https://github.com/ClickHouse/ClickHouse/pull/97748) ([Mikhail Artemenko](https://github.com/Michicosun)).
+  * セカンダリ索引を伴う論理更新後の mutation に関する問題を修正しました。 [#98044](https://github.com/ClickHouse/ClickHouse/pull/98044) ([Raúl Marín](https://github.com/Algunenano)).
+  * 主キーのスキップ索引と非主キーのスキップ索引を併用した場合に、FINAL クエリの結果が誤っていた問題を修正しました。 [#98097](https://github.com/ClickHouse/ClickHouse/pull/98097) ([Raúl Marín](https://github.com/Algunenano)).
+  * パーティションキー カラムがソートキーに含まれていない場合、パーティションプルーニングによって、FINAL の重複排除で &quot;勝つ&quot; はずの行を含むパーティションが誤ってスキップされることがありました。 [#98242](https://github.com/ClickHouse/ClickHouse/pull/98242) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * 2 つの同時実行 `MOVE PARTITION` 操作が同じテーブルの組を逆方向に扱う場合に発生しうるデッドロックを修正しました。 [#98264](https://github.com/ClickHouse/ClickHouse/pull/98264) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * キーカラムに対する `toDate` 変換で、データが 65535 の境界をまたぐ場合にトリガーされていた `LOGICAL_ERROR` 例外 &quot;Invalid binary search result in `MergeTreeSetIndex`&quot; を修正しました。 [#98276](https://github.com/ClickHouse/ClickHouse/pull/98276) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `blocks/` と `deduplication_hashes/` の ZooKeeper ディレクトリ間でクリーンアップ順序に一貫性がなかったため、再 insert が誤って重複排除される散発的な重複排除の不具合を修正しました。 [#98293](https://github.com/ClickHouse/ClickHouse/pull/98293) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * mutation の完了前に索引またはプロジェクションが削除された場合に、`MATERIALIZE INDEX` および `MATERIALIZE PROJECTION` の mutation が進まなくなる問題を修正しました。 [#98369](https://github.com/ClickHouse/ClickHouse/pull/98369) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `Nullable` のパーティションキー カラムを持つパーツのマージ後に、誤った min-max 索引の境界が原因でパーティションプルーニングの結果が不正になっていた問題を修正しました。 [#98405](https://github.com/ClickHouse/ClickHouse/pull/98405) ([Amos Bird](https://github.com/amosbird)).
+  * MergeTree transaction を使用した `OPTIMIZE TABLE` と `TRUNCATE TABLE` が同時実行された場合に発生しうる、`renameAndCommitEmptyParts` 内の `LOGICAL_ERROR` 例外を修正しました。 [#98508](https://github.com/ClickHouse/ClickHouse/pull/98508) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `DateTime64` でのパーティションプルーニング時に発生していた Decimal overflow を修正しました。 [#98628](https://github.com/ClickHouse/ClickHouse/pull/98628) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * 空の covering パーツが誤ってクリーンアップされていたことによって発生していた、古いデータパーツの再出現を修正しました。 [#98698](https://github.com/ClickHouse/ClickHouse/pull/98698) ([Shaohua Wang](https://github.com/tiandiwonder)).
+  * false を伴う `OR` (つまり `or(x, 0)`) 条件式で、set スキップ索引の有効性を正しく検出できない問題を修正しました。[#98776](https://github.com/ClickHouse/ClickHouse/pull/98776) ([Azat Khuzhin](https://github.com/azat)).
+  * クエリプランで式のマージが無効になっている場合 (`query_plan_merge_expressions = 0` または `query_plan_enable_optimizations = 0`) に、ALIAS カラムに対してスキップ索引 (および主キー条件) が適用されない問題を修正しました。[#98960](https://github.com/ClickHouse/ClickHouse/pull/98960) ([Peng](https://github.com/fastio)).
+  * `startsWith`、`LIKE`、`NOT LIKE` を `FixedString` カラムに対して使用したときに、不正確または不十分なプルーニングが行われる問題を修正しました。さらに、主キーカラムを `FixedString` から `String` に CAST した場合も、グラニュールをプルーニングできるようになりました。[#99001](https://github.com/ClickHouse/ClickHouse/pull/99001) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * クエリプランに `_part_offset` カラムが含まれていない状態でパッチパート (論理更新) を読み取る際に発生する例外を修正しました。[#99023](https://github.com/ClickHouse/ClickHouse/pull/99023) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `pk_id` が `String` 型の主キーである `SELECT * FROM table WHERE pk_id = ''` のようなクエリで、グラニュールの絞り込みに主キー索引が正しく使われるようになりました。[#99027](https://github.com/ClickHouse/ClickHouse/pull/99027) ([Shankar Iyer](https://github.com/shankar-iyer)).
+  * 仮想カラム (例: `_part_offset`) と同じ名前の `EPHEMERAL` カラムを持つテーブルの作成時に発生する例外を修正しました。[#99031](https://github.com/ClickHouse/ClickHouse/pull/99031) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * パッチパートのカラム順序の不一致によって発生する `LOGICAL_ERROR` を修正しました。[#99164](https://github.com/ClickHouse/ClickHouse/pull/99164) ([Pablo Marcos](https://github.com/pamarcos)).
+  * テーブルに、式が `EPHEMERAL` カラムに依存する MATERIALIZED カラムがある場合、`ALTER TABLE UPDATE`/`DELETE` が `Missing columns` エラーで失敗する問題を修正しました。[#99281](https://github.com/ClickHouse/ClickHouse/pull/99281) ([Yash](https://github.com/Onyx2406)).
+  * 暗黙的な minmax 索引を持つレプリケートテーブルを 25.10 からそれ以降のバージョンへアップグレードする際の互換性の問題を修正しました。[#99392](https://github.com/ClickHouse/ClickHouse/pull/99392) ([Raúl Marín](https://github.com/Algunenano)).
+  * `DETACH`/`ATTACH TABLE` クエリの後、データパートがまれに誤って破損と判定され、デタッチされる問題を修正しました。[#99529](https://github.com/ClickHouse/ClickHouse/pull/99529) ([Anton Popov](https://github.com/CurtizJ)).
+  * `Dynamic` カラムを持つテーブルのマージ中に `SYSTEM STOP/START MERGES` を短時間で何度も切り替えた際、バーティカルマージの `rows_sources` で assertion failure が発生する問題を修正しました。[#99532](https://github.com/ClickHouse/ClickHouse/pull/99532) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `toWeek()` に対する誤ったパーティションプルーニングを修正しました。この問題により、`toYYYYMM(date)` でパーティション分割されたテーブルで `WHERE toWeek(date, mode) = N` を含むクエリが、週 49〜52 に対して空の結果を返していました。[#99542](https://github.com/ClickHouse/ClickHouse/pull/99542) ([Takumi Hara](https://github.com/takumihara)).
+  * `ALTER TABLE ADD COLUMN` を使って仮想カラム (例: `_part_offset`) と同じ名前の `EPHEMERAL` カラムを作成した際に発生する `LOGICAL_ERROR` を修正しました。[#99549](https://github.com/ClickHouse/ClickHouse/pull/99549) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `CLEAR COLUMN` 実行時にプロジェクションが再構築されず、さらにクリアされたカラムに依存するマテリアライズドカラムが再評価されない問題を修正しました。これにより、後続のマージで例外やデータ破損が発生する可能性がありました。[#99565](https://github.com/ClickHouse/ClickHouse/pull/99565) ([Desel72](https://github.com/Desel72)).
+  * 不明なプロジェクションを含むパーツが、永久に失われたものとしてマークされなくなりました。 [#99623](https://github.com/ClickHouse/ClickHouse/pull/99623) ([Sema Checherinda](https://github.com/CheSema)).
+  * `injectRequiredColumns` 内のダングリング参照を修正し、マージ中にクラッシュが発生する問題を解消しました。 [#99679](https://github.com/ClickHouse/ClickHouse/pull/99679) ([Tuan Pham Anh](https://github.com/tuanpach)).
+  * プロジェクションと compact パーツを持つテーブルで `CLEAR COLUMN` を実行した後、projection パーツのマージ中に発生する論理エラーを修正しました。 [#100068](https://github.com/ClickHouse/ClickHouse/pull/100068) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `optimize_on_insert=0` の wide パーツ内にネストされた `Array(JSON)` カラムを持つテーブルへの挿入時に発生する `LOGICAL_ERROR` &quot;Stream ... not found&quot; を修正しました。 [#100475](https://github.com/ClickHouse/ClickHouse/pull/100475) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `StorageAlias` の定義を保存する前にエンジン引数を評価するようにし、`currentDatabase()` のような式がデータベースに保存される前にリテラルへ解決されるようにしました。 [#100902](https://github.com/ClickHouse/ClickHouse/pull/100902) ([Nikolay Degterinsky](https://github.com/evillique)).
+  * 一部のケースで、索引解析中のフィルタ式で使用された `divide` と `intDiv` が `ILLEGAL_DIVISION` を返す問題を修正しました。 [#100928](https://github.com/ClickHouse/ClickHouse/pull/100928) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * 論理削除の後、論理削除マスクを持つすべてのパーツがマージで消えた後も、`minmax_count_projection` と単純な `COUNT(*)` 最適化が恒久的に無効のままになる問題を修正しました。 [#101212](https://github.com/ClickHouse/ClickHouse/pull/101212) ([Anton Popov](https://github.com/CurtizJ)).
+  * `IStorage::getDependentViewsByColumn` の `storage_id` におけるデータ競合を修正しました。 [#101385](https://github.com/ClickHouse/ClickHouse/pull/101385) ([Nikolay Degterinsky](https://github.com/evillique)).
+  * マージ中に `materialize_skip_indexes_on_merge=false` がテキスト (全文検索) 索引を抑制しない問題を修正しました。従来は、テキスト以外のスキップ索引 (minmax、set、bloom&#95;filter) のみが抑制されていました。 [#101932](https://github.com/ClickHouse/ClickHouse/pull/101932) ([Groene AI](https://github.com/groeneai)).
+  * パーツ削除後 (たとえばマージ時) にベクトル類似度索引キャッシュのエントリが削除されるようになり、cache キーの不一致によりエントリがまったく追い出されない問題を修正しました。 [#99575](https://github.com/ClickHouse/ClickHouse/pull/99575) ([Seva Potapov](https://github.com/seva-potapov)).
+  * SLRU のサブキュー昇格における race condition により、ファイルシステムキャッシュの動的リサイズ中に誤って `LOGICAL_ERROR` 例外が発生する問題を修正しました。 [#99850](https://github.com/ClickHouse/ClickHouse/pull/99850) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * Map のサブカラム読み取り時に発生しうる論理エラーを修正しました。 [#101641](https://github.com/ClickHouse/ClickHouse/pull/101641) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `getSubcolumnData` で、完全一致するサブカラムがプレフィックス一致より優先されるよう修正し、クラッシュの可能性を回避しました。 [#101645](https://github.com/ClickHouse/ClickHouse/pull/101645) ([Pavel Kruglov](https://github.com/Avogar)).
+  * JSONカラム上に作成された min-max 索引で誤った最小値・最大値が使われ、誤ったクエリ結果につながる問題を修正しました。 [#101918](https://github.com/ClickHouse/ClickHouse/pull/101918) ([Pavel Kruglov](https://github.com/Avogar)).
+  * ファイルシステムキャッシュ (26.1+) における SLRU の競合バグを修正しました。これは領域予約の論理エラーにつながる可能性がありました。 [#101991](https://github.com/ClickHouse/ClickHouse/pull/101991) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * リモートオブジェクトが `list` と `read` の間で上書きされると、古いオブジェクトのメタデータが残り、cache で `Having zero bytes` 論理エラーが発生していた問題を修正しました。[#101219](https://github.com/ClickHouse/ClickHouse/pull/101219) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * 同時実行の書き込み中に、S3 オブジェクトストレージ上の `Log` または `StripeLog` テーブルを読み取る際に発生していた `file_offset_of_buffer_end <= getFileSize()` アサーション失敗を修正しました。[#100763](https://github.com/ClickHouse/ClickHouse/pull/100763) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * config の再読み込み時に cache サイズの上限設定が正しく適用されない問題を修正しました。[#100659](https://github.com/ClickHouse/ClickHouse/pull/100659) ([Aleksei Filatov](https://github.com/aalexfvk)).
+  * サブキュー間でエビクション統計が共有されていたことと、失敗した候補に対する誤った復旧パスが原因で、SLRU ファイルシステムキャッシュの動的リサイズ中に `LOGICAL_ERROR` で中断していた問題を修正しました。[#102396](https://github.com/ClickHouse/ClickHouse/pull/102396) ([Antonio Andelic](https://github.com/antonio2368)).
+  * 論理削除の後に、`minmax_count_projection` と単純な `COUNT(*)` 最適化が恒久的に無効化される問題を修正しました。[#102900](https://github.com/ClickHouse/ClickHouse/pull/102900) ([Anton Popov](https://github.com/CurtizJ)).
+
+  ### データ型とシリアライゼーションの修正
+
+  * ALIAS カラムのサブカラムの読み取り時に、誤った結果が返されたり例外が発生したりする問題を修正しました。[#95408](https://github.com/ClickHouse/ClickHouse/pull/95408) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `Nullable(Tuple)` の導入後、`sumCount` 集約関数が古いシリアライズ済み状態を読み取れなくなっていた問題を修正しました。[#97502](https://github.com/ClickHouse/ClickHouse/pull/97502) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * JSON と shared data 内の buckets を使用した `INSERT SELECT` で、stream の欠落に関する論理エラーが発生する問題を修正しました。[#97523](https://github.com/ClickHouse/ClickHouse/pull/97523) ([Pavel Kruglov](https://github.com/Avogar)).
+  * JSON の advanced shared data で空の granules を読み取る際に、クラッシュする可能性があった問題を修正しました。[#97778](https://github.com/ClickHouse/ClickHouse/pull/97778) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `Int8` より広い整数型に対する `sign` 関数の JIT 誤コンパイルを修正しました。-128..127 の範囲外の値で、誤った符号が返される可能性がありました。[#98012](https://github.com/ClickHouse/ClickHouse/pull/98012) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * メッセージ間で読み取り状態がリセットされていなかったため、`ProtobufList` フォーマットが Kafka エンジンで動作しなかった問題を修正しました。[#98151](https://github.com/ClickHouse/ClickHouse/pull/98151) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * Parquet/Arrow の `Date` カラムを `Enum` カラムに insert した際に、静かにデータ破損が発生する問題を修正しました。互換性のない型変換は、無効な enum 値を保存するのではなく、適切に拒否されるようになりました。[#98364](https://github.com/ClickHouse/ClickHouse/pull/98364) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `Array` カラムを持つ Arrow ファイルを `Nested` カラムを持つ table に読み込む際に、例外が発生する問題を修正しました。[#98365](https://github.com/ClickHouse/ClickHouse/pull/98365) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * Tuple 要素名が Nullable の `null` サブカラムと衝突する場合に、`Nullable(Tuple(...))` の読み取りで例外が発生する問題を修正しました。[#98372](https://github.com/ClickHouse/ClickHouse/pull/98372) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * native V3 reader において、Parquet の `Bool` から `FixedString` への変換が誤っており、文字列表現ではなく raw bytes が生成されていた問題を修正しました。[#98378](https://github.com/ClickHouse/ClickHouse/pull/98378) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `tryGetColumnDescription` が、他のカラム ルックアップ method と整合するよう、親カラムの kind でサブカラムを filter するように修正しました。[#98391](https://github.com/ClickHouse/ClickHouse/pull/98391) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 新しい block の append 中に例外を処理した際の Buffer engine におけるカラムのロールバックを修正しました。以前のロジックでは、メモリ内のカラム state が破損する可能性がありました。[#98551](https://github.com/ClickHouse/ClickHouse/pull/98551) ([Pavel Kruglov](https://github.com/Avogar)).
+  * const の `Dynamic` または `Variant` カラムと `NULL` を使った null-safe 比較 (`<=>` / `IS NOT DISTINCT FROM`) で、例外 `Bad cast from type ColumnConst to ColumnDynamic` が発生する問題を修正しました。また、`Dynamic`/`Variant` と `NULL` の `IS DISTINCT FROM` が常に誤って 0 を返していた問題も修正しました。[#98553](https://github.com/ClickHouse/ClickHouse/pull/98553) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `parseDateTimeBestEffort` が、月名または曜日のプレフィックスで始まる単語を誤ってパースしていた問題を修正しました。[#98742](https://github.com/ClickHouse/ClickHouse/pull/98742) ([Pavel Kruglov](https://github.com/Avogar)).
+  * 無効な (途中で切れた) UTF-8 入力に対して `reverseUTF8` が例外を発生させる問題を修正しました。[#98770](https://github.com/ClickHouse/ClickHouse/pull/98770) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `BFloat16` 型の引数が渡されたときに金融関数 (`financialNetPresentValue`、`financialInternalRateOfReturn` など) で発生していた `LOGICAL_ERROR` 例外を修正しました。[#98958](https://github.com/ClickHouse/ClickHouse/pull/98958) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * SummingMergeTree が `Bool` (およびその他のドメイン型) カラムを合計しなくなりました。`Bool` の値は算術的に加算されず、そのまま保持されます。[#98976](https://github.com/ClickHouse/ClickHouse/pull/98976) ([Yash](https://github.com/Onyx2406)).
+  * MergeTree エンジンで version/sign/is&#95;deleted カラムを `EPHEMERAL` または `ALIAS` に変更した際の未定義動作 (null ポインタの逆参照) を修正しました。このような変更は適切に拒否されるようになりました。[#98985](https://github.com/ClickHouse/ClickHouse/pull/98985) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * DD-month-YYYY フォーマットで、月名のプレフィックスで始まる単語を `parseDateTimeBestEffort` が誤ってパースしていた問題を修正しました。[#99350](https://github.com/ClickHouse/ClickHouse/pull/99350) ([Pavel Kruglov](https://github.com/Avogar)).
+  * Dynamic を含む Tuple 内のスパースなシリアライゼーションに対する `CHECK TABLE` を修正しました。[#99351](https://github.com/ClickHouse/ClickHouse/pull/99351) ([Pavel Kruglov](https://github.com/Avogar)).
+  * enum 定義に存在しない値を持つ `Enum8`/`Enum16` カラムのシリアライズ時に、Avro 出力フォーマットで発生していた論理エラー `unordered_map::at: key not found` を修正しました。[#99332](https://github.com/ClickHouse/ClickHouse/pull/99332) ([Desel72](https://github.com/Desel72)).
+  * `Time[64]` 型と `DateTime[64]` 型の比較がわかりにくかった不具合を修正しました。`Time[64]` の値は、日付部分として `1970-01-01` を加えることで `DateTime[64]` に昇格されるようになりました。[#99267](https://github.com/ClickHouse/ClickHouse/pull/99267) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * Escaped/Raw テキストフォーマットにおける `Variant` 型の `\N` (NULL) のデシリアライゼーションを修正しました。[#99648](https://github.com/ClickHouse/ClickHouse/pull/99648) ([Pavel Kruglov](https://github.com/Avogar)).
+  * 対象のカラム型でオーバーフローする数値を読み取る際の、Avro フォーマットリーダーでの未定義動作を修正しました。これにより、クエリは誤った値を黙って生成するのではなく、オーバーフロー時に失敗するようになりました。[#99697](https://github.com/ClickHouse/ClickHouse/pull/99697) ([asyablue22](https://github.com/asyablue22)).
+  * 行数不一致のある Native フォーマットストリームをデシリアライズする際に `NativeReader` で発生していた誤検知による異常終了を修正しました。エラーは `LOGICAL_ERROR` から `INCORRECT_DATA` に変更されました。[#99822](https://github.com/ClickHouse/ClickHouse/pull/99822) ([Rahul Nair](https://github.com/motsc)).
+  * バイナリストリーム内のシリアライゼーション種別が `DETACHED` の場合に、`Tuple` カラムのデシリアライゼーションで発生していたプロセスの異常終了を修正しました。[#99823](https://github.com/ClickHouse/ClickHouse/pull/99823) ([Rahul Nair](https://github.com/motsc)).
+  * `aggregate_functions_null_for_empty` 設定が、`Array` や `Map` などの非 Nullable 型を返す集約関数 (例: `groupArray`、`sumMap`) でも動作するように修正しました。[#99839](https://github.com/ClickHouse/ClickHouse/pull/99839) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 符号付き整数型と符号なし整数型が混在した状態で呼び出されたときに `midpoint` 関数で発生していた `LOGICAL_ERROR` 例外を修正しました。[#99867](https://github.com/ClickHouse/ClickHouse/pull/99867) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * クロス結合とランタイムフィルタを含む `Dynamic` カラム関連のクエリで発生していた `LOGICAL_ERROR` 例外を修正しました。原因は、`hasOnlyNulls` 最適化パスで `ColumnVariant::filter` が Variant カラムのポインタを複製せずに共有していたことでした。[#100234](https://github.com/ClickHouse/ClickHouse/pull/100234) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `arrayFirst`/`arrayLast` の呼び出し時にデータ型が再解釈されることがあった、array-of-variant の不具合を修正しました。たとえば、実際の基になる Variant 型が `Date` である場合に、`Array(Variant(Date, Bool))` が `Bool` に変換されていました。 [#100255](https://github.com/ClickHouse/ClickHouse/pull/100255) ([timothygk](https://github.com/timothygk)).
+  * `CSV` および `MsgPack` フォーマットで `Nullable(Tuple)` を正しくパースできなかった問題を修正しました。 [#100038](https://github.com/ClickHouse/ClickHouse/pull/100038) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * 定数入力に対して `accurateCastOrDefault` および `to*OrDefault` 関数が Const カラム型を保持しなかった問題を修正しました。 [#100132](https://github.com/ClickHouse/ClickHouse/pull/100132) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `LowCardinality(Nullable(T))` 型の省略されたクエリパラメータが、`Nullable(T)` と同様に、正しく `NULL` にデフォルト設定されるようになりました。 [#100144](https://github.com/ClickHouse/ClickHouse/pull/100144) ([Denys Melnyk](https://github.com/germiBest)).
+  * 高精度の `DateTime64` で非常に大きなミリ秒/マイクロ秒のインターバル値を指定して `toStartOfInterval` を呼び出した際に発生していた、符号付き整数オーバーフロー (未定義動作) を修正しました。 [#100156](https://github.com/ClickHouse/ClickHouse/pull/100156) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `Variant` データ型に対する JOIN ランタイムフィルタの問題を修正しました。 [#100182](https://github.com/ClickHouse/ClickHouse/pull/100182) ([Dmitry Novik](https://github.com/novikd)).
+  * 値が 24 時間に切り詰められることがあった `Time64` から `UInt64` への CAST の問題を修正しました。 [#100025](https://github.com/ClickHouse/ClickHouse/pull/100025) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * `use_variant_as_common_type` が有効な場合に、空の Tuple と空でない Tuple の共通スーパータイプを計算すると例外が発生していた問題を修正しました。 [#100699](https://github.com/ClickHouse/ClickHouse/pull/100699) ([Antonio Andelic](https://github.com/antonio2368)).
+  * 符号なし除数が符号付きの結果型に収まらない場合の `positiveModulo` における未定義動作を修正しました。 [#100705](https://github.com/ClickHouse/ClickHouse/pull/100705) ([Raúl Marín](https://github.com/Algunenano)).
+  * 始点 argument と極端なインターバル値を指定して Week、Quarter、または Year のインターバルを使用した際の `toStartOfInterval` における未定義動作 (符号付き整数オーバーフロー) を修正しました。 [#100817](https://github.com/ClickHouse/ClickHouse/pull/100817) ([Raúl Marín](https://github.com/Algunenano)).
+  * `Nullable(Tuple)` の導入後、`Tuple` return type と 1 つ以上の `Nullable` argument を持つ `If`、`Distinct`、`DistinctIf`、および `IfState` 集約関数コンビネータが、古いシリアライズ済み state を読み取れなかった問題を修正しました。 [#100826](https://github.com/ClickHouse/ClickHouse/pull/100826) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * `cast_keep_nullable` が有効な場合、`Dynamic` の null を `Variant` に CAST しても例外をスローしなくなりました。 [#100864](https://github.com/ClickHouse/ClickHouse/pull/100864) ([Seva Potapov](https://github.com/seva-potapov)).
+  * nullable な Tuple の配列に対する `intDiv`/`intDivOrZero` で発生していた例外を修正しました。 [#100895](https://github.com/ClickHouse/ClickHouse/pull/100895) ([Raúl Marín](https://github.com/Algunenano)).
+  * 小数秒以下が 19 桁以上ある日時文字列をパースした際の `parseDateTimeBestEffort` における未定義動作 (符号付き整数オーバーフロー) を修正しました。 [#100948](https://github.com/ClickHouse/ClickHouse/pull/100948) ([Vasily Chekalkin](https://github.com/bacek)).
+  * `Nullable(Tuple)` の導入後、1 つ以上の `Nullable` 引数を持つ `sumCountOrDefault` 集約関数が、古いシリアライズ済みの状態を読み取れなくなる問題を修正しました。[#101021](https://github.com/ClickHouse/ClickHouse/pull/101021) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * 宣言されたタイムゾーンが式のタイムゾーンと異なる場合に、`DateTime`/`DateTime64` 型の ALIAS カラムでタイムゾーン変換が適用されない問題を修正しました。[#101043](https://github.com/ClickHouse/ClickHouse/pull/101043) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * シリアライゼーション/デシリアライゼーションの不整合を防ぐため、`arrayIntersect` および関連関数の結果カラムから `Nullable` を取り除くようにしました。[#101569](https://github.com/ClickHouse/ClickHouse/pull/101569) ([George Larionov](https://github.com/george-larionov)).
+  * `positiveModulo(tuple, number)` が剰余ではなく除算に誤ってディスパッチされる問題を修正しました。[#101709](https://github.com/ClickHouse/ClickHouse/pull/101709) ([ClickGap AI Bot](https://github.com/clickgapai)).
+  * 特定の非デフォルトのフォーマット設定において、`formatDateTime` の `%W` フォーマッタの出力が正しくない問題を修正しました。[#101847](https://github.com/ClickHouse/ClickHouse/pull/101847) ([Robert Schulze](https://github.com/rschu1ze)).
+  * 一部のブロックでデフォルトカラムが const の場合に、`transform` で型不一致の例外が発生する問題を修正しました。[#100616](https://github.com/ClickHouse/ClickHouse/pull/100616) ([Pavel Kruglov](https://github.com/Avogar)).
+  * Parquet で空の行グループを許可するようにしました。[#100653](https://github.com/ClickHouse/ClickHouse/pull/100653) ([Vitaly Baranov](https://github.com/vitlibar)).
+  * `min`/`max`/`argMin`/`argMax` が、NaN を `ORDER BY` と一貫した形で扱うようになりました。NaN は常にスキップされ (すべての値が NaN の場合にのみ返されます) 、以前は IEEE 754 の順序なし比較セマンティクスにより、結果がデータ内の NaN の位置に依存していました。[#100448](https://github.com/ClickHouse/ClickHouse/pull/100448) ([Raúl Marín](https://github.com/Algunenano)).
+  * タイムゾーン調整後に overflow が発生した場合の日付データ型の推論誤りを修正しました。[#102674](https://github.com/ClickHouse/ClickHouse/pull/102674) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `Dynamic` 式を持つ `CASE` が、すべての行に対して `ELSE` を返してしまう問題を修正しました。[#102684](https://github.com/ClickHouse/ClickHouse/pull/102684) ([Pavel Kruglov](https://github.com/Avogar)).
+  * バイナリエンコードされたデータ型における、フラット化された `Dynamic` 型のシリアライゼーションの問題を修正しました。[#102692](https://github.com/ClickHouse/ClickHouse/pull/102692) ([Pavel Kruglov](https://github.com/Avogar)).
+  * `Nullable(DateTime)` への `CAST` で `cast_string_to_date_time_mode` が無視される問題を修正しました。[#103035](https://github.com/ClickHouse/ClickHouse/pull/103035) ([Pavel Kruglov](https://github.com/Avogar)).
+  * レプリケートされたカラムおよびスパースカラムのシリアライゼーションにおける null 表現が、設定 (例: `format_tsv_null_representation`) を反映するようにしました。[#102888](https://github.com/ClickHouse/ClickHouse/pull/102888) ([Hechem Selmi](https://github.com/m-selmi)).
+
+  ### テキスト索引とスキップ索引の修正
+
+  * テキスト索引を他のスキップ索引と併用した際の不具合を修正しました。以前は、クエリのフィルターでテキスト索引と通常のスキップ索引を同時に使用すると、&quot;Trying to get non-existing mark&quot; のような論理エラーが発生することがありました。[#98555](https://github.com/ClickHouse/ClickHouse/pull/98555) ([Anton Popov](https://github.com/CurtizJ)).
+  * 有効期限 (TTL) を伴うマージ時のテキスト索引の再構築を修正しました。[#99107](https://github.com/ClickHouse/ClickHouse/pull/99107) ([Anton Popov](https://github.com/CurtizJ)).
+  * テキスト索引のプリプロセッサに対する検証が厳しすぎた問題を修正しました。[#99359](https://github.com/ClickHouse/ClickHouse/pull/99359) ([Anton Popov](https://github.com/CurtizJ)).
+  * テキスト索引解析における否定関数 (`notEquals`、`notLike`、`notIn`) のサポートを削除しました。これらの関数ではグラニュールをまったくスキップできないため、それらに対する索引解析は余分なオーバーヘッドを増やすだけでした。[#99393](https://github.com/ClickHouse/ClickHouse/pull/99393) ([Anton Popov](https://github.com/CurtizJ)).
+  * テキスト索引の述語 (例: `hasAllTokens`) がエイリアス経由で `SELECT` 句と `WHERE` 句の両方から参照された場合に発生していた `NOT_FOUND_COLUMN_IN_BLOCK` 例外を修正しました。[#99504](https://github.com/ClickHouse/ClickHouse/pull/99504) ([Anton Popov](https://github.com/CurtizJ)).
+  * それぞれ別個のテキスト索引を持つカラムに対して `OR` で `hasAllTokens` を使用した際に、誤った結果が返る問題を修正しました。[#99505](https://github.com/ClickHouse/ClickHouse/pull/99505) ([Anton Popov](https://github.com/CurtizJ)).
+  * 既存の論理削除と行ポリシーがあるテーブルでのテキスト索引の読み取りを修正しました。[#99661](https://github.com/ClickHouse/ClickHouse/pull/99661) ([Anton Popov](https://github.com/CurtizJ)).
+  * プリプロセッサ付きテキスト索引による `IN` 関数を含む述語の解析を修正し、誤った結果につながる可能性があった検索トークンの衝突も修正しました。[#99755](https://github.com/ClickHouse/ClickHouse/pull/99755) ([Anton Popov](https://github.com/CurtizJ)).
+  * 部分文字列一致をサポートしないトークナイザー (`array`、`splitByString`) で `startsWith` および `endsWith` 関数とともにテキスト索引を使用した際の誤った動作を修正しました。以前は、これらのトークナイザーで誤った結果が静かに生成されることがありました。[#100151](https://github.com/ClickHouse/ClickHouse/pull/100151) ([Anton Popov](https://github.com/CurtizJ)).
+  * テキスト索引の構築中に &quot;Memory Limit&quot; 例外が発生した場合に、まれにクラッシュする問題を修正しました。[#100213](https://github.com/ClickHouse/ClickHouse/pull/100213) ([Anton Popov](https://github.com/CurtizJ)).
+  * `IN` 句を含む述語に対して `mapValues` 上に構築されたテキスト索引を解析する際に発生していた、&quot;Not-ready Set is passed as the second argument&quot; エラーを修正しました。[#100224](https://github.com/ClickHouse/ClickHouse/pull/100224) ([Anton Popov](https://github.com/CurtizJ)).
+  * タプルのサブクエリを含む `IN` 句を使ってテキスト検索索引を使用した際、たとえば `WHERE (id, str) IN (SELECT (id, str) FROM ...)` のような場合や、サブクエリ内のカラム数が `IN` の左辺のタプルと一致しない場合に発生していたクラッシュを修正しました。[#100959](https://github.com/ClickHouse/ClickHouse/pull/100959) ([Anton Popov](https://github.com/CurtizJ)).
+  * `splitByString` トークナイザーは、空の区切り文字列を拒否するようになりました。[#101928](https://github.com/ClickHouse/ClickHouse/pull/101928) ([Robert Schulze](https://github.com/rschu1ze)).
+  * `sparseGrams` トークナイザーが、指定された最大長より長いトークンを生成してしまう不具合がありました (実装内で `+2` がハードコードされていたため) 。[#101934](https://github.com/ClickHouse/ClickHouse/pull/101934) ([Elmi Ahmadov](https://github.com/ahmadov)).
+  * `query_plan_direct_read_from_text_index` が有効な場合に、フルテキスト索引を持つ `Merge` または `Distributed` テーブルに対して、`has*Tokens` と `LIKE` が混在する複合フィルタ条件でクエリした際に発生していた例外を修正しました。[#101939](https://github.com/ClickHouse/ClickHouse/pull/101939) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+  * テキスト索引を持つカラムに対して、区切り文字のみからなる needle (例: `'()'`、`'!!!'`) を使った `hasToken`/`hasTokenOrNull` の問題を修正しました。従来は、`BAD_ARGUMENTS` をスローする (`hasToken` の場合) か `NULL` を返す (`hasTokenOrNull` の場合) べきところで、索引がすべての granule を暗黙的にスキップしていました。[#102544](https://github.com/ClickHouse/ClickHouse/pull/102544) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+  * `compatibility` 設定が 26.1 より古いバージョンを指している場合でも、フルテキスト索引の設定 (`enable_full_text_index`、`allow_experimental_full_text_index`、`use_skip_indexes_on_data_read`) が無効化されなくなりました。[#102422](https://github.com/ClickHouse/ClickHouse/pull/102422) ([Nikita Fomichev](https://github.com/fm4v)).
+  * テキスト索引の direct read 最適化で、`ALIAS` カラムのサポートを追加しました。[#103037](https://github.com/ClickHouse/ClickHouse/pull/103037) ([Anton Popov](https://github.com/CurtizJ)).
+
+  ### データレイクの修正
+
+  * `DeltaLake` テーブルエンジンで、スナップショットのバージョン変更時に発生する競合状態を修正し、不要で高コストなスナップショットの再読み込みを削除しました。 [#96226](https://github.com/ClickHouse/ClickHouse/pull/96226) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * 名前にドットを含む struct フィールドがあり、カラムマッピング &quot;name&quot; モードを使用する Delta Lake テーブルの読み取り時に発生していた `DUPLICATE_COLUMN` 例外と、NULL が黙って返される問題を修正しました。 [#98013](https://github.com/ClickHouse/ClickHouse/pull/98013) ([Caio Ishizaka Costa](https://github.com/ch-caioishizaka)).
+  * GCS 上で Unity Catalog を使用する際のバグを修正しました。 [#98456](https://github.com/ClickHouse/ClickHouse/pull/98456) ([Melvyn Peignon](https://github.com/melvynator)).
+  * `DataLakeCatalog` は、`auth_header` 設定の検証時にサーバーの `http_forbid_headers` 設定に従うようになりました。 [#98827](https://github.com/ClickHouse/ClickHouse/pull/98827) ([Michael Anastasakis](https://github.com/michael-anastasakis)).
+  * ユーザーパス外にあるローカルデータレイクテーブルの作成、アタッチ、更新が禁止されるようになり、`IDataLakeMetadata` の作成時および更新時にチェックされます。 [#98936](https://github.com/ClickHouse/ClickHouse/pull/98936) ([Daniil Ivanik](https://github.com/divanik)).
+  * Iceberg BigLake の読み取りを修正しました。ADC 認証情報が GCS S3 client に転送されるようになり (403 エラーを修正) 、OAuth2 認証情報は送信前に URL エンコードされるようになり、BigLake の HTTP 400 レスポンスでネームスペースの走査が中断されなくなりました。 [#98998](https://github.com/ClickHouse/ClickHouse/pull/98998) ([Nikita Fomichev](https://github.com/fm4v)).
+  * Avro データを持つ Iceberg テーブルで仮想カラムのみをクエリした際に発生していた範囲外アクセスエラーを修正しました。 [#99080](https://github.com/ClickHouse/ClickHouse/pull/99080) ([alesapin](https://github.com/alesapin)).
+  * Iceberg テーブルエンジンにおける `ALTER TABLE ... REMOVE SETTINGS` のクラッシュを修正しました。 [#99108](https://github.com/ClickHouse/ClickHouse/pull/99108) ([alesapin](https://github.com/alesapin)).
+  * Iceberg テーブルに異なるフォーマット (ORC と Parquet) のファイルが混在している場合に、ごくまれに発生していたクラッシュを修正しました。 [#99168](https://github.com/ClickHouse/ClickHouse/pull/99168) ([alesapin](https://github.com/alesapin)).
+  * Iceberg テーブルで `ALTER TABLE ... MODIFY COLUMN ... COMMENT` を実行した際のクラッシュ (null ポインタ逆参照) を修正しました。 [#99838](https://github.com/ClickHouse/ClickHouse/pull/99838) ([Desel72](https://github.com/Desel72)).
+  * ClickHouse は、Spark スタイルのテーブル (各ファイルに完全な絶対パスがあるもの、または共通テーブルパスからの相対パスを持つもの) を正しく処理するようになりました。 [#99935](https://github.com/ClickHouse/ClickHouse/pull/99935) ([alesapin](https://github.com/alesapin)).
+  * Iceberg メタデータファイルのパス設定に null byte が含まれている場合の例外を修正しました。 [#100283](https://github.com/ClickHouse/ClickHouse/pull/100283) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `delta_lake_snapshot_start_version` を指定せずに `delta_lake_snapshot_end_version` を設定した場合、本来は `BAD_ARGUMENTS` エラーになるべきところで黙って無視されていたコピーペースト由来のバグを修正しました。 [#100454](https://github.com/ClickHouse/ClickHouse/pull/100454) ([Mohammad Lareb Zafar](https://github.com/zlareb1)).
+  * ソート済みの Iceberg テーブルでミューテーション中に発生していた論理エラーを修正しました。 [#100499](https://github.com/ClickHouse/ClickHouse/pull/100499) ([alesapin](https://github.com/alesapin)).
+  * Azure での Polaris Catalog を修正しました。25.12 以降、カタログがパスの先頭にバケットを追加してしまっていた問題に対応しています。 [#100583](https://github.com/ClickHouse/ClickHouse/pull/100583) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+  * パーティション化された Iceberg テーブルで `ALTER TABLE UPDATE` を連続して実行した際に発生していた `Logical error: 'partitions_count > 0'` 例外を修正しました。 [#101278](https://github.com/ClickHouse/ClickHouse/pull/101278) ([Desel72](https://github.com/Desel72)).
+  * ReplicatedMergeTree を使用した Delta Lake クラスターからの insert-select を修正しました。[#101299](https://github.com/ClickHouse/ClickHouse/pull/101299) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+  * DeltaKernel が有効になっていない状態で `delta_lake_snapshot_version` または CDF バージョン設定が使用された場合、誤ったデータを黙って返すのではなく、エラーをスローするようにしました。[#101489](https://github.com/ClickHouse/ClickHouse/pull/101489) ([Desel72](https://github.com/Desel72)) 。
+  * `iceberg_metadata_file_path` を使用して table が作成され、対象のメタデータのバージョンがすでに存在している場合に、Iceberg の INSERT の再試行ループが失敗する問題を修正しました。[#101548](https://github.com/ClickHouse/ClickHouse/pull/101548) ([Groene AI](https://github.com/groeneai)) 。
+  * IcebergLocal table engine を基盤とする materialized view から SELECT した際に発生する server の crash (`LOGICAL_ERROR`) を修正しました。[#101577](https://github.com/ClickHouse/ClickHouse/pull/101577) ([Groene AI](https://github.com/groeneai)) 。
+  * Avro format 使用時の IcebergLocal `ALTER TABLE ... UPDATE` における crash を修正しました。原因は、`LowCardinality`/`Nullable` の wrapper types がシリアライゼーション前にアンラップされていなかったことでした。[#102337](https://github.com/ClickHouse/ClickHouse/pull/102337) ([Desel72](https://github.com/Desel72)) 。
+  * `system.delta_lake_metadata_log` および `system.iceberg_metadata_log` に、不足していた `hostname` カラムを追加しました。[#102162](https://github.com/ClickHouse/ClickHouse/pull/102162) ([Michael Russell](https://github.com/Crazybus)) 。
+  * Array 型に対する CoalescingMergeTree の不具合を修正しました。[#102384](https://github.com/ClickHouse/ClickHouse/pull/102384) ([Konstantin Vedernikov](https://github.com/scanhex12)) 。
+
+  ### S3/Azure/オブジェクトストレージの修正
+
+  * `CachedOnDiskReadBufferFromFile::readBigAt` で発生する例外を修正しました。[#97890](https://github.com/ClickHouse/ClickHouse/pull/97890) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * glob パターンを使ってファイルをクエリした際 (例: `file('dir/**', 'LineAsString')`) 、ディレクトリにリンク切れのシンボリックリンクが含まれていると、未処理の filesystem 例外によりクラッシュする問題を修正しました。リンク切れのシンボリックリンクは現在は黙ってスキップされます。[#98143](https://github.com/ClickHouse/ClickHouse/pull/98143) ([Mark Andreev](https://github.com/mrk-andreev)).
+  * 非 Arrow データの読み取り時 (例: 明示的なフォーマットを指定しない `url()` または `file()` からの JSON) に、ArrowStream リーダーが先頭のバイト列を巨大なメタデータ長として誤って解釈することで発生していた、フォーマット自動検出中の過剰なメモリ使用量 (約 514 MiB) を修正しました。[#98893](https://github.com/ClickHouse/ClickHouse/pull/98893) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * `urlCluster` または同様の cluster table function を使用するクエリで、&quot;ReadBuffer is canceled&quot; 例外を引き起こす可能性があった race condition を修正しました。[#98955](https://github.com/ClickHouse/ClickHouse/pull/98955) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `url()` table function で glob パターンを使って存在しない compressed ファイルを読み取った際に表示されていた、誤解を招く &quot;inflate failed: buffer error&quot; を修正しました。[#99034](https://github.com/ClickHouse/ClickHouse/pull/99034) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * S3 の波括弧展開 glob における N+1 `HeadObject` 呼び出しを修正しました。[#99219](https://github.com/ClickHouse/ClickHouse/pull/99219) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * hive のパーティション化パスで、先頭にゼロが付いた数値がエラーを引き起こしていたケースを修正しました。[#99458](https://github.com/ClickHouse/ClickHouse/pull/99458) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * `O_DIRECT` を使用した `AsynchronousReadBufferFromFileDescriptor` での不正な seek を修正しました。[#99678](https://github.com/ClickHouse/ClickHouse/pull/99678) ([Pavel Kruglov](https://github.com/Avogar)).
+  * HEAD リクエストのレスポンスに `Content-Length` header がない場合 (たとえば GCS での展開的トランスコーディングが原因) 、ClickHouse がファイルをスキップしてしまうことがあるバグを修正しました。[#99971](https://github.com/ClickHouse/ClickHouse/pull/99971) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * Azure blob storage ディスクが設定されていても、endpoint に一時的に到達できない場合 (例: DNS 障害) に server が起動に失敗しなくなりました。[#100701](https://github.com/ClickHouse/ClickHouse/pull/100701) ([Raúl Marín](https://github.com/Algunenano)).
+  * 接続プールの use-after-free により `s3Cluster` と distributed queries で発生していた segfault を修正しました。[#100837](https://github.com/ClickHouse/ClickHouse/pull/100837) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * S3 の `Client::~Client` デストラクタ から例外が伝播し、server の終了を引き起こしていた問題を修正しました。[#101798](https://github.com/ClickHouse/ClickHouse/pull/101798) ([Gagan Dhakrey](https://github.com/gagandhakrey)).
+  * 再接続時に host とポート が正しく記録されない問題を修正しました。[#102280](https://github.com/ClickHouse/ClickHouse/pull/102280) ([Grant Holly](https://github.com/grantholly-clickhouse)).
+  * 静的クラスター (config で定義) が一時的に稼働中のノードを持たなくなった場合に、ClusterDiscovery で server 例外が発生する問題を修正しました。[#102661](https://github.com/ClickHouse/ClickHouse/pull/102661) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+  ### S3Queue の修正
+
+  * S3Queue: ZooKeeper 接続が失われた後でも commit が成功した場合に発生していた failed assert を修正しました。[#100210](https://github.com/ClickHouse/ClickHouse/pull/100210) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * `system.s3_queue_settings` と `system.azure_queue_settings` の `alterable` カラムの説明文が逆になっていた問題を修正しました。実際のコードの動作に合わせて、`0` と `1` の意味を入れ替えました。[#101703](https://github.com/ClickHouse/ClickHouse/pull/101703) ([ClickGap AI Bot](https://github.com/clickgapai)).
+
+  ### セキュリティとアクセス制御の修正
+
+  * `loop` table function が `inner_storage->read()` を直接呼び出し、行ポリシーやカラム単位の権限付与、その他のセキュリティチェックが適用されるインタープリタ層をバイパスしていた問題を修正しました。これにより、行ポリシーで制限されているユーザーでも `loop(table)` を使ってすべての行を読み取ることができていました。 [#97682](https://github.com/ClickHouse/ClickHouse/pull/97682) ([pufit](https://github.com/pufit)).
+  * scalar `file()` および `DESCRIBE TABLE file()` に対して `READ ON FILE` チェックを強制するようにしました。 [#98115](https://github.com/ClickHouse/ClickHouse/pull/98115) ([Nikolay Degterinsky](https://github.com/evillique)).
+  * HTTP Basic Auth で、パディングなしの base64 資格情報を受け入れるようにしました。一部の HTTP クライアントは `Authorization: Basic` ヘッダー末尾の `=` パディングを省略しますが、従来はこれが authentication の失敗を引き起こしていました。 [#98392](https://github.com/ClickHouse/ClickHouse/pull/98392) ([Amos Bird](https://github.com/amosbird)).
+  * `SHOW_COLUMNS` privilege がなくても、localhost を指す `remote()`、`remoteSecure()`、`cluster()`、または `clusterAllReplicas()` 経由で任意の table を `DESCRIBE` できてしまう RBAC バイパスを修正しました。 [#98669](https://github.com/ClickHouse/ClickHouse/pull/98669) ([pufit](https://github.com/pufit)).
+  * `system.grants` の `access_object` カラムで、`URL` および `S3` grants の regular expression パラメーターが欠落していた問題を修正しました。 [#98987](https://github.com/ClickHouse/ClickHouse/pull/98987) ([DQ](https://github.com/il9ue)).
+  * 必要なソースアクセス権がなくても、table function (`mysql()`, `postgresql()`, `sqlite()`, `arrowFlight()`, `jdbc()`, `odbc()` など) に対して `DESCRIBE TABLE` や `CREATE TABLE AS` を実行することで table の構造を取得できてしまう RBAC バイパスを修正しました。リモート server からスキーマを推定する関数では、これにより認可なしでアウトバウンド接続 (SSRF) をトリガーすることも可能でした。 [#99122](https://github.com/ClickHouse/ClickHouse/pull/99122) ([pufit](https://github.com/pufit)).
+  * distributed DDL queries の DDL worker で settings constraints を制限するようにしました。 [#99317](https://github.com/ClickHouse/ClickHouse/pull/99317) ([Pablo Marcos](https://github.com/pamarcos)).
+  * TOTP authentication に関する軽微な問題を修正しました。具体的には、空の password を指定した `--one-time-password` CLI オプションと、`<digits>` および `<period>` の configuration values の検証です。 [#99322](https://github.com/ClickHouse/ClickHouse/pull/99322) ([Vladimir Cherkasov](https://github.com/vdimir)).
+  * JDBC、ODBC、および NATS の接続文字列内の資格情報が、クエリログおよび `SHOW CREATE` 出力でマスクされるようになりました。URI 形式の接続文字列では、password 部分のみがマスクされます。`nats_token` setting もマスクされるようになりました。 [#99344](https://github.com/ClickHouse/ClickHouse/pull/99344) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  * ローカルファイルから Google 資格情報を読み取ることを禁止しました。これは、ファイルパスが分かっていれば他の資格情報も読み取れてしまい、安全ではなかったためです。 [#99584](https://github.com/ClickHouse/ClickHouse/pull/99584) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+  * インライン DDL params で MySQL Dictionary ソースが `RemoteHostFilter` をバイパスしていた問題を修正しました。 [#99720](https://github.com/ClickHouse/ClickHouse/pull/99720) ([Shaohua Wang](https://github.com/tiandiwonder)).
+  * `system.completions` が、table 単位、db 単位、カラム単位の revoke を含むあらゆる grant の組み合わせで、databases、tables、columns をアクセス権に基づいて正しくフィルタリングするよう修正しました。 [#100432](https://github.com/ClickHouse/ClickHouse/pull/100432) ([Shaohua Wang](https://github.com/tiandiwonder)).
+  * HTTP ハンドラーで `query_id` をサニタイズし、`X-ClickHouse-Query-Id` ヘッダー経由でレスポンスヘッダーに CRLF が挿入されるのを防ぐようにしました。 [#100500](https://github.com/ClickHouse/ClickHouse/pull/100500) ([Pablo Marcos](https://github.com/pamarcos)).
+  * 一部のカタログでは、`SELECT * FROM system.databases` の `SETTINGS` セクションにシークレットが表示される可能性がありました。現在は表示されないようになっています。[#100800](https://github.com/ClickHouse/ClickHouse/pull/100800) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+  * 行ポリシーがログ出力のためにサブプランナーから親プランナーへ引き継がれていなかったため、ビュー、サブクエリ、insert-select の `query_log` に記録されていませんでした。現在は、ログ出力用に `QueryAccessInfo` 内に保持されるようになりました。[#101044](https://github.com/ClickHouse/ClickHouse/pull/101044) ([Narasimha Pakeer](https://github.com/npakeer)).
+
+  ### バックアップと復元の修正
+
+  * バックアップ/リストアで `max_execution_time` が適用されない問題を修正しました。[#99205](https://github.com/ClickHouse/ClickHouse/pull/99205) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * zip アーカイブを使用したバックアップ/リストア操作で発生していた `ReadBuffer is canceled. Can't read from it.` 例外を修正しました。[#100400](https://github.com/ClickHouse/ClickHouse/pull/100400) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * バックアップのメタデータ内のファイルエントリのパスを検証し、`RESTORE` 時にパストラバーサル、絶対パス、空の名前を受け付けないようにしました。[#100483](https://github.com/ClickHouse/ClickHouse/pull/100483) ([Pablo Marcos](https://github.com/pamarcos)).
+  * `BACKUP FROM SNAPSHOT` の AST のフォーマットとクローン処理を修正しました。[#101405](https://github.com/ClickHouse/ClickHouse/pull/101405) ([Pablo Marcos](https://github.com/pamarcos)).
+
+  ### ClickHouse Keeper の修正
+
+  * send thread と receive thread の間で発生していた ZooKeeper client の data race を修正しました。[#97887](https://github.com/ClickHouse/ClickHouse/pull/97887) ([Pablo Marcos](https://github.com/pamarcos)).
+  * ログストレージに `s3_plain` メタデータを使用している場合に、Azure Blob Storage 利用時の再起動後に Keeper でデータが失われる問題を修正しました。[#97987](https://github.com/ClickHouse/ClickHouse/pull/97987) ([Antonio Andelic](https://github.com/antonio2368)).
+  * `aggregated_zookeeper_log` の watch レスポンスで、空のままにするのではなく `Watch` 部分を設定するようにしました。[#98202](https://github.com/ClickHouse/ClickHouse/pull/98202) ([Antonio Andelic](https://github.com/antonio2368)).
+  * `addWatch` リクエスト後に ClickHouse Keeper が Java ZooKeeper client を切断してしまう問題を修正しました。Java クライアントは 4 バイトの `ErrorResponse` ボディを想定していますが、Keeper は空のボディを送信していたため、`EOFException` と session 切断が発生していました。[#98499](https://github.com/ClickHouse/ClickHouse/pull/98499) ([Antonio Andelic](https://github.com/antonio2368)).
+  * follower がダウンした際に `zk_followers` および `zk_synced_followers` の Keeper メトリクスが減少しない問題を修正しました。`mntr` コマンドに新たに `zk_learners` と `zk_synced_non_voting_followers` メトリクスを追加しました。[#98504](https://github.com/ClickHouse/ClickHouse/pull/98504) ([Antonio Andelic](https://github.com/antonio2368)).
+  * Keeper の secure raft port が `openSSL` 設定の `cipherList` と `dhParamsFile` を無視する問題を修正しました。[#98509](https://github.com/ClickHouse/ClickHouse/pull/98509) ([Antonio Andelic](https://github.com/antonio2368)).
+  * 「session X のリクエスト受信に 9963 ms かかりました」のような、誤解を招く Keeper のログメッセージを修正しました。報告されていた時間は、実際には heartbeat 間で `poll()` 内で idle のまま待機していた時間でした。[#98510](https://github.com/ClickHouse/ClickHouse/pull/98510) ([Antonio Andelic](https://github.com/antonio2368)).
+  * Keeper の TCP connection がシャットダウンシグナルに応答しないため、server の正常なシャットダウンを妨げる問題を修正しました。[#98525](https://github.com/ClickHouse/ClickHouse/pull/98525) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 再初期化による復旧中に ZooKeeper のエントリが削除されたあと、古い `first_failed_task_name` が原因で `DDLWorker` の debug assertion が発生する問題を修正しました。[#99099](https://github.com/ClickHouse/ClickHouse/pull/99099) ([Antonio Andelic](https://github.com/antonio2368)).
+  * Keeper がクラッシュするケースを修正しました。[#99133](https://github.com/ClickHouse/ClickHouse/pull/99133) ([JIaQi Tang](https://github.com/JiaQiTang98)).
+  * Keeper の不具合を修正しました。同じ server 上の別の無関係な session がちょうど悪いタイミングで close されると、read request が停止したままになり (session timeout の原因となる) 、処理が進まなくなることがありました。[#99484](https://github.com/ClickHouse/ClickHouse/pull/99484) ([Michael Kolupaev](https://github.com/al13n321)).
+  * race condition により NuRaft で発生していた SEGFAULT を修正しました。[#100444](https://github.com/ClickHouse/ClickHouse/pull/100444) ([Pablo Marcos](https://github.com/pamarcos)).
+  * 25.1 より前の partial drop による残存 ZooKeeper node に `drop_lock_version` node が存在しない場合、`KeeperMap` の `CREATE TABLE` が「Cannot create metadata for table」で失敗する問題を修正しました。[#101623](https://github.com/ClickHouse/ClickHouse/pull/101623) ([Antonio Andelic](https://github.com/antonio2368)).
+  * 定期的な refresh 中に ZooKeeper session の有効期限が切れた際、UDF registry が失われる問題を修正しました。これにより、full refresh が成功するまで、すべてのユーザー定義関数が利用できなくなる可能性がありました。[#101891](https://github.com/ClickHouse/ClickHouse/pull/101891) ([Nikita Fomichev](https://github.com/fm4v)).
+  * 期限切れで古くなった ZooKeeper session を更新せずに `ZooKeeperRetriesControl` が再試行することで、UDF refresh でクラッシュが発生する問題を修正しました。[#102059](https://github.com/ClickHouse/ClickHouse/pull/102059) ([Nikita Fomichev](https://github.com/fm4v)).
+
+  ### クラッシュおよび安定性の修正
+
+  * 空の引数が指定された場合に、Kusto dialect 関数 `bin()`, `bin_at()`, `extract()`, `indexof()` で発生していたクラッシュを修正しました。 [#95736](https://github.com/ClickHouse/ClickHouse/pull/95736) ([NeedmeFordev](https://github.com/spider-yamet)).
+  * `tokenbf_v1` スキップ索引を使用した `mapContainsKey`/`mapContainsKeyLike` で発生していたサーバークラッシュ / assert を修正しました。 [#97826](https://github.com/ClickHouse/ClickHouse/pull/97826) ([Shankar Iyer](https://github.com/shankar-iyer)).
+  * 高い同時実行性の下で connection group のハード制限に達した際に、HTTP接続プールのデストラクタ内で未捕捉の例外が発生し、サーバーがクラッシュ (`std::terminate`) していた問題を修正しました。 [#97850](https://github.com/ClickHouse/ClickHouse/pull/97850) ([Antonio Andelic](https://github.com/antonio2368)).
+  * `extremes = 1` が有効な場合にクラッシュを引き起こす可能性があった、`ColumnConst::getExtremes` の範囲外アクセスを修正しました。 [#98263](https://github.com/ClickHouse/ClickHouse/pull/98263) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 破損した `quantilesDD` aggregate function states の読み取り時に、segfault、例外、無限ループ、OOM を防ぐため、`DDSketch` のデシリアライゼーション中に破損データを検証するようにしました。 [#98284](https://github.com/ClickHouse/ClickHouse/pull/98284) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * パイプラインの展開とクエリのキャンセルが競合した際に、まれに `Received signal 6` (debug builds で) として現れることがあった、pipeline executor での例外を修正しました。 [#98428](https://github.com/ClickHouse/ClickHouse/pull/98428) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * キー引数が `Nullable` の場合に `dictGetOrDefault` で発生していた null ポインタ逆参照を修正しました。 [#98460](https://github.com/ClickHouse/ClickHouse/pull/98460) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `sort_overflow_mode = 'break'` を window functions と組み合わせて使用した場合に発生していたパイプラインのデッドロックを修正しました。 [#98543](https://github.com/ClickHouse/ClickHouse/pull/98543) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `IDatabaseTablesIterator::table()` でテーブルのスナップショットを取得してから、その後の反復処理中に別スレッドでテーブルが変更された場合に、その間に作成されたシステムテーブルで発生していた null ポインタ逆参照によるクラッシュを修正しました。 [#98792](https://github.com/ClickHouse/ClickHouse/pull/98792) ([Grant Holly](https://github.com/grantholly-clickhouse)).
+  * 失敗した割り当てがロールバックされないこと、`nallocx(0)` の未定義動作、グローバルピークトラッキングにおける off-by-one によって発生していたメモリ追跡のずれを修正しました。さらに、`io_uring` ring buffers も追跡対象に追加しました。 [#98915](https://github.com/ClickHouse/ClickHouse/pull/98915) ([Antonio Andelic](https://github.com/antonio2368)).
+  * スキーマ変更 (例: ADD COLUMN) の後にパッチパートに対して `ALTER TABLE ... DROP PART` を実行した際のサーバークラッシュ (`std::terminate`) を修正しました。 [#99036](https://github.com/ClickHouse/ClickHouse/pull/99036) ([Peng](https://github.com/fastio)).
+  * キャッシュされたディスク読み取り中にメモリ制限超過の例外がスローされた場合に発生する可能性があったサーバークラッシュを修正しました。 [#99042](https://github.com/ClickHouse/ClickHouse/pull/99042) ([Shankar Iyer](https://github.com/shankar-iyer)).
+  * パッチパートの適用中にスローされたメモリ制限例外によって引き起こされるクラッシュを修正しました。 [#99086](https://github.com/ClickHouse/ClickHouse/pull/99086) ([Anton Popov](https://github.com/CurtizJ)).
+  * 宛先が `SAMPLE` をサポートしていない場合に、Bufferテーブルで `SAMPLE` を使用すると発生していたクラッシュを修正しました。 [#99141](https://github.com/ClickHouse/ClickHouse/pull/99141) ([Kseniia Sumarokova](https://github.com/kssenii)).
+  * 実行中の読み取りクエリと同時に table が drop された場合に発生していた heap-use-after-free を修正しました。 [#99483](https://github.com/ClickHouse/ClickHouse/pull/99483) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 不正な圧縮データの展開時に `CompressionCodecT64` で発生していた heap-buffer-overflow と、`CompressionCodecMultiple` で発生していたプロセスの異常終了を修正しました。これにより、コーデックはクラッシュする代わりに例外をスローするようになりました。[#99680](https://github.com/ClickHouse/ClickHouse/pull/99680) ([Rahul Nair](https://github.com/motsc)).
+  * 形状の次元が負の `Npy` フォーマットファイルを読み取る際に発生していた無限ループを修正しました。[#99812](https://github.com/ClickHouse/ClickHouse/pull/99812) ([Desel72](https://github.com/Desel72)).
+  * クエリプランのヘッダー計算中に 0 行で評価された場合、`FixedString` 引数に対する `CRC32` 関数で発生していた global-buffer-overflow を修正しました。[#99835](https://github.com/ClickHouse/ClickHouse/pull/99835) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * データ引数が配列のキーを持つ Map やその他のネストされた配列型である場合に、`sipHash128Keyed` (および類似の鍵付きハッシュ関数) で発生していたアサーション失敗を修正しました。[#99921](https://github.com/ClickHouse/ClickHouse/pull/99921) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `pointwiseAddInplace` 内でエイリアスされた Roaring bitmap に対する self-XOR が原因で、偶数の整数定数を `NumericIndexedVector` aggregate states に乗算した際に発生していたアサーション失敗を修正しました。[#99976](https://github.com/ClickHouse/ClickHouse/pull/99976) ([Desel72](https://github.com/Desel72)).
+  * filter-in-decoder パスが除外済みのページに遭遇した際に Parquet リーダー で発生していた nullptr dereference を修正しました。[#99677](https://github.com/ClickHouse/ClickHouse/pull/99677) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `CREATE DICTIONARY` に、存在しない関数を含むリスト値を持つ定義がある場合に発生していたローカルサーバーのクラッシュを修正しました。[#100036](https://github.com/ClickHouse/ClickHouse/pull/100036) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+  * `ALTER MODIFY COLUMN` 後にパッチパートを読み取る際に発生していた SIGSEGV を修正しました。[#100107](https://github.com/ClickHouse/ClickHouse/pull/100107) ([Nikolay Degterinsky](https://github.com/evillique)).
+  * `StringSearcher.h` における未初期化値の使用を修正しました。[#100225](https://github.com/ClickHouse/ClickHouse/pull/100225) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * `quantileIfArrayArray(0.5)([[NULL]], [[1]])` のように、Array combinator と NULL 引数を伴う parametric aggregate functions を使用した際に発生していたサーバークラッシュ (アサーション失敗) を修正しました。[#100679](https://github.com/ClickHouse/ClickHouse/pull/100679) ([nerve-bot](https://github.com/nerve-bot)).
+  * ベクトル類似度検索中にクラッシュや気付かれないままメモリ破壊を引き起こす可能性があった、usearch `sorted_buffer_gt::insert()` の heap-buffer-overflow を修正しました。[#100537](https://github.com/ClickHouse/ClickHouse/pull/100537) ([Dustin Healy](https://github.com/dustinhealy)).
+  * `use_top_k_dynamic_filtering` が有効で、`ORDER BY` カラムが `Dynamic` または `Variant` 型の場合に発生していたサーバークラッシュ (論理エラー &quot;Unexpected return type from &#95;&#95;topKFilter&quot;) を修正しました。[#100742](https://github.com/ClickHouse/ClickHouse/pull/100742) ([Groene AI](https://github.com/groeneai)).
+  * LowCardinality 要素を含む Tuple キーに対して PREWHERE/WHERE で `has()` 関数を使用した際に発生していたサーバークラッシュを修正しました。[#100760](https://github.com/ClickHouse/ClickHouse/pull/100760) ([Groene AI](https://github.com/groeneai)).
+  * サーバーのシャットダウン中にディクショナリを読み込む際に発生していた null pointer dereference segfault を修正しました。[#100839](https://github.com/ClickHouse/ClickHouse/pull/100839) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+  * 入力に非 ASCII バイトが含まれる場合に `ULIDStringToDateTime` で発生していた buffer overflow を修正しました。[#100843](https://github.com/ClickHouse/ClickHouse/pull/100843) ([Konstantin Bogdanov](https://github.com/thevar1able)).
+  * `distributed_group_by_no_merge=1` を有効にした状態で、`Distributed` テーブルを含む複数のテーブルをラップする `Merge` テーブル (または `merge()` テーブル関数) に対してクエリを実行した際に発生していたクラッシュ (`LOGICAL_ERROR`) を修正しました。[#100859](https://github.com/ClickHouse/ClickHouse/pull/100859) ([Groene AI](https://github.com/groeneai)).
+  * スパースカラムのシリアライゼーションを使用する `MergeTree` テーブルから Polygon Dictionary を構築する際に発生していたクラッシュを修正しました。[#100964](https://github.com/ClickHouse/ClickHouse/pull/100964) ([Anton Popov](https://github.com/CurtizJ)).
+  * 遅延カラムレプリケーション (`enable_lazy_columns_replication`) によって生成された `ColumnReplicated` カラムが、入力の到着が遅い merge-sort パイプラインに流れ込む場合に、マージアルゴリズムで発生していたクラッシュ (`Logical error: isConst/isSparse/isReplicated assertTypeEquality`) を修正しました。[#101036](https://github.com/ClickHouse/ClickHouse/pull/101036) ([Groene AI](https://github.com/groeneai)).
+  * 内部専用の `Null` combinator (例: `sumNull`, `avgNull`) を使う集約関数と `aggregate_functions_null_for_empty = 1` を使用した際に発生していたサーバークラッシュ (`SIGABRT`) を修正しました。[#101147](https://github.com/ClickHouse/ClickHouse/pull/101147) ([Groene AI](https://github.com/groeneai)).
+  * 完了したファイルセグメントのログ出力時に解放済みメモリの読み取りを引き起こす可能性があった、ファイルシステムキャッシュの書き込みパスにおける use-after-free を修正しました。[#101161](https://github.com/ClickHouse/ClickHouse/pull/101161) ([Groene AI](https://github.com/groeneai)).
+  * 分散索引解析で、明示的な要素なしに構築された set を持つ `GLOBAL IN` predicate に遭遇した際に発生していた、&quot;Trying to attach external table to a ready set without explicit elements&quot; を伴うサーバークラッシュを修正しました。[#101178](https://github.com/ClickHouse/ClickHouse/pull/101178) ([Groene AI](https://github.com/groeneai)).
+  * JIT コンパイルが有効な場合に、`Decimal` カラムに対する `MAX`/`MIN` 集約関数が誤った結果を返していた問題を修正しました。[#101203](https://github.com/ClickHouse/ClickHouse/pull/101203) ([Raúl Marín](https://github.com/Algunenano)).
+  * `lc_column` が LowCardinality 型であるときに、`ORDER BY CAST(lc_column, 'Type')` を持つ MergeTree テーブルに対してクエリを実行した際に発生していたサーバークラッシュ (`LOGICAL_ERROR`: Bad cast from `ColumnVector` to `ColumnLowCardinality`) を修正しました。[#101220](https://github.com/ClickHouse/ClickHouse/pull/101220) ([Groene AI](https://github.com/groeneai)).
+  * optimizations 引数が無効な場合の `mergeTreeAnalyzeIndexes()` における UB を修正しました。[#101253](https://github.com/ClickHouse/ClickHouse/pull/101253) ([Azat Khuzhin](https://github.com/azat)).
+  * Dynamic Map type を含む Tuple カラムとそのサブカラムを同時に読み取るクエリで発生していたサーバークラッシュ (Logical error: &quot;Variant ... is empty&quot;) を修正しました。[#101448](https://github.com/ClickHouse/ClickHouse/pull/101448) ([Groene AI](https://github.com/groeneai)).
+  * `enforce_keeper_component_tracking` を有効にして `system.part_moves_between_shards` に対してクエリを実行した際に発生していた `LOGICAL_ERROR` クラッシュ &quot;Current component is empty&quot; を修正しました。[#101462](https://github.com/ClickHouse/ClickHouse/pull/101462) ([Groene AI](https://github.com/groeneai)).
+  * fuzzer が不正な Dynamic type AST を生成した場合に `DataTypeDynamic::create()` で発生していた segmentation fault を修正しました。[#101464](https://github.com/ClickHouse/ClickHouse/pull/101464) ([Groene AI](https://github.com/groeneai)).
+  * `use_variant_default_implementation_for_comparisons` が無効な状態で、`LowCardinality` カラムを `Variant` の NULL 定数と比較した際に発生していたクラッシュ (`LOGICAL_ERROR`: &quot;ColumnUnique can&#39;t contain null values&quot;) を修正しました。[#101690](https://github.com/ClickHouse/ClickHouse/pull/101690) ([Groene AI](https://github.com/groeneai)).
+  * `Bzip2ReadBuffer` に空ストリーム用のガードを追加し、内部ストリームが空の場合は `UNEXPECTED_END_OF_FILE` をスローするのではなく EOF を返すようにしました。[#101691](https://github.com/ClickHouse/ClickHouse/pull/101691) ([ClickGap AI Bot](https://github.com/clickgapai)).
+  * 待機タイマーの寿命が、参照先の `ProfileEvents::Counters` を持つワーカースレッドより長い場合に、CPU lease scheduler で use-after-free によるクラッシュが発生する問題を修正しました。 [#101761](https://github.com/ClickHouse/ClickHouse/pull/101761) ([Antonio Andelic](https://github.com/antonio2368)).
+  * `Object` 型の dynamic path の並列 deserialization における use-after-scope を修正しました。これにより、多数の dynamic path を持つ table の読み取り時にクラッシュが発生する可能性がありました。 [#101823](https://github.com/ClickHouse/ClickHouse/pull/101823) ([Antonio Andelic](https://github.com/antonio2368)).
+  * `addStreams` 中に stream constructor が例外を throw し、`column_streams` に null エントリが残ることで発生していた `MergeTreeDataPartWriterWide::cancel` の SIGSEGV を修正しました。 [#101936](https://github.com/ClickHouse/ClickHouse/pull/101936) ([Antonio Andelic](https://github.com/antonio2368)).
+  * 式を持たない materialized columns に対する mutations で発生する segmentation fault を修正しました。 [#102342](https://github.com/ClickHouse/ClickHouse/pull/102342) ([zoomxi](https://github.com/zoomxi)).
+  * bloom filter push-down を有効にし、`WHERE` clause の equality/inequality conditions を指定して Parquet files を読み取る際に、Parquet prefetcher の範囲外メモリアクセスが原因で発生する segfault (または debug builds での `LOGICAL_ERROR`) を修正しました。 [#102385](https://github.com/ClickHouse/ClickHouse/pull/102385) ([Groene AI](https://github.com/groeneai)).
+  * null byte のみで構成された needle を検索した際に、string search functions (`countSubstrings`、`position` など) で発生する範囲外読み取りを修正しました。 [#102401](https://github.com/ClickHouse/ClickHouse/pull/102401) ([Raúl Marín](https://github.com/Algunenano)).
+  * 末尾が `%` の `printf` で発生する範囲外読み取りを修正しました。 [#102472](https://github.com/ClickHouse/ClickHouse/pull/102472) ([Raúl Marín](https://github.com/Algunenano)).
+  * `WHERE` filter を指定して nullable columns を読み取る際に、native Parquet V3 reader で `LOGICAL_ERROR` クラッシュ &quot;Unexpected number of rows in column subchunk&quot; が発生する問題を修正しました。 [#102628](https://github.com/ClickHouse/ClickHouse/pull/102628) ([Groene AI](https://github.com/groeneai)).
+  * cyclic symbolic type references を含む recursive schemas を持つ Avro files の読み取り時に発生する server crash (SIGSEGV) を修正しました。このような schema は、今後は明確なエラーメッセージとともに検出されて拒否されます。 [#102853](https://github.com/ClickHouse/ClickHouse/pull/102853) ([Groene AI](https://github.com/groeneai)).
+  * `Variant` カラムに対する関数で、`FunctionVariantAdaptor` における result casting 中にメモリ制限や型変換以外の例外に達した際に発生する server crash (`LOGICAL_ERROR` assertion) を修正しました。 [#102855](https://github.com/ClickHouse/ClickHouse/pull/102855) ([Groene AI](https://github.com/groeneai)).
+  * schema inference 中に `std::length_error` が throw された場合に、debug/sanitizer builds で発生する server crash を修正しました。 [#102859](https://github.com/ClickHouse/ClickHouse/pull/102859) ([Groene AI](https://github.com/groeneai)).
+  * inner query が view のメタデータと異なる型のカラムを生成する場合 (たとえば、`join_use_nulls` を伴う `LEFT JOIN` による `Nullable`) に、`WHERE` clause を持つ view の使用時に発生するクラッシュを修正しました。 [#102085](https://github.com/ClickHouse/ClickHouse/pull/102085) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+
+  ### その他のバグ修正
+
+  * 同じリクエストで `compatibility` と一緒に送信された明示的な設定について、値がサーバーのデフォルト値と一致していると暗黙に無視されることがあった不具合を修正しました。[#97078](https://github.com/ClickHouse/ClickHouse/pull/97078) ([Raufs Dunamalijevs](https://github.com/rienath)).
+  * 並列パースを伴う INSERT が無効なデータに遭遇した際、client が実際のパースエラー (正しい行番号付き) ではなく `NETWORK_ERROR` を報告していた不具合を修正しました。[#97339](https://github.com/ClickHouse/ClickHouse/pull/97339) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * クエリが kill された際に、`database_atomic_wait_for_drop_and_detach_synchronously` を指定した `DROP DATABASE` が無期限にハングする不具合を修正しました。[#97586](https://github.com/ClickHouse/ClickHouse/pull/97586) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `WITH FILL` の generation、`dictGet` による Dictionary の loading、または `ReplicatedMergeTree` 上で `mutations_sync=1` を伴う `ALTER DELETE` で停止したクエリを、`KILL QUERY` で終了できなかった不具合を修正しました。[#97589](https://github.com/ClickHouse/ClickHouse/pull/97589) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `ON CLUSTER` を含むデータ masking policy クエリで発生していた論理エラーを修正しました。[#97594](https://github.com/ClickHouse/ClickHouse/pull/97594) ([Bharat Nallan](https://github.com/bharatnc)).
+  * `toDate()` 関数でエポック以前の `DateTime64` を使用した場合に、パーティションプルーニングが誤って行われる不具合を修正しました。[#97746](https://github.com/ClickHouse/ClickHouse/pull/97746) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * `DROP` と `INSERT` の競合により、`Distributed` への `INSERT` で `Cannot schedule a file` `LOGICAL_ERROR` が発生する不具合を修正しました。[#97822](https://github.com/ClickHouse/ClickHouse/pull/97822) ([Azat Khuzhin](https://github.com/azat)).
+  * 定数 Array 引数で呼び出した際に `kql_array_sort_asc`/`kql_array_sort_desc` で発生していた論理エラー &quot;Bad cast from type DB::ColumnConst to DB::ColumnArray&quot; を修正しました。[#98251](https://github.com/ClickHouse/ClickHouse/pull/98251) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 不正な headers が原因の 400 Bad Request 応答で、HTTP server が空のボディではなくレスポンスボディにエラーメッセージを返すようになりました。[#98268](https://github.com/ClickHouse/ClickHouse/pull/98268) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 分散索引解析 (experimental feature) および query condition cache で誤った結果が返される不具合を修正しました。[#98269](https://github.com/ClickHouse/ClickHouse/pull/98269) ([Azat Khuzhin](https://github.com/azat)).
+  * named collections で `MongoDB` の Dictionary ソースが失敗する不具合を修正しました。[#98528](https://github.com/ClickHouse/ClickHouse/pull/98528) ([Pablo Marcos](https://github.com/pamarcos)).
+  * 他のカラムの default/alias expression でその subcolumns が使われている場合はカラムを削除できないようにし、`ALTER DROP COLUMN` の default expression ではアナライザを使用するようにしました。[#98569](https://github.com/ClickHouse/ClickHouse/pull/98569) ([Nikita Mikhaylov](https://github.com/nikitamikhaylov)).
+  * `PocoHTTPClient::makeRequestInternalImpl` からのすべての `DB::Exception` が、`HTTP_CONNECTION_LIMIT_REACHED` を含めて再試行不可になりました。[#98598](https://github.com/ClickHouse/ClickHouse/pull/98598) ([Sema Checherinda](https://github.com/CheSema)).
+  * JIT expression compilation における 2 件の不具合を修正しました。`nativeCast` の type checking におけるコピー＆ペーストミスにより integer-to-integer および float-to-float の cast 分岐に到達できなくなっていた問題と、LLVM `PassBuilder` に誤って `nullptr` の TargetMachine が渡されていた問題です。[#98660](https://github.com/ClickHouse/ClickHouse/pull/98660) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 主キーに NaN の浮動小数点値が含まれる場合に、デバッグビルドで発生していた例外 &quot;Inconsistent KeyCondition behavior&quot; を修正しました。`accurateLess` と `accurateEquals` が、ClickHouse のソート順と整合する形で NaN を一貫して扱うようになりました。 [#98964](https://github.com/ClickHouse/ClickHouse/pull/98964) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 重複イベントに遭遇した際、`strict_deduplication` を指定した `windowFunnel` が誤ったレベルを返していた問題を修正しました。 [#99003](https://github.com/ClickHouse/ClickHouse/pull/99003) ([Yash](https://github.com/Onyx2406)).
+  * ClickHouse の Dictionary の自動再読み込みに対する `system.trace_log` のエントリに、空でないクエリ ID が設定されるようにしました。 [#98784](https://github.com/ClickHouse/ClickHouse/pull/98784) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+  * `SYSTEM START REPLICATED VIEW` でリフレッシュタスクが起動しない問題を修正しました。 [#98797](https://github.com/ClickHouse/ClickHouse/pull/98797) ([Pablo Marcos](https://github.com/pamarcos)).
+  * データが複数の chunk で読み込まれる場合 (たとえば `index_granularity` が小さい場合) に、`WITH FILL STALENESS` が余分な補完行を生成していた問題を修正しました。 [#98895](https://github.com/ClickHouse/ClickHouse/pull/98895) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `Ab` のように大文字で始まる識別子に対するクエリ難読化で発生していたクラッシュを修正しました。 [#101450](https://github.com/ClickHouse/ClickHouse/pull/101450) ([Xuewei Wang](https://github.com/Sallery-X)).
+  * アナライザを使わないコードパスで `TABLE_UUID_MISMATCH` が無視されていた問題を修正しました。 [#99380](https://github.com/ClickHouse/ClickHouse/pull/99380) ([Azat Khuzhin](https://github.com/azat)).
+  * `clickhouse format --obfuscate` が、スキップ索引の型、圧縮 codec 名、データベースエンジン名、および dictionary layout/source 定義を難読化して無効な SQL を生成していた問題を修正しました。 [#99260](https://github.com/ClickHouse/ClickHouse/pull/99260) ([Raúl Marín](https://github.com/Algunenano)).
+  * エンジン自体も settings をサポートしている場合に、CREATE クエリ内の設定変更を検証するようにしました。 [#99279](https://github.com/ClickHouse/ClickHouse/pull/99279) ([János Benjamin Antal](https://github.com/antaljanosbenjamin)).
+  * `ORDER BY ALL` のない `INSERT SELECT` クエリで `insert_deduplication_token` が黙って無視されていた問題を修正しました。これにより、`insert_deduplication_token` を指定するだけで、`ORDER BY ALL` に関係なく deduplication が有効になります。 [#99206](https://github.com/ClickHouse/ClickHouse/pull/99206) ([Desel72](https://github.com/Desel72)).
+  * サーバーがすべてのテーブルの読み込みを完了するまで、処理を遅延させるようにしました。 [#99700](https://github.com/ClickHouse/ClickHouse/pull/99700) ([Seva Potapov](https://github.com/seva-potapov)).
+  * `executable` table function の argument におけるシェル形式の引用符のパースを修正しました。 [#99794](https://github.com/ClickHouse/ClickHouse/pull/99794) ([Nikita Semenov](https://github.com/leftmain)).
+  * 非同期 INSERT クエリが、`query_log` とクライアント出力で `written_rows`、`read_rows`、`result_rows` を 0 と報告していた問題を修正しました。 [#99879](https://github.com/ClickHouse/ClickHouse/pull/99879) ([Sema Checherinda](https://github.com/CheSema)).
+  * データの次の行に末尾の SQL コメント (`--` または `/* */`) が続く場合に、`VALUES` を伴う `INSERT` が失敗していた問題を修正しました。コメントは別の行としてパースされるのではなく、スキップされるようになりました。 [#100016](https://github.com/ClickHouse/ClickHouse/pull/100016) ([Pratima Patel](https://github.com/pratimapatel2008)).
+  * NULL の部分を含むタプルを比較した際に `arrayRemove` で発生していた例外を修正しました。 [#100017](https://github.com/ClickHouse/ClickHouse/pull/100017) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `NumericIndexedVectorDataBSI` 内の負の値を正しく処理するようにしました。 [#100086](https://github.com/ClickHouse/ClickHouse/pull/100086) ([Daniil Ivanik](https://github.com/divanik)).
+  * `primes` table function が、一部のケース、特に offset と step が指定されている場合に `max_rows_to_read` を正しく尊重しない問題を修正しました。[#100199](https://github.com/ClickHouse/ClickHouse/pull/100199) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * `CROSS JOIN` に書き換えられる natural join クエリの AST をクエリした際に、`NATURAL CROSS JOIN` が表示されてしまうことがなくなりました。[#100223](https://github.com/ClickHouse/ClickHouse/pull/100223) ([Peter Nguyen](https://github.com/petern48)).
+  * いくつかの軽微な関数変更を行いました。h3 関数は境界をより適切に検証するようになり、`readWKB` はサイズ制限 (新しい設定 `max_wkb_geometry_elements`) をチェックするようになり、ランダム生成関数は最大反復回数を制限するようになりました。[#100270](https://github.com/ClickHouse/ClickHouse/pull/100270) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `cutURLParameter` で、あるパラメーターが別のパラメーターの部分文字列として現れた場合に、誤ってスキップされることがある問題を修正しました。[#100280](https://github.com/ClickHouse/ClickHouse/pull/100280) ([Nikita Semenov](https://github.com/leftmain)).
+  * `block_size_bytes` パラメーターが極端に大きい場合に `estimateCompressionRatio` で発生する `LOGICAL_ERROR` 例外を修正しました。[#100298](https://github.com/ClickHouse/ClickHouse/pull/100298) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * heartbeat error の後にコンシューマーが rebalance で停止したままになると、Kafka engine テーブルで `DROP TABLE` が無期限にハングする問題を修正しました。[#100388](https://github.com/ClickHouse/ClickHouse/pull/100388) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * 細工された `.npy` ファイルによるサービス拒否を防ぐため、Npy フォーマットの shape の次元をファイルサイズおよび overflow 制限に照らして検証するようにしました。あわせて、空の shape を拒否し、1 行あたりのメモリ使用量を 2 GiB に制限しました。[#100625](https://github.com/ClickHouse/ClickHouse/pull/100625) ([Raúl Marín](https://github.com/Algunenano)).
+  * 非同期 INSERT (TCP) 時および HTTP 経由のすべての insert で `DateTime` 値をパースする際に `session_timezone` が無視される問題を修正しました。[#100647](https://github.com/ClickHouse/ClickHouse/pull/100647) ([Sema Checherinda](https://github.com/CheSema)).
+  * `StorageRabbitMQ::shutdown` を冪等にし、防御的な null チェックを追加しました。これは現在、`StreamingStorageRegistry` と `DatabaseCatalog` から 2 回呼び出されるためです。[#100455](https://github.com/ClickHouse/ClickHouse/pull/100455) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+  * `QBit` を対象型として `accurateCastOrNull` を使用した際に発生する `LOGICAL_ERROR` 例外を修正しました。[#100470](https://github.com/ClickHouse/ClickHouse/pull/100470) ([Raufs Dunamalijevs](https://github.com/rienath)).
+  * `LIMIT m OFFSET n WITH TIES` 構文が動作しない問題を修正しました (これは、すでに動作していた `LIMIT n, m WITH TIES` と等価です) 。[#100491](https://github.com/ClickHouse/ClickHouse/pull/100491) ([Nihal Z. Miaji](https://github.com/nihalzp)).
+  * `ALTER MODIFY COLUMN` によってカラムが非 Tuple 型から Tuple に変更された後のパーツのマージ時に、`SerializationInfoTuple::add` が通常の `SerializationInfo` 参照に対して `assert_cast` を行っていたことによる segfault を修正しました。[#100509](https://github.com/ClickHouse/ClickHouse/pull/100509) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+  * 名前付きフィールドと `LowCardinality` 要素を持つ `Nullable(Tuple)` カラムで `IN` を使用した際に発生する &quot;No set is registered for key&quot; 例外を修正しました。[#100523](https://github.com/ClickHouse/ClickHouse/pull/100523) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+  * `EXECUTE AS` がクエリで指定された `FORMAT` および `INTO OUTFILE` 句を無視する問題を修正しました。[#100538](https://github.com/ClickHouse/ClickHouse/pull/100538) ([pufit](https://github.com/pufit)).
+  * クエリレベルの `OFFSET` を伴う `SAMPLE` で、AST のフォーマットが一貫していなかった問題を修正しました。[#100579](https://github.com/ClickHouse/ClickHouse/pull/100579) ([Pavel Kruglov](https://github.com/Avogar)).
+  * 起動時の依存関係の順序が誤っていたため、非同期起動中に内部テーブルを持つ materialized view で &quot;Target table doesn&#39;t exist&quot; エラーが発生していた問題を修正しました。[#100946](https://github.com/ClickHouse/ClickHouse/pull/100946) ([Nikolay Degterinsky](https://github.com/evillique)).
+  * PREWHERE を含む projection を `ORDER BY ... LIMIT` と組み合わせて使用した際に、`optimizeLazyMaterialization` で発生していた例外を修正しました。[#101115](https://github.com/ClickHouse/ClickHouse/pull/101115) ([Anton Popov](https://github.com/CurtizJ)).
+  * `intExp10` を NaN 引数で呼び出した際の誤ったエラーメッセージを修正しました。`intExp10` ではなく `intExp2` と表示されていました。[#101582](https://github.com/ClickHouse/ClickHouse/pull/101582) ([Krishna Chaitanya](https://github.com/Krishnachaitanyakc)).
+  * `allow_statistics=0` で `ALTER TABLE ADD STATISTICS` と `ALTER TABLE DROP STATISTICS` をブロックできていなかった問題を修正しました。[#101585](https://github.com/ClickHouse/ClickHouse/pull/101585) ([Krishna Chaitanya](https://github.com/Krishnachaitanyakc)).
+  * `CREATE TABLE ... AS merge()` が明示的なカラム一覧を無視し、代わりにソーステーブルからカラムを自動推論していた問題を修正しました。これにより、`merge_table_max_tables_to_look_for_schema_inference` が十分に低く、ソーステーブルのスキーマが異なる場合に `NOT_FOUND_COLUMN_IN_BLOCK` エラーが発生していました。[#101663](https://github.com/ClickHouse/ClickHouse/pull/101663) ([Miсhael Stetsyuk](https://github.com/mstetsyuk)).
+  * `RANGE_HASHED` Dictionary の作成時に、存在しない `MAX` 範囲属性を暗黙的に受け入れていた問題と、最小・最大の範囲属性の型が異なる場合に誤った型設定が使用されていた問題を修正しました。[#101732](https://github.com/ClickHouse/ClickHouse/pull/101732) ([Yakov Olkhovskiy](https://github.com/yakov-olkhovskiy)).
+  * `arrayLevenshteinDistanceWeighted` および `arraySimilarity` 関数の不具合を修正しました。[#101767](https://github.com/ClickHouse/ClickHouse/pull/101767) ([Mikhail f. Shiryaev](https://github.com/Felixoid)).
+  * Prometheus Query API が POST のフォームボディを無視していた問題を修正しました。[#101794](https://github.com/ClickHouse/ClickHouse/pull/101794) ([James Cunningham](https://github.com/JTCunning)).
+  * 検索文字列がデマングル後のシンボル名のテンプレート引数内に最初に現れる場合に、`SYSTEM INSTRUMENT ADD` で `shouldPatchFunction` が偽陰性になっていた問題を修正しました。[#101885](https://github.com/ClickHouse/ClickHouse/pull/101885) ([Pablo Marcos](https://github.com/pamarcos)).
+  * `AES_256_GCM_SIV` に対する `system.codecs` の説明が、`AES-128` ではなく `AES-256` を示すよう修正しました。[#101917](https://github.com/ClickHouse/ClickHouse/pull/101917) ([Jimmy Aguilar Mena](https://github.com/Ergus)).
+  * 無効な `QueryProcessingStage` 値を持つネイティブプロトコルのクエリパケットをパースする際の未定義動作を修正しました。[#101972](https://github.com/ClickHouse/ClickHouse/pull/101972) ([Raúl Marín](https://github.com/Algunenano)).
+  * 初期クエリのパース中に例外が発生した場合、同期が崩れたストリームからゴミデータを読み取らないように TCP 接続を閉じるようにしました。[#101989](https://github.com/ClickHouse/ClickHouse/pull/101989) ([Raúl Marín](https://github.com/Algunenano)).
+  * 負の値を持つ `Time` を `DateTime` と比較した際に、誤った結果を返していたケースを修正しました。[#102056](https://github.com/ClickHouse/ClickHouse/pull/102056) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+  * ロック解除 snapshot のフォーマット時に空白が欠けていた問題を修正しました。[#102063](https://github.com/ClickHouse/ClickHouse/pull/102063) ([Han Fei](https://github.com/hanfei1991)).
+  * Database Replicated で、ターゲットテーブルを持たない Alias tables を新しいレプリカで初期化できなかった問題を修正しました。[#102397](https://github.com/ClickHouse/ClickHouse/pull/102397) ([Nikolay Degterinsky](https://github.com/evillique)).
+  * materialized view を伴わない通常の INSERT で、過剰な `ConcurrencyControl` スロットやスレッド (`max_insert_threads` ではなく `max_threads`) を要求しないようになり、INSERT スループットが高いクラスターでの CC スロット枯渇やスレッド数の膨張を防止します。 [#102961](https://github.com/ClickHouse/ClickHouse/pull/102961) ([Sema Checherinda](https://github.com/CheSema)).
+  * カーネル OOM を回避するために `MEMORY_LIMIT_EXCEEDED` を発生させられるよう、`ArrowMemoryPool` を再導入しました。 [#102999](https://github.com/ClickHouse/ClickHouse/pull/102999) ([Azat Khuzhin](https://github.com/azat)).
+  * 引数を逆順で渡した場合 (`function_locate_has_mysql_compatible_argument_order = 1` の `locate(needle, haystack)` など) に、文字列検索関数 (例: `locate`, `position`) のエラーメッセージで報告される引数の型が誤っていた問題を修正しました。 [#103102](https://github.com/ClickHouse/ClickHouse/pull/103102) ([Alex Kuleshov](https://github.com/0xAX)).
+  * failpoint で一時停止しているスレッドがない状態で `disableFailPoint` が呼び出された際に、`waitForPause` が無期限にハングする問題を修正しました。 [#103119](https://github.com/ClickHouse/ClickHouse/pull/103119) ([Shaohua Wang](https://github.com/tiandiwonder)).
+</Accordion>

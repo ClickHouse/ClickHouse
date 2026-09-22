@@ -1,0 +1,265 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-cloud
+title: 'Helm Cloud 部署'
+description: '在 GKE、EKS 和 AKS 上部署 ClickStack 的 Cloud 专用配置'
+doc_type: 'guide'
+keywords: ['ClickStack GKE', 'ClickStack EKS', 'ClickStack AKS', 'Kubernetes Cloud 部署', '生产部署']
+---
+
+<Warning>
+  **Helm 图表版本 2.x**
+
+  本页介绍基于子图表的 **v2.x** Helm 图表。如果你仍在使用 v1.x 内联模板图表，请参见 [Helm Cloud 部署 (v1.x) ](/zh/clickstack/deployment/helm-cloud-v1)。有关迁移步骤，请参见 [升级指南](/zh/clickstack/deployment/helm-upgrade)。
+</Warning>
+
+本指南介绍在托管 Kubernetes 服务上部署 ClickStack 时所需的 Cloud 专用配置。有关基础安装，请参见 [主 Helm 部署指南](/zh/clickstack/deployment/helm)。
+
+<div id="google-kubernetes-engine-gke">
+  ## Google Kubernetes Engine (GKE)
+</div>
+
+在 GKE 上部署时，由于云平台特有的网络行为，你可能需要覆盖某些配置值。
+
+<div id="loadbalancer-dns-resolution-issue">
+  ### LoadBalancer DNS 解析问题
+</div>
+
+GKE 的 LoadBalancer 服务可能会引发内部 DNS 解析问题，导致 pod (容器组) 之间的通信被解析到外部 IP，而不是保持在集群内部网络中。这尤其会影响 OTel collector 与 OpAMP 服务器之间的连接。
+
+**症状：**
+
+* OTel collector 日志中出现带有集群 IP 地址的“connection refused”错误
+* OpAMP 连接失败，例如：`dial tcp 34.118.227.30:4320: connect: connection refused`
+
+**解决方案：**
+
+对 OpAMP 服务器 URL 使用完全限定域名 (FQDN) ：
+
+```shell
+helm install my-clickstack clickstack/clickstack \
+  --set hyperdx.frontendUrl="http://your-external-ip-or-domain.com" \
+  --set hyperdx.config.OPAMP_SERVER_URL="http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+```
+
+<div id="gke-example-values">
+  ### GKE 示例配置值
+</div>
+
+```yaml
+# values-gke.yaml
+hyperdx:
+  frontendUrl: "http://34.123.61.99"  # 使用您的 LoadBalancer 外部 IP
+
+  config:
+    OPAMP_SERVER_URL: "http://my-clickstack-clickstack-app.default.svc.cluster.local:4320"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "pd-ssd"
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "pd-ssd"
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+<div id="amazon-eks">
+  ## Amazon EKS
+</div>
+
+对于 EKS 部署，常见的配置如下：
+
+```yaml
+# values-eks.yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"
+
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "gp3"
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "gp3"
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+有关 AWS ALB 入口配置，请参阅[附加清单指南](/zh/clickstack/deployment/helm-additional-manifests#aws-alb-ingress)和 [ALB 示例 values 文件](https://github.com/ClickHouse/ClickStack-helm-charts/tree/main/examples/alb-ingress)。
+
+<div id="azure-aks">
+  ## Azure AKS
+</div>
+
+对于 AKS 部署：
+
+```yaml
+# values-aks.yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"
+
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "managed-csi"
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "managed-csi"
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+<div id="production-cloud-deployment-checklist">
+  ## 生产环境云部署检查清单
+</div>
+
+在任何云提供商上将 ClickStack 部署到生产环境之前：
+
+* [ ] 使用外部域名/IP 正确配置 `hyperdx.frontendUrl`
+* [ ] 配置启用 TLS 的入口，以提供 HTTPS 访问
+* [ ] 如果遇到连接问题，请使用 FQDN 覆盖 OpAMP 服务器 URL (尤其是在 GKE 上)
+* [ ] 为 ClickHouse 和 Keeper 的卷声明配置存储类
+* [ ] 设置适当的资源请求和限制
+* [ ] 启用监控和告警
+* [ ] 配置备份和灾难恢复
+* [ ] 通过 `hyperdx.secrets` 或外部 Secret 做好敏感信息管理
+
+<div id="production-best-practices">
+  ## 生产环境最佳实践
+</div>
+
+<div id="resource-management">
+  ### 资源管理
+</div>
+
+```yaml
+hyperdx:
+  deployment:
+    resources:
+      requests:
+        cpu: 500m
+        memory: 1Gi
+      limits:
+        cpu: "2"
+        memory: 4Gi
+
+otel-collector:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+```
+
+<div id="high-availability">
+  ### 高可用性
+</div>
+
+```yaml
+hyperdx:
+  deployment:
+    replicas: 3
+    topologySpreadConstraints:
+      - maxSkew: 1
+        topologyKey: kubernetes.io/hostname
+        whenUnsatisfiable: ScheduleAnyway
+        labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: clickstack
+
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+```
+
+<div id="persistent-storage">
+  ### 持久化存储
+</div>
+
+确保在 operator 的 CR spec 中为持久卷配置数据保留：
+
+```yaml
+clickhouse:
+  keeper:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      dataVolumeClaimSpec:
+        storageClassName: "fast-ssd"
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 100Gi
+
+mongodb:
+  spec:
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              storageClassName: "fast-ssd"
+              accessModes: ["ReadWriteOnce"]
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+**Cloud 专用存储类：**
+
+* **GKE**: `pd-ssd` 或 `pd-balanced`
+* **EKS**: `gp3` 或 `io2`
+* **AKS**: `managed-premium` 或 `managed-csi`
+
+<div id="browser-compatibility-notes">
+  ### 浏览器兼容性说明
+</div>
+
+对于仅使用 HTTP 的部署 (开发/测试环境) ，由于安全上下文要求，某些浏览器可能会报出 crypto API 错误。对于生产环境部署，请始终通过入口配置使用具有有效 TLS 证书的 HTTPS。
+
+有关 TLS 设置说明，请参阅 [入口配置](/zh/clickstack/deployment/helm-configuration#ingress-setup)。
+
+<div id="next-steps">
+  ## 后续步骤
+</div>
+
+* [配置指南](/zh/clickstack/deployment/helm-configuration) - API 密钥、Secret 和入口
+* [部署选项](/zh/clickstack/deployment/helm-deployment-options) - 外部系统配置
+* [升级指南](/zh/clickstack/deployment/helm-upgrade) - 从 v1.x 迁移到 v2.x
+* [附加清单](/zh/clickstack/deployment/helm-additional-manifests) - 自定义 Kubernetes 对象
+* [Helm 指南](/zh/clickstack/deployment/helm) - 基础安装
+* [Cloud 部署 (v1.x)](/zh/clickstack/deployment/helm-cloud-v1) - v1.x 云配置

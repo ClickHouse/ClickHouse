@@ -28,14 +28,14 @@ namespace
 
     struct DelayedMetricsScope
     {
-        ProfileEvents::Count slots_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed].load();
-        ProfileEvents::Count queries_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed].load();
+        ProfileEvents::Count slots_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed];
+        ProfileEvents::Count queries_before = ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed];
 
         DelayedMetrics diff() const
         {
             return {
-                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed].load() - slots_before,
-                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed].load() - queries_before,
+                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlSlotsDelayed] - slots_before,
+                ProfileEvents::global_counters[ProfileEvents::ConcurrencyControlQueriesDelayed] - queries_before,
             };
         }
     };

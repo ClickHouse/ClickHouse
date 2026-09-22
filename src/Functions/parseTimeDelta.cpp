@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
+#include <Functions/FunctionHelpers.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 namespace DB
@@ -14,7 +15,6 @@ namespace ErrorCodes
 {
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int BAD_ARGUMENTS;
 }
 
@@ -116,7 +116,7 @@ namespace
 
         size_t getNumberOfArguments() const override { return 0; }
 
-        DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+        DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
         {
             if (arguments.empty())
                 throw Exception(
@@ -132,10 +132,11 @@ namespace
                     getName(),
                     arguments.size());
 
-            const IDataType & type = *arguments[0];
+            FunctionArgumentDescriptors mandatory_args{
+                {"timestr", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isString), nullptr, "String"},
+            };
 
-            if (!isString(type))
-                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot format {} as time string.", type.getName());
+            validateFunctionArguments(*this, arguments, mandatory_args);
 
             return std::make_shared<DataTypeFloat64>();
         }
@@ -144,6 +145,11 @@ namespace
         {
             return std::make_shared<DataTypeFloat64>();
         }
+
+        /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
+        /// row references it, so a function that throws on the default value must not be executed on
+        /// the whole dictionary - it would fail on entirely valid data.
+        bool canBeExecutedOnDefaultArguments() const override { return false; }
 
         bool useDefaultImplementationForConstants() const override { return true; }
 

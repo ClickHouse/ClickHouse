@@ -1,0 +1,60 @@
+---
+description: '서버 CPU 과부하 시 동작 방식을 제어합니다.'
+sidebarTitle: '서버 과부하'
+slug: /operations/settings/server-overload
+title: '서버 과부하'
+doc_type: 'reference'
+---
+
+<div id="overview">
+  ## 개요
+</div>
+
+때로는 다양한 이유로 서버에 과부하가 걸릴 수 있습니다. 현재 CPU 과부하를 판단하기 위해
+ClickHouse 서버는 CPU 대기 시간(`OSCPUWaitMicroseconds` 메트릭)과 사용 시간
+(`OSCPUVirtualTimeMicroseconds` 메트릭)의 비율을 계산합니다. 서버가 특정 비율 이상으로 과부하 상태가 되면,
+부하를 더 늘리지 않도록 일부 쿼리를 폐기하거나 연결 요청을 차단하는 것이 합리적입니다.
+
+CPU가 유의미한 작업을 수행하고 있다고 판단할 최소 사용 시간을 제어하는 서버 설정
+`os_cpu_busy_time_threshold`가 있습니다. 현재 `OSCPUVirtualTimeMicroseconds` 메트릭 값이 이 값보다 낮으면,
+CPU 과부하는 0으로 간주됩니다.
+
+<div id="rejecting-queries">
+  ## 쿼리 거부
+</div>
+
+쿼리 거부 동작은 쿼리 수준 설정인 `min_os_cpu_wait_time_ratio_to_throw` 및
+`max_os_cpu_wait_time_ratio_to_throw`로 제어됩니다. 이 설정이 지정되어 있고 `min_os_cpu_wait_time_ratio_to_throw`가
+`max_os_cpu_wait_time_ratio_to_throw`보다 작으면, 과부하 비율이 `min_os_cpu_wait_time_ratio_to_throw` 이상일 때 일정 확률로 쿼리가 거부되며
+`SERVER_OVERLOADED` 오류가 발생합니다. 이 확률은 최소 비율과 최대 비율 사이를 선형 보간하여 결정됩니다. 예를 들어 `min_os_cpu_wait_time_ratio_to_throw = 2`,
+`max_os_cpu_wait_time_ratio_to_throw = 6`, 그리고 `cpu_overload = 4`이면, 해당 쿼리는 `0.5`의 확률로 거부됩니다.
+
+<div id="dropping-connections">
+  ## 연결 차단
+</div>
+
+연결 차단은 서버 수준 설정인 `min_os_cpu_wait_time_ratio_to_drop_connection` 및
+`max_os_cpu_wait_time_ratio_to_drop_connection`으로 제어됩니다. 이 설정은 서버를 다시 시작하지 않고도 변경할 수 있습니다. 이 설정의 기본 개념은
+쿼리를 거부하는 경우와 비슷합니다. 차이점은 이 경우 서버에 과부하가 걸리면
+서버 측에서 연결 시도가 거부된다는 점입니다.
+
+<div id="resource-overload-warnings">
+  ## 리소스 과부하 경고
+</div>
+
+ClickHouse는 서버에 과부하가 발생하면 CPU 및 메모리 과부하 경고도 `system.warnings` 테이블에 기록합니다. 이러한 임계값은
+서버 구성을 통해 조정할 수 있습니다.
+
+**예시**
+
+```xml
+
+<resource_overload_warnings>
+    <cpu_overload_warn_ratio>0.9</cpu_overload_warn_ratio>
+    <cpu_overload_clear_ratio>0.8</cpu_overload_clear_ratio>
+    <cpu_overload_duration_seconds>600</cpu_overload_duration_seconds>
+    <memory_overload_warn_ratio>0.9</memory_overload_warn_ratio>
+    <memory_overload_clear_ratio>0.8</memory_overload_clear_ratio>
+    <memory_overload_duration_seconds>600</memory_overload_duration_seconds>
+</resource_overload_warnings>
+```

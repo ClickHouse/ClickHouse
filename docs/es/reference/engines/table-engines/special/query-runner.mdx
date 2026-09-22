@@ -1,0 +1,133 @@
+---
+description: 'Los registros insertados en una tabla `QueryRunner` representan consultas que el
+  motor ejecuta, ya sea localmente o en un clúster remoto, en el modo "fire and forget".'
+sidebarTitle: 'QueryRunner'
+slug: /engines/table-engines/special/query-runner
+title: 'motor de tabla QueryRunner'
+doc_type: 'reference'
+---
+
+Los registros insertados en una tabla `QueryRunner` representan consultas que ejecuta el motor.
+El motor puede usarse para la ejecución asíncrona de consultas, la ejecución en lote de consultas generadas,
+el envío de consultas a clústeres remotos, benchmarks, fuzzing y pruebas con tráfico espejo.
+
+<div id="creating-a-table">
+  ## Crear una tabla
+</div>
+
+```sql
+CREATE TABLE runner
+(
+    query String,
+    database String,
+    settings Map(LowCardinality(String), String)
+)
+ENGINE = QueryRunner
+SETTINGS
+    cluster = 'cluster_name',
+    shard = '1',
+    mode = 'asynchronous',
+    threads = 4,
+    max_queue_size = 1000
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | INVOKER | NONE }];
+```
+
+La tabla debe crearse con un subconjunto de las columnas permitidas: `query`, `database`, `settings`.
+La columna `query` es obligatoria y las demás columnas son opcionales.
+
+| Columna    | Tipo                  | Significado                                                                                                           |
+| ---------- | --------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `query`    | `String`              | La consulta que se va a ejecutar.                                                                                     |
+| `database` | `String`              | La base de datos predeterminada para la consulta. Si está vacía, se usa la base de datos predeterminada del servidor. |
+| `settings` | `Map(String, String)` | Ajustes aplicados a la consulta.                                                                                      |
+
+<div id="engine-settings">
+  ## Configuración del motor
+</div>
+
+| Configuración    | Predeterminado   | Significado                                                                                                                                                                                                                                 |
+| ---------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster`        | `''`             | Nombre del clúster al que se envían las consultas. Si está vacío, las consultas se ejecutan localmente.                                                                                                                                     |
+| `shard`          | `'1'`            | Índice basado en 1 del segmento del clúster al que se envían las consultas, o `'random'` para elegir un segmento aleatorio por consulta, o `'all'` para ejecutar cada consulta en todos los segmentos. Requiere la configuración `cluster`. |
+| `mode`           | `'asynchronous'` | En el modo `synchronous`, INSERT devuelve el control después de que hayan finalizado todas las consultas del lote insertado. En el modo `asynchronous`, INSERT devuelve el control en cuanto las consultas se ponen en cola.                |
+| `threads`        | `4`              | Número de hilos en segundo plano que ejecutan las consultas.                                                                                                                                                                                |
+| `max_queue_size` | `1000`           | Número máximo de consultas en cola. Cuando la cola está llena, las consultas recién insertadas se descartan y se registra un error.                                                                                                         |
+
+<div id="details">
+  ## Detalles
+</div>
+
+La tabla solo permite consultas `INSERT`.
+Las consultas se ejecutan en modo &quot;fire and forget&quot;: en caso de excepción, no hay reintentos
+y los resultados de las consultas `SELECT` se descartan (la única forma de conservar los resultados es `INSERT SELECT`).
+El resultado de cada consulta puede comprobarse en la tabla `system.query_log`, donde las consultas iniciadas por
+este motor se marcan con `is_internal = 1` en el servidor iniciador.
+
+Las consultas en cola se mantienen en memoria y no sobreviven al reinicio del servidor. Al apagar el servidor
+(o al hacer `DROP`/`DETACH` de la tabla), las consultas que aún no se hayan iniciado se descartan. De las
+consultas que ya están en ejecución, las que se han enviado a un clúster se cancelan, mientras que se espera
+a que finalicen las que se ejecutan localmente.
+
+Cuando la consulta que se va a ejecutar es a su vez un `INSERT`, sus datos deben ir en línea: `INSERT ... VALUES (...)`,
+`INSERT ... SELECT ...` o `INSERT ... FORMAT ...` con los datos en el texto de la consulta. Un `INSERT` que
+espera recibir los datos desde un stream independiente no es compatible.
+
+<div id="local-mode-and-sql-security">
+  ## Modo local y SQL SECURITY
+</div>
+
+Sin la configuración `cluster`, las consultas se ejecutan en el servidor local.
+El usuario con cuyos permisos se ejecutan lo determina la cláusula `SQL SECURITY`:
+
+* `INVOKER` (predeterminado): las consultas se ejecutan en nombre del usuario que realizó el `INSERT`.
+* `DEFINER`: las consultas se ejecutan en nombre del usuario `DEFINER` especificado. Como las consultas insertadas son arbitrarias, conceder `INSERT` en una tabla de este tipo delega todos los privilegios del definidor.
+* `NONE`: las consultas se ejecutan con acceso total, sin usuario. Requiere el privilegio `ALLOW_SQL_SECURITY_NONE` al crear la tabla.
+
+<div id="cluster-mode">
+  ## Modo de clúster
+</div>
+
+Cuando se especifica la configuración `cluster`, las consultas se envían al clúster especificado.
+
+El segmento de destino se selecciona mediante `shard`: un índice fijo de base 1 (`'1'` de forma predeterminada), `'random'` para elegir un
+segmento aleatorio para cada consulta, o `'all'` para ejecutar cada consulta en todos los segmentos del clúster. La réplica dentro
+del segmento se elige según la configuración `load_balancing` del servidor.
+
+La columna `database` establece la base de datos predeterminada de la conexión con el servidor remoto. Como la
+base de datos predeterminada se establece una vez por conexión, cada valor distinto de `database` usa su propio
+pool de conexiones, que se crea en el primer uso y se reutiliza durante toda la vida útil de la tabla.
+
+`DEFINER` y `SQL SECURITY` solo tienen efecto en el modo local, y combinarlos con la
+configuración `cluster` es un error. En los servidores remotos, las consultas se autentican con las
+credenciales de la configuración del clúster y se ejecutan como consultas iniciales normales: se registran en
+`system.query_log` con `is_initial_query = 1` y su propio `query_id` (no vinculado al INSERT que
+las produjo). En el servidor iniciador, las consultas despachadas se registran en `system.query_log`
+con `is_internal = 1`.
+
+Como el motor descarta los resultados de las consultas, siempre ejecuta las consultas despachadas con
+`discard_query_data = 1`, por lo que los datos de resultado de las consultas SELECT no se transfieren por la red
+(esto sustituye cualquier valor de `discard_query_data` establecido en la columna `settings`).
+
+<div id="waiting-for-queries-to-finish">
+  ## Esperar a que finalicen las consultas
+</div>
+
+En modo asíncrono, se puede usar la siguiente consulta para bloquear hasta que terminen todas las consultas enviadas a la tabla hasta ese momento:
+
+```sql
+SYSTEM WAIT QUERY RUNNER runner;
+```
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+Volver a ejecutar consultas `SELECT` recientes del registro de consultas:
+
+```sql
+INSERT INTO runner (query, database, settings)
+SELECT query, current_database, Settings
+FROM system.query_log
+WHERE type = 'QueryFinish' AND is_initial_query AND NOT is_internal AND query_kind = 'Select'
+  AND event_time > now() - INTERVAL 1 HOUR;
+```

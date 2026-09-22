@@ -1,0 +1,18 @@
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS max_threads = 4, max_memory_usage = 1000000
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS max_threads = 8, max_memory_usage = 1000000
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS max_threads = 2, max_memory_usage = 1000000, max_execution_time = 100.
+CREATE USER test_user IDENTIFIED WITH no_password SETTINGS max_threads = 4 MIN 1 MAX 8 CONST, max_memory_usage = 1000000, max_execution_time = 100.
+CREATE ROLE test_role SETTINGS max_threads = 4, max_memory_usage = 1000000
+CREATE ROLE test_role SETTINGS max_threads = 8, max_memory_usage = 1000000
+CREATE ROLE test_role SETTINGS max_threads = 2, max_memory_usage = 1000000, max_execution_time = 100.
+CREATE ROLE test_role SETTINGS max_threads = 4 MIN 1 MAX 8 CONST, max_memory_usage = 1000000, max_execution_time = 100.
+CREATE SETTINGS PROFILE `test_profile` SETTINGS max_threads = 4, max_memory_usage = 1000000
+CREATE SETTINGS PROFILE `test_profile` SETTINGS max_threads = 8, max_memory_usage = 1000000
+CREATE SETTINGS PROFILE `test_profile` SETTINGS max_threads = 2, max_memory_usage = 1000000, max_execution_time = 100.
+CREATE SETTINGS PROFILE `test_profile` SETTINGS max_threads = 4 MIN 1 MAX 8 CONST, max_memory_usage = 1000000, max_execution_time = 100.
+--- SET is equivalent to MODIFY SETTING ---
+SET == MODIFY SETTING
+--- SET round-trips through the parser as MODIFY SETTING ---
+ALTER USER u MODIFY SETTING max_threads = 4
+ALTER USER u MODIFY SETTINGS max_threads = 4, max_memory_usage = 1000000
+ALTER ROLE r MODIFY SETTING max_threads = 4 MIN 1 MAX 8 CONST

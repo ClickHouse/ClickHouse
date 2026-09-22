@@ -30,7 +30,10 @@ ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0,
          packed_skip_index_max_bytes = 4096,
          auto_statistics_types = '',
-         index_granularity = 1024;
+         index_granularity = 1024,
+         -- Pinned: a randomized low ratio sparse-serializes some columns per part, adding column
+         -- files that break this test's "phases differ only in index layout" file-count assumption.
+         ratio_of_defaults_for_sparse_serialization = 1.0;
 
 -- Remembers the active part's file count at each phase so later phases can compare against the
 -- packed baseline without printing absolute counts.

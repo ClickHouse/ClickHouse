@@ -1,0 +1,381 @@
+---
+sidebarTitle: 'Configuración'
+keywords: ['clickhouse', 'go', 'golang', 'configuración', 'conexión', 'tls', 'autenticación']
+description: 'Configuración del cliente clickhouse-go: opciones de conexión, TLS, autenticación, pool de conexiones, logging y compresión.'
+slug: /integrations/language-clients/go/configuration
+title: 'Configuración'
+doc_type: 'reference'
+---
+
+<div id="connection-settings">
+  ## Ajustes de conexión
+</div>
+
+<Tip>
+  Para un análisis detallado y completo de cada opción, con valores predeterminados, parámetros DSN, buenas prácticas y solución de problemas, consulta la [Referencia de configuración](/es/integrations/language-clients/go/config-reference).
+</Tip>
+
+Al abrir una conexión, se puede usar una estructura `Options` para controlar el comportamiento del cliente. Están disponibles los siguientes ajustes:
+
+| Parámetro              | Tipo                                               | Predeterminado     | Descripción                                                                                                                                                                                                                            |
+| ---------------------- | -------------------------------------------------- | ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Protocol`             | `Protocol`                                         | `Native`           | Protocolo de transporte: `Native` (TCP) o `HTTP`. Consulta [TCP vs HTTP](#tcp-vs-http).                                                                                                                                                |
+| `Addr`                 | `[]string`                                         | —                  | Slice de direcciones `host:port`. Para varios nodos, consulta [conexión a varios nodos](#connecting-to-multiple-nodes).                                                                                                                |
+| `Auth`                 | `Auth`                                             | —                  | Credenciales de autenticación (`Database`, `Username`, `Password`). Consulta [Autenticación](#authentication).                                                                                                                         |
+| `TLS`                  | `*tls.Config`                                      | `nil`              | Configuración de TLS. Un valor distinto de `nil` habilita TLS. Consulta [TLS](#using-tls).                                                                                                                                             |
+| `DialContext`          | `func(ctx, addr) (net.Conn, error)`                | —                  | Función personalizada para controlar cómo se establecen las conexiones TCP.                                                                                                                                                            |
+| `DialTimeout`          | `time.Duration`                                    | `30s`              | Tiempo máximo de espera al abrir una conexión nueva. Auméntalo a `1m`–`2m` al conectarte a un servicio de ClickHouse Cloud que pueda estar inactivo; consulta [Timeouts](/es/integrations/language-clients/go/config-reference#timeouts). |
+| `MaxOpenConns`         | `int`                                              | `MaxIdleConns + 5` | Número máximo de conexiones abiertas en un momento dado.                                                                                                                                                                               |
+| `MaxIdleConns`         | `int`                                              | `5`                | Número de conexiones inactivas que se mantienen en el grupo.                                                                                                                                                                           |
+| `ConnMaxLifetime`      | `time.Duration`                                    | `1h`               | Tiempo de vida máximo de una conexión del grupo. Consulta [pool de conexiones](#connection-pooling).                                                                                                                                   |
+| `ConnOpenStrategy`     | `ConnOpenStrategy`                                 | `ConnOpenInOrder`  | Estrategia para elegir un nodo de `Addr`. Consulta [conexión a varios nodos](#connecting-to-multiple-nodes).                                                                                                                           |
+| `BlockBufferSize`      | `uint8`                                            | `2`                | Número de bloques que se decodifican en paralelo. Los valores más altos aumentan el rendimiento a costa de más memoria. Se puede sobrescribir por consulta mediante el contexto.                                                       |
+| `Settings`             | `Settings`                                         | —                  | Mapa de ajuste de ClickHouse aplicados a cada consulta. Las consultas individuales pueden sobrescribirlos mediante [context](/es/integrations/language-clients/go/clickhouse-api#using-context).                                          |
+| `Compression`          | `*Compression`                                     | `nil`              | Compresión a nivel de bloque. Consulta [compresión](#compression).                                                                                                                                                                     |
+| `ReadTimeout`          | `time.Duration`                                    | —                  | Tiempo máximo de espera para una lectura del servidor en una sola llamada.                                                                                                                                                             |
+| `FreeBufOnConnRelease` | `bool`                                             | `false`            | Si es `true`, libera el búfer de memoria de la conexión de vuelta al grupo en cada consulta. Reduce el uso de memoria con un pequeño coste de CPU.                                                                                     |
+| `Logger`               | `*slog.Logger`                                     | `nil`              | Logger estructurado (Go `log/slog`). Consulta [registro](#logging).                                                                                                                                                                    |
+| `Debug`                | `bool`                                             | `false`            | **Obsoleto.** Usa `Logger` en su lugar. Habilita la salida de depuración heredada a stdout.                                                                                                                                            |
+| `Debugf`               | `func(string, ...any)`                             | —                  | **Obsoleto.** Usa `Logger` en su lugar. Función personalizada de registro de depuración. Requiere `Debug: true`.                                                                                                                       |
+| `GetJWT`               | `GetJWTFunc`                                       | —                  | Callback que devuelve un token JWT para la autenticación de ClickHouse Cloud (solo HTTPS).                                                                                                                                             |
+| `HttpHeaders`          | `map[string]string`                                | —                  | Headers HTTP adicionales enviados en cada solicitud (solo transporte HTTP).                                                                                                                                                            |
+| `HttpUrlPath`          | `string`                                           | —                  | Ruta URL adicional añadida a las solicitudes HTTP (solo transporte HTTP).                                                                                                                                                              |
+| `HttpMaxConnsPerHost`  | `int`                                              | —                  | Sobrescribe `MaxConnsPerHost` en el `http.Transport` subyacente (solo transporte HTTP).                                                                                                                                                |
+| `TransportFunc`        | `func(*http.Transport) (http.RoundTripper, error)` | —                  | Fábrica personalizada de transporte HTTP. El transporte predeterminado se pasa para aplicar sobrescrituras selectivas (solo transporte HTTP).                                                                                          |
+| `HTTPProxyURL`         | `*url.URL`                                         | —                  | URL del proxy HTTP para todas las solicitudes (solo transporte HTTP).                                                                                                                                                                  |
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    DialContext: func(ctx context.Context, addr string) (net.Conn, error) {
+        dialCount++
+        var d net.Dialer
+        return d.DialContext(ctx, "tcp", addr)
+    },
+    Debug: true,
+    Debugf: func(format string, v ...interface{}) {
+        fmt.Printf(format, v)
+    },
+    Settings: clickhouse.Settings{
+        "max_execution_time": 60,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionLZ4,
+    },
+    DialTimeout:      time.Duration(10) * time.Second,
+    MaxOpenConns:     5,
+    MaxIdleConns:     5,
+    ConnMaxLifetime:  time.Duration(10) * time.Minute,
+    ConnOpenStrategy: clickhouse.ConnOpenInOrder,
+    BlockBufferSize: 10,
+})
+if err != nil {
+    return err
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/connect_settings.go)
+
+<div id="using-tls">
+  ## TLS
+</div>
+
+A bajo nivel, todos los métodos de conexión del cliente (`DSN/OpenDB/Open`) usarán el[ paquete tls de Go](https://pkg.go.dev/crypto/tls) para establecer una conexión segura. El cliente sabe que debe usar TLS si la estructura Options contiene un puntero `tls.Config` distinto de nil.
+
+```go
+env, err := GetNativeTestEnvironment()
+if err != nil {
+    return err
+}
+cwd, err := os.Getwd()
+if err != nil {
+    return err
+}
+t := &tls.Config{}
+caCert, err := ioutil.ReadFile(path.Join(cwd, "../../tests/resources/CAroot.crt"))
+if err != nil {
+    return err
+}
+caCertPool := x509.NewCertPool()
+successful := caCertPool.AppendCertsFromPEM(caCert)
+if !successful {
+    return err
+}
+t.RootCAs = caCertPool
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: t,
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl.go)
+
+Esta configuración mínima de `TLS.Config` suele ser suficiente para conectarse al puerto nativo seguro (normalmente, el 9440) de un servidor ClickHouse. Si el servidor ClickHouse no tiene un certificado válido (caducado, con un `hostname` incorrecto o no firmado por una autoridad de certificación raíz reconocida públicamente), `InsecureSkipVerify` puede establecerse en `true`, pero se desaconseja encarecidamente.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.SslPort)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    TLS: &tls.Config{
+        InsecureSkipVerify: true,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/ssl_no_verify.go)
+
+Si se necesitan parámetros de TLS adicionales, el código de la aplicación debe configurar los campos deseados en la estructura `tls.Config`. Esto puede incluir conjuntos de cifrado específicos, forzar una versión concreta de TLS (como 1.2 o 1.3), añadir una cadena interna de certificados de una CA, añadir un certificado de cliente (y su clave privada) si lo requiere el ClickHouse server, y la mayoría de las demás opciones propias de una configuración de seguridad más especializada.
+
+<div id="authentication">
+  ## Autenticación
+</div>
+
+Especifique una estructura Auth en los detalles de conexión para definir un nombre de usuario y una contraseña.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+
+v, err := conn.ServerVersion()
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/auth.go)
+
+<div id="connecting-to-multiple-nodes">
+  ## Conexión a varios nodos
+</div>
+
+Se pueden especificar varias direcciones mediante la estructura `Addr`.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+fmt.Println(v.String())
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L26-L45)
+
+Hay tres estrategias de conexión disponibles:
+
+* `ConnOpenInOrder` (predeterminada)  - las direcciones se recorren en orden. Las direcciones posteriores solo se utilizan si falla la conexión con las direcciones anteriores de la lista. En la práctica, se trata de una estrategia de conmutación por error.
+* `ConnOpenRoundRobin` - La carga se distribuye entre las direcciones mediante una estrategia round-robin.
+* `ConnOpenRandom` - Se selecciona un nodo aleatoriamente de la lista de direcciones.
+
+Esto se puede controlar mediante la opción `ConnOpenStrategy`
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:             []string{"127.0.0.1:9001", "127.0.0.1:9002", fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    ConnOpenStrategy: clickhouse.ConnOpenRoundRobin,
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+})
+if err != nil {
+    return err
+}
+v, err := conn.ServerVersion()
+if err != nil {
+    return err
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/1c0d81d0b1388dbb9e09209e535667df212f4ae4/examples/clickhouse_api/multi_host.go#L50-L67)
+
+<div id="connection-pooling">
+  ## Pool de conexiones
+</div>
+
+El cliente mantiene un pool de conexiones y las reutiliza entre consultas según sea necesario. Como máximo, se usará `MaxOpenConns` en un momento dado, y `MaxIdleConns` controla el tamaño máximo del pool. El cliente obtiene una conexión del pool para cada ejecución de consulta y la devuelve al pool para reutilizarla. Una conexión se usa durante toda la vida útil de un batch y se libera en `Send()`.
+
+No se garantiza que se use la misma conexión del pool en consultas posteriores, a menos que el usuario establezca `MaxOpenConns=1`. Esto rara vez es necesario, pero puede serlo en casos en los que se usen tablas temporales.
+
+Además, tenga en cuenta que `ConnMaxLifetime` es, de forma predeterminada, de 1 h. Esto puede hacer que la carga en ClickHouse se desequilibre si algunos nodos abandonan el cluster. Esto puede ocurrir cuando un nodo deja de estar disponible; las conexiones se redistribuyen entre los demás nodos. Estas conexiones persistirán y no se actualizarán durante 1 h de forma predeterminada, incluso si el nodo problemático vuelve al cluster. Considere reducir este valor en casos de workload elevado.
+
+La agrupación de conexiones está habilitada tanto para Native (TCP) como para el protocolo HTTP.
+
+<div id="logging">
+  ## Registro
+</div>
+
+El cliente admite el registro estructurado a través del paquete estándar `log/slog` de Go mediante el campo `Logger` de `Options`. Los campos `Debug` y `Debugf` anteriores están obsoletos, pero siguen funcionando por compatibilidad con versiones anteriores (prioridad: `Debugf` &gt; `Logger` &gt; no-op).
+
+```go
+import (
+    "log/slog"
+    "os"
+)
+
+// Registro estructurado en JSON
+logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelDebug,
+}))
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Logger: logger,
+})
+```
+
+También puedes enriquecer el logger con contexto de la aplicación:
+
+```go
+baseLogger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+    Level: slog.LevelInfo,
+}))
+enrichedLogger := baseLogger.With(
+    slog.String("service", "my-service"),
+    slog.String("environment", "production"),
+)
+
+conn, err := clickhouse.Open(&clickhouse.Options{
+    // ...
+    Logger: enrichedLogger,
+})
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/logger_test.go)
+
+<div id="compression">
+  ## Compresión
+</div>
+
+La compatibilidad con los métodos de compresión depende del protocolo subyacente que se utilice. En el protocolo nativo, el cliente admite compresión `LZ4` y `ZSTD`. Esto se realiza únicamente a nivel de bloque. La compresión puede habilitarse añadiendo una configuración `Compression` a la conexión.
+
+```go
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr: []string{fmt.Sprintf("%s:%d", env.Host, env.Port)},
+    Auth: clickhouse.Auth{
+        Database: env.Database,
+        Username: env.Username,
+        Password: env.Password,
+    },
+    Compression: &clickhouse.Compression{
+        Method: clickhouse.CompressionZSTD,
+    },
+    MaxOpenConns: 1,
+})
+ctx := context.Background()
+defer func() {
+    conn.Exec(ctx, "DROP TABLE example")
+}()
+conn.Exec(context.Background(), "DROP TABLE IF EXISTS example")
+if err = conn.Exec(ctx, `
+    CREATE TABLE example (
+            Col1 Array(String)
+    ) Engine Memory
+    `); err != nil {
+    return err
+}
+batch, err := conn.PrepareBatch(ctx, "INSERT INTO example")
+if err != nil {
+    return err
+}
+defer batch.Close()
+
+for i := 0; i < 1000; i++ {
+    if err := batch.Append([]string{strconv.Itoa(i), strconv.Itoa(i + 1), strconv.Itoa(i + 2), strconv.Itoa(i + 3)}); err != nil {
+        return err
+    }
+}
+if err := batch.Send(); err != nil {
+    return err
+}
+```
+
+[Ejemplo completo](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/compression.go)
+
+Hay técnicas de compresión adicionales disponibles cuando se usa el transporte HTTP: `gzip`, `deflate` y `br`. Consulta [Base de datos/API SQL: compresión](/es/integrations/language-clients/go/database-sql-api#compression) para obtener más detalles.
+
+<div id="tcp-vs-http">
+  ## TCP vs HTTP
+</div>
+
+El transporte se cambia con una sola opción de configuración; todo lo demás de esta guía se aplica a ambos. Esto es lo que cambia:
+
+|                                | TCP (protocolo nativo)           | HTTP                                                                   |
+| :----------------------------- | :------------------------------- | :--------------------------------------------------------------------- |
+| **Puerto predeterminado**      | 9000 (sin cifrado), 9440 (TLS)   | 8123 (sin cifrado), 8443 (TLS)                                         |
+| **Habilitar**                  | Predeterminado: omita `Protocol` | `Protocol: clickhouse.HTTP` o use un DSN `http://`                     |
+| **Compresión**                 | `lz4`, `zstd`                    | `lz4`, `zstd`, `gzip`, `deflate`, `br`                                 |
+| **Sesiones**                   | Integradas (siempre activas)     | Explícitas: pase `session_id` como ajuste                              |
+| **header HTTP**                | —                                | `HttpHeaders`, `HttpUrlPath`, `HttpMaxConnsPerHost`                    |
+| **Transporte personalizado**   | —                                | `TransportFunc`                                                        |
+| **Autenticación JWT**          | —                                | `GetJWT` (HTTPS de ClickHouse Cloud)                                   |
+| **OpenTelemetry (`WithSpan`)** | ✅                                | El servidor lo admite; el cliente aún no envía el header `traceparent` |
+
+Para cambiar cualquiera de las dos API a HTTP:
+
+```go
+// ClickHouse API sobre HTTP
+conn, err := clickhouse.Open(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... autenticación, etc.
+})
+
+// database/sql sobre HTTP — mediante Options
+conn := clickhouse.OpenDB(&clickhouse.Options{
+    Addr:     []string{"host:8123"},
+    Protocol: clickhouse.HTTP,
+    // ... autenticación, etc.
+})
+
+// database/sql sobre HTTP — mediante DSN
+conn, err := sql.Open("clickhouse", "http://host:8123?username=user&password=pass")
+```

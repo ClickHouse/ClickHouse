@@ -1,0 +1,462 @@
+---
+title: '성능 가이드'
+sidebarTitle: '성능 가이드'
+slug: /chdb/guides/pandas-performance
+description: 'DataStore와 pandas의 성능 최적화 팁'
+keywords: ['chdb', 'datastore', 'pandas', '성능', '벤치마크', '최적화']
+doc_type: 'guide'
+---
+
+DataStore는 많은 작업에서 pandas보다 훨씬 뛰어난 성능을 제공합니다. 이 가이드에서는 그 이유와 워크로드를 최적화하는 방법을 설명합니다.
+
+<div id="why-faster">
+  ## DataStore가 더 빠른 이유
+</div>
+
+<div id="sql-pushdown">
+  ### 1. SQL 푸시다운
+</div>
+
+연산이 데이터 소스로 푸시다운됩니다:
+
+```python
+# pandas: Loads ALL data, then filters in memory
+df = pd.read_csv("huge.csv")       # Load 10GB
+df = df[df['year'] == 2024]        # Filter in Python
+
+# DataStore: Filter at source
+ds = pd.read_csv("huge.csv")       # Just metadata
+ds = ds[ds['year'] == 2024]        # Filter in SQL
+df = ds.to_df()                    # Only load filtered data
+```
+
+<div id="column-pruning">
+  ### 2. 컬럼 프루닝(Column Pruning)
+</div>
+
+필요한 컬럼만 읽습니다:
+
+```python
+# DataStore: Only reads name, age columns
+ds = pd.read_parquet("wide_table.parquet")
+result = ds.select('name', 'age').to_df()
+
+# vs pandas: Reads all 100 columns, then selects
+```
+
+<div id="lazy-evaluation">
+  ### 3. 지연 실행
+</div>
+
+여러 연산이 하나의 쿼리로 컴파일됩니다:
+
+```python
+# DataStore: One optimized SQL query
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': 'sum'})
+    .sort('sum', ascending=False)
+    .head(10)
+    .to_df()
+)
+
+# Becomes:
+# SELECT region, SUM(amount) FROM data
+# WHERE amount > 100
+# GROUP BY region ORDER BY sum DESC LIMIT 10
+```
+
+***
+
+<div id="benchmark">
+  ## 벤치마크: DataStore와 pandas 비교
+</div>
+
+<div id="test-environment">
+  ### 테스트 환경
+</div>
+
+* 데이터: 1,000만 행
+* 하드웨어: 표준 노트북
+* 파일 포맷: CSV
+
+<div id="results">
+  ### 결과
+</div>
+
+| 연산                  | pandas (ms) | DataStore (ms) | 우위                     |
+| ------------------- | ----------- | -------------- | ---------------------- |
+| GroupBy count       | 347         | 17             | **DataStore (19.93x)** |
+| 복합 연산               | 1,535       | 234            | **DataStore (6.56x)**  |
+| 복잡한 파이프라인        | 2,047       | 380            | **DataStore (5.39x)**  |
+| 다중 Filter+Sort+Head | 1,963       | 366            | **DataStore (5.36x)**  |
+| Filter+Sort+Head    | 1,537       | 350            | **DataStore (4.40x)**  |
+| Head/Limit          | 166         | 45             | **DataStore (3.69x)**  |
+| 초복잡도 (10개 이상 연산)    | 1,070       | 338            | **DataStore (3.17x)**  |
+| GroupBy 집계          | 406         | 141            | **DataStore (2.88x)**  |
+| Select+Filter+Sort  | 1,217       | 443            | **DataStore (2.75x)**  |
+| Filter+GroupBy+Sort | 466         | 184            | **DataStore (2.53x)**  |
+| Filter+Select+Sort  | 1,285       | 533            | **DataStore (2.41x)**  |
+| Sort (단일)           | 1,742       | 1,197          | **DataStore (1.45x)**  |
+| Filter (단일)         | 276         | 526            | 유사                     |
+| Sort (다중)           | 947         | 1,477          | 유사                     |
+
+<div id="insights">
+  ### 핵심 인사이트
+</div>
+
+1. **GroupBy 연산**: DataStore가 최대 **19.93배 더 빠릅니다**
+2. **복잡한 파이프라인**: DataStore가 **5-6배 더 빠릅니다** (SQL 푸시다운의 이점)
+3. **단순 슬라이스 작업**: 성능이 비슷해 차이가 거의 없습니다
+4. **가장 적합한 사용 사례**: GroupBy/집계를 포함한 다단계 작업
+5. **zero-copy**: `to_df()`에는 데이터 변환 오버헤드가 없습니다
+
+***
+
+<div id="when-datastore-wins">
+  ## DataStore가 더 적합한 경우
+</div>
+
+<div id="heavy-aggregations">
+  ### 대규모 집계
+</div>
+
+```python
+# DataStore excels: 19.93x faster
+result = ds.groupby('category')['amount'].sum()
+```
+
+<div id="complex-pipelines">
+  ### 복잡한 파이프라인
+</div>
+
+```python
+# DataStore excels: 5-6x faster
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean', 'count']})
+    .sort('sum', ascending=False)
+    .head(20)
+)
+```
+
+<div id="large-file-processing">
+  ### 대용량 파일 처리
+</div>
+
+```python
+# DataStore: Only loads what you need
+ds = pd.read_parquet("huge_file.parquet")
+result = ds.filter(ds['id'] == 12345).to_df()  # Fast!
+```
+
+<div id="multiple-column-operations">
+  ### 여러 컬럼 연산
+</div>
+
+```python
+# DataStore: Combines into single SQL
+ds['total'] = ds['price'] * ds['quantity']
+ds['is_large'] = ds['total'] > 1000
+ds = ds.filter(ds['is_large'])
+```
+
+***
+
+<div id="when-pandas-wins">
+  ## pandas와 비슷한 성능을 보이는 경우
+</div>
+
+대부분의 시나리오에서 DataStore는 pandas와 비슷하거나 더 나은 성능을 보입니다. 하지만 다음과 같은 특정한 경우에는 pandas가 약간 더 빠를 수 있습니다:
+
+<div id="small-datasets">
+  ### 소규모 데이터셋 (&lt;1,000행)
+</div>
+
+```python
+# For very small datasets, overhead is minimal for both
+# Performance difference is negligible
+small_df = pd.DataFrame({'x': range(100)})
+```
+
+<div id="simple-slice-operations">
+  ### 간단한 슬라이싱 연산
+</div>
+
+```python
+# Single slice operations without aggregation
+df = df[df['x'] > 10]  # pandas slightly faster
+ds = ds[ds['x'] > 10]  # DataStore comparable
+```
+
+<div id="custom-python-functions">
+  ### 사용자 정의 Python 람다 함수
+</div>
+
+```python
+# pandas required for custom Python code
+def complex_function(row):
+    return custom_logic(row)
+
+df['result'] = df.apply(complex_function, axis=1)
+```
+
+<Info>
+  **중요**
+
+  DataStore가 &quot;더 느린&quot; 경우에도 성능은 일반적으로 **pandas와 비슷한 수준**이며, 실제 사용에서는 차이가 거의 없습니다. 복잡한 작업에서는 DataStore의 장점이 이러한 예외적인 경우를 훨씬 상회합니다.
+
+  실행을 세밀하게 제어하는 방법은 [실행 엔진 구성](/ko/chdb/configuration/execution-engine)을 참조하십시오.
+</Info>
+
+***
+
+<div id="zero-copy">
+  ## Zero-Copy 데이터프레임 통합
+</div>
+
+DataStore는 pandas 데이터프레임을 읽고 쓸 때 **zero-copy**를 사용합니다. 이는 다음을 의미합니다:
+
+```python
+# to_df() does NOT copy data - it's a zero-copy operation
+result = ds.filter(ds['x'] > 10).to_df()  # No data conversion overhead
+
+# Same for creating DataStore from DataFrame
+ds = DataStore(existing_df)  # No data copy
+```
+
+**주요 시사점:**
+
+* `to_df()`는 직렬화(serialization)나 메모리 복사 없이 사실상 비용이 들지 않습니다
+* pandas DataFrame에서 DataStore를 생성하는 작업은 즉시 완료됩니다
+* 메모리는 DataStore와 pandas 뷰 사이에서 공유됩니다
+
+***
+
+<div id="tips">
+  ## 최적화 팁
+</div>
+
+<div id="use-performance-mode">
+  ### 1. 부하가 큰 워크로드에 성능 모드 활성화
+</div>
+
+정확한 pandas 출력 형식(행 순서, MultiIndex 컬럼, Dtype 보정)이 필요하지 않은 집계 작업이 많은 워크로드에서는 최대 처리량을 위해 성능 모드를 활성화하세요:
+
+```python
+from chdb.datastore.config import config
+
+config.use_performance_mode()
+
+# Now all operations use SQL-first execution with no pandas overhead:
+# - Parallel Parquet reading (no preserve_order)
+# - Single-SQL aggregation (filter+groupby in one query)
+# - No row-order preservation overhead
+# - No MultiIndex, no dtype corrections
+result = (ds
+    .filter(ds['amount'] > 100)
+    .groupby('region')
+    .agg({'amount': ['sum', 'mean', 'count']})
+)
+```
+
+**예상 개선 사항**: filter+groupby 워크로드에서 최대 2~8배 빨라지고, 대용량 Parquet 파일의 메모리 사용량이 줄어듭니다.
+
+자세한 내용은 [성능 모드](/ko/chdb/configuration/performance-mode)를 참조하십시오.
+
+<div id="use-parquet">
+  ### 2. CSV 대신 Parquet 사용하기
+</div>
+
+```python
+# CSV: Slower, reads entire file
+ds = pd.read_csv("data.csv")
+
+# Parquet: Faster, columnar, compressed
+ds = pd.read_parquet("data.parquet")
+
+# Convert once, benefit forever
+df = pd.read_csv("data.csv")
+df.to_parquet("data.parquet")
+```
+
+**기대 효과**: 읽기 속도 3~10배 향상
+
+<div id="filter-early">
+  ### 3. 가능한 한 일찍 필터링하기
+</div>
+
+```python
+# Good: Filter first, then aggregate
+result = (ds
+    .filter(ds['date'] >= '2024-01-01')  # Reduce data early
+    .groupby('category')['amount'].sum()
+)
+
+# Less optimal: Process all data
+result = (ds
+    .groupby('category')['amount'].sum()
+    .filter(ds['sum'] > 1000)  # Filter too late
+)
+```
+
+<div id="select-only-needed-columns">
+  ### 4. 필요한 컬럼만 선택
+</div>
+
+```python
+# Good: Column pruning
+result = ds.select('name', 'amount').filter(ds['amount'] > 100)
+
+# Less optimal: All columns loaded
+result = ds.filter(ds['amount'] > 100)  # Loads all columns
+```
+
+<div id="leverage-sql-aggregations">
+  ### 5. SQL 집계 활용하기
+</div>
+
+```python
+# GroupBy is where DataStore shines
+# Up to 20x speedup!
+result = ds.groupby('category').agg({
+    'amount': ['sum', 'mean', 'count', 'max'],
+    'quantity': 'sum'
+})
+```
+
+<div id="use-head">
+  ### 6. 전체 쿼리 대신 head() 사용
+</div>
+
+```python
+# Don't load entire result if you only need a sample
+result = ds.filter(ds['type'] == 'A').head(100)  # LIMIT 100
+
+# Avoid this for large results
+# result = ds.filter(ds['type'] == 'A').to_df()  # Loads everything
+```
+
+<div id="batch-operations">
+  ### 7. 배치 작업
+</div>
+
+```python
+# Good: Single execution
+result = ds.filter(ds['x'] > 10).filter(ds['y'] < 100).to_df()
+
+# Bad: Multiple executions
+result1 = ds.filter(ds['x'] > 10).to_df()  # Execute
+result2 = result1[result1['y'] < 100]       # Execute again
+```
+
+<div id="use-explain">
+  ### 8. `explain()`으로 최적화하기
+</div>
+
+```python
+# View the query plan before executing
+query = ds.filter(...).groupby(...).agg(...)
+query.explain()  # Check if operations are pushed down
+
+# Then execute
+result = query.to_df()
+```
+
+***
+
+<div id="profiling">
+  ## 워크로드 프로파일링하기
+</div>
+
+<div id="enable-profiling">
+  ### 프로파일링 활성화
+</div>
+
+```python
+from chdb.datastore.config import config, get_profiler
+
+config.enable_profiling()
+
+# Run your workload
+result = your_pipeline()
+
+# View report
+profiler = get_profiler()
+profiler.report()
+```
+
+<div id="identify-bottlenecks">
+  ### 병목 지점 파악
+</div>
+
+```text
+Performance Report
+==================
+Step                    Duration    % Total
+----                    --------    -------
+SQL execution           2.5s        62.5%     <- Bottleneck!
+read_csv                1.2s        30.0%
+Other                   0.3s        7.5%
+```
+
+<div id="compare-approaches">
+  ### 접근 방식 비교
+</div>
+
+```python
+# Test approach 1
+profiler.reset()
+result1 = approach1()
+time1 = profiler.get_steps()[-1]['duration_ms']
+
+# Test approach 2
+profiler.reset()
+result2 = approach2()
+time2 = profiler.get_steps()[-1]['duration_ms']
+
+print(f"Approach 1: {time1:.0f}ms")
+print(f"Approach 2: {time2:.0f}ms")
+```
+
+***
+
+<div id="summary">
+  ## 모범 사례 요약
+</div>
+
+| Practice       | Impact              |
+| -------------- | ------------------- |
+| 성능 모드 활성화      | 집계 워크로드에서 2~8배 더 빠름 |
+| Parquet 파일 사용  | 읽기 속도 3~10배 향상      |
+| 초기에 필터 적용      | 데이터 처리량 감소          |
+| 필요한 컬럼 선택      | I/O 및 메모리 사용량 감소    |
+| GroupBy/집계 사용  | 최대 20배 더 빠름         |
+| 배치 작업          | 반복 실행 방지            |
+| 최적화 전에 프로파일링   | 실제 병목 파악            |
+| explain() 사용   | 쿼리 최적화 검증           |
+| 샘플에는 head() 사용 | 전체 테이블 스캔 방지        |
+
+***
+
+<div id="decision">
+  ## 빠른 의사결정 가이드
+</div>
+
+| 워크로드                  | 권장 사항                |
+| --------------------- | -------------------- |
+| GroupBy/집계            | DataStore 사용         |
+| 복잡한 다단계 파이프라인         | DataStore 사용         |
+| 필터가 있는 대용량 파일         | DataStore 사용         |
+| 단순 슬라이스 작업            | 어느 쪽이든 가능(성능 유사)     |
+| 사용자 정의 Python 람다 함수   | pandas를 사용하거나 나중에 변환 |
+| 매우 작은 데이터(&lt;1,000행) | 어느 쪽이든 가능(차이 미미)     |
+
+<Tip>
+  최적의 엔진을 자동으로 선택하려면 `config.set_execution_engine('auto')`를 사용하십시오(기본값).
+  집계 워크로드에서 최대 처리량을 얻으려면 `config.use_performance_mode()`를 사용하십시오.
+  자세한 내용은 [실행 엔진](/ko/chdb/configuration/execution-engine) 및 [성능 모드](/ko/chdb/configuration/performance-mode)를 참조하십시오.
+</Tip>

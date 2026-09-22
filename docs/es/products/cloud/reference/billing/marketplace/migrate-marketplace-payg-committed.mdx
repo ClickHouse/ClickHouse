@@ -1,0 +1,97 @@
+---
+slug: /cloud/billing/marketplace/migrate
+title: 'Migrar la facturación de pago por uso (PAYG) a un contrato de gasto comprometido en un marketplace en la nube'
+description: 'Migrar de pago por uso a un contrato de gasto comprometido.'
+keywords: ['marketplace', 'facturación', 'PAYG', 'pago por uso', 'contrato de gasto comprometido']
+doc_type: 'guide'
+---
+
+Si actualmente a su organización de ClickHouse se le factura mediante una suscripción activa de pago por uso (PAYG) en un marketplace en la nube (o un pedido activo) y desea pasar a la facturación mediante un contrato de gasto comprometido en ese mismo marketplace en la nube, acepte la nueva oferta y luego siga los pasos que se indican a continuación según su proveedor de servicios en la nube.
+
+<div id="important-notes">
+  ## Notas importantes
+</div>
+
+Ten en cuenta que cancelar tu suscripción PAYG de marketplace no elimina tu cuenta de ClickHouse Cloud, sino únicamente la relación de facturación a través del marketplace. Una vez cancelada, nuestro sistema dejará de facturar los servicios de ClickHouse Cloud a través del marketplace. (Nota: este proceso no es inmediato y puede tardar unos minutos en completarse).
+
+Después de que se cancele tu suscripción de marketplace, si tu organización de ClickHouse tiene una tarjeta de crédito registrada, haremos el cargo a esa tarjeta al final de tu ciclo de facturación, a menos que antes se asocie una nueva suscripción de marketplace.
+
+Si no hay una tarjeta de crédito configurada después de la cancelación, tendrás 14 días para añadir a tu organización una tarjeta de crédito válida o una nueva suscripción de marketplace en la nube. Si no se configura un método de pago dentro de ese período, tus servicios se suspenderán y se considerará que tu organización incumple el [cumplimiento de facturación](/es/products/cloud/reference/billing/billing-compliance).
+
+Cualquier uso acumulado después de que se cancele la suscripción se facturará al siguiente método de pago válido configurado: primero un crédito prepagado, luego una suscripción de marketplace y, por último, una tarjeta de crédito.
+
+Si tienes alguna pregunta o necesitas ayuda para configurar tu organización con una nueva suscripción de marketplace, ponte en contacto con el [soporte](https://clickhouse.com/support/program) de ClickHouse para obtener ayuda.
+
+<div id="aws-marketplace">
+  ## AWS Marketplace
+</div>
+
+Si quieres usar el mismo ID de cuenta de AWS para migrar tu suscripción PAYG a un contrato de gasto comprometido, te recomendamos [ponerte en contacto con el equipo de ventas](https://clickhouse.com/company/contact) para realizar este cambio. De este modo, no tendrás que hacer ningún paso adicional y no habrá ninguna interrupción en tu organización ni en tus servicios de ClickHouse.
+
+Si quieres usar un ID de cuenta de AWS distinto para migrar tu organización de ClickHouse de una suscripción PAYG a un contrato de gasto comprometido, sigue estos pasos:
+
+<div id="cancel-aws-payg">
+  ### Pasos para cancelar la suscripción PAYG de AWS
+</div>
+
+1. **Accede a [AWS Marketplace](https://us-east-1.console.aws.amazon.com/marketplace)**
+2. **Haz clic en el botón &quot;Manage Subscriptions&quot;**
+3. **Ve a &quot;Your Subscriptions&quot;:**
+   * Haz clic en &quot;Manage Subscriptions&quot;
+4. **Busca ClickHouse Cloud en la lista:**
+   * Busca ClickHouse Cloud en &quot;Your Subscriptions&quot; y haz clic en él
+5. **Cancela la suscripción:**
+   * En &quot;Agreement&quot;, haz clic en el menú desplegable o botón &quot;Actions&quot; junto a la entrada de ClickHouse Cloud
+   * Selecciona &quot;Cancel subscription&quot;
+
+> **Nota:** Si necesitas ayuda para cancelar tu suscripción (por ejemplo, si el botón para cancelar la suscripción no está disponible), ponte en contacto con el [soporte de AWS](https://support.console.aws.amazon.com/support/home#/).
+
+A continuación, sigue estos [pasos](/es/products/cloud/reference/billing/marketplace/aws-marketplace-committed) para configurar tu organización de ClickHouse para el nuevo contrato de gasto comprometido de AWS que aceptaste.
+
+<div id="gcp-marketplace">
+  ## Marketplace de Google Cloud
+</div>
+
+<div id="cancel-gcp-payg">
+  ### Pasos para cancelar el pedido PAYG de GCP
+</div>
+
+1. **Ve a tu [Google Cloud Marketplace Console](https://console.cloud.google.com/marketplace):**
+   * Asegúrate de haber iniciado sesión en la cuenta de GCP correcta y de haber seleccionado el proyecto adecuado
+2. **Localiza tu pedido de ClickHouse:**
+   * En el menú de la izquierda, haz clic en &quot;Your Orders&quot;
+   * Busca el pedido de ClickHouse correcto en la lista de pedidos activos
+3. **Cancela el pedido:**
+   * Busca el menú de tres puntos a la derecha de tu pedido y sigue las instrucciones para cancelar el pedido de ClickHouse
+
+> **Nota:** Si necesitas ayuda para cancelar este pedido, ponte en contacto con el [soporte de GCP](https://cloud.google.com/support/docs/get-billing-support).
+
+A continuación, sigue estos [pasos](/es/products/cloud/reference/billing/marketplace/gcp-marketplace-committed) para configurar tu organización de ClickHouse con tu nuevo contrato de gasto comprometido de GCP.
+
+<div id="azure-marketplace">
+  ## Azure Marketplace
+</div>
+
+<div id="cancel-azure-payg">
+  ### Pasos para cancelar una suscripción PAYG de Azure
+</div>
+
+1. **Ve al [Microsoft Azure Portal](http://portal.azure.com)**
+2. **Ve a &quot;Subscriptions&quot;**
+3. **Localiza la suscripción activa de ClickHouse que deseas cancelar**
+4. **Cancela la suscripción:**
+   * Haz clic en la suscripción de ClickHouse Cloud para abrir sus detalles
+   * Selecciona el botón &quot;Cancel subscription&quot;
+
+> **Nota:** Si necesitas ayuda para cancelar este pedido, abre un ticket de soporte en Azure Portal.
+
+A continuación, sigue estos [pasos](/es/products/cloud/reference/billing/marketplace/azure-marketplace-committed) para configurar tu organización de ClickHouse con tu nuevo contrato de gasto comprometido de Azure.
+
+<div id="linking-requirements">
+  ## Requisitos para vincular un contrato de gasto comprometido del marketplace
+</div>
+
+> **Nota:** Para vincular su organización a un contrato de gasto comprometido del marketplace:
+>
+> * El usuario que siga estos pasos debe ser administrador de la organización de ClickHouse a la que va a asociar la suscripción
+> * Deben estar pagadas todas las facturas pendientes de la organización (si tiene alguna pregunta, póngase en contacto con el [soporte](https://clickhouse.com/support/program) de ClickHouse)

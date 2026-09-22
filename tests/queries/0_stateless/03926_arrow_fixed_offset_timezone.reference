@@ -1,0 +1,18 @@
+--- +00:00 ---
+ts	Nullable(DateTime64(6, \'Fixed/UTC+00:00:00\'))					
+2024-06-06 12:00:00.000000
+--- +05:30 ---
+ts	Nullable(DateTime64(6, \'Fixed/UTC+05:30:00\'))					
+2024-06-06 17:30:00.000000
+--- -08:00 ---
+ts	Nullable(DateTime64(6, \'Fixed/UTC-08:00:00\'))					
+2024-06-06 04:00:00.000000
+--- fixed ---
+ts	Nullable(DateTime64(6, \'UTC\'))					
+2024-06-06 12:00:00.000000
+--- Europe/Amsterdm (invalid) ---
+Cannot load time zone Europe/Amsterdm
+--- 12 (bare hour, invalid) ---
+Cannot load time zone 12
+--- +05 (bare hour, invalid) ---
+Cannot load time zone +05

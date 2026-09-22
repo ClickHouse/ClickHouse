@@ -1,0 +1,38 @@
+---
+description: 'Guia para configurar e usar scripts SQL de inicialização no ClickHouse para
+  criação automática de schema e migrações'
+sidebarTitle: 'Scripts de inicialização'
+slug: /operations/startup-scripts
+title: 'Scripts de inicialização'
+doc_type: 'guide'
+---
+
+O ClickHouse pode executar consultas SQL arbitrárias a partir da configuração do servidor durante a inicialização. Isso pode ser útil para migrações ou para a criação automática de schema.
+
+```xml
+<clickhouse>
+    <startup_scripts>
+        <throw_on_error>false</throw_on_error>
+        <scripts>
+            <query>CREATE ROLE OR REPLACE test_role</query>
+        </scripts>
+        <scripts>
+            <query>CREATE TABLE TestTable (id UInt64) ENGINE=TinyLog</query>
+            <condition>SELECT 1;</condition>
+        </scripts>
+        <scripts>
+            <query>CREATE DICTIONARY test_dict (...) SOURCE(CLICKHOUSE(...))</query>
+            <user>default</user>
+        </scripts>
+    </startup_scripts>
+</clickhouse>
+```
+
+ClickHouse executa todas as consultas de `startup_scripts` sequencialmente, na ordem especificada. Se alguma das consultas falhar, a execução das consultas seguintes não será interrompida. No entanto, se `throw_on_error` estiver definido como true,
+o servidor não será iniciado se ocorrer um erro durante a execução do script.
+
+Você pode especificar uma consulta condicional na configuração. Nesse caso, a consulta correspondente será executada somente quando a consulta de condição retornar o valor `1` ou `true`.
+
+<Note>
+  Se a consulta de condição retornar qualquer valor diferente de `1` ou `true`, o resultado será interpretado como `false`, e a consulta correspondente não será executada.
+</Note>

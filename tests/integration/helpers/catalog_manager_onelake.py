@@ -204,13 +204,51 @@ class OneLakeCatalogManager(CatalogManager):
     def make_database_name() -> str:
         return f"e2e_onelake_{uuid.uuid4().hex[:8]}"
 
+    def bearer_token(self) -> str:
+        """Mint a real bearer token scoped to ``https://storage.azure.com``.
+        """
+        return self._credential.get_token(
+            "https://storage.azure.com/.default"
+        ).token
+
+    def create_db_sql_bearer(
+        self, database_name: str, bearer_token: str, **overrides
+    ) -> str:
+        """Build a ``CREATE DATABASE`` SQL string authenticating with a
+        pre-obtained bearer token via ``onelake_bearer_token``.
+        """
+        cfg = self.config
+        u = overrides.get("catalog_url", cfg.catalog_url)
+        w = overrides.get("warehouse", self.warehouse)
+        return (
+            f"CREATE DATABASE {database_name} ENGINE = DataLakeCatalog('{u}')\n"
+            f"SETTINGS\n"
+            f"    catalog_type='onelake',\n"
+            f"    warehouse='{w}',\n"
+            f"    onelake_bearer_token='{bearer_token}'"
+        )
+
+    def create_catalog_bearer(
+        self, node, database_name: str, bearer_token: str
+    ) -> None:
+        """Drop-and-create a DataLakeCatalog database authenticating with a
+        pre-obtained bearer token.
+
+        Assumes ``allow_experimental_database_iceberg`` is enabled in the
+        server's user config."""
+        node.query(
+            f"DROP DATABASE IF EXISTS {database_name};\n"
+            + self.create_db_sql_bearer(database_name, bearer_token)
+        )
+
     def create_db_sql(self, database_name: str, **overrides) -> str:
         """Build a ``CREATE DATABASE`` SQL string.
 
         Uses real credentials by default; pass keyword overrides
         (``tenant_id``, ``client_id``, ``client_secret``,
         ``catalog_url``, ``oauth_server_uri``, ``warehouse``,
-        ``auth_scope``) to substitute individual values.
+        ``auth_scope``) to substitute individual values. Pass
+        ``bearer_token`` to also emit an ``onelake_bearer_token`` setting.
         """
         cfg = self.config
         t = overrides.get("tenant_id", cfg.tenant_id)
@@ -223,11 +261,17 @@ class OneLakeCatalogManager(CatalogManager):
         )
         w = overrides.get("warehouse", self.warehouse)
         a = overrides.get("auth_scope", "https://storage.azure.com/.default")
+        # Optional; lets a test provide both auth methods at once.
+        bearer = overrides.get("bearer_token")
+        bearer_line = (
+            f"    onelake_bearer_token='{bearer}',\n" if bearer is not None else ""
+        )
         return (
             f"CREATE DATABASE {database_name} ENGINE = DataLakeCatalog('{u}')\n"
             f"SETTINGS\n"
             f"    catalog_type='onelake',\n"
             f"    warehouse='{w}',\n"
+            f"{bearer_line}"
             f"    onelake_tenant_id='{t}',\n"
             f"    onelake_client_id='{c}',\n"
             f"    onelake_client_secret='{s}',\n"

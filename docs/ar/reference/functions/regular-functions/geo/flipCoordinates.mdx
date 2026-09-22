@@ -1,0 +1,97 @@
+---
+description: 'توثيق الدالة flipCoordinates'
+sidebarTitle: 'عكس الإحداثيات'
+slug: /sql-reference/functions/geo/flipCoordinates
+title: 'عكس الإحداثيات'
+doc_type: 'reference'
+---
+
+<div id="flipcoordinates">
+  ## flipCoordinates
+</div>
+
+تبدّل الدالة `flipCoordinates` إحداثيات نقطة أو حلقة أو مضلع أو متعدد الأضلاع. ويكون ذلك مفيدًا، على سبيل المثال، عند التحويل بين أنظمة الإحداثيات التي يختلف فيها ترتيب خط العرض وخط الطول.
+
+```sql
+flipCoordinates(coordinates)
+```
+
+<div id="input-parameters">
+  ### معلمات الإدخال
+</div>
+
+* `coordinates` — ‏Tuple يمثّل نقطة `(x, y)`، أو مصفوفة من Tupleات مماثلة تمثّل حلقة أو مضلعًا أو متعدد الأضلاع. تشمل أنواع الإدخال المدعومة ما يلي:
+  * [**Point**](/ar/reference/data-types/geo#point): ‏Tuple `(x, y)` حيث تكون `x` و`y` قيمًا من نوع [Float64](/ar/reference/data-types/float).
+  * [**Ring**](/ar/reference/data-types/geo#ring): مصفوفة من النقاط `[(x1, y1), (x2, y2), ...]`.
+  * [**Polygon**](/ar/reference/data-types/geo#polygon): مصفوفة من الحلقات `[ring1, ring2, ...]`، حيث تكون كل حلقة مصفوفة من النقاط.
+  * [**متعدد الأضلاع**](/ar/reference/data-types/geo#multipolygon): مصفوفة من المضلعات `[polygon1, polygon2, ...]`.
+
+<div id="returned-value">
+  ### القيمة المُعادة
+</div>
+
+تُعيد الدالة المُدخل بعد تبديل الإحداثيات. على سبيل المثال:
+
+* تتحول النقطة `(x, y)` إلى `(y, x)`.
+* تتحول الحلقة `[(x1, y1), (x2, y2)]` إلى `[(y1, x1), (y2, x2)]`.
+* تُعالَج البُنى المتداخلة مثل المضلعات ومتعددات الأضلاع بشكلٍ تكراري.
+
+<div id="examples">
+  ### أمثلة
+</div>
+
+<div id="example-1">
+  #### مثال 1: تبديل إحداثيات نقطة واحدة
+</div>
+
+```sql
+SELECT flipCoordinates((10, 20)) AS flipped_point
+```
+
+```text
+┌─flipped_point─┐
+│ (20,10)       │
+└───────────────┘
+```
+
+<div id="example-2">
+  #### المثال 2: عكس مصفوفة من النقاط (Ring)
+</div>
+
+```sql
+SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
+```
+
+```text
+┌─flipped_ring──────────────┐
+│ [(20,10),(40,30)]         │
+└───────────────────────────┘
+```
+
+<div id="example-3">
+  #### مثال 3: قلب مضلع
+</div>
+
+```sql
+SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
+```
+
+```text
+┌─flipped_polygon──────────────────────────────┐
+│ [[(20,10),(40,30)],[(60,50),(80,70)]]        │
+└──────────────────────────────────────────────┘
+```
+
+<div id="example-4">
+  #### مثال 4: عكس متعدد الأضلاع
+</div>
+
+```sql
+SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
+```
+
+```text
+┌─flipped_multipolygon──────────────────────────────┐
+│ [[[20,10],[40,30]],[[60,50],[80,70]]]             │
+└───────────────────────────────────────────────────┘
+```

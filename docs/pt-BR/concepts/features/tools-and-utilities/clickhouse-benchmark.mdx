@@ -1,0 +1,170 @@
+---
+description: 'Documentação para clickhouse-benchmark '
+sidebarTitle: 'clickhouse-benchmark'
+slug: /operations/utilities/clickhouse-benchmark
+title: 'clickhouse-benchmark'
+doc_type: 'reference'
+---
+
+Conecta-se a um servidor ClickHouse e envia repetidamente as consultas especificadas.
+
+**Sintaxe**
+
+```bash
+$ clickhouse-benchmark --query ["single query"] [keys]
+```
+
+ou
+
+```bash
+$ echo "single query" | clickhouse-benchmark [keys]
+```
+
+ou
+
+```bash
+$ clickhouse-benchmark [keys] <<< "single query"
+```
+
+Se você quiser enviar um conjunto de consultas, crie um arquivo de texto e coloque cada consulta em uma linha separada nesse arquivo. Por exemplo:
+
+```sql
+SELECT * FROM system.numbers LIMIT 10000000;
+SELECT 1;
+```
+
+Em seguida, envie este arquivo para a entrada padrão do `clickhouse-benchmark`:
+
+```bash
+clickhouse-benchmark [keys] < queries_file;
+```
+
+<div id="clickhouse-benchmark-command-line-options">
+  ## Opções de linha de comando
+</div>
+
+* `--query=QUERY` — Consulta a ser executada. Se esse parâmetro não for informado, o `clickhouse-benchmark` lerá as consultas da entrada padrão.
+* `--query_id=ID` — ID da consulta.
+* `--query_id_prefix=ID_PREFIX` — Prefixo do ID da consulta.
+* `--queries-format=FORMAT` — Formato das consultas lidas da entrada padrão. Valores possíveis: `tsv` (padrão, uma consulta com tabulação escapada por linha) e `script` (analisa a entrada como um script com várias consultas separadas por ponto e vírgula). Limitação de `script`: consultas `INSERT ... FORMAT` devem estar em uma única linha.
+* `-c N`, `--concurrency=N` — Número de consultas que o `clickhouse-benchmark` envia simultaneamente. Valor padrão: 1.
+* `-C N`, `--max_concurrency=N` — Aumenta gradualmente o número de consultas paralelas até o valor especificado, gerando um relatório para cada nível de concorrência.
+* `--precise` — Habilita relatórios precisos por intervalo com métricas ponderadas.
+* `-d N`, `--delay=N` — Intervalo, em segundos, entre relatórios intermediários (para desativar os relatórios, defina 0). Valor padrão: 1.
+* `-h HOST`, `--host=HOST` — Host do servidor. Valor padrão: `localhost`. No [modo de comparação](#clickhouse-benchmark-comparison-mode), você pode usar várias chaves `-h`.
+* `-i N`, `--iterations=N` — Número total de consultas. Valor padrão: 0 (repetir indefinidamente).
+* `-r`, `--randomize` — Executa as consultas em ordem aleatória se houver mais de uma consulta de entrada.
+* `-s`, `--secure` — Usa conexão `TLS`.
+* `-t N`, `--timelimit=N` — Limite de tempo em segundos. O `clickhouse-benchmark` para de enviar consultas quando o limite de tempo especificado é atingido. Valor padrão: 0 (limite de tempo desativado).
+* `--port=N` — Porta do servidor. Valor padrão: 9000. No [modo de comparação](#clickhouse-benchmark-comparison-mode), você pode usar várias chaves `--port`.
+* `--confidence=N` — Nível de confiança para o teste t. Valores possíveis: 0 (80%), 1 (90%), 2 (95%), 3 (98%), 4 (99%), 5 (99,5%). Valor padrão: 5. No [modo de comparação](#clickhouse-benchmark-comparison-mode), o `clickhouse-benchmark` executa o [teste t de Student para duas amostras independentes](https://en.wikipedia.org/wiki/Student%27s_t-test#Independent_two-sample_t-test) para determinar se as duas distribuições não diferem no nível de confiança selecionado.
+* `--cumulative` — Exibe dados cumulativos em vez de dados por intervalo.
+* `--database=DATABASE_NAME` — nome do banco de dados do ClickHouse. Valor padrão: `default`.
+* `--user=USERNAME` — Nome de usuário do ClickHouse. Valor padrão: `default`.
+* `--password=PSWD` — Senha do usuário do ClickHouse. Valor padrão: string vazia.
+* `--stacktrace` — Saída de stack traces. Quando essa chave é definida, o `clickhouse-benchmark` exibe os stack traces das exceções.
+* `--stage=WORD` — Estágio do processamento da consulta no servidor. O ClickHouse interrompe o processamento da consulta e retorna uma resposta ao `clickhouse-benchmark` no estágio especificado. Valores possíveis: `complete`, `fetch_columns`, `with_mergeable_state`. Valor padrão: `complete`.
+* `--roundrobin` — Em vez de comparar consultas entre diferentes `--host`/`--port`, escolhe aleatoriamente um `--host`/`--port` para cada consulta e a envia para ele.
+* `--reconnect=N` — Controla o comportamento de reconexão. Valores possíveis: 0 (nunca reconectar), 1 (reconectar a cada consulta) ou N (reconectar após cada N consultas). Valor padrão: 0.
+* `--max-consecutive-errors=N` — Número de erros consecutivos permitidos. Valor padrão: 0.
+* `--ignore-error`,`--continue_on_errors` — Continua o teste mesmo que as consultas falhem.
+* `--client-side-time` — Exibe o tempo incluindo a comunicação de rede em vez do tempo no servidor; observe que, para versões do servidor anteriores à 22.8, sempre exibimos o tempo do cliente.
+* `--proto-caps` — Habilita/desabilita o uso de chunks na transferência de dados. Opções (podem ser separadas por vírgula): `chunked_optional`, `notchunked`, `notchunked_optional`, `send_chunked`, `send_chunked_optional`, `send_notchunked`, `send_notchunked_optional`, `recv_chunked`, `recv_chunked_optional`, `recv_notchunked`, `recv_notchunked_optional`. Valor padrão: `notchunked`.
+* `--help` — Mostra a mensagem de ajuda.
+* `--verbose` — Aumenta a verbosidade da mensagem de ajuda.
+
+Se quiser aplicar algumas [configurações](/pt-BR/concepts/features/configuration/settings/overview) às consultas, passe-as como uma chave `--<session setting name>= SETTING_VALUE`. Por exemplo, `--max_memory_usage=1048576`.
+
+<div id="clickhouse-benchmark-environment-variable-options">
+  ## Opções de variáveis de ambiente
+</div>
+
+O nome de usuário, a senha e o host podem ser definidos por meio das variáveis de ambiente `CLICKHOUSE_USER`, `CLICKHOUSE_PASSWORD` e `CLICKHOUSE_HOST`.
+Os argumentos de linha de comando `--user`, `--password` ou `--host` têm prioridade sobre as variáveis de ambiente.
+
+<div id="clickhouse-benchmark-output">
+  ## Saída
+</div>
+
+Por padrão, o `clickhouse-benchmark` apresenta um relatório a cada intervalo de `--delay`.
+
+Exemplo de relatório:
+
+```text
+Queries executed: 10.
+
+localhost:9000, queries 10, QPS: 6.772, RPS: 67904487.440, MiB/s: 518.070, result RPS: 67721584.984, result MiB/s: 516.675.
+
+0.000%      0.145 sec.
+10.000%     0.146 sec.
+20.000%     0.146 sec.
+30.000%     0.146 sec.
+40.000%     0.147 sec.
+50.000%     0.148 sec.
+60.000%     0.148 sec.
+70.000%     0.148 sec.
+80.000%     0.149 sec.
+90.000%     0.150 sec.
+95.000%     0.150 sec.
+99.000%     0.150 sec.
+99.900%     0.150 sec.
+99.990%     0.150 sec.
+```
+
+No relatório, você pode encontrar:
+
+* Número de consultas no campo `Queries executed:`.
+
+* String de status contendo (nesta ordem):
+
+  * Endpoint do servidor ClickHouse.
+  * Número de consultas processadas.
+  * QPS: Quantas consultas o servidor executou por segundo durante um período especificado no argumento `--delay`.
+  * RPS: Quantas linhas o servidor lê por segundo durante um período especificado no argumento `--delay`.
+  * MiB/s: Quantos mebibytes o servidor lê por segundo durante um período especificado no argumento `--delay`.
+  * result RPS: Quantas linhas o servidor adicionou ao resultado de uma consulta por segundo durante um período especificado no argumento `--delay`.
+  * result MiB/s. Quantos mebibytes o servidor adicionou ao resultado de uma consulta por segundo durante um período especificado no argumento `--delay`.
+
+* Percentis do tempo de execução das consultas.
+
+<div id="clickhouse-benchmark-comparison-mode">
+  ## Modo de comparação
+</div>
+
+`clickhouse-benchmark` pode comparar o desempenho de dois servidores ClickHouse em execução.
+
+Para usar o modo de comparação, especifique os endpoints de ambos os servidores usando dois pares de opções `--host` e `--port`. As opções são associadas pela posição na lista de argumentos; o primeiro `--host` é associado ao primeiro `--port` e assim por diante. O `clickhouse-benchmark` estabelece conexões com ambos os servidores e, em seguida, envia consultas. Cada consulta é direcionada a um servidor selecionado aleatoriamente. Os resultados são exibidos em uma tabela.
+
+<div id="clickhouse-benchmark-example">
+  ## Exemplo
+</div>
+
+```bash
+$ echo "SELECT * FROM system.numbers LIMIT 10000000 OFFSET 10000000" | clickhouse-benchmark --host=localhost --port=9001 --host=localhost --port=9000 -i 10
+```
+
+```text
+Loaded 1 queries.
+
+Queries executed: 5.
+
+localhost:9001, queries 2, QPS: 3.764, RPS: 75446929.370, MiB/s: 575.614, result RPS: 37639659.982, result MiB/s: 287.168.
+localhost:9000, queries 3, QPS: 3.815, RPS: 76466659.385, MiB/s: 583.394, result RPS: 38148392.297, result MiB/s: 291.049.
+
+0.000%          0.258 sec.      0.250 sec.
+10.000%         0.258 sec.      0.250 sec.
+20.000%         0.258 sec.      0.250 sec.
+30.000%         0.258 sec.      0.267 sec.
+40.000%         0.258 sec.      0.267 sec.
+50.000%         0.273 sec.      0.267 sec.
+60.000%         0.273 sec.      0.267 sec.
+70.000%         0.273 sec.      0.267 sec.
+80.000%         0.273 sec.      0.269 sec.
+90.000%         0.273 sec.      0.269 sec.
+95.000%         0.273 sec.      0.269 sec.
+99.000%         0.273 sec.      0.269 sec.
+99.900%         0.273 sec.      0.269 sec.
+99.990%         0.273 sec.      0.269 sec.
+
+No difference proven at 99.5% confidence
+```

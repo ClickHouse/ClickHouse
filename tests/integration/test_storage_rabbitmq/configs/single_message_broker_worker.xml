@@ -1,0 +1,6 @@
+<clickhouse>
+    <!-- One message-broker worker: a streaming cycle that parks waiting for the first delivery
+         cannot rely on a second worker running the looping (AMQP event-loop) task, which
+         deterministically reproduces the SYSTEM REFRESH ALL BACKGROUND pool-starvation path. -->
+    <background_message_broker_schedule_pool_size>1</background_message_broker_schedule_pool_size>
+</clickhouse>

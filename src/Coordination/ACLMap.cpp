@@ -40,6 +40,21 @@ bool ACLMap::ACLsComparator::operator()(const Coordination::ACLs & left, const C
     return true;
 }
 
+ACLMap::ACLMap(ACLMap && other) noexcept
+    : acl_to_num(std::move(other.acl_to_num))
+    , num_to_acl(std::move(other.num_to_acl))
+    , max_acl_id(other.max_acl_id)
+{
+}
+
+ACLMap & ACLMap::operator=(ACLMap && other) noexcept
+{
+    acl_to_num = std::move(other.acl_to_num);
+    num_to_acl = std::move(other.num_to_acl);
+    max_acl_id = other.max_acl_id;
+    return *this;
+}
+
 ACLMap::MapEntry & ACLMap::numToAcl(ACLId id)
 {
     auto it = num_to_acl.find(id);

@@ -1,0 +1,38 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: '概览'
+title: '查询优化'
+description: '了解如何诊断 ClickHouse 慢查询、定位瓶颈并选择有针对性的优化方案'
+doc_type: 'guide'
+keywords: ['查询优化', '性能', '最佳实践', '查询调优', '效率', '查询日志', 'EXPLAIN']
+---
+
+本指南提供了一套用于分析和改进 ClickHouse 慢查询的工作流。识别反复出现的慢查询，定位其瓶颈，选择有针对性的优化方案，并与可重复的基线进行对比。
+
+<div id="choose-where-to-start">
+  ## 选择起点
+</div>
+
+前三篇指南构成一个端到端工作流，但您也可以根据自己已掌握的知识，从相应阶段开始。
+
+<CardGroup cols={1}>
+  <Card title="诊断慢查询" icon="magnifying-glass" href="/zh/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    如果需要识别反复出现的慢查询模式，请从这里开始。使用本地或集群级查询历史记录选择一次具有代表性的执行，检查其资源使用情况，并形成初步假设。
+  </Card>
+
+  <Card title="定位查询瓶颈" icon="layer-group" href="/zh/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    如果您有慢查询，但尚不清楚哪些操作最影响其性能，请从这里开始。在受控条件下比较逐步简化的查询形式。
+  </Card>
+
+  <Card title="选择优化方案" icon="sliders" href="/zh/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    如果您已掌握有关瓶颈的证据，并需要选择有针对性的改动，请从这里开始。比较减少读取数据量、使数据布局适配查询，或预先计算重复性工作的方法。
+  </Card>
+</CardGroup>
+
+<div id="example">
+  ## 示例
+</div>
+
+<Card title="优化实战示例" icon="flask" href="/zh/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  先针对 NYC Taxi dataset 执行工作负载查询，然后调整 schema 和排序键，并以同一基线衡量每个阶段的效果。
+</Card>

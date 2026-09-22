@@ -1,0 +1,142 @@
+---
+title: 'Como usar um banco de dados clickhouse-local'
+sidebarTitle: 'Como usar o banco de dados clickhouse-local'
+slug: /chdb/guides/clickhouse-local
+description: 'Aprenda a usar um banco de dados clickhouse-local com chDB'
+keywords: ['chdb', 'clickhouse-local']
+doc_type: 'guide'
+---
+
+[clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) é uma CLI com uma versão embutida do ClickHouse.
+Ela permite usar o poder do ClickHouse sem precisar instalar um servidor.
+Neste guia, aprenderemos a usar um banco de dados clickhouse-local com o chDB.
+
+<div id="setup">
+  ## Configuração
+</div>
+
+Primeiro, vamos criar um ambiente virtual:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Agora vamos instalar o chDB.
+Certifique-se de que você tenha a versão 2.0.2 ou superior:
+
+```bash
+pip install "chdb>=2.0.2"
+```
+
+Agora, vamos instalar [ipython](https://ipython.org/):
+
+```bash
+pip install ipython
+```
+
+Vamos usar o `ipython` para executar os comandos do restante do guia, que você pode iniciar com:
+
+```bash
+ipython
+```
+
+<div id="installing-clickhouse-local">
+  ## Instalando o clickhouse-local
+</div>
+
+Fazer o download e instalar o clickhouse-local é igual a [fazer o download e instalar o ClickHouse](/pt-BR/get-started/setup/install).
+Podemos fazer isso executando o seguinte comando:
+
+```bash
+curl https://clickhouse.com/ | sh
+```
+
+Para iniciar o clickhouse-local com os dados persistidos em um diretório, precisamos informar um `--path`:
+
+```bash
+./clickhouse -m --path demo.chdb
+```
+
+<div id="ingesting-data-into-clickhouse-local">
+  ## Ingestão de dados no clickhouse-local
+</div>
+
+O banco de dados padrão armazena dados apenas na memória, então precisamos criar um banco de dados com nome para garantir que os dados ingeridos sejam persistidos em disco.
+
+```sql
+CREATE DATABASE foo;
+```
+
+Vamos criar uma tabela e inserir alguns números aleatórios:
+
+```sql
+CREATE TABLE foo.randomNumbers
+ORDER BY number AS
+SELECT rand() AS number
+FROM numbers(10_000_000);
+```
+
+Vamos escrever uma consulta para ver quais dados temos:
+
+```sql
+SELECT quantilesExact(0, 0.5, 0.75, 0.99)(number) AS quants
+FROM foo.randomNumbers
+```
+
+```response
+┌─quants────────────────────────────────┐
+│ [69,2147776478,3221525118,4252096960] │
+└───────────────────────────────────────┘
+```
+
+Depois de fazer isso, certifique-se de executar `exit;` na CLI, pois apenas um processo pode manter um bloqueio neste diretório.
+Se não fizermos isso, receberemos o seguinte erro ao tentar nos conectar ao banco de dados pelo chDB:
+
+```text
+ChdbError: Code: 76. DB::Exception: Cannot lock file demo.chdb/status. Another server instance in same directory is already running. (CANNOT_OPEN_FILE)
+```
+
+<div id="connecting-to-a-clickhouse-local-database">
+  ## Conectando-se ao banco de dados clickhouse-local
+</div>
+
+Volte ao shell `ipython` e importe o módulo `session` do chDB:
+
+```python
+from chdb import session as chs
+```
+
+Inicialize uma sessão apontando para `demo.chdb`:
+
+```python
+sess = chs.Session("demo.chdb")
+```
+
+Podemos então executar a mesma consulta que retorna os quantis dos números:
+
+```python
+sess.query("""
+SELECT quantilesExact(0, 0.5, 0.75, 0.99)(number) AS quants
+FROM foo.randomNumbers
+""", "Vertical")
+
+Linha 1:
+──────
+quants: [0,9976599,2147776478,4209286886]
+```
+
+Também podemos inserir dados nesse banco de dados usando o chDB:
+
+```python
+sess.query("""
+INSERT INTO foo.randomNumbers
+SELECT rand() AS number FROM numbers(10_000_000)
+""")
+
+Linha 1:
+──────
+quants: [0,9976599,2147776478,4209286886]
+```
+
+Podemos então executar novamente a consulta de quantis no chDB ou no clickhouse-local.

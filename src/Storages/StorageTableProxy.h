@@ -162,6 +162,11 @@ public:
         getNested()->checkTableCanBeDropped(query_context);
     }
 
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
+    {
+        getNested()->checkTableSizeBelowDropLimit(query_context);
+    }
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override
     {
         std::lock_guard lock{nested_mutex};

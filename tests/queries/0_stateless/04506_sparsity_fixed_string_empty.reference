@@ -1,0 +1,12 @@
+baseline empty:	3000
+baseline notEmpty:	2000
+baseline =empty:	3000
+baseline !=empty:	2000
+rewrite empty:	1
+rewrite notEmpty:	1
+rewrite =empty:	1
+rewrite !=empty:	1
+count empty:	3000
+count notEmpty:	2000
+count =empty:	3000
+count !=empty:	2000

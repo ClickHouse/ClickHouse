@@ -1,0 +1,133 @@
+---
+description: '업그레이드 문서'
+sidebar_title: '자가 관리형 업그레이드'
+slug: /operations/update
+title: '자가 관리형 업그레이드'
+doc_type: 'guide'
+---
+
+<div id="clickhouse-upgrade-overview">
+  ## ClickHouse 업그레이드 개요
+</div>
+
+이 문서에는 다음 내용이 포함되어 있습니다:
+
+* 일반 지침
+* 권장 업그레이드 계획
+* 시스템의 바이너리를 업그레이드하는 구체적인 방법
+
+<div id="general-guidelines">
+  ## 일반 지침
+</div>
+
+이 참고 사항은 계획을 세우고, 이 문서 뒷부분에서 제시하는 권장 사항의 배경을 이해하는 데 도움이 됩니다.
+
+<div id="upgrade-clickhouse-server-separately-from-clickhouse-keeper-or-zookeeper">
+  ### ClickHouse 서버는 ClickHouse Keeper 또는 ZooKeeper와 별도로 업그레이드하십시오
+</div>
+
+ClickHouse Keeper 또는 Apache ZooKeeper에 보안 수정이 필요한 경우가 아니라면, ClickHouse 서버를 업그레이드할 때 Keeper까지 함께 업그레이드할 필요는 없습니다. 업그레이드 과정에서는 Keeper의 안정성이 중요하므로, Keeper 업그레이드는 검토하기에 앞서 ClickHouse 서버 업그레이드부터 완료하십시오.
+
+<div id="minor-version-upgrades-should-be-adopted-often">
+  ### 마이너 버전 업그레이드는 자주 적용해야 합니다
+</div>
+
+새로운 마이너 버전이 릴리스되면 가능한 한 빨리 최신 버전으로 업그레이드하는 것을 강력히 권장합니다. 마이너 릴리스에는 호환되지 않는 변경 사항은 없지만, 중요한 버그 수정(보안 수정이 포함될 수도 있음)이 포함됩니다.
+
+<div id="test-experimental-features-on-a-separate-clickhouse-server-running-the-target-version">
+  ### 대상 버전으로 실행되는 별도의 ClickHouse 서버에서 실험적 기능을 테스트하십시오
+</div>
+
+실험적 기능의 호환성은 언제든 어떤 식으로든 깨질 수 있습니다. 실험적 기능을 사용 중이라면 changelog를 확인하고, 대상 버전이 설치된 별도의 ClickHouse 서버를 구성한 뒤 그곳에서 실험적 기능 사용을 테스트하는 것을 고려하십시오.
+
+<div id="downgrades">
+  ### 다운그레이드
+</div>
+
+업그레이드한 후 새 버전이 의존 중인 일부 기능과 호환되지 않는다는 사실을 알게 된 경우, 아직 새 기능을 하나도 사용하기 시작하지 않았다면 비교적 최근 버전(출시된 지 1년이 지나지 않은 버전)으로 다운그레이드할 수 있습니다. 새 기능을 사용한 이후에는 다운그레이드가 작동하지 않습니다.
+
+<div id="multiple-clickhouse-server-versions-in-a-cluster">
+  ### 클러스터 내 여러 ClickHouse 서버 버전
+</div>
+
+ClickHouse는 1년의 호환성 유지 기간(여기에는 2개의 LTS 버전이 포함됨)을 유지하기 위해 노력합니다. 즉, 두 버전의 차이가 1년 미만이거나(또는 그 사이에 LTS 버전이 2개 미만인 경우) 클러스터에서 함께 작동할 수 있어야 합니다. 다만 일부 사소한 문제가 발생할 수 있으므로(예: 분산 쿼리 성능 저하, ReplicatedMergeTree의 일부 백그라운드 작업에서 재시도 가능한 오류 등) 클러스터의 모든 멤버를 가능한 한 빨리 동일한 버전으로 업그레이드하는 것이 좋습니다.
+
+릴리스 날짜 차이가 1년을 초과하는 서로 다른 버전을 동일한 클러스터에서 실행하는 것은 절대 권장하지 않습니다. 데이터 손실이 발생할 것으로 예상하지는 않지만, 클러스터를 사용할 수 없게 될 수 있습니다. 버전 차이가 1년을 초과하면 다음과 같은 문제가 발생할 수 있습니다.
+
+* 클러스터가 작동하지 않을 수 있습니다
+* 일부(또는 심지어 모든) 쿼리가 예기치 않은 오류와 함께 실패할 수 있습니다
+* 로그에 예기치 않은 오류/경고가 나타날 수 있습니다
+* 다운그레이드가 불가능할 수 있습니다
+
+<div id="incremental-upgrades">
+  ### 단계적 업그레이드
+</div>
+
+현재 버전과 대상 버전의 차이가 1년을 초과하는 경우에는 다음 중 한 가지 방법을 권장합니다.
+
+* 다운타임을 감수하고 업그레이드합니다(모든 서버를 중지한 후 업그레이드하고 다시 실행).
+* 또는 중간 버전(현재 버전보다 1년 미만 더 최신인 버전)을 거쳐 업그레이드합니다.
+
+<div id="recommended-plan">
+  ## 권장 계획
+</div>
+
+다음은 무중단 ClickHouse 업그레이드를 위한 권장 단계입니다.
+
+1. 구성 변경 사항이 기본 `/etc/clickhouse-server/config.xml` 파일이 아니라 `/etc/clickhouse-server/config.d/`에 있는지 확인하십시오. 업그레이드 중 `/etc/clickhouse-server/config.xml` 파일이 덮어써질 수 있습니다.
+2. 호환되지 않는 변경 사항이 있는지 [changelogs](/ko/resources/changelogs/oss/2026)를 확인하십시오(대상 릴리스부터 현재 사용 중인 릴리스까지 거슬러 올라가며 확인).
+3. 호환되지 않는 변경 사항 중 업그레이드 전에 적용할 수 있는 업데이트를 적용하고, 업그레이드 후에 적용해야 할 변경 사항 목록을 작성하십시오.
+4. 각 세그먼트마다 나머지 레플리카를 업그레이드하는 동안 계속 가동할 레플리카를 하나 이상 정하십시오.
+5. 업그레이드할 레플리카에서는 한 번에 하나씩 다음을 수행하십시오.
+
+* ClickHouse 서버 종료
+* 서버를 대상 버전으로 업그레이드
+* ClickHouse 서버 다시 시작
+* 시스템이 안정 상태가 되었다는 Keeper 메시지가 나타날 때까지 대기
+* 다음 레플리카로 진행
+
+6. Keeper 로그와 ClickHouse 로그에서 오류를 확인하십시오.
+
+7. 4단계에서 정한 레플리카를 새 버전으로 업그레이드하십시오.
+
+8. 1~3단계에서 정리한 변경 사항 목록을 참고하여 업그레이드 후 적용해야 하는 변경 사항을 적용하십시오.
+
+<Note>
+  복제된 환경에서 여러 버전의 ClickHouse가 실행 중일 때는 이 오류 메시지가 예상되는 동작입니다. 모든 레플리카가 동일한 버전으로 업그레이드되면 더 이상 이 메시지가 표시되지 않습니다.
+
+  ```text
+  MergeFromLogEntryTask: Code: 40. DB::Exception: Checksums of parts don't match:
+  hash of uncompressed files doesn't match. (CHECKSUM_DOESNT_MATCH)  Data after merge is not
+  byte-identical to data on another replicas.
+  ```
+</Note>
+
+<div id="clickhouse-server-binary-upgrade-process">
+  ## ClickHouse 서버 바이너리 업그레이드 절차
+</div>
+
+ClickHouse를 `deb` 패키지로 설치한 경우 서버에서 다음 명령을 실행하십시오:
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-client clickhouse-server
+$ sudo service clickhouse-server restart
+```
+
+권장 `deb` 패키지 이외의 방법으로 ClickHouse를 설치한 경우에는 해당 방식에 맞는 업데이트 방법을 사용하십시오.
+
+<Note>
+  하나의 세그먼트에 속한 모든 레플리카가 동시에 오프라인되는 시점만 없다면 여러 서버를 한 번에 업데이트할 수 있습니다.
+</Note>
+
+이전 버전의 ClickHouse를 특정 버전으로 업그레이드하는 방법은 다음과 같습니다:
+
+예시:
+
+`xx.yy.a.b`는 현재 안정 버전입니다. 최신 안정 버전은 [여기](https://github.com/ClickHouse/ClickHouse/releases)에서 확인할 수 있습니다.
+
+```bash
+$ sudo apt-get update
+$ sudo apt-get install clickhouse-server=xx.yy.a.b clickhouse-client=xx.yy.a.b clickhouse-common-static=xx.yy.a.b
+$ sudo service clickhouse-server restart
+```

@@ -3,6 +3,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
+#include <Parsers/ASTRefreshStrategy.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -20,11 +21,14 @@ namespace zkutil
 namespace DB
 {
 
-class PipelineExecutor;
+class CompletedPipelineExecutor;
+class QueryStatus;
 
 class StorageMaterializedView;
-class ASTRefreshStrategy;
 struct OwnedRefreshTask;
+
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 enum class RefreshState
 {
@@ -113,6 +117,10 @@ public:
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
 
+        /// Per-partition cursor of the last successfully processed snapshot, for incremental refresh
+        /// (`REFRESH ... APPEND INCREMENTAL`). Null when the view is not incremental or nothing has been processed yet.
+        CursorTreeNodePtr cursor;
+
         /// Znode version. Not serialized.
         int32_t version = -1;
 
@@ -136,7 +144,7 @@ public:
     };
 
     /// Never call it manually, public for shared_ptr construction only
-    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool is_restore_from_backup);
+    RefreshTask(StorageMaterializedView * view_, ContextPtr context, const ASTRefreshStrategy & strategy, std::vector<StorageID> initial_dependencies_, bool attach, bool coordinated, bool empty, bool start_paused_, bool is_restore_from_backup);
 
     /// If !attach, creates coordination znodes if needed.
     static OwnedRefreshTask create(
@@ -146,6 +154,7 @@ public:
         bool attach,
         bool coordinated,
         bool empty,
+        bool start_paused,
         bool is_restore_from_backup);
 
     /// Called at most once.
@@ -279,14 +288,17 @@ private:
             Finished,
         };
 
-        /// Protects interrupt_execution and executor.
+        /// Protects interrupt_execution, executor and executing_query_status.
         /// Can be locked while holding `mutex`.
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
         /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
-        PipelineExecutor * executor = nullptr;
+        CompletedPipelineExecutor * executor = nullptr;
+        /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
+        /// killed. Set as soon as the query enters the process list, before it is interpreted.
+        std::shared_ptr<QueryStatus> executing_query_status;
         /// Interrupts internal CREATE/EXCHANGE/DROP queries that refresh does. Only used during shutdown.
         StopSource cancel_ddl_queries;
         Progress progress;
@@ -338,7 +350,12 @@ private:
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
-    const bool refresh_append;
+    const RefreshMode refresh_mode;
+    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
+    bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
+    /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
+    /// resumed after the rename so it cannot refresh the target before the replacement is committed.
+    const bool start_paused;
 
     RefreshSet::Handle set_handle;
 
@@ -387,7 +404,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 
@@ -421,6 +438,11 @@ private:
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
+
+    /// Enter the permanent, non-resumable "coordination unavailable" state (sets
+    /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
+    /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
+    void markCoordinationUnavailable();
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

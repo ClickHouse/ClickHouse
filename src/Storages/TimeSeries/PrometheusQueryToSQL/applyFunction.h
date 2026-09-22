@@ -7,6 +7,7 @@ namespace DB::PrometheusQueryToSQL
 {
 
 /// Applies a prometheus function.
-SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
+SQLQueryPiece applyFunction(
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context);
 
 }

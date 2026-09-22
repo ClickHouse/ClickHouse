@@ -1,0 +1,39 @@
+---
+title: Cuándo usar el tipo JSON
+---
+
+<div id="when-to-use-json-type">
+  ## Cuándo usar el tipo `JSON`
+</div>
+
+El tipo `JSON` está diseñado para consultar, filtrar y agregar campos específicos dentro de objetos JSON con estructuras dinámicas o impredecibles. Lo consigue dividiendo los objetos JSON en sub-columnas independientes, lo que reduce drásticamente la cantidad de datos leídos y acelera las consultas sobre los campos seleccionados en comparación con alternativas como `Map` o analizar cadenas.
+
+**Sin embargo, esto conlleva desventajas importantes:**
+
+* `INSERT`s más lentos - Dividir el JSON en sub-columnas, realizar la inferencia de tipos y gestionar estructuras de almacenamiento flexibles hace que las inserciones sean más lentas que almacenar el JSON como una simple columna `String`.
+* Más lento al leer objetos completos - Si necesita recuperar documentos JSON completos (en lugar de campos específicos), el tipo `JSON` es más lento que leer desde una columna `String`. La sobrecarga de reconstruir objetos a partir de sub-columnas independientes no aporta ningún beneficio cuando no se realizan consultas a nivel de campo.
+* Sobrecarga de almacenamiento - Mantener sub-columnas independientes añade sobrecarga estructural en comparación con almacenar JSON como un único valor de cadena.
+
+<div id="use-json-type">
+  ### Usa el tipo `JSON` cuando:
+</div>
+
+* Tus datos tienen una estructura dinámica o impredecible, con claves que varían entre documentos
+* Los tipos de los campos o los esquemas cambian con el tiempo o varían entre registros
+* Necesitas consultar, filtrar o agregar sobre rutas específicas dentro de objetos JSON cuya estructura no puedes predecir de antemano
+* Tu caso de uso incluye datos semiestructurados, como logs, eventos o contenido generado por los usuarios, con esquemas inconsistentes
+
+<div id="use-string-type">
+  ### Usa una columna `String` (o tipos estructurados) cuando:
+</div>
+
+* La estructura de tus datos es conocida y consistente; en este caso, usa columnas normales o tipos `Tuple`, `Array`, `Dynamic` o `Variant`
+* Los documentos `JSON` se tratan como blobs opacos que solo se almacenan y recuperan completos, sin análisis a nivel de campo
+* No necesitas consultar ni filtrar campos individuales de `JSON` dentro de la base de datos
+* `JSON` es simplemente un formato de transporte/almacenamiento y no se analiza dentro de ClickHouse
+
+<Tip>
+  Si `JSON` es un documento opaco que no se analiza dentro de la base de datos y solo se almacena y se recupera, debe almacenarse como un campo `String`. Las ventajas del tipo `JSON` solo se materializan cuando necesitas consultar, filtrar o agregar de forma eficiente campos específicos dentro de estructuras `JSON` dinámicas.
+
+  También puedes combinar ambos enfoques: usa columnas estándar para campos de nivel superior predecibles y una columna `JSON` para las secciones dinámicas del payload.
+</Tip>

@@ -1,0 +1,102 @@
+---
+description: 'C''est un alias de any, mais il a été introduit pour des raisons de compatibilité avec les
+  fonctions de fenêtre, pour lesquelles il est parfois nécessaire de traiter les valeurs `NULL` (par défaut,
+  toutes les fonctions d''agrégation de ClickHouse ignorent les valeurs `NULL`).'
+slug: /sql-reference/aggregate-functions/reference/first_value
+title: 'first_value'
+doc_type: 'reference'
+---
+
+C&#39;est un alias de [`any`](/fr/reference/functions/aggregate-functions/any), mais il a été introduit pour des raisons de compatibilité avec les [fonctions de fenêtre](/fr/reference/functions/window-functions/index), pour lesquelles il est parfois nécessaire de traiter les valeurs `NULL` (par défaut, toutes les fonctions d&#39;agrégation de ClickHouse ignorent les valeurs `NULL`).
+
+Il est possible de déclarer un modificateur pour respecter les valeurs `NULL` (`RESPECT NULLS`), aussi bien avec les [fonctions de fenêtre](/fr/reference/functions/window-functions/index) que dans les agrégations classiques.
+
+Comme avec `any`, en dehors des fonctions de fenêtre, le résultat sera aléatoire si le flux source n&#39;est pas ordonné, et le type de retour
+correspond au type d&#39;entrée (`NULL` n&#39;est renvoyé que si l&#39;entrée est `Nullable` ou si le combinator `-OrNull` est ajouté).
+
+<div id="examples">
+  ## exemples
+</div>
+
+```sql
+CREATE TABLE test_data
+(
+    a Int64,
+    b Nullable(Int64)
+)
+ENGINE = Memory;
+
+INSERT INTO test_data (a, b) VALUES (1,null), (2,3), (4, 5), (6,null);
+```
+
+<div id="example1">
+  ### Exemple 1
+</div>
+
+Par défaut, la valeur NULL est ignorée.
+
+```sql
+SELECT first_value(b) FROM test_data;
+```
+
+```text
+┌─any(b)─┐
+│      3 │
+└────────┘
+```
+
+<div id="example2">
+  ### Exemple 2
+</div>
+
+La valeur NULL est ignorée.
+
+```sql
+SELECT first_value(b) ignore nulls FROM test_data
+```
+
+```text
+┌─any(b) IGNORE NULLS ─┐
+│                    3 │
+└──────────────────────┘
+```
+
+<div id="example3">
+  ### Exemple 3
+</div>
+
+La valeur NULL est acceptée.
+
+```sql
+SELECT first_value(b) respect nulls FROM test_data
+```
+
+```text
+┌─any(b) RESPECT NULLS ─┐
+│                  ᴺᵁᴸᴸ │
+└───────────────────────┘
+```
+
+<div id="example4">
+  ### Exemple 4
+</div>
+
+Résultat stabilisé grâce à la sous-requête avec `ORDER BY`.
+
+```sql
+SELECT
+    first_value_respect_nulls(b),
+    first_value(b)
+FROM
+(
+    SELECT *
+    FROM test_data
+    ORDER BY a ASC
+)
+```
+
+```text
+┌─any_respect_nulls(b)─┬─any(b)─┐
+│                 ᴺᵁᴸᴸ │      3 │
+└──────────────────────┴────────┘
+```

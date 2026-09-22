@@ -1,0 +1,17 @@
+---
+title: Nombre maximal recommandé de bases de données, tables, partitions et parts dans ClickHouse
+description: "Découvrez les limites maximales recommandées pour les bases de données, les tables, les partitions et les parts dans un cluster ClickHouse afin de garantir des performances optimales."
+date: 2021-09-01
+tags: ['Performances et optimisations', 'Déploiements et mise à l’échelle']
+keywords: ['limites']
+---
+
+<div id="recommended-maximum-databases-tables-partitions-and-parts-in-clickhouse">
+  ## Nombre maximal recommandé de bases de données, de tables, de partitions et de parts dans ClickHouse
+</div>
+
+Nous recommandons de ne pas dépasser 1 000 bases de données, 5 000 tables, 50 000 partitions et 100 000 parts au total sur l’ensemble des bases de données d’un service.
+
+Dans ClickHouse, les bases de données s’apparentent davantage à un *espace de noms* et n’ont pas d’impact sur les performances ; la limite de 1 000 bases de données reste une indication souple. En revanche, le nombre de tables a une incidence sur le temps de démarrage du service ; nous recommandons donc de limiter le nombre de tables ou de partitions. ClickHouse affiche un avertissement lorsque ces seuils sont atteints.
+
+Ces limites s’appliquent également à ClickHouse Cloud.

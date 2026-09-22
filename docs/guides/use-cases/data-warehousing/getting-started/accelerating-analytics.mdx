@@ -1,0 +1,215 @@
+---
+title: 'Accelerating analytics with MergeTree'
+sidebarTitle: 'Accelerating queries'
+slug: /use-cases/data-lake/getting-started/accelerating-analytics
+toc_max_heading_level: 3
+description: 'Load data from open table formats into ClickHouse MergeTree tables for dramatically faster analytical queries.'
+keywords: ['data lake', 'lakehouse', 'MergeTree', 'accelerate', 'analytics', 'inverted index', 'full-text index', 'INSERT INTO SELECT']
+doc_type: 'guide'
+---
+
+In the [previous section](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs), you connected ClickHouse to a data catalog and queried open table formats directly. While querying data in place is convenient, open table formats are not optimized for the low-latency, high-concurrency workloads that power dashboards and operational reporting. For these use cases, loading data into ClickHouse's [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) engine delivers dramatically better performance.
+
+MergeTree offers several advantages over reading open table formats directly:
+
+- **[Sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes)** - Orders data on disk by a chosen key, allowing ClickHouse to skip over large ranges of irrelevant rows during queries.
+- **Enhanced data types** - Native support for types such as [JSON](/concepts/best-practices/json-type), [LowCardinality](/reference/data-types/lowcardinality), and [Enum](/reference/data-types/enum), enabling more compact storage and faster processing.
+- **[Skip indices](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes)** and **[full-text indices](/reference/engines/table-engines/mergetree-family/textindexes)** - Secondary index structures that let ClickHouse skip granules that don't match a query's filter predicates, particularly effective for text search workloads.
+- **Fast inserts with automatic compaction** - ClickHouse is designed for high-throughput inserts and automatically merges data parts in the background, analogous to compaction in open table formats.
+- **Optimized for concurrent reads** - MergeTree columnar storage layout, combined with [multiple caching layers](/concepts/features/performance/caches/caches), supports real-time analytical workloads with high concurrency - something open table formats are not designed for.
+
+This guide shows how to load data from a catalog into a MergeTree table using `INSERT INTO SELECT` for faster analytics.
+
+## Connect to the catalog {#connect-catalog}
+
+We'll use the same Unity Catalog connection from the [previous guide](/guides/use-cases/data-warehousing/getting-started/connecting-catalogs), connecting via the Iceberg REST endpoint:
+
+```sql
+SET allow_database_iceberg = 1;
+
+CREATE DATABASE unity
+ENGINE = DataLakeCatalog('https://<workspace-id>.cloud.databricks.com/api/2.1/unity-catalog/iceberg-rest')
+SETTINGS catalog_type = 'rest', catalog_credential = '<client-id>:<client-secret>', warehouse = 'workspace',
+oauth_server_uri = 'https://<workspace-id>.cloud.databricks.com/oidc/v1/token', auth_scope = 'all-apis,sql';
+```
+
+### List tables {#list-tables}
+
+```sql
+SHOW TABLES FROM unity
+```
+
+```response
+┌─name───────────────────────────────────────────────┐
+│ unity.logs                                         │
+│ unity.single_day_log                               │
+└────────────────────────────────────────────────────┘
+```
+
+### Explore the schema {#explore-schema}
+
+```sql
+SHOW CREATE TABLE unity.`icebench.single_day_log`
+
+CREATE TABLE unity.`icebench.single_day_log`
+(
+    `pull_request_number` Nullable(Int64),
+    `commit_sha` Nullable(String),
+    `check_start_time` Nullable(DateTime64(6, 'UTC')),
+    `check_name` Nullable(String),
+    `instance_type` Nullable(String),
+    `instance_id` Nullable(String),
+    `event_date` Nullable(Date32),
+    `event_time` Nullable(DateTime64(6, 'UTC')),
+    `event_time_microseconds` Nullable(DateTime64(6, 'UTC')),
+    `thread_name` Nullable(String),
+    `thread_id` Nullable(Decimal(20, 0)),
+    `level` Nullable(String),
+    `query_id` Nullable(String),
+    `logger_name` Nullable(String),
+    `message` Nullable(String),
+    `revision` Nullable(Int64),
+    `source_file` Nullable(String),
+    `source_line` Nullable(Decimal(20, 0)),
+    `message_format_string` Nullable(String)
+)
+ENGINE = Iceberg('s3://...')
+```
+
+This table contains ~283 million log rows from ClickHouse CI test runs - a realistic dataset for exploring analytical performance.
+
+```sql
+SELECT count()
+FROM unity.`icebench.single_day_log`
+```
+
+```response
+┌───count()─┐
+│ 282634391 │ -- 282.63 million
+└───────────┘
+
+1 row in set. Elapsed: 1.265 sec.
+```
+
+## Query over the data lake table {#query-lakehouse}
+
+Let's run a query that filters logs by thread name and instance type, searches the message text for errors, and groups results by logger:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM icebench.`icebench.single_day_log`
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 8.921 sec. Processed 282.63 million rows, 5.42 GB (31.68 million rows/s., 607.26 MB/s.)
+Peak memory usage: 4.35 GiB.
+```
+
+The query takes nearly **9 seconds** because ClickHouse must perform a full table scan across all Parquet files in object storage. Performance could be improved with partitioning, but columns like `logger_name` may be too high cardinality to partition effectively. We also have no indices such as [Text indices](/reference/engines/table-engines/mergetree-family/mergetree#text) to further prune data. This is where MergeTree excels.
+
+## Load data into MergeTree {#load-data}
+
+### Create an optimized table {#create-table}
+
+We create a MergeTree table with some effort to optimize the schema. Notice a few key differences from the Iceberg schema:
+
+- **No `Nullable` wrappers** - removing `Nullable` improves storage efficiency and query performance.
+- **`LowCardinality(String)`** on the `level`, `instance_type`, `thread_name` and `check_name` columns - dictionary-encodes a column with few distinct values for better compression and faster filtering.
+- **A [full-text index](/reference/engines/table-engines/mergetree-family/textindexes)** on the `message` column - accelerates token-based text searches like `hasToken(message, 'error')`.
+- **An `ORDER BY` key** of `(instance_type, thread_name, toStartOfMinute(event_time))` - aligns data on disk with common filter patterns so the [sparse primary index](/guides/clickhouse/data-modelling/sparse-primary-indexes) can skip irrelevant granules.
+
+```sql
+SET enable_full_text_index = 1;
+
+CREATE TABLE single_day_log
+(
+    `pull_request_number` Int64,
+    `commit_sha` String,
+    `check_start_time` DateTime64(6, 'UTC'),
+    `check_name` LowCardinality(String),
+    `instance_type` LowCardinality(String),
+    `instance_id` String,
+    `event_date` Date32,
+    `event_time` DateTime64(6, 'UTC'),
+    `event_time_microseconds` DateTime64(6, 'UTC'),
+    `thread_name` LowCardinality(String),
+    `thread_id` Decimal(20, 0),
+    `level` LowCardinality(String),
+    `query_id` String,
+    `logger_name` String,
+    `message` String,
+    `revision` Int64,
+    `source_file` String,
+    `source_line` Decimal(20, 0),
+    `message_format_string` String,
+    INDEX text_idx(message) TYPE text(tokenizer = splitByNonAlpha)
+)
+ENGINE = MergeTree
+ORDER BY (instance_type, thread_name, toStartOfMinute(event_time))
+```
+
+### Insert data from the catalog {#insert-data}
+
+Use `INSERT INTO SELECT` to load the ~300m from the data lake table into our ClickHouse table:
+
+```sql
+INSERT INTO single_day_log SELECT * FROM icebench.`icebench.single_day_log`
+```
+
+```response
+282634391 rows in set. Elapsed: 237.680 sec. Processed 282.63 million rows, 5.42 GB (1.19 million rows/s., 22.79 MB/s.)
+Peak memory usage: 18.62 GiB.
+```
+
+## Re-execute the query {#reexecute-query}
+
+If we now run the same query against the MergeTree table we see performance improves dramatically:
+
+```sql
+SELECT
+    logger_name,
+    count() AS c
+FROM single_day_log
+WHERE (thread_name = 'TCPHandler')
+    AND (instance_type = 'm6i.4xlarge')
+    AND hasToken(message, 'error')
+GROUP BY logger_name
+ORDER BY c DESC
+LIMIT 5
+```
+
+```response
+┌─logger_name──────────────┬────c─┐
+│ executeQuery             │ 6907 │
+│ TCPHandler               │ 4145 │
+│ TCP-Session              │  790 │
+│ PostgreSQLConnectionPool │  530 │
+│ ContextAccess (default)  │  392 │
+└──────────────────────────┴──────┘
+
+5 rows in set. Elapsed: 0.220 sec. Processed 13.84 million rows, 2.85 GB (62.97 million rows/s., 12.94 GB/s.)
+Peak memory usage: 1.12 GiB.
+```
+
+The same query now completes in **0.22 seconds** - a **~40x speedup**. Two key optimizations drive this improvement:
+
+- **Sparse primary index** - The `ORDER BY (instance_type, thread_name, ...)` key means ClickHouse can skip directly to granules matching `instance_type = 'm6i.4xlarge'` and `thread_name = 'TCPHandler'`, reducing the rows processed from 283 million to just 14 million.
+- **Full-text index** - The `text_idx` index on the `message` column allows `hasToken(message, 'error')` to resolve via the index rather than scanning every message string, further reducing the data ClickHouse needs to read.
+
+The result is a query that can comfortably power a real-time dashboard - at a scale and latency that querying Parquet files in object storage cannot match.

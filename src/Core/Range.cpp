@@ -45,7 +45,12 @@ Range Range::createWholeUniverseTypeAware(const DataTypePtr & type)
 
 Range Range::createRightBounded(const FieldRef & right_point, bool right_included, bool with_null)
 {
-    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    return createRightBounded(right_point, right_included, with_null ? createWholeUniverse() : createWholeUniverseWithoutNull());
+}
+
+Range Range::createRightBounded(const FieldRef & right_point, bool right_included, const Range & universe)
+{
+    Range r = universe;
     r.right = right_point;
     r.right_included = right_included;
     r.shrinkToIncludedIfPossible();
@@ -57,7 +62,12 @@ Range Range::createRightBounded(const FieldRef & right_point, bool right_include
 
 Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, bool with_null)
 {
-    Range r = with_null ? createWholeUniverse() : createWholeUniverseWithoutNull();
+    return createLeftBounded(left_point, left_included, with_null ? createWholeUniverse() : createWholeUniverseWithoutNull());
+}
+
+Range Range::createLeftBounded(const FieldRef & left_point, bool left_included, const Range & universe)
+{
+    Range r = universe;
     r.left = left_point;
     r.left_included = left_included;
     r.shrinkToIncludedIfPossible();

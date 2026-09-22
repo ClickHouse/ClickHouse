@@ -1,0 +1,17 @@
+---
+title: ClickHouse 中数据库、表、分区和 parts 的建议上限
+description: "了解 ClickHouse 集群中数据库、表、分区和 parts 的建议上限，以确保最佳性能。"
+date: 2021-09-01
+tags: ['性能与优化', '部署与扩缩容']
+keywords: ['限制']
+---
+
+<div id="recommended-maximum-databases-tables-partitions-and-parts-in-clickhouse">
+  ## ClickHouse 中数据库、表、分区和 parts 的建议最大数量
+</div>
+
+我们建议单个服务的所有数据库总计最多不超过 1000 个数据库、5000 张表、50000 个分区以及 100000 个 parts。
+
+ClickHouse 中的数据库更接近于一种&#95;命名空间&#95;，对性能没有影响；1000 个数据库只是一个相对宽松的参考值。不过，表的数量会影响服务启动时间，因此我们建议限制表和分区的数量。达到这些阈值时，ClickHouse 会发出警告。
+
+这些限制同样适用于 ClickHouse Cloud。
