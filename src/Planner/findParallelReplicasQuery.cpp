@@ -59,7 +59,7 @@ bool isTableNodeEligibleForParallelReplicas(const TableNode & table_node, const 
     return true;
 }
 
-static bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
+bool canUseTableForParallelReplicas(const TableNode & table_node, const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
     auto storage = table_node.getStorage();
@@ -73,7 +73,9 @@ static bool canUseTableForParallelReplicas(const TableNode & table_node, const C
             if (!underlying_storage)
                 return false;
 
-            return true;
+            /// The eligibility of the inner table node is checked while unwrapping, but the modifiers of
+            /// the outer node - a FINAL on the view itself - are only visible here.
+            return isTableNodeEligibleForParallelReplicas(table_node, underlying_storage, context);
         }
     }
 
@@ -162,7 +164,9 @@ static std::vector<const QueryNode *> getSupportingParallelReplicasQueries(const
                     query_tree_node = join_node.getLeftTableExpressionNode().get();
                 else if (join_kind == JoinKind::Right && join_strictness != JoinStrictness::RightAny
                     && supported_table_expression_types.contains(join_node.getLeftTableExpressionNode()->getNodeType()))
-                    query_tree_node = join_node.getLeftTableExpressionNode().get();
+                    /// For RIGHT JOIN the left side is materialized into a temporary table by
+                    /// buildQueryTreeForShard, so only the right side survives to be read with replicas.
+                    query_tree_node = join_node.getRightTableExpressionNode().get();
                 else
                     return {};
 
@@ -615,6 +619,11 @@ JoinTreeQueryPlan buildQueryPlanForParallelReplicas(
     auto initial_header = InterpreterSelectQueryAnalyzer::getSampleBlock(
         modified_query_tree, context, SelectQueryOptions(processed_stage).analyze());
 
+    /// Inline ALIAS columns before shipping the query, mirroring the Distributed/remote() path.
+    /// buildQueryTreeForShard below rebuilds a shipped table expression from names and types only, which
+    /// would drop an ALIAS column's expression and make the replica read it as physical.
+    /// initial_header above is taken from the un-inlined tree, which is what the converting step matches.
+    inlineAliasColumns(modified_query_tree);
     rewriteJoinToGlobalJoin(modified_query_tree, context);
     modified_query_tree = buildQueryTreeForShard(planner_context, modified_query_tree, /*allow_global_join_for_right_table*/ true);
 

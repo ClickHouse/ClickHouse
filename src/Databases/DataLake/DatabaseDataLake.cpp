@@ -30,6 +30,9 @@
 #include <Databases/DataLake/RestCatalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
+#if USE_AWS_S3 && USE_SSL
+#include <Databases/DataLake/S3TablesCatalog.h>
+#endif
 #include <DataTypes/DataTypeString.h>
 
 #include <Storages/ObjectStorage/S3/Configuration.h>
@@ -79,6 +82,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString onelake_client_id;
     extern const DatabaseDataLakeSettingsString onelake_client_secret;
     extern const DatabaseDataLakeSettingsString onelake_bearer_token;
+    extern const DatabaseDataLakeSettingsString onelake_refresh_token;
     extern const DatabaseDataLakeSettingsBool onelake_use_blob_endpoint;
     extern const DatabaseDataLakeSettingsString dlf_access_key_id;
     extern const DatabaseDataLakeSettingsString dlf_access_key_secret;
@@ -91,13 +95,14 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
+    extern const DatabaseDataLakeSettingsBool flat_namespaces;
 }
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_database_iceberg;
-    extern const SettingsBool allow_experimental_database_unity_catalog;
-    extern const SettingsBool allow_experimental_database_glue_catalog;
+    extern const SettingsBool allow_database_iceberg;
+    extern const SettingsBool allow_database_unity_catalog;
+    extern const SettingsBool allow_database_glue_catalog;
     extern const SettingsBool allow_experimental_database_hms_catalog;
     extern const SettingsBool allow_experimental_database_paimon_rest_catalog;
     extern const SettingsBool use_hive_partitioning;
@@ -107,7 +112,6 @@ namespace Setting
     extern const SettingsBool database_datalake_require_metadata_access;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
-
 }
 
 namespace DataLakeStorageSetting
@@ -141,6 +145,10 @@ namespace FailPoints
 
 namespace
 {
+
+/// In refresh-token mode a single token, minted with `auth_scope`, serves both the OneLake
+/// catalog and Azure storage requests, so the scope must be the Azure storage audience.
+constexpr auto ONELAKE_STORAGE_AUTH_SCOPE = "https://storage.azure.com/.default";
 
 /// Translate the database-layer `TablesFilter` into the catalog-layer
 /// `TableNameFilter` so the catalog can restrict which namespaces it lists.
@@ -201,8 +209,20 @@ void DatabaseDataLake::validateSettings()
     {
         if (settings[DatabaseDataLakeSetting::region].value.empty())
             throw Exception(
-                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue Catalog. "
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for Glue catalog. "
                 "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+    }
+    else if (settings[DatabaseDataLakeSetting::catalog_type].value == DB::DatabaseDataLakeCatalogType::S3_TABLES)
+    {
+        if (settings[DatabaseDataLakeSetting::region].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`region` setting cannot be empty for S3 Tables catalog. "
+                "Please specify 'SETTINGS region=<region_name>' in the CREATE DATABASE query");
+
+        if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "`warehouse` setting cannot be empty for S3 Tables catalog. "
+                "Please specify 'SETTINGS warehouse=<table_bucket_arn>' in the CREATE DATABASE query");
     }
     else if (settings[DatabaseDataLakeSetting::warehouse].value.empty())
     {
@@ -244,6 +264,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -259,11 +280,34 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
+                Context::getGlobalContextInstance());
+            break;
+        }
+        case DB::DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
+        {
+            /// Snowflake Horizon embeds Polaris and speaks Iceberg REST, but authenticates with
+            /// PAT/JWT as OAuth client_secret (optionally without client_id) and scope
+            /// `session:role:<ROLE>`. `HorizonCatalog` accepts bare secrets as credentials.
+            catalog_impl = std::make_shared<DataLake::HorizonCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::catalog_credential].value,
+                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::auth_header],
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
+                settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
         case DB::DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
+            /// The default `auth_scope` value targets Iceberg REST catalogs; for OneLake the
+            /// token audience is Azure storage unless the user overrides it explicitly.
+            const std::string onelake_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
+                ? settings[DatabaseDataLakeSetting::auth_scope].value
+                : ONELAKE_STORAGE_AUTH_SCOPE;
             catalog_impl = std::make_shared<DataLake::OneLakeCatalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
@@ -271,9 +315,11 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::onelake_client_id].value,
                 settings[DatabaseDataLakeSetting::onelake_client_secret].value,
                 settings[DatabaseDataLakeSetting::onelake_bearer_token].value,
-                settings[DatabaseDataLakeSetting::auth_scope].value,
+                settings[DatabaseDataLakeSetting::onelake_refresh_token].value,
+                onelake_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -377,6 +423,23 @@ void DatabaseDataLake::initialize() const
             }
             break;
         }
+        case DB::DatabaseDataLakeCatalogType::S3_TABLES:
+        {
+#if USE_AWS_S3 && USE_SSL
+            catalog_impl = std::make_shared<DataLake::S3TablesCatalog>(
+                settings[DatabaseDataLakeSetting::warehouse].value,
+                url,
+                settings[DatabaseDataLakeSetting::region].value,
+                catalog_parameters,
+                Context::getGlobalContextInstance(),
+                allow_server_credentials_in_user_queries);
+#else
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Amazon S3 Tables catalog requires ClickHouse built with USE_AWS_S3 and USE_SSL");
+#endif
+            break;
+        }
     }
 }
 
@@ -439,7 +502,8 @@ void DatabaseDataLake::resetCatalog(String reason) const
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr storage_settings) const
+    DataLakeStorageSettingsPtr storage_settings,
+    DataLake::DataLakeTableFormat /* table_format */) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -465,7 +529,9 @@ std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfigur
         case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
         case DatabaseDataLakeCatalogType::ICEBERG_REST:
         case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
+        case DatabaseDataLakeCatalogType::S3_TABLES:
         case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+        case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
         {
             switch (type)
             {
@@ -787,7 +853,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
-    const auto configuration = getConfiguration(storage_type, storage_settings);
+    const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -805,11 +871,17 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         if (!rest_catalog)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Catalog is not equals to one lake");
         const auto auth = rest_catalog->getStateSnapshot();
+        /// In refresh-token mode the storage layer asks the catalog client for a valid
+        /// access token on every request; the catalog renews it transparently.
+        AzureBlobStorage::TokenProviderCredential::TokenProvider access_token_provider;
+        if (!auth->refresh_token.empty())
+            access_token_provider = [onelake_catalog = rest_catalog] { return onelake_catalog->getCurrentAccessToken(); };
         azure_configuration->setInitializationAsOneLake(
             auth->client_id,
             auth->client_secret,
             auth->tenant_id,
             auth->bearer_token,
+            std::move(access_token_provider),
             settings[DatabaseDataLakeSetting::onelake_use_blob_endpoint].value
         );
 #else
@@ -863,7 +935,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             return std::nullopt;
         if (!with_vended_credentials && !catalog_manages_provider_chain)
             return std::nullopt;
-        return catalog->getCredentialsConfigurationCallback(storage_id);
+        return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
     const auto catalog_uuid = table_metadata.getTableUUID();
@@ -883,7 +955,9 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             context_,
             /// Use is_table_function = true,
             /// because this table is actually stateless like a table function.
-            /* is_table_function */true);
+            /* is_table_function */true,
+            getFormatSettings(context_copy),
+            getCatalog());
 
         if (context_->hasQueryContext() && context_->getSettingsRef()[Setting::log_queries])
             context_->getQueryContext()->addQueryFactoriesInfo(Context::QueryLogFactories::Storage, storage_cluster->getName());
@@ -1311,8 +1385,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-    if (!table_metadata.isDefaultReadableTable())
-        storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
     storage->settings = {};
 
@@ -1414,6 +1487,16 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Engine `{}` must have arguments", database_engine_name);
         }
 
+        if (database_engine_name == "Iceberg"
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_REST
+            && catalog_type != DatabaseDataLakeCatalogType::S3_TABLES
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
+            && catalog_type != DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Engine `Iceberg` must use `rest`, `s3tables`, `biglake`, or `onelake` catalog type only");
+        }
+
         for (auto & engine_arg : engine_args)
             engine_arg = evaluateConstantExpressionOrIdentifierAsLiteral(engine_arg, args.context);
 
@@ -1434,59 +1517,124 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             case DatabaseDataLakeCatalogType::ICEBERG_REST:
             case DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE:
             case DatabaseDataLakeCatalogType::ICEBERG_DELTA_SHARING:
+            case DatabaseDataLakeCatalogType::ICEBERG_HORIZON:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_iceberg])
+                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Iceberg Rest catalog is beta. "
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
+                if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_HORIZON)
+                {
+                    const bool has_credential = !database_settings[DatabaseDataLakeSetting::catalog_credential].value.empty();
+                    const bool has_auth_header = !database_settings[DatabaseDataLakeSetting::auth_header].value.empty();
+                    if (has_credential == has_auth_header)
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Horizon catalog requires exactly one authentication method: "
+                            "`catalog_credential` (PAT or key-pair JWT) "
+                            "or `auth_header` (Authorization: Bearer <token>)");
+                    }
+
+                    /// Horizon scopes are Snowflake session roles, not Polaris principal roles.
+                    const auto & scope = database_settings[DatabaseDataLakeSetting::auth_scope].value;
+                    if (!has_auth_header && !scope.starts_with("session:role:"))
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Horizon catalog with `catalog_credential` requires `auth_scope` in the form "
+                            "`session:role:<ROLE>` (got '{}'). When using a pre-exchanged bearer token via "
+                            "`auth_header`, scope is optional",
+                            scope);
+                    }
+
+                    if (database_settings[DatabaseDataLakeSetting::warehouse].value.empty())
+                    {
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Horizon catalog requires `warehouse` set to the Snowflake database name "
+                            "(usually uppercase, e.g. ICEBERG_TEST_DB)");
+                    }
+                }
+
                 if (!args.create_query.attach && catalog_type == DatabaseDataLakeCatalogType::ICEBERG_ONELAKE)
                 {
-                    /// Require exactly one auth method: a bearer token, or a client id + secret pair.
+                    /// Require exactly one auth method: a bearer token, a refresh token (needs a client id,
+                    /// a secret only for confidential app registrations), or a client id + secret pair.
                     const bool has_bearer = !database_settings[DatabaseDataLakeSetting::onelake_bearer_token].value.empty();
+                    const bool has_refresh = !database_settings[DatabaseDataLakeSetting::onelake_refresh_token].value.empty();
                     const bool has_client_id = !database_settings[DatabaseDataLakeSetting::onelake_client_id].value.empty();
                     const bool has_client_secret = !database_settings[DatabaseDataLakeSetting::onelake_client_secret].value.empty();
 
-                    const bool has_client_pair = has_client_id && has_client_secret;
-                    bool has_exactly_one_method = has_bearer != has_client_pair;
-                    bool has_conflicting_fields = has_client_id != has_client_secret;
-
-                    if (!has_exactly_one_method || has_conflicting_fields)
+                    const auto throw_invalid_auth = []
+                    {
                         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "OneLake catalog requires exactly one authentication method: either `onelake_bearer_token` "
-                            "or both `onelake_client_id` and `onelake_client_secret`");
+                            "OneLake catalog requires exactly one authentication method: `onelake_bearer_token`, "
+                            "or `onelake_refresh_token` with `onelake_client_id` (and `onelake_client_secret` "
+                            "for confidential app registrations), or both `onelake_client_id` and `onelake_client_secret`");
+                    };
+
+                    if (has_bearer)
+                    {
+                        if (has_refresh || has_client_id || has_client_secret)
+                            throw_invalid_auth();
+                    }
+                    else if (has_refresh)
+                    {
+                        if (!has_client_id)
+                            throw_invalid_auth();
+
+                        /// The refresh token grant always sends parameters in the request body,
+                        /// no matter whether it goes to the default Entra ID token endpoint or to
+                        /// a custom `oauth_server_uri`; the query-parameter flavor selected by
+                        /// this setting is not implemented for it.
+                        if (!database_settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`oauth_server_use_request_body = 0` is not supported together with `onelake_refresh_token`: "
+                                "the refresh token grant always sends parameters in the request body, "
+                                "regardless of `oauth_server_uri`");
+
+                        /// In refresh-token mode the storage layer reuses the catalog access token,
+                        /// so a scope accepted by the catalog but not by Azure storage would pass
+                        /// CREATE and then fail on the first table read.
+                        if (database_settings[DatabaseDataLakeSetting::auth_scope].changed
+                            && database_settings[DatabaseDataLakeSetting::auth_scope].value != ONELAKE_STORAGE_AUTH_SCOPE)
+                            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                "`onelake_refresh_token` requires `auth_scope` to be the Azure storage audience '{}' "
+                                "(or unset), because the same access token is used for both the catalog and Azure "
+                                "storage requests. Got `auth_scope` = '{}'",
+                                ONELAKE_STORAGE_AUTH_SCOPE,
+                                database_settings[DatabaseDataLakeSetting::auth_scope].value);
+                    }
+                    else if (!has_client_id || !has_client_secret)
+                        throw_invalid_auth();
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::GLUE:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_glue_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_glue_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DatabaseDataLake with Glue catalog is beta. "
                                     "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY:
             {
                 if (!args.create_query.attach
-                    && !args.context->getSettingsRef()[Setting::allow_experimental_database_unity_catalog])
+                    && !args.context->getSettingsRef()[Setting::allow_database_unity_catalog])
                 {
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                                     "DataLake database with Unity catalog catalog is beta. "
                                     "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
-                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -1499,7 +1647,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
@@ -1512,7 +1659,18 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
                 }
 
-                engine_func->name = "Paimon";
+                break;
+            }
+            case DatabaseDataLakeCatalogType::S3_TABLES:
+            {
+                if (!args.create_query.attach
+                    && !args.context->getSettingsRef()[Setting::allow_database_iceberg])
+                {
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                                    "DatabaseDataLake with S3 Tables catalog (Iceberg REST) is beta. "
+                                    "To allow its usage, enable setting allow_database_iceberg");
+                }
+
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
@@ -1550,6 +1708,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
+        .has_builtin_setting_fn = DatabaseDataLakeSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 The `DataLakeCatalog` database engine enables you to connect ClickHouse to external
@@ -1571,9 +1730,9 @@ The `DataLakeCatalog` engine supports the following data catalogs:
 You will need to enable the relevant settings below to use the `DataLakeCatalog` engine:
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
-SET allow_experimental_database_unity_catalog = 1;
-SET allow_experimental_database_glue_catalog = 1;
+SET allow_database_iceberg = 1;
+SET allow_database_unity_catalog = 1;
+SET allow_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -1592,7 +1751,7 @@ The following settings are supported:
 
 | Setting                 | Description                                                                             |
 |-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces) |
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
@@ -1614,10 +1773,10 @@ The following settings are supported:
 
 See below sections for examples of using the `DataLakeCatalog` engine:
 
-* [Unity Catalog](/use-cases/data-lake/unity-catalog)
-* [Glue Catalog](/use-cases/data-lake/glue-catalog)
+* [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
+* [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-    Can be used by enabling `allow_experimental_database_iceberg` or `allow_database_iceberg`.
+    Can be used by enabling `allow_database_iceberg`.
 ```sql
 CREATE DATABASE database_name
 ENGINE = DataLakeCatalog(catalog_endpoint)

@@ -3,6 +3,10 @@
 -- no-parallel-replicas: with parallel replicas the vector search optimization is disabled and the
 -- read layer uses a different pool, so the concurrency this test pins would not exist.
 
+-- Several threads search a vector similarity index over ONE part, so that the per-part vector
+-- search read hints are written and consumed while more than one reader is alive for that part. The
+-- assertions pin the split across readers, the index search, and equality with a single threaded read.
+
 -- The test runner can enable the query result cache. A cache hit returns an earlier attempt's answer
 -- without building a plan or reading the part, which would make every assertion below replay a stale
 -- result instead of measuring this attempt. Session wide, so a future assertion cannot forget it.
@@ -14,8 +18,7 @@ SET use_query_cache = 0;
 -- Session wide, so it also covers the statements that only read system tables.
 SET query_plan_try_use_vector_search = 1;
 
--- ignore_drop_queries_probability = 0: the stress runner sets it to 0.2, which makes a DROP a no-op.
-DROP TABLE IF EXISTS vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EXISTS vs_concurrent;
 
 CREATE TABLE vs_concurrent
 (
@@ -283,4 +286,4 @@ SELECT 'diff_filtered', (
     )
 );
 
-DROP TABLE vs_concurrent SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE vs_concurrent;

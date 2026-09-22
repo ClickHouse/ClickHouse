@@ -1,6 +1,7 @@
 {
   "group": "C",
   "icon": "/images/integrations/logos/logo_c.svg",
-  "pages": [],
-  "root": "es/integrations/language-clients/c/index"
+  "pages": [
+    "es/integrations/language-clients/c/index"
+  ]
 }

@@ -21,12 +21,22 @@ WHERE name > ''
 GROUP BY name
 ORDER BY name;
 
-EXPLAIN
-SELECT name, sum(age)
-FROM uv
-WHERE name > ''
-GROUP BY name
-ORDER BY name;
+-- Print the plan without step descriptions, drop the `Expression` steps and normalize the name of
+-- the step reading from the replicas, so that the result does not depend on how reading with
+-- parallel replicas is planned.
+SELECT if(step IN ('ReadFromRemoteParallelReplicas', 'ReadFromParallelReplicas'), 'ReadFromParallelReplicas', step)
+FROM
+(
+    SELECT rowNumberInAllBlocks() AS n, trim(explain) AS step
+    FROM (EXPLAIN description = 0
+        SELECT name, sum(age)
+        FROM uv
+        WHERE name > ''
+        GROUP BY name
+        ORDER BY name)
+)
+WHERE step != 'Expression'
+ORDER BY n;
 
 SELECT name, sum(age)
 FROM uv

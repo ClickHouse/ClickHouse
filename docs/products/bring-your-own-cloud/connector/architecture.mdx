@@ -1,0 +1,98 @@
+---
+title: 'Architecture'
+sidebarTitle: 'Architecture'
+description: 'ClickHouse Connector components, connections, certificate lifecycle, data flow, and trust boundaries, including the executor in managed mode'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+The managed-mode enrollment, customer-create, and platform-approval workflows described here require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) confirmed by your account team. Public `v0.16.0` has neither the managed-mode init flags nor the `platform` command, and does not ship the customer-create workflow.
+</Note>
+
+## Components {#components}
+
+The ClickHouse Connector runs three daemons, all built into the `clicklink` binary:
+
+- **The executor** holds an outbound command channel to your connector endpoint and applies the lifecycle commands ClickHouse Cloud sends for the services it manages in your cluster. The commands are create, scale, stop and start, restart, backup and backup deletion, delete, and platform updates you have approved. Every action it takes is a Kubernetes API call. It opens no connection to ClickHouse and holds no credentials to your buckets or IAM. It runs when managed mode is enabled.
+- **The scraper** reads an allowlist of ClickHouse system tables on a fixed interval and buffers the results locally. It ships them to your connector endpoint with infrastructure metadata and health status.
+- **The troubleshooter** holds an outbound command channel to your connector endpoint and runs read-only diagnostics during an active [support session](/products/bring-your-own-cloud/connector/support-sessions). Outside a session it runs nothing.
+
+On Kubernetes, the `clicklink-connector` Helm chart deploys the daemons in a namespace you choose (default `clicklink`). The executor is a single-replica Deployment that keeps its command state on a persistent volume. On a Linux VM, the daemons run as the `clicklink-scraper`, `clicklink-troubleshooter`, and `clicklink-executor` systemd units under an unprivileged `clicklink` system user.
+
+<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="ClickHouse Connector architecture" />
+
+## Connections {#connections}
+
+The customer-create and platform-approval connections below apply to [supported managed-mode deployments](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); those workflows are unavailable in public `v0.16.0`.
+
+Every connection the connector makes is outbound. The complete list:
+
+| Destination | Direction | Protocol | Authentication | Purpose |
+|---|---|---|---|---|
+| Your connector endpoint (API) | Outbound | HTTPS | mTLS client certificate plus HMAC-signed requests | Ships metrics, connector self-metrics, and status; syncs service, infrastructure, and backup metadata; renews the client certificate |
+| Your connector endpoint (API, from `clicklink clctl`) | Outbound | HTTPS | The connector's mTLS client certificate plus HMAC-signed requests | Submits a service definition when you run `clicklink clctl instances create` (`POST /v1/pcm/instances`) |
+| Your connector endpoint (troubleshooter command channel) | Outbound | WebSocket over TLS | mTLS client certificate plus HMAC-signed handshake | Carries diagnostic commands only while a support session is active |
+| Your connector endpoint (executor command channel) | Outbound | WebSocket over TLS | mTLS client certificate plus HMAC-signed handshake | Carries lifecycle commands for managed services and returns their progress and results; separate from the troubleshooter channel |
+| Your enrollment endpoint | Outbound | HTTPS | Single-use enrollment token (redeem) or HMAC (first certificate signing); no mTLS | Token redemption and first certificate issuance during setup |
+| Your ClickHouse clusters | Outbound, inside your environment | ClickHouse native protocol | Dedicated read-only users `pcm_scraper` and `pcm_troubleshooter`, stored as bcrypt hashes | System-table reads for scraping and session diagnostics, plus the scraper's log-table flush. The executor opens no ClickHouse connection |
+| Kubernetes API server (every provisioned deployment, both install targets) | Outbound, inside your environment | HTTPS | ServiceAccounts bound to Roles; in managed mode the `pcm-executor` ServiceAccount, confined by an admission policy | Read-only workload views for the troubleshooter; the executor's lifecycle writes inside service namespaces and, during an approved platform update, workload writes inside the platform namespaces; on Kubernetes installs the daemons also persist the automatically renewed client certificate back to the mTLS Secret |
+| Amazon ECR (executor, managed mode only) | Outbound | HTTPS | For direct platform access, the read-only pull role assumed using the connector EC2 VM's instance profile; ambient AWS credentials for other ECR chart registries | Registry login to pull a chart for a platform sync or create; `DescribeImages` during a platform update to confirm the images exist |
+| AWS STS (executor, managed mode only) | Outbound | HTTPS | The connector EC2 VM's instance profile for direct platform access; the configured AWS credential chain for other ECR chart registries | Assumes the read-only pull role for direct platform chart login and image checks; may also supply credentials for other ECR logins. ECR and STS are the executor's only cloud API calls |
+| Container registry | Outbound, from your cluster nodes | HTTPS | Your node identity: a read-only pull role that ClickHouse grants to the node roles you registered, or your own registry after you import the images | Image pulls for managed services and platform components. Your cluster pulls; ClickHouse pushes nothing into it |
+| Your identity provider's JWKS endpoint (only when the gateway is enabled) | Outbound | HTTPS | None (public signing keys) | Validates the OIDC ID tokens presented to the session gateway |
+
+Every API request carries an `Authorization` header with an HMAC-SHA256 signature over the method, path, timestamp, and a hash of the body. Requests cannot be replayed or altered in transit, even inside the TLS channel.
+
+Inbound, each daemon exposes one local health port: 8082 for the scraper, 8084 for the troubleshooter, 8086 for the executor. That port serves `/livez`, `/readyz`, `/healthz`, and the daemon's Prometheus metrics at `/metrics`; there is no separate metrics port. The executor's local command API binds to loopback only, and no Service exposes it. The only other listener is the opt-in session gateway described on the [support sessions](/products/bring-your-own-cloud/connector/support-sessions) page. ClickHouse Cloud never connects to any of them.
+
+## Certificate lifecycle {#certificate-lifecycle}
+
+The connector authenticates to your endpoint with a client certificate it obtains and maintains itself. All three daemons present the same certificate.
+
+- **Enrollment.** `clicklink clctl init` generates a private key locally and a certificate signing request. The CSR carries your organization ID as the common name and your endpoint host as the single DNS SAN. The private key never leaves your environment.
+- **First issuance.** `init` submits the CSR to the enrollment signing endpoint at `/v1/pcm/cert/sign`, authenticated with HMAC. If an unexpired certificate already exists for your organization, the endpoint refuses with a 409. The CLI then prints how to complete with the existing certificate or supersede it with `--force`.
+- **Automatic renewal.** All three daemons check the certificate lifetime every 12 hours. Once 10 days remain, they request a renewed 30-day certificate through `/v1/pcm/cert/renew` (mTLS plus HMAC). On Kubernetes the renewed certificate is written back to the `clicklink-mtls` Secret through an exact-name RBAC grant; on a VM each daemon writes it to `/etc/clicklink/tls`. Renewal needs no operator action.
+
+The connector verifies your endpoint's server certificate against the system trust store. When `api.tls.ca_file` (VM) or `api.tls.caFile` (Helm) is set, the CA chain from your enrollment bundle is appended to those roots.
+
+## Data flow {#data-flow}
+
+<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="ClickHouse Connector data flow" />
+
+### What leaves your environment {#what-leaves}
+
+- **Metrics from allowlisted system tables.** The scraper's default set is `metric_log`, `asynchronous_metric_log`, `tables`, `warnings`, and `server_settings`. The allowlist is explicit configuration; the scraper reads nothing outside it.
+- **Infrastructure metadata.** Service, infrastructure, and backup inventory synced through the API. For a managed service this is its state, current and expected replica counts, and the running server version and configuration version.
+- **Health and self-metrics.** Component status and the connector's own operational metrics. The executor's heartbeat also reports whether its command channel is connected. It carries the outcome of the last platform update, the platform component versions, and the digest of the last bundle it applied. On a VM install it adds whether its Kubernetes access bundle is `ok`, `expiring`, `expired`, or absent.
+- **Command results.** For each lifecycle command the executor runs: progress while it converges, then success or failure with the error text on failure.
+- **Service definitions you submit.** `clicklink clctl instances create` sends your environment ID, cloud and region, the service name, its bucket names and IAM role ARN, and an idempotency key. It also sends two hashes of the default user's password (SHA-256 and double SHA-1).
+- **Support session output.** Results of read-only diagnostics run during a session you enabled, after redaction.
+
+### What never leaves by default {#what-never-leaves}
+
+- **Raw query text, on the scrape path.** `system.query_log` is excluded from the default scrape set because its query columns can carry literal values, and with them PII or secrets. Re-adding it is a per-deployment override you make knowingly. The default session table allowlist does include `system.processes`, which shows the text of live queries; see [support sessions](/products/bring-your-own-cloud/connector/support-sessions) for trimming it.
+- **Your table data and backups.** They stay in buckets in your account. The executor holds no credentials to your buckets and cannot read them.
+- **Credentials.** `init` writes no credentials into configuration files. ClickHouse stores only bcrypt hashes of the connector users' passwords, and secrets stay in Kubernetes Secrets or root-readable files on the host. The default user password of a managed service is generated on your side and shown once; only its hashes are submitted. Nothing in the scrape or sync paths transmits a credential.
+- **Unredacted troubleshooter output.** Everything the troubleshooter returns passes through redaction patterns (built-in plus your own) before it leaves. See [support sessions](/products/bring-your-own-cloud/connector/support-sessions).
+
+## Trust boundaries {#trust-boundaries}
+
+The service-creation and platform-approval workflows require [matching CLI and deployment support](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability); public `v0.16.0` does not ship them.
+
+- **Your environment is the boundary.** ClickHouse Cloud receives only what the connector sends: scrapes, heartbeats and status, command results, and what an active support session returns. It never initiates a connection inward.
+- **The session gateway is yours.** It is reachable only inside your environment (over `kubectl port-forward` on Kubernetes, or locally on a VM) unless you opt into exposing it through an Ingress. ClickHouse Cloud never connects to it.
+- **ClickHouse access is read-only.** The `pcm_scraper` and `pcm_troubleshooter` users hold per-table `SELECT` grants, the scraper's `READ ON REMOTE` (needed for `clusterAllReplicas()`), and one scraper-only `SYSTEM FLUSH LOGS` grant. No `INSERT`, DDL, or user-management grants exist. The executor has no ClickHouse user. The exact listing is in the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model).
+- **The scraper and troubleshooter cannot change your cluster.** Their RBAC is granted through Roles in the connector and service namespaces, with read-only verbs on workload resources and exact-name access to the connector's own Secrets. There is no `exec`, `delete`, or `patch` permission.
+- **The executor changes cluster state in service namespaces as `pcm-executor`.** It creates and deletes namespaces carrying the service prefix (`ns-` by default) and deletes pods to restart them. Inside those namespaces it writes the ClickHouseCluster, Backup, and ScalingOverride objects, the Secrets, ServiceAccounts, and Services a service needs, and the Role and RoleBinding that give the scraper read access. A ValidatingAdmissionPolicy denies any write from that ServiceAccount outside the prefix, except its own token renewal and the `clicklink-instance-registry` ConfigMap in its home namespace. The policy fails closed when it cannot be evaluated. Admission does not run on reads, so its reads of those resource families are not confined by prefix.
+- **The executor changes platform namespaces only as `pcm-platform`, during an update you approved.** `clicklink clctl platform approve` mints that identity's token for 2 hours; it is never renewed. With it the executor may write only Deployments, Services, ConfigMaps, Secrets, Jobs, and PodDisruptionBudgets. Namespaces, CRDs, ServiceAccounts, RBAC, webhook and admission configurations, PriorityClasses, and the StorageClass are applied by your own credentials during approval. See [platform updates](/products/bring-your-own-cloud/connector/platform-updates).
+- **The executor holds no credentials to your buckets or IAM.** `clicklink clctl executor prepare` creates a service's data and backup buckets and its IAM role, and `clicklink clctl executor teardown` removes them; both run with your credentials. The role trusts only that service's pods, so neither the executor nor ClickHouse can assume it. Its only cloud calls go to Amazon ECR and STS. It logs in to the registry when a platform sync or create pulls a chart. During a platform update it checks the images under the read-only pull role. It makes no S3 or IAM calls.
+- **Network policy.** On Kubernetes the chart renders a default-deny NetworkPolicy for each daemon. Egress is allowed only to DNS, the CIDRs you list for your connector endpoint, and the Kubernetes API server CIDRs. The scraper and troubleshooter policies also allow the ClickHouse Services in namespaces the executor manages (selected by the label it stamps on them) or that you list by name. The executor's policy has no ClickHouse rule. If a platform bundle's charts live in Amazon ECR, add the ECR and STS ranges (or your registry mirror) to `allowEgressCIDRs`. Without them the sync cannot pull the charts under an enforcing CNI. Enforcement depends on your cluster running an enforcing CNI; without one the policy is inert. See [configuration](/products/bring-your-own-cloud/connector/configuration).
+- **Host hardening on VMs.** The units run as a non-login system user with `ProtectSystem=strict`, `NoNewPrivileges`, read-only configuration paths, and FIPS mode enabled.
+
+For the connector's exact grants and RBAC rules, see the [privilege model](/products/bring-your-own-cloud/connector/reference/privilege-model) reference. If ClickHouse provisions and operates the cluster itself, the trust model differs; see the [BYOC architecture](/products/bring-your-own-cloud/overview/architecture) and [BYOC privilege](/products/bring-your-own-cloud/reference/privilege) pages.

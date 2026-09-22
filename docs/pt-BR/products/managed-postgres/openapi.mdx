@@ -1,9 +1,9 @@
 ---
 slug: /cloud/managed-postgres/openapi
 sidebarTitle: 'OpenAPI'
-title: 'Managed Postgres OpenAPI'
-description: 'Controle seus serviços do Managed Postgres com nossa OpenAPI'
-keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'linha de comando', 'query insights', 'consultas lentas']
+title: 'ClickHouse Managed Postgres OpenAPI'
+description: 'Controle seus serviços do ClickHouse Managed Postgres com nossa OpenAPI'
+keywords: ['managed postgres', 'openapi', 'api', 'curl', 'tutorial', 'linha de comando', 'query insights', 'consultas lentas', 'logs do servidor', 'logs']
 doc_type: 'guide'
 ---
 
@@ -11,11 +11,11 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.openapi-beta" />
 
-Use a [OpenAPI do ClickHouse](/pt-BR/products/cloud/features/admin-features/api/index) para
-controlar programaticamente seus serviços de Managed Postgres da mesma forma que os serviços do ClickHouse. A
+Use a [OpenAPI do ClickHouse](/pt-BR/products/cloud/features/admin-features/api/api-overview) para
+controlar programaticamente seus serviços do ClickHouse Managed Postgres da mesma forma que os serviços do ClickHouse. A
 mesma API também expõe um [endpoint do Prometheus] para coleta de métricas do serviço.
 Já conhece a [OpenAPI]? Obtenha suas [chaves de API] e vá direto para a
-[referência da API do Managed Postgres][pg-openapi]. Caso contrário, acompanhe este
+[referência da API do ClickHouse Managed Postgres][pg-openapi]. Caso contrário, acompanhe este
 guia rápido.
 
 <div id="api-keys">
@@ -83,13 +83,7 @@ como:
   ## CRUD
 </div>
 
-Vamos examinar o ciclo de vida de um serviço Postgres.
-
-<Warning>
-  **Ocultação de credenciais a partir de 31 de julho de 2026**
-
-  A partir de **31 de julho de 2026**, a API não retorna mais as propriedades `password` e `connectionString` em suas respostas. Elas aparecem apenas na resposta de [criação](#create) e na resposta de [redefinição de senha] quando a solicitação não inclui senha. Recomendamos que você capture as credenciais da resposta de [criação](#create). Se você gerencia serviços com Terraform, faça upgrade do provider para a versão **v3.21.0 ou posterior** antes de 31 de julho de 2026 (consulte a [referência do Terraform](/pt-BR/products/managed-postgres/terraform)).
-</Warning>
+Vamos analisar o ciclo de vida de um serviço Postgres.
 
 <div id="create">
   ### Criar
@@ -119,7 +113,9 @@ create_data='{
 ```
 
 Agora use esses dados para criar uma nova instância; observe que isso requer o cabeçalho
-Content-Type. Salve a resposta para ter acesso às credenciais retornadas:
+Content-Type. Salve a resposta: ela é a única que inclui as credenciais do serviço
+(a resposta de [password reset] também as retorna quando a solicitação
+não fornece uma senha):
 
 ```bash
 pg_created=$(curl -s --user "$KEY_ID:$KEY_SECRET" -H 'Content-Type: application/json' \
@@ -168,7 +164,8 @@ curl -s --user "$KEY_ID:$KEY_SECRET" \
     | jq
 ```
 
-A saída será semelhante ao JSON retornado na criação (mas sem as propriedades `password` e `connectionString` após 31 de julho de 2026), mas fique de olho
+A saída será semelhante ao JSON retornado na criação, sem as
+credenciais, mas fique de olho
 em `state`; quando ele mudar para `running`, o servidor estará pronto:
 
 ```bash
@@ -200,8 +197,8 @@ Digite `\q` para sair do [psql].
   ### Atualização
 </div>
 
-A [API de patch] oferece suporte à atualização de um subconjunto das propriedades de um serviço Managed Postgres
-Postgres usando [RFC 7396] JSON Merge Patch. As tags podem ser especialmente úteis em implantações complexas;
+A [API de patch] oferece suporte à atualização de um subconjunto das propriedades de um serviço Postgres
+usando [RFC 7396] JSON Merge Patch. As tags podem ser especialmente úteis em implantações complexas;
 basta enviá-las sozinhas na solicitação:
 
 ```bash
@@ -229,9 +226,7 @@ Os dados retornados devem incluir as novas tags:
       "value": "production"
     }
   ],
-  "connectionString": "postgres://postgres:vV6cfEr2p_-TzkCDrZOx@my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com:5432/postgres?channel_binding=require",
   "username": "postgres",
-  "password": "vV6cfEr2p_-TzkCDrZOx",
   "hostname": "my-postgres-6d8d2e3e.$PG_ID.c0.us-west-2.aws.pg.clickhouse-dev.com",
   "isPrimary": true,
   "state": "running"
@@ -309,7 +304,7 @@ Em caso de sucesso, a resposta retornará o código de status 200, por exemplo:
 </div>
 
 Dois endpoints compatíveis com o Prometheus expõem métricas de CPU, memória, E/S, conexão
-e transação para serviços do Managed Postgres: um fornece
+e transação para serviços do ClickHouse Managed Postgres: um fornece
 métricas de todos os serviços da organização; o outro, de um único
 serviço. Consulte a página [endpoint do Prometheus] para a configuração e a
 [referência de métricas] para ver a lista completa de métricas.
@@ -446,7 +441,59 @@ de CPU em modo usuário e do sistema, workers paralelos, JIT e WAL — os mesmos
 O exemplo resume ambos os objetos por brevidade; a API retorna o conjunto completo
 de contadores documentado em [contadores por execução].
 
-[OpenAPI do ClickHouse]: /products/cloud/features/admin-features/api/index "API do Cloud"
+<div id="server-logs">
+  ## Logs do servidor
+</div>
+
+Os logs do servidor PostgreSQL exibidos no visualizador de logs do console do Cloud também estão
+disponíveis programaticamente. A [API de logs] retorna entradas de log individuais de um
+serviço em uma janela de tempo. Assim como no Query Insights, a janela é obrigatória; portanto,
+passe `from_date` e `to_date` como timestamps RFC 3339. O intervalo não pode exceder
+30 dias, e `to_date` deve ser posterior a `from_date`:
+
+```bash
+FROM=2026-05-25T00:00:00Z
+TO=2026-05-26T00:00:00Z
+
+curl -s --user "$KEY_ID:$KEY_SECRET" \
+    "https://api.clickhouse.cloud/v1/organizations/$ORG_ID/postgres/$PG_ID/logs?from_date=$FROM&to_date=$TO" \
+    | jq
+```
+
+As entradas são retornadas da mais recente para a mais antiga; inverta a ordem com `sort_order` (`asc` ou
+`desc`). Filtre por uma única severidade com `severity` (por exemplo, `ERROR`,
+`WARNING` ou `LOG`), encontre uma substring do corpo do log que diferencia maiúsculas de minúsculas com
+`body_contains` e pagine os resultados com `limit` e `offset`.
+
+Cada entrada contém `timestamp`, `severity` e `body` bruto. O corpo é
+sempre uma string: linhas de log estruturadas são retornadas codificadas em JSON, e linhas simples são retornadas
+literalmente:
+
+```json
+{
+  "result": [
+    {
+      "timestamp": "2026-05-25T16:42:09.512844Z",
+      "severity": "ERROR",
+      "body": "{\"message\":\"deadlock detected\",\"detail\":\"Process 42 waits for ShareLock\"}"
+    },
+    {
+      "timestamp": "2026-05-25T16:41:58.004120Z",
+      "severity": "LOG",
+      "body": "connection received: host=10.0.0.7 port=54210 user=orders_service database=sales"
+    }
+  ],
+  "limit": 50,
+  "offset": 0,
+  "requestId": "b0d5c3a1-9f2e-4a7c-8b1d-3e6f0a2c4d55",
+  "status": 200
+}
+```
+
+O endpoint é paginado com `limit` e `offset`, em vez de retornar uma contagem
+total; avance o `offset` até que uma página retorne menos entradas que o `limit`.
+
+[OpenAPI do ClickHouse]: /products/cloud/features/admin-features/api/api-overview "API do Cloud"
 
 [OpenAPI]: https://www.openapis.org "Iniciativa OpenAPI"
 
@@ -472,9 +519,9 @@ de contadores documentado em [contadores por execução].
 
 [redefinição de senha]: /products/cloud/api-reference/postgres/postgres-service-set-password "Redefinir a senha de superusuário de um serviço Postgres"
 
-[endpoint do Prometheus]: /products/managed-postgres/monitoring/prometheus "Endpoint do Prometheus do Managed Postgres"
+[endpoint do Prometheus]: /products/managed-postgres/monitoring/prometheus "Endpoint do Prometheus do ClickHouse Managed Postgres"
 
-[referência de métricas]: /products/managed-postgres/monitoring/metrics "Referência de métricas do Managed Postgres"
+[referência de métricas]: /products/managed-postgres/monitoring/metrics "Referência de métricas do ClickHouse Managed Postgres"
 
 [Query Insights]: /products/managed-postgres/monitoring/query-insights "Query Insights do Postgres"
 
@@ -485,3 +532,5 @@ de contadores documentado em [contadores por execução].
 [slow patterns API]: /products/cloud/api-reference/postgres/slow-query-patterns-get-list "Listar padrões de consultas lentas do Postgres"
 
 [API de padrão de consulta lenta]: /products/cloud/api-reference/postgres/slow-query-pattern-get "Obter um padrão de consulta lenta do Postgres com execuções recentes"
+
+[API de logs]: /products/cloud/api-reference/postgres/postgres-logs-get-list "Listar logs do servidor Postgres"

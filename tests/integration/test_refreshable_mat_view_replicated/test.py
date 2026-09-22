@@ -34,7 +34,7 @@ node2 = cluster.add_instance(
 nodes = [node, node2]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
@@ -457,6 +457,16 @@ def fn3_setup_tables():
         "CREATE TABLE tgt1 ON CLUSTER default (a DateTime) ENGINE = ReplicatedMergeTree ORDER BY tuple()"
     )
 
+    yield
+
+    # A leaked test_rmv keeps retrying every 2 seconds, and each failed attempt creates and drops
+    # a temp table, so later tests cannot enqueue their own DDL (Code 529). Stop the refresher on
+    # both replicas before the DROP, which is itself replicated DDL. SYSTEM STOP VIEW is a local
+    # no-op when the view does not exist, so it needs no guard.
+    for n in nodes:
+        n.query("SYSTEM STOP VIEW test_rmv")
+    node.query("DROP TABLE IF EXISTS test_rmv ON CLUSTER default SYNC")
+
 
 def test_query_fail(fn3_setup_tables):
     if node.is_built_with_sanitizer():
@@ -520,6 +530,45 @@ def test_query_retry(fn3_setup_tables):
 
 
 def _drop_circular_objects():
+    # Quiesce the refresh cycle before touching the schema. While the cycle runs, every
+    # non-APPEND refresh of current_batch_v enqueues replicated-DDL entries into the
+    # Replicated database's log (create + exchange + drop of the swap table), and under CI
+    # load a replica can fall more than max_replication_lag_to_enqueue entries behind, after
+    # which any DDL on it fails with "Cannot enqueue query on this replica, because it has
+    # replication lag of N queries" (NOT_A_LEADER).
+    #
+    # The stop must survive a lagging replica catching up. SYSTEM STOP VIEW only installs a
+    # local action lock on a replica where the view is already attached, so a replica that has
+    # not replayed the CREATE yet would attach the view during the SYNC below and start
+    # refreshing unpaused. SYSTEM STOP REPLICATED VIEW instead writes a persistent "paused"
+    # znode into the view's Keeper coordination state, which every replica checks before
+    # scheduling a refresh - including a replica that only attaches the view afterwards. All
+    # three views are coordinated (Replicated database, no all_replicas setting), so issuing
+    # it from any one replica that has the view attached pauses the whole cycle. The views may
+    # not exist yet (the first call precedes creation) or may not be attached on a given
+    # replica yet, hence the fallback to the other replica. Only that absence error is
+    # tolerated - SYSTEM STOP REPLICATED VIEW on a replica whose RefreshSet has no such view
+    # throws BAD_ARGUMENTS "Refreshable view ... doesn't exist" (there is no table lookup
+    # before the RefreshSet lookup, so no UNKNOWN_TABLE). Any other failure to pause a live
+    # view would leak the running cycle into the rest of the module, so it is re-raised
+    # instead of letting cleanup continue and mask the root cause behind later DDL failures.
+    for v in ("current_batch_v", "batch_log_v", "stats_v"):
+        unexpected_error = None
+        for n in nodes:
+            try:
+                n.query(f"SYSTEM STOP REPLICATED VIEW {v}")
+                unexpected_error = None
+                break
+            except helpers.client.QueryRuntimeException as e:
+                # 36 = BAD_ARGUMENTS, thrown by InterpreterSystemQuery::getRefreshTasks
+                if e.returncode == 36 and "doesn't exist" in str(e):
+                    continue
+                unexpected_error = e
+        if unexpected_error is not None:
+            raise unexpected_error
+    for n in nodes:
+        n.query("SYSTEM SYNC DATABASE REPLICA default")
+
     node.query("DROP TABLE IF EXISTS current_batch_v ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS batch_log_v ON CLUSTER default SYNC")
     node.query("DROP TABLE IF EXISTS stats_v ON CLUSTER default SYNC")
@@ -593,47 +642,52 @@ def test_circular_dependencies_survive_restart(module_setup_tables):
         "SELECT cityHash64(v) % 8 AS h, count() AS n FROM current_batch GROUP BY h"
     )
 
-    # Kick the cycle once. Subsequent waves must run without further intervention. Each wave
-    # advances the frontier max(max_t) by exactly 5 (every refresh reads 5 fresh numbers), so 3
-    # self-sustained waves means the frontier reaches at least 15.
-    node.query("SYSTEM REFRESH VIEW current_batch_v")
+    # From here on the cycle is live and keeps enqueueing replicated-DDL entries on every wave,
+    # so the cleanup must run even when an assertion fails — a leaked cycle starves the DDL
+    # queue and makes every later test in the module fail with "Cannot enqueue query on this
+    # replica" (NOT_A_LEADER).
+    try:
+        # Kick the cycle once. Subsequent waves must run without further intervention. Each wave
+        # advances the frontier max(max_t) by exactly 5 (every refresh reads 5 fresh numbers), so 3
+        # self-sustained waves means the frontier reaches at least 15.
+        node.query("SYSTEM REFRESH VIEW current_batch_v")
 
-    pre_max = _wait_batch_log_max_t(15)
-    assert pre_max >= 15
+        pre_max = _wait_batch_log_max_t(15)
+        assert pre_max >= 15
 
-    # Full cluster restart. With Replicated DB, dependency state is persisted in Keeper, so the
-    # cycle should resume on its own and push the frontier further without another manual kick.
-    for n in nodes:
-        n.restart_clickhouse()
+        # Full cluster restart. With Replicated DB, dependency state is persisted in Keeper, so the
+        # cycle should resume on its own and push the frontier further without another manual kick.
+        for n in nodes:
+            n.restart_clickhouse()
 
-    post_max = _wait_batch_log_max_t(pre_max + 15)
-    assert post_max >= pre_max + 15
+        post_max = _wait_batch_log_max_t(pre_max + 15)
+        assert post_max >= pre_max + 15
 
-    # Sanity-check the wave invariants. The cycle can occasionally re-run a wave (e.g. an extra
-    # refresh right after restart re-reads current_batch before it advances), and since the loggers
-    # are APPEND views such a re-run produces a duplicate row. So max_t is not required to be
-    # unique. What must hold: max_t never goes backwards, the distinct waves are exactly the gapless
-    # progression 5, 10, 15, ... (no skipped or spurious wave), and every wave has a positive count.
-    #
-    # post_max may have been observed on either replica by _wait_batch_log_max_t, but the invariants
-    # below are read from node1. batch_log is a ReplicatedMergeTree, so node1 may not have fetched
-    # the latest part yet; sync it first so it has caught up to at least post_max. Otherwise the
-    # distinct[-1] >= post_max check could spuriously fail under replication lag.
-    node.query("SYSTEM SYNC REPLICA batch_log")
-    rows = node.query(
-        "SELECT max_t, n FROM batch_log ORDER BY max_t FORMAT TabSeparated"
-    ).strip().split("\n")
-    parsed = [tuple(int(x) for x in row.split("\t")) for row in rows]
-    max_ts = [mt for mt, _ in parsed]
-    assert max_ts == sorted(max_ts), f"max_t went backwards: {parsed}"
-    distinct = sorted(set(max_ts))
-    assert distinct == list(
-        range(5, distinct[-1] + 1, 5)
-    ), f"distinct waves are not the gapless 5, 10, 15, ... progression: {parsed}"
-    assert distinct[-1] >= post_max, f"frontier regressed below {post_max}: {parsed}"
-    assert all(n > 0 for _, n in parsed), f"some waves had n<=0: {parsed}"
-
-    _drop_circular_objects()
+        # Sanity-check the wave invariants. The cycle can occasionally re-run a wave (e.g. an extra
+        # refresh right after restart re-reads current_batch before it advances), and since the loggers
+        # are APPEND views such a re-run produces a duplicate row. So max_t is not required to be
+        # unique. What must hold: max_t never goes backwards, the distinct waves are exactly the gapless
+        # progression 5, 10, 15, ... (no skipped or spurious wave), and every wave has a positive count.
+        #
+        # post_max may have been observed on either replica by _wait_batch_log_max_t, but the invariants
+        # below are read from node1. batch_log is a ReplicatedMergeTree, so node1 may not have fetched
+        # the latest part yet; sync it first so it has caught up to at least post_max. Otherwise the
+        # distinct[-1] >= post_max check could spuriously fail under replication lag.
+        node.query("SYSTEM SYNC REPLICA batch_log")
+        rows = node.query(
+            "SELECT max_t, n FROM batch_log ORDER BY max_t FORMAT TabSeparated"
+        ).strip().split("\n")
+        parsed = [tuple(int(x) for x in row.split("\t")) for row in rows]
+        max_ts = [mt for mt, _ in parsed]
+        assert max_ts == sorted(max_ts), f"max_t went backwards: {parsed}"
+        distinct = sorted(set(max_ts))
+        assert distinct == list(
+            range(5, distinct[-1] + 1, 5)
+        ), f"distinct waves are not the gapless 5, 10, 15, ... progression: {parsed}"
+        assert distinct[-1] >= post_max, f"frontier regressed below {post_max}: {parsed}"
+        assert all(n > 0 for _, n in parsed), f"some waves had n<=0: {parsed}"
+    finally:
+        _drop_circular_objects()
 
 
 def _drop_sync_objects():

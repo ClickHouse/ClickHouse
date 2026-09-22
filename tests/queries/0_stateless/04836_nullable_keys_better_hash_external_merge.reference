@@ -1,0 +1,8 @@
+nullable_key64
+5000	1	12497497	0	4999
+nullable_keys128
+22000	11	2000	21988923	100000
+nullable_keys256
+22000	11	2000	21988923	100000
+the spilled result matches the in-memory one
+1	1	1

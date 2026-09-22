@@ -38,8 +38,6 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
-    extern const SettingsBool s3_disable_checksum;
-    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
 }
@@ -132,7 +130,7 @@ private:
         const ContextPtr & context)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        HTTPHeaderEntries headers;
+        NormalizedHTTPHeaderEntries headers;
         String session_token = settings.auth_settings[S3AuthSetting::session_token];
         String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
@@ -164,7 +162,6 @@ private:
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
-        const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
         /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
@@ -219,7 +216,6 @@ private:
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
-        client_configuration.maxConnections = static_cast<unsigned>(global_settings[Setting::s3_max_connections]);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -259,7 +255,6 @@ private:
 
         S3::ClientSettings client_settings{
             .use_virtual_addressing = s3_uri.is_virtual_hosted_style,
-            .disable_checksum = local_settings[Setting::s3_disable_checksum],
             .gcs_issue_compose_request = context->getConfigRef().getBool("s3.gcs_issue_compose_request", false),
             .is_s3express_bucket = S3::isS3ExpressEndpoint(s3_uri.endpoint),
         };
@@ -682,6 +677,22 @@ std::unique_ptr<WriteBuffer> BackupWriterS3::writeFile(const String & file_name)
         std::nullopt,
         threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
         write_settings);
+}
+
+std::unique_ptr<WriteBuffer> BackupWriterS3::writeFileIfNotExists(const String & file_name)
+{
+    WriteSettings conditional_write_settings = write_settings;
+    conditional_write_settings.object_storage_write_if_none_match = "*";
+    return std::make_unique<WriteBufferFromS3>(
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        DBMS_DEFAULT_BUFFER_SIZE,
+        s3_settings.request_settings,
+        blob_storage_log,
+        std::nullopt,
+        threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER),
+        conditional_write_settings);
 }
 
 void BackupWriterS3::removeFile(const String & file_name)

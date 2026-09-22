@@ -6,6 +6,7 @@
 #include <Interpreters/ClientInfo.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnsDescription.h>
+#include <Common/FlatStringMap.h>
 #include <Common/ProfileEvents.h>
 #include <Common/TransactionID.h>
 
@@ -13,6 +14,7 @@
 #include <memory>
 #include <optional>
 #include <set>
+#include <type_traits>
 #include <unordered_set>
 
 namespace ProfileEvents
@@ -96,6 +98,11 @@ struct QueryLogElement
 
     ClientInfo client_info;
 
+    /// Name of the SQL-defined HTTP handler (CREATE HANDLER) that invoked the query, if any.
+    String http_handler_name;
+    /// The HTTP request URL (path and query string) that invoked the query, if any.
+    String http_request_url;
+
     String log_comment;
 
     std::vector<UInt64> thread_ids;
@@ -105,7 +112,8 @@ struct QueryLogElement
     /// element owns all its memory - see SystemLogBase::add.
     std::optional<ProfileEvents::Counters::Snapshot> profile_counters;
     std::map<String, UInt64> async_read_counters;
-    std::map<String, String> query_settings;
+    /// Unset when the settings were not dumped, which is not the same as a query that changed none.
+    std::optional<FlatStringMap> query_settings;
 
     bool is_internal{};
 
@@ -121,4 +129,7 @@ struct QueryLogElement
 
     static void appendClientInfo(const ClientInfo & client_info, MutableColumns & columns, size_t & i);
 };
+
+/// Keep the moves implicit: the trait must reflect the members, not a declaration.
+static_assert(std::is_nothrow_move_constructible_v<QueryLogElement>);
 }

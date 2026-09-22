@@ -28,7 +28,24 @@ Para saber mais sobre compressão de mensagens no Kafka, recomendamos começar p
   ## Semântica de entrega
 </div>
 
-O ClickPipes do Kafka oferece semântica de entrega `at-least-once` (uma das abordagens mais usadas). Gostaríamos muito de receber seu feedback sobre a semântica de entrega no [formulário de contato](https://clickhouse.com/company/contact?loc=clickpipes). Se você precisar de semântica `exactly-once`, recomendamos usar nosso sink oficial [`clickhouse-kafka-connect`](https://clickhouse.com/blog/real-time-event-streaming-with-kafka-connect-confluent-cloud-clickhouse).
+O ClickPipes para Kafka garante entrega pelo menos uma vez por padrão, acompanhando o progresso da ingestão por meio dos offsets do grupo de consumidores do Kafka. Ele também oferece suporte opcional à semântica de exatamente uma vez, em que cada registro do Kafka é inserido no ClickHouse exatamente uma vez, mesmo em caso de reinicializações de pods, rebalanceamentos de consumidores e falhas de inserção.
+
+Para garantir a entrega exatamente uma vez, o ClickPipes registra o progresso de cada partição em seu armazenamento de estado interno usando dois valores:
+
+* **Marca d&#39;água** — o offset até o qual a inserção de todos os registros da partição no ClickHouse está confirmada. Ao reiniciar, o ClickPipes descarta qualquer registro nesse marco ou abaixo dele, para que dados já inseridos nunca sejam enviados novamente.
+* **Intervalos pendentes** — os intervalos de offsets dos blocos de inserção enviados ao ClickHouse, mas ainda não confirmados. Após uma falha, o ClickPipes reproduz exatamente esses intervalos.
+
+Cada bloco de inserção abrange um intervalo contíguo de offsets e inclui um [token de desduplicação](/pt-BR/concepts/features/operations/insert/deduplicating-inserts-on-retries) determinístico no formato `topic:partition:firstOffset-lastOffset`. Na reprodução, o ClickPipes recria o mesmo intervalo de offsets e, portanto, o mesmo token, fazendo com que o ClickHouse rejeite a duplicata. Como o token depende apenas do intervalo de offsets, uma reprodução é desduplicada mesmo quando o bloco recriado não é idêntico byte a byte.
+
+<Note>
+  **Janela de desduplicação**
+
+  A desduplicação por token é limitada pela [`replicated_deduplication_window`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) da tabela de destino (os 10.000 blocos de inserção mais recentes por padrão) e por [`replicated_deduplication_window_seconds`](/pt-BR/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) (uma hora por padrão). Pipes de alta vazão podem consumir rapidamente a janela de contagem de blocos, portanto, recomendamos verificar e, se necessário, aumentar ambas as configurações na tabela de destino para cobrir o maior atraso de reprodução possível. Dados reproduzidos após o token sair da janela podem ser inseridos novamente; nesse caso, a garantia de exatamente uma vez não se aplica.
+</Note>
+
+A principal contrapartida é o tamanho das partes. Blocos de inserção maiores produzem menos [partes](/pt-BR/concepts/core-concepts/parts), porém maiores, no ClickHouse, o que mantém baixa a sobrecarga de merge. O ClickPipes mantém as linhas de uma partição na memória enquanto cria um bloco; portanto, o tamanho de parte que pode alcançar depende da memória disponível para o pipe — quando a memória é limitada, ele cria blocos menores e a tabela acumula mais partes. Fornecer mais memória ao pipe permite criar blocos maiores, produzindo menos partes.
+
+Um pipe funciona melhor quando o número de partições é próximo ao número de &quot;workers&quot; internos de inserção, pois cada worker processa aproximadamente uma partição e tem capacidade de memória adicional para criar blocos grandes. Tanto a quantidade de workers quanto a memória disponível aumentam com o tamanho e o número de réplicas, que você configura em **Configurações** -&gt; **Configurações avançadas** -&gt; **Escalonamento**.
 
 <div id="authentication">
   ## Autenticação

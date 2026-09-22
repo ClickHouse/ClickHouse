@@ -1,6 +1,7 @@
 -- A numeric `accurateCast` / `accurateCastOrNull` to `Date32` must reject the values that the type
--- cannot represent, instead of silently saturating them to `1900-01-01` or `2299-12-31` the way the
--- ordinary `toDate32` does. The representable window is [-getDayNumOffsetEpoch(), MAX_DATE32_TIMESTAMP],
+-- cannot represent, instead of silently saturating them to `0000-01-01` or `9999-12-31` the way the
+-- ordinary `toDate32` does. The representable window is
+-- [DATE_LUT_MIN_EXTEND_DAY_NUM, MAX_DATE32_TIMESTAMP] = [-719528, 253402300799],
 -- because a number is read either as an extended day number or as a unix timestamp.
 
 -- A numeric source that is read as a unix timestamp is interpreted in the session time zone,
@@ -13,6 +14,7 @@ SELECT accurateCastOrNull(toUInt64(9223372036854775808), 'Date32');
 SELECT accurateCastOrNull(toUInt128(18446744073709551615), 'Date32');
 SELECT accurateCastOrNull(toUInt256(18446744073709551615), 'Date32');
 SELECT accurateCastOrNull(materialize(toUInt64(18446744073709551615)), 'Date32');
+SELECT accurateCastOrNull(toUInt64(253402300800), 'Date32');
 SELECT accurateCast(toUInt64(18446744073709551615), 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- Oversized and non-finite floating-point values.
@@ -26,21 +28,27 @@ SELECT accurateCast(1e30, 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 -- Non-integral floating-point values are not representable and are rejected too.
 SELECT accurateCastOrNull(toFloat64(1704067200.5), 'Date32');
 SELECT accurateCastOrNull(materialize(toFloat64(1704067200.5)), 'Date32');
+SELECT accurateCastOrNull(-25567.5, 'Date32');
 SELECT accurateCast(toFloat64(1704067200.5), 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- Values below the first representable day number.
-SELECT accurateCastOrNull(toInt32(-25568), 'Date32');
-SELECT accurateCastOrNull(toInt64(-10413792000), 'Date32');
-SELECT accurateCastOrNull(toInt128(-10413792000), 'Date32');
-SELECT accurateCastOrNull(toInt256(-10413792000), 'Date32');
-SELECT accurateCastOrNull(-25567.5, 'Date32');
-SELECT accurateCast(toInt32(-25568), 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrNull(toInt32(-719529), 'Date32');
+SELECT accurateCastOrNull(toInt64(-62167219201), 'Date32');
+SELECT accurateCastOrNull(toInt128(-62167219201), 'Date32');
+SELECT accurateCastOrNull(toInt256(-62167219201), 'Date32');
+SELECT accurateCast(toInt32(-719529), 'Date32'); -- { serverError CANNOT_CONVERT_TYPE }
 
 -- The boundary values themselves and the ordinary values are preserved.
-SELECT accurateCast(toInt32(-25567), 'Date32'), accurateCastOrNull(toInt32(-25567), 'Date32');
-SELECT accurateCast(toInt64(10413791999), 'Date32'), accurateCastOrNull(toInt64(10413791999), 'Date32');
+SELECT accurateCast(toInt32(-719528), 'Date32'), accurateCastOrNull(toInt32(-719528), 'Date32');
+SELECT accurateCast(toInt64(253402300799), 'Date32'), accurateCastOrNull(toInt64(253402300799), 'Date32');
 SELECT accurateCast(toUInt32(0), 'Date32'), accurateCastOrNull(toInt32(19723), 'Date32');
 SELECT accurateCast(materialize(toInt64(1704067200)), 'Date32'), accurateCastOrNull(materialize(toFloat64(1704067200)), 'Date32');
 
+-- The values that were outside the old `[1900-01-01, 2299-12-31]` range are now ordinary values.
+SELECT accurateCast(toInt32(-25568), 'Date32'), accurateCastOrNull(toInt32(-100000), 'Date32'), accurateCastOrNull(toInt64(10413792000), 'Date32');
+-- A negative number is only ever read as an extended day number, so a negative unix timestamp is below the
+-- lower bound of the window and is rejected, exactly as it was before the range was extended.
+SELECT accurateCastOrNull(toInt64(-10413792000), 'Date32');
+
 -- The ordinary conversion still saturates, and it is unaffected by the accurate-cast check.
-SELECT toDate32(toUInt64(18446744073709551615), 'UTC'), toDate32(toInt32(-25568)), toDate32(toInt64(10413792000), 'UTC');
+SELECT toDate32(toUInt64(18446744073709551615), 'UTC'), toDate32(toInt32(-719529)), toDate32(toInt64(253402300800), 'UTC');

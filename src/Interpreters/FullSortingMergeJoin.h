@@ -86,6 +86,11 @@ public:
         if (!isMergeAlgorithmStrictnessAndKindSupported(table_join->kind(), table_join->strictness()))
             return false;
 
+        /// `MergeJoinAlgorithm` never evaluates a mixed (cross-side non-equi) `ON` condition, so
+        /// accepting one here would silently drop it.
+        if (table_join->getMixedJoinExpression())
+            return false;
+
         bool support_storage = !table_join->isSpecialStorage();
 
         const auto & on_expr = table_join->getOnlyClause();
@@ -112,11 +117,14 @@ public:
             DataTypePtr left_type = left_block.getByName(onexpr.key_names_left[i]).type;
             DataTypePtr right_type = right_sample_block->getByName(onexpr.key_names_right[i]).type;
 
-            bool type_equals
-                = table_join->hasUsing() ? left_type->equals(*right_type) : removeNullable(left_type)->equals(*removeNullable(right_type));
+            /// `FullMergeJoinCursor` strips `LowCardinality` and moves a `Nullable` into a separate null map, so keys differing
+            /// only in those wrappers compare correctly; any other difference should have been converted by an earlier pipeline
+            /// step. `USING` instead inserts right key values into the left key column, which needs the exact type.
+            bool type_equals = table_join->hasUsing()
+                ? left_type->equals(*right_type)
+                : removeNullable(recursiveRemoveLowCardinality(left_type))
+                      ->equals(*removeNullable(recursiveRemoveLowCardinality(right_type)));
 
-            /// Even slightly different types should be converted on previous pipeline steps.
-            /// If we still have some differences, we can't join, because the algorithm expects strict type equality.
             if (!type_equals)
             {
                 throw DB::Exception(
@@ -151,6 +159,11 @@ public:
     }
 
     bool alwaysReturnsEmptySet() const override { return false; }
+
+    StepAnalysisReport getAnalysisReport() const override
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "FullSortingMergeJoin::getAnalysisReport should not be called");
+    }
 
     IBlocksStreamPtr
     getNonJoinedBlocks(const Block & /* left_sample_block */, const Block & /* result_sample_block */, UInt64 /* max_block_size */) const override

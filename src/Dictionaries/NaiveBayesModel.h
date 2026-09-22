@@ -10,10 +10,10 @@
 #include <vector>
 #include <base/defines.h>
 #include <base/sort.h>
+#include <base/PackedStringRef.h>
 #include <Common/Arena.h>
 #include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
-#include <Common/HashTable/StringHashMap.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
 #include <Common/UTF8Helpers.h>
@@ -316,7 +316,7 @@ struct TokenPolicy
 };
 
 /// Maps an n-gram to its dense index.
-using NGramIndexMap = StringHashMap<UInt32>;
+using NGramIndexMap = HashMap<PackedStringRef, UInt32>;
 
 using ClassCountMap = HashMap<UInt32, UInt64, HashCRC32<UInt32>>; // class id -> total n-gram count
 using ClassIndexMap = HashMap<UInt32, UInt32, HashCRC32<UInt32>>; // class id -> dense class index
@@ -433,8 +433,7 @@ inline String parsePaddingToken(const String & raw_value, TokenizerMode mode, st
     {
         const UInt32 code_point = parse_number(0x10FFFF);
 
-        /// Surrogates are not Unicode scalar values and have no UTF-8 encoding.
-        if (code_point >= 0xD800 && code_point <= 0xDFFF)
+        if (UTF8::isSurrogateCodePoint(code_point))
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "NaiveBayes: {} for 'codepoint' mode must not be a UTF-16 surrogate (0xD800-0xDFFF), got '{}'",
@@ -475,7 +474,7 @@ public:
     /// arena) when it is not yet in the vocabulary.
     UInt32 getOrAssignNgramIndex(std::string_view ngram)
     {
-        ArenaKeyHolder key_holder{ngram, key_arena};
+        ArenaPackedStringHolder key_holder{PackedStringRef::build(ngram.data(), ngram.size(), PackedStringRefHash{}), key_arena};
         NGramIndexMap::LookupResult it = nullptr;
         bool inserted = false;
         ngram_to_index.emplace(key_holder, it, inserted);
@@ -575,7 +574,8 @@ public:
         size_t matched_ngrams = 0;
         auto accumulate = [&](std::string_view ngram)
         {
-            auto it = ngram_to_index.find(ngram);
+            auto key = PackedStringRef::build(ngram.data(), ngram.size(), PackedStringRefHash{});
+            const auto *it = ngram_to_index.find(key);
             if (!it)
                 return;
             ++matched_ngrams;

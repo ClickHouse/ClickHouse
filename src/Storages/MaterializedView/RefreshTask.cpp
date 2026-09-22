@@ -9,6 +9,10 @@
 #include <IO/ReadBufferFromString.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
+
+#include <Core/Streaming/CursorTree.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
@@ -18,7 +22,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Storages/StorageMaterializedView.h>
 #include <base/EnumReflection.h>
@@ -95,9 +99,16 @@ namespace FailPoints
     /// refresh is already in flight cancels the local refresh before giving up coordination,
     /// instead of leaving Keeper thinking the refresh is still running.
     extern const char refresh_mv_force_scheduling_feature_flags_missing[];
+    /// Pauses the refresh thread after the executor is published to execution.executor and
+    /// executor_mutex is released, but before it starts, so a test can cancel a refresh that has a
+    /// live executor to interrupt. This is the refresh (BackgroundSchedulePool) thread, not a
+    /// pipeline worker: no IProcessor::work() frame exists yet, so nothing waits inside work().
+    extern const char refresh_mv_pause_after_executor_published[];
     /// Pauses the refresh thread after the insert pipeline finished but before the target-table
     /// exchange, so a test can deterministically hit the post-insert window where the executor is
     /// already gone and only the interrupt_execution flag can stop the exchange.
+    /// Throws after an incremental refresh appends its snapshot but before the cursor is persisted, to exercise at-least-once replay.
+    extern const char refresh_mv_incremental_fail_after_append[];
     extern const char refresh_mv_pause_before_exchange[];
     /// Pauses the refresh thread AFTER the pre-exchange interrupt re-check has already passed (the
     /// executor_mutex was read and released) but BEFORE the exchange, so a test can deterministically
@@ -158,7 +169,7 @@ RefreshTask::RefreshTask(
     : view(view_)
     , refresh_schedule(strategy)
     , initial_dependencies(std::move(initial_dependencies_))
-    , refresh_append(strategy.append)
+    , refresh_mode(strategy.mode)
     , start_paused(start_paused_)
 {
     createLogger(view->getStorageID());
@@ -294,9 +305,9 @@ OwnedRefreshTask RefreshTask::create(
 
     auto task = std::make_shared<RefreshTask>(view, context, strategy, std::move(deps), attach, coordinated, empty, start_paused, is_restore_from_backup);
 
-    task->scheduling_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshSched",
+    task->scheduling_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshSched",
         [self = task.get()] { self->doScheduling(/*is_shutdown=*/ false); });
-    task->execution_task = context->getSchedulePool().createTask(view->getStorageID(), "RefreshExec",
+    task->execution_task = context->getSchedulePool()->createTask(view->getStorageID(), "RefreshExec",
         [self = task.get()] { self->executeRefresh(); });
 
     task->watch_callback = std::make_shared<Coordination::WatchCallback>([w = task->coordination.watches, task_waker = task->scheduling_task->getWatchCallback()](const Coordination::WatchResponse & response)
@@ -310,14 +321,14 @@ OwnedRefreshTask RefreshTask::create(
 
 bool RefreshTask::canCreateOrDropOtherTables() const
 {
-    return !refresh_append;
+    return !isAppend();
 }
 
 void RefreshTask::startup()
 {
     if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
-    auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
+    auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
 
     std::lock_guard guard(mutex);
@@ -442,7 +453,7 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
         if (set_handle)
         {
             old_id = set_handle.getID();
-            set_handle.rename(new_id, refresh_append ? std::nullopt : std::make_optional(new_inner_table_id));
+            set_handle.rename(new_id, isAppend() ? std::nullopt : std::make_optional(new_inner_table_id));
         }
         if (view)
             context = view->getContext();
@@ -464,8 +475,8 @@ void RefreshTask::checkAlterIsPossible(const DB::ASTRefreshStrategy & new_strate
         s.applyChanges(new_strategy.settings->changes);
     if (s[RefreshSetting::all_replicas] != refresh_settings[RefreshSetting::all_replicas])
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Altering setting 'all_replicas' is not supported.");
-    if (new_strategy.append != refresh_append)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Adding or removing APPEND is not supported.");
+    if (new_strategy.mode != refresh_mode)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Changing APPEND or INCREMENTAL is not supported.");
 }
 
 void RefreshTask::alterRefreshParams(const DB::ASTRefreshStrategy & new_strategy)
@@ -674,14 +685,14 @@ void RefreshTask::wait(const ContextPtr & context)
 
     lock.unlock();
 
-    if (coordination.coordinated && !refresh_append)
+    if (coordination.coordinated && !isAppend())
         waitForLatestTargetTable(context);
 }
 
 void RefreshTask::waitForLatestTargetTable(const ContextPtr & context)
 {
     chassert(coordination.coordinated);
-    chassert(!refresh_append);
+    chassert(!isAppend());
 
     UInt64 backoff_ms = 100;
     const UInt64 max_backoff_ms = 1000;
@@ -1216,6 +1227,7 @@ void RefreshTask::executeRefresh()
     Stopwatch stopwatch;
     int32_t root_znode_version = execution.znode.version;
     String error_message;
+    CursorTreeNodePtr cursor_after_refresh;
     std::optional<UUID> new_table_uuid;
 
     String log_comment = fmt::format("refresh of {}", view->getStorageID().getFullTableName());
@@ -1236,7 +1248,7 @@ void RefreshTask::executeRefresh()
     try
     {
         CurrentMetrics::Increment metric_inc(CurrentMetrics::RefreshingViews);
-        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message);
+        new_table_uuid = executeRefreshUnlocked(root_znode_version, deps, log_comment, error_message, cursor_after_refresh);
     }
     catch (...)
     {
@@ -1260,6 +1272,7 @@ void RefreshTask::executeRefresh()
         znode.last_success_time = start_time_seconds;
         znode.last_success_duration = std::chrono::milliseconds(stopwatch.elapsedMilliseconds());
         znode.last_success_table_uuid = *new_table_uuid;
+        znode.cursor = cursor_after_refresh;
         if (now > znode.last_success_end_time)
             znode.last_success_end_time = now;
         else
@@ -1278,7 +1291,7 @@ void RefreshTask::executeRefresh()
     scheduling_task->schedule();
 }
 
-std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message)
+std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor)
 {
     StorageID view_storage_id = view->getStorageID();
     LOG_DEBUG(getLogger(), "Refreshing view");
@@ -1298,13 +1311,40 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
     std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>("query");
     Stopwatch stopwatch;
 
+    /// Set for a transactional target (e.g. Iceberg) that commits the cursor with its data; the refresh
+    /// then resumes from that cursor and does not also persist it in the Keeper znode.
+    bool cursor_persisted_by_target = false;
+
     try
     {
         refresh_context = view->createRefreshContext(log_comment);
 
+        const bool incremental = isIncremental();
+
+        /// For incremental refresh, resume the source stream from the last persisted cursor and attach a
+        /// holder that the reading source fills with the new cursor (read back after the query succeeds).
+        CursorTreeNodePtr stream_cursor;
+        if (incremental)
+        {
+            /// A transactional target (e.g. Iceberg) commits the cursor with its data and is the source of
+            /// truth on resume; otherwise resume from the cursor in the Keeper coordination znode.
+            stream_cursor = execution.znode.cursor;
+            StoragePtr target_table = view->getTargetTable();
+            if (auto * object_storage = dynamic_cast<StorageObjectStorage *>(target_table.get());
+                object_storage && object_storage->isTransactionalRefreshTarget())
+            {
+                cursor_persisted_by_target = true;
+                stream_cursor = object_storage->loadRefreshCursor(refresh_context);
+            }
+
+            auto cursor = std::make_shared<StreamingCursor>();
+            cursor->tree = std::make_shared<CursorTreeNode>();
+            refresh_context->setStreamingCursor(std::move(cursor));
+        }
+
         syncDependenciesForRefresh(deps, refresh_context);
 
-        if (!refresh_append)
+        if (!isAppend())
         {
             refresh_context->setParentTable(view_storage_id.uuid);
             refresh_context->setDDLQueryCancellation(execution.cancel_ddl_queries.get_token());
@@ -1317,7 +1357,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_for_logging = "(create target table)";
             normalized_query_hash = normalizedQueryHash(query_for_logging, false);
             QueryScope query_scope;
-            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_append, refresh_context, table_to_drop);
+            std::tie(refresh_query, query_scope) = view->prepareRefresh(refresh_mode, refresh_context, table_to_drop, stream_cursor);
             new_table_id = refresh_query->table_id;
 
             /// Add the query to system.processes and allow it to be killed with KILL QUERY.
@@ -1329,6 +1369,20 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                 query_for_logging, normalized_query_hash, refresh_query.get(), refresh_context, Stopwatch{CLOCK_MONOTONIC}.getStart(), internal);
 
             refresh_context->setProcessListElement(process_list_entry->getQueryStatus());
+
+            /// Publish the query status before interpreting the query, not just around the pipeline executor
+            /// below: planning runs nested pipelines for `IN (subquery)` sets, and only the status cancels those.
+            {
+                std::unique_lock exec_lock(execution.executor_mutex);
+                if (execution.interrupt_execution.load())
+                    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
+                execution.executing_query_status = process_list_entry->getQueryStatus();
+            }
+            SCOPE_EXIT({
+                std::unique_lock exec_lock(execution.executor_mutex);
+                execution.executing_query_status = nullptr;
+            });
+
             /// Carry the refresh query's normalized hash so that `NORMALIZED_QUERY_HASH` quotas account
             /// the refresh write (`WRITTEN_BYTES` pre-check and `CountingTransform`) to the refresh
             /// pattern's bucket instead of the shared hash-0 bucket.
@@ -1362,23 +1416,23 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
                     ErrorCodes::LOGICAL_ERROR, "Pipeline for view {} refresh must be completed", view_storage_id.getFullTableName());
 
             {
-                PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-                executor.setReadProgressCallback(pipeline.getReadProgressCallback());
+                CompletedPipelineExecutor executor(pipeline);
+                executor.initialize();
 
                 {
                     std::unique_lock exec_lock(execution.executor_mutex);
                     if (execution.interrupt_execution.load())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Refresh for view {} cancelled", view_storage_id.getFullTableName());
                     execution.executor = &executor;
-                    execution.executing_query_status = process_list_entry ? process_list_entry->getQueryStatus() : nullptr;
                 }
                 SCOPE_EXIT({
                     std::unique_lock exec_lock(execution.executor_mutex);
                     execution.executor = nullptr;
-                    execution.executing_query_status = nullptr;
                 });
 
-                executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+                FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_after_executor_published);
+
+                executor.execute();
 
                 /// A cancelled PipelineExecutor may return without exception but with incomplete results.
                 /// In this case make sure to:
@@ -1397,8 +1451,15 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
             query_span = nullptr;
         }
 
+        fiu_do_on(FailPoints::refresh_mv_incremental_fail_after_append,
+        {
+            /// ABORTED (not LOGICAL_ERROR): must fail the refresh gracefully, not trip abort_on_logical_error.
+            if (incremental)
+                throw Exception(ErrorCodes::ABORTED, "Injected failure after incremental append (test)");
+        });
+
         /// Exchange tables.
-        if (!refresh_append)
+        if (!isAppend())
         {
             /// The executor is gone once its block above returns, so interruptExecution() is a no-op
             /// past this point. The exchange is the destructive coordinated step, so re-check the
@@ -1458,6 +1519,12 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
 
     if (table_to_drop.has_value())
         view->dropTempTable(table_to_drop.value(), refresh_context, out_error_message);
+
+    /// Persist the cursor the streaming source advanced to. A transactional target already committed it
+    /// with its data, so the znode cursor stays empty for it.
+    if (!cursor_persisted_by_target)
+        if (auto cursor = refresh_context->getStreamingCursor())
+            out_cursor = cursor->tree;
 
     return new_table_id.uuid;
 }
@@ -1907,7 +1974,7 @@ void RefreshTask::syncForDependentRefresh(const ContextPtr & context)
     if (!coordination.coordinated)
         return;
 
-    if (refresh_append)
+    if (isAppend())
     {
         /// Do a SYNC REPLICA to make sure dependent refresh sees the rows appended by the latest dependency refresh.
 
@@ -2079,6 +2146,15 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
+    String cursor_serialized;
+    if (cursor)
+    {
+        WriteBufferFromOwnString cursor_buf;
+        writeFieldBinary(Field(cursorTreeToMap(cursor)), cursor_buf);
+        cursor_serialized = cursor_buf.str();
+    }
+    out << "cursor: " << escape << cursor_serialized << "\n";
+
     return out.str();
 }
 
@@ -2168,6 +2244,13 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
+    String cursor_serialized;
+    optional_field("cursor", cursor_serialized);
+    if (!cursor_serialized.empty())
+    {
+        ReadBufferFromString cursor_buf(cursor_serialized);
+        cursor = buildCursorTree(readFieldBinary(cursor_buf).safeGet<Map>());
+    }
 
     if (!next_field_name.empty())
     {
