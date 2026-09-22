@@ -920,8 +920,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 /// transformation is beneficial when the occurrence is in WHERE/PREWHERE: only
 /// the relevant subcolumn is read for the filter (letting a
 /// skip index on that subcolumn prune granules), while the full column is still
-/// read for matching rows in SELECT. The reads are independent and semantically
-/// correct.
+/// read for matching rows in SELECT. For legacy String parts where .size is virtual,
+/// the MergeTree read planner co-reads the parent String in PREWHERE to avoid
+/// scanning the regular String stream again after filtering.
 /// The second pass applies this permission at identifier granularity, so another
 /// eligible direct transformer on the same identifier may also be rewritten in
 /// the filter. Keep this set limited to transformers that make that behavior safe.
