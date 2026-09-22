@@ -50,8 +50,8 @@ CompressionMethod chooseCompressionMethod(const std::string & path, const std::s
 
 /** File name suffixes that `chooseCompressionMethod` recognizes for the given compression method
   * hint, e.g. `{"gz", "gzip"}` for `gzip`. An empty hint or `auto` yields the suffixes of every
-  * supported method, `none` yields nothing. An unrecognized hint also yields nothing: it is
-  * `chooseCompressionMethod` that reports it, when the data is actually read.
+  * supported method, `none` yields nothing, and an unrecognized hint throws the same exception as
+  * `chooseCompressionMethod`.
   * Used to build globs that have to match compressed files by name.
   */
 Strings getFileSuffixesForCompressionMethodHint(const std::string & hint);

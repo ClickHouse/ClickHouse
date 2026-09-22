@@ -11,6 +11,7 @@
 #include <Storages/KeyDescription.h>
 #include <Poco/String.h>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -372,19 +373,44 @@ std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefi
     /// The glob is matched against the object key as it is stored, before anything decompresses it
     /// (`GlobIterator` filters the listing, while the compression method is derived much later, in
     /// `ReadBufferIterator`), so a compressed lake of `key=1/data.jsonl.gz` objects is invisible to
-    /// a glob of bare extensions. Spell out the compression suffixes the reader would accept.
-    /// An explicit compression method still needs the bare extensions, because it applies to files
-    /// named without any compression suffix - and that is what `getPathForWrite` produces.
+    /// a glob of bare extensions. The glob has to accept exactly the names the reader would accept,
+    /// which is the rule of `chooseCompressionMethod`:
+    ///  - `auto` (the default): the file name decides, so spell out every suffix it recognizes;
+    ///  - an explicit codec: the file name is ignored, so a `gzip` lake of `data.jsonl.custom` objects
+    ///    is as readable as one of `data.jsonl.gz` objects, and anything after the format extension
+    ///    must match. The bare extension is kept too, because an explicit codec also applies to
+    ///    files named without any suffix - and that is what `getPathForWrite` produces;
+    ///  - `none`: the files carry no compression layer, so a suffix after the format extension is
+    ///    not a compression spelling to accept but foreign data (`.parquet.crc` sidecars and the
+    ///    like), and only the bare extensions match.
     Strings alternatives = extensions;
+    std::string tail;
 
-    for (const auto & compression_suffix : getFileSuffixesForCompressionMethodHint(compression_method))
-        for (const auto & extension : extensions)
-            alternatives.push_back(extension + "." + compression_suffix);
+    std::string compression_hint = compression_method;
+    boost::algorithm::to_lower(compression_hint);
+
+    if (compression_hint.empty() || compression_hint == "auto")
+    {
+        for (const auto & compression_suffix : getFileSuffixesForCompressionMethodHint(compression_method))
+            for (const auto & extension : extensions)
+                alternatives.push_back(extension + "." + compression_suffix);
+    }
+    else if (chooseCompressionMethod(/* path */ "", compression_method) != CompressionMethod::None)
+    {
+        /// A misspelled codec is reported right here, at `CREATE TABLE`, instead of degrading into a
+        /// glob without suffixes: table reads set `throw_on_zero_files_match = false`, so that would
+        /// turn an invalid codec into a silently empty table.
+        ///
+        /// `*` is not allowed inside a `{...}` alternation, so the optional suffix cannot be spelled
+        /// as `{jsonl,jsonl.*}`; `.jsonl*` is the closest glob, and under an explicit codec the
+        /// reader does not look at the name anyway.
+        tail = "*";
+    }
 
     if (alternatives.size() == 1)
-        return prefix + "**." + alternatives.front();
+        return prefix + "**." + alternatives.front() + tail;
 
-    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}";
+    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}" + tail;
 }
 
 std::string HiveStylePartitionStrategy::getPathForWrite(

@@ -109,14 +109,33 @@ PARTITION BY key;
 SELECT 'gzipped jsonl lake:';
 SELECT id, key FROM 05233_gz;
 
--- An explicit compression method names the suffixes of that method only, and it still has to
--- match the files named without any suffix - that is what the table itself writes.
+-- An explicit compression method is authoritative: the reader ignores the file name, so the glob
+-- must accept any suffix after the format extension (a gzipped file does not have to be named
+-- .gz), and it still has to match the files named without any suffix - that is what the table
+-- itself writes.
+INSERT INTO FUNCTION s3('$path/gz_lake/key=9/data.jsonl.custom', 'test', 'testtest', 'JSONEachRow', 'gzip') SELECT 12 AS id;
+
 CREATE TABLE 05233_gz_explicit (id UInt64, key UInt64)
 ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'gzip', partition_strategy = 'hive')
 PARTITION BY key;
 
 SELECT 'gzipped jsonl lake with an explicit compression method:';
-SELECT id, key FROM 05233_gz_explicit;
+SELECT id, key FROM 05233_gz_explicit ORDER BY id;
+
+-- Autodetection goes by the file name, so it cannot know that .custom is gzip and sees the .gz
+-- file only.
+SELECT 'gzipped jsonl lake with autodetection:';
+SELECT id, key FROM 05233_gz ORDER BY id;
+
+-- With compression_method = 'none' the files carry no compression layer: a suffix after the
+-- format extension is foreign data, not an alternative spelling, and only the bare extensions
+-- match.
+CREATE TABLE 05233_gz_none (id UInt64, key UInt64)
+ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'none', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'gzipped jsonl lake with compression_method = none:';
+SELECT count() FROM 05233_gz_none;
 
 -- Files written through the table itself are named <snowflake id>.<lowercased format name>
 -- and must still be read back together with the pre-existing files.
@@ -135,6 +154,7 @@ DROP TABLE 05233_jsonlines_lake;
 DROP TABLE 05233_tsvwithnames_lake;
 DROP TABLE 05233_gz;
 DROP TABLE 05233_gz_explicit;
+DROP TABLE 05233_gz_none;
 "
 
 # A misspelled compression method must be reported, not silently turned into a glob without any
