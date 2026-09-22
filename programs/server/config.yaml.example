@@ -668,8 +668,8 @@ query_log:
     # What table to insert data. If table is not exist, it will be created.
     # When query log structure is changed after system update,
     # then old table will be renamed and new table will be created automatically.
-    database: system
-    table: query_log
+    # database: system
+    # table: query_log
 
     # PARTITION BY expr: https://clickhouse.com/docs/table_engines/mergetree-family/custom_partitioning_key/
     # Example:
@@ -677,7 +677,7 @@ query_log:
     # toMonday(event_date)
     # toYYYYMM(event_date)
     # toStartOfHour(event_time)
-    partition_by: toYYYYMM(event_date)
+    # partition_by: toYYYYMM(event_date)
 
     # Table TTL specification: https://clickhouse.com/docs/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
     # Example:
@@ -691,39 +691,39 @@ query_log:
     # Example: engine: 'ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024'
 
     # Interval of flushing data.
-    flush_interval_milliseconds: 7500
+    # flush_interval_milliseconds: 7500
 
 # Trace log. Stores stack traces collected by query profilers.
 # See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings.
 trace_log:
-    database: system
-    table: trace_log
-    partition_by: toYYYYMM(event_date)
-    flush_interval_milliseconds: 7500
+    # database: system
+    # table: trace_log
+    # partition_by: toYYYYMM(event_date)
+    # flush_interval_milliseconds: 7500
 
 # Query thread log. Has information about all threads participated in query execution.
 # Used only for queries with setting log_query_threads = 1.
 query_thread_log:
-    database: system
-    table: query_thread_log
-    partition_by: toYYYYMM(event_date)
-    flush_interval_milliseconds: 7500
+    # database: system
+    # table: query_thread_log
+    # partition_by: toYYYYMM(event_date)
+    # flush_interval_milliseconds: 7500
 
 # Query views log. Has information about all dependent views associated with a query.
 # Used only for queries with setting log_query_views = 1.
 query_views_log:
-    database: system
-    table: query_views_log
-    partition_by: toYYYYMM(event_date)
-    flush_interval_milliseconds: 7500
+    # database: system
+    # table: query_views_log
+    # partition_by: toYYYYMM(event_date)
+    # flush_interval_milliseconds: 7500
 
 # Uncomment if use part log.
 # Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads).
 part_log:
-    database: system
-    table: part_log
-    partition_by: toYYYYMM(event_date)
-    flush_interval_milliseconds: 7500
+    # database: system
+    # table: part_log
+    # partition_by: toYYYYMM(event_date)
+    # flush_interval_milliseconds: 7500
 
 # Uncomment to write text log into table.
 # Text log contains all information from usual server log but stores it in structured and efficient way.
@@ -736,34 +736,34 @@ part_log:
 
 # Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval.
 metric_log:
-    database: system
-    table: metric_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
+    # database: system
+    # table: metric_log
+    # flush_interval_milliseconds: 7500
+    # collect_interval_milliseconds: 1000
 
 # Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval.
 error_log:
-    database: system
-    table: error_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
+    # database: system
+    # table: error_log
+    # flush_interval_milliseconds: 7500
+    # collect_interval_milliseconds: 1000
 
 # Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk.
 query_metric_log:
-    database: system
-    table: query_metric_log
-    flush_interval_milliseconds: 7500
-    collect_interval_milliseconds: 1000
+    # database: system
+    # table: query_metric_log
+    # flush_interval_milliseconds: 7500
+    # collect_interval_milliseconds: 1000
 
 # Asynchronous metric log contains values of metrics from
 # system.asynchronous_metrics.
 asynchronous_metric_log:
-    database: system
-    table: asynchronous_metric_log
+    # database: system
+    # table: asynchronous_metric_log
 
     # Asynchronous metrics are updated once a minute, so there is
     # no need to flush more often.
-    flush_interval_milliseconds: 60000
+    # flush_interval_milliseconds: 60000
 
 # OpenTelemetry log contains OpenTelemetry trace spans.
 opentelemetry_span_log:
@@ -776,19 +776,34 @@ opentelemetry_span_log:
     # between several spans inserted in parallel). This gives the spans a
     # global order that we can use to e.g. retry insertion into some external
     # system.
-    partition_by: toYYYYMM(finish_date)
-    order_by: finish_date, finish_time_us
-    database: system
-    table: opentelemetry_span_log
-    flush_interval_milliseconds: 7500
+    # partition_by: toYYYYMM(finish_date)
+    # order_by: finish_date, finish_time_us
+    # database: system
+    # table: opentelemetry_span_log
+    # flush_interval_milliseconds: 7500
 
 # Crash log. Stores stack traces for fatal errors.
 # This table is normally empty.
 crash_log:
-    database: system
-    table: crash_log
-    partition_by: ''
-    flush_interval_milliseconds: 1000
+    # database: system
+    # table: crash_log
+    # partition_by: ''
+    # flush_interval_milliseconds: 1000
+
+# Global settings for system tables
+# system_tables:
+#     ttl: ''
+#     partition_by: ''
+#     order_by: ''
+#     storage_policy: ''
+#     settings: ''
+#
+#     flush_interval_milliseconds: ''
+#     max_size_rows: ''
+#     reserved_size_rows: ''
+#     buffer_size_rows_flush_threshold: ''
+#     flush_on_crash: ''
+#     skip_alias_columns: ''
 
 # top_level_domains_path: /var/lib/clickhouse/top_level_domains/
 # Custom TLD lists.

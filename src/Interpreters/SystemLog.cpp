@@ -243,7 +243,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
             log_settings.engine += " PARTITION BY (" + partition_by + ")";
 
         /// TTL expr is not necessary.
-        String ttl = getSystemTableOption<std::string>("ttl", config, config_prefix).value_or("");
+        String ttl = getSystemTableOption<std::string>("ttl", config, config_prefix).value_or(TSystemLog::getDefaultTTL());
         if (!ttl.empty())
             log_settings.engine += " TTL " + ttl;
 

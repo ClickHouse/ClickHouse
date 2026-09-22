@@ -67,6 +67,8 @@ public:
         return !prefix_to_ignore.empty() && path.starts_with(prefix_to_ignore);
     }
 
+    static const char * getDefaultTTL() { return "event_date + INTERVAL 30 DAY"; }
+
 protected:
     void prepareTable() override;
     void addSettingsForQuery(ContextMutablePtr & mutable_context, IAST::QueryKind query_kind) const override;

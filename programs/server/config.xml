@@ -1211,8 +1211,8 @@
              When query log structure is changed after system update,
               then old table will be renamed and new table will be created automatically.
         -->
-        <database>system</database>
-        <table>query_log</table>
+        <!-- <database>system</database> -->
+        <!-- <table>query_log</table> -->
         <!--
             PARTITION BY expr: https://clickhouse.com/docs/en/table_engines/mergetree-family/custom_partitioning_key/
             Example:
@@ -1221,7 +1221,7 @@
                 toYYYYMM(event_date)
                 toStartOfHour(event_time)
         -->
-        <partition_by>toYYYYMM(event_date)</partition_by>
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
         <!--
             Table TTL specification: https://clickhouse.com/docs/en/engines/table-engines/mergetree-family/mergetree/#mergetree-table-ttl
             Example:
@@ -1247,19 +1247,19 @@
           -->
 
         <!-- Interval of flushing data. -->
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
         <!-- Maximum size in lines for the logs. When non-flushed logs amount reaches max_size, logs dumped to the disk. -->
-        <max_size_rows>1048576</max_size_rows>
+        <!-- <max_size_rows>1048576</max_size_rows> -->
         <!-- Pre-allocated size in lines for the logs. -->
-        <reserved_size_rows>8192</reserved_size_rows>
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
         <!-- Lines amount threshold, reaching it launches flushing logs to the disk in background. -->
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <flush_on_crash>false</flush_on_crash> -->
 
         <!-- Create `system.user_query_log`, which shows every user their own query log records
              without requiring access to the query log table. -->
-        <enable_user_query_log>true</enable_user_query_log>
+        <!-- <enable_user_query_log>true</enable_user_query_log> -->
 
         <!-- example of using a different storage policy for a system table -->
         <!-- storage_policy>local_ssd</storage_policy -->
@@ -1268,51 +1268,51 @@
     <!-- Trace log. Stores stack traces collected by query profilers.
          See query_profiler_real_time_period_ns and query_profiler_cpu_time_period_ns settings. -->
     <trace_log>
-        <database>system</database>
-        <table>trace_log</table>
+        <!-- <database>system</database> -->
+        <!-- <table>trace_log</table> -->
 
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
         <!-- Indication whether logs should be dumped to the disk in case of a crash -->
-        <flush_on_crash>false</flush_on_crash>
-        <symbolize>true</symbolize>
+        <!-- <flush_on_crash>false</flush_on_crash> -->
+        <!-- <symbolize>true</symbolize> -->
     </trace_log>
 
     <!-- Query thread log. Has information about all threads participated in query execution.
          Used only for queries with setting log_query_threads = 1. -->
     <query_thread_log>
-        <database>system</database>
-        <table>query_thread_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>query_thread_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </query_thread_log>
 
     <!-- Query views log. Has information about all dependent views associated with a query.
          Used only for queries with setting log_query_views = 1. -->
     <query_views_log>
-        <database>system</database>
-        <table>query_views_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- <database>system</database> -->
+        <!-- <table>query_views_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
     </query_views_log>
 
     <!-- Part log contains information about all actions with parts in MergeTree tables (creation, deletion, merges, downloads). -->
     <part_log>
-        <database>system</database>
-        <table>part_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>part_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </part_log>
 
     <!-- Contains information about all background tasks that are executed via various background pools.
@@ -1323,80 +1323,80 @@
          - background_distributed_schedule_pool_size
     -->
     <background_schedule_pool_log>
-        <database>system</database>
-        <table>background_schedule_pool_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>background_schedule_pool_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
         <!-- Only tasks longer then duration_threshold_milliseconds will be logged. Zero means log everything -->
         <!-- Default value is 30ms (averge tasks execution time) -->
-        <duration_threshold_milliseconds>30</duration_threshold_milliseconds>
+        <!-- <duration_threshold_milliseconds>30</duration_threshold_milliseconds> -->
     </background_schedule_pool_log>
 
     <!-- Text log contains all information from usual server log but stores it in structured and efficient way.
          The level of the messages that goes to the table can be limited (<level>), if not specified all messages will go to the table.
     -->
     <text_log>
-        <database>system</database>
-        <table>text_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
-        <level>trace</level>
+        <!-- <database>system</database> -->
+        <!-- <table>text_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
+        <!-- <level>trace</level> -->
     </text_log>
 
     <!-- Metric log contains rows with current values of ProfileEvents, CurrentMetrics collected with "collect_interval_milliseconds" interval. -->
     <metric_log>
-        <database>system</database>
-        <table>metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>metric_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <collect_interval_milliseconds>1000</collect_interval_milliseconds> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </metric_log>
 
     <!-- Error log contains rows with current values of errors collected with "collect_interval_milliseconds" interval. -->
     <error_log>
-        <database>system</database>
-        <table>error_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>error_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <collect_interval_milliseconds>1000</collect_interval_milliseconds> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </error_log>
 
     <!-- Instrumentation trace log contains rows with profile information of functions produced using XRay that we can export to Chrome trace format. -->
     <instrumentation_trace_log>
-        <database>system</database>
-        <table>instrumentation_trace_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>instrumentation_trace_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <collect_interval_milliseconds>1000</collect_interval_milliseconds> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </instrumentation_trace_log>
 
     <!-- Query metric log contains history of memory and metric values from table system.events for individual queries, periodically flushed to disk
     every "collect_interval_milliseconds" interval-->
     <query_metric_log>
-        <database>system</database>
-        <table>query_metric_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>query_metric_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <collect_interval_milliseconds>1000</collect_interval_milliseconds> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </query_metric_log>
 
     <!--
@@ -1404,33 +1404,33 @@
         system.asynchronous_metrics.
     -->
     <asynchronous_metric_log>
-        <database>system</database>
-        <table>asynchronous_metric_log</table>
-        <flush_interval_milliseconds>7000</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>asynchronous_metric_log</table> -->
+        <!-- <flush_interval_milliseconds>7000</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </asynchronous_metric_log>
 
     <iceberg_metadata_log>
-        <database>system</database>
-        <table>iceberg_metadata_log</table>
-        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>iceberg_metadata_log</table> -->
+        <!-- <flush_interval_milliseconds>2000</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </iceberg_metadata_log>
 
     <delta_lake_metadata_log>
-        <database>system</database>
-        <table>delta_lake_metadata_log</table>
-        <flush_interval_milliseconds>2000</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>delta_lake_metadata_log</table> -->
+        <!-- <flush_interval_milliseconds>2000</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </delta_lake_metadata_log>
     <!--
         OpenTelemetry log contains OpenTelemetry trace spans.
@@ -1448,30 +1448,29 @@
             global order that we can use to e.g. retry insertion into some external
             system.
         -->
-        <partition_by>toYYYYMM(finish_date)</partition_by>
-        <order_by>finish_date, finish_time_us</order_by>
-        <database>system</database>
-        <table>opentelemetry_span_log</table>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
+        <!-- <partition_by>toYYYYMM(finish_date)</partition_by> -->
+        <!-- <order_by>finish_date, finish_time_us</order_by> -->
+        <!-- <database>system</database> -->
+        <!-- <table>opentelemetry_span_log</table> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
     </opentelemetry_span_log>
 
 
     <!-- Crash log. Stores stack traces for fatal errors.
          This table is normally empty. -->
     <crash_log>
-        <database>system</database>
-        <table>crash_log</table>
-
-        <partition_by />
-        <flush_interval_milliseconds>1000</flush_interval_milliseconds>
-        <max_size_rows>1024</max_size_rows>
-        <reserved_size_rows>1024</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
-        <flush_on_crash>true</flush_on_crash>
+        <!-- <database>system</database> -->
+        <!-- <table>crash_log</table> -->
+        <!---->
+        <!-- <flush_interval_milliseconds>1000</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1024</max_size_rows> -->
+        <!-- <reserved_size_rows>1024</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>true</flush_on_crash> -->
     </crash_log>
 
     <!-- Session log. Stores user log in (successful or not) and log out events. -->
@@ -1489,70 +1488,70 @@
 
     <!-- Profiling on Processors level. -->
     <processors_profile_log>
-        <database>system</database>
-        <table>processors_profile_log</table>
-
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
-        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <!-- <database>system</database> -->
+        <!-- <table>processors_profile_log</table> -->
+        <!---->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
+        <!-- <ttl>event_date + INTERVAL 30 DAY DELETE</ttl> -->
     </processors_profile_log>
 
     <!-- Log of asynchronous inserts. It allows to check status
          of insert query in fire-and-forget mode.
     -->
     <asynchronous_insert_log>
-        <database>system</database>
-        <table>asynchronous_insert_log</table>
-
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <max_size_rows>1048576</max_size_rows>
-        <reserved_size_rows>8192</reserved_size_rows>
-        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
-        <flush_on_crash>false</flush_on_crash>
-        <partition_by>event_date</partition_by>
-        <ttl>event_date + INTERVAL 3 DAY</ttl>
+        <!-- <database>system</database> -->
+        <!-- <table>asynchronous_insert_log</table> -->
+        <!---->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <max_size_rows>1048576</max_size_rows> -->
+        <!-- <reserved_size_rows>8192</reserved_size_rows> -->
+        <!-- <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold> -->
+        <!-- <flush_on_crash>false</flush_on_crash> -->
+        <!-- <partition_by>event_date</partition_by> -->
+        <!-- <ttl>event_date + INTERVAL 3 DAY</ttl> -->
     </asynchronous_insert_log>
 
     <!-- Backup/restore log.
     -->
     <backup_log>
-        <database>system</database>
-        <table>backup_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- <database>system</database> -->
+        <!-- <table>backup_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
     </backup_log>
 
     <!-- Storage S3Queue log.
     -->
     <s3queue_log>
-        <database>system</database>
-        <table>s3queue_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <!-- <database>system</database> -->
+        <!-- <table>s3queue_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
     </s3queue_log>
 
     <!-- Blob storage object operations log.
     -->
     <blob_storage_log>
-        <database>system</database>
-        <table>blob_storage_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
-        <ttl>event_date + INTERVAL 30 DAY</ttl>
+        <!-- <database>system</database> -->
+        <!-- <table>blob_storage_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <flush_interval_milliseconds>7500</flush_interval_milliseconds> -->
+        <!-- <ttl>event_date + INTERVAL 30 DAY</ttl> -->
     </blob_storage_log>
 
     <!-- Aggregated ZooKeeper log.
     -->
     <aggregated_zookeeper_log>
-        <database>system</database>
-        <table>aggregated_zookeeper_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <collect_interval_milliseconds>1000</collect_interval_milliseconds>
-        <ttl>event_date + INTERVAL 30 DAY</ttl>
+        <!-- <database>system</database> -->
+        <!-- <table>aggregated_zookeeper_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <collect_interval_milliseconds>1000</collect_interval_milliseconds> -->
+        <!-- <ttl>event_date + INTERVAL 30 DAY</ttl> -->
     </aggregated_zookeeper_log>
 
     <!--
@@ -1568,10 +1567,10 @@
     <!-- ZooKeeper connection log.
     -->
     <zookeeper_connection_log>
-        <database>system</database>
-        <table>zookeeper_connection_log</table>
-        <partition_by>toYYYYMM(event_date)</partition_by>
-        <ttl>event_date + INTERVAL 30 DAY</ttl>
+        <!-- <database>system</database> -->
+        <!-- <table>zookeeper_connection_log</table> -->
+        <!-- <partition_by>toYYYYMM(event_date)</partition_by> -->
+        <!-- <ttl>event_date + INTERVAL 30 DAY</ttl> -->
     </zookeeper_connection_log>
 
     <!-- Global settings for system tables -->
