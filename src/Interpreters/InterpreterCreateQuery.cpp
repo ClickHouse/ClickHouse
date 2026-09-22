@@ -2073,8 +2073,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
             context_copy->setSetting("enable_global_with_statement", Field{true});
             definition_context = context_copy;
         }
+        ApplyWithSubqueryVisitor::visit(*create.select, definition_context);
         AddDefaultDatabaseVisitor visitor(getContext(), current_database);
-        visitor.setKeptCTEReferences(ApplyWithSubqueryVisitor::visit(*create.select, definition_context));
         visitor.visit(*create.select);
     }
 

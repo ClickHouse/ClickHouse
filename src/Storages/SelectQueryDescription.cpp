@@ -260,7 +260,7 @@ SelectQueryDescription SelectQueryDescription::getSelectQueryFromASTForMatView(c
 
     /// Qualify the stored first SELECT as before, keeping references to MATERIALIZED CTEs unqualified.
     AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase());
-    visitor.setKeptCTEReferences(ApplyWithSubqueryVisitor::visit(query));
+    ApplyWithSubqueryVisitor::visit(query);
     visitor.visit(new_inner_query);
 
     /// Extracting first found table ID, looking through CTE references

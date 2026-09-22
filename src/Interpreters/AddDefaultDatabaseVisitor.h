@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/typeid_cast.h>
+#include <Core/SettingsFields.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
@@ -8,6 +9,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRefreshStrategy.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -17,7 +19,6 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/DumpASTNode.h>
 #include <Parsers/ASTAlterQuery.h>
-#include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/IdentifierSemantic.h>
 #include <Interpreters/Context.h>
@@ -121,17 +122,15 @@ public:
             substituteDatabaseInTableFunctions(*child);
     }
 
-    /// Identifiers `ApplyWithSubqueryVisitor::visit` left as references to `MATERIALIZED` CTEs.
-    void setKeptCTEReferences(ApplyWithSubqueryVisitor::KeptCTEReferences references) { kept_cte_references = std::move(references); }
-
 private:
 
     ContextPtr context;
 
     const String database_name;
     std::set<String> external_tables;
-    ApplyWithSubqueryVisitor::KeptCTEReferences kept_cte_references;
     mutable std::unordered_set<String> with_aliases;
+    /// Names of the `MATERIALIZED` CTEs visible in the select being visited.
+    mutable std::unordered_set<String> materialized_cte_names;
     mutable std::unordered_set<String> expression_aliases;
 
     bool only_replace_current_database_function = false;
@@ -150,6 +149,19 @@ private:
 
     void visit(ASTSelectQuery & select, ASTPtr &) const
     {
+        /// `MATERIALIZED` CTEs stay references in a stored query: a bare identifier with such a name is not a table.
+        /// Nested selects inherit the names, unless their own `SETTINGS` clause turns global `WITH` off.
+        auto enclosing_cte_names = materialized_cte_names;
+        if (turnsGlobalWithOff(select))
+            materialized_cte_names.clear();
+        const auto base_cte_names = materialized_cte_names;
+
+        std::unordered_set<String> own_cte_names;
+        if (auto with = select.with())
+            for (const auto & child : with->children)
+                if (const auto * element = child->as<ASTWithElement>(); element && element->is_materialized)
+                    own_cte_names.insert(element->name);
+
         if (select.recursive_with)
             for (const auto & child : select.with()->children)
             {
@@ -167,12 +179,46 @@ private:
         for (const auto & child : select.children)
             collectAliases(child);
 
+        /// After `with_aliases` and aliases are filled; inside its own body a name keeps its meaning in the enclosing select.
+        if (auto with = select.with())
+            for (auto & child : with->children)
+            {
+                const auto * element = child->as<ASTWithElement>();
+                materialized_cte_names = base_cte_names;
+                for (const auto & name : own_cte_names)
+                    if (!element || name != element->name)
+                        materialized_cte_names.insert(name);
+                visit(child);
+            }
+        materialized_cte_names = base_cte_names;
+        materialized_cte_names.insert(own_cte_names.begin(), own_cte_names.end());
+
         if (select.tables())
             tryVisit<ASTTablesInSelectQuery>(select.refTables());
 
-        visitChildren(select);
+        /// The `WITH` elements were visited above.
+        const auto with = select.with();
+        for (auto & child : select.children)
+            if (child != with)
+                visit(child);
 
         expression_aliases = std::move(enclosing_query_aliases);
+        materialized_cte_names = std::move(enclosing_cte_names);
+    }
+
+    /// Whether the select's own `SETTINGS` clause sets `enable_global_with_statement` to false.
+    static bool turnsGlobalWithOff(const ASTSelectQuery & select)
+    {
+        const auto settings = select.settings();
+        if (!settings)
+            return false;
+        const auto * set_query = settings->as<ASTSetQuery>();
+        if (!set_query)
+            return false;
+        for (const auto & change : set_query->changes)
+            if (change.name == "enable_global_with_statement" && !SettingFieldBool(change.value).value)
+                return true;
+        return false;
     }
 
     /// Collect aliases of expressions in the subtree, skipping nested select queries:
@@ -299,8 +345,8 @@ private:
         /// Already has database.
         if (identifier.compound())
             return;
-        /// A reference to a MATERIALIZED CTE kept in a stored view definition.
-        if (kept_cte_references.contains(&identifier))
+        /// A reference to a `MATERIALIZED` CTE visible here.
+        if (materialized_cte_names.contains(identifier.name()))
             return;
         /// A parameterized name is only known when the view is called, and it has no
         /// resolvable name to qualify here.
@@ -369,7 +415,7 @@ private:
                             if (!identifier->as<ASTTableIdentifier>() && expression_aliases.contains(identifier->name()))
                                 continue;
 
-                            if (kept_cte_references.contains(identifier))
+                            if (identifier->isShort() && materialized_cte_names.contains(identifier->name()))
                                 continue;
 
                             /// If identifier is broken then we can do nothing and get an exception

@@ -200,17 +200,15 @@ BlockIO InterpreterUpdateQuery::execute()
     /// were a table. The context makes CTE expansion respect `enable_global_with_statement`: a CTE
     /// name a subquery does not see is a table name there, and has to be qualified.
     /// A reference to a `MATERIALIZED` CTE stays an identifier and must not be qualified below.
-    ApplyWithSubqueryVisitor::KeptCTEReferences predicate_kept_references;
-    ApplyWithSubqueryVisitor::KeptCTEReferences assignments_kept_references;
     if (update_query.predicate)
     {
         ASTPtr predicate = update_query.predicate->ptr();
-        predicate_kept_references = ApplyWithSubqueryVisitor::visit(predicate, getContext());
+        ApplyWithSubqueryVisitor::visit(predicate, getContext());
     }
     if (update_query.assignments)
     {
         ASTPtr assignments = update_query.assignments->ptr();
-        assignments_kept_references = ApplyWithSubqueryVisitor::visit(assignments, getContext());
+        ApplyWithSubqueryVisitor::visit(assignments, getContext());
     }
 
     /// Add default database to table identifiers that we can encounter in the update expression.
@@ -219,14 +217,12 @@ BlockIO InterpreterUpdateQuery::execute()
     if (update_query.predicate)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-        visitor.setKeptCTEReferences(std::move(predicate_kept_references));
         ASTPtr predicate = update_query.predicate->ptr();
         visitor.visit(predicate);
     }
     if (update_query.assignments)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-        visitor.setKeptCTEReferences(std::move(assignments_kept_references));
         ASTPtr assignments = update_query.assignments->ptr();
         visitor.visit(assignments);
     }

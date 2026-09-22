@@ -546,7 +546,6 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     }
 #endif
 
-    ApplyWithSubqueryVisitor::KeptCTEReferences kept_cte_references;
     if (modify_query)
     {
         // Expand plain CTEs before filling the default database; MATERIALIZED ones stay as references for the analyzer.
@@ -555,12 +554,11 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         // the altering user's settings constraints (a clamped clause would store a different name for the same text).
         auto definition_context = Context::createCopy(getContext()->getGlobalContext());
         definition_context->setSetting("enable_global_with_statement", Field{true});
-        kept_cte_references = ApplyWithSubqueryVisitor::visit(*modify_query, definition_context);
+        ApplyWithSubqueryVisitor::visit(*modify_query, definition_context);
     }
 
     /// Add default database to table identifiers that we can encounter in e.g. default expressions, mutation expression, etc.
     AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
-    visitor.setKeptCTEReferences(std::move(kept_cte_references));
     ASTPtr command_list_ptr = alter.command_list->ptr();
     visitor.visit(command_list_ptr);
 
