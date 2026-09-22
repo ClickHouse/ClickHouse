@@ -134,6 +134,29 @@ bool overridesResourceLimits(const std::string & sql_original)
     return false;
 }
 
+/// Table functions that reach an external system (object storage, another server, an external database) or
+/// read a local path. The harness has no such systems configured, so these either fail after a network
+/// timeout, make real outbound requests to whatever host the fuzzer invented, or (for the data-lake
+/// functions built on the Rust `delta_kernel`/`iceberg` FFI) panic inside Rust, which ASan reports as a
+/// stack-buffer-underflow in `memset`/`_Unwind_Resume` (a false positive of ASan over the Rust unwinder,
+/// see the HINT in the report). None of that exercises the SQL layer, so skip such statements.
+bool usesExternalTableFunction(const std::string & sql_original)
+{
+    std::string sql = sql_original;
+    for (char & c : sql)
+        c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    static const char * table_functions[] = {
+        "deltalake", "iceberg", "hudi", "s3(", "s3cluster", "gcs(", "cosn(", "oss(",
+        "azureblobstorage", "hdfs", "url(", "urlcluster", "remote(", "remotesecure", "cluster(",
+        "mysql(", "postgresql(", "mongodb(", "redis(", "sqlite(", "jdbc(", "odbc(", "file(",
+        "kafka(", "nats(", "rabbitmq(", "s3queue", "azurequeue", "hdfscluster", "prometheus(",
+    };
+    for (const char * fn : table_functions)
+        if (sql.find(fn) != std::string::npos)
+            return true;
+    return false;
+}
+
 Verdict classify(const DB::IAST & ast)
 {
     using namespace DB;
@@ -822,7 +845,7 @@ DEFINE_BINARY_PROTO_FUZZER(const json_ast_fuzzer::Node & original_root)
 
     auto & stats = DB::JSONASTFuzzer::pipelineStats();
     const Verdict verdict = classify(*ast);
-    if (verdict == Verdict::SKIP || overridesResourceLimits(input.sql))
+    if (verdict == Verdict::SKIP || overridesResourceLimits(input.sql) || usesExternalTableFunction(input.sql))
     {
         ++stats.execution_skipped;
         return;
