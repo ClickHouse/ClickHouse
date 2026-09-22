@@ -254,10 +254,8 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3NoEndpoint)
 }
 
 /// A REST catalog (e.g. Apache Polaris) can vend an `s3.endpoint` that is a bare host such as
-/// `http://minio:9000`. The metadata file path must still be made relative to the table
-/// location and must not be polluted by the endpoint. Before the fix this returned the full
-/// `s3://bucket123/...` URI because the endpoint-rebuilt location no longer shared its prefix
-/// with the metadata file URI.
+/// `http://minio:9000`. The catalog reports it independently of the metadata file URI, so the
+/// result must stay relative to the table location and carry no trace of the endpoint.
 TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointBareHost)
 {
     TableMetadata metadata;
@@ -273,9 +271,9 @@ TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointBa
 }
 
 /// The vended `s3.endpoint` may also already include the bucket, e.g.
-/// `http://minio:9000/bucket123`. This is the shape the previous fix attempt could not handle:
-/// stripping the endpoint left `music/albums` while the metadata URI still carried the leading
-/// `bucket123/`, so the prefix comparison failed.
+/// `http://minio:9000/bucket123`. The bucket sits inside the endpoint here and after it in the
+/// bare-host shape above, so both are pinned: the result must not depend on where the endpoint
+/// puts the bucket.
 TEST_F(AzureAbfssParsingTest, TableMetadataGetMetadataLocationS3VendedEndpointIncludesBucket)
 {
     TableMetadata metadata;
