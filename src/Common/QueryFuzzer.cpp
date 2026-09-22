@@ -6097,7 +6097,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (!expr)
                 return nullptr;
             auto watermark = std::make_shared<WatermarkSettings>();
-            watermark->column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
+            watermark->time_attribute_column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
             watermark->expression = expr;
             if (fuzz_rand() % 2 == 0)
                 watermark->idle_timeout = std::chrono::milliseconds((fuzz_rand() % 1000 + 1) * 1000);
