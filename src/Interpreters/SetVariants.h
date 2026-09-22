@@ -360,6 +360,11 @@ struct SetVariantsTemplate: public Variant
     size_t estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t num_rows) const
         requires std::is_same_v<Variant, NonClearableSet>;
 
+    /// Estimates the per-row packed-key buffer of the selected hash method, independently of table
+    /// growth. Other methods pack or hash each row on demand and need no such buffer.
+    /// Requires an initialized set and key sizes matching the selected method.
+    size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const;
+
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`
     size_t getTotalByteCount() const;

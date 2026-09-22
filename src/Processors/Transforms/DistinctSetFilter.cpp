@@ -11,6 +11,7 @@
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
 
+#include <algorithm>
 #include <limits>
 #include <unordered_map>
 
@@ -484,7 +485,9 @@ size_t DistinctSetFilter::estimateFilteringMemory(const Chunk & chunk) const
     /// Round up both masks to cover the allocation rounding used when the latter is resized.
     const size_t mask_bytes = roundUpToPowerOfTwoOrZero(
         chunk.getNumRows() * sizeof(IColumn::Filter::value_type) + IColumn::Filter::pad_left + IColumn::Filter::pad_right);
-    return chunk.allocatedBytes() + 2 * mask_bytes;
+    /// Packed keys live through insertion but are released before filtering copies the columns.
+    const size_t prepared_keys_bytes = data->estimatePreparedKeysMemory(chunk.getNumRows(), key_sizes);
+    return std::max(chunk.allocatedBytes(), prepared_keys_bytes) + 2 * mask_bytes;
 }
 
 Chunk DistinctSetFilter::filter(Chunk chunk)

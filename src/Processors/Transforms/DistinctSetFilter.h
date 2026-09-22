@@ -160,7 +160,7 @@ public:
     /// when the bound is not representable.
     size_t estimateGrowthMemory(const Chunk & chunk) const;
 
-    /// Estimates filtering workspace for a copy of the prepared input and the top-level row masks.
+    /// Estimates peak workspace for packed keys, a copy of the prepared input, and top-level row masks.
     /// Excludes retained set growth. Requires columns normalized by `prepareForInsert` and
     /// `skip_null_keys_ = false`. Column-specific temporary allocations can exceed this estimate.
     size_t estimateFilteringMemory(const Chunk & chunk) const;

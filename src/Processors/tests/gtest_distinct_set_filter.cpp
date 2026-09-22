@@ -1055,3 +1055,58 @@ TEST(DistinctSetFilterGrowth, PreparationMaterializesRetainedStringKeys)
         }
     }
 }
+
+TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
+{
+    const auto u8 = std::make_shared<DataTypeUInt8>();
+    const auto u16 = std::make_shared<DataTypeUInt16>();
+    const auto u32 = std::make_shared<DataTypeUInt32>();
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+    const std::vector<DataTypes> key_types{
+        {u8}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64}, {u64, u64, u64},
+        {std::make_shared<DataTypeNullable>(u8), u64},
+        {std::make_shared<DataTypeFixedString>(3), u64},
+        {std::make_shared<DataTypeLowCardinality>(u64), u64},
+        {std::make_shared<DataTypeArray>(u64)}};
+
+    for (const auto & types : key_types)
+    {
+        for (const size_t rows : {0, 1, 256})
+        {
+            Columns columns;
+            ColumnRawPtrs key_columns;
+            for (const auto & type : types)
+            {
+                auto column = type->createColumn();
+                column->insertManyDefaults(rows);
+                key_columns.push_back(column.get());
+                columns.emplace_back(std::move(column));
+            }
+            Sizes key_sizes;
+            SetVariants set;
+            set.init(SetVariants::chooseMethod(key_columns, key_sizes));
+            SCOPED_TRACE(::testing::Message() << "method=" << static_cast<int>(set.type) << ", rows=" << rows);
+
+            auto check = [&]<typename Method>(const Method &)
+            {
+                typename Method::State state(key_columns, key_sizes, {});
+                size_t actual_bytes = 0;
+                if constexpr (requires { state.prepared_keys; })
+                {
+                    /// An empty array uses shared static padding without allocating a batch buffer.
+                    if (!state.prepared_keys.empty())
+                        actual_bytes = state.prepared_keys.allocated_bytes();
+                }
+                EXPECT_EQ(set.estimatePreparedKeysMemory(rows, key_sizes), actual_bytes);
+            };
+            switch (set.type)
+            {
+                case SetVariants::Type::EMPTY:
+                    FAIL() << "Set method was not initialized";
+#define M(NAME) case SetVariants::Type::NAME: check(*set.NAME); break;
+                APPLY_FOR_SET_VARIANTS(M)
+#undef M
+            }
+        }
+    }
+}

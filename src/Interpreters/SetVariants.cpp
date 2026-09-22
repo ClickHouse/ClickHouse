@@ -82,6 +82,30 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
 }
 
 template <typename Variant>
+size_t SetVariantsTemplate<Variant>::estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const
+{
+    chassert(type != Type::EMPTY);
+
+    auto estimate = [num_rows, &key_sizes]<typename Method>(const Method &) -> size_t
+    {
+        if constexpr (requires { Method::State::estimatePreparedKeysMemory(num_rows, key_sizes); })
+            return Method::State::estimatePreparedKeysMemory(num_rows, key_sizes);
+        else
+            return 0;
+    };
+
+    switch (type)
+    {
+        case Type::EMPTY: UNREACHABLE();
+
+    #define M(NAME) case Type::NAME: return estimate(*(NAME));
+        APPLY_FOR_SET_VARIANTS(M)
+    #undef M
+    }
+    UNREACHABLE();
+}
+
+template <typename Variant>
 size_t SetVariantsTemplate<Variant>::getTotalRowCount() const
 {
     switch (type)
