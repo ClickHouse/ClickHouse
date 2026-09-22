@@ -15,7 +15,7 @@ import { Image } from "/snippets/components/Image.jsx";
 A managed cluster runs a small platform layer that the ClickHouse services depend on. ClickHouse Cloud proposes updates to that layer; the executor applies nothing until you approve each one with your own cluster credentials. This page explains what a platform update is, how to approve one on a VM or a Kubernetes install, how long an approval lasts, and what it grants.
 
 <Note>
-Kubernetes platform approval requires support in both the CLI and the executor chart that is not yet in the public release. Before using these workflows, confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team.
+The public `v0.16.0` CLI has no `platform` command, including `platform approve` and `platform reset`. Neither the Linux VM nor the Kubernetes workflow below is available in that release. Kubernetes approval additionally requires CLI and executor-chart support for the Secret-based token bundle (`--secret-namespace`). Confirm [managed-mode availability](/products/bring-your-own-cloud/connector/onboarding#managed-mode-availability) with your account team before using either workflow.
 </Note>
 
 ## What a platform update is {#what-a-platform-update-is}

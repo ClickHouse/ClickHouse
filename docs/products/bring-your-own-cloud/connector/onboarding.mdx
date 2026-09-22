@@ -16,7 +16,7 @@ This page takes you from an enrollment token to a verified connector in managed 
 ## Managed-mode availability {#managed-mode-availability}
 
 <Warning>
-As of 2026-09-22, the public installer serves `v0.16.0`, which does not include `init --managed`. Customer service creation (`instances create --from-prepare`) and Kubernetes platform approval (`platform approve --secret-namespace`) are also not yet available in a public release.
+As of 2026-09-22, the public installer serves `v0.16.0`, which has neither the `init --managed` and `init --no-managed` flags nor the `platform` command. Platform approval on both Linux VM and Kubernetes installs, and customer service creation (`instances create --from-prepare`), are not yet available in a public release. Kubernetes platform approval additionally requires CLI and chart support for `platform approve --secret-namespace`.
 
 Before following the managed-mode workflows, ask your ClickHouse account team to confirm support for your deployment target and provide the matching CLI, connector chart or image, and installation instructions. Customer service creation also requires support on your connector endpoint and in ClickHouse Cloud; a newer CLI alone is not sufficient. The public installation commands below do not currently install a release that supports these workflows.
 </Warning>
