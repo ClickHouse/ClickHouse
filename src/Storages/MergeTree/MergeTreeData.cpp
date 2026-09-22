@@ -6701,11 +6701,7 @@ MergeTreeDataPartFormat MergeTreeData::choosePartFormat(
     };
 
     auto part_type = PartType::Wide;
-    /// The per-key Map streams are data-dependent and lazily opened (per granule); the
-    /// single-file Compact layout requires one compressed block per column per granule
-    /// and fixed marks, so `with_key_columns` tables always write Wide parts.
-    if ((*settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
-        && satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
+    if (satisfies((*settings)[MergeTreeSetting::min_bytes_for_wide_part], (*settings)[MergeTreeSetting::min_rows_for_wide_part], (*settings)[MergeTreeSetting::min_level_for_wide_part]))
         part_type = PartType::Compact;
 
     auto storage_type = PartStorageType::Full;

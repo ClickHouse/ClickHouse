@@ -84,10 +84,9 @@ INSERT INTO t_skip_index VALUES (1, {'a': 1}), (2, {'b': 2}), (3, {'a': 3, 'c': 
 SELECT id FROM t_skip_index WHERE mapContains(m, 'a') ORDER BY id;
 DROP TABLE t_skip_index;
 
--- Compact parts are not supported: the per-key streams of a `with_key_columns` Map are
--- data-dependent and lazily opened (per granule), but the Compact format requires one
--- compressed block per column per granule and fixed marks, so `choosePartFormat` forces
--- Wide parts for such tables.
+-- Compact parts work: the per-key streams of a `with_key_columns` Map are seeded with
+-- the part-level key set before the first mark is recorded, and each key's substreams get
+-- their own compressed block per granule inside `data.bin`.
 DROP TABLE IF EXISTS t_compact;
 CREATE TABLE t_compact (id UInt32, m Map(String, Nullable(UInt64)))
 ENGINE = MergeTree ORDER BY id

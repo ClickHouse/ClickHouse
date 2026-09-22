@@ -2,6 +2,7 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
 #include <IO/ReadPipeline.h>
+#include <IO/SeekableReadBuffer.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
@@ -288,6 +289,20 @@ ReadBuffer * MergeTreeReaderStream::getDataBuffer()
 {
     init();
     return data_buffer;
+}
+
+size_t MergeTreeReaderStream::getCompressedBlockEnd() const
+{
+    if (!compressed_data_buffer)
+        return 0;
+
+    const auto * in = compressed_data_buffer->getCompressedIn();
+    const auto * seekable = dynamic_cast<const SeekableReadBuffer *>(in);
+    if (!seekable)
+        return 0;
+
+    /// The file offset after the compressed block the data buffer decompressed last.
+    return seekable->getFileOffsetOfBufferEnd() - static_cast<size_t>(in->available());
 }
 
 size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)

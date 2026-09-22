@@ -9,6 +9,9 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
 #include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
@@ -57,6 +60,8 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
@@ -176,6 +181,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -413,6 +420,66 @@ static std::vector<String> readMapKeyColumnsKeysFromPart(
     /// DEFAULT-evaluated (or empty) maps, matching the read path for missing columns.
     if (!part.getColumns().contains(map_column.name))
         return {};
+
+    if (part.getType() == MergeTreeDataPartType::Compact)
+    {
+        /// In a compact part the `m.keys` manifest lives inside `data.bin`, not in a
+        /// separate stream file: read the whole column through the compact reader (its
+        /// own prefix reads the manifest) and report its key set.
+        if (!part.index_granularity_info.mark_type.with_substreams)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Part {} is Compact without per-substream marks; cannot locate the Map keys stream",
+                part.name);
+
+        MergeTreeData::DataPartPtr part_ptr = part.storage.getPartIfExists(part.name, {MergeTreeData::DataPartState::Active, MergeTreeData::DataPartState::Outdated, MergeTreeData::DataPartState::Deleting});
+        if (!part_ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in the active set while reading its Map keys", part.name);
+
+        auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part_ptr, std::make_shared<AlterConversions>());
+        const auto metadata_ptr = part.storage.getInMemoryMetadataPtr(part.storage.getContext(), false);
+        auto snapshot = std::make_shared<StorageSnapshot>(part.storage, StorageMetadataPtr(metadata_ptr));
+        NamesAndTypesList columns_to_read{map_column};
+        auto reader = createMergeTreeReaderCompact(
+            read_info,
+            columns_to_read,
+            snapshot,
+            settings,
+            MarkRanges{MarkRange(0, part.getMarksCount())},
+            VirtualFields{},
+            /*uncompressed_cache=*/ nullptr,
+            /*mark_cache=*/ nullptr,
+            /*deserialization_prefixes_cache=*/ nullptr,
+            MergeTreeReaderSettings::createForMergeMutation(ReadSettings{}),
+            ValueSizeMap{},
+            /*profile_callback=*/ {});
+
+        Block block;
+        MutableColumns columns(1);
+        columns[0] = map_column.type->createColumn();
+        size_t read_rows = reader->readRows(0, false, part.rows_count, columns);
+        if (read_rows != part.rows_count)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all rows of Map column {} of part {}", map_column.name, part.name);
+        block.insert(ColumnWithTypeAndName(std::move(columns[0]), map_column.type, map_column.name));
+
+        const auto & map = assert_cast<const ColumnMap &>(*block.getByName(map_column.name).column);
+        const auto & keys_column = assert_cast<const ColumnString &>(map.getNestedData().getColumn(0));
+        const auto & offsets = map.getNestedColumn().getOffsets();
+
+        std::vector<String> keys;
+        std::set<String> seen;
+        for (size_t row = 0; row < map.size(); ++row)
+        {
+            for (size_t i = offsets[ssize_t(row) - 1]; i < offsets[row]; ++i)
+            {
+                String key = String(keys_column.getDataAt(i));
+                if (seen.emplace(key).second)
+                    keys.push_back(std::move(key));
+            }
+        }
+        std::sort(keys.begin(), keys.end());
+        return keys;
+    }
 
     ISerialization::SubstreamPath path;
     path.push_back(ISerialization::Substream::MapKeys);

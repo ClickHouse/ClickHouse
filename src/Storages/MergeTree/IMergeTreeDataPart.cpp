@@ -3174,14 +3174,6 @@ void IMergeTreeDataPart::checkMapKeyColumnsCompatibility() const
     const bool table_uses_key_columns
         = table_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
 
-    if (table_uses_key_columns && part_type == Type::Compact)
-    {
-        throw Exception(
-            ErrorCodes::INCOMPATIBLE_COLUMNS,
-            "Part {} is Compact, but map_serialization_version = 'with_key_columns' requires Wide parts",
-            name);
-    }
-
     for (const auto & column : getColumns())
     {
         if (!typeid_cast<const DataTypeMap *>(column.type.get()))

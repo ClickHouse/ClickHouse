@@ -3,6 +3,7 @@
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <DataTypes/Serializations/ISerialization.h>
 
 namespace DB
@@ -65,6 +66,21 @@ protected:
 
     MergeTreeMarksLoaderPtr marks_loader;
     MergeTreeMarksGetterPtr marks_getter;
+
+    /// The end of the compressed block that the substream at `substream_position` of the
+    /// column at `column_position` starts in: the start of the next recorded substream.
+    /// Returns zero when there is no next substream. Used to bound the whole-part read of
+    /// a `with_key_columns` Map manifest (`m.keys`), whose stream would otherwise drain
+    /// into the per-key streams that follow it in `data.bin`.
+    size_t getNextSubstreamStart(size_t column_position, size_t substream_position, size_t from_mark);
+
+    /// A copy of the uncompressed bytes of one substream of one granule, made when a
+    /// serialization needs to read a substream to its end (the `m.keys` manifest of a
+    /// `with_key_columns` Map) through the shared buffer of the whole part.
+    std::unordered_map<String, String> manifest_substream_data;
+    /// Bounded in-memory views over `manifest_substream_data`, handed to the
+    /// serialization's stream getter so the manifest read stops at its end.
+    std::unordered_map<String, std::unique_ptr<ReadBufferFromMemory>> manifest_buffers;
 
     ReadBufferFromFileBase::ProfileCallback profile_callback;
     clockid_t clock_type;

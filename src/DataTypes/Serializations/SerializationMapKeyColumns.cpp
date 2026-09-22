@@ -448,6 +448,14 @@ void SerializationMapKeyColumns::serializeBinaryBulkStatePrefix(
     auto * keys_stream = settings.getter(settings.path);
     settings.path.pop_back();
 
+    /// The keys list goes first in the `m.keys` stream, before any of the per-key
+    /// stream prefixes: in a compact part the manifest and the prefixes share the
+    /// same compressed stream (same codec), so the manifest must be written while the
+    /// stream is at the position the manifest's mark was recorded at — a prefix written
+    /// in between would land in the manifest's compressed block.
+    if (keys_stream && !map_state->extraction_source)
+        writeMapKeys(*keys_stream, map_state->keys);
+
     auto presence_serialization = createPresenceSerialization();
     for (const auto & key : map_state->keys)
     {
@@ -475,16 +483,8 @@ void SerializationMapKeyColumns::serializeBinaryBulkStatePrefix(
     /// A null stream getter (e.g. a rejection probe that must not write anything)
     /// has no `m.keys` stream; the key extraction above still ran, so invalid keys
     /// are rejected even then.
-    if (!keys_stream)
-    {
-        if (!map_state->keys.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Map keys");
-        return;
-    }
-
-    /// The keys list goes first in the `m.keys` stream: it shares the compressed
-    /// stream with the granule data, which starts right after it.
-    writeMapKeys(*keys_stream, map_state->keys);
+    if (!keys_stream && !map_state->keys.empty())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Missing stream for Map keys");
 }
 
 ColumnPtr SerializationMapKeyColumns::createMapKeysColumn(const std::vector<String> & keys) const
