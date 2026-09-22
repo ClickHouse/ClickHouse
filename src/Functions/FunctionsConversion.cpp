@@ -1,6 +1,7 @@
 #include <Functions/FunctionsConversion.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/NullableUtils.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/IRBuilder.h>
@@ -94,19 +95,6 @@ static void unifyConvertedColumnsNullability(std::initializer_list<VectorWithMem
                 column = makeNullable(column);
 }
 
-/// Row-wise source null map (ColumnUInt8, 1 = source value is NULL), or nullptr when the column
-/// cannot hold NULLs. Dynamic/Variant encode NULLs via NULL_DISCRIMINATOR rather than a separate
-/// null map, so reconstruct it via createNullMap() (the same way FunctionConvert does).
-static ColumnPtr getSourceNullMap(const IColumn & src_col)
-{
-    if (const auto * src_nullable = checkAndGetColumn<ColumnNullable>(&src_col))
-        return src_nullable->getNullMapColumnPtr();
-    if (const auto * src_dynamic = checkAndGetColumn<ColumnDynamic>(&src_col))
-        return src_dynamic->getVariantColumn().createNullMap();
-    if (const auto * src_variant = checkAndGetColumn<ColumnVariant>(&src_col))
-        return src_variant->createNullMap();
-    return nullptr;
-}
 
 ColumnPtr ConvertImplFromDynamicToColumn::execute(
     const ColumnsWithTypeAndName & arguments,

@@ -82,6 +82,17 @@ ColumnPtr mergeNullMaps(ColumnPtr lhs, const ColumnPtr & rhs)
     return result;
 }
 
+ColumnPtr getSourceNullMap(const IColumn & column)
+{
+    if (const auto * column_nullable = checkAndGetColumn<ColumnNullable>(&column))
+        return column_nullable->getNullMapColumnPtr();
+    if (const auto * column_dynamic = checkAndGetColumn<ColumnDynamic>(&column))
+        return column_dynamic->getVariantColumn().createNullMap();
+    if (const auto * column_variant = checkAndGetColumn<ColumnVariant>(&column))
+        return column_variant->createNullMap();
+    return nullptr;
+}
+
 ColumnPtr extractNestedColumnsAndNullMap(ColumnRawPtrs & key_columns, ConstNullMapPtr & null_map)
 {
     ColumnPtr null_map_holder;
