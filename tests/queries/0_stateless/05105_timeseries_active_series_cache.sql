@@ -115,8 +115,9 @@ SELECT 'after reset to defaults (cached series skips tags insert):';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_cache');
 
--- 5. A table that stores min_time / max_time gets no cache, whatever tags_cache_max_series says:
--- skipping its tags inserts would freeze the bounds a query prunes series by.
+-- 5. The point of the split: from version 6 a table which stores min_time / max_time gets the cache
+-- too. The bounds live in their own target and are written on every block, cache hit or not, so
+-- skipping the repeat tags write no longer freezes the bounds a query prunes series by.
 DROP TABLE IF EXISTS ts_bounds;
 CREATE TABLE ts_bounds ENGINE = TimeSeries
 SETTINGS store_min_time_and_max_time = 1, tags_cache_max_series = 1000;
@@ -127,13 +128,13 @@ INSERT INTO ts_bounds (metric_name, tags, samples) VALUES
 INSERT INTO ts_bounds (metric_name, tags, samples) VALUES
     ('http_requests', {'job': 'api', 'instance': 'host1:8080'}, [(toDateTime64(1015, 3), 2.0)]);
 
-SELECT 'bounds stored: both inserts write tags:';
+SELECT 'bounds stored: the cached series skips its second tags insert:';
 SELECT count() FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_bounds');
 SELECT count() FROM timeSeriesSamples({CLICKHOUSE_DATABASE:String}, 'ts_bounds');
 
--- and the bounds advance with the samples, which is what the cache would have broken
+-- and the bounds still advance, because they go to their own target on every block
 SELECT 'max_time advanced to the latest sample:';
-SELECT max(max_time) = toDateTime64(1015, 3) FROM timeSeriesTags({CLICKHOUSE_DATABASE:String}, 'ts_bounds');
+SELECT max(max_time) = toDateTime64(1015, 3) FROM timeSeriesTagsMinMax({CLICKHOUSE_DATABASE:String}, 'ts_bounds');
 
 -- 6. External tags target gets no cache even with store_min_time_and_max_time = 0
 DROP TABLE IF EXISTS ext_tags;

@@ -16,7 +16,9 @@ class TableFunctionTimeSeriesTarget : public ITableFunction
 public:
     static constexpr auto name = (target_kind == ViewTarget::Samples)
         ? "timeSeriesSamples"
-        : ((target_kind == ViewTarget::Tags) ? "timeSeriesTags" : "timeSeriesMetricFamilies");
+        : ((target_kind == ViewTarget::Tags)
+            ? "timeSeriesTags"
+            : ((target_kind == ViewTarget::TagsMinMax) ? "timeSeriesTagsMinMax" : "timeSeriesMetricFamilies"));
 
     String getName() const override { return name; }
 

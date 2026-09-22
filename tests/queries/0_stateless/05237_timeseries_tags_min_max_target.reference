@@ -1,0 +1,31 @@
+-- a new table is split, and its tags target loses the engine that carried the bounds
+6
+0
+ReplacingMergeTree	0
+-- the tags min max target carries them, keyed the same way
+id	Tuple(UInt64, LowCardinality(UUID))
+metric_name	LowCardinality(String)
+min_time	SimpleAggregateFunction(min, Nullable(DateTime64(3)))
+max_time	SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+AggregatingMergeTree	1
+-- an insert fills both targets and the bounds follow the samples
+2
+2
+1970-01-01 00:16:40.000	1970-01-01 00:17:40.000
+1970-01-01 01:23:20.000	1970-01-01 01:23:20.000
+-- a range query still returns exactly the series it must
+2
+0
+3
+-- a series whose bounds row is missing must not vanish from a read
+1
+-- a table pinned to version 5 keeps the old single-table layout
+0
+2
+0
+-- `AS` a version 5 table produces a version 6 split copy
+6
+1
+-- without stored bounds there is no tags min max target at all
+0
+0

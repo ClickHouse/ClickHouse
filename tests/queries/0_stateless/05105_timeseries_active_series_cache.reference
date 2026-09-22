@@ -30,8 +30,8 @@ after alter ttl on live cache (second insert skips tags):
 after reset to defaults (cached series skips tags insert):
 3
 5
-bounds stored: both inserts write tags:
-2
+bounds stored: the cached series skips its second tags insert:
+1
 2
 max_time advanced to the latest sample:
 1
