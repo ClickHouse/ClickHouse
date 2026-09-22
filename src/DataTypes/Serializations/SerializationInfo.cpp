@@ -1,5 +1,8 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
+#include <algorithm>
+#include <array>
+
 #include <Columns/ColumnSparse.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeString.h>
@@ -20,6 +23,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int INCORRECT_DATA;
 }
 
 namespace
@@ -254,7 +258,46 @@ void SerializationInfo::serialializeKindStackBinary(WriteBuffer & out) const
     }
 }
 
-void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
+/// The order in which the kinds wrap each other, innermost first: `ColumnSparse` can sit inside
+/// `ColumnReplicated` but not the other way round (see `removeSpecialRepresentations`), and nothing
+/// wraps a `ColumnBLOB`. Not the order of the enum, whose values are part of the Native format.
+static constexpr std::array canonical_kind_order
+{
+    ISerialization::Kind::DEFAULT,
+    ISerialization::Kind::SPARSE,
+    ISerialization::Kind::REPLICATED,
+    ISerialization::Kind::DETACHED,
+};
+
+void SerializationInfo::checkKindStack(ISerialization::KindSet allowed_kinds) const
+{
+    if (kind_stack.empty() || kind_stack.front() != ISerialization::Kind::DEFAULT)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Serialization kind stack must start with Default");
+
+    /// A stack describes nested wrappers, so it must be a subsequence of the canonical order — and
+    /// therefore free of repeats. Any other stack is a layout no writer builds and nothing unwraps.
+    auto expected = canonical_kind_order.begin();
+
+    for (auto kind : kind_stack)
+    {
+        if (!allowed_kinds.contains(kind))
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Unexpected serialization kind {} in the received data",
+                ISerialization::kindToString(kind));
+
+        expected = std::find(expected, canonical_kind_order.end(), kind);
+        if (expected == canonical_kind_order.end())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Serialization kind {} is out of order in a kind stack",
+                ISerialization::kindToString(kind));
+
+        ++expected;
+    }
+}
+
+void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in, ISerialization::KindSet allowed_kinds)
 {
     UInt8 type = 0;
     readBinary(type, in);
@@ -283,6 +326,12 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
         {
             size_t num_kinds = 0;
             readVarUInt(num_kinds, in);
+            /// Refuse an impossible peer-declared count before reading that many kinds;
+            /// `checkKindStack` rejects the same stacks afterwards by their shape.
+            if (num_kinds > magic_enum::enum_count<ISerialization::Kind>())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Too many serialization kinds in a kind stack: {}", num_kinds);
+
+            kind_stack.clear();
             for (size_t i = 0; i != num_kinds; ++i)
             {
                 UInt8 kind = 0;
@@ -296,6 +345,8 @@ void SerializationInfo::deserializeFromKindsBinary(ReadBuffer & in)
             break;
         }
     }
+
+    checkKindStack(allowed_kinds);
 }
 
 void SerializationInfo::writeJSONFields(WriteBuffer & out, const String * name) const
