@@ -502,16 +502,15 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
         processors->emplace_back(std::move(source));
     }
 
+    output_format = format.get();
+    processors->emplace_back(std::move(format));
+
     connect(*totals, format_totals);
     connect(*extremes, format_extremes);
 
     input = &format_main;
     totals = nullptr;
     extremes = nullptr;
-
-    output_format = format.get();
-
-    processors->emplace_back(std::move(format));
 }
 
 /// Discards `totals`/`extremes` without adding a childless node; see `DroppingTransform`.
@@ -530,22 +529,26 @@ static void dropTotalsAndExtremesViaTransform(
         totals ? totals->getSharedHeader() : nullptr,
         extremes ? extremes->getSharedHeader() : nullptr);
 
-    connect(*output, dropping->getInputs().front());
+    /// Put the processor into the pipeline before connecting it: `emplace_back` allocates and can throw,
+    /// and a processor that is connected but not owned leaves the pipeline with ports into a destroyed object.
+    auto * dropping_ptr = dropping.get();
+    processors.emplace_back(std::move(dropping));
+
+    connect(*output, dropping_ptr->getInputs().front());
 
     if (totals)
     {
-        connect(*totals, *dropping->getTotalsPort());
+        connect(*totals, *dropping_ptr->getTotalsPort());
         totals = nullptr;
     }
 
     if (extremes)
     {
-        connect(*extremes, *dropping->getExtremesPort());
+        connect(*extremes, *dropping_ptr->getExtremesPort());
         extremes = nullptr;
     }
 
-    output = &dropping->getOutputs().front();
-    processors.emplace_back(std::move(dropping));
+    output = &dropping_ptr->getOutputs().front();
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
@@ -557,8 +560,10 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
 
     dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
 
-    connect(*output, sink->getPort());
+    auto * sink_ptr = sink.get();
     processors->emplace_back(std::move(sink));
+
+    connect(*output, sink_ptr->getPort());
     output = nullptr;
 }
 
@@ -575,9 +580,11 @@ void QueryPipeline::complete(Chain chain)
         processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
-    connect(*output, chain.getInputPort());
-    connect(chain.getOutputPort(), sink->getPort());
+    auto * sink_ptr = sink.get();
     processors->emplace_back(std::move(sink));
+
+    connect(*output, chain.getInputPort());
+    connect(chain.getOutputPort(), sink_ptr->getPort());
     output = nullptr;
 }
 
@@ -593,11 +600,13 @@ void QueryPipeline::complete(Pipe pipe)
 
     pipe.resize(1);
     pipe.dropTotalsAndExtremes();
-    connect(*pipe.getOutputPort(0), *input);
-    input = nullptr;
+    auto * pipe_output = pipe.getOutputPort(0);
 
     auto pipe_processors = Pipe::detachProcessors(std::move(pipe));
     processors->insert(processors->end(), pipe_processors.begin(), pipe_processors.end());
+
+    connect(*pipe_output, *input);
+    input = nullptr;
 }
 
 static void addMaterializing(OutputPort *& output, Processors & processors, bool remove_special_column_representations)
@@ -606,9 +615,11 @@ static void addMaterializing(OutputPort *& output, Processors & processors, bool
         return;
 
     auto materializing = std::make_shared<MaterializingTransform>(output->getSharedHeader(), remove_special_column_representations);
-    connect(*output, materializing->getInputPort());
-    output = &materializing->getOutputPort();
+    auto * materializing_ptr = materializing.get();
     processors.emplace_back(std::move(materializing));
+
+    connect(*output, materializing_ptr->getInputPort());
+    output = &materializing_ptr->getOutputPort();
 }
 
 void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
@@ -642,6 +653,10 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
         processors->emplace_back(std::move(source));
     }
 
+    /// Own the format before connecting it, see the comment in `dropTotalsAndExtremesViaTransform`.
+    auto * format_ptr = format.get();
+    processors->emplace_back(std::move(format));
+
     connect(*output, format_main);
     connect(*totals, format_totals);
     connect(*extremes, format_extremes);
@@ -650,18 +665,16 @@ void QueryPipeline::complete(std::shared_ptr<IOutputFormat> format)
     totals = nullptr;
     extremes = nullptr;
 
-    initRowsBeforeLimit(format.get());
+    initRowsBeforeLimit(format_ptr);
     for (const auto & context : resources.interpreter_context)
     {
         if (context->getSettingsRef()[Setting::rows_before_aggregation])
         {
-            initRowsBeforeAggregation(processors, format.get());
+            initRowsBeforeAggregation(processors, format_ptr);
             break;
         }
     }
-    output_format = format.get();
-
-    processors->emplace_back(std::move(format));
+    output_format = format_ptr;
 }
 
 Block QueryPipeline::getHeader() const
