@@ -364,6 +364,13 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             {
                 written_files.emplace_back(std::move(file));
             }
+            else if (!metadata_snapshot->hasPartitionKey() && new_part->info.getPartitionId() != "all")
+            {
+                /// Preserve a durable marker for a part that still belongs to a partition created
+                /// before DROP PARTITION KEY. The old key is no longer available to serialize, and
+                /// the marker is intentionally not read while the table is unpartitioned.
+                write_hashed_file("partition.dat", [](auto &) {});
+            }
 
             if (new_part->getMinMaxIndex()->initialized)
             {

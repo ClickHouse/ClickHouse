@@ -47,6 +47,33 @@ ALTER TABLE t_drop_partition_key DROP PARTITION KEY; -- { serverError BAD_ARGUME
 SYSTEM START MERGES t_drop_partition_key;
 DROP TABLE t_drop_partition_key;
 
+-- A rewrite after DROP must preserve enough on-disk state to recognize the legacy
+-- partition after restart. Otherwise a merged old part becomes indistinguishable
+-- from a corrupted ordinary unpartitioned part.
+DROP TABLE IF EXISTS t_drop_partition_key_merged_part;
+
+CREATE TABLE t_drop_partition_key_merged_part
+(
+    d Date,
+    id UInt64
+)
+ENGINE = MergeTree
+PARTITION BY toYYYYMM(d)
+ORDER BY id;
+
+SYSTEM STOP MERGES t_drop_partition_key_merged_part;
+INSERT INTO t_drop_partition_key_merged_part VALUES ('2024-01-01', 1);
+INSERT INTO t_drop_partition_key_merged_part VALUES ('2024-01-02', 2);
+ALTER TABLE t_drop_partition_key_merged_part DROP PARTITION KEY;
+SYSTEM START MERGES t_drop_partition_key_merged_part;
+OPTIMIZE TABLE t_drop_partition_key_merged_part FINAL;
+
+DETACH TABLE t_drop_partition_key_merged_part;
+ATTACH TABLE t_drop_partition_key_merged_part;
+
+SELECT count(), uniqExact(_partition_id), min(_partition_id) FROM t_drop_partition_key_merged_part;
+DROP TABLE t_drop_partition_key_merged_part;
+
 CREATE TABLE t_drop_partition_key_no_key (id UInt64) ENGINE = MergeTree ORDER BY id;
 ALTER TABLE t_drop_partition_key_no_key DROP PARTITION KEY; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_drop_partition_key_no_key;

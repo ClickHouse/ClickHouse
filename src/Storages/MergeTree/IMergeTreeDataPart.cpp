@@ -2325,16 +2325,21 @@ void IMergeTreeDataPart::loadPartitionAndMinMaxIndex()
     }
 
     String calculated_partition_id;
-    bool check_partition_id = false;
+    bool check_partition_id = true;
     if (info.isPatch())
     {
         calculated_partition_id = getPartitionIdForPatch(partition);
-        check_partition_id = true;
     }
-    else if (metadata_snaphost->hasPartitionKey())
+    else if (!metadata_snaphost->hasPartitionKey() && getDataPartStorage().existsFile("partition.dat"))
+    {
+        /// After DROP PARTITION KEY the original partition expression is unavailable, so a legacy
+        /// partition ID cannot be recalculated. `partition.dat` is preserved as an opaque marker for
+        /// these parts. Ordinary unpartitioned parts never have this file and still validate to `all`.
+        check_partition_id = false;
+    }
+    else
     {
         calculated_partition_id = partition.getID(metadata_snaphost->getPartitionKey().sample_block);
-        check_partition_id = true;
     }
 
     if (check_partition_id && calculated_partition_id != info.getPartitionId())
