@@ -62,31 +62,36 @@ ${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --send_logs_level=fata
 IS_CLOUD=$(${CLICKHOUSE_CLIENT} --query "SELECT value FROM system.build_options WHERE name = 'CLICKHOUSE_CLOUD'")
 
 # Prints nothing when the command behaves: the reference is made of build-independent lines only.
-check_no_conversion_error()
+# The exit status, not the presence of output, is what says whether the command failed - server logs
+# reach the client's stderr at the harness' log level, so an unrelated warning must not read as a
+# failure - and `--send_logs_level=fatal` keeps a real exception's report short.
+run_optimize()
 {
     local label=$1 && shift
-    local err=$1 && shift
+    local query=$1 && shift
+    local err
+    local status
+
+    err=$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 --allow_experimental_iceberg_compaction=1 \
+        --send_logs_level=fatal --query "${query}" 2>&1)
+    status=$?
 
     if printf '%s' "${err}" | grep -qF 'Can not convert empty value'; then
         # The regression: `has` was true for the JSON null and `getValue<Int64>` threw.
         echo "FAIL: ${label} hit the JSON-null conversion error"
-    elif [[ -n "${err}" ]]; then
+    elif [[ "${status}" -ne 0 ]]; then
         echo "FAIL: ${label} failed: ${err}"
     fi
 }
 
 if [[ "${IS_CLOUD}" != "1" ]]; then
     # `OPTIMIZE TABLE` walks the snapshot ancestry through `IcebergMetadata::getHistory`.
-    check_no_conversion_error "OPTIMIZE" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
-        --allow_experimental_iceberg_compaction=1 \
-        --query "OPTIMIZE TABLE ${TABLE}" 2>&1)"
+    run_optimize "OPTIMIZE" "OPTIMIZE TABLE ${TABLE}"
 
     # `OPTIMIZE TABLE ... MANIFEST` takes a different route - `IcebergMetadata::optimizeManifestFiles` ->
     # `compactIcebergManifests` -> `isCurrentManifestListAboveThreshold` - which reads
     # `current-snapshot-id` with its own `has` check.
-    check_no_conversion_error "OPTIMIZE MANIFEST" "$(${CLICKHOUSE_CLIENT} --use_iceberg_metadata_files_cache=0 \
-        --allow_experimental_iceberg_compaction=1 \
-        --query "OPTIMIZE TABLE ${TABLE} MANIFEST" 2>&1)"
+    run_optimize "OPTIMIZE MANIFEST" "OPTIMIZE TABLE ${TABLE} MANIFEST"
 fi
 
 # The table is still readable, still empty.
