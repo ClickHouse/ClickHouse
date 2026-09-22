@@ -231,7 +231,7 @@ ColumnPtr getDateTime64CastLossMap(const ColumnWithTypeAndName & source, const D
     const auto & datetime_column = assert_cast<const ColumnDecimal<DateTime64> &>(*column);
 
     ColumnPtr float_loss_map;
-    if (callOnBasicType<DateTime64, false, true, false, false>(to_type->getTypeId(), [&](const auto & types)
+    if (callOnBasicType<void, false, true, false, false>(to_type->getTypeId(), [&](const auto & types)
         {
             using FloatType = typename std::decay_t<decltype(types)>::RightType;
             float_loss_map = getDateTime64ToFloatLossMap<FloatType>(datetime_column);
