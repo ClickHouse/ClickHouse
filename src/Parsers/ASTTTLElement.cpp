@@ -119,12 +119,12 @@ void ASTTTLElement::readJSON(const Poco::JSON::Object & json)
     index_name = r.getString("index_name");
     if_exists = r.getBool("if_exists");
 
-    auto ttl_child = r.readChild("ttl_expr");
+    auto ttl_child = r.readExpressionChild("ttl_expr");
     if (!ttl_child)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Required field 'ttl_expr' is missing in JSON AST for TTLElement");
     setTTL(std::move(ttl_child));
 
-    auto where_child = r.readChild("where_expr");
+    auto where_child = r.readExpressionChild("where_expr");
     if (where_child && mode != TTLMode::DELETE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'where_expr' is only valid for TTL DELETE during AST JSON deserialization");
     if (where_child)

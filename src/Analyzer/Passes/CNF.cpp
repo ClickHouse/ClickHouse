@@ -12,8 +12,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/logical.h>
 
-#include <DataTypes/IDataType.h>
-
 #include <Common/checkStackSize.h>
 
 namespace DB
@@ -288,70 +286,11 @@ private:
     }
 };
 
-/// Whether a type can hold a `NaN` by itself, not looking at the nested types. `Dynamic` and `JSON`
-/// can carry a value of any type, including a floating point one, and `DataTypeDynamic::forEachChild`
-/// has nothing to enumerate (`DataTypeObject::forEachChild` enumerates only the typed paths), so both
-/// have to be judged by the type itself.
-bool typeCanHoldNaNItself(const IDataType & type)
-{
-    WhichDataType which(type);
-    return which.isFloat() || which.isDynamic() || which.isObject();
-}
-
-/// Whether the type, or a type nested in it, can hold a `NaN`.
-bool typeCanHoldNaN(const IDataType & type)
-{
-    if (typeCanHoldNaNItself(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child) { result = result || typeCanHoldNaNItself(child); });
-    return result;
-}
-
-/// Whether an argument of a comparison can be a `NaN`. A literal is judged by its value, anything
-/// else by its type.
-bool argumentCanBeNaN(const QueryTreeNodePtr & argument)
-{
-    if (const auto * constant = argument->as<ConstantNode>())
-    {
-        const auto & value = constant->getValue();
-        /// A `Tuple` or `Array` constant can still hide a `NaN` in an element, so only a plain
-        /// floating point literal is decided by its value here.
-        if (value.getType() == Field::Types::Float64)
-            return value.isNaN();
-    }
-
-    const auto & type = argument->getResultType();
-    return type && typeCanHoldNaN(*type);
-}
-
-/// `NaN` fails every ordered comparison, so for a `NaN` argument `NOT (x < c)` is true while
-/// `x >= c` is false: the two are complementary over a totally ordered domain only. Inverting such a
-/// comparison would silently drop the `NaN` rows from the result.
-bool inversionKeepsComparisonSemantics(const FunctionNode & function_node)
-{
-    static const std::unordered_set<std::string_view> ordered_comparisons
-        = {"less", "lessOrEquals", "greater", "greaterOrEquals"};
-
-    if (!ordered_comparisons.contains(function_node.getFunctionName()))
-        return true;
-
-    for (const auto & argument : function_node.getArguments())
-        if (argumentCanBeNaN(argument))
-            return false;
-
-    return true;
-}
-
 std::optional<CNFAtomicFormula> tryInvertFunction(
     const CNFAtomicFormula & atom, const ContextPtr & context, const std::unordered_map<std::string, std::string> & inverse_relations)
 {
     auto * function_node = atom.node_with_hash.node->as<FunctionNode>();
     if (!function_node)
-        return std::nullopt;
-
-    if (!inversionKeepsComparisonSemantics(*function_node))
         return std::nullopt;
 
     if (auto it = inverse_relations.find(function_node->getFunctionName()); it != inverse_relations.end())
