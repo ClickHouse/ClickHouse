@@ -14,6 +14,14 @@ class ColumnString;
 class TextIndexAnalyzer
 {
 public:
+    /// Half-open range of dictionary token keys. An empty `end` reaches the end of the dictionary.
+    /// Equal bounds are the single key `begin`, not an empty range.
+    struct TokenKeyRange
+    {
+        String begin;
+        String end;
+    };
+
     struct ReadableRows
     {
     public:
@@ -84,17 +92,20 @@ public:
 
     /// Pushes the row ranges still readable after the analysis of the primary key and prior skip indexes.
     void setReadableRows(std::vector<RowsRange> readable_ranges);
-    /// Finds matching dictionary tokens, attaching them to their prefix or regex queries.
-    std::vector<size_t> addTokensToPatterns(const ColumnString & tokens);
-    /// Returns true if a dictionary block can contain a token in any pattern query's prefix range.
-    bool mayMatchPatternsInRange(std::string_view begin, std::optional<std::string_view> end) const;
+    /// Attaches a scan-discovered `token` to every matching pattern query.
+    /// Returns true if any pattern matched.
+    bool addTokenToPatterns(std::string_view token);
+    /// One key range per pattern, or nothing when some pattern can match tokens anywhere in the dictionary.
+    std::optional<std::vector<TokenKeyRange>> getPatternTokenKeyRanges() const;
+    bool canFilterTokensByLiterals() const;
+    /// Appends, ascending, the tokens `addTokenToPatterns` accepts, running it only on those holding a pattern's literal.
+    void matchTokensByLiterals(const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks, std::vector<size_t> & matched_indices);
     /// Marks all pattern queries as bypassed (e.g. dictionary scan budget exhausted).
     void bypassPatternQueries();
 
     /// Discards `Hint`-mode queries whose estimated cardinality (read postings + `cardinality`
     /// estimates for unread multi-block tokens) exceeds `selectivity_threshold * total_rows`.
     void analyzeCardinalitiesAndBypassHints(double selectivity_threshold, size_t total_rows);
-    size_t memoryUsageBytes() const;
 
 private:
     using QueryHashes = absl::flat_hash_set<UInt128>;
@@ -103,6 +114,9 @@ private:
     /// then cleans up `queries_by_token` for any query that just failed.
     template <typename Operation>
     void processTokenOperation(std::string_view token, Operation && operation);
+
+    static void markPatternCandidateTokens(
+        const OptimizedRegularExpression & pattern, const ColumnString & tokens, PaddedPODArray<UInt8> & candidate_marks);
 
     /// Removes the query from `queries_by_token` for all affected tokens, so they stop passing `isTokenNeeded`.
     void detachQueryFromTokens(const UInt128 & query_hash, const QueryBuilder & query_builder);
@@ -124,12 +138,6 @@ private:
     absl::flat_hash_map<const OptimizedRegularExpression *, QueryHashes> queries_by_pattern;
     /// JSON pattern queries grouped by their dictionary-token prefix.
     absl::flat_hash_map<String, QueryHashes> queries_by_prefix;
-    /// True when some pattern query is not restricted to token prefixes,
-    /// so every dictionary block may contain a matching token.
-    bool has_unrestricted_pattern_query = false;
-    /// Half-open dictionary-token ranges [prefix, prefix_end) of prefix-restricted pattern
-    /// queries, precomputed once because `mayMatchPatternsInRange` runs per dictionary block.
-    std::vector<std::pair<String, String>> pattern_prefix_ranges;
 
     /* Fields updated dynamically during text index analysis. */
 

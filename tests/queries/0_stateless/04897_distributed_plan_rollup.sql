@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- `GROUP BY ... WITH ROLLUP` under `make_distributed_plan`: the aggregation runs distributed and
 -- the `Rollup` step computes the subtotals over the merged result. The `Rollup` step can land in a
 -- worker stage (for example below a distributed `ORDER BY`), so its serialization is exercised here.

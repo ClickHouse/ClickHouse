@@ -9,8 +9,6 @@
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
-#include <IO/WriteHelpers.h>
 #include <Core/Types.h>
 #include <bit>
 #include <utility>
@@ -58,6 +56,7 @@ public:
     CompressionCodecT64(std::optional<TypeIndex> type_idx_, Variant variant_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDescription() const override;
     void updateHash(SipHash & hash) const override;
     std::optional<UInt32> tryGetCompressedSize(const char * source, UInt32 source_size) const override;
 
@@ -986,15 +985,18 @@ CompressionCodecT64::CompressionCodecT64(std::optional<TypeIndex> type_idx_, Var
     : type_idx(type_idx_)
     , variant(variant_)
 {
+}
+
+ASTPtr CompressionCodecT64::getCodecDescription() const
+{
     if (variant == Variant::Byte)
-        setCodecDescription("T64");
-    else
-        setCodecDescription("T64", {make_intrusive<ASTLiteral>("bit")});
+        return makeCodecDescription("T64");
+    return makeCodecDescription("T64", {make_intrusive<ASTLiteral>("bit")});
 }
 
 void CompressionCodecT64::updateHash(SipHash & hash) const
 {
-    getCodecDesc()->updateTreeHash(hash, /*ignore_aliases=*/ true);
+    getCodecDescription()->updateTreeHash(hash, /*ignore_aliases=*/ true);
     hash.update(type_idx.value_or(TypeIndex::Nothing));
     hash.update(variant);
 }
