@@ -48,38 +48,9 @@ SYSTEM REFRESH VIEW table_name_mv;
 You can also cancel, stop, or start a view.
 For more details, see the [managing refreshable materialized views](/reference/statements/system#managing-refreshable-materialized-views) documentation.
 
-## What happens when the server restarts? {#what-happens-when-the-server-restarts}
-
 <Warning>
-A refreshable materialized view keeps its refresh schedule across a server restart only when its refreshes are coordinated through ClickHouse Keeper. Coordination is enabled for a view in a [`Replicated`](/reference/engines/database-engines/replicated) database, and a `REFRESH ... APPEND` view there can opt out of it with `SETTINGS all_replicas = 1`. A view that is not coordinated forgets when it last refreshed, so on any ordinary schedule it can refresh again as soon as the server is ready, and `RANDOMIZE FOR` does not spread these refreshes out. On a server with many views, or views over large datasets, that can put many full-dataset refreshes in flight at the moment the server is least able to absorb them.
-
-Those extra refreshes are not only a load problem. An `APPEND` view appends another full result, which is the duplication reported in [issue #81840](https://github.com/ClickHouse/ClickHouse/issues/81840), and an `APPEND INCREMENTAL` view loses the cursor it resumes from unless its target table commits one itself, so it reprocesses rows it had already appended. Staging the start as described below limits the concurrency but still runs those refreshes. An `APPEND` view avoids the extra append if you start it only when its next refresh is due anyway; an `APPEND INCREMENTAL` view that lost its cursor gains nothing from the timing, because whenever it next runs it reprocesses the whole source table and appends that result, so keep it stopped until you can absorb or remove the duplicated rows.
-
-A fix is in progress, tracked in [issue #101902](https://github.com/ClickHouse/ClickHouse/issues/101902).
+Refreshable materialized views whose refreshes are not coordinated through ClickHouse Keeper forget when they last refreshed, so after a server restart they can all refresh at once. See [What happens to refreshable materialized views when the server restarts](/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) for which views are affected and how to start them again one at a time.
 </Warning>
-
-Until then, you can keep every view stopped when the server comes up by setting [`stop_refreshable_materialized_views_on_startup`](/reference/settings/session-settings/other#stop_refreshable_materialized_views_on_startup) in the server's own settings profile, which is the profile named by `system_profile`, falling back to `default_profile` and then to `default`. [`SYSTEM STOP VIEWS`](/reference/statements/system#stop-view-stop-views) is not an alternative, because the stopped state it sets does not survive a restart.
-
-```xml title="/etc/clickhouse-server/users.d/refreshable_materialized_views.xml"
-<clickhouse>
-    <profiles>
-        <default>
-            <stop_refreshable_materialized_views_on_startup>1</stop_refreshable_materialized_views_on_startup>
-        </default>
-    </profiles>
-</clickhouse>
-```
-
-Start the views one at a time afterwards, letting each refresh finish before starting the next one. [`SYSTEM START VIEWS`](/reference/statements/system#start-view-start-views) starts all of them at once, which produces the same burst, so start each view by name. [`system.view_refreshes`](/reference/system-tables/view_refreshes) lists them:
-
-```sql
-SYSTEM START VIEW my_database.my_view;
-SYSTEM WAIT VIEW my_database.my_view;
-```
-
-Resuming an overdue view starts its refresh right away, and [`SYSTEM WAIT VIEW`](/reference/statements/system#wait-view) blocks while that refresh runs. A view that is waiting for a `REFRESH ... DEPENDS ON` prerequisite is not refreshing yet, so start those after the views they depend on. A [circular dependency](/reference/statements/create/view#refresh-dependencies) has no such order, and a restart breaks the cycle whenever its views are not coordinated: start every member, then trigger the view the cycle starts from with `SYSTEM REFRESH VIEW` and wait for that refresh. That is the view whose manual refresh starts the cycle when it is first created, `current_batch_v` in the linked example; a graph that needed more than one such refresh to start needs the same set again. Without that trigger the cycle stays idle, and triggering a different member can leave it idle too, because a view resumes only once every one of its prerequisites has refreshed. Once triggered the cycle refreshes on its own, and every view that depends on the same member refreshes when that member finishes, so the one-at-a-time pacing stops at the trigger.
-
-While this setting is in place, an unplanned restart leaves every refreshable materialized view stopped, and a newly created one does not begin refreshing until it is started either. A view that is not coordinated is the exception when a `RESTORE` includes it: the restore starts it, whether it created the view or found it already there and stopped, so it refreshes without waiting for you. Make whatever automation restarts your servers and creates your views responsible for starting them.
 
 ## When was a refreshable materialized view last refreshed? {#when-was-a-refreshable-materialized-view-last-refreshed}
 
