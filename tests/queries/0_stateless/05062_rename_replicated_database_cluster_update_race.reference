@@ -1,3 +1,0 @@
-before-rename ok rows=1
-rename observed=1
-after-rename ok rows=1

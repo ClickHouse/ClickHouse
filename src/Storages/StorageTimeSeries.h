@@ -17,15 +17,15 @@ using TimeSeriesSettingsPtr = std::shared_ptr<const TimeSeriesSettings>;
 ///
 /// CREATE TABLE ts ENGINE = TimeSeries()
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRIC FAMILIES [db].table3
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES [db].table1 TAGS [db].table2 METRICS [db].table3
 /// -OR-
-/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRIC FAMILIES ENGINE = ReplacingMergeTree
+/// CREATE TABLE ts ENGINE = TimeSeries() SAMPLES ENGINE = MergeTree TAGS ENGINE = ReplacingMergeTree METRICS ENGINE = ReplacingMergeTree
 /// -OR-
 /// CREATE TABLE ts ENGINE = TimeSeries()
 ///    SETTINGS tags_to_columns = {'instance': 'instance', 'job': 'job'}
 ///    SAMPLES ENGINE = ReplicatedMergeTree('zkpath', 'replica')
 ///    TAGS INNER COLUMNS (
-///        id UUID DEFAULT reinterpretAsUUID(sipHash128(tags)) CODEC(ZSTD(3)),
+///        id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)) CODEC(ZSTD(3)),
 ///        instance LowCardinality(String),
 ///        job String)
 ///    ENGINE = ReplacingMergeTree, ...
@@ -43,9 +43,6 @@ public:
 
     std::shared_ptr<const TimeSeriesSettings> getStorageSettings() const { return storage_settings.get(); }
 
-    /// Returns the schema version of this table (the `version` setting, see TimeSeriesVersion.h).
-    UInt64 getVersion() const;
-
     /// Returns the target table (works for both inner and external targets).
     StoragePtr getTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
     StoragePtr tryGetTargetTable(ViewTarget::Kind target_kind, const ContextPtr & local_context) const;
@@ -55,14 +52,10 @@ public:
     bool isInnerTable(ViewTarget::Kind target_kind) const;
     bool hasInnerTables() const { return has_inner_tables; }
 
-    /// Whether this table has a target of the given kind (the RecentSamples target is optional).
-    bool hasTarget(ViewTarget::Kind target_kind) const;
-
-    /// Returns all possible target kinds: Samples, RecentSamples, Tags, and MetricFamilies.
-    /// A concrete table can have no RecentSamples target (see hasTarget).
-    static constexpr std::array<ViewTarget::Kind, 4> getTargetKinds()
+    /// Returns the three target kinds: Samples, Tags, Metrics.
+    static constexpr std::array<ViewTarget::Kind, 3> getTargetKinds()
     {
-        return {ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies};
+        return {ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics};
     }
 
     void readImpl(
@@ -74,10 +67,6 @@ public:
         QueryProcessingStage::Enum processed_stage,
         size_t max_block_size,
         size_t num_streams) override;
-
-    /// With `FINAL` the read deduplicates unmerged rows of the inner "tags" table, so a series is returned
-    /// exactly once (see `makeASTSelectFromTimeSeries`).
-    bool supportsFinal() const override { return true; }
 
     static VirtualColumnsDescription createVirtuals();
 
@@ -105,7 +94,7 @@ public:
     void renameInMemory(const StorageID & new_table_id) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr local_context) const override;
-    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder & table_lock_holder) override;
 
     void backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
     void restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & partitions) override;
@@ -119,7 +108,8 @@ public:
 #endif
 
 private:
-    /// Represents one of the target tables; `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
+    /// Represents one of the three target tables (Samples, Tags, Metrics).
+    /// `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target
     {
         ViewTarget::Kind kind{};
@@ -127,25 +117,23 @@ private:
         bool is_inner_table = false;
     };
 
-    /// Reads information about the target tables from the create query without creating anything.
-    static std::vector<Target> findTargets(const ASTCreateQuery & create_query);
-
-    /// Initializes information about the target tables and creates the inner ones (unless this is an ATTACH query).
+    /// Initializes information about three target tables (Samples, Tags, Metrics).
+    /// The function also creates inner tables (unless this is an ATTACH query).
     static std::vector<Target> buildTargets(
         const ASTCreateQuery & create_query,
         const StorageID & table_id,
         const ContextPtr & local_context, LoadingStrictnessLevel mode);
 
-    /// Returns the target of the given kind or null if this table has no such target.
-    const Target * tryGetTarget(ViewTarget::Kind target_kind) const;
-
     /// Implementation for getTargetTable() and tryGetTargetTable().
     StoragePtr getTargetTableImpl(ViewTarget::Kind target_kind, const ContextPtr & local_context, bool throw_if_not_found) const;
 
+    /// The CREATE query with normalization applied.
+    const boost::intrusive_ptr<const ASTCreateQuery> normalized_create_query;
+
     MultiVersion<TimeSeriesSettings> storage_settings;
 
-    std::vector<Target> targets;
-    bool has_inner_tables = false;
+    const std::vector<Target> targets;
+    const bool has_inner_tables;
 };
 
 std::shared_ptr<StorageTimeSeries> storagePtrToTimeSeries(StoragePtr storage);

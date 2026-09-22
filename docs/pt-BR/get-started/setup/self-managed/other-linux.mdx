@@ -13,12 +13,16 @@ import Recommendations from '/snippets/pt-BR/recommendations.mdx';
 > Recomenda-se usar os arquivos `tgz` oficiais pré-compilados em todas as distribuições Linux nas quais não seja possível instalar pacotes `deb` ou `rpm`.
 
 <Steps>
-  <Step title="Revise as recomendações" id="review-recommendations">
+  <Step>
+    ## Revise as recomendações
+
     <Recommendations />
   </Step>
 
-  <Step title="Baixe e instale a versão estável mais recente" id="install-latest-stable">
-    A versão necessária pode ser baixada com `curl` ou `wget` do repositório [https://packages.clickhouse.com/tgz/](https://packages.clickhouse.com/tgz/).
+  <Step>
+    ## Baixe e instale a versão estável mais recente
+
+    A versão necessária pode ser baixada com `curl` ou `wget` do repositório https://packages.clickhouse.com/tgz/.
     Depois, os arquivos baixados devem ser descompactados e instalados com os scripts de instalação.
 
     Abaixo está um exemplo de como instalar a versão estável mais recente.
@@ -30,7 +34,9 @@ import Recommendations from '/snippets/pt-BR/recommendations.mdx';
     </Note>
   </Step>
 
-  <Step title="Obtenha a versão mais recente do ClickHouse" id="get-latest-version">
+  <Step>
+    ## Obtenha a versão mais recente do ClickHouse
+
     Obtenha a versão mais recente do ClickHouse no GitHub e armazene-a na variável `LATEST_VERSION`.
 
     ```bash
@@ -40,7 +46,9 @@ import Recommendations from '/snippets/pt-BR/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Detecte a arquitetura do seu sistema" id="detect-system-architecture">
+  <Step>
+    ## Detecte a arquitetura do seu sistema
+
     Detecte a arquitetura do sistema e defina a variável ARCH de acordo com ela:
 
     ```bash
@@ -52,8 +60,11 @@ import Recommendations from '/snippets/pt-BR/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Baixe os tarballs de cada componente do ClickHouse" id="download-tarballs">
-    Baixe os tarballs de cada componente do ClickHouse. O loop tenta primeiro os pacotes específicos da arquitetura e, em seguida, recorre aos genéricos.
+  <Step>
+    ## Baixe os tarballs de cada componente do ClickHouse
+
+    Baixe os tarballs de cada componente do ClickHouse. O loop tenta primeiro os pacotes
+    específicos da arquitetura e, em seguida, recorre aos genéricos.
 
     ```bash
     for PKG in clickhouse-common-static clickhouse-common-static-dbg clickhouse-server clickhouse-client clickhouse-keeper
@@ -64,7 +75,9 @@ import Recommendations from '/snippets/pt-BR/recommendations.mdx';
     ```
   </Step>
 
-  <Step title="Extraia e instale os pacotes" id="extract-and-install">
+  <Step>
+    ## Extraia e instale os pacotes
+
     Execute os comandos abaixo para extrair e instalar os seguintes pacotes:
 
     * `clickhouse-common-static`

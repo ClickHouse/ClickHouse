@@ -34,17 +34,19 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 * Доступ на изменение файлов конфигурации ClickStack
 
 <Steps>
-  <Step title="Проверьте наличие файлов syslog" id="verify-syslog">
+  <Step>
+    #### Проверьте наличие файлов syslog
+
     Сначала убедитесь, что система записывает файлы syslog:
 
     ```bash
-    # Check if syslog files exist (Linux)
+    # Проверить наличие файлов syslog (Linux)
     ls -la /var/log/syslog /var/log/messages
 
-    # Or on macOS
+    # Или на macOS
     ls -la /var/log/system.log
 
-    # View recent entries
+    # Просмотреть последние записи
     tail -20 /var/log/syslog
     ```
 
@@ -55,7 +57,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * **macOS**: `/var/log/system.log`
   </Step>
 
-  <Step title="Создание пользовательской конфигурации OTel collector" id="custom-otel">
+  <Step>
+    #### Создание пользовательской конфигурации OTel collector
+
     ClickStack позволяет расширить базовую конфигурацию OpenTelemetry Collector, подключив пользовательский файл конфигурации и установив переменную среды.
 
     Создайте файл `host-logs-monitoring.yaml` с конфигурацией для вашей системы:
@@ -199,7 +203,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Настройте ClickStack для загрузки пользовательской конфигурации" id="load-custom">
+  <Step>
+    #### Настройте ClickStack для загрузки пользовательской конфигурации
+
     Чтобы включить пользовательскую конфигурацию collector в существующем развертывании ClickStack, необходимо:
 
     1. Смонтировать файл пользовательской конфигурации по пути `/etc/otelcol-contrib/custom.config.yaml`
@@ -213,14 +219,14 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```yaml
     services:
       clickstack:
-        # ... existing configuration ...
+        # ... существующая конфигурация ...
         environment:
           - CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml
-          # ... other environment variables ...
+          # ... другие переменные окружения ...
         volumes:
           - ./host-logs-monitoring.yaml:/etc/otelcol-contrib/custom.config.yaml:ro
           - /var/log:/var/log:ro
-          # ... other volumes ...
+          # ... другие тома ...
     ```
 
     ##### Вариант 2: Docker Run (образ «всё в одном»)
@@ -241,7 +247,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     </Note>
   </Step>
 
-  <Step title="Проверка журналов в HyperDX" id="verifying-logs">
+  <Step>
+    #### Проверка журналов в HyperDX
+
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
     1. Перейдите в представление поиска
@@ -262,7 +270,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Для пользователей, которые хотят протестировать интеграцию журналов хоста перед настройкой своих рабочих систем, мы предоставляем демо-набор данных с заранее сгенерированными системными журналами, имитирующими реалистичные сценарии.
 
 <Steps>
-  <Step title="Скачайте демо-набор данных" id="download-sample">
+  <Step>
+    #### Скачайте демо-набор данных
+
     Скачайте демонстрационный файл журнала:
 
     ```bash
@@ -280,7 +290,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Сочетание обычных операций и заметных событий
   </Step>
 
-  <Step title="Создайте тестовую конфигурацию коллектора" id="test-config">
+  <Step>
+    #### Создайте тестовую конфигурацию коллектора
+
     Создайте файл с именем `host-logs-demo.yaml` со следующей конфигурацией:
 
     ```yaml
@@ -322,7 +334,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     ```
   </Step>
 
-  <Step title="Запустите ClickStack с демо-конфигурацией" id="run-demo">
+  <Step>
+    #### Запустите ClickStack с демо-конфигурацией
+
     Запустите ClickStack с демо-журналами и этой конфигурацией:
 
     ```bash
@@ -336,10 +350,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 
     <Note>
       **Файл журнала монтируется прямо в контейнер. Это сделано для тестирования на статических демо-данных.**
+
     </Note>
   </Step>
 
-  <Step title="Проверьте журналы в HyperDX" id="verify-demo-logs">
+  <Step>
+    #### Проверьте журналы в HyperDX
+
     После запуска ClickStack:
 
     1. Откройте [HyperDX](http://localhost:8080/) и войдите в свою учётную запись (возможно, сначала потребуется её создать)
@@ -365,11 +382,13 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
 Чтобы вам было проще начать мониторинг журналов хоста с помощью ClickStack, мы предоставляем основные визуализации для системных журналов.
 
 <Steps>
-  <Step title="Скачать конфигурацию панели мониторинга" id="download">
-    <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Скачать файл конфигурации панели мониторинга</TrackedLink>.
+  <Step>
+    #### <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/host-logs-dashboard.json'} download="host-logs-dashboard.json" eventName="docs.host_logs_monitoring.dashboard_download">Скачать</TrackedLink> конфигурацию панели мониторинга
   </Step>
 
-  <Step title="Импортируйте преднастроенный дашборд" id="import-dashboard">
+  <Step>
+    #### Импортируйте преднастроенный дашборд
+
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
@@ -380,7 +399,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Завершение импорта" />
   </Step>
 
-  <Step title="Откройте панель мониторинга" id="created-dashboard">
+  <Step>
+    #### Откройте панель мониторинга
+
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
     <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Панель мониторинга журналов" />
@@ -492,7 +513,7 @@ tail -5 /var/log/system.log
 * Создайте пользовательские панели мониторинга для мониторинга безопасности (попытки SSH, использование sudo, блокировки межсетевым экраном)
 
 <div id="going-to-production">
-  ## Переход к продакшну
+  ## Переход к промышленной эксплуатации
 </div>
 
-В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для развертываний в продакшне мы рекомендуем запускать собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. Инструкции по настройке для продакшна см. в разделе [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry).
+В этом руководстве для быстрой настройки используется встроенный в ClickStack OpenTelemetry Collector. Для промышленной эксплуатации мы рекомендуем запустить собственный OTel Collector и отправлять данные в конечную точку OTLP ClickStack. См. [Отправка данных OpenTelemetry](/ru/clickstack/ingesting-data/opentelemetry) для настройки production-конфигурации.

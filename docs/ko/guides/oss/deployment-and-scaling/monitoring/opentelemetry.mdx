@@ -14,7 +14,7 @@ doc_type: 'guide'
 
 ClickHouse는 [W3C 권고안](https://www.w3.org/TR/trace-context/)에 설명된 추적 컨텍스트 HTTP 헤더를 허용합니다. 또한 ClickHouse 서버 간 또는 클라이언트와 서버 간 통신에 사용되는 네이티브 프로토콜을 통한 추적 컨텍스트도 허용합니다. 수동으로 테스트할 때는 Trace Context 권고안을 준수하는 추적 컨텍스트 헤더를 `--opentelemetry-traceparent` 및 `--opentelemetry-tracestate` 플래그를 사용해 `clickhouse-client`에 전달할 수 있습니다.
 
-부모 추적 컨텍스트가 제공되지 않거나 제공된 추적 컨텍스트가 위의 W3C 표준을 준수하지 않으면, ClickHouse는 [opentelemetry&#95;start&#95;trace&#95;probability](/ko/reference/settings/session-settings/opentelemetry-start#opentelemetry_start_trace_probability) 설정으로 제어되는 확률에 따라 새 트레이스를 시작할 수 있습니다.
+부모 추적 컨텍스트가 제공되지 않거나 제공된 추적 컨텍스트가 위의 W3C 표준을 준수하지 않으면, ClickHouse는 [opentelemetry&#95;start&#95;trace&#95;probability](/ko/reference/settings/session-settings#opentelemetry_start_trace_probability) 설정으로 제어되는 확률에 따라 새 trace를 시작할 수 있습니다.
 
 <div id="propagating-the-trace-context">
   ## 추적 컨텍스트 전파
@@ -101,7 +101,7 @@ ClickHouse는 각 쿼리와 쿼리 계획, 분산 쿼리 같은 일부 쿼리 �
   ## 쿼리 설정 로그
 </div>
 
-[log&#95;query&#95;settings](/ko/reference/settings/session-settings/log-query#log_query_settings) 설정을 사용하면 쿼리 실행 중 쿼리 설정 변경 사항을 기록할 수 있습니다. 이 설정을 활성화하면 쿼리 설정에 가해진 모든 변경 사항이 OpenTelemetry 스팬 로그에 기록됩니다. 이 기능은 특히 프로덕션 환경에서 쿼리 성능에 영향을 줄 수 있는 구성 변경을 추적하는 데 유용합니다.
+[log&#95;query&#95;settings](/ko/reference/settings/session-settings) 설정을 사용하면 쿼리 실행 중 쿼리 설정 변경 사항을 기록할 수 있습니다. 이 설정을 활성화하면 쿼리 설정에 가해진 모든 변경 사항이 OpenTelemetry 스팬 로그에 기록됩니다. 이 기능은 특히 프로덕션 환경에서 쿼리 성능에 영향을 줄 수 있는 구성 변경을 추적하는 데 유용합니다.
 
 <div id="integration-with-monitoring-systems">
   ## 모니터링 시스템과의 통합

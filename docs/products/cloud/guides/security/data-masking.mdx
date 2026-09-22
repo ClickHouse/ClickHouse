@@ -463,7 +463,7 @@ ORDER BY user_id ASC
 
 ## Use query masking rules for log data {#use-query-masking-rules}
 
-For users of ClickHouse OSS wishing to mask log data specifically, you can make use of [query masking rules](/reference/settings/server-settings/settings/query#query_masking_rules) (log masking) to mask data.
+For users of ClickHouse OSS wishing to mask log data specifically, you can make use of [query masking rules](/reference/settings/server-settings/settings#query_masking_rules) (log masking) to mask data.
 
 To do so, you can define regular expression-based masking rules in the server configuration.
 These rules are applied to queries and all log messages before they're stored in server logs or system tables (such as `system.query_log`, `system.text_log`, and `system.processes`).

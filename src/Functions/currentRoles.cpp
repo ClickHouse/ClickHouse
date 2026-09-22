@@ -82,14 +82,12 @@ namespace
 
         ColumnPtr executeImpl(const ColumnsWithTypeAndName &, const DataTypePtr &, size_t input_rows_count) const override
         {
-            auto res_strings_column = ColumnString::create();
-            auto res_offsets_column = ColumnArray::ColumnOffsets::create();
-            ColumnString & res_strings = *res_strings_column;
-            ColumnArray::Offsets & res_offsets = res_offsets_column->getData();
+            auto col_res = ColumnArray::create(ColumnString::create());
+            ColumnString & res_strings = typeid_cast<ColumnString &>(col_res->getData());
+            ColumnArray::Offsets & res_offsets = col_res->getOffsets();
             for (const String & role_name : role_names)
                 res_strings.insertData(role_name.data(), role_name.length());
             res_offsets.push_back(res_strings.size());
-            auto col_res = ColumnArray::create(std::move(res_strings_column), std::move(res_offsets_column));
             return ColumnConst::create(std::move(col_res), input_rows_count);
         }
 
@@ -114,9 +112,9 @@ Returns an array of the roles which are assigned to the current user.
 SELECT currentRoles();
         )",
         R"(
-┌─currentRoles()─┐
-│ []             │
-└────────────────┘
+┌─currentRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
         )"
     }
     };
@@ -137,9 +135,9 @@ Returns an array of the roles which are enabled for the current user.
 SELECT enabledRoles();
         )",
         R"(
-┌─enabledRoles()─┐
-│ []             │
-└────────────────┘
+┌─enabledRoles()─────────────────────────────────────────────────┐
+│ ['general_data', 'sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -160,9 +158,9 @@ Returns an array of default roles for the current user.
 SELECT defaultRoles();
         )",
         R"(
-┌─defaultRoles()─┐
-│ []             │
-└────────────────┘
+┌─defaultRoles()─────────────────────────────────┐
+│ ['sql-console-role:jane.smith@clickhouse.com'] │
+└────────────────────────────────────────────────┘
         )"
     }
     };
