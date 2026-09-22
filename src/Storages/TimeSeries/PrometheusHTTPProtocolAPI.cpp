@@ -27,6 +27,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
@@ -151,6 +152,62 @@ PrometheusQueryTree::MatcherList parseInstantSelectorMatchers(const String & mat
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter must contain at least one matcher",
                         quoteString(match_param));
     return matchers;
+}
+
+ASTPtr makeSelectFromTagsTable(const StorageID & tags_table_id, const ASTs & select_list, ASTPtr where_filter)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    for (const auto & expr : select_list)
+        select_list_exp->children.push_back(expr->clone());
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    auto table_exp = make_intrusive<ASTTableExpression>();
+    table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
+    table_exp->children.emplace_back(table_exp->database_and_table_name);
+    table->table_expression = table_exp;
+    tables->children.push_back(std::move(table));
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
+    select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
+    return select_query;
+}
+
+ASTPtr ifNonEmptyThenSingletonArray(ASTPtr value_ast, const String & name)
+{
+    return makeASTFunction(
+        "if",
+        makeASTFunction("notEquals", std::move(value_ast), make_intrusive<ASTLiteral>(String{})),
+        makeASTFunction("array", make_intrusive<ASTLiteral>(name)),
+        makeASTFunction("emptyArrayString"));
+}
+
+ASTPtr makeLabelNamesPerRowExpression(const std::unordered_map<String, String> & column_name_by_tag_name)
+{
+    auto keys = makeASTFunction(
+        "arrayConcat",
+        makeASTFunction("mapKeys", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags)),
+        ifNonEmptyThenSingletonArray(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName), TimeSeriesTagNames::MetricName));
+    for (const auto & [tag_name, column_name] : column_name_by_tag_name)
+        keys->arguments->children.push_back(ifNonEmptyThenSingletonArray(make_intrusive<ASTIdentifier>(column_name), tag_name));
+    return keys;
+}
+
+ASTPtr makeLabelValuePerRowExpression(const String & label_name, const std::unordered_map<String, String> & column_name_by_tag_name)
+{
+    if (label_name == TimeSeriesTagNames::MetricName)
+        return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
+
+    auto it = column_name_by_tag_name.find(label_name);
+    if (it != column_name_by_tag_name.end())
+        return make_intrusive<ASTIdentifier>(it->second);
+
+    return makeASTFunction(
+        "arrayElement",
+        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
+        make_intrusive<ASTLiteral>(label_name));
 }
 
 /// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
@@ -610,6 +667,36 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
 }
 
 
+ASTPtr PrometheusHTTPProtocolAPI::makeFilteredTagsUnionQuery(
+    const ASTs & select_list,
+    const Strings & match_params,
+    const String & start_param,
+    const String & end_param)
+{
+    auto scan = makeTagsScanContext(*time_series_storage, getContext(), start_param, end_param);
+
+    Strings selectors = match_params;
+    if (selectors.empty())
+        selectors.push_back(R"({__name__!=""})");
+
+    auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    union_query->union_mode = SelectUnionMode::UNION_ALL;
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+
+    for (const auto & match_param : selectors)
+    {
+        auto matchers = parseInstantSelectorMatchers(match_param, scan.timestamp_scale);
+        auto where_filter = StorageTimeSeriesSelector::makeWhereFilterForTagsTable(
+            matchers, scan.column_name_by_tag_name, scan.min_time, scan.max_time, scan.timestamp_data_type);
+        list_of_selects->children.push_back(makeSelectFromTagsTable(scan.tags_table_id, select_list, std::move(where_filter)));
+    }
+
+    union_query->children.push_back(std::move(list_of_selects));
+    union_query->list_of_selects = union_query->children.back();
+    return union_query;
+}
+
+
 void PrometheusHTTPProtocolAPI::getSeries(
     WriteBuffer & response,
     const Strings & match_params,
@@ -869,20 +956,20 @@ void PrometheusHTTPProtocolAPI::getLabels(
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    /// SELECT arraySort(groupUniqArrayArray(tupleElement(timeSeriesIdToTags(series_id), 1))) AS labels FROM (<series_ids_query>)
-    /// timeSeriesIdToTags returns the tags registered by the inner query (including `__name__`), so the label names
-    /// are the first elements of the returned pairs; groupUniqArrayArray dedups them across all the matched series,
-    /// and arraySort returns them in sorted order like Prometheus does.
+    /// SELECT arraySort(groupUniqArrayArray(keys)) AS labels FROM (
+    ///     SELECT arrayConcat(mapKeys(tags), if(metric_name != '', ['__name__'], []), ...) FROM <tags> WHERE ...
+    /// )
+    /// Dedicated tag columns and `metric_name` are merged in because older tags tables omit them from the `tags` Map.
+    auto keys_expression = makeLabelNamesPerRowExpression(
+        StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings()));
+    keys_expression->setAlias("keys");
+    auto source_query = makeFilteredTagsUnionQuery({keys_expression}, match_params, start_param, end_param);
+
     auto labels_expression = makeASTFunction(
         "arraySort",
-        makeASTFunction(
-            "groupUniqArrayArray",
-            makeASTFunction(
-                "tupleElement",
-                makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id")),
-                make_intrusive<ASTLiteral>(1u))));
+        makeASTFunction("groupUniqArrayArray", make_intrusive<ASTIdentifier>("keys")));
 
-    getLabelsOrLabelValues(response, std::move(labels_expression), match_params, start_param, end_param, limit, query_finish_callback);
+    getLabelsOrLabelValues(response, std::move(labels_expression), std::move(source_query), limit, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::getLabelValues(
@@ -900,55 +987,35 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
     if (label_name.empty() || !UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(label_name.data()), label_name.size()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid label name {}", quoteString(label_name_param));
 
-    /// SELECT arraySort(groupUniqArrayArray(arrayMap(tag -> tag.2, arrayFilter(tag -> tag.1 = <label_name> AND tag.2 != '', timeSeriesIdToTags(series_id))))) AS labels
-    /// FROM (<series_ids_query>)
-    /// timeSeriesIdToTags returns the (name, value) pairs of the tags registered by the inner query (including `__name__`),
-    /// so the values of the requested label are the second elements of the pairs whose first element is the label name.
+    /// SELECT arraySort(arrayFilter(x -> x != '', groupUniqArray(label))) AS labels FROM (
+    ///     SELECT metric_name | <tag column> | tags[label] AS label FROM <tags> WHERE ...
+    /// )
     /// An empty value means an absent label in Prometheus, so it's never returned.
-    auto tag_element = [](UInt32 index)
-    {
-        return makeASTFunction("tupleElement", make_intrusive<ASTIdentifier>("tag"), make_intrusive<ASTLiteral>(index));
-    };
-
-    auto filtered_tags = makeASTFunction(
-        "arrayFilter",
-        makeASTLambda(
-            {"tag"},
-            makeASTFunction(
-                "and",
-                makeASTFunction("equals", tag_element(1), make_intrusive<ASTLiteral>(label_name)),
-                makeASTFunction("notEquals", tag_element(2), make_intrusive<ASTLiteral>(String{})))),
-        makeASTFunction("timeSeriesIdToTags", make_intrusive<ASTIdentifier>("series_id")));
+    auto value_expression = makeLabelValuePerRowExpression(
+        label_name, StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings()));
+    value_expression->setAlias("label");
+    auto source_query = makeFilteredTagsUnionQuery({value_expression}, match_params, start_param, end_param);
 
     auto values_expression = makeASTFunction(
         "arraySort",
         makeASTFunction(
-            "groupUniqArrayArray",
-            makeASTFunction("arrayMap", makeASTLambda({"tag"}, tag_element(2)), std::move(filtered_tags))));
+            "arrayFilter",
+            makeASTLambda({"x"}, makeASTFunction("notEquals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(String{}))),
+            makeASTFunction("groupUniqArray", make_intrusive<ASTIdentifier>("label"))));
 
-    getLabelsOrLabelValues(response, std::move(values_expression), match_params, start_param, end_param, limit, query_finish_callback);
+    getLabelsOrLabelValues(response, std::move(values_expression), std::move(source_query), limit, query_finish_callback);
 }
 
 void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     WriteBuffer & response,
     ASTPtr array_expression,
-    const Strings & match_params,
-    const String & start_param,
-    const String & end_param,
+    ASTPtr source_query,
     UInt64 limit,
     QueryFinishCallback query_finish_callback)
 {
-    /// Unlike /api/v1/series, the `match[]` selectors are optional here: without them the endpoint
-    /// returns the label names (or the label values) of all the time series stored in the table.
-    Strings selectors = match_params;
-    if (selectors.empty())
-        selectors.push_back(R"({__name__!=""})");
-
-    auto series_ids_query = makeSeriesIDsQuery(selectors, start_param, end_param);
-
     array_expression->setAlias("labels");
 
-    auto sql_query = makeSelectFromSubquery({std::move(array_expression)}, std::move(series_ids_query), /* distinct = */ false, {});
+    auto sql_query = makeSelectFromSubquery({std::move(array_expression)}, std::move(source_query), /* distinct = */ false, {});
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
