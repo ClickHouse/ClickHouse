@@ -2200,8 +2200,8 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         materialized_ctes_per_subquery.push_back(collectMaterializedCTEs(query_tree, SelectQueryOptions{}));
 
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
-        for (const auto & ctx : subquery_plan.getInterpretersContexts())
-            query_plan.addInterpreterContext(ctx);
+        /// The set source is kept aside, so its contexts must follow this plan's distributed-plan decision.
+        query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
