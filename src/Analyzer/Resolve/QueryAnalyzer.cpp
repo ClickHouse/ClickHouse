@@ -188,6 +188,20 @@ bool isUntupleExpansion(const QueryTreeNodes & nodes)
     return !nodes.empty();
 }
 
+bool convertToNullableIfSupported(QueryTreeNodePtr & node)
+{
+    if (auto * column_node = node->as<ColumnNode>())
+        column_node->convertToNullable();
+    else if (auto * constant_node = node->as<ConstantNode>())
+        constant_node->convertToNullable();
+    else if (auto * function_node = node->as<FunctionNode>())
+        function_node->convertToNullable();
+    else
+        return false;
+
+    return true;
+}
+
 /// The tuple field name a `tupleElement(arg, name)` node projects. The legacy path names an
 /// untupled element `<prefix><column>.<field>` (`f_a.1`, `f_a.id`); the field comes from the
 /// constant second argument.
@@ -2860,7 +2874,7 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 /// See resolveExpressionNode: for a constant keep the matched node's own source
                 /// expression instead of the stored key, which may be a different colliding constant.
                 node = node_to_convert->clone();
-                node->convertToNullable();
+                convertToNullableIfSupported(node);
 
                 /// Keep the projection name computed for the original node, e.g. the qualified
                 /// `t.x` a matcher assigned to disambiguate columns of joined table expressions.
@@ -4243,7 +4257,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                         /// planner would no longer recognize as correlated.
                         /// A correlated column is always a `ColumnNode`, never a
                         /// constant, so the constant special-casing below does not apply.
-                        node->convertToNullable();
+                        convertToNullableIfSupported(node);
                     }
                     else
                     {
@@ -4265,7 +4279,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
                             || node_to_convert_type == QueryTreeNodeType::FUNCTION)
                         {
                             node = node_to_convert->clone();
-                            node->convertToNullable();
+                            convertToNullableIfSupported(node);
                         }
                     }
                     break;
@@ -4559,7 +4573,7 @@ bool convertNestedGroupByKeysToNullable(
 {
     if (nodeSupportsConvertToNullable(node) && nullable_group_by_keys.contains(node))
     {
-        node->convertToNullable();
+        convertToNullableIfSupported(node);
         return true;
     }
 
@@ -4633,7 +4647,7 @@ void registerNullableGroupByKeys(const QueryTreeNodes & group_by_keys, Identifie
         if (nodeSupportsConvertToNullable(key))
         {
             auto converted_key = key->clone();
-            converted_key->convertToNullable();
+            convertToNullableIfSupported(converted_key);
             scope.nullable_group_by_keys.emplace(std::move(converted_key), key);
         }
     }
