@@ -165,6 +165,19 @@ namespace
         return 0;
     }
 
+    String getExceptionMessage(const std::function<void()> & function)
+    {
+        try
+        {
+            function();
+        }
+        catch (const Exception & e)
+        {
+            return e.message();
+        }
+        return "";
+    }
+
     const String default_id_type = "Tuple(UInt64, LowCardinality(UUID))";
     const String default_tags_index = ", INDEX tags_idx tags TYPE text(tokenizer = 'keyValuePairs') GRANULARITY 100000000";
     const String default_id_generator = "tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags))))";
@@ -187,7 +200,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 6")) << definition;
+    EXPECT_TRUE(definition.contains("version = 7")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -202,7 +215,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
         "`tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), "
         "`max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))" + default_tags_index);
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"),
-        "`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String");
+        "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String");
 
     EXPECT_EQ(extractInnerEngine(definition, "SAMPLES"), "MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 32768");
     EXPECT_EQ(extractInnerEngine(definition, "RECENT SAMPLES"),
@@ -210,7 +223,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1");
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
         "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
-    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
 }
 
 
@@ -375,7 +388,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, ExternalTargetTablesDefineTypes)
         {makeColumn("id", "UInt64"), makeColumn("timestamp", "DateTime64(6)"), makeColumn("value", "Float32")});
     params.external_target_columns[ViewTarget::Tags] = external_tags_columns("UInt64");
     params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns(
-        {makeColumn("metric_family_name", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+        {makeColumn("metric_family", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
 
     auto definition = normalizeNewTable(
         "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES db.ext_samples TAGS db.ext_tags METRIC FAMILIES db.ext_metric_families", params);
@@ -397,17 +410,17 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, MetricsKeywordIsAliasOfMetricFamilies)
     /// The "metric families" target was named "metrics" before, the old keyword is still accepted
     /// but a normalized definition is always written with the new keyword.
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRICS INNER ENGINE = ReplacingMergeTree");
-    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
     EXPECT_FALSE(definition.contains("METRICS")) << definition;
 
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRICS INNER COLUMNS (extra UInt8)");
     EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"),
-        "`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String, `extra` UInt8");
+        "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String, `extra` UInt8");
 
     /// An external metric families table can be specified with either keyword.
     NormalizeTimeSeriesDefinitionParams params;
     params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns(
-        {makeColumn("metric_family_name", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+        {makeColumn("metric_family", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
     definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRICS db.ext_metric_families", params);
     EXPECT_TRUE(definition.contains(" METRIC FAMILIES db.ext_metric_families")) << definition;
     EXPECT_FALSE(definition.contains("METRICS")) << definition;
@@ -495,6 +508,60 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, SamplesOuterColumnNameDependsOnVersion
 }
 
 
+TEST_F(NormalizeTimeSeriesDefinitionTest, MetricFamilyInnerColumnNameDependsOnVersion)
+{
+    /// The column of the inner metric families table with the name of a metric family is named `metric_family` from version 6
+    /// and `metric_family_name` in the earlier versions (see TimeSeriesVersion.h). The default definition is checked in DefaultDefinition.
+    const String old_columns = "`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String";
+    const String new_columns = "`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String";
+
+    const String stored_definition_of_version_5 = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5");
+    EXPECT_EQ(extractInnerColumns(stored_definition_of_version_5, "METRIC FAMILIES"), old_columns);
+    EXPECT_EQ(extractInnerEngine(stored_definition_of_version_5, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+    EXPECT_EQ(normalizeExistingTable(stored_definition_of_version_5), stored_definition_of_version_5);
+
+    /// A declaration under the name used by the other versions is rejected: nothing would write to that column.
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRIC FAMILIES INNER COLUMNS (metric_family_name LowCardinality(String)) "
+            "METRIC FAMILIES ENGINE = ReplacingMergeTree ORDER BY metric_family_name");
+    }), ErrorCodes::INCORRECT_QUERY);
+    EXPECT_EQ(getExceptionCode([]
+    {
+        normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES INNER COLUMNS (metric_family LowCardinality(String))");
+    }), ErrorCodes::INCORRECT_QUERY);
+
+    /// An external metric families table must name the column the way the version does, the error suggests renaming the column otherwise.
+    NormalizeTimeSeriesDefinitionParams params;
+    params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns({makeColumn("metric_family_name", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES db.ext_metrics", params).contains("db.ext_metrics"));
+    auto create_with_new_version = [&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries METRIC FAMILIES db.ext_metrics", params); };
+    EXPECT_EQ(getExceptionCode(create_with_new_version), ErrorCodes::THERE_IS_NO_COLUMN);
+    EXPECT_TRUE(getExceptionMessage(create_with_new_version).contains("ALTER TABLE db.ext_metrics RENAME COLUMN metric_family_name TO metric_family"))
+        << getExceptionMessage(create_with_new_version);
+
+    params.external_target_columns[ViewTarget::MetricFamilies] = makeColumns({makeColumn("metric_family", "String"), makeColumn("type", "String"), makeColumn("unit", "String"), makeColumn("help", "String")});
+    auto create_with_old_version = [&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES db.ext_metrics", params); };
+    EXPECT_EQ(getExceptionCode(create_with_old_version), ErrorCodes::THERE_IS_NO_COLUMN);
+    EXPECT_TRUE(getExceptionMessage(create_with_old_version).contains("ALTER TABLE db.ext_metrics RENAME COLUMN metric_family TO metric_family_name"))
+        << getExceptionMessage(create_with_old_version);
+
+    /// The clause `AS <other_table>` doesn't copy a customized column and the engine keys under the name of the other versions:
+    /// they are generated again for the version of the new table, while the other customized parts are copied.
+    auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5 METRIC FAMILIES INNER COLUMNS (metric_family_name LowCardinality(String)) "
+            "METRIC FAMILIES ENGINE = ReplacingMergeTree PARTITION BY substring(metric_family_name, 1, 1) ORDER BY (metric_family_name, type) SETTINGS index_granularity = 1024"));
+    EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"), new_columns);
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family SETTINGS index_granularity = 1024");
+
+    definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 5",
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries METRIC FAMILIES INNER COLUMNS (metric_family LowCardinality(String)) "
+            "METRIC FAMILIES ENGINE = ReplacingMergeTree ORDER BY (metric_family, type)"));
+    EXPECT_EQ(extractInnerColumns(definition, "METRIC FAMILIES"), old_columns);
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+}
+
+
 TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGeneratedKeys)
 {
     auto definition = normalizeNewTable(
@@ -506,13 +573,16 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DeclaredEnginesWithoutKeysGetGenerated
         "TTL toDateTime(timestamp) + toIntervalSecond(345600) SETTINGS index_granularity = 8192, ttl_only_drop_parts = 1");
     EXPECT_EQ(extractInnerEngine(definition, "TAGS"),
         "AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1");
-    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family_name");
+    EXPECT_EQ(extractInnerEngine(definition, "METRIC FAMILIES"), "ReplacingMergeTree ORDER BY metric_family");
 }
 
 
 TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
 {
     /// An explicit supported version is accepted, an unknown one is rejected.
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 6").contains("version = 6"));
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5").contains("version = 5"));
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 4").contains("version = 4"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 3").contains("version = 3"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2").contains("version = 2"));
     EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1").contains("version = 1"));
@@ -522,7 +592,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 6")) << definition;
+    EXPECT_TRUE(definition.contains("version = 7")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
 }
 
@@ -539,15 +609,15 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
     /// The timezone is named only from the version that introduced it, so an earlier version keeps
     /// generating the expression it always generated and stays reproducible.
     EXPECT_EQ(
-        extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5"), "RECENT SAMPLES"),
+        extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 6"), "RECENT SAMPLES"),
         legacy_engine);
     EXPECT_EQ(extractInnerEngine(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries"), "RECENT SAMPLES"), pinned_engine);
 
     /// A copy is a new table at the latest version. The source's own spelling is what identifies its
     /// key as generated, so it is stripped rather than carried over as if it had been declared.
     auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
-        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5"));
-    EXPECT_TRUE(copy.contains("version = 6")) << copy;
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6"));
+    EXPECT_TRUE(copy.contains("version = 7")) << copy;
     EXPECT_EQ(extractInnerEngine(copy, "RECENT SAMPLES"), pinned_engine);
 
     static constexpr std::string_view legacy_replicated_engine
@@ -562,18 +632,18 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, RecentSamplesPartitionKeyIsVersioned)
     /// The engine and its arguments are preserved on copy, while the generated partition
     /// key is recognized, stripped, and regenerated with UTC on the new table.
     auto replicated_src = normalizeNewTable(
-        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5 "
+        "CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6 "
         "RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}')");
     EXPECT_EQ(extractInnerEngine(replicated_src, "RECENT SAMPLES"), legacy_replicated_engine);
 
     auto replicated_copy = normalizeNewTableAs(
         "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries", replicated_src);
-    EXPECT_TRUE(replicated_copy.contains("version = 6")) << replicated_copy;
+    EXPECT_TRUE(replicated_copy.contains("version = 7")) << replicated_copy;
     EXPECT_EQ(extractInnerEngine(replicated_copy, "RECENT SAMPLES"), pinned_replicated_engine);
 
     /// An explicit custom partition key is preserved on copy even when the engine has arguments.
     auto custom_partition_copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
-        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 5 "
+        normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 6 "
             "RECENT SAMPLES ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/ts_recent_samples', '{replica}') "
             "PARTITION BY toYYYYMM(timestamp)"));
     EXPECT_TRUE(extractInnerEngine(custom_partition_copy, "RECENT SAMPLES").contains("PARTITION BY toYYYYMM(timestamp)"))
@@ -596,6 +666,9 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, NormalizationIsIdempotent)
     const std::vector<std::pair<String, NormalizeTimeSeriesDefinitionParams>> definitions =
     {
         {"CREATE TABLE db.ts ENGINE = TimeSeries", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 5", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 4", {}},
+        {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 3", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 2", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 1", {}},
         {"CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS tags_to_columns = {'job': 'job'}, store_min_time_and_max_time = 0, recent_samples_ttl_seconds = 0", {}},
