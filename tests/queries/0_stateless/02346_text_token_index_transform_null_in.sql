@@ -119,4 +119,18 @@ SELECT count() FROM tab WHERE m['k'] = toFixedString('', 4) SETTINGS force_data_
 SELECT count() FROM tab WHERE m['k'] = toFixedString('', 4);
 SELECT count() FROM tab WHERE m['k'] IN ('val0') SETTINGS force_data_skipping_indices = 'idx';
 
+-- A String map value defaults to '' only, so an all-NUL value is a real value and must prune.
+
+DROP TABLE tab;
+CREATE TABLE tab (id UInt64, m Map(String, String), INDEX idx mapValues(m) TYPE text(tokenizer = array)) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab SELECT 0, map('k', unhex('00'));
+INSERT INTO tab SELECT number, map('k', 'val' || toString(number)) FROM numbers(1, 2);
+INSERT INTO tab SELECT 3, map('other', 'x');
+
+SELECT count() FROM tab WHERE m['k'] = unhex('00') SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM tab WHERE m['k'] IN (unhex('00')) SETTINGS force_data_skipping_indices = 'idx';
+SELECT count() FROM tab WHERE m['k'] = '' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE m['k'] IN ('') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM tab WHERE m['k'] = '';
+
 DROP TABLE tab;
