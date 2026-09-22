@@ -143,6 +143,8 @@ For this tutorial, you'll need:
     </Step>
 
     <Step title="Incorporate Geo data">
+        <span id="germany-polygon" />
+
         You might also be interested in knowing how many cell towers are within a specific geographical area.
         ClickHouse has many useful geo functions for this use case, such as the [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) function.
 
@@ -220,15 +222,15 @@ For this tutorial, you'll need:
         ```
     </Step>
 
-    <Step title="Visualize the data with ClickHouse Agents">
-        Next we'd like to visualize this data.
+    <Step title="Optional: Visualize the data with ClickHouse Agents">
+        Next we'd like to visualize this data. This is an optional example run: ClickHouse Agents is model-driven beta functionality, so its plan, tool trace and output can differ between runs.
         [ClickHouse Agents](/products/cloud/features/ai-ml/agents) lets you easily query and explore your ClickHouse data through conversation, without writing SQL or orchestration logic yourself.
         The agent interprets your intent, plans steps, calls the tools you’ve configured, and returns the results to you.
 
         Click **ClickHouse agents** underneath your organization name in the bottom of the left hand menu to open ClickHouse Agents.
         You can message the ClickHouse agent through the [chat](/products/cloud/features/ai-ml/agents/chat).
         Type "Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables" and hit send.
-        You'll be able to observe what the agent is doing as it works through the request in steps:
+        On one run, the agent carried out the following steps:
 
         <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="ClickHouse Agent chat showing the steps taken to build a cell tower density grid for Germany"/>
 

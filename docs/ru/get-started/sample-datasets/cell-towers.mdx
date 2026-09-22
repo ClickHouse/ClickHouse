@@ -35,7 +35,7 @@ import { Image } from "/snippets/components/Image.jsx";
     ```
   </Step>
   <Step title="Используйте геоданные">
-    `ClickHouse` предоставляет [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). Создайте `germany`, вставьте контур континентальной Германии из [английского руководства](/get-started/sample-datasets/cell-towers#geospatial-analysis-with-cell-towers) и подсчитайте станции внутри полигона:
+    `ClickHouse` предоставляет [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). Создайте `germany`, вставьте контур континентальной Германии из [английского руководства](/get-started/sample-datasets/cell-towers#germany-polygon) и подсчитайте станции внутри полигона:
 
     ```sql
     CREATE TABLE germany (polygon Array(Tuple(Float64, Float64))) ORDER BY polygon;

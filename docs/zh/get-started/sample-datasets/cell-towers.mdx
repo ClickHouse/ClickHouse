@@ -35,7 +35,7 @@ import { Image } from "/snippets/components/Image.jsx";
     ```
   </Step>
   <Step title="使用地理数据">
-    `ClickHouse` 提供 [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) 等函数。创建 `germany`，插入[英文指南](/get-started/sample-datasets/cell-towers#geospatial-analysis-with-cell-towers)中的德国本土边界，然后统计多边形内的基站：
+    `ClickHouse` 提供 [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) 等函数。创建 `germany`，插入[英文指南](/get-started/sample-datasets/cell-towers#germany-polygon)中的德国本土边界，然后统计多边形内的基站：
 
     ```sql
     CREATE TABLE germany (polygon Array(Tuple(Float64, Float64))) ORDER BY polygon;

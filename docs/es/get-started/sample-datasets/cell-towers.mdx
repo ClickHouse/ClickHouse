@@ -39,7 +39,7 @@ En esta guía cargarás los datos de `OpenCelliD` en `ClickHouse Cloud`, los enr
     ```
   </Step>
   <Step title="Incorpora datos geográficos">
-    `ClickHouse` incluye funciones como [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). Crea `germany`, inserta el contorno de Alemania continental del [tutorial en inglés](/get-started/sample-datasets/cell-towers#geospatial-analysis-with-cell-towers) y cuenta las antenas dentro del polígono:
+    `ClickHouse` incluye funciones como [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon). Crea `germany`, inserta el contorno de Alemania continental del [tutorial en inglés](/get-started/sample-datasets/cell-towers#germany-polygon) y cuenta las antenas dentro del polígono:
 
     ```sql
     CREATE TABLE germany (polygon Array(Tuple(Float64, Float64))) ORDER BY polygon;

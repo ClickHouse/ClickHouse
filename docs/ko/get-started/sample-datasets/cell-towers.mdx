@@ -35,7 +35,7 @@ import { Image } from "/snippets/components/Image.jsx";
     ```
   </Step>
   <Step title="지리 데이터 사용">
-    `ClickHouse`의 [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon)을 사용합니다. `germany`를 만들고 [영문 가이드](/get-started/sample-datasets/cell-towers#geospatial-analysis-with-cell-towers)의 독일 본토 윤곽을 삽입합니다.
+    `ClickHouse`의 [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon)을 사용합니다. `germany`를 만들고 [영문 가이드](/get-started/sample-datasets/cell-towers#germany-polygon)의 독일 본토 윤곽을 삽입합니다.
 
     ```sql
     CREATE TABLE germany (polygon Array(Tuple(Float64, Float64))) ORDER BY polygon;

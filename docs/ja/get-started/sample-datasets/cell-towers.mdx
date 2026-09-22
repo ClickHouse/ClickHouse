@@ -35,7 +35,7 @@ import { Image } from "/snippets/components/Image.jsx";
     ```
   </Step>
   <Step title="地理データを使う">
-    `ClickHouse` の [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) を使います。`germany` を作成し、[英語版ガイド](/get-started/sample-datasets/cell-towers#geospatial-analysis-with-cell-towers) のドイツ本土の輪郭を挿入します。
+    `ClickHouse` の [`pointInPolygon`](/reference/functions/regular-functions/geo/coordinates#pointinpolygon) を使います。`germany` を作成し、[英語版ガイド](/get-started/sample-datasets/cell-towers#germany-polygon) のドイツ本土の輪郭を挿入します。
 
     ```sql
     CREATE TABLE germany (polygon Array(Tuple(Float64, Float64))) ORDER BY polygon;
