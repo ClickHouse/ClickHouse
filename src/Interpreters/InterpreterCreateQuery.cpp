@@ -1290,12 +1290,12 @@ void InterpreterCreateQuery::validateMaterializedViewColumnsAndEngine(const ASTC
 
     if (create.refresh_strategy && !create.refresh_strategy->isAppend())
     {
-        if (database && database->getEngineName() != "Atomic" && database->getEngineName() != "Replicated")
+        if (database && !database->supportsAtomicTableReplacement())
             throw Exception(ErrorCodes::INCORRECT_QUERY,
-                "Refreshable materialized views (except with APPEND) only support Atomic and Replicated database engines, but database {} has engine {}", create.getDatabase(), database->getEngineName());
+                "Refreshable materialized views (except with APPEND) require atomic table replacement, but database {} with engine {} does not support it", create.getDatabase(), database->getEngineName());
 
         std::string message;
-        if (!supportsAtomicRename(&message))
+        if (!database && !supportsAtomicRename(&message))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Can't create refreshable materialized view because exchanging files is not supported by the OS ({})", message);
     }

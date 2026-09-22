@@ -92,6 +92,11 @@ DatabaseAtomic::DatabaseAtomic(
 {
 }
 
+bool DatabaseAtomic::supportsAtomicTableReplacement() const
+{
+    return supportsAtomicRename();
+}
+
 void DatabaseAtomic::createDirectories()
 {
     std::lock_guard lock(mutex);

@@ -218,6 +218,9 @@ public:
     /// This is distinct from `isExternal`, which classifies whether the engine supports ClickHouse internal table types.
     virtual bool isRemoteDatabase() const { return false; }
 
+    /// Readers see either the old or the new table contents during replacement.
+    virtual bool supportsAtomicTableReplacement() const { return false; }
+
     /// Load a set of existing tables.
     /// You can call only once, right after the object is created.
     virtual void loadStoredObjects( /// NOLINT
