@@ -123,6 +123,12 @@ size_t computeBytesBeforeWidth(const UInt8 * data, size_t size, size_t prefix, s
   */
 size_t computeBytesBeforeCodePoint(const UInt8 * data, size_t size, size_t limit) noexcept;
 
+/// True if `Poco::Unicode::toLower` maps some non-ASCII code point onto the ASCII character `c`, or onto its
+/// other case. Today that set is {'k', 'K'}, reachable from U+212A KELVIN SIGN.
+/// Case-insensitive UTF-8 search folds per code point with that same rule, so a caller comparing bytes cannot
+/// reproduce it and must not answer a needle containing such a character.
+bool isASCIIReachableByCaseFolding(char c);
+
 }
 
 }

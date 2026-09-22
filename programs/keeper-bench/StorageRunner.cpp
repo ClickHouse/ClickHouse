@@ -6,6 +6,7 @@
 #include <sstream>
 
 #include <Common/Exception.h>
+#include <Common/InterruptListener.h>
 #include <Common/Logger.h>
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
@@ -15,6 +16,8 @@
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
+
+#include <RunnerCommon.h>
 
 namespace DB::ErrorCodes
 {
@@ -62,18 +65,18 @@ StorageRunner::StorageRunner(
     DB::ConfigProcessor config_processor(config_path, true, false);
     config_ptr = config_processor.loadConfig().configuration;
 
+    concurrency = getOption<size_t>(concurrency_, config_ptr, "concurrency", 4);
+    max_time = getOption<double>(max_time_, config_ptr, "timelimit", 0.0);
+    report_delay = getOption<double>(report_delay_, config_ptr, "report_delay", 1.0);
+    max_iterations = getOption<size_t>(max_iterations_, config_ptr, "iterations", 0);
+    continue_on_error = getOption<bool>(continue_on_error_, config_ptr, "continue_on_error", false);
+
     parseConfig(*config_ptr);
 
-    if (concurrency_)
-        concurrency = *concurrency_;
-    if (max_time_)
-        max_time = *max_time_;
-    if (report_delay_)
-        report_delay = *report_delay_;
-    if (max_iterations_)
-        max_iterations = *max_iterations_;
-    if (continue_on_error_)
-        continue_on_error = *continue_on_error_;
+    /// Parse the workload before setting up the storage: this registers the path
+    /// sets the generators draw from, which the setup tree creation populates.
+    generator = std::make_shared<Generator>();
+    generator->parse(*config_ptr, nodes_setup);
 }
 
 StorageRunner::~StorageRunner()
@@ -92,12 +95,6 @@ StorageRunner::~StorageRunner()
 
 void StorageRunner::parseConfig(const Poco::Util::AbstractConfiguration & config)
 {
-    concurrency = config.getUInt("concurrency", 4);
-    max_time = config.getDouble("timelimit", 0.0);
-    report_delay = config.getDouble("report_delay", 1.0);
-    max_iterations = config.getUInt64("iterations", 0);
-    continue_on_error = config.getBool("continue_on_error", false);
-
     writes_per_read_batch = config.getUInt64("storage.writes_per_read_batch", 10);
     snapshot_toggle_periods = config.getUInt64("storage.snapshot_toggle_periods", 0);
     preprocess_commit_queue_size = config.getUInt64("storage.preprocess_commit_queue_size", 32);
@@ -111,7 +108,7 @@ void StorageRunner::parseConfig(const Poco::Util::AbstractConfiguration & config
     if (input_queue_size < 2)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "storage.input_queue_size must be >= 2");
 
-    benchmark_context.initializeFromConfig(config);
+    nodes_setup.initializeFromConfig(config);
 }
 
 size_t StorageRunner::opIndex(Coordination::OpNum op_num)
@@ -197,22 +194,13 @@ void StorageRunner::setupStorage()
     for (size_t i = 0; i < concurrency; ++i)
         generator_session_ids.push_back(storage->getSessionID(setup_timeout_ms));
 
-    /// Recursively create the setup tree. The real `BenchmarkContext::startup` uses a
-    /// ZooKeeper client, so we walk the node tree here and issue preprocess+commit
-    /// directly against the storage, populating `tagged_paths` as we go.
-    std::function<void(const BenchmarkContext::Node &, const std::string &)> create_subtree;
-    auto & tagged = benchmark_context.getTaggedPaths();
-    const Coordination::ACLs & default_acls = benchmark_context.getDefaultAcls();
-
-    create_subtree = [&](const BenchmarkContext::Node & node, const std::string & parent_path)
+    /// The setup tree walk produces `Create` requests; issue preprocess+commit
+    /// for each of them directly against the storage.
+    std::cerr << "---- Populating storage for benchmark ----" << std::endl;
+    nodes_setup.finalizePathSets(concurrency);
+    nodes_setup.createNodes([&](std::shared_ptr<Coordination::ZooKeeperCreateRequest> request)
     {
-        std::string path = parent_path == "/" ? "/" + node.name.getString() : parent_path + "/" + node.name.getString();
-
-        auto request = std::make_shared<Coordination::ZooKeeperCreateRequest>();
-        request->path = path;
-        request->data = node.data ? node.data->getString() : "";
-        request->acls = default_acls;
-
+        const std::string path = request->path;
         int64_t zxid = next_zxid.fetch_add(1);
         try
         {
@@ -230,31 +218,13 @@ void StorageRunner::setupStorage()
                 << DB::getCurrentExceptionMessage(false) << std::endl;
             throw;
         }
+    });
 
-        if (node.tag)
-            tagged[*node.tag].push_back(path);
-
-        for (const auto & child : node.children)
-            create_subtree(*child, path);
-    };
-
-    std::cerr << "---- Populating storage for benchmark ----" << std::endl;
-    for (const auto & root_node : benchmark_context.getRootNodes())
-        create_subtree(*root_node, "/");
-
-    if (!benchmark_context.getTaggedPaths().empty())
-    {
-        std::cerr << "Tagged paths:" << std::endl;
-        for (const auto & [tag_name, paths] : benchmark_context.getTaggedPaths())
-            std::cerr << "  \"" << tag_name << "\": " << paths.size() << " paths" << std::endl;
-    }
     std::cerr << "Populated " << storage->getStorageStats().nodes_count << " znodes.\n" << std::endl;
 }
 
 void StorageRunner::startGenerators()
 {
-    const auto * tagged_paths = benchmark_context.getTaggedPaths().empty() ? nullptr : &benchmark_context.getTaggedPaths();
-
     auto list_children = [this](const std::string & parent_path) -> std::vector<std::string>
     {
         Coordination::KeeperRequestsForSessions requests;
@@ -275,14 +245,11 @@ void StorageRunner::startGenerators()
         return list.names;
     };
 
-    generators.resize(concurrency);
-    for (size_t i = 0; i < concurrency; ++i)
-    {
-        generators[i] = std::make_shared<Generator>();
-        generators[i]->startup(*config_ptr, list_children, i, tagged_paths);
-        generators[i]->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
-            [](const Coordination::WatchResponse &) {}));
-    }
+    nodes_setup.resolveChildrenOf(list_children);
+    nodes_setup.validatePathSets();
+
+    generator->setWatchCallback(std::make_shared<Coordination::WatchCallback>(
+        [](const Coordination::WatchResponse &) {}));
 }
 
 template <typename QueueT>
@@ -298,7 +265,8 @@ void StorageRunner::pushBlocking(QueueT & queue, QueueItem & item)
 
 void StorageRunner::generatorThread(size_t idx)
 {
-    auto & generator = *generators[idx];
+    pcg64 rng(generator->getSeedFor(idx));
+    GenerateContext ctx{rng, idx};
     const int64_t session_id = generator_session_ids[idx];
 
     while (!shutdown.load(std::memory_order_relaxed))
@@ -320,7 +288,7 @@ void StorageRunner::generatorThread(size_t idx)
         ZooKeeperRequestWithCallbacks request_with_callbacks;
         try
         {
-            request_with_callbacks = generator.generate();
+            request_with_callbacks = generator->generate(ctx);
         }
         catch (...)
         {
@@ -578,6 +546,8 @@ void StorageRunner::printStats(const std::string & header, double seconds, const
     if (snapshot_mode)
         out << ", snapshot_mode: " << (*snapshot_mode ? "yes" : "no");
     out << "\n";
+    if (auto dynamic_sets = nodes_setup.describeDynamicPathSets(); !dynamic_sets.empty())
+        out << "path sets: " << dynamic_sets << "\n";
     out << "per-op avg ns per request:\n";
     for (size_t i = 1; i < NUM_OP_SLOTS; ++i)
     {
@@ -627,6 +597,10 @@ void StorageRunner::runBenchmark()
     read_queue = std::make_unique<NonblockingBoundedQueue<QueueItem>>(input_queue_size);
     commit_queue = std::make_unique<NonblockingBoundedQueue<QueueItem>>(preprocess_commit_queue_size);
 
+    /// SIGINT is blocked process-wide (see mainEntryClickHouseKeeperBench); poll it
+    /// in the main loop so Ctrl+C leads to a graceful shutdown with a final report.
+    DB::InterruptListener interrupt_listener;
+
     total_watch.restart();
 
     preprocess_thread_handle = std::make_unique<std::thread>([this] { preprocessThread(); });
@@ -645,6 +619,12 @@ void StorageRunner::runBenchmark()
 
         if (max_time > 0 && total_watch.elapsedSeconds() >= max_time)
             shutdown = true;
+
+        if (interrupt_listener.check())
+        {
+            std::cerr << "Stopping. SIGINT received." << std::endl;
+            shutdown = true;
+        }
 
         double elapsed_period = period_watch.elapsedSeconds();
         if ((report_delay > 0 && elapsed_period >= report_delay) || shutdown.load())

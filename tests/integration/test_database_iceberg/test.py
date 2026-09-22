@@ -397,6 +397,100 @@ def test_namespace_filter_pushdown(started_cluster):
     )
 
 
+def test_iceberg_history_namespace_filter_pushdown(started_cluster):
+    """
+    A predicate on `system.iceberg_history.table` must be passed to the REST
+    catalog so ClickHouse requests the target namespace's table list only.
+
+    The result alone cannot prove pushdown because filtering after a full catalog
+    scan returns the same rows. `RestCatalog` logs every namespace whose `/tables`
+    endpoint it requests, so this test verifies that the target request happens
+    and the sibling request does not.
+    """
+    node = started_cluster.instances["node1"]
+
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    target_namespace = f"{root_namespace}.target"
+    sibling_namespace = f"{root_namespace}.sibling"
+    table_name = "history_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(target_namespace)
+    catalog.create_namespace(sibling_namespace)
+
+    target_table = create_table(catalog, target_namespace, table_name)
+    target_table.append(pa.Table.from_pylist([generate_record()]))
+    sibling_table = create_table(catalog, sibling_namespace, table_name)
+    sibling_table.append(pa.Table.from_pylist([generate_record()]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    target_table_name = f"{target_namespace}.{table_name}"
+    target_log_message = (
+        f"Received tables response for namespace: {target_namespace}"
+    )
+    sibling_log_message = (
+        f"Received tables response for namespace: {sibling_namespace}"
+    )
+
+    predicates = [
+        f"table = '{target_table_name}'",
+        f"table LIKE '{escape_like_literal(target_namespace)}.%'",
+    ]
+    for predicate in predicates:
+        target_requests_before = int(node.count_in_log(target_log_message))
+        sibling_requests_before = int(node.count_in_log(sibling_log_message))
+
+        result = node.query(
+            f"SELECT DISTINCT table FROM system.iceberg_history "
+            f"WHERE database = '{CATALOG_NAME}' AND {predicate}"
+        ).strip()
+
+        assert result == target_table_name
+        node.wait_for_log_line(
+            re.escape(target_log_message),
+            repetitions=target_requests_before + 1,
+            look_behind_lines="+1",
+            timeout=15,
+        )
+
+        assert int(node.count_in_log(target_log_message)) == target_requests_before + 1
+        assert int(node.count_in_log(sibling_log_message)) == sibling_requests_before
+
+
+def test_iceberg_history_skips_broken_tables(started_cluster):
+    """`system.iceberg_history` logs and skips tables whose metadata cannot be resolved."""
+    node = started_cluster.instances["node1"]
+    namespace = f"clickhouse_{uuid.uuid4()}"
+    table_name = "history_table"
+
+    catalog = load_catalog_impl(started_cluster)
+    catalog.create_namespace(namespace)
+    table = create_table(catalog, namespace, table_name)
+    table.append(pa.Table.from_pylist([generate_record()]))
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+
+    qualified_table_name = f"{namespace}.{table_name}"
+    query = (
+        f"SELECT DISTINCT table FROM system.iceberg_history "
+        f"WHERE database = '{CATALOG_NAME}' AND table = '{qualified_table_name}' "
+        "SETTINGS database_datalake_require_metadata_access = 0"
+    )
+    assert node.query(query).strip() == qualified_table_name
+
+    node.query("SYSTEM ENABLE FAILPOINT datalake_try_get_table_throw")
+    try:
+        assert node.query(query).strip() == ""
+        node.wait_for_log_line(
+            re.escape(f"Ignoring broken table {CATALOG_NAME}.{qualified_table_name}")
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_try_get_table_throw")
+
+    assert node.query(query).strip() == qualified_table_name
+
+
 def test_check_database(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -2402,6 +2496,69 @@ def test_catalog_listing_error_surfaces_in_system_tables(started_cluster):
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
 
 
+def test_incremental_refreshable_mv_rest_catalog(started_cluster):
+    # Exactly-once incremental refreshable MV writing MergeTree -> a REST-catalog Iceberg table.
+    # The refresh appends through the catalog's compare-and-swap commit and embeds the advanced cursor
+    # in the append snapshot's summary, so data and cursor commit together. The MV lives in an Atomic
+    # database (no Keeper coordination znode), so a restart between rounds proves the cursor was read
+    # back from the catalog: round 2 appends only the new rows (exactly-once), not the whole source.
+    node = started_cluster.instances["node1"]
+
+    uid = uuid.uuid4().hex[:12]
+    namespace = f"irmv_ns_{uid}"
+    tgt_table = f"irmv_tgt_{uid}"
+    src = f"irmv_src_{uid}"
+    mv = f"irmv_mv_{uid}"
+    tgt = f"{CATALOG_NAME}.`{namespace}.{tgt_table}`"
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(started_cluster, node, namespace, tgt_table, "(k Int64)")
+
+    # MergeTree source with the block-number/offset columns the streaming cursor reads.
+    node.query(
+        f"""
+        CREATE TABLE {src} (k Int64)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS
+            enable_block_number_column = 1,
+            enable_block_offset_column = 1,
+            add_minmax_index_for_block_number_column = 1,
+            add_minmax_index_for_block_offset_column = 1,
+            part_minmax_index_columns = 'with_block_number_offset'
+        """
+    )
+
+    # REFRESH EVERY 10 YEAR + EMPTY: no automatic refresh; every refresh below is triggered manually.
+    node.query(
+        f"""
+        CREATE MATERIALIZED VIEW {mv}
+            REFRESH EVERY 10 YEAR APPEND INCREMENTAL
+            TO {tgt} EMPTY
+            AS SELECT k FROM {src}
+        """
+    )
+
+    # Round 1: commit rows 0..4 and refresh. The advanced cursor is committed inside the catalog snapshot.
+    node.query(f"INSERT INTO {src} SELECT number FROM numbers(5)")
+    node.query(f"SYSTEM REFRESH VIEW {mv}")
+    node.query(f"SYSTEM WAIT VIEW {mv}")
+    assert node.query(f"SELECT count(), uniqExact(k) FROM {tgt}").strip() == "5\t5"
+
+    # Restart wipes in-memory RefreshTask state; only the cursor persisted in the catalog snapshot
+    # summary can let the next refresh resume instead of re-reading from the beginning.
+    node.restart_clickhouse()
+
+    # Round 2: commit rows 5..9. If the cursor survived (catalog), only the new rows are appended ->
+    # 10 rows, 10 distinct (exactly-once). If it were lost, round 2 re-reads all 10 -> 15 rows.
+    node.query(f"INSERT INTO {src} SELECT number FROM numbers(5, 5)")
+    node.query(f"SYSTEM REFRESH VIEW {mv}")
+    node.query(f"SYSTEM WAIT VIEW {mv}")
+    assert node.query(f"SELECT count(), uniqExact(k) FROM {tgt}").strip() == "10\t10"
+
+    node.query(f"DROP TABLE {mv}")
+    node.query(f"DROP TABLE {src}")
+
+
 def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
     node = started_cluster.instances["node1"]
 
@@ -2455,5 +2612,4 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
     )
 
     assert int(node.query(f"SELECT count() FROM {table_ref}")) == 4000000
-
     node.query(f"DROP DATABASE IF EXISTS {CATALOG_NAME}")
