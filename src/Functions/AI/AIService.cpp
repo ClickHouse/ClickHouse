@@ -144,7 +144,6 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
     for (UInt64 attempt = 0; attempt <= policy.max_retries; ++attempt)
     {
         /// Reserve an API-call slot before each request; this also performs a quota check.
-        /// Kept outside the `try` so a `throw_on_quota_exceeded` exception isn't caught by the retry handler.
         if (!quota.recordApiCall())
             return {};
 
