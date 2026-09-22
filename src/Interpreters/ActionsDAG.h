@@ -307,6 +307,9 @@ public:
     bool hasCorrelatedColumns() const noexcept;
     bool hasArrayJoin() const noexcept;
     bool hasStatefulFunctions() const;
+    /// Returns true for stateful functions or functions non-deterministic within the query,
+    /// including functions in lambda bodies.
+    bool hasNonDeterministicOrStatefulFunctions() const;
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
@@ -464,8 +467,7 @@ public:
 
     struct SplitArrayJoinResult;
 
-    /// Extract one `arrayJoin` function so it can become an ArrayJoinStep between `before` and `after`.
-    /// Picks an ARRAY_JOIN node whose argument does not itself contain an array join; returns nullopt if none.
+    /// Split out the first `arrayJoin` so it can become an ArrayJoinStep between `before` and `after`, nullopt if none.
     std::optional<SplitArrayJoinResult> extractFirstArrayJoin() const;
 
     /// Splits actions into two parts. First part has minimal size sufficient for calculation of
