@@ -8,6 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
+# A fail point is server-global state: disarm every one this test enables on any path out of it,
+# so that a paused part loader is released and nothing fires in a concurrently running test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_loading_outdated_part" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # A writable table loads its outdated parts asynchronously after start. Loading modifies the disk
 # (it detaches broken parts, removes duplicates, and prepares parts for removal), so a table that is
 # made read-only with `ALTER TABLE ... MODIFY SETTING table_readonly = 1` while that loading is still

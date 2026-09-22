@@ -8,6 +8,19 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
+# A fail point is server-global state: disarm every one this test enables on any path out of it,
+# so that a paused `ALTER` is released and nothing fires in a concurrently running test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_alter_readonly_pause_after_metadata_commit" 2>/dev/null || true
+    # Release and reap the `ALTER` that a paused fail point may have left parked in the background.
+    if [[ -n "${alter_pid:-}" ]]
+    then
+        wait "$alter_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 # A successful `table_readonly` 1 -> 0 toggle commits the setting before it restores the background
 # workers: enabling them and rescheduling the outdated-part loaders happens in the tail of
 # `StorageMergeTree::alter`, after the metadata commit. In that gap the table is durably writable

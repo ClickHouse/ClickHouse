@@ -8,6 +8,20 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
+# A fail point is server-global state: disarm every one this test enables on any path out of it,
+# so that a paused `ALTER` is released and nothing fires in a concurrently running test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_alter_settings_pause_before_metadata_commit" 2>/dev/null || true
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_alter_readonly_pause_after_metadata_commit" 2>/dev/null || true
+    # Release and reap the `ALTER` that a paused fail point may have left parked in the background.
+    if [[ -n "${alter_pid:-}" ]]
+    then
+        wait "$alter_pid" 2>/dev/null || true
+    fi
+}
+trap cleanup EXIT
+
 # A table attached read-only keeps its outdated parts unloaded on disk. `ATTACH PARTITION ... FROM`
 # waits for the outdated parts of the *source* table before cloning, and that wait returns at once
 # while the source is read-only, including inside both windows of its `table_readonly` 1 -> 0

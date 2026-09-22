@@ -8,6 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 set -e
 
+# A fail point is server-global state: disarm every one this test enables on any path out of it,
+# so that paused part loads are released and nothing fires in a concurrently running test.
+function cleanup()
+{
+    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT mt_pause_before_loading_queued_outdated_part" 2>/dev/null || true
+}
+trap cleanup EXIT
+
 # A writable table loads its outdated parts asynchronously after start: a scheduling loop hands the
 # parts one by one to a thread pool, which loads a bounded number of them at a time. The loop can
 # therefore be far ahead of the pool, with several loads queued but not started. Loading modifies the
