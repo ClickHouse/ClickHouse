@@ -8,19 +8,18 @@ cluster = ClickHouseCluster(__file__, zookeeper_config_path="configs/zookeeper.x
 
 node1 = cluster.add_instance(
     "node1",
-    main_configs=["configs/cluster.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["configs/cluster.xml"],
     with_zookeeper=True,
     stay_alive=True,
 )
 
 DATABASE = "db_active_node_taken"
 NODES = (node1, node2)
+DATABASE_UUID = "2b3d1d8c-6f4e-4a7b-9c1e-5d8f0a6b7c21"
 
 
 @pytest.fixture(scope="module")
@@ -33,15 +32,18 @@ def started_cluster():
 
 
 def test_active_node_owned_by_another_server(started_cluster):
-    # ON CLUSTER assigns one database UUID to every host, and literal shard/replica names make both
-    # hosts the same replica, so one of them finds <replica_path>/active owned by the live other one.
-    # The database is left unusable (issue #115818), but the failure is reachable from a single
-    # user query, so it must not be reported as a logical error.
-    node1.query(
-        f"CREATE DATABASE {DATABASE} ON CLUSTER 'two_nodes' "
-        f"ENGINE = Replicated('/clickhouse/databases/{DATABASE}', 's1', 'r1')",
-        settings={"distributed_ddl_task_timeout": 60},
-    )
+    # Both hosts get one database UUID and literal shard/replica names, so they are the same replica,
+    # and the second one finds <replica_path>/active owned by the live first one. This is what
+    # `CREATE DATABASE ... ON CLUSTER` does (issue #115818), but there both hosts create the replica
+    # concurrently, and a host that reads Keeper before the other one writes it fails the query
+    # itself with REPLICA_ALREADY_EXISTS. Creating the replicas one after another makes the second
+    # host always read the replica written by the first. The database is left unusable, but the
+    # failure is reachable from a user query, so it must not be reported as a logical error.
+    for node in NODES:
+        node.query(
+            f"CREATE DATABASE {DATABASE} UUID '{DATABASE_UUID}' "
+            f"ENGINE = Replicated('/clickhouse/databases/{DATABASE}', 's1', 'r1')"
+        )
 
     # REPLICA_ALREADY_EXISTS, reported by the losing replica's own DDL worker after 3x session_timeout_ms.
     expected = f"Error on initialization of {DATABASE}: Code: 253"
