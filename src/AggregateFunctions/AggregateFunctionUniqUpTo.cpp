@@ -211,9 +211,6 @@ public:
 
     String getName() const override { return "uniqUpTo"; }
 
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     /// ALWAYS_INLINE is required to have better code layout for uniqUpTo function
@@ -273,9 +270,6 @@ public:
     }
 
     String getName() const override { return "uniqUpTo"; }
-
-    /// A numeric parameter may arrive as a Decimal or wide integer, whose untyped spelling reparses as String.
-    bool shouldPrintParametersWithTypes() const override { return true; }
 
     bool allocatesMemoryInArena() const override { return false; }
 
