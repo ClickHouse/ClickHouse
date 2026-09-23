@@ -969,7 +969,6 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
     {
-        /// The column-level CAST accepts an array of 2-element tuples here too (FunctionCast::createMapWrapper).
         const FieldVector * map = nullptr;
         if (src.getType() == Field::Types::Map)
             map = &src.safeGet<Map>();
