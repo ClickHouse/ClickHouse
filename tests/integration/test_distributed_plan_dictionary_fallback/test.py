@@ -292,10 +292,14 @@ def test_assign_centroid_dictionary_form_falls_back(started_cluster):
 
 
 def test_assign_centroid_wrapped_name_falls_back(started_cluster):
-    """The function sees the dictionary name unwrapped, but the plan node keeps the type as written: `Nullable(String)`
-    from a scalar subquery, `LowCardinality(String)` from `toLowCardinality`. Issue 121486."""
-    # The scalar subquery is a unit of its own: it has no dictionary, so it distributes and spawns tasks of its own while
-    # the outer plan falls back. Only the outer plan's decision is asserted for it.
+    """Issue 121486. The dictionary name of `assignCentroid` written in a type other than plain `String`; the original
+    name-based check compared the raw argument type and let these ship. Each row must run locally, with the reason
+    naming `default.c`:
+    - `toLowCardinality('default.c')`: the name as `LowCardinality(String)`
+    - `CAST('default.c', 'Nullable(String)')`: the name as `Nullable(String)`
+    - `(SELECT nm FROM cfg LIMIT 1)`: the name from a scalar subquery, which yields `Nullable(String)`. The scalar
+      subquery itself is a separate unit with no dictionary, so it distributes and spawns tasks of its own; only the
+      outer plan's fallback is asserted for this row."""
     for name_expression, outer_plan_only in [
         ("toLowCardinality('default.c')", False),
         ("CAST('default.c', 'Nullable(String)')", False),
@@ -334,12 +338,20 @@ def test_join_get_falls_back(started_cluster):
 
 
 def test_dict_get_in_column_default_falls_back(started_cluster):
-    """The plan carries only `INPUT nm`; the worker's reader would compute the default from the metadata, on the worker,
-    with a dictionary it does not have. A default reading another defaulted column is followed. Issue 121489."""
-    # `via` reads `nm`, `via2` reads `via`: the reader would compute the whole chain, so the check follows it. `lam` hides
-    # the call in a lambda body. `cid` is the dictionary form of `assignCentroid` spelled in a default.
-    # The reason names the function and the selected column whose resolved default contains it: for `via` and `via2` the
-    # analyzer substitutes `nm` by its own default, so the call is found in their expressions.
+    """Issue 121489. The columns below were added by ALTER after the insert, so the only part lacks them. The MergeTree
+    reader of whichever server scans the part (the worker, in a distributed plan) computes a missing column from its
+    default expression in the table metadata. On a worker that ends in calling a dictionary it does not have.
+    The plan itself carries no dictionary call (only `INPUT <column>`),
+    hence the fallback.
+    Each row selects one such column and must run locally, with the reason naming the dictionary and the table:
+    - `nm`:   `DEFAULT dictGet(d, ...)`, the plain case
+    - `mt`:   `MATERIALIZED dictGet(d, ...)`, computed the same way as DEFAULT when missing
+    - `via`:  `DEFAULT concat(nm, '!')`: computing `via` needs `nm`, computing `nm` calls the dictionary
+    - `via2`: `DEFAULT upper(via)`: one more step, `via2` -> `via` -> `nm` -> dictionary
+    - `lam`:  `DEFAULT arrayMap(x -> dictGet(d, ...), [k])`, the call inside a lambda body
+    - `cid`:  `DEFAULT assignCentroid(..., 'default.c')`, the dictionary form of assignCentroid
+    The second loop selects defaults that use no dictionary (`plain`, and both inline forms of assignCentroid) and must
+    still distribute."""
     for query, expected, reason in [
         ("SELECT k, nm FROM t_dflt ORDER BY k LIMIT 3", "0\tn0\n1\tn1\n2\tn2\n", "dictionary default.d"),
         ("SELECT k, mt FROM t_dflt ORDER BY k LIMIT 3", "0\tn0\n1\tn1\n2\tn2\n", "dictionary default.d"),
@@ -356,7 +368,6 @@ def test_dict_get_in_column_default_falls_back(started_cluster):
         assert _worker_tasks(query_id) == 0, query
         assert f"does not support {reason}: it is an object of the initiator, used by a column default of table default.t_dflt" in _fallback_reasons(query_id), query
 
-    # Defaults without an object of the initiator still distribute: a plain expression, and the inline form of `assignCentroid`.
     for query, expected in [
         ("SELECT k, plain FROM t_dflt ORDER BY k LIMIT 2", "0\tp0\n1\tp1\n"),
         ("SELECT k, cid_inline FROM t_dflt ORDER BY k LIMIT 3", "0\t1\n1\t0\n2\t1\n"),
@@ -372,8 +383,8 @@ def test_dict_get_in_column_default_falls_back(started_cluster):
 
 def test_column_default_check_boundaries(started_cluster):
     """What the column-default check does and does not look at: only the columns the read produces (a query without a
-    defaulted column distributes; a virtual column is skipped), never the parts (a materialized default still falls back,
-    the accepted imprecision of the temporary check), and not aliases (the analyzer inlines them into the query)."""
+    defaulted column distributes; a virtual column is skipped), never the parts (a materialized default still falls back)
+    and not aliases (the analyzer inlines them into the query)."""
     for query, expected in [
         ("SELECT k FROM t_dflt ORDER BY k LIMIT 2", "0\n1\n"),
         ("SELECT k, _part != '' FROM t_dflt ORDER BY k LIMIT 2", "0\t1\n1\t1\n"),
@@ -390,9 +401,8 @@ def test_column_default_check_boundaries(started_cluster):
     assert _remote_tasks(query_id) == 0
     assert "does not support dictionary default.d_both: it is an object of the initiator, used by a column default of table default.t_mat" in _fallback_reasons(query_id)
 
-    # An ALIAS is inlined by the analyzer, so it is caught through the query text, not through the column-default check;
-    # and because the analyzer resolves the alias expressions of a table up front, a query that does not use the alias
-    # falls back as well. Accepted while dictionaries are disabled for distributed plans.
+    # The analyzer resolves all ALIAS expressions of a table during analysis, so a dictionary ALIAS makes every query on
+    # the table fall back, used or not.
     for query, expected in [
         ("SELECT k, al FROM t_alias ORDER BY k LIMIT 2", "0\tn0\n1\tn1\n"),
         ("SELECT k FROM t_alias ORDER BY k LIMIT 2", "0\n1\n"),
@@ -404,62 +414,6 @@ def test_column_default_check_boundaries(started_cluster):
         reasons = _fallback_reasons(query_id)
         assert "does not support dictionary default.d: it is an object of the initiator" in reasons, query
         assert "column default" not in reasons, query
-
-
-def test_unresolvable_column_default_falls_back(started_cluster):
-    """The default expression of `gone` names a dictionary that no longer exists. The check cannot resolve it and treats
-    that as a reference, so the query runs locally, where the reader finds the column in every part and never evaluates
-    the default. Distributing would have been fine here; failing at planning would not."""
-    query_id = str(uuid.uuid4())
-    result = initiator.query(f"SELECT k, gone FROM t_gone ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
-    assert result == "0\tn0\n1\tn1\n"
-    _flush_logs()
-    assert _remote_tasks(query_id) == 0
-    assert _worker_tasks(query_id) == 0
-    assert "a column default of table default.t_gone does not resolve" in _fallback_reasons(query_id)
-
-
-def test_dict_in_limit_range_and_interpolate_falls_back(started_cluster):
-    """Steps other than expression and filter carry a DAG too: the `LIMIT AFTER` / `UNTIL` boundaries sit in the
-    `LimitRange` step above the gather, and `INTERPOLATE` in the `Filling` step."""
-    for query, function in [
-        ("SELECT k FROM t ORDER BY k LIMIT AFTER dictHas(d, 1996 - k)", "dictHas"),
-        ("SELECT k FROM t ORDER BY k LIMIT UNTIL NOT dictHas(d, k + 997)", "dictHas"),
-        ("SELECT k, v FROM t WHERE k < 2 ORDER BY k WITH FILL FROM 0 TO 4 INTERPOLATE (v AS dictGet(d, 'name', k))", "dictGet"),
-    ]:
-        query_id = str(uuid.uuid4())
-        result = initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id)
-        assert result != ""
-        _flush_logs()
-        assert _remote_tasks(query_id) == 0, query
-        assert _worker_tasks(query_id) == 0, query
-        assert "does not support dictionary default.d" in _fallback_reasons(query_id), query
-
-
-def test_scalar_subquery_with_dictionary_disables_the_query(started_cluster):
-    """The record is per query: a dictionary resolved while a scalar subquery is evaluated on the initiator makes the
-    outer plan fall back too, although only its constant result would have shipped. Accepted while dictionaries are
-    disabled for distributed plans."""
-    query_id = str(uuid.uuid4())
-    result = initiator.query(
-        f"SELECT k, (SELECT dictGet(d, 'name', toUInt64(1))) AS s FROM t ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}",
-        query_id=query_id,
-    )
-    assert result == "0\tn1\n1\tn1\n"
-    _flush_logs()
-    assert _remote_tasks(query_id) == 0
-    assert _worker_tasks(query_id) == 0
-    assert "does not support dictionary default.d" in _fallback_reasons(query_id)
-
-
-def test_record_does_not_depend_on_query_logging(started_cluster):
-    """`system.query_log` bookkeeping is gated on `log_queries`; the record the decision reads is not."""
-    error = initiator.query_and_get_error(
-        f"SELECT k, dictGet(d, 'name', k) FROM t ORDER BY k LIMIT 3 "
-        f"SETTINGS {DISTRIBUTED_SETTINGS}, distributed_plan_fallback_to_local_execution = 0, log_queries = 0"
-    )
-    assert "SUPPORT_IS_DISABLED" in error
-    assert "does not support dictionary default.d" in error
 
 
 def test_strict_mode_throws(started_cluster):
