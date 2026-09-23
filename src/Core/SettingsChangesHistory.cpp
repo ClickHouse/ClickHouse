@@ -55,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"parallel_replicas_plan_based", false, true, "Enable plan-based parallel replicas by default on this experiment branch. previous_value=false so `compatibility` with versions before 26.9 restores the old behavior."},
             {"parallel_replicas_allow_merge_tables", false, true, "New setting to allow reading from a `Merge` table with plan-based parallel replicas, by expanding the `Merge` read into a union of the reads from the underlying `MergeTree` tables. It only has an effect together with `parallel_replicas_plan_based`. Enabled by default on this experiment branch."},
+            {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
