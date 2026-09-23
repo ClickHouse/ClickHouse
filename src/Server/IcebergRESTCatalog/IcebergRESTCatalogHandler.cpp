@@ -32,6 +32,8 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int AUTHENTICATION_FAILED;
+    extern const int KEEPER_EXCEPTION;
+    extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
 }
 
@@ -39,6 +41,10 @@ namespace
 {
 
 constexpr size_t MAX_NAMESPACE_CREATE_BODY_SIZE = 1_MiB;
+/// Keeper limits path depth and node data size. Reject oversized requests here with 400 instead of a Keeper error.
+constexpr size_t MAX_NAMESPACE_LEVELS = 16;
+constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
+constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 IcebergNamespaceName splitNamespace(const String & value)
@@ -73,10 +79,11 @@ std::optional<String> getQueryParameter(const Poco::URI & uri, const String & na
 
 }
 
-IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, String warehouse_, IcebergRESTCatalogStorePtr store_)
+IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, String warehouse_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_)
     : log(getLogger("IcebergRESTCatalogHandler"))
     , server(server_)
     , warehouse(std::move(warehouse_))
+    , base_location(std::move(base_location_))
     , store(std::move(store_))
 {
 }
@@ -246,6 +253,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             type = "ForbiddenException";
             message = getCurrentExceptionMessage(false);
         }
+        /// The store handles expected Keeper errors. Anything else means the store is unavailable.
+        else if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::NO_ZOOKEEPER)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+            type = "ServiceUnavailableException";
+            message = "Catalog storage is unavailable";
+        }
 
         tryLogCurrentException(log, "Failed to process Iceberg REST catalog request");
         try
@@ -360,12 +374,17 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & reques
         const auto namespace_array = json->getArray("namespace");
         if (!namespace_array || namespace_array->size() == 0)
             throw Poco::Exception("'namespace' must be a non-empty array");
+        if (namespace_array->size() > MAX_NAMESPACE_LEVELS)
+            throw Poco::Exception(fmt::format("'namespace' must have at most {} levels", MAX_NAMESPACE_LEVELS));
 
         for (const auto & level : *namespace_array)
         {
-            if (level.extract<String>().empty())
+            auto level_string = level.extract<String>();
+            if (level_string.empty())
                 throw Poco::Exception("namespace levels must be non-empty strings");
-            name.push_back(level.extract<String>());
+            if (level_string.size() > MAX_NAMESPACE_LEVEL_LENGTH)
+                throw Poco::Exception(fmt::format("namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH));
+            name.push_back(std::move(level_string));
         }
 
         if (json->has("properties"))
@@ -373,8 +392,15 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & reques
             const auto properties_object = json->getObject("properties");
             if (!properties_object)
                 throw Poco::Exception("'properties' must be an object");
+            size_t properties_size = 0;
             for (const auto & [key, value] : *properties_object)
-                properties[key] = value.extract<String>();
+            {
+                auto value_string = value.extract<String>();
+                properties_size += key.size() + value_string.size();
+                if (properties_size > MAX_NAMESPACE_PROPERTIES_SIZE)
+                    throw Poco::Exception(fmt::format("'properties' must be at most {} bytes in total", MAX_NAMESPACE_PROPERTIES_SIZE));
+                properties[key] = std::move(value_string);
+            }
         }
     }
     catch (const Poco::Exception & e)

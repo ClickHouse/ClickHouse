@@ -2,7 +2,7 @@
 
 #include <Interpreters/Context_fwd.h>
 #include <Server/HTTP/HTTPRequestHandler.h>
-#include <Server/IcebergRESTCatalog/IIcebergRESTCatalogStore.h>
+#include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 #include <Server/IcebergRESTCatalog/IcebergRESTCatalogRouter.h>
 #include <Common/logger_useful.h>
 
@@ -23,7 +23,7 @@ class Session;
 class IcebergRESTCatalogHandler : public HTTPRequestHandler
 {
 public:
-    IcebergRESTCatalogHandler(IServer & server_, String warehouse_, IcebergRESTCatalogStorePtr store_);
+    IcebergRESTCatalogHandler(IServer & server_, String warehouse_, String base_location_, KeeperIcebergRESTCatalogStorePtr store_);
 
     void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, const ProfileEvents::Event & write_event) override;
 
@@ -46,7 +46,9 @@ private:
     LoggerPtr log;
     IServer & server;
     const String warehouse;
-    IcebergRESTCatalogStorePtr store;
+    /// Storage prefix for tables created without an explicit location.
+    const String base_location;
+    KeeperIcebergRESTCatalogStorePtr store;
 };
 
 }
