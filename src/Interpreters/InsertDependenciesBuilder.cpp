@@ -25,6 +25,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/QueryViewsLog.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InsertDeduplication.h>
@@ -100,7 +101,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool use_strict_insert_block_limits;
     extern const SettingsNonZeroUInt64 max_insert_block_size;
     extern const SettingsUInt64 max_insert_block_size_bytes;
@@ -617,7 +617,7 @@ private:
     {
         /// We create a table with the same name as original table and the same alias columns,
         ///  but it will contain single block (that is INSERT-ed into main table).
-        /// InterpreterSelectQuery will do processing of alias columns.
+        /// The interpreter will do processing of alias columns.
         auto local_context = Context::createCopy(context);
 
         local_context->addViewSource(std::make_shared<StorageValues>(
@@ -628,15 +628,13 @@ private:
 
         QueryPipelineBuilder pipeline;
 
-        if (local_context->getSettingsRef()[Setting::allow_experimental_analyzer])
         {
+            /// Mark this region to avoid counting the `QueryExecutionCounters` metrics several times:
+            /// the pipeline is built again for every source block.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(view_id.getFullTableName());
+
             InterpreterSelectQueryAnalyzer interpreter(
                 select_query, local_context, SelectQueryOptions().ignoreAccessCheck(), local_context->getViewSource());
-            pipeline = interpreter.buildQueryPipeline();
-        }
-        else
-        {
-            InterpreterSelectQuery interpreter(select_query, local_context, SelectQueryOptions().ignoreAccessCheck());
             pipeline = interpreter.buildQueryPipeline();
         }
         pipeline.resize(1);

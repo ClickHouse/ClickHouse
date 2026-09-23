@@ -17,7 +17,7 @@ INSERT INTO ts_two_stacks VALUES
 
 -- step=1 over [100,120] -> 21 grid points. window=50 -> 50 buckets/window (>= threshold -> two-stacks); window % step == 0.
 SELECT 'two-stacks, window multiple of step (window=50, step=1):';
-SELECT timeSeriesResampleToGridWithStaleness(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
+SELECT timeSeriesLastToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesChangesToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesResetsToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesRateToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks;
@@ -31,7 +31,7 @@ SELECT timeSeriesMinToGrid(100, 120, 1, 50)(timestamp, value) FROM ts_two_stacks
 
 -- step=2 over [100,120] -> 11 grid points. window=51 -> 51 buckets/window (>= threshold -> two-stacks); window % step == 1, so each step is split.
 SELECT 'two-stacks, window splits step (window=51, step=2):';
-SELECT timeSeriesResampleToGridWithStaleness(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
+SELECT timeSeriesLastToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesChangesToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesResetsToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
 SELECT timeSeriesRateToGrid(100, 120, 2, 51)(timestamp, value) FROM ts_two_stacks;
