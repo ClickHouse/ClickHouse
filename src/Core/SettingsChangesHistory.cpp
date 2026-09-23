@@ -1534,6 +1534,13 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"merge_selector_small_parts_threshold", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
+            {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
+            {"merge_selector_small_parts_max_age", 600, 600, "Age limit for the small-parts merge restriction"},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
@@ -1545,9 +1552,6 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
-            {"merge_selector_small_parts_threshold", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"},
-            {"merge_selector_small_parts_min_count", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"},
-            {"merge_selector_small_parts_max_age", 600, 600, "Age limit for the small-parts merge restriction"},
             {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 
