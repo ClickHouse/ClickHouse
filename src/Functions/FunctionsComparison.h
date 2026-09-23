@@ -59,6 +59,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int NO_COMMON_TYPE;
 }
 
 /// For the array/tuple element-comparison path, when there is a scalar position pair a `String`/`FixedString` on one side
@@ -1785,6 +1786,65 @@ public:
     bool canThrow(const DataTypesWithConstInfo & arguments) const override
     {
         return arguments.size() != 2 || comparisonCanThrow(arguments[0].type, arguments[1].type);
+    }
+
+    /// A `String`/`FixedString` operand is admitted against any other type below, but at execution only a
+    /// constant string is converted to the other operand's type (`executeWithConstString`). A non-constant
+    /// string against a constant of a type without a common supertype always throws `NO_COMMON_TYPE` at
+    /// execution, so reject it here. Otherwise the error depends on whether an optimization removes the
+    /// comparison before it runs: e.g. a chain `s != 1 AND s != 2 AND s != 3` rewritten to `NOT IN`.
+    /// Only a constant operand is checked, because an argument without a column may still be constant at execution.
+    static void checkNonConstStringAgainstConstant(const ColumnWithTypeAndName & string_side, const ColumnWithTypeAndName & other_side, const String & function_name)
+    {
+        if (!other_side.column || !isColumnConst(*other_side.column))
+            return;
+        if (string_side.column && isColumnConst(*string_side.column))
+            return;
+
+        const auto string_type = removeLowCardinalityAndNullable(string_side.type);
+        const auto other_type = removeLowCardinalityAndNullable(other_side.type);
+        WhichDataType which_string(string_type);
+        WhichDataType which_other(other_type);
+
+        if (!which_string.isStringOrFixedString() || which_other.isStringOrFixedString())
+            return;
+
+        /// A string is parsed as a tuple value; `Dynamic`, `Variant` and `JSON` are compared per value.
+        if (which_other.isTuple() || which_other.isVariant() || other_type->hasDynamicStructure())
+            return;
+
+        /// `FixedString(16)` is compared with `IPv6` as its binary representation.
+        if (which_other.isIPv6() && which_string.isFixedString()
+            && assert_cast<const DataTypeFixedString &>(*string_type).getN() == IPV6_BINARY_LENGTH)
+            return;
+
+        if (tryGetLeastSupertype(DataTypes{string_type, other_type}))
+            return;
+
+        throw Exception(
+            ErrorCodes::NO_COMMON_TYPE,
+            "Illegal types of arguments ({}, {}) of function {}: a non-constant {} cannot be compared with a constant of type {}"
+            " because they have no common type. Use a constant of type {} or convert one of the arguments explicitly",
+            backQuote(string_side.type->getName()),
+            backQuote(other_side.type->getName()),
+            backQuote(function_name),
+            string_type->getName(),
+            other_type->getName(),
+            string_type->getName());
+    }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() == 2)
+        {
+            checkNonConstStringAgainstConstant(arguments[0], arguments[1], getName());
+            checkNonConstStringAgainstConstant(arguments[1], arguments[0], getName());
+        }
+
+        DataTypes data_types(arguments.size());
+        for (size_t i = 0; i < arguments.size(); ++i)
+            data_types[i] = arguments[i].type;
+        return getReturnTypeImpl(data_types);
     }
 
     /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
