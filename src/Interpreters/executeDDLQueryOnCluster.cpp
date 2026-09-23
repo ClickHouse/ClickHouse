@@ -158,6 +158,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
 
     bool use_local_default_database = false;
     const String & current_database = context->getCurrentDatabase();
+    Strings access_check_default_databases{current_database};
 
     if (need_replace_current_database)
     {
@@ -182,6 +183,7 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
         }
         else
         {
+            access_check_default_databases = host_default_databases;
             for (size_t i = 0; i != access_to_check.size();)
             {
                 auto & element = access_to_check[i];
@@ -205,7 +207,8 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     context->checkAccess(access_to_check);
 
     if (params.additional_access_check)
-        params.additional_access_check();
+        for (const auto & default_database : access_check_default_databases)
+            params.additional_access_check(default_database);
 
     DDLLogEntry entry;
     entry.hosts = std::move(hosts);

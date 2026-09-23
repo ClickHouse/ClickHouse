@@ -177,10 +177,8 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
 
     initiator.query("REVOKE CLUSTER ON *.* FROM cluster_mutator_role")
     cluster_access_error = initiator.query_and_get_error(
-        "UPDATE cluster_data_rp ON CLUSTER cluster "
-        "SET v = v + 1 WHERE k IN cluster_set_rp",
+        "DELETE FROM cluster_data_rp ON CLUSTER cluster WHERE k IN cluster_set_rp",
         user="cluster_mutator",
-        settings={"enable_lightweight_update": 1},
     )
     assert_privilege_error(cluster_access_error, "CLUSTER")
     initiator.query("GRANT CLUSTER ON *.* TO cluster_mutator_role")
@@ -196,8 +194,61 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
         user="cluster_mutator",
         settings={"enable_lightweight_update": 1},
     )
+    delete_error = initiator.query_and_get_error(
+        "DELETE FROM cluster_data_rp ON CLUSTER cluster WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+    )
 
-    for error in (alter_error, update_error):
+    for error in (alter_error, update_error, delete_error):
         assert_set_policy_error(error, "default.cluster_set_rp")
     for node in (initiator, worker):
         assert node.query("SELECT count(), sum(v) FROM cluster_data_rp") == "2\t30\n"
+
+    worker.query(
+        "CREATE TABLE remote_cluster_data_rp (k UInt64, v UInt64) "
+        "ENGINE = MergeTree ORDER BY k "
+        "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+    )
+    worker.query("INSERT INTO remote_cluster_data_rp VALUES (1, 10), (2, 20)")
+    worker.query("CREATE TABLE remote_only_set_rp (k UInt64) ENGINE = Set")
+    worker.query("INSERT INTO remote_only_set_rp VALUES (1), (2)")
+    initiator.query(
+        "GRANT ALTER UPDATE ON default.remote_cluster_data_rp TO cluster_mutator_role"
+    )
+    remote_delete_access_error = initiator.query_and_get_error(
+        "UPDATE default.remote_cluster_data_rp ON CLUSTER worker_only "
+        "SET _row_exists = 0 WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+        settings={"enable_lightweight_update": 1},
+    )
+    assert_privilege_error(
+        remote_delete_access_error,
+        "ALTER DELETE",
+        "default.remote_cluster_data_rp",
+    )
+    initiator.query(
+        "GRANT ALTER DELETE ON default.remote_cluster_data_rp TO cluster_mutator_role"
+    )
+
+    remote_alter_error = initiator.query_and_get_error(
+        "ALTER TABLE default.remote_cluster_data_rp ON CLUSTER worker_only "
+        "DELETE WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+    )
+    remote_update_error = initiator.query_and_get_error(
+        "UPDATE default.remote_cluster_data_rp ON CLUSTER worker_only "
+        "SET v = v + 1 WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+        settings={"enable_lightweight_update": 1},
+    )
+    for error in (remote_alter_error, remote_update_error):
+        assert_set_policy_error(error, "default.cluster_set_rp")
+
+    unresolved_source_error = initiator.query_and_get_error(
+        "ALTER TABLE default.remote_cluster_data_rp ON CLUSTER worker_only "
+        "DELETE WHERE k IN remote_only_set_rp",
+        user="cluster_mutator",
+    )
+    assert "UNKNOWN_TABLE" in unresolved_source_error
+    assert "default.remote_only_set_rp" in unresolved_source_error
+    assert worker.query("SELECT count(), sum(v) FROM remote_cluster_data_rp") == "2\t30\n"

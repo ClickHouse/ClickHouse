@@ -112,9 +112,14 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
+    extern const int UNKNOWN_TABLE;
 }
 
-void checkNoRowPolicyForSetOperands(const ASTPtr & mutation_ast, const String & default_database, const ContextPtr & context)
+void checkNoRowPolicyForSetOperands(
+    const ASTPtr & mutation_ast,
+    const String & default_database,
+    const ContextPtr & context,
+    bool throw_if_unresolved)
 {
     ASTPtr ast = mutation_ast->clone();
     AddDefaultDatabaseVisitor visitor(context, default_database);
@@ -131,6 +136,9 @@ void checkNoRowPolicyForSetOperands(const ASTPtr & mutation_ast, const String & 
             {
                 auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
                     Identifier(table_identifier->name_parts), context);
+                if (!resolved.resolved_identifier && throw_if_unresolved)
+                    throw Exception(ErrorCodes::UNKNOWN_TABLE, "Table {} does not exist", table_identifier->formatForErrorMessage());
+
                 auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
                 if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
                     storage_set->checkNoRowPolicy(context);

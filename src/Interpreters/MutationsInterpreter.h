@@ -58,7 +58,11 @@ void normalizeSetOperations(ASTPtr & ast, const ContextPtr & context);
 
 /// Reject mutation expressions whose `IN` operand is a `Set` with an applicable row policy.
 /// This must run with the submitting context before the mutation is handed to a background context.
-void checkNoRowPolicyForSetOperands(const ASTPtr & mutation_ast, const String & default_database, const ContextPtr & context);
+void checkNoRowPolicyForSetOperands(
+    const ASTPtr & mutation_ast,
+    const String & default_database,
+    const ContextPtr & context,
+    bool throw_if_unresolved = false);
 
 /// Create an input stream that will read data from storage and apply mutation commands (UPDATEs, DELETEs, MATERIALIZEs)
 /// to this data.

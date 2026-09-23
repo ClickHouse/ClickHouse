@@ -13,6 +13,14 @@
                 </replica>
             </shard>
         </cluster>
+        <worker_only>
+            <shard>
+                <replica>
+                    <host>worker</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </worker_only>
     </remote_servers>
     <distributed_ddl>
         <path>/clickhouse/task_queue/ddl</path>
