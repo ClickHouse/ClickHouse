@@ -1598,6 +1598,63 @@ bool isJSONBloomPathFilterSafe(
     return isJSONPathFilterSafe(key_type, value, value_type, format_settings, indexes_missing_values);
 }
 
+/// The indexed path that must be present in a granule for `node`, a JSON subcolumn optionally wrapped in `CAST`, to be
+/// non-NULL or differ from its type default. It matches the checks that a `bloom_filter` index over `JSONAllPaths` uses.
+std::optional<String> tryMatchJSONPresencePath(
+    const RPNBuilderTreeNode & node,
+    const Block & header,
+    const NameSet & columns_shadowing_map_subcolumns,
+    const JSONBloomPathMatcher & path_matcher)
+{
+    String column_name;
+    if (!node.isFunction())
+        column_name = node.getColumnName();
+    else
+    {
+        const auto function = node.toFunctionNode();
+        if ((function.getFunctionName() != "CAST" && function.getFunctionName() != "_CAST") || function.getArgumentsSize() != 2
+            || function.getArgumentAt(0).isFunction())
+            return std::nullopt;
+        column_name = function.getArgumentAt(0).getColumnName();
+    }
+
+    if (columns_shadowing_map_subcolumns.contains(column_name))
+        return std::nullopt;
+    auto match = tryMatchJSONSubcolumn(column_name, header);
+    if (!match || match->indexes_missing_values || match->role != JSONBloomRole::Scalar || !path_matcher.shouldIndex(match->logical_path))
+        return std::nullopt;
+    return std::move(match->logical_path);
+}
+
+/// The name of the indexed `JSON` column when `node` is `JSONAllPaths(json)`.
+std::optional<String> tryMatchJSONAllPaths(const RPNBuilderTreeNode & node, const Block & header)
+{
+    if (!node.isFunction())
+        return std::nullopt;
+    const auto function = node.toFunctionNode();
+    if (function.getFunctionName() != "JSONAllPaths" || function.getArgumentsSize() != 1 || function.getArgumentAt(0).isFunction())
+        return std::nullopt;
+    String column_name = function.getArgumentAt(0).getColumnName();
+    if (!header.has(column_name) || !isObject(header.getByName(column_name).type))
+        return std::nullopt;
+    return column_name;
+}
+
+/// The indexed path for an element of `JSONAllPaths(json)`. Returns nothing for typed paths, which `JSONAllPaths`
+/// can list in every row, and for paths the index does not track.
+std::optional<String> tryMatchJSONAllPathsElement(
+    const String & column_name, const Field & element, const Block & header, const JSONBloomPathMatcher & path_matcher)
+{
+    /// Backticks introduce type hints in subcolumn names, so such literal paths stay unindexed.
+    if (element.getType() != Field::Types::String || element.safeGet<String>().contains('`'))
+        return std::nullopt;
+    auto match = tryMatchJSONSubcolumn(column_name + "." + element.safeGet<String>(), header);
+    if (!match || match->typed_dynamic || match->indexes_missing_values || match->role != JSONBloomRole::Scalar
+        || !isDynamic(match->type) || !path_matcher.shouldIndex(match->logical_path))
+        return std::nullopt;
+    return std::move(match->logical_path);
+}
+
 bool appendTypedProbe(
     std::vector<JSONBloomFilterProbe> & hashes,
     std::string_view path,
@@ -2145,7 +2202,10 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
 
 bool MergeTreeIndexConditionJSONBloomFilter::usesPath(const String & path) const
 {
-    return std::ranges::any_of(rpn, [&](const auto & element) { return element.path == path; });
+    return std::ranges::any_of(rpn, [&](const auto & element)
+    {
+        return element.path == path || std::ranges::find(element.exists_paths, path) != element.exists_paths.end();
+    });
 }
 
 void MergeTreeIndexConditionJSONBloomFilter::prepareDynamicProbes(MergeTreeIndexGranuleJSONBloomFilter & granule) const
@@ -2284,10 +2344,18 @@ bool MergeTreeIndexConditionJSONBloomFilter::evaluateGranule(
         switch (element.function)
         {
             case RPNElement::FUNCTION_UNKNOWN: stack.emplace_back(true, true); break;
-            case RPNElement::FUNCTION_EXISTS:
-                element_is_unknown = !part_path_matcher.shouldIndex(element.path);
-                stack.emplace_back(element_is_unknown || granule.hasPath(element.path), true);
+            case RPNElement::FUNCTION_EXISTS: {
+                /// A path the part does not index can be present in any granule.
+                const auto may_exist = [&](const String & path) { return !part_path_matcher.shouldIndex(path) || granule.hasPath(path); };
+                const auto is_unknown = [&](const String & path) { return !part_path_matcher.shouldIndex(path); };
+                element_is_unknown = element.exists_all ? std::ranges::all_of(element.exists_paths, is_unknown)
+                                                        : std::ranges::any_of(element.exists_paths, is_unknown);
+                stack.emplace_back(
+                    element.exists_all ? std::ranges::all_of(element.exists_paths, may_exist)
+                                       : std::ranges::any_of(element.exists_paths, may_exist),
+                    true);
                 break;
+            }
             case RPNElement::FUNCTION_ANY: {
                 if (!part_path_matcher.shouldIndex(element.path))
                 {
@@ -2381,20 +2449,71 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
 
     const auto function = node.toFunctionNode();
     const String function_name = function.getFunctionName();
+
+    /// Path presence covers every predicate that a `bloom_filter` index over `JSONAllPaths` can use.
+    const auto set_exists = [&](std::vector<String> paths, bool all)
+    {
+        if (paths.empty())
+            return false;
+        out.function = RPNElement::FUNCTION_EXISTS;
+        out.exists_paths = std::move(paths);
+        out.exists_all = all;
+        return true;
+    };
+
     if (function_name == "isNotNull" && function.getArgumentsSize() == 1)
     {
-        auto path = tryMatchJSONPath(function.getArgumentAt(0), header, columns_shadowing_map_subcolumns);
-        if (!path || path->cast_type || path->typed_dynamic || path->indexes_missing_values
-            || path->role != JSONBloomRole::Scalar || !isDynamic(path->type) || !path_matcher->shouldIndex(path->logical_path))
+        /// A missing path reads as NULL, and a present path has a directory entry even for complex values.
+        const auto argument = function.getArgumentAt(0);
+        if (!canContainNull(*argument.getDAGNode()->result_type))
             return false;
-
-        /// A non-null `Dynamic` leaf emits a value or presence token, including complex values.
-        out.path = path->logical_path;
-        out.function = RPNElement::FUNCTION_EXISTS;
-        return true;
+        auto path = tryMatchJSONPresencePath(argument, header, columns_shadowing_map_subcolumns, *path_matcher);
+        return path && set_exists({std::move(*path)}, false);
     }
     if (function.getArgumentsSize() != 2)
         return false;
+
+    /// `indexOf(JSONAllPaths(json), 'path')` inside a comparison that implies the path is listed.
+    for (size_t i = 0; i != 2; ++i)
+    {
+        const auto argument = function.getArgumentAt(i);
+        if (!argument.isFunction())
+            continue;
+        const auto index_of = argument.toFunctionNode();
+        if (index_of.getFunctionName() != "indexOf" || index_of.getArgumentsSize() != 2)
+            continue;
+        const auto column_name = tryMatchJSONAllPaths(index_of.getArgumentAt(0), header);
+        if (!column_name)
+            continue;
+        if (!indexOfCanUseBloomFilter(&node) || !index_of.getArgumentAt(1).tryGetConstant(constant, constant_type))
+            return false;
+        auto path = tryMatchJSONAllPathsElement(*column_name, constant, header, *path_matcher);
+        return path && set_exists({std::move(*path)}, false);
+    }
+
+    /// `has`, `hasAny` and `hasAll` over `JSONAllPaths(json)`.
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll")
+    {
+        if (const auto column_name = tryMatchJSONAllPaths(function.getArgumentAt(0), header))
+        {
+            if (!function.getArgumentAt(1).tryGetConstant(constant, constant_type))
+                return false;
+            if (function_name != "has" && constant.getType() != Field::Types::Array)
+                return false;
+            const Array elements = function_name == "has" ? Array{constant} : constant.safeGet<Array>();
+            std::vector<String> paths;
+            for (const auto & element : elements)
+            {
+                auto path = tryMatchJSONAllPathsElement(*column_name, element, header, *path_matcher);
+                /// An unmatched element can be listed in any granule, which only `hasAll` can ignore.
+                if (!path && function_name != "hasAll")
+                    return false;
+                if (path)
+                    paths.push_back(std::move(*path));
+            }
+            return set_exists(std::move(paths), function_name == "hasAll");
+        }
+    }
 
     if (functionIsInOrGlobalInOperator(function_name))
     {
@@ -2402,37 +2521,83 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
             return false;
 
         auto key_node = function.getArgumentAt(0);
+        const auto all_paths_column = tryMatchJSONAllPaths(key_node, header);
         auto path = tryMatchJSONPath(key_node, header, columns_shadowing_map_subcolumns);
-        if (!path || !path_matcher->shouldIndex(path->logical_path) || path->cast_type || isDynamic(removeJSONBloomWrappers(path->type)))
+        auto presence_path = tryMatchJSONPresencePath(key_node, header, columns_shadowing_map_subcolumns, *path_matcher);
+        if (!all_paths_column && !path && !presence_path)
             return false;
-        out.path = path->logical_path;
 
         auto future_set = function.getArgumentAt(1).tryGetPreparedSet();
         if (!future_set)
             return false;
         auto prepared_set = future_set->buildOrderedSetInplace(function.getArgumentAt(1).getTreeContext().getQueryContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements() || prepared_set->getSetElements().size() != 1)
+        if (!prepared_set || !prepared_set->hasExplicitSetElements())
             return false;
-
         const auto set_columns = prepared_set->getSetElements();
         const auto set_types = prepared_set->getElementsTypes();
-        const auto & set_column = set_columns.front();
-        const auto & set_type = set_types.front();
-        for (size_t row = 0; row != set_column->size(); ++row)
+
+        if (all_paths_column)
         {
-            Field value;
-            set_column->get(row, value);
-            if (!isJSONBloomPathFilterSafe(
-                    key_node.getDAGNode()->result_type, value, set_type, comparison_format_settings, path->indexes_missing_values))
+            /// Each set element is a whole path list, so a granule needs at least one path from a non-empty list.
+            if (set_columns.size() != 1)
                 return false;
-            auto probes = makeValueProbes(path->path, path->role, path->type, value, set_type, comparison_format_settings, path->typed_dynamic);
-            out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
+            std::vector<String> paths;
+            for (size_t row = 0; row != set_columns.front()->size(); ++row)
+            {
+                Field elements;
+                set_columns.front()->get(row, elements);
+                if (elements.getType() != Field::Types::Array || elements.safeGet<Array>().empty())
+                    return false;
+                for (const auto & element : elements.safeGet<Array>())
+                {
+                    auto element_path = tryMatchJSONAllPathsElement(*all_paths_column, element, header, *path_matcher);
+                    if (!element_path)
+                        return false;
+                    paths.push_back(std::move(*element_path));
+                }
+            }
+            return set_exists(std::move(paths), false);
         }
 
-        if (out.hashes.empty())
+        if (path && path_matcher->shouldIndex(path->logical_path) && !path->cast_type && !isDynamic(removeJSONBloomWrappers(path->type))
+            && set_columns.size() == 1)
+        {
+            out.path = path->logical_path;
+            bool safe = true;
+            for (size_t row = 0; safe && row != set_columns.front()->size(); ++row)
+            {
+                Field value;
+                set_columns.front()->get(row, value);
+                safe = isJSONBloomPathFilterSafe(
+                    key_node.getDAGNode()->result_type, value, set_types.front(), comparison_format_settings, path->indexes_missing_values);
+                if (safe)
+                {
+                    auto probes = makeValueProbes(
+                        path->path, path->role, path->type, value, set_types.front(), comparison_format_settings, path->typed_dynamic);
+                    out.hashes.insert(out.hashes.end(), probes.begin(), probes.end());
+                }
+            }
+            if (safe && !out.hashes.empty())
+            {
+                out.function = RPNElement::FUNCTION_ANY;
+                return true;
+            }
+            out.path.clear();
+            out.hashes.clear();
+        }
+
+        /// Fall back to path presence when a missing path cannot satisfy the condition.
+        if (!presence_path)
             return false;
-        out.function = RPNElement::FUNCTION_ANY;
-        return true;
+        const auto & key_type = key_node.getDAGNode()->result_type;
+        if (!canContainNull(*key_type))
+        {
+            ColumnsWithTypeAndName default_columns{{key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst(), key_type, ""}};
+            const auto result = prepared_set->execute(default_columns, false);
+            if (assert_cast<const ColumnUInt8 &>(*result).getData()[0])
+                return false;
+        }
+        return set_exists({std::move(*presence_path)}, false);
     }
 
     auto lhs_node = function.getArgumentAt(0);
@@ -2446,28 +2611,47 @@ bool MergeTreeIndexConditionJSONBloomFilter::extractAtomFromTree(const RPNBuilde
         std::swap(key_node, value_node);
     }
 
+    if (function_name == "equals")
+    {
+        /// `arrayJoin(JSONAllPaths(json)) = 'path'` needs the path in the granule.
+        if (const auto array_join_argument = key_node->getArrayJoinArgument())
+        {
+            const auto column_name = tryMatchJSONAllPaths(*array_join_argument, header);
+            auto path = column_name ? tryMatchJSONAllPathsElement(*column_name, constant, header, *path_matcher) : std::nullopt;
+            return path && set_exists({std::move(*path)}, false);
+        }
+
+        auto path = tryMatchJSONPath(*key_node, header, columns_shadowing_map_subcolumns);
+        if (path && path_matcher->shouldIndex(path->logical_path)
+            && isJSONBloomPathFilterSafe(
+                key_node->getDAGNode()->result_type, constant, constant_type, comparison_format_settings, path->indexes_missing_values))
+        {
+            if (path->cast_type)
+                out.hashes = makeDynamicCastProbes(
+                    path->path, path->role, path->type, path->cast_type, constant, constant_type, comparison_format_settings);
+            else
+                out.hashes = makeValueProbes(
+                    path->path, path->role, path->type, constant, constant_type, comparison_format_settings, path->typed_dynamic);
+            if (!out.hashes.empty())
+            {
+                out.path = path->logical_path;
+                out.function = RPNElement::FUNCTION_ANY;
+                return true;
+            }
+        }
+
+        /// Fall back to path presence when a missing path cannot satisfy the condition.
+        auto presence_path = tryMatchJSONPresencePath(*key_node, header, columns_shadowing_map_subcolumns, *path_matcher);
+        if (!presence_path
+            || !isJSONBloomPathFilterSafe(key_node->getDAGNode()->result_type, constant, constant_type, comparison_format_settings, false))
+            return false;
+        return set_exists({std::move(*presence_path)}, false);
+    }
+
     auto path = tryMatchJSONPath(*key_node, header, columns_shadowing_map_subcolumns);
     if (!path || !path_matcher->shouldIndex(path->logical_path))
         return false;
     out.path = path->logical_path;
-
-    if (function_name == "equals")
-    {
-        if (!isJSONBloomPathFilterSafe(
-                key_node->getDAGNode()->result_type, constant, constant_type, comparison_format_settings, path->indexes_missing_values))
-            return false;
-        if (path->cast_type)
-        {
-            out.hashes = makeDynamicCastProbes(
-                path->path, path->role, path->type, path->cast_type, constant, constant_type, comparison_format_settings);
-        }
-        else
-            out.hashes = makeValueProbes(path->path, path->role, path->type, constant, constant_type, comparison_format_settings, path->typed_dynamic);
-        if (out.hashes.empty())
-            return false;
-        out.function = RPNElement::FUNCTION_ANY;
-        return true;
-    }
 
     if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll")
     {

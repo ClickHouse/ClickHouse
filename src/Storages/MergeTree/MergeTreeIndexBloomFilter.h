@@ -18,6 +18,9 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+/// Whether `parent`, a comparison over `indexOf(array, value)`, implies that the array contains the value.
+bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent);
+
 class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
 {
 public:

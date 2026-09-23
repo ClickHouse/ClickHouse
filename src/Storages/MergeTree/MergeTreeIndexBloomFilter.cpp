@@ -891,7 +891,7 @@ static ColumnPtr createColumnFromConstantArray(
 }
 
 
-static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
+bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 {
     if (!parent)
         return true;

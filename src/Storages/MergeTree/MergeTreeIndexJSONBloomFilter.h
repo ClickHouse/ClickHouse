@@ -156,6 +156,9 @@ private:
         String path;
         std::vector<JSONBloomFilterProbe> hashes;
         std::vector<std::vector<JSONBloomFilterProbe>> alternatives;
+        /// `FUNCTION_EXISTS` requires any, or with `exists_all` every, of these paths in the granule.
+        std::vector<String> exists_paths;
+        bool exists_all = false;
     };
 
     bool evaluateGranule(
