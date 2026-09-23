@@ -29,6 +29,9 @@ public:
     /// Consecutive calls read the stream sequentially; a gap seeks to the granule of `from_mark`.
     void readRows(size_t from_mark, size_t row_offset, size_t num_rows);
 
+    /// Extends the readable range of the stream to `right_mark` when the reader gets new mark ranges.
+    void adjustRightMark(size_t right_mark);
+
     /// Returns the `SmallFloat` doc-length byte of a row loaded by the last `readRows`.
     UInt8 getByte(UInt32 doc_id) const;
 

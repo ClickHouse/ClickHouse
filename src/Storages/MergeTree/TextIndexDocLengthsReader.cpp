@@ -63,6 +63,12 @@ void TextIndexDocLengthsReader::readRows(size_t from_mark, size_t row_offset, si
     rows_end = row_offset + num_rows;
 }
 
+void TextIndexDocLengthsReader::adjustRightMark(size_t right_mark)
+{
+    if (stream)
+        stream->adjustRightMark(right_mark);
+}
+
 UInt8 TextIndexDocLengthsReader::getByte(UInt32 doc_id) const
 {
     chassert(doc_id >= rows_begin && doc_id < rows_end);

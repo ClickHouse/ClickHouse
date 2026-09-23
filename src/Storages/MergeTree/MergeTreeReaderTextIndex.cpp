@@ -263,6 +263,10 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
         fallback_reader->updateAllMarkRanges(ranges);
     }
 
+    /// The `.dl` stream was bounded by the ranges it was created with; a reused reader may read further.
+    if (score_doc_lengths)
+        score_doc_lengths->adjustRightMark(last_mark_to_read);
+
     if (!ranges.empty())
     {
         const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
