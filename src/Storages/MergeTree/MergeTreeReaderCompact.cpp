@@ -205,7 +205,7 @@ void MergeTreeReaderCompact::readData(
     ISerialization::SubstreamsCache * substreams_cache)
 {
     const auto & name_and_type = columns_to_read[column_idx];
-    const auto [name, type] = name_and_type;
+    const auto & name = name_and_type.name;
 
     bool seek_to_substream_mark = name_and_type.isSubcolumn() && has_substream_marks;
     auto buffer_getter = [&](const ISerialization::SubstreamPath & substream_path) -> ReadBuffer *
