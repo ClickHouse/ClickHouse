@@ -1732,9 +1732,11 @@ KeyDescription getSortingKeyDescriptionFromMetadata(Poco::JSON::Object::Ptr meta
             auto iceberg_transform_name = field->getValue<String>(f_transform);
             auto clickhouse_transform_name = parseTransformAndArgument(iceberg_transform_name);
             if (!clickhouse_transform_name.has_value())
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Unsupported Iceberg transform name '{}' in the table's sort order", iceberg_transform_name);
+            {
+                /// An unknown transform is not a reason to reject the table: an Iceberg sort order
+                /// is only an optimization hint, so drop it and read/write the table as unsorted.
+                return KeyDescription{};
+            }
             /// Quote the column name so identifiers with special characters (e.g. `@timestamp`)
             /// produce a parseable ORDER BY clause.
             auto quoted_column_name = backQuoteIfNeed(column_name);

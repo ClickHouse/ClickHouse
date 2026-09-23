@@ -14,7 +14,7 @@ rm -rf "${TABLE_PATH}"
 # Regression test for #121514: an Iceberg sort-order field naming a transform that
 # ClickHouse cannot parse used to dereference a disengaged std::optional in
 # getSortingKeyDescriptionFromMetadata and abort the whole server process.
-# It must surface as a query error instead.
+# The sort order must be dropped instead, so that the table stays readable.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE} (x Int64, y String)
         ENGINE = IcebergLocal('${TABLE_PATH}')
@@ -29,8 +29,9 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "INSERT INTO ${TABLE}
 LATEST=$(ls "${TABLE_PATH}metadata"/v*.metadata.json | sort -V | tail -1)
 sed -i 's/"truncate\[3\]"/"bucket[xyz]"/' "${LATEST}"
 
-# Reading the table must raise BAD_ARGUMENTS, not kill the server.
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${TABLE_PATH}', 'Parquet')" 2>&1 | grep -m1 -c BAD_ARGUMENTS
+# Reading the table must still work without the sorted-read optimization,
+# and must not kill the server.
+${CLICKHOUSE_CLIENT} --query "SELECT x, y FROM icebergLocal('${TABLE_PATH}', 'Parquet') ORDER BY x"
 
 # The server must still be alive.
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
