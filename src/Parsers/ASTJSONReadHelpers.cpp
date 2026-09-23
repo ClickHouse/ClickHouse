@@ -153,6 +153,9 @@ Field JSONObjectReader::readFieldFromObjectImpl(const Poco::JSON::Object & obj, 
             "Structured Field value exceeds maximum AST depth limit ({}) during JSON AST deserialization",
             max_depth);
 
+    /// The limit above counts `Field` levels, which is not a stack budget at any value.
+    checkStackSize();
+
     /// Count every `Field` value (scalar or structured) against the element-count budget too, so a
     /// wide literal payload (e.g. one huge `Array`) cannot bypass `max_ast_elements` while adding no
     /// AST nodes.
