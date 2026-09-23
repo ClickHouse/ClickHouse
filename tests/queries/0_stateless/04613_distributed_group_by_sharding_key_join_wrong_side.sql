@@ -8,6 +8,8 @@ DROP TABLE IF EXISTS bug_l;
 DROP TABLE IF EXISTS bug_r;
 DROP TABLE IF EXISTS bug_dl;
 DROP TABLE IF EXISTS bug_dr;
+DROP TABLE IF EXISTS bug_sk;
+DROP TABLE IF EXISTS bug_dsk;
 
 CREATE TABLE bug_l (k UInt32, g UInt32) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE bug_r (k UInt32) ENGINE = MergeTree ORDER BY k;
@@ -16,6 +18,12 @@ INSERT INTO bug_r SELECT number FROM numbers(40);
 
 CREATE TABLE bug_dl (k UInt32, g UInt32) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), bug_l, k);
 CREATE TABLE bug_dr (k UInt32) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), bug_r, k);
+
+-- Second fixture, for issue #111274: the sharding key is an EXPRESSION over k, and the query
+-- self-joins the distributed table on a column unrelated to it.
+CREATE TABLE bug_sk (k UInt32, g UInt16, n Int64, lc String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO bug_sk SELECT number, number % 5, number, toString(number % 4) FROM numbers(60);
+CREATE TABLE bug_dsk (k UInt32, g UInt16, n Int64, lc String) ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), bug_sk, intHash64(k));
 
 SET distributed_product_mode = 'global', optimize_skip_unused_shards = 1;
 
@@ -61,28 +69,31 @@ FROM (
     SELECT l.k AS k, count() AS c, max(r.k) AS m FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
     GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1);
 
--- FULL JOIN pads both sides.
-SELECT 'FULL JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0';
+-- FULL JOIN pads both sides. Two conditions keep this arm about padding: the join must run on the
+-- shards, since a broadcast right side has the grouping column resolved to it instead, and the ON
+-- condition must not equate the sharding key, for the same reason. Relax either and the arm still
+-- passes without any padded-side check at all.
+SELECT 'FULL JOIN GROUP BY l.k (bug_dl padded, shard-local join), optimize=1 equals optimize=0';
 SELECT groupArray((k, c)) = (
         SELECT groupArray((k, c)) FROM (
-            SELECT l.k AS k, count() AS c FROM bug_dl AS l FULL JOIN bug_dr AS r ON l.k = r.k AND l.k > 29 AND r.k > 29
-            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
+            SELECT l.k AS k, count() AS c FROM bug_dl AS l FULL JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0, distributed_product_mode = 'local'))
 FROM (
-    SELECT l.k AS k, count() AS c FROM bug_dl AS l FULL JOIN bug_dr AS r ON l.k = r.k AND l.k > 29 AND r.k > 29
-    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1);
+    SELECT l.k AS k, count() AS c FROM bug_dl AS l FULL JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1, distributed_product_mode = 'local');
 
--- The padded table can also sit under a CROSS/comma join: `bug_dl CROSS JOIN one RIGHT JOIN bug_dr`
--- builds JoinNode(RIGHT){CrossJoinNode[bug_dl, one], bug_dr}, so bug_dl is on the padded left side even
--- though it is reached through a CrossJoinNode. The shortcut must still not fire.
+-- The padded table can also sit under a CROSS/comma join: in `bug_dl CROSS JOIN one RIGHT JOIN bug_dr`
+-- the RIGHT JOIN pads everything reached through the cross join, so bug_dl is still on a padded side
+-- and the shortcut must not fire.
 SET joined_subquery_requires_alias = 0;
-SELECT 'CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0';
-SELECT groupArray((k, c, m)) = (
-        SELECT groupArray((k, c, m)) FROM (
-            SELECT l.k AS k, count() AS c, max(r.k) AS m FROM bug_dl AS l CROSS JOIN system.one AS s RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
-            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
+SELECT 'CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded, shard-local join), optimize=1 equals optimize=0';
+SELECT groupArray((k, c)) = (
+        SELECT groupArray((k, c)) FROM (
+            SELECT l.k AS k, count() AS c FROM bug_dl AS l CROSS JOIN system.one AS s RIGHT JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0, distributed_product_mode = 'local'))
 FROM (
-    SELECT l.k AS k, count() AS c, max(r.k) AS m FROM bug_dl AS l CROSS JOIN system.one AS s RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
-    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1);
+    SELECT l.k AS k, count() AS c FROM bug_dl AS l CROSS JOIN system.one AS s RIGHT JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1, distributed_product_mode = 'local');
 
 -- A plain CROSS JOIN with no outer join does not pad, so GROUP BY the sharding key must still take the
 -- shortcut (fires): the shard-local result has more rows than the merged one.
@@ -121,6 +132,17 @@ SELECT
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
 SETTINGS allow_experimental_analyzer = 1;
 
+-- The same exemption for RIGHT SEMI, where the kind alone would say "padded". A shard-local join
+-- keeps l.k as bug_dl's own column, so the strictness carve-out is the only thing letting the
+-- shortcut fire here; drop it and this count stops growing.
+SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (shard-local join)';
+SELECT
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1, distributed_product_mode = 'local'))
+    >
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0, distributed_product_mode = 'local'));
+
 -- ANTI is the opposite of SEMI: RIGHT ANTI keeps the right rows with no left match, so l.k is defaulted
 -- to 0 on every shard exactly like a plain RIGHT JOIN. The shortcut must stay disabled (only Semi is
 -- excluded from the padded-side guard, not Anti).
@@ -148,6 +170,17 @@ FROM (
     SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
     ORDER BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1)
 SETTINGS allow_experimental_analyzer = 1;
+
+-- The same DISTINCT call site, on the shape where the padded-side check is the blocker rather than
+-- the foreign-column one, so the two guards are covered separately here too.
+SELECT 'DISTINCT l.k over RIGHT JOIN (bug_dl padded, shard-local join), optimize=1 equals optimize=0';
+SELECT groupArray(k) = (
+        SELECT groupArray(k) FROM (
+            SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+            ORDER BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0, distributed_product_mode = 'local'))
+FROM (
+    SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+    ORDER BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1, distributed_product_mode = 'local');
 
 -- LIMIT BY l.k over the same padded side keeps one row per key. Without the guard the shortcut runs it
 -- per shard, so each key survives on every shard and appears twice.
@@ -186,7 +219,35 @@ FROM (
     SELECT r.k AS k, count() AS c FROM bug_dl AS l INNER JOIN bug_dr AS r ON l.g = r.k % 3
     GROUP BY r.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1);
 
+-- Issue #111274: the grouping expression is the foreign column under an injective wrapper, so
+-- matching the sharding key by name alone still accepted it and every group came back duplicated.
+-- The sharding key is the expression intHash64(k) and the self-join is on the unrelated g.
+-- Both settings that consult the sharding key are pinned on each side rather than left to the test
+-- runner's randomisation: with optimize_distributed_group_by_sharding_key = 0 this shape never
+-- reaches the shortcut, and the assertion would then hold on an unguarded build too.
+SELECT 'GROUP BY negate(r.k) over an expression-sharded self join (#111274), optimize=1 equals optimize=0';
+SELECT groupArray((nk, c)) = (
+        SELECT groupArray((nk, c)) FROM (
+            SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
+            GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0, optimize_skip_unused_shards = 1))
+FROM (
+    SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
+    GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1, optimize_skip_unused_shards = 1);
+
+-- The same shape through the other setting that consults the sharding key, which is the one the
+-- report toggles.
+SELECT 'GROUP BY negate(r.k) over an expression-sharded self join (#111274), skip_unused_shards=1 equals =0';
+SELECT groupArray((nk, c)) = (
+        SELECT groupArray((nk, c)) FROM (
+            SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
+            GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_skip_unused_shards = 0, optimize_distributed_group_by_sharding_key = 1))
+FROM (
+    SELECT negate(r.k) AS nk, countDistinctIf(l.n, r.lc IN ('1', '3')) AS c FROM bug_dsk AS l INNER JOIN bug_dsk AS r ON l.g = r.g
+    GROUP BY negate(r.k) ORDER BY ALL SETTINGS optimize_skip_unused_shards = 1, optimize_distributed_group_by_sharding_key = 1);
+
 DROP TABLE bug_dl;
 DROP TABLE bug_dr;
+DROP TABLE bug_dsk;
 DROP TABLE bug_l;
 DROP TABLE bug_r;
+DROP TABLE bug_sk;

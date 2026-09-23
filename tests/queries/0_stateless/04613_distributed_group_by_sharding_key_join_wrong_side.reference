@@ -9,9 +9,9 @@ optimization still fires for GROUP BY l.k (sharding key)
 1
 RIGHT JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
 1
-FULL JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
+FULL JOIN GROUP BY l.k (bug_dl padded, shard-local join), optimize=1 equals optimize=0
 1
-CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
+CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded, shard-local join), optimize=1 equals optimize=0
 1
 optimization still fires for plain CROSS JOIN GROUP BY l.k (sharding key)
 1
@@ -19,13 +19,21 @@ RIGHT SEMI JOIN GROUP BY l.k, optimize=1 equals optimize=0
 1
 optimization still fires for LEFT SEMI JOIN GROUP BY l.k
 1
+optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (shard-local join)
+1
 RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0
 1
 DISTINCT l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0
+1
+DISTINCT l.k over RIGHT JOIN (bug_dl padded, shard-local join), optimize=1 equals optimize=0
 1
 LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0
 1
 DISTINCT r.k over LEFT JOIN (foreign column name), optimize=1 equals optimize=0
 1
 INNER JOIN GROUP BY r.k, join condition unrelated to the sharding key, optimize=1 equals optimize=0
+1
+GROUP BY negate(r.k) over an expression-sharded self join (#111274), optimize=1 equals optimize=0
+1
+GROUP BY negate(r.k) over an expression-sharded self join (#111274), skip_unused_shards=1 equals =0
 1
