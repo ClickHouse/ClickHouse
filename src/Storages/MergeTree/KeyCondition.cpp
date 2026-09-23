@@ -581,6 +581,33 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
+/// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN:
+/// `not(NaN > c)` is true while `NaN <= c` is false. `=` / `!=` do stay complements under NaN and are
+/// covered only to keep one rule for every comparison. A finite float constant is safe.
+static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    if (name != "equals" && name != "notEquals"
+        && name != "less" && name != "greater"
+        && name != "lessOrEquals" && name != "greaterOrEquals")
+        return false;
+
+    for (const auto * child : children)
+    {
+        if (!KeyCondition::typeMayHideNaN(child->result_type))
+            continue;
+
+        /// Non-constant: could be NaN at runtime, must not invert.
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column || !isColumnConst(*child->column))
+            return true;
+
+        /// Constant: only a NaN blocks the rewrite.
+        const Field field = (*child->column)[0];
+        if (field.isNaN())
+            return true;
+    }
+    return false;
+}
+
 /// `value_is_truth_tested` tells whether the consumer of this node only truth-tests its value
 /// (`boolean_context`), so neither the value itself nor its type is observed. It gates the
 /// `Nullable`-widening case below, which is the only one that changes the node's result type.
@@ -1332,7 +1359,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end() && canFoldToInverseRelation(name, children))
+                if (it != inverse_relations.end()
+                    && canFoldToInverseRelation(name, children)
+                    && !(need_inversion && isFloatComparison(name, children)))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
@@ -1612,30 +1641,116 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
-/// Whether a float is reachable by descending `Tuple` elements and the `Nullable` / `LowCardinality`
-/// wrappers. `Array` and `Map` are not descended: an equal-type comparison of those is `compareAt`-based
-/// and orders a NaN exactly where the index does, so their bounds and their rows already agree.
-static bool floatReachableThroughTupleElements(const DataTypePtr & type)
+bool KeyCondition::typeMayHideNaN(const DataTypePtr & type)
 {
+    if (!type)
+        return false;
+
     const auto unwrapped = removeLowCardinalityAndNullable(type);
     if (WhichDataType(unwrapped).isFloat())
         return true;
 
-    const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
-    if (!tuple)
-        return false;
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (typeMayHideNaN(element))
+                return true;
+    }
 
-    const auto & elements = tuple->getElements();
-    return std::any_of(elements.begin(), elements.end(), floatReachableThroughTupleElements);
+    return false;
 }
 
+void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
+{
+    auto column_may_hide_nan = [&key_types](size_t key_column)
+    {
+        return key_column < key_types.size() && typeMayHideNaN(key_types[key_column]);
+    };
+
+    /// A packed `Tuple` key keeps the mapped set column as a `ColumnTuple`, so an element can carry the
+    /// NaN nested rather than at the top level.
+    auto set_column_contains_nan = [](const IColumn & column)
+    {
+        Field field;
+        for (size_t i = 0, size = column.size(); i < size; ++i)
+        {
+            column.get(i, field);
+            if (anyFieldSatisfies(field, isNaNField))
+                return true;
+        }
+        return false;
+    };
+
+    for (auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            {
+                if (element.key_columns.size() != 1 || !column_may_hide_nan(element.getKeyColumn()))
+                    break;
+
+                if (element.monotonic_functions_chain.empty())
+                    element.relaxed = true;
+                else
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                break;
+            }
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            {
+                if (std::none_of(element.key_columns.begin(), element.key_columns.end(), column_may_hide_nan))
+                    break;
+
+                /// Without a prepared set there is nothing to inspect: assume the worst rather than
+                /// keep an unverified `can_be_true`.
+                if (!element.set_index)
+                {
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                    break;
+                }
+
+                const auto & ordered_set = element.set_index->getOrderedSet();
+                const auto & mapping = element.set_index->getIndexesMapping();
+
+                bool relax = false;
+                for (size_t i = 0; i < mapping.size(); ++i)
+                {
+                    if (!column_may_hide_nan(mapping[i].key_index))
+                        continue;
+
+                    /// `ordered_set[i]` belongs to `mapping[i]`: the constructor sorts `indexes_mapping`
+                    /// and then indexes the set elements through it, so `tuple_index` is not a position here.
+                    if (!mapping[i].functions.empty() || set_column_contains_nan(*ordered_set[i]))
+                    {
+                        element.function = RPNElement::FUNCTION_UNKNOWN;
+                        relax = false;
+                        break;
+                    }
+                    relax = true;
+                }
+                if (relax)
+                    element.relaxed = true;
+                break;
+            }
+            default:
+                break;
+        }
+    }
+}
+
+/// Whether a NaN is reachable by descending the `Tuple` elements of this type, i.e. `typeMayHideNaN`
+/// for a key column that is a `Tuple` rather than a float. `Array` and `Map` are not descended, for the
+/// reason `typeMayHideNaN` gives: an equal-type comparison of those is `compareAt`-based and orders a
+/// NaN exactly where the index does, so their bounds and their rows already agree.
 static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
 {
     if (!type)
         return false;
 
     const auto unwrapped = removeLowCardinalityAndNullable(type);
-    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && floatReachableThroughTupleElements(unwrapped);
+    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && KeyCondition::typeMayHideNaN(unwrapped);
 }
 
 /// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
@@ -2925,6 +3040,77 @@ static bool tryPrepareSetColumnsForIndex(
     return true;
 }
 
+namespace
+{
+
+bool fieldContainsNaN(const Field & field)
+{
+    if (field.isNaN())
+        return true;
+
+    if (field.getType() == Field::Types::Tuple)
+    {
+        for (const auto & element : field.safeGet<Tuple>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    if (field.getType() == Field::Types::Array)
+    {
+        for (const auto & element : field.safeGet<Array>())
+            if (fieldContainsNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (isFloat(removeLowCardinalityAndNullable(type)))
+        return true;
+
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
+
+/** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
+  * works with ranges produced by `IColumn::getExtremes`, which deliberately skips `NaN`. A part or
+  * granule that holds `NaN` next to finite values therefore gets a `NaN`-free range, the set-vs-range
+  * intersection finds no overlap, and it is pruned even though row-wise evaluation of the same filter
+  * matches the `NaN` rows. The set atom serves every index at once, so it has to be declined outright;
+  * `has` declines floating-point arrays for a closely related mismatch.
+  */
+bool setElementsContainNaN(const Columns & set_columns, const DataTypes & key_types)
+{
+    if (std::none_of(key_types.begin(), key_types.end(), typeContainsFloat))
+        return false;
+
+    for (const auto & column : set_columns)
+    {
+        const size_t size = column->size();
+        for (size_t i = 0; i < size; ++i)
+        {
+            Field field;
+            column->get(i, field);
+            if (fieldContainsNaN(field))
+                return true;
+        }
+    }
+
+    return false;
+}
+
+}
+
 /// `has` compares array elements with the key values as raw `Field`s, whereas `MergeTreeSetIndex`
 /// converts the elements to the key type with an accurate cast. The two agree only when the raw
 /// representation of the set element type carries the same semantics as the key type. Counter-examples
@@ -3235,6 +3421,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
             set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
         return false;
 
+    if (setElementsContainNaN(set_columns, data_types))
+        return false;
+
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
 
     /// MergeTreeSetIndex constructor can sort and deduplicate the indexes mapping.
@@ -3510,6 +3699,13 @@ public:
 
     IFunctionBase::Monotonicity getMonotonicityForRange(const IDataType & type, const Field & left, const Field & right) const override
     {
+        /// `toDayOfWeek` declares that it is monotonic inside the enclosing Monday-based week: its factor
+        /// transform is `ToMondayImpl`. That holds for the Monday-first modes 0 and 1, but not for the
+        /// Sunday-first modes 2 and 3, where the value drops back at Sunday - in the middle of the factor's
+        /// interval. Pruning a key range with the unsound claim silently loses matching rows.
+        if (kind == Kind::RIGHT_CONST && func->getName() == "toDayOfWeek" && !isMondayFirstDayOfWeekMode())
+            return {};
+
         if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(func.get()))
         {
             if (dynamic_cast<FunctionDateOrDateTimeBase *>(adaptor->getFunction().get()) && kind == Kind::RIGHT_CONST)
@@ -3541,6 +3737,25 @@ public:
     const ColumnWithTypeAndName & getConstArg() const { return const_arg; }
 
 private:
+    /// Whether the constant argument is a `toDayOfWeek` mode that numbers the week from Monday.
+    /// A mode of an unexpected shape is reported as not Monday-first, which only declines monotonicity.
+    bool isMondayFirstDayOfWeekMode() const
+    {
+        const Field mode = (*const_arg.column)[0];
+
+        UInt64 mode_value = 0;
+        if (mode.getType() == Field::Types::UInt64)
+            mode_value = mode.safeGet<UInt64>();
+        else if (mode.getType() == Field::Types::Int64)
+            mode_value = static_cast<UInt64>(mode.safeGet<Int64>());
+        else
+            return false;
+
+        /// Only the two lowest bits of the mode are significant, see `DateLUTImpl::check_week_day_mode`,
+        /// and the second one selects the Sunday-first numbering.
+        return (mode_value & 2) == 0;
+    }
+
     FunctionBasePtr func;
     ColumnWithTypeAndName const_arg;
     Kind kind = Kind::NO_CONST;
