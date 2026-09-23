@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # prefer_optimize_projection would let the baseline read p_wide over far more marks than the parent
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_prefer;
-    CREATE TABLE t_prefer (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+    CREATE TABLE t_prefer (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100, index_granularity_bytes = 0;
     ALTER TABLE t_prefer ADD PROJECTION p_wide (SELECT a, b ORDER BY b);
     INSERT INTO t_prefer SELECT number, cityHash64(number) % 1000 FROM numbers(100000);
 "
