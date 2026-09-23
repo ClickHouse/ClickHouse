@@ -84,7 +84,7 @@ DataTypePtr getTypeToParse(const DataTypePtr & type, Mode mode)
     return type;
 }
 
-/// A mask is only as long as its highest set bit: `BlockMissingValues::setBit` resizes to `row_idx + 1`.
+/// The mask can be shorter than the chunk: `BlockMissingValues::setBit` resizes only up to the row it sets.
 bool isRowMissing(const BlockMissingValues::RowsBitMask * missing_rows, size_t row)
 {
     return missing_rows && row < missing_rows->size() && (*missing_rows)[row];

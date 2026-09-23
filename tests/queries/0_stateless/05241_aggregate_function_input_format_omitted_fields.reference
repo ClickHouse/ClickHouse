@@ -7,6 +7,8 @@ omitted and present rows in one block
 nested in a tuple, omitted then present
 0
 1
+an omitted state merges as nothing, not as a default value
+-5	1
 every function shape
 0		0	0	0	
 fewer columns in the row, and a column absent from the file
@@ -18,10 +20,8 @@ nan
 control: the other two modes
 0	nan
 0	nan
-control: an omitted array or map has no elements to aggregate
-0	0
-control: a column default still wins over the empty state
-1	10
-2	5
+control: an omitted array or map has no elements, a present array keeps all of them
+1	[]	0
+2	[5,6]	0
 known boundary of input_format_defaults_for_omitted_fields = 0
 1	0

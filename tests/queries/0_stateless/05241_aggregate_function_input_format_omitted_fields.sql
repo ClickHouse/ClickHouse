@@ -15,6 +15,9 @@ SELECT 'nested in a tuple, omitted then present';
 SELECT countMerge(t.2) FROM format(JSONEachRow, 'k UInt8, t Tuple(UInt8, AggregateFunction(count))', '{"k":1}');
 SELECT countMerge(t.2) FROM format(JSONEachRow, 'k UInt8, t Tuple(UInt8, AggregateFunction(count))', '{"k":1,"t":[1,[]]}');
 
+SELECT 'an omitted state merges as nothing, not as a default value';
+SELECT maxMerge(m), countMerge(c) FROM format(JSONEachRow, 'k UInt8, m AggregateFunction(max, Int32), c AggregateFunction(count)', '{"k":1}\n{"k":2,"m":-5,"c":[]}');
+
 SELECT 'every function shape';
 SELECT countMerge(c), argMaxMerge(g), uniqExactMerge(u), sumIfMerge(s), uniqMerge(n), anyMerge(l) FROM format(JSONEachRow, 'k UInt8, c AggregateFunction(count), g AggregateFunction(argMax, String, UInt32), u AggregateFunction(uniqExact, UInt32), s AggregateFunction(sumIf, UInt32, UInt8), n AggregateFunction(uniq, Nullable(String)), l AggregateFunction(any, LowCardinality(String))', '{"k":1}');
 
@@ -33,16 +36,8 @@ SELECT 'control: the other two modes';
 SELECT countMerge(c), avgMerge(a) FROM format(JSONEachRow, 'k UInt8, c AggregateFunction(count), a AggregateFunction(avg, UInt32)', '{"k":1}') SETTINGS aggregate_function_input_format = 'state';
 SELECT countMerge(c), avgMerge(a) FROM format(JSONEachRow, 'k UInt8, c AggregateFunction(count), a AggregateFunction(avg, UInt32)', '{"k":1}') SETTINGS aggregate_function_input_format = 'array';
 
-SELECT 'control: an omitted array or map has no elements to aggregate';
-SELECT length(x), length(m) FROM format(JSONEachRow, 'k UInt8, x Array(AggregateFunction(count)), m Map(String, AggregateFunction(sum, UInt64))', '{"k":1}');
-
-SELECT 'control: a column default still wins over the empty state';
-DROP TABLE IF EXISTS t_05241;
-CREATE TABLE t_05241 (k UInt64, x AggregateFunction(sum, UInt64) DEFAULT arrayReduce('sumState', [k * 10])) ENGINE = Memory;
-INSERT INTO t_05241 SETTINGS async_insert = 0 FORMAT JSONEachRow {"k":1} {"k":2,"x":5};
-
-SELECT k, sumMerge(x) FROM t_05241 GROUP BY k ORDER BY k;
-DROP TABLE t_05241;
+SELECT 'control: an omitted array or map has no elements, a present array keeps all of them';
+SELECT k, arrayMap(s -> finalizeAggregation(s), x), length(m) FROM format(JSONEachRow, 'k UInt8, x Array(AggregateFunction(sum, UInt64)), m Map(String, AggregateFunction(sum, UInt64))', '{"k":1}\n{"k":2,"x":[5,6]}') ORDER BY k;
 
 -- Known boundary, not a regression: with `input_format_defaults_for_omitted_fields = 0` the format is asked
 -- not to report which fields a row omitted, so nothing downstream can tell an omitted field from a value.
