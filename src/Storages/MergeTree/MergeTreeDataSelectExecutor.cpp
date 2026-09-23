@@ -170,6 +170,12 @@ static std::vector<std::optional<size_t>> buildPrimaryKeyToMinMaxSlotMapping(
     std::vector<std::optional<size_t>> mapping(primary_key.column_names.size());
     for (size_t i = 0; i < primary_key.column_names.size(); ++i)
     {
+        /// `forAnyHyperrectangle` uses these bounds as the column universe, so a bound that can hide a
+        /// NaN is not usable here: `containsRange` would be true where the NaN falsifies it. Such a
+        /// column falls back to the whole universe.
+        if (i < primary_key.data_types.size() && KeyCondition::typeMayHideNaN(primary_key.data_types[i]))
+            continue;
+
         auto it = std::find(minmax_names.begin(), minmax_names.end(), primary_key.column_names[i]);
         if (it != minmax_names.end())
             mapping[i] = static_cast<size_t>(it - minmax_names.begin());
@@ -2739,7 +2745,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         mark_cache,
         uncompressed_cache,
         vector_similarity_index_cache,
-        reader_settings);
+        reader_settings,
+        /*interruptible_marks_read=*/ true);
 
     MarkRanges res;
     size_t ranges_size = ranges.size();
@@ -3099,7 +3106,8 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
             mark_cache,
             uncompressed_cache,
             vector_similarity_index_cache,
-            reader_settings);
+            reader_settings,
+            /*interruptible_marks_read=*/ true);
 
     auto min_max_granules = std::make_shared<MergeTreeIndexBulkGranulesMinMax>(skip_index_minmax->index.name,
                                     skip_index_minmax->index.sample_block, skip_index_granularity, direction,
