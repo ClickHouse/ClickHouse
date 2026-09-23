@@ -545,6 +545,17 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
         return;
     }
 
+    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
+    /// table was created before the first file landed). Caching it would permanently disable hive
+    /// partitioning for this storage instance: once files appear, schema-declared partition
+    /// columns would silently read file defaults instead of the path values, and filters on them
+    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
+    if (sample_path.empty())
+    {
+        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
+        return;
+    }
+
     auto current_metadata = getInMemoryMetadataPtr(query_context, false);
     auto new_metadata = *current_metadata;
 
@@ -1167,6 +1178,12 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
+Pipe StorageObjectStorage::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
+{
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+}
+
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
@@ -1191,6 +1208,15 @@ void StorageObjectStorage::shutdown(bool)
 bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     return configuration->scheduleDataProcessingJob(assignee, *this);
+}
+
+void StorageObjectStorage::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
 }

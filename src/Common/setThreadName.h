@@ -167,6 +167,7 @@ namespace DB
     M(TCP_HANDLER, "TCPHandler") \
     M(TEST_KEEPER_PROC, "TestKeeperProc") \
     M(TEST_SCHEDULER, "TestScheduler") \
+    M(TIMER_DESCRIPTOR, "TimerDescriptor") \
     M(TRACE_COLLECTOR, "TraceCollector") \
     M(TRANSPOSED_METRIC_LOG, "TMetricLog") \
     M(TRUNCATE_TABLE, "TruncTbls") \

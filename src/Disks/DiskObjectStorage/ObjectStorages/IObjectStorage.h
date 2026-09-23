@@ -336,6 +336,13 @@ public:
         const std::string & start_after,
         const std::string & continuation_token) const;
 
+    /// Whether `iterate` treats its argument as an arbitrary key prefix rather than as a directory path,
+    /// and honours `start_after`. A true object storage has no directories, so listing `pref` also returns
+    /// `prefix/a/b`; `LocalObjectStorage` instead walks a real directory tree and returns nothing unless
+    /// the argument names an existing directory, and `AzureObjectStorage` ignores `start_after`. Both are
+    /// silent, so a caller that splits one listing into several by key range must check this first.
+    virtual bool supportsPrefixListing() const { return false; }
+
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
     virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const
@@ -445,7 +452,8 @@ public:
 
         /// Force the client to be rebuilt even if the stored settings did not change. Used to re-resolve
         /// credentials under a different accessing context (e.g. re-applying the server-credential opt-in to a
-        /// server-internal table whose client was built restricted at metadata load) without detaching the table.
+        /// server-internal table whose client was built restricted at metadata load) without detaching the table,
+        /// and by the config reload of server disks, which rebuilds the client unconditionally.
         bool force_client_rebuild = false;
     };
     virtual void applyNewSettings(
@@ -492,7 +500,8 @@ public:
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
 
-    virtual const AzureBlobStorage::ConnectionParams & getAzureBlobStorageConnectionParams() const
+    /// Returns a snapshot: `applyNewSettings` may swap the parameters together with the client.
+    virtual std::shared_ptr<const AzureBlobStorage::ConnectionParams> getAzureBlobStorageConnectionParams() const
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "This function is only implemented for AzureBlobStorage");
     }
@@ -535,10 +544,34 @@ public:
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
 
+    /// Creates a private copy of this object storage: same settings and an equivalent client, but
+    /// no shared mutable state, so `applyNewSettings` on the copy cannot affect the original.
+    /// Decorators (e.g. `CachedObjectStorage`) clone the wrapped storage and keep sharing the
+    /// immutable parts (the file cache object itself). Used by data-lake tables created on top of
+    /// a server disk (`SETTINGS disk = '...'`): the table works through a copy of the disk's
+    /// object storage, so per-table setting updates cannot corrupt the disk.
+    /// The only state shared with the copy on purpose is the IO scheduling resource names: they are a
+    /// property of the disk (see `DiskObjectStorage::propagateResourceNamesNoLock`) and change with
+    /// `CREATE RESOURCE` / `DROP RESOURCE`, so the copy keeps following the disk's resources.
+    ObjectStoragePtr clone() const;
+
+protected:
+    /// Creates the copy itself, see `clone`. The state of the base class is handled by `clone`.
+    virtual ObjectStoragePtr cloneImpl() const
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'clone' is not implemented for {}", getName());
+    }
+
 private:
-    mutable std::mutex io_scheduling_mutex;
-    String read_resource_name;
-    String write_resource_name;
+    /// Names of the workload scheduler resources for reads and writes. Set by the owning
+    /// `DiskObjectStorage`, shared with the copies created by `clone`.
+    struct IOSchedulingResourceNames
+    {
+        std::mutex mutex;
+        String read_resource_name;
+        String write_resource_name;
+    };
+    std::shared_ptr<IOSchedulingResourceNames> io_scheduling_resource_names = std::make_shared<IOSchedulingResourceNames>();
 };
 
 using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
