@@ -84,29 +84,23 @@ keeperclusters.clickhouse.com        2025-01-06T00:00:00Z
 연산자 배포 옵션을 구성하려면 아래 단계를 따르십시오.
 
 <Steps>
-  <Step>
-    ### 리포지토리 클론
-
+  <Step title="리포지토리 클론" id="clone-the-repository">
     ```bash
     git clone https://github.com/ClickHouse/clickhouse-operator.git
     cd clickhouse-operator
     ```
   </Step>
 
-  <Step>
-    ### 설치 옵션 구성
-
+  <Step title="설치 옵션 구성" id="configure-installation-options">
     필요에 따라 기능을 활성화하거나 비활성화하려면 `config/default/kustomization.yaml`을 편집하십시오.
 
     * 웹훅을 비활성화하려면 `[WEBHOOK]` 및 `[CERTMANAGER]` 섹션을 주석 처리하십시오.
     * 보안 메트릭 엔드포인트를 활성화하려면 `[METRICS]` 섹션을 주석 처리하고 `[METRICS SECURE]` 및 `[CERTMANAGER]` 섹션의 주석을 해제하십시오.
     * Prometheus Operator용 ServiceMonitor를 활성화하려면 `[PROMETHEUS]` 섹션의 주석을 해제하십시오.
-    * 연산자 네트워크 정책을 활성화하려면 `[NETWORK POLICY]` 섹션의 주석을 해제하십시오.
+    * 연산자 network policy를 활성화하려면 `[NETWORK POLICY]` 섹션의 주석을 해제하십시오.
   </Step>
 
-  <Step>
-    ### 빌드 및 배포
-
+  <Step title="빌드 및 배포" id="build-and-deploy">
     연산자 매니페스트를 빌드한 후 적용합니다.
 
     ```bash

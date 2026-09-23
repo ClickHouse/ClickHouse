@@ -18,8 +18,6 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
-#include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 
@@ -107,21 +105,18 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     time_series_storage_id = context->resolveStorageID(time_series_storage_id);
 
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
-    UInt64 time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto table_timestamp_type = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type).first;
+    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::TimeSeries).type);
 
-    UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
+    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
-    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), time_scale};
+    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
 
     PrometheusQueryEvaluationMode mode = {};
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
-    DataTypes time_parameter_types;  /// The types of the timestamp parameters: they can specify the time zone of the results.
 
     if (over_range)
     {
@@ -130,20 +125,18 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         auto [step_field, step_type] = evaluateConstantExpression(args[argument_index++], context);
 
         mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        start_time = parseTimeSeriesTimestamp(start_time_field, start_time_type, time_scale);
-        end_time = parseTimeSeriesTimestamp(end_time_field, end_time_type, time_scale);
-        step = parseTimeSeriesDuration(step_field, step_type, time_scale);
-        time_parameter_types = {start_time_type, end_time_type};
+        start_time = parseTimeSeriesTimestamp(start_time_field, start_time_type, timestamp_scale);
+        end_time = parseTimeSeriesTimestamp(end_time_field, end_time_type, timestamp_scale);
+        step = parseTimeSeriesDuration(step_field, step_type, timestamp_scale);
     }
     else
     {
         auto [time_field, time_type] = evaluateConstantExpression(args[argument_index++], context);
 
         mode = PrometheusQueryEvaluationMode::QUERY;
-        start_time = parseTimeSeriesTimestamp(time_field, time_type, time_scale);
+        start_time = parseTimeSeriesTimestamp(time_field, time_type, timestamp_scale);
         end_time = start_time;
         step = 0;
-        time_parameter_types = {time_type};
     }
 
     chassert(argument_index == args.size());
@@ -152,10 +145,8 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     config.promql_query = std::make_shared<PrometheusQueryTree>(std::move(promql_query));
     auto & evaluation_settings = config.evaluation_settings;
     evaluation_settings.time_series_storage_id = std::move(time_series_storage_id);
-    evaluation_settings.time_series_version = time_series_version;
-    evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
-    evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
-    evaluation_settings.time_scale = time_scale;
+    evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
+    evaluation_settings.scalar_data_type = std::move(scalar_data_type);
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
@@ -195,9 +186,6 @@ void StoragePrometheusQuery::readImpl(
     size_t /* max_block_size */,
     size_t /* num_streams */)
 {
-    auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(config.evaluation_settings.time_series_storage_id, context));
-    checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
-
     LOG_INFO(log, "Building SQL to evaluate promql: {}", *config.promql_query);
     PrometheusQueryToSQL::Converter converter{config.promql_query, config.evaluation_settings};
     ASTPtr select_query = converter.getSQL();
@@ -205,11 +193,16 @@ void StoragePrometheusQuery::readImpl(
     LOG_INFO(log, "Will execute query:\n{}", select_query->formatForLogging());
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
-    /// Isolate the settings required by generated PromQL from the outer query.
-    auto query_context = Context::createCopy(context);
+    /// The generated SQL relies on `AS MATERIALIZED` to avoid evaluating subqueries referenced more than once
+    /// repeatedly (see SQLSubqueryType::MATERIALIZED_TABLE), and that mark has effect only with the setting
+    /// `enable_materialized_cte` enabled. Enable it unless the user set it explicitly.
+    auto query_context = context;
     if (!context->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        query_context->setSetting("enable_materialized_cte", true);
-    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
+    {
+        auto context_copy = Context::createCopy(context);
+        context_copy->setSetting("enable_materialized_cte", true);
+        query_context = context_copy;
+    }
 
     InterpreterSelectQueryAnalyzer interpreter(select_query, query_context, options, column_names);
     interpreter.addStorageLimits(*query_info.storage_limits);

@@ -120,7 +120,7 @@ void LimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out, ctx.version);
+        serializeSortDescription(description, ctx.out);
 }
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
@@ -139,7 +139,7 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 
     SortDescription description;
     if (with_ties)
-        deserializeSortDescription(description, ctx.in, ctx.version, ctx.max_type_complexity);
+        deserializeSortDescription(description, ctx.in);
 
     return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }

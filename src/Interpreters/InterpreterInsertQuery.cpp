@@ -14,10 +14,9 @@
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
-#include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/QueryAliasesVisitor.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/QueryLog.h>
-#include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/processColumnTransformers.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -30,7 +29,6 @@
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
@@ -45,6 +43,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -67,6 +66,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool distributed_foreground_insert;
     extern const SettingsBool insert_null_as_default;
     extern const SettingsBool optimize_trivial_insert_select;
@@ -122,7 +122,6 @@ namespace ErrorCodes
     extern const int QUERY_IS_PROHIBITED;
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int LOGICAL_ERROR;
 }
 
 InterpreterInsertQuery::InterpreterInsertQuery(
@@ -161,8 +160,25 @@ StoragePtr InterpreterInsertQuery::getTable(ASTInsertQuery & query)
         /// we can create a temporary pipeline and get the header.
         if (query.select && table_function_ptr->needStructureHint())
         {
+            SharedHeader header_block;
             auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-            auto header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
+
+            if (current_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+            {
+                header_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query.select, current_context, select_query_options);
+            }
+            else
+            {
+                ASTPtr input_function;
+                query.tryFindInputFunction(input_function);
+                if (input_function)
+                    throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Schema inference is not supported with allow_experimental_analyzer=0 for INSERT INTO FUNCTION ... SELECT FROM input()");
+
+                InterpreterSelectWithUnionQuery interpreter_select{
+                    query.select, current_context, select_query_options};
+                auto tmp_pipeline = interpreter_select.buildQueryPipeline();
+                header_block = tmp_pipeline.getSharedHeader();
+            }
 
             ColumnsDescription structure_hint{header_block->getNamesAndTypesList()};
             table_function_ptr->setStructureHint(structure_hint);
@@ -200,6 +216,8 @@ Block InterpreterInsertQuery::getSampleBlock(
     /// If the query does not include information about columns
     if (!query.columns)
     {
+        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
+            return window_view->getInputHeader();
         if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         return metadata_snapshot->getSampleBlockNonMaterialized();
@@ -613,8 +631,18 @@ QueryPipeline InterpreterInsertQuery::buildInsertSelectPipeline(ASTInsertQuery &
     QueryPipelineBuilder pipeline = [&]()
     {
         auto select_query_options = SelectQueryOptions(QueryProcessingStage::Complete, 1);
-        InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
-        return interpreter_select_analyzer.buildQueryPipeline();
+
+        const Settings & settings = select_context->getSettingsRef();
+        if (settings[Setting::allow_experimental_analyzer])
+        {
+            InterpreterSelectQueryAnalyzer interpreter_select_analyzer(query.select, select_context, select_query_options);
+            return interpreter_select_analyzer.buildQueryPipeline();
+        }
+        else
+        {
+            InterpreterSelectWithUnionQuery interpreter_select(query.select, select_context, select_query_options);
+            return interpreter_select.buildQueryPipeline();
+        }
     }();
 
     /// ORDER BY ALL should produce a single globally-sorted stream.
@@ -675,8 +703,6 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
             && !select_query->orderBy()
             && !select_query->limitBy()
             && !select_query->limitLength()
-            && !select_query->limitAfter()
-            && !select_query->limitUntil()
             && !hasAggregateFunctions(select_query));
     }
     return false;
@@ -686,6 +712,9 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
+    if (!settings[Setting::allow_experimental_analyzer])
+        return {};
+
     if (settings[Setting::parallel_distributed_insert_select] != 2)
         return {};
 
@@ -694,13 +723,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     /// and followers need automatic_parallel_replicas_mode == 0 to participate in coordinated reading.
     auto context = Context::createCopy(getContext());
     context->setSetting("automatic_parallel_replicas_mode", Field{0});
-
-    /// A follower executing the shipped INSERT never uses the plan-based implementation of parallel
-    /// replicas: `collaborate_with_initiator` makes `canUseParallelReplicasOnInitiator` false, which is what
-    /// gates `QueryPlanOptimizationSettings::enable_parallel_replicas`. The initiator takes part as one more
-    /// replica, so it has to read the way the followers read. This is not a fallback for a declined
-    /// plan-based query: the feature is defined on top of the query-shipping transport.
-    context->setSetting("parallel_replicas_plan_based", false);
 
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
@@ -712,13 +734,6 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
         return {};
 
-    /// Pinning it on the context above is not enough: the nested interpreter re-applies the SELECT's own
-    /// `SETTINGS` clause on top of the context it is handed (`QueryTreeBuilder::buildSelectExpression`),
-    /// bringing the plan-based implementation back for the plans built below. `execute` restores
-    /// `query.select` from its backup once this returns, so the user's query text is not affected.
-    static constexpr std::array settings_overridden_for_this_path{std::string_view{"parallel_replicas_plan_based"}};
-    removeSettingsFromQueryTopLevel(query.select, settings_overridden_for_this_path);
-
     auto select = query.select->as<ASTSelectWithUnionQuery &>().list_of_selects->children.front();
     if (!ClusterProxy::isSuitableForInsertSelectWithParallelReplicas(select, context))
         return {};
@@ -728,33 +743,16 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
         && settings[Setting::parallel_replicas_prefer_local_replica])
     {
-        /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
-        /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
-        /// 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
-        /// settings). Skip the local pipeline when the leaf timeout contract differs from the initiator's timeout
-        /// contract so that all leaf reading happens on remote replicas — the same approach as for SELECT in
-        /// 'updateContextForParallelReplicas'.
-        if (ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
-        {
-            LOG_TRACE(
-                logger,
-                "Not using the local insert select pipeline because the leaf timeout contract differs from the "
-                "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
-                "timeout separately");
-        }
-        else
-        {
-            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
-            auto coordinator = parallel_replicas_info.coordinator;
-            auto local_replica_index = parallel_replicas_info.local_replica_index;
-            return ClusterProxy::executeInsertSelectWithParallelReplicas(
-                query,
-                context,
-                std::move(local_pipeline),
-                std::move(coordinator),
-                std::move(parallel_replicas_info.connection_pools),
-                local_replica_index);
-        }
+        auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+        auto coordinator = parallel_replicas_info.coordinator;
+        auto local_replica_index = parallel_replicas_info.local_replica_index;
+        return ClusterProxy::executeInsertSelectWithParallelReplicas(
+            query,
+            context,
+            std::move(local_pipeline),
+            std::move(coordinator),
+            std::move(parallel_replicas_info.connection_pools),
+            local_replica_index);
     }
 
     return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);
@@ -1109,30 +1107,12 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
-    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
-
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-    const auto src_snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
-
-    /// Strip the initiator-only settings from the forwarded query text (both `changes` and `default_settings`,
-    /// across the INSERT and its source SELECT) so those names — including the new HTTP table-as-file settings —
-    /// do not reach the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is
-    /// stripped below.
+    /// Actually the query doesn't change, we just serialize it to string. Strip the initiator-only
+    /// settings from the forwarded query text (both `changes` and `default_settings`, across the INSERT
+    /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
+    /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
     auto query_to_send = query.clone();
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
-
-    /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
-    /// function (`url`, `s3`, ...), while the query text still names that plain function. A node that runs
-    /// the forwarded query as a secondary query does not convert it again: it creates a plain storage that
-    /// expands the globs and reads every file on its own instead of taking its share of the read tasks from
-    /// the initiator, so N nodes insert the data N times. Rewrite the source the same way `IStorageCluster::read`
-    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument, and the
-    /// structure and format arguments are added so that the nodes do not infer the schema again.
-    {
-        auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
-        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
-    }
-
     String query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1154,70 +1134,44 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         query_context->setSettings(stripped_settings);
     }
 
+    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
+
     std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate = nullptr;
-    if (select_query && (select_query->prewhere() || select_query->where()))
+    if (select_query)
     {
-        /// The metadata and the snapshot are acquired outside of the `try` block below:
-        /// a failure there is a real storage-side problem rather than an expected miss of
-        /// the best-effort condition analysis, so it has to propagate.
-        const auto columns = src_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        ASTPtr condition_ast;
+        if (select_query->prewhere() && select_query->where())
+            condition_ast = makeASTOperator("and", select_query->prewhere()->clone(), select_query->where()->clone());
+        else if (select_query->prewhere())
+            condition_ast = select_query->prewhere()->clone();
+        else if (select_query->where())
+            condition_ast = select_query->where()->clone();
 
-        try
+        if (condition_ast)
         {
-            /// `PREWHERE` and `WHERE` can reference aliases introduced in the `WITH` clause or in the `SELECT` list,
-            /// as in `WITH splitByChar(' ', line) AS values SELECT ... WHERE length(values) >= 3`.
-            /// The condition is analyzed here in isolation from the rest of the query, so the aliases have to be
-            /// substituted first - otherwise the analysis below would not be able to resolve them.
-            /// It is done on a copy, because the original AST has already been serialized for the remote nodes.
-            NameSet source_columns_set;
-            for (const auto & column : columns)
-                source_columns_set.insert(column.name);
-
-            ASTPtr select_copy = select_query->clone();
-            Aliases aliases;
-            QueryAliasesVisitor(aliases).visit(select_copy);
-            MarkTableIdentifiersVisitor::Data mark_identifiers_data{aliases};
-            MarkTableIdentifiersVisitor(mark_identifiers_data).visit(select_copy);
-            QueryNormalizer::Data normalizer_data(
-                aliases,
-                source_columns_set,
-                /*ignore_alias_=*/ false,
-                QueryNormalizer::ExtractedSettings(settings),
-                /*allow_self_aliases_=*/ true);
-            QueryNormalizer(normalizer_data).visit(select_copy);
-
-            const auto & normalized_select = select_copy->as<ASTSelectQuery &>();
-
-            ASTPtr condition_ast;
-            if (normalized_select.prewhere() && normalized_select.where())
-                condition_ast = makeASTOperator("and", normalized_select.prewhere()->clone(), normalized_select.where()->clone());
-            else if (normalized_select.prewhere())
-                condition_ast = normalized_select.prewhere()->clone();
-            else
-                condition_ast = normalized_select.where()->clone();
-
-            auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
-            filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
-            predicate = filter_dag->getOutputs().at(0);
-        }
-        catch (...)
-        {
-            /// Filter extraction is best-effort: the condition is analyzed here in isolation
-            /// from the rest of the query, so the analysis can legitimately fail (e.g. the
-            /// predicate references columns qualified with a table alias, which is not
-            /// resolvable in this isolated pass). Fall back to no pruning so the query still
-            /// executes correctly. This is an expected outcome for some queries rather than
-            /// an error, hence the low log level. A logical error, however, indicates a bug
-            /// rather than an expected miss, so it is logged prominently.
-            tryLogCurrentException(
-                logger,
-                "Cannot build the filter expression for pruning in INSERT ... SELECT; continuing without pruning",
-                getCurrentExceptionCode() == ErrorCodes::LOGICAL_ERROR ? LogsLevel::error : LogsLevel::debug);
-            filter_dag.reset();
-            predicate = nullptr;
+            try
+            {
+                const auto metadata = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+                const auto snapshot = src_storage_cluster->getStorageSnapshot(metadata, local_context);
+                const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+                auto syntax = TreeRewriter(local_context).analyze(condition_ast, columns);
+                filter_dag = ExpressionAnalyzer(condition_ast, syntax, local_context).getActionsDAG(true, true);
+                predicate = filter_dag->getOutputs().at(0);
+            }
+            catch (...)
+            {
+                /// Filter extraction is best-effort: if DAG construction fails for any reason
+                /// (e.g. the predicate references columns or functions not available in this
+                /// isolated analysis pass), silently fall back to no pruning so the query
+                /// still executes correctly.
+                tryLogCurrentException(logger, "Failed to build filter DAG for partition pruning in INSERT ... SELECT; continuing without pruning");
+                filter_dag.reset();
+                predicate = nullptr;
+            }
         }
     }
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
     auto extension = src_storage_cluster->getTaskIteratorExtension(
         predicate, filter_dag ? &*filter_dag : nullptr, local_context, src_cluster, src_metadata_snapshot);
 
