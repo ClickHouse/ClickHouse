@@ -3276,7 +3276,10 @@ static BlockIO executeQueryImpl(
             plan.resolveStorages(context);
 
             /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
-            /// plan to a distributed one.
+            /// plan to a distributed one. A deserialized plan has no planner-registered contexts, and its
+            /// steps captured this query context at deserialization, so it is the object the decision
+            /// must write on fallback (set building reads `make_distributed_plan` live from it).
+            plan.addDistributedPlanDecisionContext(context);
             QueryPlanOptimizationSettings optimization_settings(context);
             plan.applyDistributedPlanFallbackToLocal(optimization_settings);
             plan.optimize(optimization_settings);
