@@ -1,4 +1,5 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -9,6 +10,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
@@ -32,6 +34,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -557,6 +560,126 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
     node = std::move(function_array_sort_node);
 }
 
+bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx)
+{
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    /// No case-insensitive check here: only the format readers (`File`, `URL`, object storage, `Hive`) bind
+    /// column names up to case, and every one of them reports supportsOptimizationToSubcolumns() = false,
+    /// so storageAllowsTransformer never lets a Map rewrite reach them. On every storage that gets here
+    /// name resolution is case-sensitive, so a top-level `M.keys` cannot shadow `m.keys`.
+    NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
+        return false;
+
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return false;
+
+    function_arguments_nodes[0] = std::make_shared<ColumnNode>(column, ctx.column_source);
+    return true;
+}
+
+void optimizeFunctionMapContainsKey(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`.
+    if (optimizeMapFunctionToKeys(function_node, ctx))
+        resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
+}
+
+void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `has(map_argument, argument)` and `notHas(map_argument, argument)` with the same
+    /// function over `map_argument.keys`.
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    /// The Map implementation removes LowCardinality before comparing keys. Rewriting to the
+    /// keys subcolumn would use the Array(LowCardinality) path and can change comparisons for
+    /// values such as a FixedString needle wider than the Map key type.
+    if (WhichDataType(data_type_map.getKeyType()).isLowCardinality())
+        return;
+
+    if (optimizeMapFunctionToKeys(function_node, ctx))
+    {
+        const auto function_name = function_node.getFunctionName();
+        resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
+    }
+}
+
+template <size_t map_element>
+void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    static_assert(map_element <= 1);
+
+    const auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    /// The Map LIKE adapter evaluates the pattern once per input row before traversing the Map.
+    /// Keep arbitrary expressions out of the synthesized lambda, where they would be evaluated
+    /// once per Map element (or not at all for an empty Map). Only physical columns and constants
+    /// preserve the original evaluation scope. An expression-backed ColumnNode, such as an ALIAS
+    /// column, has the same evaluation-scope problem as any other expression.
+    const auto & pattern_node = function_arguments_nodes[1];
+    if (const auto * pattern_column_node = pattern_node->as<ColumnNode>())
+    {
+        if (pattern_column_node->hasExpression())
+            return;
+
+        const auto pattern_source = pattern_column_node->getColumnSource();
+        if (!pattern_source->as<TableNode>() && !pattern_source->as<TableFunctionNode>())
+            return;
+    }
+    else if (!pattern_node->as<ConstantNode>())
+        return;
+
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+    auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
+    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep the
+    /// original path when the searched Map element or pattern is LowCardinality;
+    /// the unused Map element is not passed to LIKE.
+    /// It also propagates a NULL pattern, while arrayExists treats a NULL lambda result as false.
+    const auto & pattern_type = function_arguments_nodes[1]->getResultType();
+    if (WhichDataType(map_element_type).isLowCardinality()
+        || WhichDataType(pattern_type).isLowCardinality()
+        || WhichDataType(pattern_type).isNullable())
+        return;
+
+    auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
+
+    NameAndTypePair subcolumn{ctx.column.name + (map_element == 0 ? ".keys" : ".values"), subcolumn_type};
+    /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
+    if (sourceHasColumn(ctx.column_source, subcolumn.name)
+        || !canOptimizeToExpectedSubcolumn(
+            ctx,
+            subcolumn.name,
+            map_element == 0 ? SerializationMap::isKeysSubcolumn : SerializationMap::isValuesSubcolumn,
+            subcolumn.type))
+        return;
+
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"x"});
+    lambda_arguments->resolve(DataTypes{map_element_type});
+
+    auto lambda_element = std::make_shared<ColumnNode>(NameAndTypePair{"x", map_element_type}, lambda_arguments);
+
+    auto like_function = std::make_shared<FunctionNode>("like");
+    like_function->markAsOperator();
+    /// The resolved Map LIKE node may be shared by multiple alias references. Keep its pattern
+    /// argument intact while attaching the same node to the synthesized lambda.
+    like_function->getArguments().getNodes() = {std::move(lambda_element), function_arguments_nodes[1]};
+    resolveOrdinaryFunctionNodeByName(*like_function, "like", ctx.context);
+
+    auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{map_element_type}, like_function->getResultType());
+    auto lambda = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(like_function), true, std::move(lambda_type));
+
+    auto array_exists = std::make_shared<FunctionNode>("arrayExists");
+    array_exists->getArguments().getNodes() = {std::move(lambda), std::make_shared<ColumnNode>(subcolumn, ctx.column_source)};
+    resolveOrdinaryFunctionNodeByName(*array_exists, "arrayExists", ctx.context);
+
+    node = std::move(array_exists);
+}
+
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
@@ -617,15 +740,25 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContainsKey"},
+        {TypeIndex::Map, "mapContainsKey"}, optimizeFunctionMapContainsKey,
+    },
+    {
+        {TypeIndex::Map, "has"}, optimizeFunctionHasForMap,
+    },
+    {
+        {TypeIndex::Map, "notHas"}, optimizeFunctionHasForMap,
+    },
+    {
+        {TypeIndex::Map, "mapContainsValue"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
+            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
-            NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+            /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
+            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -636,24 +769,10 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContainsValue"},
-        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
-        {
-            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
-            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
-
-            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
-            if (sourceHasColumn(ctx.column_source, column.name)
-                || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
-                return;
-            auto & function_arguments_nodes = function_node.getArguments().getNodes();
-
-            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
-            function_arguments_nodes[0] = std::move(has_function_argument);
-
-            resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
-        },
+        {TypeIndex::Map, "mapContainsKeyLike"}, optimizeFunctionMapContainsLike<0>,
+    },
+    {
+        {TypeIndex::Map, "mapContainsValueLike"}, optimizeFunctionMapContainsLike<1>,
     },
     {
         {TypeIndex::Nullable, "count"},
@@ -680,15 +799,22 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Nullable, "isNull"},
-        [](QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
+            /// Replace `isNull(nullable_argument)` with `nullable_argument.null != 0`. The subcolumn
+            /// cannot stand in for the function on its own, because a null map byte only has to be
+            /// non-zero to mean NULL while `isNull` returns 0 or 1.
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
-            node = std::make_shared<ColumnNode>(column, ctx.column_source);
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            function_arguments_nodes = {
+                std::make_shared<ColumnNode>(column, ctx.column_source),
+                std::make_shared<ConstantNode>(static_cast<UInt64>(0))};
+            resolveOrdinaryFunctionNodeByName(function_node, "notEquals", ctx.context);
         },
     },
     {
@@ -763,8 +889,15 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Map, "mapContainsKey"},
+    {TypeIndex::Map, "has"},
+    {TypeIndex::Map, "notHas"},
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
+    /// Map LIKE rewrites only read the searched subcolumn, so they remain safe
+    /// when the full Map is read separately, for example by SELECT.
+    {TypeIndex::Map, "mapContainsKeyLike"},
+    {TypeIndex::Map, "mapContainsValueLike"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
