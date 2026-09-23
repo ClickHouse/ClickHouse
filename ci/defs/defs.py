@@ -485,7 +485,6 @@ class ToolSet:
 
 
 class ArtifactNames:
-    STATELESS_SELECTION = "STATELESS_SELECTION"
     CH_AMD_DEBUG = "CH_AMD_DEBUG"
     CH_AMD_LLVM_COVERAGE_BUILD = (
         "CH_AMD_LLVM_COVERAGE_BUILD"  # build with LLVM coverage enabled
@@ -657,11 +656,6 @@ def with_long_retention_tags(artifacts):
 
 
 class ArtifactConfigs:
-    stateless_selection = Artifact.Config(
-        name=ArtifactNames.STATELESS_SELECTION,
-        type=Artifact.Type.S3,
-        path=f"{TEMP_DIR}/stateless-selection.json",
-    )
     clickhouse_binaries = Artifact.Config(
         name="...",
         type=Artifact.Type.S3,

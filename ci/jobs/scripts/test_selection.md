@@ -1,12 +1,15 @@
 # Precise stateless selection
 
-`Select functional tests` produces a single manifest for a PR SHA, selector
-version, workflow run, and attempt. A conditional S3 insert makes the first
-successful manifest immutable within that attempt. All targeted configurations
-consume it; a new attempt refreshes previous failures and coverage snapshots.
-If only failed jobs are rerun, the targeted jobs create or retrieve the manifest
-for the new attempt through the same producer.
-Missing, mismatched, stale, or incompatible manifests fail selection. No keyword
+Every targeted job selects its tests on its own, inside the job, with no
+shared state between jobs. All inputs read from CIDB are pinned to one cutoff
+(`Targeting.selection_cutoff`), so the jobs of an attempt select the same tests:
+previous failures count only checks that started before the cutoff, and coverage
+snapshots are taken as of the cutoff minus `coverage_settle_hours`, so an export
+still inserting its rows is ignored. The first attempt of a run uses the workflow
+start time resolved by the config job. A rerun, including a rerun of failed jobs
+only, uses the start time of its attempt from the GitHub API, so it picks up the
+failures and coverage recorded since. Selection failures fail the job.
+No keyword
 or broad-only replacement is used. Changed tests and previous failures remain
 mandatory even when they exceed the temporary ceiling; the manifest reports the
 overflow explicitly. Changes to CI scripts do not add a fixed smoke-test list
@@ -23,7 +26,8 @@ The final ceiling is 250 tests and the operational target remains below 100.
 `SelectionConfig` is shared by queries, scoring, diagnostics, monitoring, and
 replay. Change the selector version when changing the persisted contract.
 
-The manifest records commit and selector identity, configuration, coverage
+Each targeted job attaches its selection as `stateless-selection.json` to its
+report. It records the cutoff, commit and selector identity, configuration, coverage
 snapshots, source diff coordinates, and an ordered `tests` list. Each test has
 its selection reasons, score, and compact coverage evidence: matching regions,
 owner counts, changed lines or hunks, and observation counts. Rejected candidates

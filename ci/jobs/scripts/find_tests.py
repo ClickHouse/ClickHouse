@@ -5,7 +5,7 @@ import re
 import sys
 from pathlib import Path
 from dataclasses import asdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import time
 
 sys.path.append("./")
@@ -34,6 +34,8 @@ from ci.settings.settings import SECRET_CI_DB_CONNECTION
 # widespread failures (e.g. build broken, environment issue) where every test failed,
 # not genuine per-test flakiness.  Results are ordered by recency-weighted failure
 # count (exponential decay, 7-day half-life). Mandatory failures are not capped before final selection.
+# Everything is relative to the selection cutoff, so jobs of one attempt see the
+# same failures and never the failures of jobs running alongside them.
 FAILED_TESTS_QUERY = """ \
  select test_name
  from checks
@@ -42,7 +44,8 @@ FAILED_TESTS_QUERY = """ \
    and check_status = 'failure'
    and match(test_name, '{TEST_NAME_PATTERN}')
    and test_status = 'FAIL'
-   and check_start_time >= now() - interval 30 day
+   and check_start_time >= toDateTime('{CUTOFF}', 'UTC') - interval 30 day
+   and check_start_time < toDateTime('{CUTOFF}', 'UTC')
    and (commit_sha, check_name) in (
        select commit_sha, check_name
        from checks
@@ -50,12 +53,13 @@ FAILED_TESTS_QUERY = """ \
          and check_name LIKE '{JOB_TYPE}%'
          and check_status = 'failure'
          and test_status = 'FAIL'
-         and check_start_time >= now() - interval 30 day
+         and check_start_time >= toDateTime('{CUTOFF}', 'UTC') - interval 30 day
+         and check_start_time < toDateTime('{CUTOFF}', 'UTC')
        group by commit_sha, check_name
        having count(test_name) < 20
    )
  group by test_name
- order by count() * exp(-dateDiff('day', max(check_start_time), now()) / 7.) desc
+ order by count() * exp(-dateDiff('day', max(check_start_time), toDateTime('{CUTOFF}', 'UTC')) / 7.) desc
  \
 """
 
@@ -405,6 +409,7 @@ class Targeting:
             PR_NUMBER=self.info.pr_number,
             JOB_TYPE=self.job_type,
             TEST_NAME_PATTERN=test_name_pattern,
+            CUTOFF=self.selection_cutoff(),
         )
         query_result = cidb.query(query, log_level="") or ""
         # Parse test names from the query result
@@ -477,15 +482,67 @@ class Targeting:
         }
     )
 
+    def selection_cutoff(self):
+        """The point in time that every input of the selection is pinned to.
+
+        Each targeted job selects its tests on its own, so they must agree on
+        what they read from CIDB. The first attempt of a run uses the workflow
+        start time, resolved once by the config job. A rerun (including a rerun
+        of failed jobs only) uses the start of its attempt, so it picks up the
+        failures and coverage recorded since, and its jobs agree with each other.
+        """
+        if not hasattr(self, "_selection_cutoff"):
+            if self.info.is_local_run:
+                start = datetime.now(timezone.utc)
+            elif self.info.run_attempt > 1:
+                start = self._run_attempt_start_time()
+            else:
+                assert (
+                    self.info.workflow_start_time > 0
+                ), "Workflow start time is required for test selection"
+                start = datetime.fromtimestamp(
+                    self.info.workflow_start_time, timezone.utc
+                )
+            self._selection_cutoff = start.strftime("%Y-%m-%d %H:%M:%S")
+            self.selection_diagnostics["cutoff"] = self._selection_cutoff
+        return self._selection_cutoff
+
+    def _run_attempt_start_time(self):
+        import requests
+
+        headers = {"Accept": "application/vnd.github+json"}
+        token = os.environ.get("GITHUB_TOKEN", "")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
+        repo = self.info.repo_name or "ClickHouse/ClickHouse"
+        response = requests.get(
+            f"https://api.github.com/repos/{repo}/actions/runs/{self.info.run_id}"
+            f"/attempts/{self.info.run_attempt}",
+            headers=headers,
+            timeout=60,
+        )
+        response.raise_for_status()
+        return datetime.fromisoformat(
+            response.json()["run_started_at"].replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+
     def coverage_snapshots(self):
         if not hasattr(self, "_coverage_snapshots"):
-            cutoff = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            # An export inserts its rows over several minutes under one
+            # timestamp. Skip exports that may still be in progress at the
+            # cutoff, so jobs starting at different times see the same rows.
+            cutoff = (
+                datetime.fromisoformat(self.selection_cutoff()).replace(
+                    tzinfo=timezone.utc
+                )
+                - timedelta(hours=self.config.coverage_settle_hours)
+            ).strftime("%Y-%m-%d %H:%M:%S")
             snapshots = parse_rows(
                 self._ci_db().query(snapshot_query(cutoff, self.config), log_level="")
             )
             self.selection_diagnostics.update(
                 {
-                    "cutoff": cutoff,
+                    "coverage_cutoff": cutoff,
                     "coverage_snapshots": snapshots,
                     "snapshot_identity": "legacy-shard-timestamp",
                 }

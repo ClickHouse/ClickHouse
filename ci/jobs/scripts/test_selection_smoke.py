@@ -60,6 +60,8 @@ class FixtureCIDB:
 
     def query(self, query, **kwargs):
         self.queries.append(query)
+        if "from checks\n" in query:
+            return ""
         if "AS exported_tests" in query:
             return "\n".join(map(json.dumps, fixture_snapshots()))
         if "LIMIT 1 FORMAT JSONEachRow" in query:
@@ -112,6 +114,44 @@ class SelectionSmoke(unittest.TestCase):
         with patch("requests.get", side_effect=[metadata, diff]) as get:
             self.assertEqual(target.get_diff_text(), FIXTURE_DIFF)
         self.assertTrue(get.call_args.args[0].endswith("/compare/base...head"))
+
+    def test_cutoff_is_pinned_per_attempt(self):
+        def target(**kwargs):
+            return Targeting(
+                SimpleNamespace(
+                    job_name="Stateless tests",
+                    pr_number=1,
+                    repo_name="ClickHouse/ClickHouse",
+                    is_local_run=False,
+                    run_id=7,
+                    **kwargs,
+                )
+            )
+
+        # 2026-09-05 00:00:00 UTC, resolved once by the config job.
+        first = target(run_attempt=1, workflow_start_time=1788566400.0)
+        with patch("requests.get") as get:
+            self.assertEqual(first.selection_cutoff(), "2026-09-05 00:00:00")
+        get.assert_not_called()
+
+        rerun = target(run_attempt=2, workflow_start_time=1788566400.0)
+        response = SimpleNamespace(
+            raise_for_status=lambda: None,
+            json=lambda: {"run_started_at": "2026-09-06T10:20:30Z"},
+        )
+        with patch("requests.get", return_value=response) as get:
+            self.assertEqual(rerun.selection_cutoff(), "2026-09-06 10:20:30")
+        self.assertTrue(get.call_args.args[0].endswith("/actions/runs/7/attempts/2"))
+
+        # Both the failures and the coverage snapshots are read up to the cutoff.
+        first._cidb = FixtureCIDB("src/Interpreters/Fixture.cpp")
+        first._test_exists = lambda test: True
+        first.get_previously_failed_tests()
+        first.coverage_snapshots()
+        failed_query, snapshot_query_text = first._cidb.queries
+        self.assertIn("check_start_time < toDateTime('2026-09-05 00:00:00', 'UTC')", failed_query)
+        self.assertNotIn("now()", failed_query)
+        self.assertIn("toDateTime('2026-09-04 23:00:00', 'UTC')", snapshot_query_text)
 
     def test_production_path_contract(self):
         for path in canonical_coverage_paths("src/Interpreters/Fixture.cpp"):

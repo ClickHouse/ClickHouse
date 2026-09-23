@@ -94,7 +94,6 @@ workflow = Workflow.Config(
         ],
         # TODO: stabilize new jobs and remove set_allow_failure
         JobConfigs.lightweight_functional_tests_job,
-        JobConfigs.select_functional_tests,
         *[j.set_allow_failure() for j in JobConfigs.stateless_tests_targeted_pr_jobs],
         JobConfigs.integration_test_targeted_pr_jobs[0].set_allow_failure(),
         JobConfigs.ast_fuzzer_targeted_pr_jobs[0].set_allow_failure(),
@@ -222,7 +221,6 @@ workflow = Workflow.Config(
         *JobConfigs.toolchain_build_jobs,
     ],
     artifacts=[
-        ArtifactConfigs.stateless_selection,
         *ArtifactConfigs.unittests_binaries,
         *ArtifactConfigs.clickhouse_binaries,
         *ArtifactConfigs.clickhouse_darwin_plain_binaries,

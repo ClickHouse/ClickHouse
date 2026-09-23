@@ -2,7 +2,6 @@ from praktika import Job
 from praktika.utils import Utils
 
 from ci.defs.functional_test_selection import (
-    require_selection,
     rollout_targeted_jobs,
     targeted_variants,
     targeted_matrix,
@@ -193,7 +192,6 @@ common_ft_job_config = Job.Config(
             "./ci/jobs/scripts/find_tests.py",
             "./ci/praktika/result.py",
             # The selector modules decide which tests a targeted job runs.
-            "./ci/jobs/select_functional_tests.py",
             "./ci/jobs/scripts/coverage_selection.py",
             "./ci/jobs/scripts/test_selection_config.py",
             "./ci/jobs/scripts/test_selection_manifest.py",
@@ -2176,28 +2174,26 @@ class JobConfigs:
     # The ASan configuration exists only as sequential `db disk` shards, whose
     # small runner cannot hold the parallel distributed-plan workload that the
     # targeted job also runs. Use the runner of the parallel distributed-plan job.
-    stateless_tests_sanitizer_pr_jobs = require_selection(
-        [
-            (
-                job.set_runs_on(RunnerLabels.AMD_LARGE)
-                if job.parameter.startswith("amd_asan_ubsan,")
-                else job
-            )
-            for job in targeted_variants(
-                [
-                    job
-                    for job in functional_tests_jobs
-                    if job.parameter.startswith(
-                        (
-                            "amd_asan_ubsan, db disk, distributed plan,",
-                            "amd_tsan, s3 storage,",
-                        )
+    stateless_tests_sanitizer_pr_jobs = [
+        (
+            job.set_runs_on(RunnerLabels.AMD_LARGE)
+            if job.parameter.startswith("amd_asan_ubsan,")
+            else job
+        )
+        for job in targeted_variants(
+            [
+                job
+                for job in functional_tests_jobs
+                if job.parameter.startswith(
+                    (
+                        "amd_asan_ubsan, db disk, distributed plan,",
+                        "amd_tsan, s3 storage,",
                     )
-                ],
-                allow_failure=False,
-            )
-        ]
-    )
+                )
+            ],
+            allow_failure=False,
+        )
+    ]
     functional_tests_pr_jobs = [
         job
         for job in functional_tests_jobs
@@ -2217,14 +2213,6 @@ class JobConfigs:
     stateless_tests_targeted_pr_jobs = rollout_targeted_jobs(
         stateless_tests_targeted_pr_jobs,
         stateless_tests_targeted_matrix,
-    )
-    select_functional_tests = Job.Config(
-        name="Select functional tests",
-        runs_on=RunnerLabels.AMD_SMALL,
-        command="python3 -m ci.jobs.scripts.test_selection_smoke && python3 -m ci.jobs.select_functional_tests",
-        provides=[ArtifactNames.STATELESS_SELECTION],
-        run_in_docker="clickhouse/stateless-test+--network=host",
-        timeout=15 * 60,
     )
 
     # Randomized executions must remain independent even when the build is cached.

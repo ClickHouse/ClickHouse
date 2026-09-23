@@ -1,6 +1,5 @@
 import re
 
-from ci.defs.defs import ArtifactNames
 from ci.jobs.scripts.test_selection_config import SELECTION_CONFIG
 
 
@@ -69,17 +68,5 @@ def targeted_matrix(jobs):
     return targeted_variants(eligible), exemptions
 
 
-def require_selection(jobs):
-    return [
-        (
-            job
-            if ArtifactNames.STATELESS_SELECTION in job.requires
-            else job.set_requires(ArtifactNames.STATELESS_SELECTION)
-        )
-        for job in jobs
-    ]
-
-
 def rollout_targeted_jobs(existing, proposed):
-    jobs = proposed if SELECTION_CONFIG.expanded_targeted_matrix else existing
-    return require_selection(jobs)
+    return proposed if SELECTION_CONFIG.expanded_targeted_matrix else existing

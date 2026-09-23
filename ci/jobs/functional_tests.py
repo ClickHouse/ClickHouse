@@ -11,8 +11,10 @@ from pathlib import Path
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
-from ci.jobs.scripts.test_selection_manifest import SELECTION_MANIFEST
-from ci.jobs.select_functional_tests import get_selection
+from ci.jobs.scripts.test_selection_manifest import (
+    SELECTION_MANIFEST,
+    selection_manifest,
+)
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -857,18 +859,23 @@ def main():
             ).complete_job()
 
     if is_targeted_check:
-        assert not args.test, "--test cannot override a selection manifest"
+        assert not args.test, "--test cannot override the test selection"
         try:
-            selection_manifest = get_selection(info, targeter)
-            tests = [record["test"] for record in selection_manifest["tests"]]
-            results.append(
-                Result(
-                    name="Fetch relevant tests",
-                    status=Result.Status.OK,
-                    info=f"Selected {len(tests)} tests",
-                    files=[str(SELECTION_MANIFEST)],
-                )
+            # Every targeted job selects on its own. The inputs are pinned to
+            # `Targeting.selection_cutoff`, so all jobs of an attempt agree.
+            Shell.check("python3 -m ci.jobs.scripts.test_selection_smoke", strict=True)
+            tests, selection_result = targeter.get_all_relevant_tests_with_info(
+                include_changed_tests=True
             )
+            SELECTION_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+            SELECTION_MANIFEST.write_text(
+                json.dumps(
+                    selection_manifest(targeter.selection_diagnostics, info), indent=2
+                )
+                + "\n"
+            )
+            selection_result.files = [str(SELECTION_MANIFEST)]
+            results.append(selection_result)
         except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR,
