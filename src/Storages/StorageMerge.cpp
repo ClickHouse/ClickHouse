@@ -3,7 +3,7 @@
 #include <iterator>
 #include <span>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
@@ -787,11 +787,12 @@ ReadFromMerge::ReadFromMerge(
 {
 }
 
-/// True if the query has subquery sets (`IN (SELECT ...)`). A child plan is built and optimized
-/// while the *outer* plan is already being executed (`ReadFromMerge` materializes its children
-/// lazily), so by this point `addStepsToBuildSets` has already moved the source plan out of every
-/// `FutureSetFromSubquery`. A child fragment referencing such a consumed set then fails to
-/// serialize with the logical error `Cannot serialize FutureSetFromSubquery with no query plan`.
+/// True if the outer query has subquery sets (`IN (SELECT ...)`). Such a set is owned by the outer
+/// plan: its `DelayedCreatingSetsStep` builds it, and a child plan only references it through the
+/// filter pushed down from the outer `WHERE`. Worker tasks need a set with its values
+/// (`QueryPlan::serializeForDistributedTask`), and only the plan that owns a set prepares it that way
+/// in `convertToDistributed`, so a distributed child fragment referencing an outer set fails with
+/// `Cannot ship an IN-subquery set to distributed-plan worker tasks`.
 static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 {
     if (query_info.planner_context && query_info.planner_context->getPreparedSets().hasSubqueries())
@@ -805,22 +806,52 @@ static bool queryHasSubquerySets(const SelectQueryInfo & query_info)
 ///
 /// Parallel replicas must stay disabled here. The outer plan has decided its own
 /// parallel-replicas strategy, and distributing the child read from here ships a fragment that
-/// (a) silently loses the filters pushed down into it, and (b) may reference a subquery set
-/// consumed by the outer plan (see `queryHasSubquerySets`).
+/// silently loses the filters pushed down into it.
 ///
-/// `make_distributed_plan` stays enabled — distributing the child plans is supported (see
-/// 04367_distributed_plan_merge_scatter_multishard; the second, materializing run of the
-/// transforms in `ReadFromMerge::buildPipeline` is fenced by `planContainsLogicalExchange`) —
-/// unless the query has subquery sets, whose plans a child fragment cannot carry anymore.
+/// `make_distributed_plan` is decided per child (see 04367_distributed_plan_merge_scatter_multishard;
+/// the second, materializing run of the transforms in `ReadFromMerge::buildPipeline` is fenced by
+/// `planContainsLogicalExchange`). The outer plan itself always falls back: `ReadFromMerge` cannot
+/// execute remotely.
+///
+/// This function is called several times for the same child, and the context it gets differs between
+/// the calls, which is why the recorded verdict is re-applied by hand below instead of calling
+/// `QueryPlan::applyDistributedPlanFallbackToLocal` unconditionally:
+///  1. `createChildrenPlans` passes the child's own copy of the context. The children are created
+///     lazily from `getChildPlans` inside the outer plan's distributability walk, before the outer
+///     verdict is recorded, so the copy still carries `make_distributed_plan = 1` and the child decides
+///     for itself. `applyDistributedPlanFallbackToLocal` records the verdict on the child plan.
+///  2. `addFilter` and `buildPipeline` pass the outer query context. By then the outer plan has fallen
+///     back and written `make_distributed_plan = 0` into it. `applyDistributedPlanFallbackToLocal` only
+///     ever lowers the flag and returns at once when the incoming settings already say 0, so calling it
+///     here would build an accepted child with the flag off, and the logical exchanges inserted in
+///     call 1 would be built as pass-throughs. The verdict has to be applied in both directions, and
+///     that is what the branches below do.
 static QueryPlanOptimizationSettings getChildPlanOptimizationSettings(
     const ContextPtr & context, const SelectQueryInfo & query_info, QueryPlan & child_plan)
 {
     QueryPlanOptimizationSettings optimization_settings(context);
     optimization_settings.enable_parallel_replicas = false;
+
+    /// A child referencing an outer subquery set cannot ship it, so it is never asked to decide and
+    /// runs locally. This must come first: a decision taken here would insert the logical exchanges
+    /// into the child plan, and they would then be built as pass-throughs.
     if (queryHasSubquerySets(query_info))
+    {
         optimization_settings.make_distributed_plan = false;
-    /// Include the fallback decision here before call to optimize
-    if (child_plan.isInitialized())
+        return optimization_settings;
+    }
+
+    if (!child_plan.isInitialized())
+        return optimization_settings;
+
+    /// The child's verdict lives on the plan, not in the context these settings come from. An accepted
+    /// child is built distributed even from the flipped outer context (call 2), a rejected one stays
+    /// local, and an undecided child decides now on the setting of its own context (call 1).
+    if (child_plan.staysDistributed())
+        optimization_settings.make_distributed_plan = true;
+    else if (child_plan.didFallBackToLocal())
+        optimization_settings.make_distributed_plan = false;
+    else
         child_plan.applyDistributedPlanFallbackToLocal(optimization_settings);
     return optimization_settings;
 }
@@ -1254,26 +1285,14 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             /// We should remember it to not include this column in the result.
             bool is_smallest_column_requested = false;
 
-            const auto & database_name = std::get<0>(table);
-            const auto & table_name = std::get<3>(table);
-            auto row_policy_filter_ptr = modified_context->getRowPolicyFilter(
-                database_name,
-                table_name,
-                RowPolicyFilterType::SELECT_FILTER);
-            /// `Merge` reads matched tables directly, so include the target policy when a matched table is an `Alias`.
-            if (const auto * alias = storage->as<StorageAlias>())
+            auto row_policy_filter_ptr = getEffectiveRowPolicyFilter(*storage, modified_context);
+            if (row_policy_filter_ptr)
             {
-                const auto target_storage_id = alias->getTargetTable()->getStorageID();
-                auto target_row_policy_filter = modified_context->getRowPolicyFilter(
-                    target_storage_id.getDatabaseName(),
-                    target_storage_id.getTableName(),
-                    RowPolicyFilterType::SELECT_FILTER);
-                row_policy_filter_ptr = combineRowPolicyFilters(
-                    std::move(row_policy_filter_ptr), std::move(target_row_policy_filter));
-            }
+                /// The outer planner only sees this `Merge`, so a child's policy is recorded here or nowhere.
+                if (modified_context->hasQueryContext())
+                    for (const auto & row_policy : row_policy_filter_ptr->policies)
+                        modified_context->getQueryContext()->addUsedRowPolicy(row_policy->getFullName().toString());
 
-            if (row_policy_filter_ptr && !row_policy_filter_ptr->isAlwaysTrue())
-            {
                 row_policy_data_opt = RowPolicyData(row_policy_filter_ptr, storage, modified_context);
                 row_policy_data_opt->extendNames(real_column_names);
             }
@@ -2588,7 +2607,12 @@ bool StorageMerge::supportsTrivialCountOptimization(const StorageSnapshotPtr &, 
 {
     /// Here we actually need storage snapshot of all nested tables.
     /// But to avoid complexity pass nullptr to make more lightweight check in MergeTreeData.
-    return traverseTablesUntil([&](const auto & table) { return !table->supportsTrivialCountOptimization(nullptr, ctx); }) == nullptr;
+    /// A child's row policy is only applied when its rows are actually read, so counting one from
+    /// metadata would return rows the policy hides.
+    return traverseTablesUntil([&](const auto & table)
+    {
+        return !table->supportsTrivialCountOptimization(nullptr, ctx) || getEffectiveRowPolicyFilter(*table, ctx);
+    }) == nullptr;
 }
 
 std::optional<UInt64> StorageMerge::totalRows(ContextPtr query_context) const
