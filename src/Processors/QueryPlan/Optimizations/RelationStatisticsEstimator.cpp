@@ -301,10 +301,13 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
         const bool has_on_fly_data_changes = mutations_snapshot
             && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts());
         const bool has_masking_policy = reading->getMergeTreeData().hasEnabledMaskingPolicies(reading->getContext());
+        /// These transformations can rewrite values, so the on-disk NDVs and ranges are no longer bounds.
+        const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy;
         const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
             || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || query_info.isFinal() || query_info.isStream()
-            || query_info.trivial_limit || has_lightweight_deleted_rows || has_on_fly_data_changes || has_masking_policy
+            || query_info.trivial_limit || has_lightweight_deleted_rows
             || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
+        const bool has_inexact_row_count = has_row_subset || has_on_fly_data_changes;
 
         const bool use_statistics = reading->getContext()->getSettingsRef()[Setting::use_statistics];
         if (use_statistics)
@@ -316,10 +319,12 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                     .estimated_rows = relation_profile.rows,
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
-                    .rows_exact = !has_row_subset,
+                    .rows_exact = !has_inexact_row_count,
                     .source = RowEstimateSource::Statistics};
                 if (has_row_subset)
                     addTransformation(stats.column_stats, RowSubset);
+                if (has_unsupported_value_changes)
+                    addTransformation(stats.column_stats, Unsupported);
                 LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
                 return persistentRelationStats(std::move(stats));
             }
@@ -365,12 +370,13 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
                 .imprecise_estimate = true,
                 .source = RowEstimateSource::NoStatistics});
 
-        return persistentRelationStats(RelationStats{
-            .estimated_rows = analyzed_result->selected_rows,
-            .table_name = table_display_name,
-            .imprecise_estimate = true,
-            .rows_exact = !has_row_subset,
-            .source = RowEstimateSource::PrimaryIndex});
+        return persistentRelationStats(
+            RelationStats{
+                .estimated_rows = analyzed_result->selected_rows,
+                .table_name = table_display_name,
+                .imprecise_estimate = true,
+                .rows_exact = !has_inexact_row_count,
+                .source = RowEstimateSource::PrimaryIndex});
     }
 
     if (typeid_cast<const ReadFromObjectStorageStep *>(step))
