@@ -25,13 +25,14 @@
 namespace DB
 {
 
+class PartitionedHashJoin;
 class TableJoin;
 
 /** Hash table of one ON clause of `PartitionedHashJoin`, and the build that fills it.
   * That build covers routing, the barrier plan, histogram, scatter, insert, drain, growth,
   * and the counters of one build.
   *
-  * Uses the join's `HashJoin` helper (map type, key sizes, stored blocks) and the join's fill
+  * Uses the join's map type, key sizes and stored blocks, and the join's fill
   * blocks. The join owns the store, fill lanes, used flags and the probe. One instance per ON
   * clause: a join with several disjuncts holds one per clause over the same store.
   */
@@ -167,12 +168,12 @@ public:
         UInt64 row_store_blocks = 0;
     };
 
-    /// `hash_join_` is the schema helper; `clause_idx_` names this clause among `table_join_.getClauses()`,
-    /// the helper's `key_sizes` and every fill block's `clauses`; `build_blocks_` is the join's fill list;
+    /// `hash_join_` is the join; `clause_idx_` names this clause among `table_join_.getClauses()`,
+    /// the join's `key_sizes` and every fill block's `clauses`; `build_blocks_` is the join's fill list;
     /// freed route bytes go back into `accumulated_bytes_`. `max_bytes_before_external_join_` is the memory
     /// budget of the post-build gate and the grow budget; zero disables both.
     HashJoinClause(
-        HashJoin & hash_join_,
+        PartitionedHashJoin & hash_join_,
         const TableJoin & table_join_,
         size_t clause_idx_,
         bool any_take_last_row_,
@@ -186,7 +187,7 @@ public:
     /// The fill's key preparation for this clause, into `fill.clauses[clause_idx]`: the key columns as
     /// the probe side prepares them in `JoinOnKeyColumns`, the merged null map, the right-side ON mask,
     /// and the skip bytes when the mask filters. `materialized` is the right block after
-    /// `HashJoin::materializeColumnsFromRightBlock`.
+    /// the join's `materializeColumnsFromRightBlock`.
     void prepareInput(const Block & materialized, FillBlock & fill) const;
 
     /// One map hash per insertable row. The top 16 bits of the placement word are the route.
@@ -274,8 +275,8 @@ public:
     const HashJoinTableMaps & tableMaps() const { return *table_maps; }
     /// The table's buffer bytes (drives the prefetch heuristics).
     size_t tableBytes() const { return ht_total_bytes; }
-    size_t tableCells() const { return table_maps->getBufferSizeInCells(hash_join.data->type); }
-    size_t tableRowCount() const { return table_maps->getTotalRowCount(hash_join.data->type); }
+    size_t tableCells() const;
+    size_t tableRowCount() const;
     /// The table's buffer plus the arenas holding its string keys and duplicate spans.
     size_t tableAndArenaBytes() const;
     size_t sizeDegree() const { return size_degree; }
@@ -425,9 +426,9 @@ private:
     /// enable the software prefetch.
     void decideAmacEngagement();
 
-    /// The join's helper: map type, key sizes, kind and strictness, and the block store the inserted
+    /// The join: map type, key sizes, kind and strictness, and the block store the inserted
     /// references point into.
-    HashJoin & hash_join;
+    PartitionedHashJoin & hash_join;
     const TableJoin & table_join;
     /// This clause's index in `table_join.getClauses()`, `hash_join.key_sizes` and `FillBlock::clauses`.
     const size_t clause_idx;

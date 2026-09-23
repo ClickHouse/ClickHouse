@@ -993,7 +993,7 @@ size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & ta
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
 JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Block * join_get_columns)
 {
-    HashJoin & join = *this;
+    auto & join = *this;
     const bool is_join_get = join_get_columns != nullptr;
 
     /// `joinGet` hands over the keys under the right-side names, checked by `joinGetCheckAndGetReturnType`.
@@ -1036,7 +1036,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         scattered_block,
         is_join_get ? *join_get_columns : join.sample_block_with_columns_to_add,
         join.savedBlockSample(),
-        join.getTableJoin(),
+        *table_join,
         *join.data,
         join.enableSoftwarePrefetch(),
         std::move(join_on_keys),
@@ -1062,7 +1062,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         /// Lookups and match bookkeeping only. No column value is gathered yet - that is deferred to
         /// the lazy `HashJoinResult::next`, whose events are shared with the other hash-join algorithms.
         ProfileEventTimeIncrement<Microseconds> lookup_watch(ProfileEvents::HashJoinPartitionedProbeLookupMicroseconds);
-        /// Every clause's table has the one merged type (`HashJoin::mergeJoinMethods`), so one switch serves all.
+        /// Every clause's table has the one merged type (`mergeJoinMethods`), so one switch serves all.
         switch (join.data->type)
         {
 #define M(TYPE) \

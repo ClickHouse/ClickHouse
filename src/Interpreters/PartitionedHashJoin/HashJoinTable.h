@@ -718,7 +718,7 @@ struct HashJoinTableMapsFor<HashJoinTypes::MapsAsof>
     using Type = HashJoinTableMapsAsof;
 };
 
-/** A variant over the three mapped-value types whose active alternative mirrors the inner `HashJoin`'s
+/** A variant over the three mapped-value types whose active alternative mirrors the join's
   * own `MapsVariant`. Build and probe agree with the standard machinery about which maps type a
   * given (kind, strictness) uses.
   */
@@ -728,8 +728,8 @@ struct HashJoinTableMaps
 
     /// Index-compatible with `HashJoinTypes::MapsVariant` - the active alternative is selected by that
     /// variant's index. `HashJoinTypes::MapsSet` (index 3) is the one alternative without a counterpart here:
-    /// its key-only tables are hash sets, not the hash maps the traits rebind. The inner `HashJoin` is
-    /// therefore built with `allow_set_maps_ = false`. It never selects one.
+    /// its key-only tables are hash sets, not the hash maps the traits rebind. The join therefore
+    /// sets `allow_set_maps` to false. It never selects one.
     static_assert(
         std::is_same_v<std::variant_alternative_t<0, HashJoinTypes::MapsVariant>, HashJoinTypes::MapsOne>
         && std::is_same_v<std::variant_alternative_t<1, HashJoinTypes::MapsVariant>, HashJoinTypes::MapsAll>

@@ -2,14 +2,17 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Block_fwd.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
+#include <QueryPipeline/SizeLimits.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
+#include <Storages/IStorage_fwd.h>
 #include <Storages/TableLockHolder.h>
 
 #include <atomic>
@@ -26,6 +29,79 @@ namespace DB
 class MatchedRowsStats;
 class TableJoin;
 class MatchedRowsStats;
+class ExpressionActions;
+class JoinSource;
+
+namespace JoinStuff
+{
+/// Flags needed to implement RIGHT and FULL JOINs.
+class JoinUsedFlags;
+}
+
+/** Data structure for implementation of hash JOIN.
+  * It is a hash table: keys -> rows of joined ("right") table.
+  *
+  * JOIN-s could be of these types:
+  * - ALL × LEFT/INNER/RIGHT/FULL
+  * - ANY × LEFT/INNER/RIGHT
+  * - SEMI/ANTI x LEFT/RIGHT
+  * - ASOF x LEFT/INNER
+  *
+  * ALL means usual JOIN, when rows are multiplied by number of matching rows from the "right" table.
+  * ANY uses one line per unique key from right table. For LEFT JOIN it would be any row (with needed joined key) from the right table,
+  * for RIGHT JOIN it would be any row from the left table and for INNER one it would be any row from right and any row from left.
+  * SEMI JOIN filter left table by keys that are present in right table for LEFT JOIN, and filter right table by keys from left table
+  * for RIGHT JOIN. In other words SEMI JOIN returns only rows which joining keys present in another table.
+  * ANTI JOIN is the same as SEMI JOIN but returns rows with joining keys that are NOT present in another table.
+  * SEMI/ANTI JOINs allow to get values from both tables. For filter table it gets any row with joining same key. For ANTI JOIN it returns
+  * defaults other table columns.
+  * ASOF JOIN is not-equi join. For one key column it finds nearest value to join according to join inequality.
+  * It's expected that ANY|SEMI LEFT JOIN is more efficient that ALL one.
+  *
+  * If INNER is specified - leave only rows that have matching rows from "right" table.
+  * If LEFT is specified - in case when there is no matching row in "right" table, fill it with default values instead.
+  * If RIGHT is specified - first process as INNER, but track what rows from the right table was joined,
+  *  and at the end, add rows from right table that was not joined and substitute default values for columns of left table.
+  * If FULL is specified - first process as LEFT, but track what rows from the right table was joined,
+  *  and at the end, add rows from right table that was not joined and substitute default values for columns of left table.
+  *
+  * Thus, LEFT and RIGHT JOINs are not symmetric in terms of implementation.
+  *
+  * All JOINs are done by equality condition on keys (equijoin).
+  * Non-equality and other conditions are not supported.
+  *
+  * Implementation:
+  *
+  * 1. Build hash table in memory from "right" table.
+  * This hash table is in form of keys -> row in case of ANY or keys -> [rows...] in case of ALL.
+  *
+  * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
+  *
+  * In case of ANY LEFT JOIN - form new columns with found values or default values.
+  * This is the most simple. Number of rows in left table does not change.
+  *
+  * In case of ANY INNER JOIN - form new columns with found values,
+  *  and also build a filter - in what rows nothing was found.
+  * Then filter columns of "left" table.
+  *
+  * In case of ALL ... JOIN - form new columns with all found rows,
+  *  and also fill 'offsets' array, describing how many times we need to replicate values of "left" table.
+  * Then replicate columns of "left" table.
+  *
+  * How Nullable keys are processed:
+  *
+  * NULLs never join to anything, even to each other.
+  * During building of map, we just skip keys with NULL value of any component.
+  * During joining, we simply treat rows with any NULLs in key as non joined.
+  *
+  * Default values for outer joins (LEFT, RIGHT, FULL):
+  *
+  * Behaviour is controlled by 'join_use_nulls' settings.
+  * If it is false, we substitute (global) default value for the data type, for non-joined rows
+  *  (zero, empty string, etc. and NULL for Nullable data types).
+  * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
+  *  as in standard SQL.
+  */
 
 /** Partitioned hash join: the join behind `join_algorithm = 'hash'` (and its alias `parallel_hash`).
   *
@@ -75,16 +151,16 @@ class MatchedRowsStats;
   * single-partition table, created empty with the join and filled one block at a time under the
   * storage's write lock through `HashJoinTable::emplace`, so it grows as the rows arrive and is
   * probe-ready between inserts; the rows of a key are chained with the appendable `RowRefList`
-  * `Batch`. There is no build phase. A query gets an instance of its own whose `HashJoin` base reuses
+  * `Batch`. There is no build phase. A query gets an instance of its own which reuses
   * the storage's stored blocks and which shares the table and its arena by pointer
   * (`shareJoinTable`), with used flags of its own sized to the table. `joinGet` is a one-block probe
   * of the storage's instance.
   *
-  * The private `HashJoin` base owns everything the emit machinery needs: block preparation, the saved
-  * block sample, the shared row store, the used flags, the output samples. Its own maps stay empty and
+  * This class also owns everything the emit machinery needs: block preparation, the saved
+  * block sample, the shared row store, the used flags, the output samples. The maps in `data` stay empty and
   * the clauses' tables replace them.
   */
-class PartitionedHashJoin : public IJoin, private HashJoin
+class PartitionedHashJoin : public IJoin, private HashJoinTypes
 {
 public:
     /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
@@ -112,7 +188,7 @@ public:
 
     ~PartitionedHashJoin() override;
 
-    /// Makes this Join table instance a query's view of `source`, the storage's. The `HashJoin` base reuses the
+    /// Makes this Join table instance a query's view of `source`, the storage's. This instance reuses the
     /// storage's stored blocks (the saved sample, the row store and the null maps come with them); the
     /// table and its arena are shared by pointer; the used flags of this instance are sized to the
     /// table. The caller holds the storage's read lock and hands it to `setLock`, so the table cannot
@@ -321,14 +397,60 @@ public:
     /// finished, and nothing but destruction may follow.
     BlocksList releaseJoinedBlocks(bool restructure);
     /// The structure the right blocks are stored in.
-    const Block & savedBlockSample() const;
+    const Block & savedBlockSample() const { return data->sample_block; }
     /// Right rows stored so far. `getTotalRowCount` reports the distinct keys once the table is built.
     size_t getRightTableRowCount() const;
+
+    /// The ASOF insert of `HashJoinClause` reads these per new key.
+    const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
+    ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
 
 private:
     friend class NotJoinedPartitioned;
     /// Reads a Join table's rows straight out of the table and the stored blocks.
     friend class JoinSource;
+    friend class HashJoinClause;
+
+    void finishMapsBuild();
+
+    /// Number of unique keys in all built JOIN maps.
+    size_t getKeysToJoin() const;
+
+    JoinKind getKind() const { return kind; }
+    JoinStrictness getStrictness() const { return strictness; }
+
+    const ColumnWithTypeAndName & rightAsofKeyColumn() const;
+
+    /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
+    /// we can switch from ALL to RightAny strictness for better performance. Only ever goes from
+    /// true to false, so a relaxed store needs no further ordering.
+    std::atomic<bool> all_values_unique = true;
+    bool all_join_was_promoted_to_right_any = false;
+
+    void reuseJoinedData(const PartitionedHashJoin & join);
+
+    RightTableDataPtr getJoinedData() const { return data; }
+
+    using HashJoinTypes::prepareRightBlock;
+    Block prepareRightBlock(const Block & block) const;
+
+    bool isUsed(size_t off) const;
+    bool isUsed(UInt32 block_no, size_t row_idx) const;
+
+    void compactStoredColumns(size_t & total_bytes_in_join);
+
+    void materializeColumnsFromLeftBlock(Block & block) const;
+    Block materializeColumnsFromRightBlock(Block block) const;
+
+    /// Packs a prepared right block (`prepareRightBlock`) into its stored form. When the row store is
+    /// initialized, the columns its layout admits go into a `RowDataStore` and the rest stay columnar.
+    /// Otherwise every column stays columnar. A caller that already built this block's row store passes it in.
+    StoredBlock createStoredBlock(
+        const Block & block_to_save, ScatteredBlock::Selector selector, RowDataStorePtr row_store = nullptr) const;
+
+    const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
+
+    bool enableSoftwarePrefetch() const { return enable_prefetch; }
 
     PartitionedHashJoin(
         std::shared_ptr<TableJoin> table_join_,
@@ -340,7 +462,7 @@ private:
         std::optional<size_t> build_rows_hint_,
         bool join_table_mode_);
 
-    /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
+    /// Views of `data` for the non-joined filler.
     const HashJoin::RightTableData & storedData() const { return *data; }
     /// This join stores the blocks itself, one thread at a time.
     HashJoin::StoredBlocksList & storedBlocks() const { return data->columns; }
@@ -363,7 +485,7 @@ private:
 
     FillLane & getFillLane();
     FillLane & getFillLane(size_t worker_id);
-    /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
+    /// Moves one fill block's stored form into the stored block list and saves its null-key and
     /// filtered rows for RIGHT/FULL output. Returns whether a saved null map refers to the block.
     bool storeBlockInRowStore(FillBlock & fill);
     /// A block that nothing refers to is not kept: `ANY` tables see
@@ -427,7 +549,87 @@ private:
     std::unique_ptr<ProbeScratch> acquireProbeScratch(size_t lane);
     void releaseProbeScratch(std::unique_ptr<ProbeScratch> scratch, size_t lane);
 
-    /// The right input's header as given. The base's `right_sample_block` is a copy with its columns created.
+    std::shared_ptr<TableJoin> table_join;
+    JoinKind kind;
+    JoinStrictness strictness;
+
+    std::optional<TypeIndex> asof_type;
+    const ASOFJoinInequality asof_inequality;
+
+    /// Right table data. StorageJoin shares it between many Join objects.
+    /// Flags that indicate that particular row already used in join.
+    /// Flag is stored for every record in hash map.
+    /// Number of this flags equals to hashtable buffer size (plus one for zero value).
+    /// Changes in hash table broke correspondence,
+    /// so we must guarantee constantness of hash table during HashJoin lifetime
+    mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
+
+    RightTableDataPtr data;
+
+    std::vector<Sizes> key_sizes;
+
+    /// Block with columns from the right-side table.
+    Block right_sample_block;
+    /// Block with columns from the right-side table except key columns.
+    Block sample_block_with_columns_to_add;
+    /// Block with key columns in the same order they appear in the right-side table (duplicates appear once).
+    Block right_table_keys;
+    /// Block with key columns right-side table keys that are needed in result (would be attached after joined columns).
+    Block required_right_keys;
+    /// Left table column names that are sources for required_right_keys columns
+    std::vector<String> required_right_keys_sources;
+
+    std::vector<std::pair<size_t, size_t>> additional_filter_required_rhs_pos;
+
+    /// Maximum number of rows in result block. If it is 0, then no limits.
+    size_t max_joined_block_rows = 0;
+    size_t max_joined_block_bytes = 0;
+    bool joined_block_split_single_row = false;
+    bool enable_lazy_columns_replication = false;
+    bool enable_lazy_columns_indexing = false;
+    bool enable_prefetch = true;
+
+    /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
+    bool use_set_maps = false;
+    /// False when the owner cannot consume key-only maps, whatever `canUseSetMaps` would otherwise say.
+    const bool allow_set_maps = true;
+
+    LoggerPtr log;
+
+    /// Unchecked as in without `doDebugAsserts`. That walk cannot run while `PartitionedHashJoin`'s threads append.
+    size_t getTotalByteCountUnchecked() const;
+
+    void recomputeMapsBytes();
+
+    void dataMapInit(MapsVariant & map);
+
+    void initRightBlockStructure(Block & saved_block_sample);
+
+    bool preferUseMapsAll() const;
+
+    bool canUseSetMaps() const;
+
+    /// The maps flavour this join runs on. All the dispatch entry points take it.
+    JoinMapsKind getMapsKind() const;
+
+    bool isUsedByAnotherAlgorithm() const;
+    bool canRemoveColumnsFromLeftBlock() const;
+
+    void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
+    bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
+
+    bool isRowStoreSupported() const;
+
+    /// Layout is from the sample block, before any fill thread.
+    void initRowStore(const Block & block);
+
+    void reinitUsedFlagsForMaps();
+
+    bool recordsRowRefsForStats() const;
+
+    void doDebugAsserts() const;
+
+    /// The right input's header as given. `right_sample_block` is a copy with its columns created.
     SharedHeader right_input_header;
     const bool any_take_last_row;
     const size_t num_threads;
@@ -436,7 +638,7 @@ private:
 
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
-    /// The used flags are keyed per right-table row instead of per cell (`HashJoin::needUsedFlagsForPerRightTableRow`);
+    /// The used flags are keyed per right-table row instead of per cell (`needUsedFlagsForPerRightTableRow`);
     /// see the class comment.
     const bool used_flags_per_row;
     /// Whether the shape keeps used flags at all (`MapGetter::flagged`); with `used_flags_per_row` every

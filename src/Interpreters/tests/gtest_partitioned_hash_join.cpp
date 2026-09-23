@@ -1522,10 +1522,10 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
     const Block probe_header = uint64Block({{"k", {}}, {"probe_ts", {}}});
     const Block build_header = uint64Block({{"rk", {}}, {"ts", {}}});
     auto table_join = makeTableJoin(probe_header, build_header, options);
-    HashJoin schema(
+    PartitionedHashJoin schema(
         table_join,
         std::make_shared<const Block>(build_header),
-        /*allow_set_maps_=*/false);
+        /*num_threads_=*/1);
     std::vector<HashJoinClause::FillBlock> build_blocks;
     std::atomic<size_t> accumulated_bytes{0};
     size_t a_destructions = 0;
