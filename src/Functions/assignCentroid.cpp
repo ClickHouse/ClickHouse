@@ -357,6 +357,7 @@ public:
                 "or a constant String (a dictionary name)", name);
 
         /// Needs recorded use here, while the query is analyzed. Qualifying the name records without loading anything.
+        /// Inspected on plans with make_distributed_plan=1 to evaluate dictionary use
         if (const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
         {
             const auto & context = dict_helper.getContext();
