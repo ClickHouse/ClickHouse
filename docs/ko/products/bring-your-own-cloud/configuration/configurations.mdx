@@ -58,7 +58,7 @@ BYOC 배포에서 프라이빗 로드 밸런서를 사용하는 경우, 의도�
 
 기본적으로 BYOC 클러스터의 Kubernetes API 서버 엔드포인트는 공용 인터넷에서 접근할 수 있습니다. AWS에서는 IP 필터링을 통해 ClickHouse NAT Gateway IP에서만 접근이 허용되며, GCP와 Azure에서는 대신 클라우드 IAM으로 제어됩니다([Kubernetes API 서버 노출](/ko/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure) 참조). 보안을 더욱 강화하려면 Kubernetes API 서버가 프라이빗 네트워크 연결을 통해서만 접근 가능하도록 제한할 수 있습니다.
 
-사용 가능한 비공개 연결 옵션은 2가지입니다:
+사용 가능한 비공개 연결 옵션은 클라우드 제공업체에 따라 다릅니다:
 
 ### Tailscale (기본값) {#k8s-api-private-connection-tailscale}
 
@@ -81,7 +81,24 @@ AWS 배포에서는 타사 구성 요소 없이 [AWS VPC Lattice](https://aws.am
 * RAM 공유는 계정에서 생성되며 단일 BYOC 클러스터 범위로 한정됩니다. 이를 삭제하면 프라이빗 액세스 경로가 즉시 해제됩니다.
 * 액세스가 Kubernetes 클러스터 내부에서 실행되는 에이전트에 의존하지 않으므로, 클러스터 내 구성 요소를 사용할 수 없는 경우에도 ClickHouse 지원팀은 문제 해결을 위해 계속 액세스할 수 있습니다.
 
-프라이빗 API 엔드포인트 구성을 요청하려면 **ClickHouse 지원팀에 문의하십시오**.
+### GCP 프라이빗 컨트롤 플레인 엔드포인트 {#k8s-api-private-connection-gcp}
+
+GCP 배포에서는 GKE 클러스터의 IP 기반 컨트롤 플레인 엔드포인트를 비활성화하여 공용 인터넷에서 더 이상 연결할 수 없도록 할 수 있습니다. 이 경우 ClickHouse 관리 서비스는 DNS 기반 엔드포인트(`*.gke.goog`)를 통해 컨트롤 플레인에 연결합니다. 이 엔드포인트에 대한 인가는 소스 IP 허용 목록이 아니라, 사용자 프로젝트에서 ClickHouse가 가장(impersonate)하는 서비스 계정의 `container.clusters.connect` IAM 권한으로 이루어집니다.
+
+* 액세스는 전적으로 사용자 프로젝트의 클라우드 IAM으로 제어되므로, 해당 권한을 회수하면 이 경로도 차단됩니다.
+* 요청은 사용자 VPC 네트워크 내부가 아니라 Google 프론트엔드에서 종료됩니다. 따라서 이 경로는 네트워크 수준의 프라이빗 링크가 아니라 컨트롤 플레인으로 들어오는 액세스 경로로 보고 검토하십시오.
+* ClickHouse 엔지니어의 문제 해결 접근에는 기존과 같이 Tailscale을 사용합니다.
+
+### Azure Private Link {#k8s-api-private-connection-azure}
+
+Azure 배포에서는 [Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)를 통해 AKS API 서버에 비공개로 연결할 수 있습니다.
+
+* 클러스터는 API Server VNet Integration이 적용된 프라이빗 클러스터로 생성되며, 퍼블릭 FQDN은 비활성화됩니다.
+* ClickHouse Cloud는 고객 구독(subscription)의 API 서버 내부 로드 밸런서 앞단에 Private Link Service를 프로비저닝하고, ClickHouse Cloud 관리 VNet에는 이에 대응하는 프라이빗 엔드포인트를 함께 생성합니다. 연결은 ClickHouse Cloud 관리 구독에 대해서만 자동으로 승인됩니다.
+* ClickHouse 관리 서비스와 API 서버 간 트래픽은 Azure 백본 네트워크를 벗어나지 않습니다.
+* ClickHouse 엔지니어의 문제 해결 접근에는 기존과 동일하게 Tailscale이 사용됩니다.
+
+비공개 API 엔드포인트 구성을 요청하려면 **ClickHouse 지원팀에 문의하십시오**.
 
 ## 노드 그룹 {#node-groups}
 

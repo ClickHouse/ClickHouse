@@ -58,7 +58,7 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 
 默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问。在 AWS 上，会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量；在 GCP 和 Azure 上，则改为由云 IAM 进行管控 (参见 [Kubernetes API server 暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过私有网络连接访问。
 
-提供两种私有连接选项：
+可用的私有连接选项因云提供商而异：
 
 ### Tailscale (默认) {#k8s-api-private-connection-tailscale}
 
@@ -81,7 +81,24 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 * RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
 * 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
 
-**联系 ClickHouse 支持团队** 以申请配置私网 API 端点。
+### GCP 私网控制平面端点 {#k8s-api-private-connection-gcp}
+
+对于 GCP 部署，可以禁用 GKE 集群基于 IP 的控制平面端点，使其无法再通过公共互联网访问。此后，ClickHouse 管理服务将通过基于 DNS 的端点 (`*.gke.goog`) 访问控制平面。该访问的授权依据是 ClickHouse 在您项目中所模拟的服务账号上的 `container.clusters.connect` IAM 权限，而非源 IP 允许列表。
+
+* 访问完全由您项目中的云 IAM 管控，因此只需撤销该权限，即可切断此访问路径。
+* 请求终止于 Google 前端，而非您的 VPC 网络内部，因此在审查时应将其视为一条进入控制平面的访问路径，而非网络层面的私有链路。
+* ClickHouse 工程师的故障排查访问仍通过 Tailscale 进行。
+
+### Azure Private Link {#k8s-api-private-connection-azure}
+
+对于 Azure 部署，可以通过 [Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview) 以私网方式访问 AKS API server：
+
+* 该集群以私有集群形式创建，启用 API Server VNet Integration，并禁用其公网 FQDN。
+* ClickHouse Cloud 会在您的订阅中预配一个 Private Link Service，置于 API server 的内部负载均衡器之前，同时在 ClickHouse Cloud 管理 VNet 中创建对应的专用终结点。只有来自 ClickHouse Cloud 管理订阅的连接才会被自动批准。
+* ClickHouse 管理服务与您的 API server 之间的流量始终在 Azure 骨干网络内传输。
+* ClickHouse 工程师的故障排查访问仍通过 Tailscale 进行。
+
+**请联系 ClickHouse 支持团队**，申请配置私网 API 端点。
 
 ## 节点组 {#node-groups}
 

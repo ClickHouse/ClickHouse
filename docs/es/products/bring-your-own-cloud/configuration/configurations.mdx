@@ -56,9 +56,9 @@ Para obtener instrucciones de configuración paso a paso, consulte la [guía de 
 
 ## Conexión privada a la API de Kubernetes {#k8s-api-private-connection}
 
-De forma predeterminada, el endpoint del servidor de la API de Kubernetes de tu clúster BYOC es accesible desde la Internet pública. En AWS, el acceso está restringido mediante filtrado de IP para permitir solo las IP del gateway NAT de ClickHouse; en GCP y Azure, en cambio, está controlado por el IAM de la nube (consulta [Exposición del servidor de la API de Kubernetes](/es/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). Para mayor seguridad, puedes restringir el servidor de la API de Kubernetes para que sea accesible exclusivamente a través de conexiones de red privadas.
+De forma predeterminada, el endpoint del servidor de la API de Kubernetes de tu cluster BYOC es accesible desde la Internet pública. En AWS, el acceso está restringido mediante filtrado de IP para permitir solo las IP del gateway NAT de ClickHouse; en GCP y Azure, en cambio, está controlado por el IAM de la nube (consulta [Exposición del servidor de la API de Kubernetes](/es/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). Para mayor seguridad, puedes restringir el servidor de la API de Kubernetes para que sea accesible exclusivamente a través de conexiones de red privadas.
 
-Hay dos opciones de conexión privada disponibles:
+Las opciones de conexión privada disponibles dependen de tu proveedor de nube:
 
 ### Tailscale (predeterminado) {#k8s-api-private-connection-tailscale}
 
@@ -78,10 +78,27 @@ Para las implementaciones en AWS, también se puede acceder al servidor de la AP
 
 * ClickHouse Cloud aprovisiona automáticamente un VPC Lattice Resource Gateway y una Resource Configuration dirigidos al endpoint del servidor de la API de EKS dentro de tu BYOC VPC, y comparte la Resource Configuration con la cuenta de administración de ClickHouse Cloud mediante AWS Resource Access Manager (RAM).
 * El tráfico entre el servicio de administración de ClickHouse y tu servidor de la API de Kubernetes permanece por completo en la red privada de AWS.
-* El recurso compartido de RAM se crea desde tu cuenta y se limita a un único clúster de BYOC; al eliminarlo, se revoca inmediatamente la ruta de acceso privada.
-* Dado que el acceso no depende de un agente que se ejecute dentro de tu clúster de Kubernetes, el soporte de ClickHouse mantiene el acceso para la resolución de problemas incluso si los componentes dentro del clúster no están disponibles.
+* El recurso compartido de RAM se crea desde tu cuenta y se limita a un único cluster de BYOC; al eliminarlo, se revoca inmediatamente la ruta de acceso privada.
+* Dado que el acceso no depende de un agente que se ejecute dentro de tu cluster de Kubernetes, el soporte de ClickHouse mantiene el acceso para la resolución de problemas incluso si los componentes dentro del cluster no están disponibles.
 
-**Ponte en contacto con el soporte de ClickHouse** para solicitar la configuración de un endpoint privado de la API.
+### Endpoint privado del plano de control en GCP {#k8s-api-private-connection-gcp}
+
+En las implementaciones de GCP, es posible deshabilitar el endpoint del plano de control basado en IP del cluster de GKE para que deje de ser accesible desde la internet pública. En ese caso, los servicios de administración de ClickHouse acceden al plano de control a través de su endpoint basado en DNS (`*.gke.goog`), cuya autorización no depende de una lista de IP de origen permitidas, sino del permiso de IAM `container.clusters.connect` asignado a la cuenta de servicio que ClickHouse suplanta en su proyecto.
+
+* El acceso se rige íntegramente por el IAM de la nube de su proyecto, de modo que, al revocar ese permiso, se revoca también la ruta de acceso.
+* La solicitud termina en el frontend de Google y no dentro de su red VPC, por lo que debe evaluarse como una ruta de acceso a su plano de control y no como un enlace de red privado.
+* Los ingenieros de ClickHouse siguen utilizando Tailscale para el acceso de resolución de problemas.
+
+### Azure Private Link {#k8s-api-private-connection-azure}
+
+En las implementaciones de Azure, se puede acceder de forma privada al servidor de API de AKS a través de [Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview):
+
+* El cluster se crea como cluster privado con API Server VNet Integration y con su FQDN público deshabilitado.
+* ClickHouse Cloud aprovisiona en su suscripción un Private Link Service delante del balanceador de carga interno del servidor de API, junto con el private endpoint correspondiente en la VNet de administración de ClickHouse Cloud. La conexión solo se aprueba automáticamente para la suscripción de administración de ClickHouse Cloud.
+* El tráfico entre los servicios de administración de ClickHouse y su servidor de API no sale de la red troncal de Azure.
+* Los ingenieros de ClickHouse siguen utilizando Tailscale para el acceso de resolución de problemas.
+
+**Póngase en contacto con el soporte de ClickHouse** para solicitar la configuración de un endpoint privado de la API.
 
 ## Grupos de nodos {#node-groups}
 

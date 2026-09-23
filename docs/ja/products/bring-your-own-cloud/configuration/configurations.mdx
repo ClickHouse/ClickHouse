@@ -58,7 +58,7 @@ BYOC デプロイメントでプライベートロードバランサーを使用
 
 デフォルトでは、BYOC クラスターの Kubernetes API サーバーのエンドポイントはパブリックインターネットからアクセス可能です。AWS では、IP フィルタリングにより、ClickHouse NAT ゲートウェイの IP からのアクセスのみに制限されています。GCP と Azure では、代わりにクラウドの IAM によって制御されます ([Kubernetes API サーバーの公開](/ja/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)を参照) 。より強固なセキュリティを実現するには、Kubernetes API サーバーを、プライベートネットワーク接続経由でのみアクセスできるように制限できます。
 
-利用可能なプライベート接続オプションは 2 つあります:
+利用可能なプライベート接続オプションは、クラウドプロバイダーによって異なります:
 
 ### Tailscale (デフォルト) {#k8s-api-private-connection-tailscale}
 
@@ -81,7 +81,24 @@ AWS のデプロイメントでは、サードパーティ製コンポーネン�
 * RAM 共有はお使いのアカウントから作成され、単一の BYOC クラスターに限定されます。これを削除すると、プライベートアクセス経路はただちに無効になります。
 * Kubernetes クラスター内で動作するエージェントにアクセスが依存しないため、クラスター内コンポーネントが利用できない場合でも、ClickHouse Support はトラブルシューティングのためのアクセスを維持できます。
 
-プライベート API エンドポイントの設定を依頼するには、**ClickHouse Support にお問い合わせください**。
+### GCP のプライベートコントロールプレーンエンドポイント {#k8s-api-private-connection-gcp}
+
+GCP へのデプロイメントでは、GKE クラスターの IP ベースのコントロールプレーンエンドポイントを無効化して、パブリックインターネットから到達できないようにできます。この場合、ClickHouse の管理サービスは DNS ベースのエンドポイント (`*.gke.goog`) 経由でコントロールプレーンにアクセスします。このアクセスは、送信元 IP の許可リストではなく、お客様のプロジェクト内で ClickHouse が借用する service account に付与された `container.clusters.connect` IAM 権限によって承認されます。
+
+* アクセスは完全にお客様のプロジェクト内のクラウド IAM によって管理されるため、その権限を取り消せば、このアクセスパスも無効になります。
+* リクエストはお客様の VPC ネットワーク内ではなく Google のフロントエンドで終端されます。そのため、ネットワーク的にプライベートな接続としてではなく、コントロールプレーンへのアクセスパスの一つとして評価してください。
+* ClickHouse エンジニアによるトラブルシューティングアクセスには、引き続き Tailscale を使用します。
+
+### Azure プライベートリンク {#k8s-api-private-connection-azure}
+
+Azure 上のデプロイメントでは、[Azure プライベートリンク](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview) を介して AKS API サーバーにプライベートに接続できます。
+
+* クラスターは API Server VNet Integration を有効にしたプライベートクラスターとして作成され、パブリック FQDN は無効化されます。
+* ClickHouse Cloud は、お客様のサブスクリプション内で API サーバーの内部ロードバランサーの前段に Private Link Service をプロビジョニングし、あわせて ClickHouse Cloud の管理用 VNet 内に対応するプライベート エンドポイントを作成します。この接続が自動承認されるのは、ClickHouse Cloud の管理用サブスクリプションからの接続に限られます。
+* ClickHouse の管理サービスとお客様の API サーバー間のトラフィックは、Azure のバックボーンネットワーク内で完結します。
+* ClickHouse エンジニアによるトラブルシューティングアクセスには、引き続き Tailscale を使用します。
+
+プライベート API エンドポイントの設定をご希望の場合は、**ClickHouse Support にお問い合わせください**。
 
 ## ノードグループ {#node-groups}
 

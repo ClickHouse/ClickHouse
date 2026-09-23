@@ -43,7 +43,7 @@ BYOC では、ClickHouse VPC 上で稼働する **ClickHouse コントロール�
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="BYOC アーキテクチャ" background="black" />
+<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC アーキテクチャ: ClickHouse VPC 内の ClickHouse コントロールプレーンが、お客様のクラウドアカウント内の Kubernetes データプレーンを管理します。ClickHouse のデータ、バックアップ、ログ、監視データはお客様のアカウント内にとどまり、エクスポートされるのは限定された運用テレメトリーのみです。" />
 
 <br />
 
@@ -52,7 +52,7 @@ ClickHouse Cloud がお客様のアカウントにデプロイする主なクラ
 * **VPC:** ClickHouse デプロイメント専用の Virtual Private Cloud です。これは ClickHouse が管理することも、お客様自身が管理することもでき、通常はお客様のアプリケーション VPC とピアリングされます。
 * **IAM ロール and ポリシー:** Kubernetes、ClickHouse サービス、監視スタックに必要な IAM ロールと権限です。これらは ClickHouse がプロビジョニングすることも、お客様が用意することもできます。
 * **Storage buckets:** データパーツ、バックアップ、さらに (必要に応じて) 長期保存用のメトリクスやログアーカイブの保存に使用されます。
-* **Kubernetes cluster:** クラウドプロバイダーに応じて Amazon EKS、Google GKE、または Azure AKS となります。アーキテクチャ図に示されている ClickHouse サーバーと補助サービスをホストします。
+* **Kubernetes クラスター:** クラウドプロバイダーに応じて Amazon EKS、Google GKE、または Azure AKS となります。アーキテクチャ図に示されている ClickHouse サーバーと補助サービスをホストします。
 
 デフォルトでは、ClickHouse Cloud は新しい専用 VPC をプロビジョニングし、Kubernetes サービスを安全に運用するために必要な IAM ロールを設定します。より高度なネットワーク要件やセキュリティ要件を持つ組織向けに、VPC と IAM ロールを個別に管理するオプションも用意されています。このアプローチにより、ネットワーク構成をより柔軟にカスタマイズでき、権限もより細かく制御できます。ただし、これらのリソースを自己管理する場合は、運用上の責任が増します。
 
@@ -60,7 +60,7 @@ ClickHouse Cloud がお客様のアカウントにデプロイする主なクラ
   ### データストレージ {#data-storage}
 </div>
 
-ClickHouse のデータ、バックアップ、ログ、監視データは、お客様のクラウドアカウント内に保持されます。外部にエクスポートされるデータは、[ネットワーク境界](/ja/products/bring-your-own-cloud/reference/network-security#outbound-connections)に記載された限定的な使用状況およびヘルスのテレメトリーのみです。データパーツとバックアップはお客様のオブジェクトストレージ (たとえば Amazon S3) に保存され、ログは ClickHouse ノードに接続されたストレージボリュームに保存されます。今後のアップデートでは、ログは LogHouse に書き込まれるようになる予定です。LogHouse は ClickHouse ベースのロギングサービスで、お客様の BYOC VPC 内でも実行されます。メトリクスはローカルに保存することも、長期保持のためにお客様自身のアカウント内の専用バケットに保存することもできます。オブジェクトストレージは VPC/VNet の外部に位置し、プロバイダーのストレージ API 経路を通じてアクセスされます。ClickHouse VPC とお客様の BYOC VPC 間のコントロールプレーン接続は、安全で厳しく制限されたチャネル (たとえば、図に示す Tailscale 経由) で提供されます。これは管理操作にのみ使用され、クエリトラフィックには使用されません。
+ClickHouse のデータ、バックアップ、ログ、監視データは、お客様のクラウドアカウント内に保持されます。外部にエクスポートされるデータは、[ネットワーク境界](/ja/products/bring-your-own-cloud/reference/network-security#outbound-connections)に記載された限定的な使用状況およびヘルスのテレメトリーのみです。データパーツとバックアップはお客様のオブジェクトストレージ (たとえば Amazon S3) に保存され、ログは ClickHouse ノードに接続されたストレージボリュームに保存されます。今後のアップデートでは、ログは LogHouse に書き込まれるようになる予定です。LogHouse は ClickHouse ベースのロギングサービスで、お客様の BYOC VPC 内でも実行されます。メトリクスはローカルに保存することも、長期保持のためにお客様自身のアカウント内の専用バケットに保存することもできます。オブジェクトストレージは VPC/VNet の外部に位置し、プロバイダーのストレージ API 経路を通じてアクセスされます。ClickHouse VPC とお客様の BYOC VPC 間のコントロールプレーン接続は管理操作にのみ使用され、クエリトラフィックに使用されることは一切ありません。デフォルトでは、ClickHouse の管理サービスはクラスターの Kubernetes API にパブリックエンドポイント経由でアクセスしますが、このエンドポイントが無制限に公開されることはありません。AWS では ClickHouse の送信元 IP 範囲のみを許可する IP 許可リストで制限され、GCP では Google Cloud IAM、Azure では Microsoft Entra ID と Azure RBAC によってアクセスが認可されます。代わりに、図に示すように、デプロイメントごとにプライベート接続を有効にすることもできます (AWS VPC Lattice、GCP の GKE DNS ベースのコントロールプレーンエンドポイント、または Azure プライベートリンク)。Tailscale は、すべてのクラウドで ClickHouse エンジニアによるトラブルシューティングアクセスに加え、メトリクスとダッシュボードの通信を担います。Kubernetes API への経路をプライベートにした場合でも、Tailscale は引き続き使用されます。
 
 <div id="control-plane-communication">
   ### コントロールプレーン通信 {#control-plane-communication}
@@ -92,19 +92,21 @@ ClickHouse Cloud が、お客様のクラウドアカウント内のリソース
   ### Tailscale プライベートネットワーク接続 {#tailscale-private-network}
 </div>
 
-Tailscale は、ClickHouse Cloud の管理サービスとお客様の BYOC デプロイメントの間に、安全なゼロトラストのプライベートネットワーク接続を提供します。この接続により、次のことが可能になります。
+Tailscale は、ClickHouse Cloud とお客様の BYOC デプロイメントの間に、安全なゼロトラストのプライベートネットワークを提供します。このネットワークでは、ClickHouse のエンジニアによるトラブルシューティングアクセスのほか、ClickHouse がお客様のデプロイメントを監視するためのメトリクスやダッシュボードがやり取りされます。また、プライベート API エンドポイントが有効な場合は、Kubernetes API のトラフィックもこのネットワークを経由します。この接続により、次のことが可能になります。
 
 * **継続的な監視**: ClickHouse のエンジニアは、お客様の BYOC VPC にデプロイされた Prometheus 監視スタックにアクセスし、サービスの健全性とパフォーマンスを監視できます
 * **プロアクティブなメンテナンス**: エンジニアは、定期的な保守、アップグレード、トラブルシューティングを実施できます
 * **緊急サポート**: サービスに問題が発生した場合、エンジニアはお客様の環境に迅速にアクセスして、問題を診断・解決できます
-* **インフラストラクチャ管理**: 管理サービスは、自動化された運用のためにお客様の BYOC インフラストラクチャと連携できます
+* **インフラストラクチャ管理**: プライベート Kubernetes API エンドポイントが有効な場合、管理サービスはパブリックエンドポイントではなくこの接続を経由して Kubernetes API にアクセスします
 
-Tailscale 接続は、お客様の BYOC VPC からの**アウトバウンド専用**であり、インバウンド接続は不要なため、セキュリティリスクを低減できます。すべてのアクセスには、次の特性があります。
+お客様のクラスター内の Tailscale エージェントが行う接続は**アウトバウンドのみ**です。Tailscale 自体のためにインバウンドのセキュリティグループ、ファイアウォール、ネットワークセキュリティグループのルールを追加する必要はないため、外部への露出を抑えられます。すべてのアクセスには、次の特性があります。
 
 * **承認・監査済み**: エンジニアは社内承認システムを通じてアクセスを申請する必要があります
 * **時間制限付き**: アクセスは設定された期間が過ぎると自動的に失効します
 * **制限付き**: エンジニアがアクセスできるのはシステムテーブルとインフラストラクチャ コンポーネントのみであり、顧客データには決してアクセスできません
 * **暗号化**: すべての通信はエンドツーエンドで暗号化されます
+
+なお、このアウトバウンドのみという特性は Tailscale 自体に当てはまるもので、すべての管理経路に当てはまるわけではありません。お客様のクラスターの Kubernetes API server は、パブリックエンドポイント経由かプライベート接続経由かを問わず、引き続き TCP 443 で ClickHouse の管理サービスからの接続を受け付けます。リスナーの全一覧については、[インバウンド接続](/ja/products/bring-your-own-cloud/reference/network-security#inbound-connections)を参照してください。
 
 BYOC における Tailscale の仕組みとセキュリティ制御の詳細については、[ネットワークセキュリティのドキュメント](/ja/products/bring-your-own-cloud/reference/network-security#tailscale-private-network) を参照してください。
 

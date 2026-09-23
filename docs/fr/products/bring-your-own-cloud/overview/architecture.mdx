@@ -43,7 +43,7 @@ Dans votre **Customer BYOC VPC**, ClickHouse provisionne un cluster Kubernetes (
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="Architecture BYOC" background="black" />
+<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="Architecture BYOC : le plan de contrôle ClickHouse, dans le ClickHouse VPC, gère un plan de données Kubernetes situé dans le compte cloud du client ; les données ClickHouse, les sauvegardes, les logs et les données de supervision restent dans le compte du client, et seul un ensemble restreint de données de télémétrie opérationnelle est exporté." />
 
 <br />
 
@@ -60,7 +60,7 @@ Par défaut, ClickHouse Cloud provisionne un nouveau VPC dédié et configure le
   ### Stockage des données {#data-storage}
 </div>
 
-Vos données ClickHouse, vos sauvegardes, vos logs et vos données de supervision restent dans votre compte cloud ; les seules données exportées ailleurs sont les données de télémétrie d&#39;utilisation et de santé, strictement délimitées, listées dans [limites réseau](/fr/products/bring-your-own-cloud/reference/network-security#outbound-connections). Les parties de données et les sauvegardes sont stockées dans votre stockage objet (par exemple, Amazon S3), tandis que les logs sont stockés sur les volumes de stockage attachés à vos nœuds ClickHouse. Dans une prochaine mise à jour, les logs seront écrits dans LogHouse, un service de logging basé sur ClickHouse qui s&#39;exécute également dans votre VPC BYOC. Les métriques peuvent être stockées localement ou, pour une conservation à long terme, dans un bucket dédié de votre propre compte — le stockage objet se situe en dehors du VPC/VNet et est accessible via le chemin de l&#39;API de stockage du fournisseur. La connectivité du plan de contrôle entre le ClickHouse VPC et votre VPC BYOC est assurée via un canal sécurisé au périmètre strictement limité (par exemple, via Tailscale comme indiqué dans le schéma) ; elle est utilisée uniquement pour les opérations de gestion, et non pour le trafic de requêtes.
+Vos données ClickHouse, vos sauvegardes, vos logs et vos données de supervision restent dans votre compte cloud ; les seules données exportées ailleurs sont les données de télémétrie d&#39;utilisation et de santé, strictement délimitées, listées dans [limites réseau](/fr/products/bring-your-own-cloud/reference/network-security#outbound-connections). Les parties de données et les sauvegardes sont stockées dans votre stockage objet (par exemple, Amazon S3), tandis que les logs sont stockés sur les volumes de stockage attachés à vos nœuds ClickHouse. Dans une prochaine mise à jour, les logs seront écrits dans LogHouse, un service de logging basé sur ClickHouse qui s&#39;exécute également dans votre VPC BYOC. Les métriques peuvent être stockées localement ou, pour une conservation à long terme, dans un bucket dédié de votre propre compte — le stockage objet se situe en dehors du VPC/VNet et est accessible via le chemin de l&#39;API de stockage du fournisseur. La connectivité du plan de contrôle entre le ClickHouse VPC et votre VPC BYOC est utilisée uniquement pour les opérations de gestion, et jamais pour le trafic de requêtes. Par défaut, les services de gestion ClickHouse accèdent à l&#39;API Kubernetes de votre cluster via son endpoint public, qui n&#39;est jamais laissé ouvert : l&#39;accès y est restreint aux plages d&#39;adresses IP sortantes de ClickHouse par une liste d’autorisation sur AWS, autorisé par Google Cloud IAM sur GCP, et autorisé par Microsoft Entra ID conjointement avec Azure RBAC sur Azure. Une connexion privée peut être activée à la place pour chaque déploiement — AWS VPC Lattice, l&#39;endpoint du plan de contrôle GKE basé sur DNS sur GCP, ou Azure Private Link — comme indiqué dans le schéma. Sur chaque cloud, Tailscale achemine l&#39;accès de dépannage des ingénieurs ClickHouse ainsi que les métriques et les tableaux de bord, et reste en place même lorsque le chemin vers l&#39;API Kubernetes est privé.
 
 <div id="control-plane-communication">
   ### Communication du plan de contrôle {#control-plane-communication}
@@ -94,19 +94,21 @@ Pour des informations détaillées sur les autorisations spécifiques requises, 
   ### Connexion au réseau privé Tailscale {#tailscale-private-network}
 </div>
 
-Tailscale fournit une connexion sécurisée à un réseau privé zero trust entre les management services de ClickHouse Cloud et votre déploiement BYOC. Cette connexion permet :
+Tailscale fournit un réseau privé sécurisé et zero trust entre ClickHouse Cloud et votre déploiement BYOC. Ce réseau achemine les accès de dépannage des ClickHouse engineers, ainsi que les métriques et tableaux de bord utilisés par ClickHouse pour surveiller votre déploiement ; il achemine également le trafic de l’API Kubernetes lorsqu’un endpoint d’API privé est activé. Cette connexion permet :
 
-* **Surveillance continue** : les ClickHouse engineers peuvent accéder à la stack de supervision Prometheus déployée dans votre VPC BYOC afin de surveiller l’état de santé et les performances du service
-* **Maintenance proactive** : les ingénieurs peuvent effectuer des opérations de maintenance courante, des mises à niveau et de dépannage
-* **Assistance d’urgence** : en cas de problème de service, les ingénieurs peuvent accéder rapidement à votre environnement pour diagnostiquer et résoudre les problèmes
-* **Gestion de l’infrastructure** : les management services peuvent se coordonner avec votre infrastructure BYOC pour exécuter des opérations automatisées
+* **Surveillance continue** : les ClickHouse engineers peuvent accéder à la stack de supervision Prometheus déployée dans votre VPC BYOC afin de surveiller l’état de santé et les performances du service
+* **Maintenance proactive** : les ingénieurs peuvent effectuer des opérations de maintenance courante, des mises à niveau et de dépannage
+* **Assistance d’urgence** : en cas de problème de service, les ingénieurs peuvent accéder rapidement à votre environnement pour diagnostiquer et résoudre les problèmes
+* **Gestion de l’infrastructure** : lorsqu’un endpoint privé de l’API Kubernetes est activé, les services de gestion accèdent à l’API Kubernetes via cette connexion plutôt que via son endpoint public
 
-La connexion Tailscale est **strictement sortante** depuis votre VPC BYOC — aucune connexion entrante n’est nécessaire, ce qui réduit votre exposition aux risques de sécurité. Tout accès est :
+Les agents Tailscale de votre cluster établissent uniquement des connexions **sortantes** : aucune règle entrante de groupe de sécurité, de pare-feu ou de groupe de sécurité réseau n’est nécessaire pour Tailscale lui-même, ce qui réduit votre exposition. Tout accès est :
 
-* **Approuvé et audité** : les ingénieurs doivent demander l’accès via un système d’approbation interne
-* **Limité dans le temps** : l’accès expire automatiquement après une période définie
-* **Restreint** : les ingénieurs ne peuvent accéder qu’aux tables système et aux composants de l’infrastructure, jamais aux données des clients
-* **Chiffré** : toutes les communications sont chiffrées de bout en bout
+* **Approuvé et audité** : les ingénieurs doivent demander l’accès via un système d’approbation interne
+* **Limité dans le temps** : l’accès expire automatiquement après une période définie
+* **Restreint** : les ingénieurs ne peuvent accéder qu’aux tables système et aux composants de l’infrastructure, jamais aux données des clients
+* **Chiffré** : toutes les communications sont chiffrées de bout en bout
+
+Ce fonctionnement strictement sortant concerne uniquement Tailscale, et non l’ensemble des chemins de gestion. Le serveur API Kubernetes de votre cluster continue d’accepter les connexions des services de gestion ClickHouse sur le port TCP 443, que ce soit via l’endpoint public ou via une connexion privée ; consultez l’inventaire des [connexions entrantes](/fr/products/bring-your-own-cloud/reference/network-security#inbound-connections) pour obtenir la liste complète des listeners.
 
 Pour plus d’informations sur le fonctionnement de Tailscale dans BYOC et sur les contrôles de sécurité, consultez la [documentation sur la sécurité réseau](/fr/products/bring-your-own-cloud/reference/network-security#tailscale-private-network).
 
