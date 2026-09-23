@@ -504,9 +504,16 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         /// The hosts that apply this statement run the DDL entry without the initiator's user, unless
         /// `distributed_ddl_use_initial_user_and_roles` is on, so the initiator is the only place the new
         /// body can be authorized against the user who wrote it.
+        /// Every host resolves an unqualified name in the body against the database of the altered view, so
+        /// the check has to use that database as well. The session database applies only when the statement
+        /// named no database at all, which is also how each host will read it.
         if (modify_query)
-            checkAccessForModifyQueryOnCluster(
-                *modify_query, table_id ? table_id.getDatabaseName() : getContext()->getCurrentDatabase());
+        {
+            String body_default_database = alter.getDatabase();
+            if (body_default_database.empty())
+                body_default_database = getContext()->getCurrentDatabase();
+            checkAccessForModifyQueryOnCluster(*modify_query, body_default_database);
+        }
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
