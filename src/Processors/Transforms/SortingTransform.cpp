@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 MergeSorter::MergeSorter(
     SharedHeader header, Chunks chunks_, const SortDescription & description,
-    size_t max_merged_block_size_, UInt64 limit_, Mode mode_)
+    size_t max_merged_block_size_, UInt64 limit_, Mode mode_, size_t preferred_block_bytes)
     : chunks(std::move(chunks_))
     , max_merged_block_size(max_merged_block_size_)
     , limit(limit_)
@@ -58,6 +58,24 @@ MergeSorter::MergeSorter(
     }
 
     chunks.swap(nonempty_chunks);
+
+    if (preferred_block_bytes && !chunks.empty())
+    {
+        size_t total_rows = 0;
+        size_t total_bytes = 0;
+        for (const auto & chunk : chunks)
+        {
+            total_rows += chunk.getNumRows();
+            total_bytes += chunk.allocatedBytes();
+        }
+
+        /// Smaller spill blocks reduce the decoded memory held by each merge input. Average row size
+        /// gives a byte target rather than a strict bound for uneven rows. The minimum of 128 rows
+        /// avoids excessive per-block overhead, while the explicit row limit still takes precedence.
+        /// Compact column representations can use less than one allocated byte per row.
+        const size_t average_row_bytes = std::max<size_t>(1, total_bytes / total_rows);
+        max_merged_block_size = std::min(max_merged_block_size, std::max<size_t>(128, preferred_block_bytes / average_row_bytes));
+    }
 
     queue_variants.callOnBatchVariant([&](auto & queue)
     {
