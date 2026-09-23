@@ -59,6 +59,10 @@ EXPLAIN SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 
 SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, explain_query_plan_default = 'legacy',
     enable_join_runtime_filters = 1, optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
+-- A server-side fuzzed re-run repeats the statement under the same session settings, so it would
+-- carry the marker below and, being later, would win the lookup.
+SET ast_fuzzer_runs = 0;
+
 SELECT t2.g AS g, count() AS c, sum(t1.v) AS s FROM t_spill_facts AS t1 INNER JOIN t_spill_dims AS t2 ON t1.j = t2.j GROUP BY t2.g
 FORMAT Null
 SETTINGS log_comment = '05047_cascades_spill_probe';

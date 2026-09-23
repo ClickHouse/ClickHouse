@@ -114,6 +114,8 @@ ${CLICKHOUSE_CLIENT} --query_id "$query_id" --query "
         automatic_parallel_replicas_mode = 0, use_query_condition_cache = 0, make_distributed_plan = 0
     FORMAT Null"
 CODE=$?
+# One-shot and server-global, so disarm it as soon as its statement returns, not at the end of the test.
+cleanup
 [ "$CODE" -ne "0" ] && echo "Expected the statement to be served but got error code: $CODE" && exit 1
 
 # A replica takes the slot when it selects parts, before the coordinator hands out mark ranges, so a
