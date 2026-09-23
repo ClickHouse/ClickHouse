@@ -232,10 +232,10 @@ def metadata_on_the_shards(metric_family, table="ts_local"):
     carries no tags, so the sharding key always puts it on one of the two."""
     return node.query(
         f"SELECT type, help, unit FROM timeSeriesMetrics(shard_0.{table})"
-        f" WHERE metric_family_name = '{metric_family}'"
+        f" WHERE metric_family = '{metric_family}'"
         " UNION ALL "
         f"SELECT type, help, unit FROM timeSeriesMetrics(shard_1.{table})"
-        f" WHERE metric_family_name = '{metric_family}'"
+        f" WHERE metric_family = '{metric_family}'"
     )
 
 
