@@ -6871,43 +6871,45 @@ void Context::reloadClusterConfig() const
     while (true)
     {
         ConfigurationPtr cluster_config;
-        std::shared_ptr<Clusters> old_clusters;
         {
             std::lock_guard lock(shared->clusters_mutex);
             cluster_config = shared->clusters_config;
-            old_clusters = shared->clusters;
         }
 
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
-
-        if (old_clusters)
-        {
-            for (const auto & [name, cluster] : old_clusters->getContainer())
-            {
-                if (cluster->getSourceId() != Cluster::SourceId::SQL)
-                    continue;
-
-                /// Config and SQL cluster names must not collide. Reject here so a newly added
-                /// `<remote_servers>` entry cannot silently hide behind an existing SQL cluster
-                /// (and later vanish from view after `DROP CLUSTER`).
-                if (new_clusters->getCluster(name))
-                {
-                    throw Exception(
-                        ErrorCodes::CLUSTER_ALREADY_EXISTS,
-                        "Cannot load SQL cluster `{}`: a cluster with the same name already exists in server configuration",
-                        name);
-                }
-
-                new_clusters->setCluster(name, cluster);
-            }
-        }
 
         bool clusters_reloaded = false;
         {
             std::lock_guard lock(shared->clusters_mutex);
             if (shared->clusters_config.get() == cluster_config.get())
             {
+                /// Preserve SQL-managed clusters from the *current* map under the same lock as the
+                /// swap. Copying from a snapshot taken outside this lock races with `DROP CLUSTER`
+                /// and can resurrect a cluster that was already removed (seen as a non-zero
+                /// `system.clusters` count after DROP, then `CLUSTER_ALREADY_EXISTS` on CREATE).
+                if (shared->clusters)
+                {
+                    for (const auto & [name, cluster] : shared->clusters->getContainer())
+                    {
+                        if (cluster->getSourceId() != Cluster::SourceId::SQL)
+                            continue;
+
+                        /// Config and SQL cluster names must not collide. Reject here so a newly
+                        /// added `<remote_servers>` entry cannot silently hide behind an existing
+                        /// SQL cluster (and later vanish from view after `DROP CLUSTER`).
+                        if (new_clusters->getCluster(name))
+                        {
+                            throw Exception(
+                                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                                "Cannot load SQL cluster `{}`: a cluster with the same name already exists in server configuration",
+                                name);
+                        }
+
+                        new_clusters->setCluster(name, cluster);
+                    }
+                }
+
                 shared->clusters = std::move(new_clusters);
                 ++shared->clusters_version;
                 clusters_reloaded = true;
