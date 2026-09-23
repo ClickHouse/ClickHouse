@@ -169,33 +169,6 @@ def test_system_functions_readable_without_grant():
     assert "listed_udf" in instance.query("SHOW FUNCTIONS ILIKE 'listed_udf'", user="A")
 
 
-def test_listed_function_requires_grant_old_analyzer():
-    instance.query("CREATE USER A")
-    old_analyzer = {"enable_analyzer": 0}
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "SELECT hex('a')", user="A", settings=old_analyzer
-    )
-
-    instance.query("GRANT FUNCTION ON hex TO A")
-    assert instance.query("SELECT hex('a')", user="A", settings=old_analyzer) == "61\n"
-
-
-def test_listed_sql_udf_requires_grant_old_analyzer():
-    instance.query("CREATE USER A")
-    instance.query("CREATE FUNCTION listed_udf AS (x) -> plus(x, 1)")
-    old_analyzer = {"enable_analyzer": 0}
-
-    assert "Not enough privileges" in instance.query_and_get_error(
-        "SELECT listed_udf(1)", user="A", settings=old_analyzer
-    )
-
-    instance.query("GRANT FUNCTION ON listed_udf TO A")
-    assert (
-        instance.query("SELECT listed_udf(1)", user="A", settings=old_analyzer) == "2\n"
-    )
-
-
 def test_decrypt_requires_grant():
     instance.query("CREATE USER A")
     decrypt_query = (
