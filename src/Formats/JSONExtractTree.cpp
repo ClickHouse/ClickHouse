@@ -63,6 +63,7 @@
 
 #include <base/memcmpSmall.h>
 
+#include <bit>
 #include <limits>
 
 namespace DB
@@ -1482,9 +1483,12 @@ public:
         auto & tuple = assert_cast<ColumnTuple &>(column);
         size_t old_size = column.size();
         bool were_valid_elements = false;
-        /// When every element got its own value, all the nested columns already have the right size
-        /// and the `set_size` walk below (a virtual `size` per element) can be skipped.
+        /// When every element got exactly one value, all the nested columns already have the right
+        /// size and the `set_size` walk below (a virtual `size` per element) can be skipped. A JSON
+        /// object can repeat a key, so the elements that took a value are tracked as a bit set and
+        /// not just counted: two values for one element is not the same as one value for two.
         size_t inserted_elements = 0;
+        UInt64 filled_elements = 0;
 
         auto set_size = [&](size_t size)
         {
@@ -1502,10 +1506,20 @@ public:
             }
         };
 
+        /// Mark that `index` took a value. Elements past the width of the bit set keep the fixup.
+        auto note_inserted_element = [&](size_t index)
+        {
+            ++inserted_elements;
+            if (index < sizeof(filled_elements) * 8)
+                filled_elements |= 1ULL << index;
+        };
+
         auto set_size_after_success = [&](size_t size)
         {
-            /// Every element took exactly one value, so every nested column is already at `size`.
-            if (were_valid_elements && inserted_elements == tuple.tupleSize())
+            /// One value per element, and each in a distinct element, so every nested column is
+            /// already at `size`.
+            const bool all_elements_distinct = static_cast<size_t>(std::popcount(filled_elements)) == inserted_elements;
+            if (were_valid_elements && inserted_elements == tuple.tupleSize() && all_elements_distinct)
                 return;
             set_size(size);
         };
@@ -1520,12 +1534,12 @@ public:
                 if (nested[index]->insertResultToColumn(tuple.getColumn(index), *it++, insert_settings, format_settings, error))
                 {
                     were_valid_elements = true;
-                    ++inserted_elements;
+                    note_inserted_element(index);
                 }
                 else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                 {
                     tuple.getColumn(index).insertDefault();
-                    ++inserted_elements;
+                    note_inserted_element(index);
                 }
                 else
                 {
@@ -1550,12 +1564,12 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), (*it++).second, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
-                        ++inserted_elements;
+                        note_inserted_element(index);
                     }
                     else if (insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
                         tuple.getColumn(index).insertDefault();
-                        ++inserted_elements;
+                        note_inserted_element(index);
                     }
                     else
                     {
@@ -1580,7 +1594,7 @@ public:
 
                 for (const auto & [key, value] : object)
                 {
-                    size_t index;
+                    size_t index = 0;
                     if (matches_expected_name(key))
                     {
                         index = expected_index;
@@ -1597,7 +1611,7 @@ public:
                     if (nested[index]->insertResultToColumn(tuple.getColumn(index), value, insert_settings, format_settings, error))
                     {
                         were_valid_elements = true;
-                        ++inserted_elements;
+                        note_inserted_element(index);
                     }
                     else if (!insert_settings.insert_default_on_invalid_elements_in_complex_types)
                     {
