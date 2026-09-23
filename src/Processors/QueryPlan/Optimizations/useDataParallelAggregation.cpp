@@ -251,6 +251,8 @@ void optimizeWindowPerPartition(QueryPlan::Node & node, QueryPlan::Nodes &, cons
 
     if (const auto * window = typeid_cast<const WindowStep *>(node.step.get()); window && window->usesHashPartitioning())
     {
+        if (window->hasSortSizeLimits())
+            return;
         auto * reading = findReadingStep(*node.children.front());
         if (!reading)
             return;

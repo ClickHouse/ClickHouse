@@ -948,6 +948,8 @@ Below version `8` the announcement is fire-and-forget regardless of mode, and th
 
 Before version `10`, fields 2 and 3 are absent. An initiator with either non-default execution limit must not send that older layout: it ships the original SQL query instead, so the older receiver reconstructs the limits from the query settings.
 
+Version `21` adds version 1 of the `Window` step, which carries whether the window is computed by hashing the partition keys (`query_plan_window_functions_hash_partitioning`) and the settings for spilling its rows. A plan with such a window is not serialized for a receiver below version `21`.
+
 ## Configuration {#configuration}
 
 This section covers the tunables that shape native protocol connections:

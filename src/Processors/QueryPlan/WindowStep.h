@@ -74,6 +74,12 @@ public:
 
     bool usesHashPartitioning() const { return hash_partitioning_settings.has_value(); }
 
+    /// `max_rows_to_sort` / `max_bytes_to_sort` are checked per stream, so the streams must not be regrouped.
+    bool hasSortSizeLimits() const
+    {
+        return hash_partitioning_settings && (hash_partitioning_settings->size_limits.max_rows || hash_partitioning_settings->size_limits.max_bytes);
+    }
+
     Names getPartitionByColumnNames() const;
 
     /// The input streams already carry whole partitions.

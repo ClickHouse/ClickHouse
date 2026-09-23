@@ -478,8 +478,8 @@ void WindowStep::serialize(Serialization & ctx) const
 
     if (hash_partitioning_settings && ctx.step_version < 1)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan: serializing a hash-partitioned WindowStep requires query plan serialization "
-            "version >= {}; all nodes must run the same version", DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_HASH_PARTITIONING);
+            "Serializing a hash-partitioned WindowStep requires query plan serialization version >= {}",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_HASH_PARTITIONING);
 
     UInt8 flags = 0;
     if (streams_fan_out)

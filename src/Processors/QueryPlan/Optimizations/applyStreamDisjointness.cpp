@@ -226,7 +226,8 @@ static StreamDisjointnessProperty applyStreamDisjointness(
 
             const bool profitable = !property.reading || settings.force_window_partitions_independently
                 || property.reading->isPartitionIndependentProcessingProfitable(ReadFromMergeTree::ProcessorKind::Window);
-            if (settings.window_partitions_independently && profitable && partitionDeterminedByKeys(property, partition_by_names))
+            if (settings.window_partitions_independently && profitable && !window->hasSortSizeLimits()
+                && partitionDeterminedByKeys(property, partition_by_names))
             {
                 window->skipScatterByPartition();
             }
