@@ -56,6 +56,7 @@ namespace S3RequestSetting
     extern const S3RequestSettingsUInt64 min_upload_part_size;
     extern const S3RequestSettingsString storage_class_name;
     extern const S3RequestSettingsUInt64 strict_upload_part_size;
+    extern const S3RequestSettingsString upload_checksum_algorithm;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_factor;
     extern const S3RequestSettingsUInt64 upload_part_size_multiply_parts_count_threshold;
 }
@@ -66,9 +67,6 @@ namespace ErrorCodes
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int LOGICAL_ERROR;
 }
-
-/// Custom object metadata key carrying the write token, see WriteBufferFromS3::write_token.
-static constexpr auto WRITE_TOKEN_METADATA_KEY = "clickhouse-write-token";
 
 struct WriteBufferFromS3::PartData
 {
@@ -119,7 +117,7 @@ WriteBufferFromS3::WriteBufferFromS3(
     , write_settings(write_settings_)
     , client_ptr(std::move(client_ptr_))
     , object_metadata(std::move(object_metadata_))
-    , write_token(write_settings.object_storage_write_if_none_match.empty() ? "" : getRandomASCIIString(32))
+    , idempotency_id(getRandomASCIIString(S3::IDEMPOTENCY_ID_LENGTH))
     , buffer_allocation_policy(createBufferAllocationPolicy(request_settings))
     , task_tracker(
           std::make_unique<TaskTracker>(
@@ -294,7 +292,7 @@ WriteBufferFromS3::~WriteBufferFromS3()
         {
             LOG_INFO(
                 log,
-                "WriteBufferFromS3 was canceled."
+                "WriteBufferFromS3 was canceled. "
                 "The file might not be written to S3. "
                 "{}.",
                 getVerboseLogDetails());
@@ -420,14 +418,15 @@ void WriteBufferFromS3::createMultipartUpload()
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Metadata set here lands on the completed object, so a HEAD after completion sees the token.
-    if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+    req.SetMetadata(metadataWithIdempotencyId());
 
     /// The storage class of a multipart-uploaded object is determined by the CreateMultipartUpload
     /// request; it cannot be set on UploadPart or CompleteMultipartUpload. See issue #68551.
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+
+    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+        req.setUploadChecksumAlgorithm(*checksum_algorithm);
 
     client_ptr->setKMSHeaders(req);
 
@@ -504,6 +503,19 @@ void WriteBufferFromS3::abortMultipartUpload()
     LOG_INFO(log, "Multipart upload has been aborted successfully. {}", getVerboseLogDetails());
 }
 
+std::optional<S3::RequestChecksum::Algorithm> WriteBufferFromS3::getUploadChecksumAlgorithm() const
+{
+    /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`):
+    /// with `HMAC`/`SigV4` they are folded into the signed canonical request and `GCS` rejects the request with
+    /// `SignatureDoesNotMatch`. Fall back to the SDK's `Content-MD5` path, which `GCS` accepts (and which is silently
+    /// dropped under FIPS, leaving the upload with no checksum header - the safe pre-flexible-checksum behavior).
+    /// `GCS` is never an `S3Express` bucket, so this check can short-circuit before the `S3Express` handling.
+    if (client_ptr->isClientForGCS())
+        return std::nullopt;
+
+    return S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket());
+}
+
 S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, PartData & data)
 {
     ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, data.data_size);
@@ -520,11 +532,13 @@ S3::UploadPartRequest WriteBufferFromS3::getUploadRequest(size_t part_number, Pa
     /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
     req.SetContentType("binary/octet-stream");
 
-    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate then manually and store in multipart_checksums
-    if (client_ptr->isS3ExpressBucket())
+    /// Checksums need to be provided on CompleteMultipartUpload requests, so we calculate them manually and store in multipart_checksums.
+    const auto checksum_algorithm = getUploadChecksumAlgorithm();
+    if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
     {
-        auto checksum = S3::RequestChecksum::calculateChecksum(req);
-        S3::RequestChecksum::setRequestChecksum(req, checksum);
+        req.setUploadChecksumAlgorithm(*checksum_algorithm);
+        auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(req, *checksum_algorithm);
+        S3::RequestChecksum::setChecksum(req, *checksum_algorithm, checksum);
         multipart_checksums.push_back(std::move(checksum));
     }
 
@@ -645,6 +659,7 @@ bool WriteBufferFromS3::completeMultipartUpload()
     req.SetBucket(bucket);
     req.SetKey(key);
     req.SetUploadId(multipart_upload_id);
+    req.setIdempotencyId(idempotency_id);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
@@ -653,12 +668,13 @@ bool WriteBufferFromS3::completeMultipartUpload()
         req.SetIfMatch(write_settings.object_storage_write_if_match);
 
     Aws::S3::Model::CompletedMultipartUpload multipart_upload;
+    const auto checksum_algorithm = getUploadChecksumAlgorithm();
     for (size_t i = 0; i < multipart_tags.size(); ++i)
     {
         Aws::S3::Model::CompletedPart part;
         part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-        if (!multipart_checksums.empty())
-            S3::RequestChecksum::setPartChecksum(part, multipart_checksums.at(i));
+        if (checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+            S3::RequestChecksum::setChecksum(part, *checksum_algorithm, multipart_checksums.at(i));
         multipart_upload.AddParts(part);
     }
 
@@ -694,18 +710,6 @@ bool WriteBufferFromS3::completeMultipartUpload()
 
         const auto & error = outcome.GetError();
 
-        /// A 412, or a NO_SUCH_UPLOAD reporting an upload id the server already consumed, on our own
-        /// object means this completion was replayed after it had succeeded. Anything we cannot prove
-        /// we wrote is a pre-existing object and must still throw.
-        const bool replayed_after_success = error.GetExceptionName() == "PreconditionFailed"
-            || error.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD;
-        if (replayed_after_success && isObjectWrittenByThisBuffer())
-        {
-            LOG_INFO(log, "Multipart upload has completed by an earlier attempt of this write ({}). {}, Parts: {}",
-                     error.GetExceptionName(), getShortLogDetails(), multipart_tags.size());
-            return true;
-        }
-
         if (isTransientCompleteMultipartUploadError(error))
         {
             last_error_type = error.GetErrorType();
@@ -738,10 +742,13 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     req.SetKey(key);
     req.SetContentLength(data.data_size);
     req.SetBody(data.createAwsBuffer());
-    if (auto metadata = metadataWithWriteToken())
-        req.SetMetadata(*metadata);
+    req.SetMetadata(metadataWithIdempotencyId());
+    req.setIdempotencyId(idempotency_id);
     if (!request_settings[S3RequestSetting::storage_class_name].value.empty())
         req.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(request_settings[S3RequestSetting::storage_class_name]));
+
+    if (auto checksum_algorithm = getUploadChecksumAlgorithm(); checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*checksum_algorithm))
+        req.setUploadChecksumAlgorithm(*checksum_algorithm);
 
     if (!write_settings.object_storage_write_if_none_match.empty())
         req.SetIfNoneMatch(write_settings.object_storage_write_if_none_match);
@@ -757,33 +764,11 @@ S3::PutObjectRequest WriteBufferFromS3::getPutRequest(PartData & data)
     return req;
 }
 
-std::optional<ObjectAttributes> WriteBufferFromS3::metadataWithWriteToken() const
+ObjectAttributes WriteBufferFromS3::metadataWithIdempotencyId() const
 {
-    if (write_token.empty())
-        return object_metadata;
-
     auto metadata = object_metadata.value_or(ObjectAttributes{});
-    metadata[WRITE_TOKEN_METADATA_KEY] = write_token;
+    metadata[S3::IDEMPOTENCY_ID_METADATA_KEY] = idempotency_id;
     return metadata;
-}
-
-bool WriteBufferFromS3::isObjectWrittenByThisBuffer() const
-{
-    if (write_token.empty())
-        return false;
-
-    try
-    {
-        auto info = S3::getObjectInfoIfExists(*client_ptr, bucket, key, /* version_id = */ {}, /* with_metadata = */ true);
-        auto it = info.metadata.find(WRITE_TOKEN_METADATA_KEY);
-        return it != info.metadata.end() && it->second == write_token;
-    }
-    catch (...)
-    {
-        /// Report the original write error rather than a confusing read error.
-        tryLogCurrentException(log, "Failed to verify the write token of " + key);
-        return false;
-    }
 }
 
 void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data)
@@ -837,21 +822,10 @@ void WriteBufferFromS3::makeSinglepartUpload(WriteBufferFromS3::PartData && data
             else
             {
                 /// PreconditionFailed is an expected response for conditional writes (e.g. If-None-Match: *),
-                /// not a genuine error — the caller handles it.
+                /// not a genuine error — the caller handles it. A replay of our own write never reaches here.
                 if (outcome.GetError().GetExceptionName() == "PreconditionFailed")
-                {
-                    /// A 412 on our own object means this PUT was replayed after it had succeeded.
-                    /// Anything we cannot prove we wrote is a pre-existing object and must still throw.
-                    if (isObjectWrittenByThisBuffer())
-                    {
-                        LOG_INFO(log, "Single part upload has completed by an earlier attempt of this write. {}, size {}",
-                                 getShortLogDetails(), content_length);
-                        return;
-                    }
-
                     LOG_INFO(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);
-                }
                 else
                     LOG_ERROR(log, "S3Exception name {}, Message: {}, bucket {}, key {}, object size {}",
                               outcome.GetError().GetExceptionName(), outcome.GetError().GetMessage(), bucket, key, content_length);

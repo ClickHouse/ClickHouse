@@ -294,6 +294,23 @@ add_contrib (silk-cmake silk)
 
 add_contrib (sz3-cmake sz3)
 
+# cuDF and friends. Guarded by ENABLE_GPU inside each -cmake file, and listed in
+# dependency order: cccl before cuCollections, spdlog before rapids-logger before rmm.
+add_contrib (cccl-cmake cccl)
+add_contrib (cuCollections-cmake cuCollections)
+add_contrib (bs-thread-pool-cmake bs-thread-pool)
+add_contrib (dlpack-cmake dlpack)
+add_contrib (nvtx-cmake nvtx)
+add_contrib (spdlog-cmake spdlog)
+add_contrib (rapids-logger-cmake rapids-logger)
+add_contrib (rmm-cmake rmm)
+add_contrib (nanoarrow-cmake nanoarrow)
+add_contrib (kvikio-cmake kvikio)
+add_contrib (librtcx-cmake librtcx)
+# No base folder: nvcomp is not vendored, see contrib/nvcomp-cmake/CMakeLists.txt.
+add_contrib (nvcomp-cmake)
+add_contrib (cudf-cmake cudf) # requires: everything above, plus flatbuffers, xxHash, zlib, zstd
+
 # Put all targets defined here and in subdirectories under "contrib/<immediate-subdir>" folders in GUI-based IDEs.
 # Some of third-party projects may override CMAKE_FOLDER or FOLDER property of their targets, so they would not appear
 # in "contrib/..." as originally planned, so we workaround this by fixing FOLDER properties of all targets manually,
