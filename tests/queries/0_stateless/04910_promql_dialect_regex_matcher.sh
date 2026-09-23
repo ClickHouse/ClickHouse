@@ -11,7 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # is parsed by the PromQL grammar, so a matcher must not be rejected as an unrecognized token.
 $CLICKHOUSE_CLIENT --allow_experimental_time_series_table 1 -m -q "
 CREATE TABLE ts ENGINE = TimeSeries;
-INSERT INTO ts (metric_name, tags, time_series) VALUES
+INSERT INTO ts (metric_name, tags, samples) VALUES
     ('up', map('instance', 'host1'), [(toDateTime64(1700000000, 3), 30)]),
     ('up', map('instance', 'host2'), [(toDateTime64(1700000000, 3), 10)]),
     ('up', map('instance', 'host3'), [(toDateTime64(1700000000, 3), 20)]),
