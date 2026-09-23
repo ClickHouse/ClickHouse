@@ -10,24 +10,8 @@ TABLE=t_ttl_drop_not_vertical
 
 function wait_for_ttl_drop_merge()
 {
-    for _ in $(seq 1 300); do
-        local part_count
-        part_count=$(${CLICKHOUSE_CLIENT} -q "
-            SELECT count()
-            FROM system.parts
-            WHERE database = currentDatabase()
-                AND table = '${TABLE}'
-                AND active")
-
-        if [ "${part_count}" -le "1" ]; then
-            break
-        fi
-        sleep 0.1
-    done
-
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
-
-    for _ in $(seq 1 60); do
+    for _ in $(seq 1 600); do
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
         local merge_count
         merge_count=$(${CLICKHOUSE_CLIENT} -q "
             SELECT count()
@@ -41,8 +25,10 @@ function wait_for_ttl_drop_merge()
             return
         fi
         sleep 0.1
-        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS part_log"
     done
+
+    echo "Timed out waiting for a TTLDropMerge of ${TABLE}" >&2
+    exit 1
 }
 
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS ${TABLE}"
