@@ -48,17 +48,8 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 };
 
 /// A type pack cannot bind the non-type `BITS_FOR_BUCKET`, so the parameters are spelled out.
-template <
-    typename Key,
-    typename Cell,
-    typename Hash,
-    typename Grower,
-    typename Allocator,
-    typename ImplTable,
-    size_t BITS_FOR_BUCKET,
-    typename BucketHash>
-struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET, BucketHash>>
-    : std::true_type
+template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, typename ImplTable, size_t BITS_FOR_BUCKET>
+struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>> : std::true_type
 {
 };
 
