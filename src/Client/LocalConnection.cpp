@@ -238,7 +238,7 @@ void LocalConnection::sendQuery(
     /// but don't attempt to do it if we are already in that database.
     /// (there is a rare case when it matters - if we deleted the current database,
     // we can still do some queries, but we cannot switch to the same database)
-    if (!current_database.empty() && current_database != query_context->getCurrentDatabase())
+    if (!current_database.empty() && current_database != query_context->getCurrentDatabase().getFullName())
         query_context->setCurrentDatabase(current_database);
 
     /// Keep the `database` setting consistent with the connection's current database. The setting is

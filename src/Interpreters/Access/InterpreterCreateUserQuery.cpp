@@ -397,7 +397,7 @@ BlockIO InterpreterCreateUserQuery::execute()
         /// the AST children), and the current database of a DDL worker is not the initiator's, so otherwise each
         /// node would rebind bare-table grants to a different database.
         for (auto & authentication_method_ast : cluster_query.authentication_methods)
-            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+            authentication_method_ast->grants.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());
 
         auto rewrite_deadline = [](IAST & owner, ASTPtr & valid_until, bool & is_interval, time_t deadline)
         {

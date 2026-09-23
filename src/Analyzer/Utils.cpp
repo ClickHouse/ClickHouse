@@ -1277,7 +1277,7 @@ TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const Table
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context)
 {
-    String database_name = context->getCurrentDatabase();
+    String database_name = context->getCurrentDatabase().getFullName();
     String table_name;
 
     Identifier table_identifier{table_function_name};

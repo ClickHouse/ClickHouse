@@ -48,7 +48,7 @@ BlockIO InterpreterRenameQuery::execute()
     if (!skip_access_check)
         getContext()->checkAccess(getRequiredAccess(rename.database ? RenameType::RenameDatabase : RenameType::RenameTable));
 
-    String current_database = getContext()->getCurrentDatabase();
+    String current_database = getContext()->getCurrentDatabase().getFullName();
 
     /** In case of error while renaming, it is possible that only part of tables was renamed
       *  or we will be in inconsistent state. (It is worth to be fixed.)
@@ -291,12 +291,12 @@ void InterpreterRenameQuery::extendQueryLogElemImpl(QueryLogElement & elem, cons
     for (const auto & element : rename.getElements())
     {
         {
-            String database = backQuoteIfNeed(!element.from.database ? getContext()->getCurrentDatabase() : element.from.getDatabase());
+            String database = backQuoteIfNeed(!element.from.database ? getContext()->getCurrentDatabase().getFullName() : element.from.getDatabase());
             elem.query_databases.insert(database);
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.from.getTable()));
         }
         {
-            String database = backQuoteIfNeed(!element.to.database ? getContext()->getCurrentDatabase() : element.to.getDatabase());
+            String database = backQuoteIfNeed(!element.to.database ? getContext()->getCurrentDatabase().getFullName() : element.to.getDatabase());
             elem.query_databases.insert(database);
             elem.query_tables.insert(database + "." + backQuoteIfNeed(element.to.getTable()));
         }

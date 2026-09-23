@@ -82,7 +82,7 @@ BlockIO InterpreterOptimizeQuery::execute()
         {
             // Expand asterisk, column transformers, etc into list of column names.
             const auto cols
-                = processColumnTransformers(getContext()->getCurrentDatabase(), table, metadata_snapshot, ast.deduplicate_by_columns);
+                = processColumnTransformers(getContext()->getCurrentDatabase().getFullName(), table, metadata_snapshot, ast.deduplicate_by_columns);
             for (const auto & col : cols->children)
                 column_names.emplace_back(col->getColumnName());
         }

@@ -317,7 +317,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
     StorageID storage_id = table_id_node->getTableId();
     if (storage_id.database_name.empty())
     {
-        storage_id.database_name = context->getCurrentDatabase();
+        storage_id.database_name = context->getCurrentDatabase().getFullName();
     }
 
     return DatabaseCatalog::instance().tryGetTable(storage_id, context);
