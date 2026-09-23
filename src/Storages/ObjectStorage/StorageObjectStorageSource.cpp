@@ -31,6 +31,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Formats/Impl/ParquetMetadataCache.h>
@@ -973,6 +974,11 @@ Chunk StorageObjectStorageSource::generate()
 
                                     const auto column_pos = read_from_format_info.source_header.getPositionByName(name_and_type.name);
                                     auto partition_column = name_and_type.type->createColumnConst(chunk.getNumRows(), value)->convertToFullColumnIfConst();
+                                    /// The `_delta_log` type differs from the declared one when the columns were
+                                    /// specified rather than inferred, and the block follows the declared schema.
+                                    const auto & declared_type = read_from_format_info.source_header.getByPosition(column_pos).type;
+                                    if (!name_and_type.type->equals(*declared_type))
+                                        partition_column = castColumn({partition_column, name_and_type.type, name_and_type.name}, declared_type);
                                     /// This column is filled with default value now, remove it.
                                     chunk.erase(column_pos);
                                     /// Add correct values.
