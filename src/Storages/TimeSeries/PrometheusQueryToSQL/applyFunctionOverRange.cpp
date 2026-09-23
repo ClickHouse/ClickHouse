@@ -104,6 +104,7 @@ namespace
              {
                  "timeSeriesFirstToGrid",
                  /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"mad_over_time",
