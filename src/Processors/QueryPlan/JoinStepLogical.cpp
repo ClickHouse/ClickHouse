@@ -1,5 +1,4 @@
 #include <Columns/ColumnConst.h>
-#include <Core/ProtocolDefines.h>
 #include <DataTypes/IDataType.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
@@ -2529,7 +2528,7 @@ void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & setting
     if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION)
         sorting_settings.checkMaxStreamsPerHierarchicalMerge();
 
-    join_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, version, join_operator);
     sorting_settings.updatePlanSettings(settings, version);
 }
 
@@ -2625,7 +2624,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
     auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
