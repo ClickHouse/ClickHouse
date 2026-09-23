@@ -26,7 +26,9 @@ SELECT
     map('k1', toString(number % 5)) AS Attributes
 FROM numbers(0, 100000);
 
-SET max_threads = 4, optimize_read_in_order = 1, enable_parallel_replicas = 0;
+-- `max_rows_to_group_by` and `extremes` are pinned because the test runner may randomize them and
+-- `make_distributed_plan` refuses to distribute such a query (the no-fallback case below then throws).
+SET max_threads = 4, optimize_read_in_order = 1, enable_parallel_replicas = 0, max_rows_to_group_by = 0, extremes = 0;
 
 -- Control: the query is eligible for the rewrite on a plain single-node plan.
 SELECT countIf(explain LIKE '%StreamingLag%')
