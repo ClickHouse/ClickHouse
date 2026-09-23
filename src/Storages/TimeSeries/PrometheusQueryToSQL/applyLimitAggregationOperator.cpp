@@ -205,11 +205,14 @@ namespace
                 makeASTFunction("timeSeriesGroupToSamplingKey", make_intrusive<ASTIdentifier>(ColumnNames::Group))),
             make_intrusive<ASTLiteral>(18446744073709551616.0)); /// 2^64
 
-        return makeASTFunction("if",
-            makeASTFunction("greaterOrEquals", r->clone(), make_intrusive<ASTLiteral>(0.0)),
-            makeASTFunction("less", offset->clone(), r->clone()),
-            makeASTFunction("greaterOrEquals", std::move(offset),
-                makeASTFunction("plus", make_intrusive<ASTLiteral>(1.0), std::move(r))));
+        /// Build the branches in separate statements: the order of evaluation of function arguments is unspecified,
+        /// so `r` and `offset` must not be cloned and moved within the same call.
+        auto r_is_non_negative = makeASTFunction("greaterOrEquals", r->clone(), make_intrusive<ASTLiteral>(0.0));
+        auto keep_if_non_negative = makeASTFunction("less", offset->clone(), r->clone());
+        auto keep_if_negative = makeASTFunction("greaterOrEquals", std::move(offset),
+            makeASTFunction("plus", make_intrusive<ASTLiteral>(1.0), std::move(r)));
+
+        return makeASTFunction("if", std::move(r_is_non_negative), std::move(keep_if_non_negative), std::move(keep_if_negative));
     }
 
     struct ImplInfo
