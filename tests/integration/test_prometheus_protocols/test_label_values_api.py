@@ -87,6 +87,11 @@ def setup():
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
         )
+        # A row written directly into the inner tags table: the metric name is only in the tags Map.
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_no_bounds) (metric_name, tags) VALUES "
+            "('', {'__name__': 'bar', 'x': '1'})"
+        )
         send_test_data()
         assert_eq_with_retry(node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1")
         yield cluster
@@ -111,6 +116,15 @@ def test_label_values_tag_stored_in_dedicated_column():
         "server1",
         "server2",
     ]
+
+
+def test_label_values_tag_stored_only_in_tags_map():
+    # The `metric_name` column of the row written directly into the inner tags table is empty,
+    # so the endpoint reads its metric name from the `__name__` tag in the Map.
+    data = get_json_from_api(
+        "/no_bounds/api/v1/label/__name__/values", params={"match[]": '{x="1"}'}
+    )["data"]
+    assert data == ["bar"]
 
 
 def test_label_values_unknown_label_returns_empty():

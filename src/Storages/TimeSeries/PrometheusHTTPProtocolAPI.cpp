@@ -197,17 +197,26 @@ ASTPtr makeLabelNamesPerRowExpression(const std::unordered_map<String, String> &
 
 ASTPtr makeLabelValuePerRowExpression(const String & label_name, const std::unordered_map<String, String> & column_name_by_tag_name)
 {
-    if (label_name == TimeSeriesTagNames::MetricName)
-        return make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName);
-
-    auto it = column_name_by_tag_name.find(label_name);
-    if (it != column_name_by_tag_name.end())
-        return make_intrusive<ASTIdentifier>(it->second);
-
-    return makeASTFunction(
+    auto value_from_tags = makeASTFunction(
         "arrayElement",
         make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
         make_intrusive<ASTLiteral>(label_name));
+
+    String column_name;
+    if (label_name == TimeSeriesTagNames::MetricName)
+        column_name = TimeSeriesColumnNames::MetricName;
+    else if (auto it = column_name_by_tag_name.find(label_name); it != column_name_by_tag_name.end())
+        column_name = it->second;
+    else
+        return value_from_tags;
+
+    /// A dedicated column which is empty (or NULL, as such a column is allowed to be Nullable) means the tag
+    /// is absent from that column, not that it has no value: a row written directly into the tags table can
+    /// keep the value in the `tags` Map only, e.g. the metric name under the `__name__` tag.
+    return makeASTFunction(
+        "coalesce",
+        makeASTFunction("nullIf", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(String{})),
+        std::move(value_from_tags));
 }
 
 /// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
@@ -988,7 +997,7 @@ void PrometheusHTTPProtocolAPI::getLabelValues(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid label name {}", quoteString(label_name_param));
 
     /// SELECT arraySort(arrayFilter(x -> x != '', groupUniqArray(label))) AS labels FROM (
-    ///     SELECT metric_name | <tag column> | tags[label] AS label FROM <tags> WHERE ...
+    ///     SELECT coalesce(nullIf(metric_name | <tag column>, ''), tags[label]) | tags[label] AS label FROM <tags> WHERE ...
     /// )
     /// An empty value means an absent label in Prometheus, so it's never returned.
     auto value_expression = makeLabelValuePerRowExpression(
