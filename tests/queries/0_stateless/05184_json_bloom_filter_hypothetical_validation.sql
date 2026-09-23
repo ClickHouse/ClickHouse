@@ -3,6 +3,7 @@ CREATE TABLE json_bf_hypothetical (j JSON(key String)) ENGINE = MergeTree ORDER 
 
 CREATE HYPOTHETICAL INDEX hi ON json_bf_hypothetical (j.key) TYPE jsonbf_v1 GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
 CREATE HYPOTHETICAL INDEX hi ON json_bf_hypothetical (materialize(j)) TYPE jsonbf_v1 GRANULARITY 1; -- { serverError BAD_ARGUMENTS }
+SET allow_experimental_json_bloom_filter_index = 0;
 CREATE HYPOTHETICAL INDEX hi ON json_bf_hypothetical (j) TYPE jsonbf_v1 GRANULARITY 1; -- { serverError SUPPORT_IS_DISABLED }
 SET allow_experimental_json_bloom_filter_index = 1;
 CREATE HYPOTHETICAL INDEX hi ON json_bf_hypothetical (j) TYPE jsonbf_v1 GRANULARITY 1;
