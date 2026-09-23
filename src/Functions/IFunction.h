@@ -58,6 +58,9 @@ public:
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
 
+    /// Returns indexes of arguments that must be `ColumnConst`.
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
 protected:
     friend struct ::FunctionsStressTestThread;
 
@@ -111,22 +114,22 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
       *
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * *Not* useful when executing on Nullable columns. The value behind a NULL is
-      * not necessarily default. E.g.:
+      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
+      * behind a NULL untouched, so a function that declines this contract is not executed on them
+      * either - they are filtered out first, and their result is masked out as NULL anyway. This
+      * means the nested value under a NULL is not observable for such a function, e.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
+      * still holds for `plus` (which accepts the contract), while a declining function such as
+      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
