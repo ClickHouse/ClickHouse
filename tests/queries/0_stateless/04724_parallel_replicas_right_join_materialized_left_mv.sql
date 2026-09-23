@@ -1,3 +1,9 @@
+-- The assertions below require one `EXPLAIN` line to carry both the reading step and the text
+-- `RIGHT JOIN`, i.e. the shipped SQL query, so they describe the query-based implementation only.
+-- Plan-based ships a serialized plan fragment and distributes the same joins; see
+-- `05240_pr_plan_based_right_join_materialized_left`.
+SET parallel_replicas_plan_based = 0;
+
 DROP TABLE IF EXISTS t_replicated_right;
 DROP TABLE IF EXISTS mv_left;
 
