@@ -1173,6 +1173,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
         try
         {
+            /// This copy becomes `ChildPlan::context`, and the later optimization-settings snapshots are taken
+            /// from it. Every setting written here is listed in the comment of `ChildPlan::context`; keep it so.
             auto modified_context = Context::createCopy(context);
             /// See `getChildPlanOptimizationSettings`: a child plan must never use parallel
             /// replicas. The setting is cleared in the context as well, because the
@@ -1888,7 +1890,8 @@ ReadFromMerge::ChildPlan ReadFromMerge::createPlanForTable(
     }
     else
     {
-        /// Maximum permissible parallelism is streams_num
+        /// Maximum permissible parallelism is streams_num. Both settings are listed in the comment of
+        /// `ChildPlan::context`, which this context becomes.
         modified_context->setSetting("max_threads", streams_num);
         modified_context->setSetting("max_streams_to_max_threads_ratio", 1);
 
