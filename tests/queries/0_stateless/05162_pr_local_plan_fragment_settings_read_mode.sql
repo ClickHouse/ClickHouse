@@ -37,19 +37,42 @@ SET optimize_read_in_order = 1;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
 
-SELECT 'without the setting that allows the ast rewrite, the read is not ordered';
--- The fragment carries the `0`, so this is also the case that says the answer is read from there.
+SELECT 'the fragment carries the setting, so the answer is read from there, not from the outer query';
+-- The session says the rewrite may run; the subquery that travels says it may not, and the subquery is
+-- what the rewrite answers to. Read the outer `1` instead and the initiator fixes `tenant` while the
+-- replicas never see the condition.
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM (
+        SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts
+        SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 0
+    ) WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (
+    SELECT tenant, ts FROM (
+        SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts
+        SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 0
+    ) WHERE tenant = 5 ORDER BY ts LIMIT 95, 5
+);
+
+SELECT 'and the other way round: the session says no, the fragment says yes, and the read is ordered';
 SET allow_push_predicate_ast_for_distributed_subqueries = 0;
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (
     EXPLAIN description = 0, actions = 1
-    SELECT tenant, ts FROM (SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts)
-    WHERE tenant = 5 LIMIT 5
+    SELECT tenant, ts FROM (
+        SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts
+        SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 1
+    ) WHERE tenant = 5 LIMIT 5
 )
 WHERE explain LIKE '%Read type%';
 SELECT count() FROM (
-    SELECT tenant, ts FROM (SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts)
-    WHERE tenant = 5 ORDER BY ts LIMIT 95, 5
+    SELECT tenant, ts FROM (
+        SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts
+        SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 1
+    ) WHERE tenant = 5 ORDER BY ts LIMIT 95, 5
 );
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 

@@ -1,5 +1,8 @@
-without the setting that allows the ast rewrite, the read is not ordered
+the fragment carries the setting, so the answer is read from there, not from the outer query
 Read type: Default
+5
+and the other way round: the session says no, the fragment says yes, and the read is ordered
+Read type: InOrder
 5
 and the replicas must be running that AST rather than a shipped plan
 Read type: Default
