@@ -414,6 +414,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Takes no name. Listed explicitly rather than left to the `default` below,
+            /// which would accept `ON CLUSTER` - fail points are node-local state, and none
+            /// of the other `SYSTEM ... FAILPOINT` statements accept it either.
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
@@ -2064,6 +2071,26 @@ Blocks until the given file has been processed or permanently failed by the give
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
+
+## SYSTEM ENABLE|DISABLE FAILPOINT {#failpoint}
+
+Fail points are named places in the server code where a fault can be injected on demand - an error, a delay, or a pause of the executing thread - for testing. They are listed in the [`system.fail_points`](/reference/system-tables/fail_points) table together with their current state.
+
+```sql
+SYSTEM ENABLE FAILPOINT name
+SYSTEM DISABLE FAILPOINT name
+SYSTEM DISABLE ALL FAILPOINTS
+SYSTEM WAIT FAILPOINT name [PAUSE|RESUME]
+SYSTEM NOTIFY FAILPOINT name
+```
+
+`SYSTEM ENABLE FAILPOINT` arms a single fail point; `SYSTEM DISABLE FAILPOINT` disarms it and resumes any thread blocked on it, and is a no-op if it was not enabled.
+
+`SYSTEM DISABLE ALL FAILPOINTS` disables every fail point at once and resumes every thread blocked on a pauseable one. It takes no name and is idempotent, so a test harness can use it to return the server to a state that injects nothing without knowing which fail points the previous test enabled. On a build without fail point support the statement succeeds and does nothing.
+
+`SYSTEM WAIT FAILPOINT ... PAUSE` blocks until a thread pauses on the given pauseable fail point (or the fail point is disabled), `... RESUME` blocks until the paused thread is resumed, and `SYSTEM NOTIFY FAILPOINT` resumes the paused threads without disabling the fail point.
+
+Fail points are node-local state, so none of these statements accept `ON CLUSTER`. All of them require the `SYSTEM FAILPOINT` privilege.
 )DOCS_MD",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
@@ -2083,6 +2110,9 @@ SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
+SYSTEM ENABLE | DISABLE FAILPOINT name
+SYSTEM DISABLE ALL FAILPOINTS
+SYSTEM WAIT FAILPOINT name [PAUSE|RESUME] | NOTIFY FAILPOINT name
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
     });

@@ -223,6 +223,8 @@ struct SelectQueryInfo
 
     // If not 0, that means it's a trivial limit query.
     UInt64 trivial_limit = 0;
+    /// A trivial limit query whose rows `arrayJoin` expands: the source must not stop at the limit, but should read small.
+    bool small_limit_above_array_join = false;
 
     /// For IStorageSystemOneBlock
     std::vector<UInt8> columns_mask;
