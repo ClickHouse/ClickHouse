@@ -1941,6 +1941,7 @@ def test_kafka_producer_consumer_separate_settings(
 def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_{suffix}"
+    username = f"kafka_user_{suffix}"
     password = f"secret_kafka_password_{suffix}"
 
     instance.rotate_logs()
@@ -1950,7 +1951,10 @@ def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
             "key UInt64",
             topic_list="password_not_logged",
             consumer_group="test",
-            settings={"kafka_sasl_password": password},
+            settings={
+                "kafka_sasl_username": username,
+                "kafka_sasl_password": password,
+            },
         )
     )
 
@@ -1963,13 +1967,16 @@ def test_kafka_password_not_logged(kafka_cluster, create_query_generator):
     assert instance.contains_in_log(f"{kafka_table}.*Kafka producer created")
 
     # The property-logging loops ran for both the consumer and the producer,
-    # but they hid the password value
-    assert instance.contains_in_log(
-        f"{kafka_table}.*Consumer set property sasl.password:\\[HIDDEN\\]"
-    )
-    assert instance.contains_in_log(
-        f"{kafka_table}.*Producer set property sasl.password:\\[HIDDEN\\]"
-    )
+    # but they hid the values of the sensitive properties. `sasl.username` is
+    # hidden because librdkafka marks it with the _RK_SENSITIVE flag, not
+    # because of the name, so it validates the generated blacklist.
+    for client_type in ["Consumer", "Producer"]:
+        for property_name in ["sasl.username", "sasl.password"]:
+            assert instance.contains_in_log(
+                f"{kafka_table}.*{client_type} set property {property_name}:\\[HIDDEN\\]"
+            )
+    # The username still appears in the logged CREATE TABLE text (only
+    # kafka_sasl_password is masked there), so check only the password value.
     assert not instance.contains_in_log(password)
 
     instance.query(f"DROP TABLE test.{kafka_table}")
