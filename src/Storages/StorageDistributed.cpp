@@ -390,7 +390,7 @@ bool isTableExpressionOnOuterJoinNullSide(const QueryTreeNodePtr & node, const Q
 
     /// A cross/comma join never pads its own operands, but it does not shield them from padding by an
     /// enclosing outer join: `t CROSS JOIN u RIGHT JOIN v` builds JoinNode(RIGHT){CrossJoinNode[t, u], v},
-    /// so `t` and `u` are on the padded left side. Propagate the ancestor's padded state to every child.
+    /// so `t` and `u` are on the padded left side.
     if (const auto * cross_join_node = node->as<CrossJoinNode>())
     {
         for (const auto & table_expression : cross_join_node->getTableExpressions())
