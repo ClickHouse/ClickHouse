@@ -65,7 +65,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool mongodb_throw_on_unsupported_query;
 }
 
@@ -537,13 +536,6 @@ bsoncxx::document::value StorageMongoDB::buildMongoDBQuery(const ContextPtr & co
     options.projection(projection.extract());
 
     bool throw_on_error = context->getSettingsRef()[Setting::mongodb_throw_on_unsupported_query];
-
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        if (throw_on_error)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "MongoDB storage does not support 'enable_analyzer = 0' setting");
-        return make_document();
-    }
 
     const auto & query_tree = query.query_tree->as<QueryNode &>();
 
