@@ -557,11 +557,11 @@ private:
             function->resolveAsWindowFunction(AggregateFunctionFactory::instance().get(
                 name, nulls_action, argument_types, parameter_values, properties, AggregateFunctionStateVariant::Window));
 
-            String name;
+            String column_name;
             do
-                name = fmt::format("__correlated_aggregate_{}", next_window_column++);
-            while (column_by_name.contains(name));
-            NameAndTypePair column{name, function->getResultType()};
+                column_name = fmt::format("__correlated_aggregate_{}", next_window_column++);
+            while (column_by_name.contains(column_name));
+            NameAndTypePair column{column_name, function->getResultType()};
             derived->getProjection().getNodes().push_back(function);
             projection_columns.push_back(column);
             return column;
