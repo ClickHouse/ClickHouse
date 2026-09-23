@@ -177,7 +177,7 @@ struct StorageInMemoryMetadata
     bool hasOnlyRowsTTL() const;
 
     /// Common tables TTLs (for rows and moves).
-    TTLTableDescription getTableTTLs() const;
+    const TTLTableDescription & getTableTTLs() const;
     bool hasAnyTableTTL() const;
 
     /// Separate TTLs for columns.
@@ -185,23 +185,23 @@ struct StorageInMemoryMetadata
     bool hasAnyColumnTTL() const;
 
     /// Just wrapper for table TTLs, return rows part of table TTLs.
-    TTLDescription getRowsTTL() const;
+    const TTLDescription & getRowsTTL() const;
     bool hasRowsTTL() const;
 
-    TTLDescriptions getRowsWhereTTLs() const;
+    const TTLDescriptions & getRowsWhereTTLs() const;
     bool hasAnyRowsWhereTTL() const;
 
     /// Just wrapper for table TTLs, return moves (to disks or volumes) parts of
     /// table TTL.
-    TTLDescriptions getMoveTTLs() const;
+    const TTLDescriptions & getMoveTTLs() const;
     bool hasAnyMoveTTL() const;
 
     // Just wrapper for table TTLs, return info about recompression ttl
-    TTLDescriptions getRecompressionTTLs() const;
+    const TTLDescriptions & getRecompressionTTLs() const;
     bool hasAnyRecompressionTTL() const;
 
     // Just wrapper for table TTLs, return info about recompression ttl
-    TTLDescriptions getGroupByTTLs() const;
+    const TTLDescriptions & getGroupByTTLs() const;
     bool hasAnyGroupByTTL() const;
 
     using HasDependencyCallback = std::function<bool(const String &, ColumnDependency::Kind)>;
