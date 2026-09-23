@@ -130,13 +130,8 @@ PostingListCursor::~PostingListCursor()
 void PostingListCursor::prepareSegment(size_t segment_idx)
 {
     ++counters.segments_prepared;
-
     current_segment_idx = segment_idx;
-    has_prepared_first_segment = true;
-
-    if (is_embedded)
-        return;
-
+    chassert(!is_embedded);
     chassert(segment_idx < total_segments);
 
     /// Obtain the decoded segment, sharing it via the cache (keyed by index id + segment offset) when one
@@ -459,17 +454,14 @@ void PostingListCursor::advance(uint32_t target)
     }
 
     /// Try current segment first.
-    if (has_prepared_first_segment)
+    if (current_segment && target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
     {
-        if (target <= static_cast<uint32_t>(info->ranges[current_segment_idx].end))
-        {
-            if (advanceImpl(target))
-                return;
-        }
+        if (advanceImpl(target))
+            return;
     }
 
     /// Binary search across segments.
-    size_t start = has_prepared_first_segment ? current_segment_idx + 1 : 0;
+    size_t start = current_segment ? current_segment_idx + 1 : 0;
     const auto * it = std::lower_bound(
         info->ranges.begin() + start, info->ranges.end(), static_cast<size_t>(target),
         [](const RowsRange & range, size_t t) { return range.end < t; });
@@ -525,6 +517,8 @@ void PostingListCursor::next()
     }
 
     ++current_block;
+    chassert(current_segment);
+
     if (current_block < current_segment->block_count)
     {
         decodeBlock(current_block);
@@ -708,7 +702,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
         }
 
         /// Skip re-preparing the segment if it is already loaded.
-        if (i != current_segment_idx || !has_prepared_first_segment)
+        if (i != current_segment_idx || !current_segment)
             prepareSegment(i);
 
         /// Level 1: dense segment shortcut.

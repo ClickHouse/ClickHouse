@@ -161,9 +161,7 @@ private:
     std::unique_ptr<IPostingListBlockCodec> block_codec;
 
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
-
-    /// Read position within `decoded_values_ptr`.
-    size_t index = 0;
+    size_t index = 0;            /// Read position within `decoded_values_ptr`.
 
     /// Packed-block iteration state within the current segment.
     size_t current_block = 0;            /// Index of the packed block being iterated.
@@ -175,7 +173,6 @@ private:
 
     /// Segment iteration state.
     size_t current_segment_idx = 0;
-    bool has_prepared_first_segment = false;
     bool is_valid = true;
 
     /// ProfileEvents are batched into these local counters and flushed in the destructor
