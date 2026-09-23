@@ -169,6 +169,8 @@ void SetOrJoinSink::onException(std::exception_ptr)
     /// If the failure happened while `publishBackup` was replaying the promoted backup, the live
     /// state has already been restored and the promoted file removed (`publishBackup` gives the
     /// strong exception guarantee), so only the file of an earlier failure remains to clean up.
+    /// If that restore failed as well, `StorageJoin` marks its live state as lost and keeps the
+    /// promoted file, which is removed here before the state is rebuilt from the backup files.
     discardStagedBackup();
 }
 

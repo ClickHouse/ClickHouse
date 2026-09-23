@@ -137,6 +137,19 @@ private:
     /// one backup file by name. The caller decides when and under which lock the result is
     /// published.
     HashJoinPtr buildFromBackups(const String & exclude_file_name = {}) const;
+
+    /// Set under the write lock when the rollback of a failed INSERT could not restore `join`, so
+    /// that it holds some rows of that insert. Readers fail while it is set, and the next operation
+    /// under the write lock rebuilds `join` from the backup files first.
+    bool live_state_lost = false;
+    void checkLiveStateIsAvailable() const;
+    /// Must be called under the write lock.
+    void rebuildLiveStateIfLost(const String & exclude_file_name = {});
+
+    /// Where `mutate` moves the backups of the pre-mutation generation until the mutation commits.
+    static constexpr auto mutation_backups_dir = "tmp/mut_backups/";
+    /// Finishes or rolls back a rewrite of the backup files by `mutate` that was interrupted.
+    void recoverInterruptedMutation();
     RWLockImpl::LockHolder tryLockTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context) const;
     /// Same as tryLockTimedWithContext, but returns `nullptr` if lock is already acquired by current query.
     static RWLockImpl::LockHolder tryLockForCurrentQueryTimedWithContext(const RWLock & lock, RWLockImpl::Type type, ContextPtr context);

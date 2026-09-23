@@ -124,7 +124,9 @@ static struct InitFiu
     PAUSEABLE(set_or_join_sink_pause_before_replay) \
     PAUSEABLE(storage_set_pause_during_backup_replay) \
     REGULAR(storage_set_fail_during_backup_replay) \
-    ONCE(storage_join_mutate_fail_after_promoting_consolidated_backup) \
+    ONCE(storage_join_mutate_fail_after_moving_backup_aside) \
+    ONCE(storage_join_mutate_fail_removing_superseded_backups) \
+    ONCE(storage_join_publish_fail_during_rollback) \
     REGULAR(file_cache_simulate_evicting_segment) \
     REGULAR(cache_filesystem_failure) \
     REGULAR(cache_filesystem_failure_non_errno) \
