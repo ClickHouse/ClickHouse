@@ -16,7 +16,6 @@
 namespace DB::GPU
 {
 
-/// One compressed block of a column as it sits in a `MergeTree` part, within a staging buffer.
 struct CompressedBlock
 {
     size_t offset = 0;
