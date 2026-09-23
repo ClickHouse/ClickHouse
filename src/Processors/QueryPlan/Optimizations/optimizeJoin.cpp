@@ -24,8 +24,8 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/debugHelpers.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -542,8 +542,7 @@ constexpr bool isInnerOrCross(JoinKind kind)
 static bool conflictDetectorReordersSemiAnti(const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & algorithms = optimization_settings.query_plan_optimize_join_order_algorithm;
-    return (optimization_settings.query_plan_optimize_join_order_use_conflict_detector_a
-            || optimization_settings.query_plan_optimize_join_order_use_conflict_detector_c)
+    return optimization_settings.query_plan_optimize_join_order_conflict_detector != JoinOrderConflictDetector::NONE
         && algorithms.size() == 1
         && algorithms.front() == JoinOrderAlgorithm::DPSUB;
 }
