@@ -66,6 +66,10 @@ SELECT t1.key AS k, sum(t1.value) AS s FROM t_gr_push_facts AS t1 LEFT JOIN t_gr
 SYSTEM FLUSH LOGS processors_profile_log, query_log;
 
 SELECT '-- GradualResize built';
+-- The system log tables keep merging, so a distributed plan over them fails with `NO_SUCH_DATA_PART`
+-- when a part picked by the coordinator is merged away before the worker reads it. Plan locally.
+SET make_distributed_plan = 0;
+SET enable_cascades_optimizer = 0;
 SELECT
     log_comment,
     countIf(name = 'GradualResize') > 0 AS has_gradual_resize
