@@ -116,7 +116,6 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
-    extern const SettingsOverflowMode distinct_overflow_mode;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
@@ -133,11 +132,9 @@ namespace Setting
     extern const SettingsUInt64 group_by_two_level_threshold_bytes;
     extern const SettingsBool group_by_use_nulls;
     extern const SettingsBool group_by_each_block_no_merge;
-    extern const SettingsUInt64 max_bytes_in_distinct;
     extern const SettingsNonZeroUInt64 max_block_size;
     extern const SettingsUInt64 max_size_to_preallocate_for_aggregation;
     extern const SettingsUInt64 max_subquery_depth;
-    extern const SettingsUInt64 max_rows_in_distinct;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool parallel_replicas_allow_in_with_subquery;
@@ -449,7 +446,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 void extendQueryContextAndStoragesLifetime(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
 {
     query_plan.addInterpreterContext(planner_context->getQueryContext());
-
+    query_plan.addDistributedPlanDecisionContext(planner_context->getMutableQueryContext());
     for (const auto & [table_expression, _] : planner_context->getTableExpressionNodeToData())
     {
         if (auto * table_node = table_expression->as<TableNode>())
@@ -1226,6 +1223,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryOptions & select_query_options,
     const QueryNode & query_node,
     UsefulSets & useful_sets)
 {
@@ -1235,6 +1233,11 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
     auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+
+    /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
+    /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
+    for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
@@ -1364,11 +1367,9 @@ void addDistinctStep(QueryPlan & query_plan,
             limit_hint_for_distinct = limit_length + limit_offset;
     }
 
-    SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
-
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
-        limits,
+        DistinctStep::Settings(settings),
         limit_hint_for_distinct,
         column_names,
         pre_distinct);
@@ -1377,6 +1378,12 @@ void addDistinctStep(QueryPlan & query_plan,
         distinct_step->setStepDescription("Preliminary DISTINCT");
     else
         distinct_step->setStepDescription("DISTINCT");
+
+    /// The `DISTINCT` that runs after the `ORDER BY` sits above the sort in the plan: the sorted order has
+    /// to survive it up to the result.
+    if (!before_order && query_node.hasOrderBy())
+        distinct_step->preserveInputOrder();
+
     query_plan.addStep(std::move(distinct_step));
 }
 
@@ -2193,9 +2200,9 @@ void addBuildSubqueriesForSetsStepIfNeeded(
         /// Contexts should be copied into the root query plan, because some functions may
         /// be created using them while this subquery plan will be destroyed after
         /// FutureSetFromSubquery::buildSetInplace(). Otherwise, function execution may fail
-        /// with a "Context has expired" exception.
-        for (const auto & context : subquery_plan.getInterpretersContexts())
-            query_plan.addInterpreterContext(context);
+        /// with a "Context has expired" exception. The set source is not united into this plan,
+        /// so its decision contexts are copied the same way.
+        query_plan.takeContextsFrom(subquery_plan);
         subquery->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
     }
 
@@ -2278,6 +2285,37 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
         filter_info.do_remove_column);
     filter_step->setStepDescription("additional result filter");
     query_plan.addStep(std::move(filter_step));
+}
+
+/// Replace a header that holds nothing but row-count-only columns (or no column at all) with one
+/// canonical materialized marker, so that the row count has a column to live in.
+void addRowCountMarkerStepIfNeeded(QueryPlan & query_plan, const PlannerContextPtr & planner_context)
+{
+    ColumnIdentifierSet row_count_only_identifiers;
+    for (const auto & [_, table_expression_data] : planner_context->getTableExpressionNodeToData())
+    {
+        if (const auto & column_identifier = table_expression_data.getRowCountOnlyColumnIdentifier())
+            row_count_only_identifiers.insert(*column_identifier);
+    }
+
+    if (row_count_only_identifiers.empty())
+        return;
+
+    const auto & header = query_plan.getCurrentHeader();
+    for (const auto & column : *header)
+    {
+        if (!row_count_only_identifiers.contains(column.name))
+            return;
+    }
+
+    ActionsDAG marker_dag(header->getNamesAndTypesList());
+    auto marker_type = std::make_shared<DataTypeUInt8>();
+    marker_dag.getOutputs()
+        = {&marker_dag.materializeNode(marker_dag.addColumn(marker_type->createColumnConst(0, 0u), marker_type, "__row_count_marker"))};
+
+    auto marker_step = std::make_unique<ExpressionStep>(header, std::move(marker_dag));
+    marker_step->setStepDescription("Row count marker for zero-column mergeable state");
+    query_plan.addStep(std::move(marker_step));
 }
 
 void addReadFromQueryResultCacheStep(
@@ -2481,7 +2519,7 @@ void Planner::buildPlanForUnionNode()
     if (is_distinct)
     {
         /// Add distinct transform
-        SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
+        DistinctStep::Settings distinct_settings(settings);
 
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
@@ -2492,7 +2530,7 @@ void Planner::buildPlanForUnionNode()
         {
             auto pre_distinct_step = std::make_unique<DistinctStep>(
                 query_plan.getCurrentHeader(),
-                limits,
+                distinct_settings,
                 0 /*limit hint*/,
                 query_plan.getCurrentHeader()->getNames(),
                 true /*pre distinct*/);
@@ -2502,7 +2540,7 @@ void Planner::buildPlanForUnionNode()
 
         auto distinct_step = std::make_unique<DistinctStep>(
             query_plan.getCurrentHeader(),
-            limits,
+            std::move(distinct_settings),
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
             false /*pre distinct*/);
@@ -2950,7 +2988,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
+                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
             }
 
@@ -3155,6 +3193,11 @@ void Planner::buildPlanForQueryNode()
         // For additional_result_filter setting
         addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
+
+    /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
+    /// mergeable-stage boundary, and both sides must derive the same header.
+    if (!query_processing_info.isFinalizingStage() && query_plan.isInitialized())
+        addRowCountMarkerStepIfNeeded(query_plan, planner_context);
 
     const auto & client_info = query_context->getClientInfo();
 
