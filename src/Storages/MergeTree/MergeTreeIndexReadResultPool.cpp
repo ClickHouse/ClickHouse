@@ -11,6 +11,8 @@
 #include <Common/FailPoint.h>
 #include <base/sleep.h>
 
+#include <deque>
+
 namespace CurrentMetrics
 {
     extern const Metric FilteringMarksWithSecondaryKeys;
@@ -148,26 +150,52 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
     /// exact `IN` set, and the runtime filter may have overflowed into its approximate form), so decide
     /// which indexes are still usable before building the predicate: with no primary key to prune and no
     /// usable index left there is nothing to apply it to, and materializing it per part would be pure loss.
-    MergeTreeIndices usable_dynamic_skip_indexes;
+    std::vector<std::pair<MergeTreeIndexPtr, DynamicSkipIndexUse>> usable_dynamic_skip_indexes;
+    bool needs_shared_predicate = prune_primary_key;
     if (dynamic_predicate_builder && !ranges.empty())
     {
         for (const auto & index_helper : dynamic_skip_indexes)
         {
-            if (!dynamic_skip_index_filter || dynamic_skip_index_filter(*index_helper))
-                usable_dynamic_skip_indexes.push_back(index_helper);
+            const DynamicSkipIndexUse use = dynamic_skip_index_filter ? dynamic_skip_index_filter(*index_helper) : DynamicSkipIndexUse::Shared;
+            if (use == DynamicSkipIndexUse::Skip)
+                continue;
+            usable_dynamic_skip_indexes.emplace_back(index_helper, use);
+            needs_shared_predicate |= use == DynamicSkipIndexUse::Shared;
         }
     }
 
     if (dynamic_predicate_builder && !ranges.empty() && (prune_primary_key || !usable_dynamic_skip_indexes.empty()))
     {
-        /// Ask for the predicate before anything else: a filter that kept neither an exact value set nor a
+        /// Ask for the predicates before anything else: a filter that kept neither an exact value set nor a
         /// `[min, max]` range yields no predicate at all, and then this part must stay a true no-op. That is
         /// not an exotic case - a key type outside `RuntimeFilterIndexAnalysis::supportsDataType` (`String`
         /// and friends) never records a range, so once its filter overflows `join_runtime_filter_exact_values_limit`
         /// it can never prune again, however index-capable the probe side is.
         ActionsDAG predicate_dag;
-        const ActionsDAG::Node * predicate = dynamic_predicate_builder(predicate_dag);
-        if (predicate)
+        /// A `std::deque`, so that the pointers to its elements stay valid while it grows.
+        std::deque<ActionsDAGWithInversionPushDown> filter_dags;
+        const ActionsDAGWithInversionPushDown * shared_filter_dag = nullptr;
+        if (needs_shared_predicate)
+        {
+            if (const auto * shared_predicate = dynamic_predicate_builder(predicate_dag, nullptr))
+                shared_filter_dag = &filter_dags.emplace_back(shared_predicate, context, /*boolean_context=*/true);
+        }
+
+        std::vector<std::pair<MergeTreeIndexPtr, const ActionsDAGWithInversionPushDown *>> index_filter_dags;
+        for (const auto & [index_helper, use] : usable_dynamic_skip_indexes)
+        {
+            const ActionsDAGWithInversionPushDown * index_filter_dag = shared_filter_dag;
+            if (use == DynamicSkipIndexUse::Own)
+            {
+                const auto * index_predicate = dynamic_predicate_builder(predicate_dag, index_helper.get());
+                index_filter_dag = index_predicate ? &filter_dags.emplace_back(index_predicate, context, /*boolean_context=*/true) : nullptr;
+            }
+            if (index_filter_dag)
+                index_filter_dags.emplace_back(index_helper, index_filter_dag);
+        }
+
+        const bool prune_primary_key_with_predicate = prune_primary_key && shared_filter_dag;
+        if (prune_primary_key_with_predicate || !index_filter_dags.empty())
         {
             /// Pruning by the primary key needs the part itself.
             auto data_part = part_info->getDataPart();
@@ -177,12 +205,11 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                     part_info->getPartName());
 
             const size_t granules_before = ranges.getNumberOfMarks();
-            ActionsDAGWithInversionPushDown filter_dag(predicate, context, /*boolean_context=*/true);
 
-            if (prune_primary_key)
+            if (prune_primary_key_with_predicate)
             {
                 const auto & primary_key = metadata_snapshot->getPrimaryKey();
-                KeyCondition dynamic_key_condition(filter_dag, context, primary_key);
+                KeyCondition dynamic_key_condition(*shared_filter_dag, context, primary_key);
                 dynamic_key_condition.relaxRangeAtomsOverNaNHidingTupleColumns(primary_key.data_types);
 
                 ranges = MergeTreeDataSelectExecutor::markRangesFromPKRange(
@@ -200,14 +227,14 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
             }
 
             MergeTreeDataSelectExecutor::PartialDisjunctionResult no_disjunctions;
-            for (const auto & index_helper : usable_dynamic_skip_indexes)
+            for (const auto & [index_helper, index_filter_dag] : index_filter_dags)
             {
                 if (ranges.empty())
                     break;
                 if (auto can_use = MergeTreeDataSelectExecutor::canUseIndex(index_helper, metadata_snapshot, all_updated_columns); !can_use)
                     continue;
 
-                auto condition = index_helper->createIndexCondition(filter_dag.predicate, context);
+                auto condition = index_helper->createIndexCondition(index_filter_dag->predicate, context);
                 if (!condition || condition->alwaysUnknownOrTrue())
                     continue;
 

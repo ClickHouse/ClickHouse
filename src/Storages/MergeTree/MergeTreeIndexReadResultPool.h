@@ -34,11 +34,23 @@ using SkipIndexReadResultPtr = std::shared_ptr<SkipIndexReadResult>;
 class MergeTreeSkipIndexReader
 {
 public:
-    /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none.
-    using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &)>;
+    /// Builds a predicate into the DAG to prune granules at read time, or nullptr for none. With `index`
+    /// set, the predicate is for that dynamic skip index alone (see `DynamicSkipIndexUse::Own`), otherwise
+    /// it is the one shared by the primary key and every other dynamic skip index.
+    using DynamicPredicateBuilder = std::function<const ActionsDAG::Node *(ActionsDAG &, const IMergeTreeIndex * index)>;
 
-    /// Whether a dynamic skip index should be applied at read time.
-    using DynamicSkipIndexFilter = std::function<bool(const IMergeTreeIndex &)>;
+    /// How a dynamic skip index is applied at read time.
+    enum class DynamicSkipIndexUse : uint8_t
+    {
+        /// Not applied to this part.
+        Skip,
+        /// Applied with the shared predicate.
+        Shared,
+        /// Applied with a predicate built for this index alone, because the shared one carries terms
+        /// that are too expensive for it (such as a large `IN` set for a `bloom_filter` index).
+        Own,
+    };
+    using DynamicSkipIndexFilter = std::function<DynamicSkipIndexUse(const IMergeTreeIndex &)>;
 
     MergeTreeSkipIndexReader(
         UsefulSkipIndexes skip_indexes_,

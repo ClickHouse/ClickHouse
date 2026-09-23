@@ -5369,43 +5369,57 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// throw it away, which is exactly the work enabling this setting by default is supposed to avoid.
     if (runtime_prune_primary_key || !runtime_skip_indexes.empty())
     {
-        dynamic_predicate_builder =
-            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, ctx = context]
-            (ActionsDAG & dag) -> const ActionsDAG::Node *
-            {
-                return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
-            };
-
         /// A `bloom_filter` index tests the `IN` set one value at a time for every granule, and its false positives
         /// add up over the set (with the default 0.025 rate a few hundred values make every granule test positive),
         /// so it is only worth it for a small set: 1% of `join_runtime_filter_exact_values_limit`. This cap is part of the documented
         /// contract of `enable_join_runtime_filters_index_analysis` (see `Settings.cpp`) and is pinned by
-        /// `05248_join_runtime_filter_bloom_filter_index_cap`.
+        /// `05248_join_runtime_filter_bloom_filter_index_cap`. It is applied to every runtime filter on its own:
+        /// one probe key can carry several filters (`p.k = b1.k AND p.k = b2.k` registers one descriptor per
+        /// `__applyFilter`), and a filter within the cap must not let a sibling above it into the index condition.
         const UInt64 bloom_filter_in_cap = context->getSettingsRef()[Setting::join_runtime_filter_exact_values_limit] / 100;
-        dynamic_skip_index_filter =
-            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, bloom_filter_in_cap]
-            (const IMergeTreeIndex & index) -> bool
-            {
-                if (index.index.type != "bloom_filter")
-                    return true;
+        auto bloom_filter_admits = [bloom_filter_in_cap](const IMergeTreeIndex & index, const RuntimeFilterIndexAnalysisDescriptor & descr, const RuntimeFilter & filter)
+        {
+            if (std::find(index.index.column_names.begin(), index.index.column_names.end(), descr.key_column_name) == index.index.column_names.end())
+                return false;
+            auto values = filter.getRecordedKeyValues();
+            return values && values->size() <= bloom_filter_in_cap;
+        };
 
-                /// `buildRuntimeRangePredicate` ANDs every usable filter into the predicate, and one
-                /// probe key can carry several filters (`p.k = b1.k AND p.k = b2.k` registers one
-                /// descriptor per `__applyFilter`). The index is usable as soon as *any* of them still
-                /// exposes an exact `IN` set within the cap, so all matching descriptors are scanned
-                /// instead of letting the first one decide for the whole column.
+        dynamic_predicate_builder =
+            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, ctx = context, bloom_filter_admits]
+            (ActionsDAG & dag, const IMergeTreeIndex * index) -> const ActionsDAG::Node *
+            {
+                if (!index)
+                    return buildRuntimeRangePredicate(*lookup, descriptors, dag, ctx);
+
+                /// Only a `bloom_filter` index asks for a predicate of its own, see `dynamic_skip_index_filter`.
+                std::vector<RuntimeFilterIndexAnalysisDescriptor> admitted;
                 for (const auto & descr : descriptors)
                 {
-                    if (std::find(index.index.column_names.begin(), index.index.column_names.end(), descr.key_column_name) == index.index.column_names.end())
-                        continue;
                     auto filter = lookup->find(descr.filter_id);
-                    if (!filter)
-                        continue;
-                    auto values = filter->getRecordedKeyValues();
-                    if (values && values->size() <= bloom_filter_in_cap)
-                        return true;
+                    if (filter && bloom_filter_admits(*index, descr, *filter))
+                        admitted.push_back(descr);
                 }
-                return false;
+                return buildRuntimeRangePredicate(*lookup, admitted, dag, ctx);
+            };
+
+        dynamic_skip_index_filter =
+            [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, bloom_filter_admits]
+            (const IMergeTreeIndex & index) -> MergeTreeSkipIndexReader::DynamicSkipIndexUse
+            {
+                using Use = MergeTreeSkipIndexReader::DynamicSkipIndexUse;
+                if (index.index.type != "bloom_filter")
+                    return Use::Shared;
+
+                /// The index is usable as soon as *any* filter on its columns still exposes an exact `IN` set
+                /// within the cap, and then it is applied with a predicate built from those filters alone.
+                for (const auto & descr : descriptors)
+                {
+                    auto filter = lookup->find(descr.filter_id);
+                    if (filter && bloom_filter_admits(index, descr, *filter))
+                        return Use::Own;
+                }
+                return Use::Skip;
             };
     }
 
