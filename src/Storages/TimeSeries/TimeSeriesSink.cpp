@@ -517,7 +517,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     /// later does insertRangeFrom(), which requires matching binary representations.
     /// In the end any final difference is handled by the converting actions inside `samples_pipeline`.
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion());
-    auto [timestamp_type, value_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
+    auto [timestamp_type, scalar_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
 
     if (settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
@@ -579,7 +579,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
-    samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
+    samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
     /// The recent samples table (if any) receives a copy of every samples block.
@@ -671,7 +671,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         *new_tags_names, *new_tags_values, *new_tags_offsets,
         columns_by_tag_name);
 
-    auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_col.type);
+    auto [timestamp_type, scalar_type] = splitTimeSeriesType(time_series_col.type);
 
     /// Optionally fill min_time and max_time columns if enabled in settings.
     MutableColumnPtr min_time_column;
@@ -734,7 +734,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto timestamp_column = timestamp_type->createColumn();
         timestamp_column->reserve(total_samples);
 
-        auto value_column = value_type->createColumn();
+        auto value_column = scalar_type->createColumn();
         value_column->reserve(total_samples);
 
         fillSamplesColumns(
@@ -746,7 +746,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
-        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
+        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
 
         /// The samples table is written before the recent samples table: if the insert fails between
         /// the two writes, the sample is then missing from the recent samples table and just stays

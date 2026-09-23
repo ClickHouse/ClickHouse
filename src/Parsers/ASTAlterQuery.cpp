@@ -216,8 +216,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_type' field in `AlterCommand` during AST JSON deserialization");
     String command_type_str = r.getString("command_type");
     auto command_type_opt = magic_enum::enum_cast<Type>(command_type_str);
-    /// `NO_TYPE` is the unset default rather than a command name; every accepted parse assigns a real type.
-    if (!command_type_opt || *command_type_opt == ASTAlterCommand::NO_TYPE)
+    if (!command_type_opt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: '{}'", command_type_str);
     type = *command_type_opt;
 
@@ -514,7 +513,6 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                     "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
-        case ASTAlterCommand::MODIFY_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
             break;
         case ASTAlterCommand::DROP_CONSTRAINT:

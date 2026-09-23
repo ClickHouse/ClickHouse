@@ -3,7 +3,6 @@ import os
 import re
 import shlex
 import subprocess
-import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -683,16 +682,6 @@ TIMEOUT_ERROR_PATTERNS = [
     "TimeoutExpired",
 ]
 
-# Emitted by `ClickHouseInstance.describe_lost_network_interface` in
-# `tests/integration/helpers/cluster.py`, and only after the harness has confirmed both
-# halves of the state it names: docker removed a running container's network interface (a
-# `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
-# for the rest of the module through no fault of its own. Unlike the substrings below it
-# already carries its own proof, which is why the FAIL path trusts it without further
-# context. Must stay in step with the constant of the same name in the harness - pinned by
-# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
-LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
-
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
@@ -706,7 +695,6 @@ INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "toomanyrequests",
     "pull access denied",
     "Got exception pulling images:",  # docker pull failure during cluster.start()
-    LOST_NETWORK_INTERFACE_ERROR,
 ]
 
 # compose options that consume the token after them, so the subcommand is not the
@@ -841,12 +829,6 @@ def _is_infrastructure_error(result: Result) -> bool:
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
     if result.status == Result.Status.FAIL:
-        # The harness only emits this after checking the container from both sides, so the
-        # evidence the docker-context requirement below stands in for is already in hand.
-        # It has to be honoured here: the state surfaces mid-module as an ordinary failing
-        # query, which carries no docker argv at all.
-        if LOST_NETWORK_INTERFACE_ERROR in result.info:
-            return True
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
@@ -1112,18 +1094,12 @@ def prefetch_images(
     retries: int = 3,
     pull_timeout: int = 300,
     parallel: int = PREFETCH_PARALLEL_PULLS,
-    fetched_out: Optional[Set[str]] = None,
 ) -> bool:
     """Pull the images using `ci/prefetch-integration-test-images`.
 
     Images with no manifest for the current architecture (e.g. amd64-only images
     on arm64 runners) are silently skipped.  Returns True on success, False if any
     image fails to pull for a real reason.
-
-    `fetched_out`, when given, receives the references the script reports as actually
-    pulled. A missing or short report can only leave references out, so a reporting
-    failure costs the skip in `tests/integration/helpers/cluster.py` instead of claiming
-    an image that was never fetched.
     """
     if not images:
         print("No images to pre-fetch.")
@@ -1136,19 +1112,11 @@ def prefetch_images(
         "PULL_TIMEOUT": str(pull_timeout),
         "PULL_PARALLEL": str(parallel),
     }
-    report = ""
-    with tempfile.TemporaryDirectory(prefix="prefetch_", dir=temp_path) as report_dir:
-        if fetched_out is not None:
-            report = os.path.join(report_dir, "fetched.txt")
-            env["PREFETCH_FETCHED_FILE"] = report
-        ok = Shell.check(
-            f"{script} {' '.join(images)}",
-            verbose=True,
-            env=env,
-        )
-        if fetched_out is not None and Path(report).is_file():
-            fetched_out.update(Path(report).read_text(errors="replace").split())
-    return ok
+    return Shell.check(
+        f"{script} {' '.join(images)}",
+        verbose=True,
+        env=env,
+    )
 
 
 def parse_args():
@@ -1896,15 +1864,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
         + ", ".join(str(f.name) for f in compose_files)
     )
     images_to_prefetch = get_images_from_compose_files(compose_files)
-    prefetched: Set[str] = set()
-    if not prefetch_images(images_to_prefetch, fetched_out=prefetched):
+    if not prefetch_images(images_to_prefetch):
         prefetch_failure_result().complete_job()
-    # A batch's compose files need not yield the default server image, but a project's own
-    # enumeration can: it is the default instance image and Keeper's. So prefetch it separately, and
-    # ignore the result: a failed fetch only leaves it out of the export, which turns the skip off.
-    server_image = f"clickhouse/integration-test:{os.environ['DOCKER_BASE_TAG']}"
-    if server_image not in prefetched:
-        prefetch_images([server_image], fetched_out=prefetched)
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
@@ -1913,9 +1874,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
-        # Read by tests/integration/helpers/cluster.py: the references this job pulled. A reference
-        # outside this set was not fetched here and may be a stale floating tag, so it is pulled.
-        "CLICKHOUSE_TESTS_PREFETCHED_IMAGES": " ".join(sorted(prefetched)),
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
         # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).

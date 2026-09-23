@@ -24,7 +24,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
@@ -1047,10 +1047,14 @@ void IMergeTreeDataPart::removeIndexMarksFromCache(MarkCache * index_mark_cache)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
         auto index_name = skip_index->getFileName();
+        /// Physical, not usability: marks cached before an ALTER made this index unreadable still have
+        /// to be evicted, so the keys must be derived from what is actually on disk.
+        auto index_format = skip_index->getPhysicalFormat(*this, index_name);
 
-        /// Not what this part holds: resolving that needs I/O, which must not run during part
-        /// destruction. Evicting an absent key is a no-op, so the superset is free.
-        for (const auto & substream : skip_index->getPotentialSubstreams())
+        if (!index_format)
+            continue;
+
+        for (const auto & substream : index_format.substreams)
         {
             auto full_stream_name = index_name + substream.suffix;
             auto stream_name_opt = getStreamNameOrHash(full_stream_name, substream.extension, checksums);
@@ -2238,20 +2242,27 @@ CompressionCodecPtr IMergeTreeDataPart::detectDefaultCompressionCodec(const std:
 
                 auto recovered = getCompressionCodecForFile(getDataPartStorage(), path_to_data_file);
 
-                /// The default is the chain's generic or encryption stage, searched for because structural substreams drop type-specific ones.
-                /// A bare `NONE` frame counts too.
+                /// The default codec is the column's generic-compression stage. For a column coded
+                /// with the default codec alone the recovered frame codec is that stage itself; for a
+                /// pipeline (`CODEC(Delta, Default)`) the frame is a `Multiple` chain and the default
+                /// codec is its single generic-compression stage (a valid pipeline has at most one).
+                /// A structural substream (`Array` offsets, null map, ...) is written with the
+                /// generic stages only, dropping the rest of the pipeline, so search for the generic
+                /// stage instead of matching the declared pipeline by position. `NONE` counts too:
+                /// it is not a generic compression, but a default of `NONE` produces a plain `NONE`
+                /// frame that identifies the default exactly.
                 if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(recovered.get()))
                 {
                     for (const auto & stage : multiple->getCodecs())
                     {
-                        if (stage->isGenericCompression() || stage->isEncryption())
+                        if (stage->isGenericCompression())
                         {
                             result = stage;
                             break;
                         }
                     }
                 }
-                else if (recovered->isGenericCompression() || recovered->isNone() || recovered->isEncryption())
+                else if (recovered->isGenericCompression() || recovered->isNone())
                     result = recovered;
 
                 /// No generic-compression stage in the frame: it cannot prove the default codec
