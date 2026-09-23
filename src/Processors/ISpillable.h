@@ -8,7 +8,7 @@ namespace DB
 {
 
 /// Memory spilling interface of a processor.
-/// Aggregate, join and sort processors can be spillable.
+/// Aggregation, join, sorting, and `DISTINCT` processors can be spillable.
 ///
 /// Kept separate from IProcessor so that the spilling API can evolve without
 /// recompiling every translation unit that uses processors.

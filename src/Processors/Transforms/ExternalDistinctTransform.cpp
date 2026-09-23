@@ -69,7 +69,77 @@ ExternalDistinctTransform::~ExternalDistinctTransform() = default;
 
 size_t ExternalDistinctTransform::minBytesInRun() const
 {
-    return std::min(max_bytes_before_external_distinct, DEFAULT_BYTES_IN_RUN);
+    return max_bytes_before_external_distinct
+        ? std::min(max_bytes_before_external_distinct, DEFAULT_BYTES_IN_RUN) : DEFAULT_BYTES_IN_RUN;
+}
+
+ProcessorMemoryStats ExternalDistinctTransform::getMemoryStats() const
+{
+    ProcessorMemoryStats res;
+    if (const auto * hashing = std::get_if<Hashing>(&state); hashing && !hashing->input_finished && hashing->set.getTotalRowCount())
+    {
+        res.spillable_memory_bytes = hashing->set.getTotalByteCount();
+        /// Allow hash-table growth and the bounded suppression extraction/sorting workspace.
+        res.need_reserved_memory_bytes = res.spillable_memory_bytes + 2 * DEFAULT_BYTES_IN_RUN
+            + max_block_size_rows * sizeof(IColumn::Permutation::value_type);
+    }
+    else if (const auto * collecting = std::get_if<CollectingInput>(&state))
+    {
+        res.spillable_memory_bytes = collecting->bytes;
+        res.need_reserved_memory_bytes = collecting->bytes;
+    }
+
+    if (res.spillable_memory_bytes)
+        res.need_reserved_memory_bytes += 3 * tmp_data->getSettings().buffer_size;
+    return res;
+}
+
+size_t ExternalDistinctTransform::spill(size_t /*at_least_bytes*/)
+{
+    const size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!bytes || isCancelled())
+        return 0;
+
+    if (auto * hashing = std::get_if<Hashing>(&state))
+    {
+        startSpilling(*hashing);
+        /// The extractor retains the set until its last key is materialized. Drain every suppression
+        /// run before settling the scheduler's request, keeping only one run's working columns alive.
+        while (auto * connecting = std::get_if<ConnectingSuppressionRun>(&state))
+        {
+            auto run = std::move(connecting->run);
+            auto keys = std::move(connecting->keys);
+            spillRun(std::move(run));
+            auto & extracting = state.emplace<ExtractingSuppression>(std::move(keys));
+            extractSuppressionRun(extracting);
+        }
+    }
+    else if (auto * collecting = std::get_if<CollectingInput>(&state))
+    {
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting->chunks), collecting->bytes,
+            spill_layout->getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
+        spillRun(std::move(run));
+        state.emplace<CollectingInput>();
+    }
+
+    return isCancelled() ? 0 : bytes;
+}
+
+void ExternalDistinctTransform::spillRun(PreparedRun run)
+{
+    /// None of these processors have been connected yet, so writing does not depend on pipeline work.
+    while (run.progress.chunk || run.progress.merger)
+    {
+        if (run.progress.chunk)
+            run.sink->consume(std::move(run.progress.chunk));
+        if (run.progress.merger)
+            readRun(run.progress);
+    }
+    run.sink->onFinish();
+    run.source = std::make_shared<BufferingFromFileSource>(
+        run.source->getPort().getSharedHeader(), std::move(run.sink->getHolder()), log);
+    run.sink.reset();
+    spilled_runs.emplace_back(std::move(run));
 }
 
 IProcessor::Status ExternalDistinctTransform::prepare()
@@ -80,6 +150,9 @@ IProcessor::Status ExternalDistinctTransform::prepare()
         /// owned by the pipeline until destruction, outside the executor's preparation lock.
         return finish();
     }
+
+    if (!spilled_runs.empty())
+        return Status::UpdatePipeline;
 
     return std::visit([this]<typename Phase>(Phase & phase) -> Status
     {
@@ -298,41 +371,44 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     hashing.set.prepareForInsert(input_chunk);
 
-    /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation
-    /// and its row masks. Generic spill input also needs a fingerprint column.
-    /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs uncompressed,
-    /// compressed, and file buffers. Oversized values and codec overhead can exceed this estimate.
-    const size_t fingerprint_bytes = hashing.set.getKeyRepresentation() == DistinctKeyRepresentation::Hash128
-        ? input_chunk.getNumRows() * sizeof(UInt128) : 0;
-    const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
-    const size_t sort_permutation_bytes = max_block_size_rows * sizeof(IColumn::Permutation::value_type);
-    const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
-    const size_t spill_headroom_bytes
-        = hashing.set.estimateFilteringMemory(input_chunk) + fingerprint_bytes
-            + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
-
-    /// The threshold applies to total query memory, so current usage reduces the budget for growth.
-    /// Query accounting can briefly become negative while a concurrent free saturates its counter.
-    const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-    const UInt64 available_memory
-        = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
-
-    const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
-    if (spill_headroom_bytes > available_memory || growth_memory > available_memory - spill_headroom_bytes)
+    if (max_bytes_before_external_distinct)
     {
-        LOG_TRACE(log, "Switching DISTINCT to external mode: {} "
-            "(query memory: {}, spill threshold: {}, "
-            "estimated peak extra memory for growth: {}, filtering and spill workspace: {})",
-            query_memory_usage > max_bytes_before_external_distinct
-                ? "query memory exceeded the spill threshold"
-                : "projected allocations exceed the remaining spill-threshold budget",
-            formatReadableSizeWithBinarySuffix(query_memory_usage),
-            formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct),
-            formatReadableSizeWithBinarySuffix(growth_memory),
-            formatReadableSizeWithBinarySuffix(spill_headroom_bytes));
+        /// Filtering can copy the normalized input before spilling, so allow another input-sized allocation
+        /// and its row masks. Generic spill input also needs a fingerprint column.
+        /// A suppression run needs its columns, a sorted copy, and a permutation. Writing needs uncompressed,
+        /// compressed, and file buffers. Oversized values and codec overhead can exceed this estimate.
+        const size_t fingerprint_bytes = hashing.set.getKeyRepresentation() == DistinctKeyRepresentation::Hash128
+            ? input_chunk.getNumRows() * sizeof(UInt128) : 0;
+        const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
+        const size_t sort_permutation_bytes = max_block_size_rows * sizeof(IColumn::Permutation::value_type);
+        const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
+        const size_t spill_headroom_bytes
+            = hashing.set.estimateFilteringMemory(input_chunk) + fingerprint_bytes
+                + suppression_columns_bytes + sort_permutation_bytes + write_buffers_bytes;
 
-        startSpilling(hashing);
-        return;
+        /// The threshold applies to total query memory, so current usage reduces the budget for growth.
+        /// Query accounting can briefly become negative while a concurrent free saturates its counter.
+        const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+        const UInt64 available_memory
+            = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
+
+        const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
+        if (spill_headroom_bytes > available_memory || growth_memory > available_memory - spill_headroom_bytes)
+        {
+            LOG_TRACE(log, "Switching DISTINCT to external mode: {} "
+                "(query memory: {}, spill threshold: {}, "
+                "estimated peak extra memory for growth: {}, filtering and spill workspace: {})",
+                query_memory_usage > max_bytes_before_external_distinct
+                    ? "query memory exceeded the spill threshold"
+                    : "projected allocations exceed the remaining spill-threshold budget",
+                formatReadableSizeWithBinarySuffix(query_memory_usage),
+                formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct),
+                formatReadableSizeWithBinarySuffix(growth_memory),
+                formatReadableSizeWithBinarySuffix(spill_headroom_bytes));
+
+            startSpilling(hashing);
+            return;
+        }
     }
 
     consumed_rows += input_chunk.getNumRows();
@@ -349,7 +425,7 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     /// Actual allocations and concurrent operators can consume more than the pre-insertion estimate.
     const Int64 query_memory_usage_after_insert = getCurrentQueryMemoryUsage();
-    if (query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external_distinct))
+    if (max_bytes_before_external_distinct && query_memory_usage_after_insert > static_cast<Int64>(max_bytes_before_external_distinct))
     {
         LOG_TRACE(log, "Switching DISTINCT to external mode: query memory exceeded the spill threshold after insertion "
             "(query memory: {}, spill threshold: {})",
@@ -442,7 +518,7 @@ void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 
     /// An empty hash set produces no suppression files, so the first ordinary chunk starts a run.
     /// Later runs have a size floor when other operators keep query memory above the threshold.
-    if (temporary_files_num == 0 || (collecting.bytes >= minBytesInRun()
+    if (temporary_files_num == 0 || (max_bytes_before_external_distinct && collecting.bytes >= minBytesInRun()
         && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct)))
     {
         auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting.chunks), collecting.bytes,
@@ -478,7 +554,7 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
         .source = std::move(source),
         .initial_merge = {},
     };
-    if (!merge_registration)
+    if (!merge_registration && spilled_runs.empty())
         run.initial_merge = prepareMerge();
 
     return run;
@@ -589,7 +665,7 @@ void ExternalDistinctTransform::connectMerge(PreparedMerge & prepared, Processor
     merge_registration.emplace(std::move(prepared.merger), inputs.back());
 }
 
-OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
+void ExternalDistinctTransform::connectRunSource(PreparedRun & prepared, Processors & processors)
 {
     if (prepared.initial_merge)
         connectMerge(*prepared.initial_merge, processors);
@@ -598,9 +674,14 @@ OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Proce
     auto & merger = *merge_registration->merger;
     merger.addInput(prepared.source->getPort().getHeader());
     connect(prepared.source->getPort(), merger.getInputs().back());
+    processors.emplace_back(prepared.source);
+}
+
+OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Processors & processors)
+{
+    connectRunSource(prepared, processors);
     outputs.emplace_back(prepared.sink->getPort().getHeader(), this);
     connect(outputs.back(), prepared.sink->getPort());
-    processors.emplace_back(prepared.source);
     processors.emplace_back(prepared.sink);
     return outputs.back();
 }
@@ -608,6 +689,14 @@ OutputPort & ExternalDistinctTransform::connectRun(PreparedRun & prepared, Proce
 IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
 {
     Processors processors;
+    if (!spilled_runs.empty())
+    {
+        for (auto & run : spilled_runs)
+            connectRunSource(run, processors);
+        spilled_runs.clear();
+        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    }
+
     std::visit([this, &processors]<typename Phase>(Phase & phase)
     {
         if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>)

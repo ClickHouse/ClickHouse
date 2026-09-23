@@ -2,6 +2,7 @@
 
 #include <Interpreters/TemporaryDataOnDisk.h>
 #include <Processors/IProcessor.h>
+#include <Processors/ISpillable.h>
 #include <Processors/Transforms/DistinctSetFilter.h>
 #include <Processors/Transforms/DistinctSpillLayout.h>
 #include <Processors/Transforms/SortingTransform.h>
@@ -35,7 +36,9 @@ class DistinctSortedTransform;
 /// When input order must be preserved, `DistinctSpillLayout` attaches arrival numbers to spilled rows.
 /// After merging and deduplication, `MergeSortingTransform` restores that order and can itself spill.
 /// Otherwise, rows follow the spill comparison order, which is fingerprint order for generic keys.
-class ExternalDistinctTransform final : public IProcessor
+/// Scheduler requests synchronously write unconnected runs and release their memory before returning;
+/// their readers are attached at the next pipeline update.
+class ExternalDistinctTransform final : public IProcessor, public ISpillable
 {
 public:
     ExternalDistinctTransform(
@@ -56,6 +59,10 @@ public:
     Status prepare() override;
     void work() override;
     PipelineUpdate updatePipeline() override;
+
+    ISpillable * getSpillable() override { return this; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
 
 private:
     struct Hashing
@@ -190,7 +197,10 @@ private:
         SharedHeader header, Chunks chunks, size_t bytes, const SortDescription & description, MergeSorter::Mode mode);
     PreparedMerge prepareMerge();
     void connectMerge(PreparedMerge & prepared, Processors & processors);
+    void connectRunSource(PreparedRun & prepared, Processors & processors);
     OutputPort & connectRun(PreparedRun & prepared, Processors & processors);
+    /// Drain an unconnected run on the calling thread, transferring its finalized file to the reader.
+    void spillRun(PreparedRun run);
     /// Returns the minimum run size, also used by the sort that restores input order.
     size_t minBytesInRun() const;
 
@@ -207,6 +217,8 @@ private:
 
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;
+    /// Scheduler-driven spilling releases memory before returning; completed readers are connected later.
+    std::vector<PreparedRun> spilled_runs;
     size_t temporary_files_num = 0;
 
     /// Counts accepted input rows and provides the next arrival number.
