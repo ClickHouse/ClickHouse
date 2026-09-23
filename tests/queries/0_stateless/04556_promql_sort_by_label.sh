@@ -16,7 +16,7 @@ CREATE TABLE ts_tags (
     min_time SimpleAggregateFunction(min, Nullable(DateTime64(3, 'UTC'))),
     max_time SimpleAggregateFunction(max, Nullable(DateTime64(3, 'UTC'))))
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
-CREATE TABLE ts_metrics (metric_family_name String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE ts_metrics (metric_family String, type String, unit String, help String) ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE TABLE ts ENGINE = TimeSeries DATA ts_data TAGS ts_tags METRICS ts_metrics;
 
 -- 'up' has a single label 'instance' with values that differ numerically (host1, host2, host10, host20)
