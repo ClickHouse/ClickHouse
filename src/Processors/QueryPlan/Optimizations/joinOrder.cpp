@@ -51,6 +51,7 @@ DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_m
 DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         DPJoinEntryPtr rhs,
         double cost_,
+        double selectivity_,
         std::optional<UInt64> cardinality_,
         JoinOperator join_operator_,
         JoinMethod join_method_)
@@ -58,6 +59,7 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , left(std::move(lhs))
     , right(std::move(rhs))
     , cost(cost_)
+    , selectivity(selectivity_)
     , estimated_rows(cardinality_)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
@@ -366,6 +368,10 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
         query_graph.buildColumnEquivalences();
         column_equivalences = query_graph.column_equivalences;
     }
+
+    /// Carry the conflict-detector setting on the graph so DPsub (which only receives the
+    /// `QueryGraph`) can decide whether to build its reordering constraints from CD-A/CD-C.
+    query_graph.conflict_detector = optimization_settings.query_plan_optimize_join_order_conflict_detector;
 
     JoinOrderOptimizer reorderer(
         std::move(query_graph),

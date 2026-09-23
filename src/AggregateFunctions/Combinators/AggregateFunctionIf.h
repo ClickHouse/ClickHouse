@@ -157,6 +157,21 @@ public:
         nested_func->addBatch(row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
     }
 
+    void addBatchWithNonNullPlaces(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * __restrict places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t) const override
+    {
+        if (only_null_condition)
+            return;
+        nested_func->addBatchWithNonNullPlaces(
+            row_begin, row_end, places, place_offset, columns, arena, num_arguments - 1);
+    }
+
     void addBatchSinglePlace(
         size_t row_begin,
         size_t row_end,
@@ -238,6 +253,11 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         nested_func->insertMergeResultInto(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
     }
 
     bool allocatesMemoryInArena() const override
