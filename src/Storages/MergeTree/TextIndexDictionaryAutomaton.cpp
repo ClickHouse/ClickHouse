@@ -9,6 +9,7 @@
 #pragma clang diagnostic ignored "-Wgnu-anonymous-struct"
 #pragma clang diagnostic ignored "-Wnested-anon-types"
 #pragma clang diagnostic ignored "-Wnullability-extension"
+#pragma clang diagnostic ignored "-Wzero-as-null-pointer-constant"
 #include <re2/prog.h>
 #pragma clang diagnostic pop
 
