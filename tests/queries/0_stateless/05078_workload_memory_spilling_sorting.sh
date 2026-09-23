@@ -19,6 +19,7 @@ trap cleanup EXIT
 # The per-operator thresholds are disabled, so the only spill trigger is the workload soft limit.
 settings=(
   --workload "$workload"
+  --max_rows_to_read 0
   --max_bytes_before_external_sort 0
   --max_bytes_ratio_before_external_sort 0
   --max_threads 4

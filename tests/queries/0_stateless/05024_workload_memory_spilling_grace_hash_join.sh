@@ -21,6 +21,7 @@ settings=(
   --enable_adaptive_memory_spill_scheduler 1
   --max_threads 1
   --workload "$workload"
+  --max_rows_to_read 0
   --grace_hash_join_initial_buckets 1
   --min_bytes_to_spill 0
 )
