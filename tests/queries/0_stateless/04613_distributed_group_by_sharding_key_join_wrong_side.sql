@@ -94,19 +94,24 @@ SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l CROSS JOIN system.one AS s
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0));
 
--- RIGHT/FULL pad the left side only when unmatched rows are emitted. SEMI keeps only matched rows, so
--- RIGHT SEMI JOIN emits no default-padded l.k and GROUP BY the sharding key is still shard-local: the
--- shortcut must keep firing (shard-local result has more rows than the merged one).
-SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k';
-SELECT
-    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
-        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
-    >
-    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
-        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
+-- RIGHT SEMI emits no default-padded l.k, so the padded-side guard exempts it by strictness. This
+-- shape is still blocked, by the provenance check: the analyzer resolves `l.k` to the join's right
+-- column, which from bug_dl's side is a foreign column. Blocking is conservative rather than
+-- required here, since that column is bug_dr's own sharding key, but it is not unsound, and without
+-- any guard this shape returns duplicate unmerged groups.
+SELECT 'RIGHT SEMI JOIN GROUP BY l.k, optimize=1 equals optimize=0';
+SELECT groupArray((k, c)) = (
+        SELECT groupArray((k, c)) FROM (
+            SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
+FROM (
+    SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
+    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1)
 SETTINGS allow_experimental_analyzer = 1;
 
--- LEFT SEMI keeps only matched left rows, no padding either, so the shortcut also still fires.
+-- LEFT SEMI keeps only matched left rows and pads nothing, and here `l.k` stays bug_dl's own column,
+-- so the shortcut must keep firing (shard-local result has more rows than the merged one). This is
+-- what shows the SEMI exemption was not over-broadened into a blanket block on SEMI joins.
 SELECT 'optimization still fires for LEFT SEMI JOIN GROUP BY l.k';
 SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
