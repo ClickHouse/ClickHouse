@@ -33,11 +33,16 @@ proc cleanup_and_fail {} {
     # The prompt may already be waiting in the buffer (the query may have ended long before
     # the timeout), so the end of the DROP is awaited through a marker of its own, not through
     # the prompt: otherwise the test exits, and the shell is killed, while the DROP still runs.
+    # The DROP is retried until it succeeds: it fails while the interrupted query has not
+    # unwound yet and still holds the workload.
     set timeout 30
-    send "\$CLICKHOUSE_CLIENT --query \"DROP TABLE IF EXISTS t_05219; DROP WORKLOAD IF EXISTS w_05219_slow; DROP WORKLOAD IF EXISTS w_05219_all; DROP RESOURCE IF EXISTS r_05219_io\"; echo cleaned-\$?\r"
-    expect {
-        -re {cleaned-\d} {}
-        timeout {}
+    for {set attempt 0} {$attempt < 30} {incr attempt} {
+        send "\$CLICKHOUSE_CLIENT --query \"DROP TABLE IF EXISTS t_05219; DROP WORKLOAD IF EXISTS w_05219_slow; DROP WORKLOAD IF EXISTS w_05219_all; DROP RESOURCE IF EXISTS r_05219_io\"; echo cleaned-\$?\r"
+        expect {
+            -re {cleaned-0\r} { break }
+            -re {cleaned-[0-9]+\r} { after 1000 }
+            timeout { break }
+        }
     }
     exit 1
 }
