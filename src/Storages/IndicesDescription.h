@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Names.h>
 
 #include <vector>
 #include <Core/Field.h>
@@ -41,6 +42,9 @@ struct IndexDescription
 
     /// Names of index columns (not to be confused with required columns)
     Names column_names;
+
+    /// The name a query gives a column of `column_names` where it differs, see `getColumnNameAliases`.
+    NameToNameMap column_name_aliases;
 
     /// Data types of index columns
     DataTypes data_types;

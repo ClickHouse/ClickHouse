@@ -314,10 +314,12 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & header_,
+    const NameToNameMap & column_name_aliases_,
     size_t hash_functions_,
     NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(header_)
+    , column_name_aliases(column_name_aliases_)
     , hash_functions(hash_functions_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
@@ -332,6 +334,15 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
         context_,
         [&](const RPNBuilderTreeNode & node, RPNElement & out) { return extractAtomFromTree(node, out); });
     rpn = std::move(builder).extractRPN();
+}
+
+std::optional<size_t> MergeTreeIndexConditionBloomFilter::findIndexColumn(const String & name) const
+{
+    if (auto position = header.findPositionByName(name))
+        return position;
+    if (auto alias = column_name_aliases.find(name); alias != column_name_aliases.end())
+        return header.findPositionByName(alias->second);
+    return {};
 }
 
 bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
@@ -601,10 +612,10 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 {
     auto key_node_column_name = key_node.getColumnName();
 
-    if (header.has(key_node_column_name))
+    if (auto found = findIndexColumn(key_node_column_name))
     {
         size_t row_size = column->size();
-        size_t position = header.getPositionByName(key_node_column_name);
+        size_t position = *found;
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, index_type);
 
@@ -755,10 +766,11 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     auto array_column_name = array_join_argument->getColumnName();
-    if (!header.has(array_column_name))
+    auto found = findIndexColumn(array_column_name);
+    if (!found)
         return false;
 
-    size_t position = header.getPositionByName(array_column_name);
+    size_t position = *found;
     const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
     if (!array_type)
         return false;
@@ -985,9 +997,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         if (auto array_join_argument = key_node.getArrayJoinArgument())
         {
             auto array_column_name = array_join_argument->getColumnName();
-            if (header.has(array_column_name))
+            if (auto found = findIndexColumn(array_column_name))
             {
-                size_t position = header.getPositionByName(array_column_name);
+                size_t position = *found;
                 const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
@@ -1004,9 +1016,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
         }
     }
 
-    if (header.has(key_column_name))
+    if (auto found = findIndexColumn(key_column_name))
     {
-        size_t position = header.getPositionByName(key_column_name);
+        size_t position = *found;
         const DataTypePtr & index_type = header.getByPosition(position).type;
         const auto * array_type = typeid_cast<const DataTypeArray *>(index_type.get());
 
@@ -1314,7 +1326,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() c
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns());
+        predicate, context, index.sample_block, index.column_name_aliases, hash_functions, getColumnsShadowingMapSubcolumns());
 }
 
 static void assertIndexColumnsType(const Block & header)

@@ -1558,6 +1558,19 @@ KeyCondition::KeyCondition(
     bool single_point_,
     bool skip_analysis_,
     bool require_ready_sets_)
+    : KeyCondition(filter_dag, context, key_column_names_, {}, key_expr_, single_point_, skip_analysis_, require_ready_sets_)
+{
+}
+
+KeyCondition::KeyCondition(
+    const ActionsDAGWithInversionPushDown & filter_dag,
+    ContextPtr context,
+    const Names & key_column_names_,
+    const NameToNameMap & key_column_aliases_,
+    const ExpressionActionsPtr & key_expr_,
+    bool single_point_,
+    bool skip_analysis_,
+    bool require_ready_sets_)
     : num_key_columns(key_column_names_.size())
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
@@ -1569,6 +1582,8 @@ KeyCondition::KeyCondition(
         key_columns.try_emplace(name, key_index);
         ++key_index;
     }
+
+    key_column_aliases = key_column_aliases_;
 
     /// Skip any analysis. Toggled by the `use_primary_key` setting. This is useful for catching bugs
     /// in the index condition analysis logic. It is better to skip analysis in the constructor rather than in
@@ -1615,7 +1630,7 @@ KeyCondition::KeyCondition(
     const KeyDescription & key_description,
     bool single_point_,
     bool skip_analysis_)
-    : KeyCondition(filter_dag, context, key_description.column_names, key_description.expression, single_point_, skip_analysis_)
+    : KeyCondition(filter_dag, context, key_description.column_names, key_description.column_name_aliases, key_description.expression, single_point_, skip_analysis_)
 {
     key_order = KeyOrder(key_description.reverse_flags);
 }
@@ -1629,6 +1644,12 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(date_time_overflow_behavior_ignore_)
 {}
+
+String KeyCondition::keyColumnName(const String & query_side_name) const
+{
+    auto alias = key_column_aliases.find(query_side_name);
+    return alias == key_column_aliases.end() ? query_side_name : alias->second;
+}
 
 bool KeyCondition::isRelaxed() const
 {
@@ -2136,7 +2157,7 @@ bool KeyCondition::canConstantBeWrappedByMonotonicFunctions(
 {
     out_chain_is_positive = true;
 
-    String expr_name = node.getColumnName();
+    String expr_name = keyColumnName(node.getColumnName());
 
     if (!info.key_subexpr_names.contains(expr_name))
         return false;
@@ -2741,7 +2762,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
 {
     out_atom_is_exact = false;
 
-    String expr_name = node.getColumnName();
+    String expr_name = keyColumnName(node.getColumnName());
 
     if (!info.key_subexpr_names.contains(expr_name))
     {
@@ -3864,7 +3885,7 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
     const auto & sample_block = info.key_expr->getSampleBlock();
 
     /// Key columns should use canonical names for the index analysis.
-    String name = node.getColumnName();
+    String name = keyColumnName(node.getColumnName());
 
     auto it = key_columns.find(name);
     if (key_columns.end() != it)
@@ -4157,7 +4178,7 @@ bool KeyCondition::canSetValuesBeWrappedByDeterministicFunctions(
     out_is_injective = false;
 
     // Checking if column name matches any of key subexpressions
-    String expr_name = node.getColumnName();
+    String expr_name = keyColumnName(node.getColumnName());
 
     if (!info.key_subexpr_names.contains(expr_name))
     {
@@ -4573,7 +4594,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 auto first_argument = point_argument.toFunctionNode();
                 for (size_t i = 0; i < 2; ++i)
                 {
-                    auto name = first_argument.getArgumentAt(i).getColumnName();
+                    auto name = keyColumnName(first_argument.getArgumentAt(i).getColumnName());
                     auto it = key_columns.find(name);
                     if (it == key_columns.end())
                     {
@@ -4590,7 +4611,7 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                 /// e.g. a `Point` column. Tuple values are ordered lexicographically, so the range
                 /// of such key column constrains the coordinates of the point - see the evaluation
                 /// in `checkInHyperrectangle`.
-                auto name = point_argument.getColumnName();
+                auto name = keyColumnName(point_argument.getColumnName());
                 auto it = key_columns.find(name);
                 if (it == key_columns.end())
                     return false;

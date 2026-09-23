@@ -201,7 +201,7 @@ namespace
 
 KeyCondition buildCondition(const IndexDescription & index, const ActionsDAGWithInversionPushDown & filter_dag, ContextPtr context)
 {
-    return KeyCondition{filter_dag, context, index.column_names, index.expression};
+    return KeyCondition{filter_dag, context, index.column_names, index.column_name_aliases, index.expression};
 }
 
 }

@@ -156,10 +156,12 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const ActionsDAG::Node * predicate,
     ContextPtr context,
     const Block & index_sample_block,
+    const NameToNameMap & column_name_aliases_,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_,
     NameSet columns_shadowing_map_subcolumns_)
     : index_columns(index_sample_block.getNames())
+    , column_name_aliases(column_name_aliases_)
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
@@ -320,7 +322,10 @@ bool MergeTreeConditionBloomFilterText::mayBeTrueOnGranule(MergeTreeIndexGranule
 
 std::optional<size_t> MergeTreeConditionBloomFilterText::getKeyIndex(const std::string & key_column_name)
 {
-    const auto it = std::ranges::find(index_columns, key_column_name);
+    auto it = std::ranges::find(index_columns, key_column_name);
+    if (it == index_columns.end())
+        if (auto alias = column_name_aliases.find(key_column_name); alias != column_name_aliases.end())
+            it = std::ranges::find(index_columns, alias->second);
     return it == index_columns.end() ? std::nullopt : std::make_optional<size_t>(std::ranges::distance(index_columns.cbegin(), it));
 }
 
@@ -980,7 +985,7 @@ MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeConditionBloomFilterText>(
-        predicate, context, index.sample_block, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
+        predicate, context, index.sample_block, index.column_name_aliases, params, tokenizer.get(), getColumnsShadowingMapSubcolumns());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

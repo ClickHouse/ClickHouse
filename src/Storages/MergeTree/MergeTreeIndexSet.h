@@ -147,6 +147,10 @@ private:
     /// `ExpressionActions::execute` later binds the granule column by name too. A name that
     /// matches under a different type would silently substitute a differently-typed column.
     std::unordered_map<String, DataTypePtr> key_columns;
+    /// Query-side name -> declared name, see `getColumnNameAliases`.
+    NameToNameMap column_name_aliases;
+    /// The declared name of the index column a query names `query_side_name`.
+    const String & keyColumnName(const String & query_side_name) const;
     ExpressionActionsPtr actions;
     String actions_output_column_name;
 

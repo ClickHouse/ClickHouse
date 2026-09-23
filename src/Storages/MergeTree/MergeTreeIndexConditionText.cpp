@@ -162,7 +162,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     const ActionsDAG::Node * predicate,
     ContextPtr context_,
     const Block & index_sample_block,
-    const std::optional<String> & normalized_index_column_name_,
+    const NameToNameMap & column_name_aliases_,
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
@@ -171,7 +171,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     : WithContext(context_)
     , header(index_sample_block)
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
-    , normalized_index_column_name(normalized_index_column_name_)
+    , column_name_aliases(column_name_aliases_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)

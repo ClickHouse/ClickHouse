@@ -4,6 +4,7 @@
 #include <Functions/IFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -30,6 +31,7 @@ KeyDescription::KeyDescription(const KeyDescription & other)
     , expression_list_ast(other.expression_list_ast ? other.expression_list_ast->clone() : nullptr)
     , sample_block(other.sample_block)
     , column_names(other.column_names)
+    , column_name_aliases(other.column_name_aliases)
     , reverse_flags(other.reverse_flags)
     , data_types(other.data_types)
     , additional_columns(other.additional_columns)
@@ -61,6 +63,7 @@ KeyDescription & KeyDescription::operator=(const KeyDescription & other)
 
     sample_block = other.sample_block;
     column_names = other.column_names;
+    column_name_aliases = other.column_name_aliases;
     reverse_flags = other.reverse_flags;
     data_types = other.data_types;
 
@@ -168,6 +171,7 @@ KeyDescription KeyDescription::getKeyFromAST(
     checkExpressionDoesntContainSubqueries(*key_expression_list);
 
     std::tie(result.expression_list_ast, result.column_names, result.reverse_flags) = buildKeyColumns(key_expression_list, additional_columns);
+    result.column_name_aliases = getColumnNameAliases(result.expression_list_ast);
     if (!result.reverse_flags.empty() && result.reverse_flags.size() != result.expression_list_ast->children.size())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -282,6 +286,62 @@ KeyDescription KeyDescription::parse(
         ast->setParenthesized(false);
 
     return getKeyFromAST(ast, columns, virtuals, context);
+}
+
+namespace
+{
+
+void rewriteEmptyStringComparisons(ASTPtr & ast)
+{
+    for (auto & child : ast->children)
+        rewriteEmptyStringComparisons(child);
+
+    const auto * function = ast->as<ASTFunction>();
+    if (!function || (function->name != "equals" && function->name != "notEquals")
+        || !function->arguments || function->arguments->children.size() != 2)
+        return;
+
+    auto is_empty_string_literal = [](const ASTPtr & node)
+    {
+        const auto * literal = node->as<ASTLiteral>();
+        return literal && literal->value.getType() == Field::Types::String && literal->value.safeGet<String>().empty();
+    };
+
+    const auto & arguments = function->arguments->children;
+    ASTPtr expression;
+
+    if (is_empty_string_literal(arguments[1]))
+        expression = arguments[0];
+    else if (is_empty_string_literal(arguments[0]))
+        expression = arguments[1];
+    else
+        return;
+
+    ast = makeASTFunction(function->name == "equals" ? "empty" : "notEmpty", expression);
+}
+
+}
+
+NameToNameMap getColumnNameAliases(const ASTPtr & expression_list)
+{
+    NameToNameMap aliases;
+    if (!expression_list)
+        return aliases;
+
+    NameSet declared_names;
+    for (const auto & expression : expression_list->children)
+        declared_names.insert(expression->getColumnName());
+
+    for (const auto & expression : expression_list->children)
+    {
+        ASTPtr rewritten = expression->clone();
+        rewriteEmptyStringComparisons(rewritten);
+
+        String rewritten_name = rewritten->getColumnName();
+        if (!declared_names.contains(rewritten_name))
+            aliases.emplace(std::move(rewritten_name), expression->getColumnName());
+    }
+    return aliases;
 }
 
 }
