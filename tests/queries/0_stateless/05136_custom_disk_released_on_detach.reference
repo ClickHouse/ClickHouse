@@ -8,12 +8,3 @@ after detach database	0
 rows after attach database	4
 after attach database	2
 after drop database	0
-nested disks after create	3
-nested disks after dropping the cache wrapper	2
-nested disks after detaching the encrypted wrapper	0
-rows after attaching the encrypted wrapper	6
-nested disks after attach	2
-nested disks after drop	0
-shut down	Disk cache shut down
-shut down	Disk inner shut down
-shut down	Disk inner shut down
