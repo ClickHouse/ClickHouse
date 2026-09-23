@@ -362,6 +362,9 @@ std::optional<size_t> MergeTreeReaderStreamSingleColumn::getLeftOffset(size_t ma
         return std::nullopt;
     if (mark >= marks_count)
         return file_size;
+    /// All marks of an empty file point to its beginning, so don't load them.
+    if (file_size == 0)
+        return 0;
     loadMarks();
     return marks_getter->getMark(mark, 0).offset_in_compressed_file;
 }
