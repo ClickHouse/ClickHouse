@@ -328,10 +328,8 @@ protected:
     /// don't populate it (or paths outside the batched commit loop) get a direct
     /// fallback read instead, so correctness never depends on the cache being warm.
     /// Outer optional: whether the batched lookup checked this file at all
-    /// (nullopt = not checked, e.g. cache never populated). Inner optional:
-    /// whether the marker exists (nullopt = checked, marker absent). Keeping
-    /// these separate means a known "marker absent" result does not trigger a
-    /// redundant fallback read in addClearRetriableRequestIfExists().
+    /// Outer optional: cached state (nullopt = unpopulated).
+    /// Inner optional: retriable marker path if present.
     mutable std::optional<std::optional<Coordination::Stat>> retriable_node_stat_cache;
 
     /// If a live `.retriable` marker exists for this file, add its removal to
