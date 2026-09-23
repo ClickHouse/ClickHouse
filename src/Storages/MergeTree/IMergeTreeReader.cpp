@@ -154,6 +154,9 @@ void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
         if (isTextIndexVirtualColumn(it->name))
             continue;
 
+        if (virtual_columns.getDefault(it->name))
+            continue;
+
         Field field;
         if (auto field_it = virtual_fields.find(it->name); field_it != virtual_fields.end())
             field = field_it->second;
@@ -264,7 +267,6 @@ ContextPtr IMergeTreeReader::createContextForDefaultExpressions() const
     /// Default/materialized expressions may contain experimental or suspicious types that can be
     /// disabled in the current context. We must not perform any checks during reads from existing tables.
     enableAllExperimentalSettings(context_copy);
-    context_copy->setSetting("enable_analyzer", settings.enable_analyzer);
     return context_copy;
 }
 
