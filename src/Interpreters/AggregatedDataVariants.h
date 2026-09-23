@@ -497,8 +497,8 @@ struct AggregatedDataVariants : private boost::noncopyable
     static bool isConvertibleToTwoLevel(Type type);
     void convertToTwoLevel();
     bool isLowCardinality() const;
-    /// Serialized hash methods that do not use null maps; `Aggregator` passes non-nullable
-    /// `LowCardinality` key columns to them without materializing full columns first.
+    /// Serialized hash methods; `Aggregator` passes non-nullable `LowCardinality` key columns
+    /// to them without materializing full columns first.
     bool isSerialized() const;
     static ColumnsHashing::HashMethodContextPtr createCache(Type type, const ColumnsHashing::HashMethodContextSettings & settings);
     bool topKHeapEverRejected() const;
