@@ -1,6 +1,7 @@
 #include <Functions/FunctionTopKFilter.h>
 #include <Columns/Collator.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -36,6 +37,23 @@ bool hasEmptyTuple(const DataTypePtr & type)
     for (const auto & element_type : tuple_type->getElements())
         if (hasEmptyTuple(element_type))
             return true;
+
+    return false;
+}
+
+/// `lessOrEquals` and `greaterOrEquals` are false for NaN, while the sort places NaN first or last by
+/// `nulls_direction`, so the comparison functions would drop NaN rows that rank before the threshold.
+/// The column comparison path places NaN the way the sort does.
+bool hasFloatingPoint(const DataTypePtr & type)
+{
+    const auto nested_type = removeNullable(removeLowCardinality(type));
+    if (isFloat(nested_type))
+        return true;
+
+    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(nested_type.get()))
+        for (const auto & element_type : tuple_type->getElements())
+            if (hasFloatingPoint(element_type))
+                return true;
 
     return false;
 }
@@ -110,7 +128,8 @@ public:
             auto current_threshold = threshold_tracker->getValue();
             auto data_type = arguments[0].type;
 
-            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type))
+            if (collator || data_type->isNullable() || isDynamic(data_type) || isVariant(data_type) || hasEmptyTuple(data_type)
+                || hasFloatingPoint(data_type))
                 return executeGeneral(arguments[0], current_threshold, data_type, input_rows_count);
 
             return executeVectorized(arguments[0], current_threshold, data_type, input_rows_count);
@@ -122,7 +141,7 @@ public:
     }
 
 private:
-    /// Fast path: vectorized less/greater for non-nullable, non-collation types.
+    /// Fast path: vectorized less/greater for non-nullable, non-collation types without NaN.
     ColumnPtr executeVectorized(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
@@ -135,7 +154,7 @@ private:
         return elem_compare->execute(args, elem_compare->getResultType(), input_rows_count, false);
     }
 
-    /// General path for `Nullable`, collation-aware, and non-vectorizable `Tuple` types.
+    /// General path for `Nullable`, collation-aware, floating-point, and non-vectorizable `Tuple` types.
     ColumnPtr executeGeneral(
         const ColumnWithTypeAndName & argument,
         const Field & current_threshold,
