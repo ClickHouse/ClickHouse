@@ -22,6 +22,7 @@
 #include <Backups/RestorerFromBackup.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/TimeSeries/TimeSeriesDeduplicationCache.h>
 #include <Storages/TimeSeries/TimeSeriesSink.h>
 #include <Parsers/getTimeSeriesSettingVersion.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
@@ -32,9 +33,26 @@
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <base/insertAtEnd.h>
 #include <filesystem>
+#include <mutex>
 #include <boost/algorithm/string.hpp>
 #include <base/EnumReflection.h>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric TimeSeriesMetricFamiliesDeduplicationCacheEntries;
+    extern const Metric TimeSeriesMetricFamiliesDeduplicationCacheBytes;
+    extern const Metric TimeSeriesTagsDeduplicationCacheEntries;
+    extern const Metric TimeSeriesTagsDeduplicationCacheBytes;
+}
+
+namespace ProfileEvents
+{
+    extern const Event TimeSeriesMetricFamiliesDeduplicationCacheHits;
+    extern const Event TimeSeriesMetricFamiliesDeduplicationCacheMisses;
+    extern const Event TimeSeriesTagsDeduplicationCacheHits;
+    extern const Event TimeSeriesTagsDeduplicationCacheMisses;
+}
 
 namespace DB
 {
@@ -45,6 +63,11 @@ namespace Setting
 
 namespace TimeSeriesSetting
 {
+    extern const TimeSeriesSettingsBool store_min_time_and_max_time;
+    extern const TimeSeriesSettingsUInt64 metric_families_deduplication_cache_expiration_seconds;
+    extern const TimeSeriesSettingsUInt64 metric_families_deduplication_cache_size_bytes;
+    extern const TimeSeriesSettingsUInt64 tags_deduplication_cache_expiration_seconds;
+    extern const TimeSeriesSettingsUInt64 tags_deduplication_cache_size_bytes;
     extern const TimeSeriesSettingsUInt64 version;
 }
 
@@ -73,10 +96,15 @@ namespace
         return copy;
     }
 
-    /// We allow altering only two settings: `id_generator` and `filter_by_min_time_and_max_time`.
+    /// Only the settings which don't affect the stored data can be altered.
     void checkSettingCanBeAltered(std::string_view setting_name, std::string_view storage_name)
     {
-        if ((setting_name != "id_generator") && (setting_name != "filter_by_min_time_and_max_time"))
+        if ((setting_name != "id_generator")
+            && (setting_name != "filter_by_min_time_and_max_time")
+            && (setting_name != "metric_families_deduplication_cache_size_bytes")
+            && (setting_name != "metric_families_deduplication_cache_expiration_seconds")
+            && (setting_name != "tags_deduplication_cache_size_bytes")
+            && (setting_name != "tags_deduplication_cache_expiration_seconds"))
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "Setting '{}' of storage {} cannot be changed after the table is created", setting_name, storage_name);
     }
@@ -218,6 +246,8 @@ StorageTimeSeries::StorageTimeSeries(
 
     has_inner_tables = std::ranges::any_of(targets, &Target::is_inner_table);
     storage_settings.set(std::move(settings));
+    applySettingsToTagsDeduplicationCache();
+    applySettingsToMetricFamiliesDeduplicationCache();
 
     if (!comment.empty())
         storage_metadata.setComment(comment);
@@ -362,6 +392,101 @@ bool StorageTimeSeries::isInnerTable(ViewTarget::Kind target_kind) const
 }
 
 
+void StorageTimeSeries::applySettingsToTagsDeduplicationCache()
+{
+    std::lock_guard lock{caches_mutex};
+
+    /// The settings are read under the mutex, so that the cache updated last follows the settings published last.
+    auto settings_ptr = storage_settings.get();
+    const auto & settings = *settings_ptr;
+
+    size_t max_size_bytes = settings[TimeSeriesSetting::tags_deduplication_cache_size_bytes];
+    UInt64 expiration_seconds = settings[TimeSeriesSetting::tags_deduplication_cache_expiration_seconds];
+
+    /// Tables of earlier versions don't use the caches. Every insert changes `min_time` and `max_time` of a time series,
+    /// so the rows of the tags table can be deduplicated only if these columns aren't stored.
+    bool enabled = (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES)
+        && !settings[TimeSeriesSetting::store_min_time_and_max_time] && max_size_bytes && expiration_seconds;
+    if (!enabled)
+    {
+        tags_deduplication_cache = nullptr;
+        return;
+    }
+
+    /// An existing cache keeps its entries, only its limits change.
+    if (tags_deduplication_cache)
+    {
+        tags_deduplication_cache->setLimits(max_size_bytes, expiration_seconds);
+        return;
+    }
+
+    tags_deduplication_cache = std::make_shared<TimeSeriesDeduplicationCache>(
+        max_size_bytes,
+        expiration_seconds,
+        CurrentMetrics::TimeSeriesTagsDeduplicationCacheEntries,
+        CurrentMetrics::TimeSeriesTagsDeduplicationCacheBytes,
+        ProfileEvents::TimeSeriesTagsDeduplicationCacheHits,
+        ProfileEvents::TimeSeriesTagsDeduplicationCacheMisses);
+}
+
+void StorageTimeSeries::applySettingsToMetricFamiliesDeduplicationCache()
+{
+    std::lock_guard lock{caches_mutex};
+
+    /// The settings are read under the mutex, so that the cache updated last follows the settings published last.
+    auto settings_ptr = storage_settings.get();
+    const auto & settings = *settings_ptr;
+
+    size_t max_size_bytes = settings[TimeSeriesSetting::metric_families_deduplication_cache_size_bytes];
+    UInt64 expiration_seconds = settings[TimeSeriesSetting::metric_families_deduplication_cache_expiration_seconds];
+
+    /// Tables of earlier versions don't use the caches.
+    bool enabled = (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_DEDUPLICATION_CACHES)
+        && max_size_bytes && expiration_seconds;
+    if (!enabled)
+    {
+        metric_families_deduplication_cache = nullptr;
+        return;
+    }
+
+    /// An existing cache keeps its entries, only its limits change.
+    if (metric_families_deduplication_cache)
+    {
+        metric_families_deduplication_cache->setLimits(max_size_bytes, expiration_seconds);
+        return;
+    }
+
+    metric_families_deduplication_cache = std::make_shared<TimeSeriesDeduplicationCache>(
+        max_size_bytes,
+        expiration_seconds,
+        CurrentMetrics::TimeSeriesMetricFamiliesDeduplicationCacheEntries,
+        CurrentMetrics::TimeSeriesMetricFamiliesDeduplicationCacheBytes,
+        ProfileEvents::TimeSeriesMetricFamiliesDeduplicationCacheHits,
+        ProfileEvents::TimeSeriesMetricFamiliesDeduplicationCacheMisses);
+}
+
+TimeSeriesDeduplicationCachePtr StorageTimeSeries::getTagsDeduplicationCache() const
+{
+    std::lock_guard lock{caches_mutex};
+    return tags_deduplication_cache;
+}
+
+TimeSeriesDeduplicationCachePtr StorageTimeSeries::getMetricFamiliesDeduplicationCache() const
+{
+    std::lock_guard lock{caches_mutex};
+    return metric_families_deduplication_cache;
+}
+
+void StorageTimeSeries::clearCaches()
+{
+    std::lock_guard lock{caches_mutex};
+    if (tags_deduplication_cache)
+        tags_deduplication_cache->clear();
+    if (metric_families_deduplication_cache)
+        metric_families_deduplication_cache->clear();
+}
+
+
 void StorageTimeSeries::drop()
 {
     /// Sync flag and the setting make sense for Atomic databases only.
@@ -415,6 +540,9 @@ void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, Con
         throw Exception(ErrorCodes::INCORRECT_QUERY, "TimeSeries table {} targets only existing tables. Execute the statement directly on it.",
                         getStorageID().getNameForLogs());
     }
+
+    /// The caches are cleared before the truncation: if it fails in the middle, the next insert writes its rows again instead of skipping them.
+    clearCaches();
 
     for (auto target_kind : getTargetKinds())
     {
@@ -609,7 +737,22 @@ void StorageTimeSeries::alter(const AlterCommands & params, ContextPtr local_con
     setInMemoryMetadata(new_metadata);
 
     if (new_settings)
+    {
+        /// The caches are updated after the new settings are published, so they read the published values.
+        auto old_settings = storage_settings.get();
+        auto setting_changed = [&](const auto & setting) { return (*old_settings)[setting] != (*new_settings)[setting]; };
+        bool tags_cache_changed = setting_changed(TimeSeriesSetting::tags_deduplication_cache_size_bytes)
+            || setting_changed(TimeSeriesSetting::tags_deduplication_cache_expiration_seconds);
+        bool metric_families_cache_changed = setting_changed(TimeSeriesSetting::metric_families_deduplication_cache_size_bytes)
+            || setting_changed(TimeSeriesSetting::metric_families_deduplication_cache_expiration_seconds);
+
         storage_settings.set(std::move(new_settings));
+
+        if (tags_cache_changed)
+            applySettingsToTagsDeduplicationCache();
+        if (metric_families_cache_changed)
+            applySettingsToMetricFamiliesDeduplicationCache();
+    }
 }
 
 
@@ -1034,7 +1177,7 @@ CREATE TABLE my_table
     `help` String
 )
 ENGINE = TimeSeries
-SETTINGS version = 6, recent_samples_ttl_seconds = 345600
+SETTINGS version = 7, recent_samples_ttl_seconds = 345600
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1238,9 +1381,12 @@ By default inner target tables use the following table engines:
 - the [recent samples](#recent-samples-table) table uses [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) partitioned by 5-hour buckets (see the [recent_samples_partition_by](#settings) setting) with a `TTL` derived from
 the [recent_samples_ttl_seconds](#settings) setting and with `ttl_only_drop_parts` enabled, so expired parts are dropped as a whole;
 - the [tags](#tags-table) table uses [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) because the same data is often inserted multiple times to this table so we need a way
-to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`;
+to remove duplicates, and also because it's required to do aggregation for columns `min_time` and `max_time`. If these columns aren't stored
+(see the `store_min_time_and_max_time` setting), most duplicates don't even reach the table: the deduplication cache of the `TimeSeries` table
+skips the time series written recently (see the `tags_deduplication_cache_expiration_seconds` setting);
 - the [metric families](#metric-families-table) table uses [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) because the same data is often inserted multiple times to this table so we need a way
-to remove duplicates.
+to remove duplicates. Most duplicates don't even reach the table: the deduplication cache of the `TimeSeries` table skips the metric families
+written recently (see the `metric_families_deduplication_cache_expiration_seconds` setting).
 
 The engine family of the generated inner tables follows the `default_table_engine` query-level setting:
 with `default_table_engine = ReplicatedMergeTree` or `SharedMergeTree` the inner tables use the corresponding
@@ -1300,18 +1446,23 @@ The type of the `id` column of an external tags table and the expression generat
 
 ## Altering settings {#altering-settings}
 
-Two settings can be changed after `CREATE`:
+The following settings can be changed after `CREATE`:
 
 - `id_generator`
 - `filter_by_min_time_and_max_time`
+- `metric_families_deduplication_cache_size_bytes`, `metric_families_deduplication_cache_expiration_seconds`
+- `tags_deduplication_cache_size_bytes`, `tags_deduplication_cache_expiration_seconds`
 
 ```sql
 ALTER TABLE my_table MODIFY SETTING id_generator = 'sipHash64(tags)';
 ALTER TABLE my_table MODIFY SETTING filter_by_min_time_and_max_time = 0;
+ALTER TABLE my_table MODIFY SETTING metric_families_deduplication_cache_expiration_seconds = 600;
 ALTER TABLE my_table RESET SETTING filter_by_min_time_and_max_time;
 ```
 
 Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator.
+Changing the limits of a deduplication cache keeps its entries, except those which don't fit the new limits.
+Setting the size or the expiration of a cache to 0 disables it and frees its memory; enabling it again starts with an empty cache.
 
 The other settings can't be changed with `ALTER ... MODIFY SETTING`: most of them are baked into the schema of the inner tables at `CREATE` time,
 and the `version` setting is pinned automatically at `CREATE` time and identifies the schema itself (see [Schema versioning](#schema-versioning)).
@@ -1329,19 +1480,23 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |
 | `aggregate_min_time_and_max_time` | Bool | true | When creating an inner target `tags` table, this flag enables using `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` instead of just `Nullable(DateTime64(3))` as the type of the `min_time` column, and the same for the `max_time` column |
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
+| `metric_families_deduplication_cache_size_bytes` | UInt64 | 10485760 | Maximum size in bytes of the deduplication cache of the [metric families](#metric-families-table) table. The cache remembers the latest description of each metric family written recently, so the same descriptions aren't written again with every insert; the oldest entries are evicted when the cache is full. Set to 0 to disable the cache, see also `metric_families_deduplication_cache_expiration_seconds` |
+| `metric_families_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [metric families](#metric-families-table) table expires, counted from the moment the metric family was written. Every metric family is written again at least once per this period, so any difference between the cache and the table disappears within it. The cache is local to the server: it's cleared by `TRUNCATE TABLE` and by `SYSTEM DROP TIME SERIES CACHES`. Set to 0 to disable the cache |
+| `tags_deduplication_cache_size_bytes` | UInt64 | 104857600 | Maximum size in bytes of the deduplication cache of the [tags](#tags-table) table. The cache stores the hashes of the time series recently written to the table, so the same tags aren't written again with every insert; the oldest entries are evicted when the cache is full. The cache is used only when `store_min_time_and_max_time` is disabled, because otherwise every insert changes `min_time` and `max_time`; a non-zero value can't be set for a table storing these columns. Set to 0 to disable the cache, see also `tags_deduplication_cache_expiration_seconds` |
+| `tags_deduplication_cache_expiration_seconds` | UInt64 | 3600 | Time after which an entry of the deduplication cache of the [tags](#tags-table) table expires, counted from the moment the time series was written. Every time series is written again at least once per this period, so any difference between the cache and the table disappears within it. The cache is local to the server: it's cleared by `TRUNCATE TABLE` and by `SYSTEM DROP TIME SERIES CACHES`. Set to 0 to disable the cache |
 | `samples_index_granularity` | UInt64 | 32768 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL toDateTime(timestamp) + toIntervalSecond(recent_samples_ttl_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(toDateTime(timestamp), toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(timestamp)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 6 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 7 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 6) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 7) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
@@ -1369,6 +1524,7 @@ the `promql` dialect, and the Prometheus HTTP query API):
 | 4 | The `metrics` target table was renamed to `metric families`: the inner table is named `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, and the definition is written with the keyword `METRIC FAMILIES` instead of `METRICS`. The stored data didn't change |
 | 5 | New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index on the `tags` map by default (see [Tags table](#tags-table)) |
 | 6 | The column `metric_family_name` of the [metric families](#metric-families-table) table was renamed to `metric_family`, the name of the corresponding outer column. Tables of earlier versions keep the old name of the column, and the [timeSeriesMetricFamilies](/reference/functions/table-functions/timeSeriesMetricFamilies) table function returns the column under the name the table uses. An external metric families table must name the column the way the version of the `TimeSeries` table does |
+| 7 | The deduplication caches of the [metric families](#metric-families-table) and [tags](#tags-table) tables were introduced together with their settings (see [`metric_families_deduplication_cache_expiration_seconds`](#settings) and [`tags_deduplication_cache_expiration_seconds`](#settings)). Tables of earlier versions don't use the caches. The stored data didn't change |
 
 # Functions {#functions}
 

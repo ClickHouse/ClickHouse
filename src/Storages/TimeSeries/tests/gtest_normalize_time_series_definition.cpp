@@ -200,7 +200,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, DefaultDefinition)
     auto definition = normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries");
 
     EXPECT_TRUE(definition.contains("`samples` Array(Tuple(DateTime64(3), Float64))")) << definition;
-    EXPECT_TRUE(definition.contains("version = 6")) << definition;
+    EXPECT_TRUE(definition.contains("version = 7")) << definition;
     EXPECT_TRUE(definition.contains("recent_samples_ttl_seconds = 345600")) << definition;
 
     /// The `id` type is declared in the inner columns, so there is no need to record it in the settings.
@@ -591,7 +591,7 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, VersionSetting)
     /// The clause `AS <other_table>` doesn't copy the version: a new table gets the latest one.
     auto definition = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries",
         normalizeNewTable("CREATE TABLE db.src ENGINE = TimeSeries SETTINGS version = 0"));
-    EXPECT_TRUE(definition.contains("version = 6")) << definition;
+    EXPECT_TRUE(definition.contains("version = 7")) << definition;
     EXPECT_FALSE(definition.contains("version = 0")) << definition;
 }
 
@@ -821,6 +821,33 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, EarlierVersionDoesNotRecordIdType)
     EXPECT_TRUE(definition.contains("id_generator = 'sipHash64(tags)'")) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "SAMPLES").starts_with("`id` UInt64, ")) << definition;
     EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64, `metric_name` ")) << definition;
+}
+
+
+TEST_F(NormalizeTimeSeriesDefinitionTest, DeduplicationCacheSettings)
+{
+    const std::vector<String> settings = {"metric_families_deduplication_cache_size_bytes", "metric_families_deduplication_cache_expiration_seconds",
+                                          "tags_deduplication_cache_size_bytes", "tags_deduplication_cache_expiration_seconds"};
+
+    /// The settings are recorded, rejected for an earlier version, and dropped from a copy pinned to an earlier version.
+    auto definition = normalizeNewTable(
+        "CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0, metric_families_deduplication_cache_size_bytes = 10, "
+        "metric_families_deduplication_cache_expiration_seconds = 10, tags_deduplication_cache_size_bytes = 10, tags_deduplication_cache_expiration_seconds = 10");
+    auto copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS version = 6", definition);
+    for (const auto & setting : settings)
+    {
+        EXPECT_TRUE(definition.contains(setting + " = 10")) << definition;
+        EXPECT_FALSE(copy.contains(setting)) << copy;
+        EXPECT_EQ(getExceptionCode([&] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS version = 6, store_min_time_and_max_time = 0, " + setting + " = 10"); }), ErrorCodes::INVALID_SETTING_VALUE) << setting;
+    }
+
+    /// The cache of the tags table is useless when every insert changes `min_time` and `max_time`: enabling it is rejected,
+    /// an explicit zero is harmless, and its settings are dropped from a copy which stores these columns.
+    EXPECT_EQ(getExceptionCode([] { normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS tags_deduplication_cache_size_bytes = 10"); }), ErrorCodes::INVALID_SETTING_VALUE);
+    EXPECT_TRUE(normalizeNewTable("CREATE TABLE db.ts ENGINE = TimeSeries SETTINGS tags_deduplication_cache_size_bytes = 0").contains("tags_deduplication_cache_size_bytes = 0"));
+    copy = normalizeNewTableAs("CREATE TABLE db.copy AS db.src ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 1", definition);
+    EXPECT_FALSE(copy.contains("tags_deduplication_cache")) << copy;
+    EXPECT_TRUE(copy.contains("metric_families_deduplication_cache_size_bytes = 10")) << copy;
 }
 
 

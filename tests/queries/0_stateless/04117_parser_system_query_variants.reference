@@ -31,6 +31,7 @@ SYSTEM CLEAR CONNECTIONS CACHE
 --- prewarm cache variants ---
 SYSTEM PREWARM MARK CACHE db.t
 SYSTEM PREWARM PRIMARY INDEX CACHE db.t
+SYSTEM CLEAR TIME SERIES CACHES db.t
 --- merge / fetch / move / sends / ttl / cleanup start/stop ---
 SYSTEM STOP MERGES db.t
 SYSTEM START MERGES db.t
