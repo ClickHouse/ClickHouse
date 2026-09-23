@@ -446,10 +446,6 @@
     M(GPUGroupByKernelMicroseconds, "Time the kernels of the experimental GPU `GROUP BY` ran on the device, apart from the time they waited for uploads and decompression queued before them.", ValueType::Microseconds) \
     M(GPUDecompressionMicroseconds, "Total time spent sending compressed blocks to a GPU and expanding them there.", ValueType::Microseconds) \
     M(GPUDecompressionBytes, "Compressed bytes expanded on a GPU.", ValueType::Bytes) \
-    M(GPUJoinBuildRows, "Number of right table rows sent to a GPU by the experimental GPU hash join.", ValueType::Number) \
-    M(GPUJoinProbeRows, "Number of left table rows whose join key was sent to a GPU by the experimental GPU hash join. The rest of a left row never leaves host memory.", ValueType::Number) \
-    M(GPUJoinMatchedRows, "Number of rows the experimental GPU hash join produced, one per matching pair of a left and a right row.", ValueType::Number) \
-    M(GPUJoinMicroseconds, "Total time spent building a hash table on a GPU, probing it, and moving the join keys in and the results out.", ValueType::Microseconds) \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \

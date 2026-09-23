@@ -1,5 +1,3 @@
-#include "config.h"
-
 #include <Planner/PlannerJoins.h>
 
 #include <Columns/ColumnConst.h>
@@ -40,8 +38,6 @@
 #include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-#include <GPU/GPUDevice.h>
-#include <GPU/GPUJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -96,7 +92,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 void JoinClause::dump(WriteBuffer & buffer) const
@@ -1297,20 +1292,6 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 table_join, right_table_expression_header, /*null_direction_=*/1,
                 /*is_parallel_=*/algorithm == JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE);
     }
-
-#if USE_GPU
-    if (algorithm == JoinAlgorithm::GPU_HASH
-        && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header))
-    {
-        if (const String & probe_error = GPU::deviceProbeError(); !probe_error.empty())
-            throw Exception(
-                ErrorCodes::SUPPORT_IS_DISABLED,
-                "Cannot join on a GPU, which `join_algorithm = 'gpu_hash'` asks for: {}",
-                probe_error);
-
-        return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
-    }
-#endif
 
     if (algorithm == JoinAlgorithm::GRACE_HASH)
     {

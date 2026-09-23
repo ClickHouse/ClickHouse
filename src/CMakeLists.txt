@@ -120,7 +120,6 @@ if (ENABLE_GPU)
         GPU/Cudf.cpp
         GPU/CudfReduction.cpp
         GPU/RecordGroupBy.cpp
-        GPU/CudfHashJoin.cpp
     )
 endif ()
 

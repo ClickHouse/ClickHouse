@@ -130,7 +130,6 @@ enum class JoinAlgorithm : uint8_t
     FULL_SORTING_MERGE,
     IE_JOIN,
     PARALLEL_FULL_SORTING_MERGE,
-    GPU_HASH,
 };
 
 const char * toString(JoinAlgorithm join_algorithm);
