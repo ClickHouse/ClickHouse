@@ -2198,7 +2198,7 @@ Row 1:
 ──────
 resource:          network_read
 path:              /prio/fair/prod
-type:              fifo
+type:              request_queue
 weight:            5
 priority:          0
 is_active:         0
