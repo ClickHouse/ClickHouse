@@ -311,8 +311,7 @@ size_t computeJSONNestingDepth(const String & json)
     return max_depth;
 }
 
-/// `Poco::JSON::Parser` descends recursively over the whole document before a single AST node is
-/// built, so no check inside `createFromJSON` can observe that descent.
+/// `Poco::JSON::Parser` descends recursively over the whole document before any AST node is built.
 class StackCheckingParseHandler : public Poco::JSON::ParseHandler
 {
 public:
@@ -333,8 +332,6 @@ public:
 
 ASTPtr IAST::createFromJSON(const String & json)
 {
-    /// The raw-text bracket budget bounds the document's nesting cheaply, before the parser runs;
-    /// the parse handler below is what bounds the parser's own stack usage.
     /// The budget is a safe multiple of the effective depth limit (the JSON encoding adds bracket
     /// levels per AST/`Field` level), not the limit itself, so a valid serialized AST is never
     /// rejected here — the constructed AST depth is still bounded by the counter check below.
@@ -347,15 +344,14 @@ ASTPtr IAST::createFromJSON(const String & json)
 
     Poco::JSON::Parser parser;
     parser.setHandler(new StackCheckingParseHandler);
-    /// Poco's own default bound is 1000 levels (JSON_DEFAULT_DEPTH); this raises it to the pre-scan's budget.
+    /// Poco's own default bound is 1000 levels (JSON_DEFAULT_DEPTH).
     parser.setDepth(json_nesting_budget);
     Poco::Dynamic::Var result;
     try
     {
         result = parser.parse(json);
     }
-    /// `DB::Exception` derives from `Poco::Exception`, so without this clause the handler's own
-    /// errors would be caught below and reported as `BAD_ARGUMENTS`.
+    /// `DB::Exception` derives from `Poco::Exception`, so this clause must precede the one below.
     catch (const Exception &)
     {
         throw;
