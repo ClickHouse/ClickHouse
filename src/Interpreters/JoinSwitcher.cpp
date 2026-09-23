@@ -27,16 +27,16 @@ JoinSwitcher::JoinSwitcher(
         limits.max_bytes = table_join->defaultMaxBytes();
 }
 
-bool JoinSwitcher::addBlockToJoin(const Block & block, bool)
+bool JoinSwitcher::addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool)
 {
     std::lock_guard lock(switch_mutex);
 
     if (switched)
-        return join->addBlockToJoin(block);
+        return join->addBlockToJoin(block, num_rows, worker_id, true);
 
     /// HashJoin with external limits check
 
-    join->addBlockToJoin(block, false);
+    join->addBlockToJoin(block, num_rows, worker_id, false);
     size_t rows = join->getTotalRowCount();
     size_t bytes = join->getTotalByteCount();
 
@@ -68,7 +68,7 @@ bool JoinSwitcher::switchJoin()
 
     bool success = true;
     for (const Block & saved_block : right_blocks)
-        success = success && join->addBlockToJoin(saved_block);
+        success = success && join->addBlockToJoin(saved_block, saved_block.rows(), /* worker_id = */ 0, true);
 
     switched = true;
     return success;

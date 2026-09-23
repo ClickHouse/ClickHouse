@@ -208,7 +208,7 @@ void StorageJoin::mutate(const MutationCommands & commands, ContextPtr context)
         Block block;
         while (executor.pull(block))
         {
-            new_data->addBlockToJoin(block, true);
+            new_data->addBlockToJoin(block, block.rows(), /* worker_id = */ 0, true);
             if (persistent)
                 backup_stream.write(block);
         }
@@ -341,7 +341,7 @@ void StorageJoin::insertBlock(const Block & block, ContextPtr context)
     if (!holder)
         throw Exception(ErrorCodes::DEADLOCK_AVOIDED, "StorageJoin: cannot insert data because current query tries to read from this storage");
 
-    join->addBlockToJoin(block_to_insert, true);
+    join->addBlockToJoin(block_to_insert, block_to_insert.rows(), /* worker_id = */ 0, true);
 }
 
 size_t StorageJoin::getSize(ContextPtr context) const

@@ -75,7 +75,7 @@ public:
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
-    bool addBlockToJoin(const Block & block, bool check_limits) override;
+    bool addBlockToJoin(const Block & block, size_t num_rows, size_t worker_id, bool check_limits) override;
     void checkTypesOfKeys(const Block & block) const override;
     void initialize(const Block & sample_block) override;
     JoinResultPtr joinBlock(Block block) override;
@@ -136,8 +136,8 @@ private:
 
     /// `spill_immediately` is for the memory-pressure path: the new GraceHashJoin repartitions as it
     /// takes the data over, instead of holding all of it in bucket 0 until the next spill request.
-    void switchToGraceHashJoin(bool spill_immediately = false);
-    void tryConvertSlots();
+    void switchToGraceHashJoin(size_t worker_id, bool spill_immediately = false);
+    void tryConvertSlots(size_t worker_id);
 
     LoggerPtr log;
     std::shared_ptr<TableJoin> table_join;
