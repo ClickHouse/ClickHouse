@@ -21,6 +21,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/Converter.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/resolvePrometheusQueryTarget.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
@@ -121,12 +122,12 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     /// so the data types are taken from the target's own metadata in both cases.
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
     UInt64 time_series_version = outerSamplesVersion(*time_series_storage, *time_series_metadata);
-    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
-        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type);
+    auto table_timestamp_type = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_version)).type).first;
 
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
 
-    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), timestamp_scale};
+    PrometheusQueryTree promql_query{getStringConstArgument(args[argument_index++], context, "promql_query"), time_scale};
 
     /// Applied only when the query actually reads the table: '1 + 2' has no selector, so
     /// wrapper-only settings must not refuse it.
@@ -142,6 +143,7 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
     DateTime64 start_time;
     DateTime64 end_time;
     Decimal64 step;
+    DataTypes time_parameter_types;  /// The types of the timestamp parameters: they can specify the time zone of the results.
 
     if (over_range)
     {
@@ -150,18 +152,20 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         auto [step_field, step_type] = evaluateConstantExpression(args[argument_index++], context);
 
         mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        start_time = parseTimeSeriesTimestamp(start_time_field, start_time_type, timestamp_scale);
-        end_time = parseTimeSeriesTimestamp(end_time_field, end_time_type, timestamp_scale);
-        step = parseTimeSeriesDuration(step_field, step_type, timestamp_scale);
+        start_time = parseTimeSeriesTimestamp(start_time_field, start_time_type, time_scale);
+        end_time = parseTimeSeriesTimestamp(end_time_field, end_time_type, time_scale);
+        step = parseTimeSeriesDuration(step_field, step_type, time_scale);
+        time_parameter_types = {start_time_type, end_time_type};
     }
     else
     {
         auto [time_field, time_type] = evaluateConstantExpression(args[argument_index++], context);
 
         mode = PrometheusQueryEvaluationMode::QUERY;
-        start_time = parseTimeSeriesTimestamp(time_field, time_type, timestamp_scale);
+        start_time = parseTimeSeriesTimestamp(time_field, time_type, time_scale);
         end_time = start_time;
         step = 0;
+        time_parameter_types = {time_type};
     }
 
     chassert(argument_index == args.size());
@@ -177,9 +181,10 @@ StoragePrometheusQuery::Configuration StoragePrometheusQuery::getConfiguration(A
         evaluation_settings.skip_unavailable_shards = distributed_target->skip_unavailable_shards;
         evaluation_settings.skip_unavailable_shards_mode = std::move(distributed_target->skip_unavailable_shards_mode);
     }
-    evaluation_settings.timestamp_data_type = std::move(timestamp_data_type);
-    evaluation_settings.scalar_data_type = std::move(scalar_data_type);
     evaluation_settings.time_series_version = time_series_version;
+    evaluation_settings.time_zone = getPromQLResultTimeZone(table_timestamp_type, time_parameter_types);
+    evaluation_settings.table_timestamp_type = std::move(table_timestamp_type);
+    evaluation_settings.time_scale = time_scale;
     evaluation_settings.mode = mode;
     evaluation_settings.start_time = start_time;
     evaluation_settings.end_time = end_time;
