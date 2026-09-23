@@ -67,7 +67,9 @@ bool ParserPolyglotQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expecte
 
     /// Advance the token iterator to the end so the caller knows we
     /// consumed all remaining input.
-    while (!pos->isEnd())
+    /// Stop on `ErrorMaxQuerySizeExceeded` too: the lexer returns it forever once the input crosses
+    /// `max_query_size`, and the size check below rejects such a query.
+    while (!pos->isEnd() && pos->type != TokenType::ErrorMaxQuerySizeExceeded)
         ++pos;
 
     /// Reject oversized queries before passing them to the transpiler

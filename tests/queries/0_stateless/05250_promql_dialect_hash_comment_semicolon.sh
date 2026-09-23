@@ -40,4 +40,8 @@ promql_client -q $'sum(\n  up #keep ; comment\n)' | cut -f1,3
 echo "-- a comment the SQL lexer reads past the end of the statement is an error, not a wrong split"
 promql_client -q $'sum(up) #it\'s\n; sum(up) #x\'y\n' 2>&1 | grep -o -m1 'Cannot find the end of the PromQL statement'
 
+echo "-- max_query_size crossed only after a semicolon in a comment"
+promql_client --max_query_size 50 -q $'sum(up #keep ; comment\n+ up + up + up + up + up + up + up + up + up)' 2>&1 \
+    | grep -o -m1 'Max query size exceeded'
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"

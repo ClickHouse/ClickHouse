@@ -103,6 +103,13 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
             text_end = lookahead->begin;
             break;
         }
+
+        /// The lexer returns this token forever once the input crosses `max_query_size`, so it is
+        /// terminal. The SQL prescan in `tryParseQuery` stops at a `;`, which may be inside a PromQL
+        /// comment, so it doesn't see it. The lookahead has advanced the maximum parsed position
+        /// to this token, and `tryParseQuery` reports it as the lexical error.
+        if (lookahead->type == TokenType::ErrorMaxQuerySizeExceeded)
+            return false;
     }
 
     const auto * end = findEndOfPromQLStatement(begin, text_end);

@@ -580,7 +580,8 @@ ASTPtr tryParseQuery(
     /// Lexical error, unless the parser read the raw text itself and only used the tokens
     /// to delimit the statement (see IParser::consumesRawText). An input committed to SET
     /// is ordinary SQL even under a raw-text dialect, so it keeps the lexical error.
-    if (last_token.isError() && !consumes_raw_text)
+    /// Exceeding `max_query_size` is an error for any parser.
+    if (last_token.isError() && (!consumes_raw_text || last_token.type == TokenType::ErrorMaxQuerySizeExceeded))
     {
         if (diagnostics)
             diagnostics->error_token = last_token;

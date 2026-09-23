@@ -10,3 +10,5 @@
 []	40
 -- a comment the SQL lexer reads past the end of the statement is an error, not a wrong split
 Cannot find the end of the PromQL statement
+-- max_query_size crossed only after a semicolon in a comment
+Max query size exceeded
