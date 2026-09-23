@@ -1,4 +1,4 @@
--- The hash phase of `join_algorithm = 'auto'` follows `parallel_hash_join_threshold` like a bare `HashJoin`.
+-- The hash phase of `join_algorithm = 'auto'` follows `parallel_hash_join_threshold` like a bare `hash` join.
 --
 -- Join-order stats stay on so the planner AUTO path gets MergeTree `totalRows` (200).
 -- `missing_estimate_parallel` turns join-order off: no rhs estimate, high threshold still parallel.

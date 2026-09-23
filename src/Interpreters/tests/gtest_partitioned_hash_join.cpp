@@ -22,6 +22,7 @@
 #include <Interpreters/TableJoin.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/scope_guard_safe.h>
@@ -29,16 +30,16 @@
 
 using namespace DB;
 
+namespace ProfileEvents
+{
+extern const Event QueryMemoryLimitExceeded;
+}
+
 namespace DB::ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int MEMORY_LIMIT_EXCEEDED;
-}
-
-namespace ProfileEvents
-{
-extern const Event QueryMemoryLimitExceeded;
 }
 
 namespace
@@ -148,7 +149,7 @@ struct BuildOptions
     bool duplicate_major = false;
     /// `parallel_hash_join_threshold`; unset keeps the default (100000 rows).
     std::optional<size_t> parallel_hash_join_threshold;
-    /// `partitioned_hash_join_max_fanout_per_pass`, lowered to force refine passes without a 500M-key
+    /// `hash_join_max_fanout_per_pass`, lowered to force refine passes without a 500M-key
     /// build. Only the pass split changes; the partition count must not.
     std::optional<size_t> max_fanout_per_pass;
     bool cap_partitions_by_l1_descriptors = true;
@@ -180,9 +181,9 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
     if (options.parallel_hash_join_threshold)
         settings.set("parallel_hash_join_threshold", *options.parallel_hash_join_threshold);
     if (options.max_fanout_per_pass)
-        settings.set("partitioned_hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
+        settings.set("hash_join_max_fanout_per_pass", *options.max_fanout_per_pass);
     if (!options.cap_partitions_by_l1_descriptors)
-        settings.set("partitioned_hash_join_cap_partitions_by_l1_descriptors", false);
+        settings.set("hash_join_cap_partitions_by_l1_descriptors", false);
     /// These tests read the shared table's geometry after the build; the dense sequential keys they
     /// build would otherwise be converted to a range map.
     settings.set("enable_join_fixed_hash_table_conversion", false);
@@ -665,11 +666,6 @@ TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
         built.table_join,
         std::make_shared<const Block>(twoColumnBlock("rk", "build_id", {}, {})),
         /*any_take_last_row_=*/false,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        HashJoinStatsCollectingParams{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false,
         /*allow_set_maps_=*/false);
     addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
     hash_join->onBuildPhaseFinish();
@@ -1463,6 +1459,31 @@ TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
     EXPECT_EQ(probeKeys(*built.join, {key_b}).size(), 3u);
 }
 
+TEST(PartitionedHashJoin, DestructionWithAllocationFailure)
+{
+    std::thread([]
+    {
+        ThreadStatus thread_status;
+        thread_status.untracked_memory_limit = 0;
+        BuildOptions options;
+        options.num_threads = 2;
+        auto built = buildJoin(/*distinct_keys=*/1, /*duplicates=*/16 * 1024 * 1024, options);
+
+        ASSERT_GT(built.join->getTotalByteCount(), 100 * 1024 * 1024);
+        CurrentThread::flushUntrackedMemory();
+        thread_status.untracked_memory_limit = 0;
+        const auto failures_before = CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded];
+        const auto old_min_allocation = CurrentMemoryTracker::getMinAllocationSizeBytesToThrow();
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1);
+        /// Fail the allocation that divides the stored blocks between destruction threads.
+        thread_status.memory_tracker.setFaultProbability(1.0);
+        built.join.reset();
+        thread_status.memory_tracker.setFaultProbability(0.0);
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(old_min_allocation);
+        EXPECT_GT(CurrentThread::getProfileEvents()[ProfileEvents::QueryMemoryLimitExceeded], failures_before);
+    }).join();
+}
+
 namespace
 {
 
@@ -1508,11 +1529,6 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
         table_join,
         std::make_shared<const Block>(build_header),
         /*any_take_last_row_=*/false,
-        /*reserve_num_=*/0,
-        /*instance_id_=*/"",
-        /*stats_collecting_params_=*/{},
-        /*max_threads_=*/1,
-        /*use_parallel_layout_=*/false,
         /*allow_set_maps_=*/false);
     std::vector<HashJoinClause::FillBlock> build_blocks;
     std::atomic<size_t> accumulated_bytes{0};

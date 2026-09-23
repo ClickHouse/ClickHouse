@@ -1,19 +1,19 @@
-sequential keys, inner, no right columns	66667	1
-sequential keys, left, no right columns	200000	1
-sequential keys, semi left, no right columns	66667	1
-sequential keys, anti left, no right columns	133333	1
-sequential keys, inner, right columns read	66667	1
-sequential keys, left, right columns read	200000	1
-sequential keys, right, right columns read	66667	1
-sequential keys, full, right columns read	200000	1
-hashed keys, inner, no right columns	66939	1
-hashed keys, left, no right columns	200000	1
-hashed keys, semi left, no right columns	66939	1
-hashed keys, anti left, no right columns	133061	1
-hashed keys, inner, right columns read	66939	1
-hashed keys, left, right columns read	200000	1
-hashed keys, right, right columns read	66939	1
-hashed keys, full, right columns read	200000	1
+sequential keys, inner, no right columns	(66667,6666633333)
+sequential keys, left, no right columns	(200000,19999900000)
+sequential keys, semi left, no right columns	(66667,6666633333)
+sequential keys, anti left, no right columns	(133333,13333266667)
+sequential keys, inner, right columns read	(66667,2258641374879085479)
+sequential keys, left, right columns read	(200000,1148257890054699895)
+sequential keys, right, right columns read	(66667,2258641374879085479)
+sequential keys, full, right columns read	(200000,1148257890054699895)
+hashed keys, inner, no right columns	(66939,6687390529)
+hashed keys, left, no right columns	(200000,19999900000)
+hashed keys, semi left, no right columns	(66939,6687390529)
+hashed keys, anti left, no right columns	(133061,13312509471)
+hashed keys, inner, right columns read	(66939,9387682225905155652)
+hashed keys, left, right columns read	(200000,9368329707322064459)
+hashed keys, right, right columns read	(66939,9387682225905155652)
+hashed keys, full, right columns read	(200000,9368329707322064459)
 -- first rows
 0	810	1000270
 3	2994	1000998

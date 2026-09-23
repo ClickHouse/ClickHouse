@@ -959,8 +959,8 @@ HashJoinClause::HashJoinClause(
     , build_blocks(build_blocks_)
     , accumulated_bytes(accumulated_bytes_)
     , maps_variant_index(hash_join.data->maps.empty() ? 1 : hash_join.data->maps.front().index())
-    , max_fanout_per_pass(table_join.partitionedHashJoinMaxFanoutPerPass())
-    , cap_partitions_by_l1_descriptors(table_join.partitionedHashJoinCapPartitionsByL1Descriptors())
+    , max_fanout_per_pass(table_join.hashJoinMaxFanoutPerPass())
+    , cap_partitions_by_l1_descriptors(table_join.hashJoinCapPartitionsByL1Descriptors())
     , parallel_hash_join_threshold(table_join.parallelHashJoinThreshold())
     , fixed_hash_table_conversion_enabled(table_join.enableJoinFixedHashTableConversion())
     , log(std::move(log_))
@@ -970,7 +970,7 @@ HashJoinClause::HashJoinClause(
     if (max_fanout_per_pass < 2 || max_fanout_per_pass > 32768)
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
-            "Setting partitioned_hash_join_max_fanout_per_pass must be between 2 and 32768, got {}",
+            "Setting hash_join_max_fanout_per_pass must be between 2 and 32768, got {}",
             max_fanout_per_pass);
 }
 
@@ -1530,7 +1530,7 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
             /// A large build over few distinct keys: the table is small, so the L2 rule wants one
             /// partition, and one worker would insert every row after the barrier. Above the threshold
             /// the planner reserves for parallel builds. Give the insert one partition per worker, as
-            /// `parallel_hash` has one table per slot. Never more partitions than distinct keys.
+            /// the former `parallel_hash` had one table per slot. Never more partitions than distinct keys.
             const size_t distinct = distinctEstimate();
             const size_t partitions_wanted = std::min(std::bit_ceil(num_threads), std::bit_ceil(distinct));
             size_t floor_bits = static_cast<size_t>(std::bit_width(partitions_wanted) - 1);
@@ -1694,8 +1694,8 @@ void HashJoinClause::createHashJoinTable()
 
 bool HashJoinClause::partitionFloorFitsMemory(size_t floor_bits, size_t floor_degree, size_t rows) const
 {
-    /// Without a memory budget nothing bounds the peak but the query's own memory limit, as for
-    /// `parallel_hash`, whose per-slot tables are never budgeted either.
+    /// Without a memory budget nothing bounds the peak but the query's own memory limit, as for the
+    /// former `parallel_hash`, whose per-slot tables were never budgeted either.
     if (max_bytes_before_external_join == 0)
         return true;
 
@@ -1789,12 +1789,14 @@ size_t HashJoinClause::keyColumnBytes() const
 
 std::unique_ptr<ThreadPool> HashJoinClause::makePostBuildPool(size_t workers)
 {
+    /// The waves run one after another on the same threads: with no free thread kept, each wave would
+    /// hand them back to the global pool and take them again.
     return std::make_unique<ThreadPool>(
         CurrentMetrics::HashJoinPostBuildThreads,
         CurrentMetrics::HashJoinPostBuildThreadsActive,
         CurrentMetrics::HashJoinPostBuildThreadsScheduled,
         /*max_threads_*/ workers,
-        /*max_free_threads_*/ 0,
+        /*max_free_threads_*/ workers,
         /*queue_size_*/ workers);
 }
 

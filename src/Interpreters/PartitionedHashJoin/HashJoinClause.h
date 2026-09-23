@@ -458,7 +458,7 @@ private:
     size_t max_fanout_per_pass;
     bool cap_partitions_by_l1_descriptors;
     /// `parallel_hash_join_threshold`: from this many build rows on, the insert phase gets at least one
-    /// partition per worker, as `parallel_hash` gets one table per slot.
+    /// partition per worker, as the former `parallel_hash` got one table per slot.
     size_t parallel_hash_join_threshold;
     /// `enable_join_fixed_hash_table_conversion`.
     const bool fixed_hash_table_conversion_enabled;

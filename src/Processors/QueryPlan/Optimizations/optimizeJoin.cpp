@@ -11,7 +11,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinUtils.h>
@@ -201,8 +201,8 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     const auto & table_join = join->getTableJoin();
 
-    /// Algorithms other than HashJoin may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
-    const auto * hash_join = typeid_cast<const HashJoin *>(join.get());
+    /// Algorithms other than the hash join may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
+    const auto * hash_join = typeid_cast<const PartitionedHashJoin *>(join.get());
     if (table_join.kind() != JoinKind::Inner && !hash_join)
         return true;
 
@@ -242,13 +242,11 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
 
     auto updated_table_join = std::make_shared<TableJoin>(table_join);
     updated_table_join->swapSides();
-    /// After the swap the old left stream is the build side. Recompute the layout from that
-    /// estimate; `HashJoin::clone` would keep the pre-swap `use_parallel_layout`.
-    const bool use_parallel_layout
-        = preferParallelHashLayout(updated_table_join->kind(), lhs_estimation, updated_table_join->parallelHashJoinThreshold());
+    /// After the swap the old left stream is the build side, so the clone gets that estimate;
+    /// `clone` would keep the pre-swap hint.
     JoinPtr updated_join;
     if (hash_join)
-        updated_join = hash_join->cloneWithParallelLayout(updated_table_join, left_stream_input_header, use_parallel_layout);
+        updated_join = hash_join->cloneWithBuildRowsHint(updated_table_join, left_stream_input_header, lhs_estimation);
     else
         updated_join = join->clone(updated_table_join, right_stream_input_header, left_stream_input_header);
 

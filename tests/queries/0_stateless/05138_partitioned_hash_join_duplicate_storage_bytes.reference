@@ -1,19 +1,19 @@
-dups 8, inner all	160008	1
-dups 8, left all	162007	1
-dups 8, right all	160008	1
-dups 8, full all	162007	1
-dups 8, inner any (key checksum)	20001	1
-dups 8, left semi	20001	1
-dups 8, left anti	1999	1
-dups 8, string keys	160008	1
-zero key, inner all	800	1
-dups 1, inner all	20000	1
-dups 2, inner all	40000	1
-dups 3, inner all	60000	1
-dups 300, inner all	300000	1
-dups 8 from 100000-row build blocks, inner all	160000	1
-32766-row key, inner all	32766	1
-32767-row key, inner all	32767	1
+dups 8, inner all	(160008,16377872312977528117)
+dups 8, left all	(162007,4305464125338211247)
+dups 8, right all	(160008,16377872312977528117)
+dups 8, full all	(162007,4305464125338211247)
+dups 8, inner any (key checksum)	(20001,10250777086069629049)
+dups 8, left semi	(20001,10250777086069629049)
+dups 8, left anti	(1999,11335022955013592435)
+dups 8, string keys	(160008,16377872312977528117)
+zero key, inner all	(800,14576540147136019717)
+dups 1, inner all	(20000,6021202391285728581)
+dups 2, inner all	(40000,12075706567339365887)
+dups 3, inner all	(60000,13786366757357537258)
+dups 300, inner all	(300000,18341071215207058625)
+dups 8 from 100000-row build blocks, inner all	(160000,948794276107521159)
+32766-row key, inner all	(32766,9741120144269948424)
+32767-row key, inner all	(32767,16700895196453709592)
 dups 8: duplicate storage bytes	1
 32766-row key: duplicate storage bytes	1
 32767-row key: duplicate storage bytes	1

@@ -1,7 +1,7 @@
--- `query_plan_join_shard_by_pk_ranges` clones `HashJoin` with `cloneNoParallel`. The clone must use
--- the serial layout: with the parallel one `JoiningTransform` would skip unmatched right rows,
--- expecting a `NonJoinedBlocksTransform` that the sharded pipeline never adds. RIGHT/FULL must
--- emit those rows.
+-- `query_plan_join_shard_by_pk_ranges` clones the join with `cloneNoParallel`. That clone used to
+-- keep the parallel non-joined processing on, so `JoiningTransform` skipped unmatched right rows
+-- (it expected `NonJoinedBlocksTransform`, which the sharded pipeline never adds). RIGHT/FULL must
+-- still emit those rows.
 
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0;

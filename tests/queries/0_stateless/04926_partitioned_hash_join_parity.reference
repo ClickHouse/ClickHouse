@@ -1,6 +1,6 @@
--- partitioned_hash is selected for INNER ALL
+-- hash is selected for INNER ALL
 1
-INNER ALL, UInt64 key	13500	1	1
+INNER ALL, UInt64 key	(13500,17148574693761175814)
 -- INNER ALL, UInt64 key, first rows
 0	v0
 0	v100
@@ -17,13 +17,13 @@ INNER ALL, UInt64 key	13500	1	1
 0	v200
 0	v300
 0	v400
-INNER ALL, String key	22260	1	1
-INNER ALL, Nullable key (NULLs never join)	25780	1	1
-INNER ALL, LowCardinality(String) key	117847	1	1
-INNER ALL, composite key (UInt64, String)	573	1	1
-LEFT ALL, UInt64 key	14150	1	1
--- a mixed non-equi ON condition runs under partitioned_hash (05218 covers every shape)
+INNER ALL, String key	(22260,18391352437608680436)
+INNER ALL, Nullable key (NULLs never join)	(25780,4715388529398877037)
+INNER ALL, LowCardinality(String) key	(117847,11536618485635876551)
+INNER ALL, composite key (UInt64, String)	(573,7889917996276549586)
+LEFT ALL, UInt64 key	(14150,11141292798321601391)
+-- a mixed non-equi ON condition runs under hash (05218 covers every shape)
 1
-mixed ON condition	13250	1
--- shapes beyond INNER/LEFT ALL execute under partitioned_hash (04928 and 04929 check their results)
+mixed ON condition	(13250,13518375155117193963)
+-- shapes beyond INNER/LEFT ALL execute under hash (04928 and 04929 check their results)
 1

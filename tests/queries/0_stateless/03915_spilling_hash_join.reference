@@ -1,5 +1,5 @@
-Algorithm: SpillingHashJoin(HashJoin)
-Algorithm: SpillingHashJoin(HashJoin)
+Algorithm: SpillingHashJoin(PartitionedHashJoin)
+Algorithm: SpillingHashJoin(PartitionedHashJoin)
 inner join small
 100	49500
 left join small

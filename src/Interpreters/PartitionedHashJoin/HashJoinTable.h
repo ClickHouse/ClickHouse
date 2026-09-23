@@ -6,8 +6,6 @@
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
-#include <Common/HashTable/TwoLevelHashMap.h>
-#include <Common/HashTable/TwoLevelHashTable.h>
 
 #include <bit>
 #include <limits>
@@ -492,38 +490,6 @@ struct TableFor<FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>>
     using Type = FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>;
 };
 
-/// `HashJoin`'s single-level maps are bucket-partitioned tables with one bucket (`BITS_FOR_BUCKET_SERIAL`):
-/// `JoinHashMap` is a `TwoLevelHashMapTable` over `HashMapTable`, `JoinFixedHashMap` a `TwoLevelHashTable`
-/// over `FixedHashMap`. Both take `cell_type`, `key_type` and `LookupResult` from the inner table. The
-/// routing layer adds no state to a cell. The two specializations strip the routing layer and delegate
-/// to the inner table's trait. The cells stay bit-identical to what `HashJoin`'s probe code reads.
-template <
-    typename Key,
-    typename Cell,
-    typename Hash,
-    typename Grower,
-    typename Alloc,
-    template <typename...> typename ImplTable,
-    Int32 bits_for_bucket>
-struct TableFor<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Alloc, ImplTable, bits_for_bucket>>
-{
-    using Type = typename TableFor<ImplTable<Key, Cell, Hash, Grower, Alloc>>::Type;
-};
-
-template <
-    typename Key,
-    typename Cell,
-    typename Hash,
-    typename Grower,
-    typename Alloc,
-    typename Impl,
-    Int32 bits_for_bucket,
-    typename BucketHash>
-struct TableFor<TwoLevelHashTable<Key, Cell, Hash, Grower, Alloc, Impl, bits_for_bucket, BucketHash>>
-{
-    using Type = typename TableFor<Impl>::Type;
-};
-
 }
 
 /** The build's tables for one mapped-value type: one member per supported `HashJoin::Type`, exactly one
@@ -614,7 +580,6 @@ public:
     case HashJoin::Type::NAME: return NAME ? maxFillOf(*NAME) : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default: return 0;
         }
     }
 
@@ -672,7 +637,6 @@ public:
     case HashJoin::Type::NAME: return NAME ? NAME->size() : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default: return 0;
         }
     }
 
@@ -684,7 +648,6 @@ public:
     case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInBytes() : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default: return 0;
         }
     }
 
@@ -696,7 +659,6 @@ public:
     case HashJoin::Type::NAME: return NAME ? NAME->getBufferSizeInCells() : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default: return 0;
         }
     }
 
@@ -708,7 +670,6 @@ public:
     case HashJoin::Type::NAME: return NAME ? reservedBufferBytesOf(*NAME) : 0;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default: return 0;
         }
     }
     /// NOLINTEND(bugprone-macro-parentheses)
@@ -811,7 +772,6 @@ struct HashJoinTableMaps
     case HashJoin::Type::NAME: return !is_hash_join_table<typename decltype(HashJoinTableMapsAll::NAME)::element_type>;
             APPLY_FOR_PARTITIONED_JOIN_TABLES(M)
 #undef M
-            default: return false;
         }
     }
 

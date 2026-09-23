@@ -9,6 +9,6 @@
 --- Sequential: NonJoinedBlocksTransform count ---
 0
 --- One-slot hash layout: NonJoinedBlocksTransform count ---
-0
+1
 --- One-slot hash layout: RIGHT unmatched rows ---
 50000	25000	50000
