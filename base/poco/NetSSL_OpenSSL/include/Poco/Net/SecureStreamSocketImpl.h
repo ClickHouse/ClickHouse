@@ -179,6 +179,10 @@ namespace Net
         Context::Ptr context() const;
         /// Returns the SSL context used by this socket.
 
+        SSL * ssl() const;
+        /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
+        /// has not been performed yet.
+
         void setLazyHandshake(bool flag = true);
         /// Enable lazy SSL handshake. If enabled, the SSL handshake
         /// will be performed the first time date is sent or
@@ -288,6 +292,12 @@ namespace Net
     inline Context::Ptr SecureStreamSocketImpl::context() const
     {
         return _impl.context();
+    }
+
+
+    inline SSL * SecureStreamSocketImpl::ssl() const
+    {
+        return _impl.ssl();
     }
 
 

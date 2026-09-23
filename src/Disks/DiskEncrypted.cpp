@@ -2,7 +2,10 @@
 
 #if USE_SSL
 #include <Disks/DiskFactory.h>
+#include <Disks/loadLocalDiskConfig.h>
 #include <IO/ReadPipeline.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/Cache/EncryptionHeaderCache.h>
 #include <Common/Base64.h>
 #include <Common/Exception.h>
 #include <IO/FileEncryptionCommon.h>
@@ -14,9 +17,13 @@
 #include <boost/algorithm/hex.hpp>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
+
 #if CLICKHOUSE_CLOUD
 #include <Core/KMS.h>
 #endif
+
+#include <algorithm>
+#include <filesystem>
 
 
 namespace DB
@@ -26,6 +33,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DISK_INDEX;
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -186,6 +194,16 @@ namespace
         return parseAlgorithmFromString(config.getString(path));
     }
 
+    void checkCustomDiskPathIsInsideWrappedDisk(const String & path)
+    {
+        std::filesystem::path fs_path(path);
+        if (fs_path.is_absolute() || std::ranges::any_of(fs_path, [](const auto & component) { return component == ".."; }))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Path of the encrypted custom disk must be relative to the wrapped disk and must not contain `..`, but got {}",
+                quoteString(path));
+    }
+
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
     void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
                                   DiskPtr & out_disk, String & out_path)
@@ -283,6 +301,39 @@ namespace
     {
         return typeid(one) == typeid(another);
     }
+
+    class DiskEncryptedDirectoryIterator final : public IDirectoryIterator
+    {
+    public:
+        DiskEncryptedDirectoryIterator(DirectoryIteratorPtr delegate_, String path_prefix_)
+            : delegate(std::move(delegate_))
+            , path_prefix(std::move(path_prefix_))
+        {
+        }
+
+        void next() override { delegate->next(); }
+        bool isValid() const override { return delegate->isValid(); }
+
+        String path() const override
+        {
+            auto delegate_path = delegate->path();
+
+            if (!delegate_path.starts_with(path_prefix))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "Encrypted disk iterator returned path {} without expected prefix {}",
+                    quoteString(delegate_path),
+                    quoteString(path_prefix));
+
+            return delegate_path.substr(path_prefix.size());
+        }
+
+        String name() const override { return delegate->name(); }
+
+    private:
+        DirectoryIteratorPtr delegate;
+        String path_prefix;
+    };
 }
 
 class DiskEncryptedReservation : public IReservation
@@ -326,7 +377,6 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
-    , use_fake_transaction(config_.getBool(config_prefix_ + ".use_fake_transaction", true))
 {
     delegate->createDirectories(disk_path);
 }
@@ -338,7 +388,6 @@ DiskEncrypted::DiskEncrypted(const String & name_, std::unique_ptr<const DiskEnc
     , disk_path(settings_->disk_path)
     , disk_absolute_path(settings_->wrapped_disk->getPath() + settings_->disk_path)
     , current_settings(std::move(settings_))
-    , use_fake_transaction(true)
 {
     delegate->createDirectories(disk_path);
 }
@@ -445,6 +494,18 @@ void DiskEncrypted::prepareRead(
         {
             return encryption_settings->findKeyByFingerprint(key_fingerprint, path_for_logs);
         });
+
+    /// Only cache encryption headers when the backend assigns a fresh blob path to every write
+    /// (`areBlobPathsRandom`): then a rewrite / replace / rename never rebinds an existing path to
+    /// different ciphertext, so the cache can never serve a stale header and needs no invalidation.
+    /// Deterministic-path backends (plain / plain-rewritable, local, web) reuse the path on rewrite
+    /// and are excluded.
+    if (delegate->areBlobPathsRandom())
+    {
+        if (auto global_context = Context::getGlobalContextInstance())
+            if (auto cache = global_context->getEncryptionHeaderCache())
+                pipeline.needEncryptionHeaderCache(std::move(cache));
+    }
 }
 
 size_t DiskEncrypted::getFileSize(const String & path) const
@@ -452,6 +513,11 @@ size_t DiskEncrypted::getFileSize(const String & path) const
     auto wrapped_path = wrappedPath(path);
     size_t size = delegate->getFileSize(wrapped_path);
     return size > FileEncryption::Header::kSize ? (size - FileEncryption::Header::kSize) : 0;
+}
+
+DirectoryIteratorPtr DiskEncrypted::iterateDirectory(const String & path) const
+{
+    return std::make_unique<DiskEncryptedDirectoryIterator>(delegate->iterateDirectory(wrappedPath(path)), disk_path);
 }
 
 UInt128 DiskEncrypted::getEncryptedFileIV(const String & path) const
@@ -520,11 +586,24 @@ void registerDiskEncrypted(DiskFactory & factory, bool global_skip_access_check)
         const String & name,
         const Poco::Util::AbstractConfiguration & config,
         const String & config_prefix,
-        ContextPtr,
+        ContextPtr context,
         const DisksMap & map,
-        bool, bool) -> DiskPtr
+        bool attach,
+        bool custom_disk) -> DiskPtr
     {
         bool skip_access_check = global_skip_access_check || config.getBool(config_prefix + ".skip_access_check", false);
+
+        if (custom_disk && !attach)
+        {
+            DiskPtr wrapped_disk;
+            String path;
+            getDiskAndPathFromConfig(config, config_prefix, map, wrapped_disk, path);
+
+            checkCustomDiskPathIsInsideWrappedDisk(path);
+            if (!wrapped_disk->isRemote())
+                checkCustomLocalDiskPath(wrapped_disk->getPath() + path, context);
+        }
+
         DiskPtr disk = std::make_shared<DiskEncrypted>(name, config, config_prefix, map);
         disk->startup(skip_access_check);
         return disk;

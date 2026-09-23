@@ -41,6 +41,19 @@
                 <cache_on_write_operations>1</cache_on_write_operations>
                 <cache_policy>SLRU</cache_policy>
             </lru>
+            <split_cache_marks>
+                <type>cache</type>
+                <disk>split_cache_disk</disk>
+                <path>/cache_marks/</path>
+                <max_size>5Mi</max_size>
+                <max_file_segment_size>1Ki</max_file_segment_size>
+                <boundary_alignment>1Ki</boundary_alignment>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <use_split_cache>1</use_split_cache>
+                <split_cache_ratio>0.4</split_cache_ratio>
+                <cache_policy>SLRU</cache_policy>
+                <system_cache_extensions>.txt,.json,.idx,.cidx,.dat,.cmrk2,.cmrk3,.mrk2,.mrk3,.cmrk,.mrk</system_cache_extensions>
+            </split_cache_marks>
         </disks>
         <policies>
             <split_cache_slru>
@@ -70,6 +83,15 @@
                     </main>
                 </volumes>
             </lru>
+            <split_cache_marks>
+                <volumes>
+                    <main>
+                        <disk>split_cache_marks</disk>
+                        <!-- To make test more deterministic -->
+                        <prefer_not_to_merge>true</prefer_not_to_merge>
+                    </main>
+                </volumes>
+            </split_cache_marks>
         </policies>
     </storage_configuration>
 </clickhouse>

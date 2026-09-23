@@ -1,0 +1,181 @@
+---
+slug: /best-practices/choosing-a-primary-key
+sidebarTitle: 'Como escolher uma chave primária'
+title: 'Como escolher uma chave primária'
+description: 'Página sobre como escolher uma chave primária no ClickHouse'
+keywords: ['chave primária']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/pt-BR/components/Image.jsx";
+
+> Usamos os termos &quot;chave de ordenação&quot; e &quot;chave primária&quot; de forma intercambiável nesta página. Em termos estritos, [eles diferem no ClickHouse](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key), mas, para os fins deste documento, os leitores podem usá-los como sinônimos, com a chave de ordenação se referindo às colunas especificadas no `ORDER BY` da tabela.
+
+Observe que a chave primária no ClickHouse funciona de forma [muito diferente](/pt-BR/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse) do que em bancos de dados OLTP, como o Postgres, onde termos semelhantes são mais familiares.
+
+Escolher uma chave primária eficaz no ClickHouse é crucial para o desempenho das consultas e a eficiência de armazenamento. O ClickHouse organiza os dados em partes, cada uma contendo seu próprio índice primário esparso. Esse índice acelera significativamente as consultas ao reduzir o volume de dados varridos. Além disso, como a chave primária determina a ordem física dos dados em disco, ela afeta diretamente a eficiência da compressão. Dados ordenados de forma ideal são comprimidos com mais eficácia, o que melhora ainda mais o desempenho ao reduzir a E/S.
+
+1. Ao selecionar uma chave de ordenação, priorize colunas usadas com frequência em filtros de consulta (ou seja, na cláusula `WHERE`), especialmente aquelas que excluem grandes quantidades de linhas.
+2. Colunas com alta correlação com outros dados da tabela também são vantajosas, pois o armazenamento contíguo melhora as taxas de compressão e a eficiência de memória durante operações `GROUP BY` e `ORDER BY`.
+
+<br />
+
+Algumas regras simples podem ajudar na escolha de uma chave de ordenação. Os critérios a seguir às vezes podem entrar em conflito, então considere-os na ordem apresentada. **Você pode identificar várias chaves com esse processo, mas 4 a 5 normalmente são suficientes**:
+
+<Info>
+  **Importante**
+
+  As chaves de ordenação devem ser definidas na criação da tabela e não podem ser adicionadas depois. É possível adicionar ordenação extra a uma tabela após (ou antes da) inserção de dados por meio de um recurso conhecido como projeções. Esteja ciente de que isso resulta em duplicação de dados. Mais detalhes [aqui](/pt-BR/reference/statements/alter/projection).
+</Info>
+
+<div id="example">
+  ## Exemplo
+</div>
+
+Considere a tabela `posts_unordered` a seguir. Ela contém uma linha para cada post do Stack Overflow.
+
+Esta tabela não tem chave primária, como indicado por `ORDER BY tuple()`.
+
+```sql
+CREATE TABLE posts_unordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 
+  'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+  `AcceptedAnswerId` UInt32,
+  `CreationDate` DateTime,
+  `Score` Int32,
+  `ViewCount` UInt32,
+  `Body` String,
+  `OwnerUserId` Int32,
+  `OwnerDisplayName` String,
+  `LastEditorUserId` Int32,
+  `LastEditorDisplayName` String,
+  `LastEditDate` DateTime,
+  `LastActivityDate` DateTime,
+  `Title` String,
+  `Tags` String,
+  `AnswerCount` UInt16,
+  `CommentCount` UInt8,
+  `FavoriteCount` UInt8,
+  `ContentLicense`LowCardinality(String),
+  `ParentId` String,
+  `CommunityOwnedDate` DateTime,
+  `ClosedDate` DateTime
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+```
+
+Suponha que um usuário queira calcular o número de perguntas submetidas após 2024, sendo esse o padrão de acesso mais comum.
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.055 sec. Processed 59.82 million rows, 361.34 MB (1.09 billion rows/s., 6.61 GB/s.)
+```
+
+Observe o número de linhas e bytes lidos por esta consulta. Sem uma chave primária, as consultas precisam varrer todo o conjunto de dados.
+
+O uso de `EXPLAIN indexes=1` confirma uma varredura completa da tabela devido à ausência de indexação.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_unordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain───────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                 │
+│   Aggregating                                             │
+│     Expression (Before GROUP BY)                          │
+│       Expression                                          │
+│         ReadFromMergeTree (stackoverflow.posts_unordered) │
+└───────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.003 sec.
+```
+
+Suponha que uma tabela `posts_ordered`, contendo os mesmos dados, seja definida com `ORDER BY` como `(PostTypeId, toDate(CreationDate))`, ou seja:
+
+```sql
+CREATE TABLE posts_ordered
+(
+  `Id` Int32,
+  `PostTypeId` Enum('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 
+  'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+...
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate))
+```
+
+`PostTypeId` tem cardinalidade 8 e representa a escolha lógica para a primeira entrada da nossa chave de ordenação. Como a filtragem com granularidade de data provavelmente será suficiente (e ainda beneficiará filtros de data e hora), usamos `toDate(CreationDate)` como o 2º componente da nossa chave. Isso também resultará em um índice menor, já que uma data pode ser representada com 16 bits, o que acelera a filtragem.
+
+A animação a seguir mostra como um índice primário esparso otimizado é criado para a tabela Posts do Stack Overflow. Em vez de indexar linhas individuais, o índice é aplicado a blocos de linhas:
+
+<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="Chave primária" />
+
+Se a mesma consulta for repetida em uma tabela com esta chave de ordenação:
+
+```sql highlight={8}
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+
+┌─count()─┐
+│  192611 │
+└─────────┘
+1 row in set. Elapsed: 0.013 sec. Processed 196.53 thousand rows, 1.77 MB (14.64 million rows/s., 131.78 MB/s.)
+```
+
+Esta consulta agora aproveita a indexação esparsa, reduzindo significativamente a quantidade de dados lidos e tornando o tempo de execução 4x mais rápido — observe a redução no número de linhas e bytes lidos.
+
+O uso do índice pode ser confirmado com `EXPLAIN indexes=1`.
+
+```sql
+EXPLAIN indexes = 1
+SELECT count()
+FROM stackoverflow.posts_ordered
+WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
+```
+
+```response
+┌─explain─────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                   │
+│   Aggregating                                                                               │
+│     Expression (Before GROUP BY)                                                            │
+│       Expression                                                                            │
+│         ReadFromMergeTree (stackoverflow.posts_ordered)                                     │
+│         Indexes:                                                                            │
+│           PrimaryKey                                                                        │
+│             Keys:                                                                           │
+│               PostTypeId                                                                    │
+│               toDate(CreationDate)                                                          │
+│             Condition: and((PostTypeId in [1, 1]), (toDate(CreationDate) in [19723, +Inf))) │
+│             Parts: 14/14                                                                    │
+│             Granules: 39/7578                                                               │
+└─────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.004 sec.
+```
+
+Além disso, visualizamos como o índice esparso descarta todos os blocos de linhas que não podem conter correspondências para nossa consulta de exemplo:
+
+<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="Chave primária" />
+
+<Note>
+  Todas as colunas de uma tabela serão ordenadas com base no valor da chave de ordenação especificada, independentemente de estarem incluídas na própria chave. Por exemplo, se `CreationDate` for usada como chave, a ordem dos valores em todas as outras colunas corresponderá à ordem dos valores na coluna `CreationDate`. É possível especificar várias chaves de ordenação — nesse caso, a ordenação seguirá a mesma semântica de uma cláusula `ORDER BY` em uma consulta `SELECT`.
+</Note>
+
+Um guia avançado completo sobre como escolher chaves primárias pode ser encontrado [aqui](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes).
+
+Para entender mais profundamente como as chaves de ordenação melhoram a compressão e otimizam ainda mais o armazenamento, consulte os guias oficiais sobre [Compressão no ClickHouse](/pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse) e [Codecs de compressão de colunas](/pt-BR/guides/clickhouse/data-modelling/compression/compression-in-clickhouse#choosing-the-right-column-compression-codec).

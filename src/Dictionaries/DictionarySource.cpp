@@ -30,7 +30,8 @@ private:
         ColumnsWithTypeAndName key_columns_to_read;
         ColumnsWithTypeAndName data_columns;
 
-        if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns))
+        size_t block_number = 0;
+        if (!coordinator->getKeyColumnsNextRangeToRead(key_columns_to_read, data_columns, block_number))
             return {};
 
         const auto & header = coordinator->getHeader();
@@ -90,15 +91,18 @@ private:
         }
 
         size_t rows_size = result_columns[0]->size();
-        return Chunk(result_columns, rows_size);
+        Chunk chunk(result_columns, rows_size);
+        chunk.getChunkInfos().add(std::make_shared<DictionaryBlockNumber>(block_number));
+        return chunk;
     }
 
     std::shared_ptr<DictionarySourceCoordinator> coordinator;
 };
 
-bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns)
+bool DictionarySourceCoordinator::getKeyColumnsNextRangeToRead(ColumnsWithTypeAndName & key_columns, ColumnsWithTypeAndName & data_columns, size_t & block_number)
 {
     size_t read_block_index = parallel_read_block_index++;
+    block_number = read_block_index;
 
     size_t start = max_block_size * read_block_index;
     size_t end = max_block_size * (read_block_index + 1);

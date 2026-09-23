@@ -1,0 +1,55 @@
+---
+slug: /cloud/overview
+title: 'Introducción'
+description: 'Descubra qué es ClickHouse Cloud, sus ventajas frente a la versión de código abierto y las funciones clave de esta plataforma de análisis totalmente gestionada'
+keywords: ['clickhouse cloud', 'qué es clickhouse cloud', 'introducción a clickhouse cloud', 'funciones de clickhouse cloud']
+hide_title: true
+doc_type: 'guide'
+---
+
+<div id="what-is-clickhouse-cloud">
+  ## ¿Qué es ClickHouse Cloud?
+</div>
+
+ClickHouse Cloud es un servicio en la nube totalmente gestionado creado por los creadores
+originales de ClickHouse, la base de datos analítica columnar de código abierto para
+procesamiento en línea más rápida y popular.
+
+Con Cloud, nos encargamos de la infraestructura, el mantenimiento, el escalado y las operaciones
+para que puedas centrarte en lo que más te importa: crear valor
+para tu organización y tus clientes más rápido.
+
+<div id="benefits-of-clickhouse-cloud">
+  ## Ventajas de ClickHouse Cloud
+</div>
+
+ClickHouse Cloud ofrece varias ventajas importantes frente a la versión de código abierto:
+
+* **Rápido retorno de valor**: Empieza a desarrollar al instante sin tener que dimensionar ni escalar tu clúster.
+* **Escalado sin interrupciones**: El escalado automático se adapta a cargas de trabajo variables para que no tengas que sobredimensionar para los picos de uso.
+* **Operaciones sin servidor**: Deja que nosotros nos encarguemos del dimensionamiento, el escalado, la seguridad, la fiabilidad y las actualizaciones.
+* **Precios transparentes**: Paga solo por lo que usas, con reservas de recursos y controles de escalado.
+* **Coste total de propiedad**: La mejor relación precio-rendimiento y una baja carga administrativa.
+* **Amplio ecosistema**: Usa tus conectores de datos favoritos, herramientas de visualización, SQL y clientes para distintos lenguajes.
+
+<div id="oss-vs-clickhouse-cloud">
+  ## Comparación de ClickHouse autogestionado y ClickHouse Cloud
+</div>
+
+| Feature                                 | Benefits                                                                                                                                                                                                                                                                                                                                                                    | OSS ClickHouse | ClickHouse Cloud |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- | ---------------- |
+| **Modos de implementación**             | ClickHouse ofrece la flexibilidad de autogestionarse con código abierto o desplegarse en la nube. Use ClickHouse local para trabajar con archivos locales sin un servidor, o chDB para incrustar ClickHouse directamente en su aplicación.                                                                                                                                  | ✅              | ✅                |
+| **Almacenamiento**                      | Como producto de código abierto y alojado en la nube, ClickHouse puede desplegarse tanto en arquitecturas de disco compartido como shared-nothing.                                                                                                                                                                                                                          | ✅              | ✅                |
+| **Supervisión y alertas**               | La supervisión y las alertas sobre el estado de sus servicios son fundamentales para garantizar un rendimiento óptimo y adoptar un enfoque proactivo para detectar y diagnosticar posibles problemas.                                                                                                                                                                       | ✅              | ✅                |
+| **ClickPipes**                          | ClickPipes es el servicio gestionado de ingestión de ClickHouse que le permite conectar sin fricciones sus fuentes de datos externas, como bases de datos, API y servicios de streaming, con ClickHouse Cloud, eliminando la necesidad de gestionar canalizaciones, jobs personalizados o procesos de ETL. Admite cargas de trabajo de cualquier tamaño.                    | ❌              | ✅                |
+| **Integraciones predefinidas**          | ClickHouse ofrece integraciones predefinidas que conectan ClickHouse con herramientas y servicios populares, como lagos de datos, clientes SQL y de lenguajes, bibliotecas de visualización y más.                                                                                                                                                                          | ❌              | ✅                |
+| **Consola SQL**                         | La consola SQL ofrece una forma rápida e intuitiva de conectarse, explorar y consultar bases de datos de ClickHouse, con una interfaz de consultas pulida, herramientas de importación de datos, visualizaciones, funciones de colaboración y asistencia SQL impulsada por GenAI.                                                                                           | ❌              | ✅                |
+| **ClickHouse CLI**                      | ClickHouse CLI (`clickhousectl`) le permite instalar y gestionar versiones locales de ClickHouse, iniciar servidores, ejecutar consultas y gestionar servicios y recursos de ClickHouse Cloud.                                                                                                                                                                              | ✅              | ✅                |
+| **Cumplimiento normativo**              | El cumplimiento normativo de ClickHouse Cloud incluye CCPA, EU-US DPF, GDPR, HIPAA, ISO 27001, ISO 27001 SoA, PCI DSS y SOC2. Los procesos de seguridad, disponibilidad, integridad del procesamiento y confidencialidad de ClickHouse Cloud se auditan de forma independiente. Detalles: trust.clickhouse.com.                                                             | ❌              | ✅                |
+| **Seguridad de nivel empresarial**      | Compatibilidad con funciones de seguridad avanzadas como SSO, autenticación multifactor, control de acceso basado en roles (RBAC), conexiones privadas y seguras con compatibilidad con Private Link y Private Service Connect, filtrado de IP, claves de cifrado gestionadas por el cliente (CMEK) y más.                                                                  | ❌              | ✅                |
+| **Escalado y optimización**             | Escala sin problemas hacia arriba o hacia abajo según la carga de trabajo, con soporte tanto para escalado horizontal como vertical. Con copias de seguridad automatizadas, replicación y alta disponibilidad, ClickHouse Cloud ofrece a los usuarios una asignación óptima de recursos.                                                                                    | ❌              | ✅                |
+| **Servicios de soporte**                | Nuestros servicios de soporte de primer nivel y los recursos de la comunidad de código abierto ofrecen cobertura para cualquier modelo de implementación que elija.                                                                                                                                                                                                         | ❌              | ✅                |
+| **Actualizaciones de la base de datos** | Las actualizaciones periódicas de la base de datos son esenciales para mantener una sólida postura de seguridad y acceder a las funciones más recientes y a las mejoras del rendimiento.                                                                                                                                                                                    | ❌              | ✅                |
+| **Copias de seguridad**                 | Las copias de seguridad y la funcionalidad de restauración garantizan la durabilidad de los datos y permiten una recuperación ordenada en caso de interrupciones u otras incidencias.                                                                                                                                                                                       | ❌              | ✅                |
+| **Compute-compute separation**          | Puede escalar los recursos de cómputo independientemente del almacenamiento, de modo que los equipos y las cargas de trabajo compartan el mismo almacenamiento mientras mantienen recursos de cómputo dedicados. Esto garantiza que el rendimiento de una carga de trabajo no interfiera con otra, lo que mejora la flexibilidad, el rendimiento y la eficiencia de costes. | ❌              | ✅                |
+| **Servicios gestionados**               | Con un servicio gestionado en la nube, los equipos pueden centrarse en los resultados de negocio y acelerar la salida al mercado sin tener que preocuparse por la sobrecarga operativa del dimensionamiento, la configuración y el mantenimiento de ClickHouse.                                                                                                             | ❌              | ✅                |

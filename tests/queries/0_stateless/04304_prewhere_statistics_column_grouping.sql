@@ -1,5 +1,6 @@
 -- Tags: no-fasttest
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 SET allow_reorder_prewhere_conditions = 1; -- CI may inject 0, which would skip grouping/reordering and produce no PREWHERE output
 
@@ -7,7 +8,9 @@ DROP TABLE IF EXISTS prewhere_stats_group;
 CREATE TABLE prewhere_stats_group (
     a UInt64 STATISTICS(tdigest, countmin),
     b UInt64 STATISTICS(countmin)
-) ENGINE = MergeTree ORDER BY tuple();
+) ENGINE = MergeTree ORDER BY tuple()
+-- Pin compact parts (per-column sizes = 0) so PREWHERE ordering is by selectivity alone, stable under CI-randomized part-type/serialization settings.
+SETTINGS min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000;
 
 INSERT INTO prewhere_stats_group SELECT number, number % 200 FROM numbers(5000) SETTINGS materialize_statistics_on_insert = 1;
 

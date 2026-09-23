@@ -1,0 +1,93 @@
+---
+slug: /guides/developer/debugging-memory-issues
+sidebarTitle: '调试内存问题'
+description: '帮助你调试内存问题的查询。'
+keywords: ['内存问题']
+title: '调试内存问题'
+doc_type: 'guide'
+---
+
+遇到内存问题或内存泄漏时，了解哪些查询和资源占用了大量内存会很有帮助。下面列出了一些可用于调试内存问题的查询，帮助你找出哪些查询、数据库和表还可以进一步优化：
+
+<div id="list-currently-running-processes-by-peak-memory">
+  ## 按峰值内存占用列出当前运行的进程
+</div>
+
+```sql
+SELECT
+    initial_query_id,
+    query,
+    elapsed,
+    formatReadableSize(memory_usage),
+    formatReadableSize(peak_memory_usage),
+FROM system.processes
+ORDER BY peak_memory_usage DESC
+LIMIT 100;
+```
+
+<div id="list-metrics-for-memory-usage">
+  ## 列出内存使用指标
+</div>
+
+```sql
+SELECT
+    metric, description, formatReadableSize(value) size
+FROM
+    system.asynchronous_metrics
+WHERE
+    metric LIKE '%Cach%'
+    OR metric LIKE '%Mem%'
+ORDER BY
+    value DESC;
+```
+
+<div id="list-tables-by-current-memory-usage">
+  ## 按当前内存使用情况列出表
+</div>
+
+```sql
+SELECT
+    database,
+    name,
+    formatReadableSize(total_bytes)
+FROM system.tables
+WHERE engine IN ('Memory','Set','Join');
+```
+
+<div id="output-total-memory-used-by-merges">
+  ## 输出合并操作当前使用的总内存
+</div>
+
+```sql
+SELECT formatReadableSize(sum(memory_usage)) FROM system.merges;
+```
+
+<div id="output-total-memory-used-by-currently-running-processes">
+  ## 输出当前运行进程使用的总内存
+</div>
+
+```sql
+SELECT formatReadableSize(sum(memory_usage)) FROM system.processes;
+```
+
+<div id="output-total-memory-used-by-dictionaries">
+  ## 输出字典占用的总内存
+</div>
+
+```sql
+SELECT formatReadableSize(sum(bytes_allocated)) FROM system.dictionaries;
+```
+
+<div id="output-total-memory-used-by-primary-keys">
+  ## 输出主键和索引粒度占用的内存总量
+</div>
+
+```sql
+SELECT
+    sumIf(data_uncompressed_bytes, part_type = 'InMemory') AS memory_parts,
+    formatReadableSize(sum(primary_key_bytes_in_memory)) AS primary_key_bytes_in_memory,
+    formatReadableSize(sum(primary_key_bytes_in_memory_allocated)) AS primary_key_bytes_in_memory_allocated,
+    formatReadableSize(sum(index_granularity_bytes_in_memory)) AS index_granularity_bytes_in_memory,
+    formatReadableSize(sum(index_granularity_bytes_in_memory_allocated)) AS index_granularity_bytes_in_memory_allocated
+FROM system.parts;
+```

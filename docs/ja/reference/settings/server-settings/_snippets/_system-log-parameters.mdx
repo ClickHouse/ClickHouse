@@ -1,0 +1,33 @@
+---
+title: システムログパラメータ
+---
+
+以下の設定はサブタグで設定できます。
+
+| Setting                            | Description                                                                                                                         | Default             | Note                                                                                   |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------------------------------------------------------------------------------- |
+| `database`                         | データベースの名前。                                                                                                                          |                     |                                                                                        |
+| `table`                            | システムテーブルの名前。                                                                                                                        |                     |                                                                                        |
+| `engine`                           | システムテーブルの [MergeTree エンジンの定義](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table)。 |                     | `partition_by` または `order_by` が定義されている場合は使用できません。指定しない場合は、デフォルトで `MergeTree` が選択されます   |
+| `partition_by`                     | システムテーブルの[カスタムパーティション化キー](/ja/reference/engines/table-engines/mergetree-family/custom-partitioning-key)。                               |                     | システムテーブルに `engine` が指定されている場合、`partition_by` パラメータは &#39;engine&#39; 内で直接指定する必要があります   |
+| `ttl`                              | テーブルの[有効期限 (TTL)](/ja/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl)を指定します。                    |                     | システムテーブルに `engine` が指定されている場合、`ttl` パラメータは &#39;engine&#39; 内で直接指定する必要があります            |
+| `order_by`                         | システムテーブルの[カスタムソートキー](/ja/reference/engines/table-engines/mergetree-family/mergetree#order_by)。`engine` が定義されている場合は使用できません。             |                     | システムテーブルに `engine` が指定されている場合、`order_by` パラメータは &#39;engine&#39; 内で直接指定する必要があります       |
+| `storage_policy`                   | テーブルで使用するストレージポリシーの名前 (任意) 。                                                                                                        |                     | システムテーブルに `engine` が指定されている場合、`storage_policy` パラメータは &#39;engine&#39; 内で直接指定する必要があります |
+| `settings`                         | MergeTree の動作を制御する[追加パラメータ](/ja/reference/engines/table-engines/mergetree-family/mergetree#settings) (任意) 。                            |                     | システムテーブルに `engine` が指定されている場合、`settings` パラメータは &#39;engine&#39; 内で直接指定する必要があります       |
+| `flush_interval_milliseconds`      | メモリ上のバッファからテーブルにデータをフラッシュする間隔。                                                                                                      | `7500`              |                                                                                        |
+| `max_size_rows`                    | ログの最大行数。未フラッシュのログ量が max&#95;size に達すると、ログがディスクにダンプされます。                                                                             | `1048576`           |                                                                                        |
+| `reserved_size_rows`               | ログ用に事前確保されるメモリの行数。                                                                                                                  | `8192`              |                                                                                        |
+| `buffer_size_rows_flush_threshold` | 行数のしきい値。このしきい値に達すると、ログをディスクにフラッシュする処理がバックグラウンドで開始されます。                                                                              | `max_size_rows / 2` |                                                                                        |
+| `flush_on_crash`                   | クラッシュ時にログをディスクへダンプするかどうかを設定します。                                                                                                     | `false`             |                                                                                        |
+
+さらに、次のサーバーレベル設定は、すべてのシステムログテーブルのデフォルトのフラッシュポリシーを制御します。
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| 設定                   | 説明                                                                                  | デフォルト   |
+| -------------------- | ----------------------------------------------------------------------------------- | ------- |
+| `skip_alias_columns` | `true` の場合、system log テーブルのスキーマから ALIAS カラムが除外されます。S3 をバックエンドとする system log では必須です。 | `false` |

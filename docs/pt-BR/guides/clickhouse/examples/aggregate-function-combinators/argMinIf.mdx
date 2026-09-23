@@ -1,0 +1,73 @@
+---
+slug: '/examples/aggregate-function-combinators/argMinIf'
+title: 'argMinIf'
+description: 'Exemplo de uso do combinador argMinIf'
+keywords: ['argMin', 'if', 'combinador', 'exemplos', 'argMinIf']
+sidebarTitle: 'argMinIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if) pode ser aplicado à função [`argMin`](/pt-BR/reference/functions/aggregate-functions/argMin)
+para encontrar o valor de `arg` que corresponde ao menor valor de `val` nas linhas em que a condição é verdadeira,
+usando a função de combinador de agregação `argMinIf`.
+
+A função `argMinIf` é útil quando você precisa encontrar o valor associado
+ao menor valor em um conjunto de dados, mas apenas para as linhas que satisfazem uma condição
+específica.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Neste exemplo, vamos criar uma tabela que armazena os preços dos produtos e seus timestamps
+e usar `argMinIf` para encontrar o menor preço de cada produto quando ele estiver em estoque.
+
+```sql title="Query"
+CREATE TABLE product_prices(
+    product_id UInt32,
+    price Decimal(10,2),
+    timestamp DateTime,
+    in_stock UInt8
+) ENGINE = MergeTree
+ORDER BY ();
+
+INSERT INTO product_prices VALUES
+    (1, 10.99, '2024-01-01 10:00:00', 1),
+    (1, 9.99, '2024-01-01 10:05:00', 1),
+    (1, 11.99, '2024-01-01 10:10:00', 0),
+    (2, 20.99, '2024-01-01 11:00:00', 1),
+    (2, 19.99, '2024-01-01 11:05:00', 1),
+    (2, 21.99, '2024-01-01 11:10:00', 1);
+
+SELECT
+    product_id,
+    argMinIf(price, timestamp, in_stock = 1) AS lowest_price_when_in_stock
+FROM product_prices
+GROUP BY product_id;
+```
+
+A função `argMinIf` encontra o preço correspondente ao timestamp mais antigo de cada produto,
+mas considerando apenas as linhas em que `in_stock = 1`. Por exemplo:
+
+* Produto 1: Entre as linhas com item em estoque, 10.99 tem o timestamp mais antigo (10:00:00)
+* Produto 2: Entre as linhas com item em estoque, 20.99 tem o timestamp mais antigo (11:00:00)
+
+```response title="Response"
+   ┌─product_id─┬─lowest_price_when_in_stock─┐
+1. │          1 │                      10.99 │
+2. │          2 │                      20.99 │
+   └────────────┴────────────────────────────┘
+```
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`argMin`](/pt-BR/reference/functions/aggregate-functions/argMin)
+* [`argMax`](/pt-BR/reference/functions/aggregate-functions/argMax)
+* [`argMaxIf`](/pt-BR/guides/clickhouse/examples/aggregate-function-combinators/argMaxIf)
+* [`combinador If`](/pt-BR/reference/functions/aggregate-functions/combinators#-if)

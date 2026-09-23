@@ -1,0 +1,140 @@
+---
+description: "Les utilisateurs ClickHouse existants et correctement configurés peuvent être authentifiés à l'aide du protocole d'authentification Kerberos."
+slug: /operations/external-authenticators/kerberos
+title: 'Kerberos'
+doc_type: 'reference'
+---
+
+import SelfManaged from '/snippets/fr/_self_managed_only_no_roadmap.mdx';
+
+<SelfManaged />
+
+Les utilisateurs ClickHouse existants et correctement configurés peuvent être authentifiés via le protocole d’authentification Kerberos.
+
+À l’heure actuelle, Kerberos ne peut être utilisé comme authentificateur externe que pour des utilisateurs existants, définis dans `users.xml` ou dans les chemins locaux de contrôle d’accès. Ces utilisateurs ne peuvent utiliser que des requêtes HTTP et doivent pouvoir s’authentifier à l’aide du mécanisme GSS-SPNEGO.
+
+Avec cette approche, Kerberos doit être configuré sur le système et activé dans la configuration de ClickHouse.
+
+<div id="enabling-kerberos-in-clickhouse">
+  ## activation de Kerberos dans ClickHouse
+</div>
+
+Pour activer Kerberos, il faut inclure la section `kerberos` dans `config.xml`. Cette section peut contenir des paramètres supplémentaires.
+
+<div id="parameters">
+  #### Paramètres
+</div>
+
+* `principal` - nom canonique du service principal qui sera obtenu et utilisé lors de l’acceptation des contextes de sécurité.
+  * Ce paramètre est facultatif ; s’il est omis, le principal par défaut sera utilisé.
+
+* `realm` - realm utilisé pour limiter l’authentification aux seules requêtes dont le realm de l’initiateur correspond.
+  * Ce paramètre est facultatif ; s’il est omis, aucun filtrage supplémentaire par realm ne sera appliqué.
+
+* `keytab` - chemin vers le fichier keytab du service.
+  * Ce paramètre est facultatif ; s’il est omis, le chemin vers le fichier keytab du service doit être défini dans la variable d’environnement `KRB5_KTNAME`.
+
+Exemple (à placer dans `config.xml`) :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos />
+</clickhouse>
+```
+
+Avec un principal spécifié :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <principal>HTTP/clickhouse.example.com@EXAMPLE.COM</principal>
+    </kerberos>
+</clickhouse>
+```
+
+Avec filtrage par domaine Kerberos :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <kerberos>
+        <realm>EXAMPLE.COM</realm>
+    </kerberos>
+</clickhouse>
+```
+
+<Note>
+  Vous ne pouvez définir qu’une seule section `kerberos`. La présence de plusieurs sections `kerberos` entraînera la désactivation de l’authentification Kerberos dans ClickHouse.
+</Note>
+
+<Note>
+  Les sections `principal` et `realm` ne peuvent pas être spécifiées en même temps. La présence simultanée des sections `principal` et `realm` entraînera la désactivation de l’authentification Kerberos dans ClickHouse.
+</Note>
+
+<div id="kerberos-as-an-external-authenticator-for-existing-users">
+  ## Kerberos comme authentificateur externe pour les utilisateurs existants
+</div>
+
+Kerberos peut être utilisé comme méthode pour vérifier l’identité des utilisateurs définis localement (utilisateurs définis dans `users.xml` ou dans les chemins locaux de contrôle d’accès). Actuellement, **seules** les requêtes via l’interface HTTP peuvent être *authentifiées avec Kerberos* (via le mécanisme GSS-SPNEGO).
+
+Le format du nom de principal Kerberos suit généralement ce modèle :
+
+* *primary/instance@REALM*
+
+La partie */instance* peut apparaître zéro, une ou plusieurs fois. **La partie *primary* du nom de principal canonique de l’initiateur doit correspondre au nom d’utilisateur authentifié avec Kerberos pour que l’authentification réussisse**.
+
+<div id="enabling-kerberos-in-users-xml">
+  ### Activation de Kerberos dans `users.xml`
+</div>
+
+Pour activer l’authentification Kerberos pour l’utilisateur, spécifiez la section `kerberos` au lieu de `password` ou d’une section similaire dans la définition de l’utilisateur.
+
+Paramètres :
+
+* `realm` - un realm utilisé pour limiter l’authentification aux seules requêtes dont le realm de l’initiateur correspond.
+  * Ce paramètre est facultatif ; s’il est omis, aucun filtrage supplémentaire par realm ne sera appliqué.
+
+Exemple (à placer dans `users.xml`) :
+
+```xml
+<clickhouse>
+    <!- ... -->
+    <users>
+        <!- ... -->
+        <my_user>
+            <!- ... -->
+            <kerberos>
+                <realm>EXAMPLE.COM</realm>
+            </kerberos>
+        </my_user>
+    </users>
+</clickhouse>
+```
+
+<Note>
+  Notez que l’authentification Kerberos ne peut pas être utilisée en parallèle d’un autre mécanisme d’authentification. La présence de toute autre section, comme `password` en plus de `kerberos`, entraînera l’arrêt de ClickHouse.
+</Note>
+
+<Info>
+  **Rappel**
+
+  Notez que désormais, une fois que l’utilisateur `my_user` utilise `kerberos`, Kerberos doit être activé dans le fichier principal `config.xml`, comme décrit précédemment.
+</Info>
+
+<div id="enabling-kerberos-using-sql">
+  ### Activation de Kerberos via SQL
+</div>
+
+Lorsque le [contrôle d’accès et la gestion des comptes pilotés par SQL](/fr/concepts/features/security/access-rights#access-control-usage) sont activés dans ClickHouse, il est également possible de créer avec des instructions SQL des utilisateurs identifiés par Kerberos.
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos REALM 'EXAMPLE.COM'
+```
+
+...ou, sans filtrage par realm :
+
+```sql
+CREATE USER my_user IDENTIFIED WITH kerberos
+```

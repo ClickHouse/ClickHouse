@@ -3,6 +3,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 PeekableWriteBuffer::PeekableWriteBuffer(DB::WriteBuffer & sub_buf_) : BufferWithOwnMemory(0), sub_buf(sub_buf_)
 {
     Buffer & sub_working = sub_buf.buffer();
@@ -63,6 +68,19 @@ void PeekableWriteBuffer::dropCheckpoint()
             throw;
         }
     }
+}
+
+void PeekableWriteBuffer::reattachToSubBuffer()
+{
+    if (checkpoint || write_to_own_memory || isFinalized() || isCanceled())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot re-attach PeekableWriteBuffer to its sub-buffer: a checkpoint is active ({}), or the buffer is finalized ({}) "
+            "or canceled ({})",
+            checkpoint.has_value(), isFinalized(), isCanceled());
+
+    Buffer & sub_working = sub_buf.buffer();
+    BufferBase::set(sub_working.begin(), sub_working.size(), sub_buf.offset());
 }
 
 void PeekableWriteBuffer::rollbackToCheckpoint(bool drop)

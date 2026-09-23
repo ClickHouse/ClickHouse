@@ -406,7 +406,7 @@ void BackupEntriesCollector::gatherDatabasesMetadata()
 
             case ASTBackupQuery::ElementType::ALL:
             {
-                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true}))
+                for (const auto & [database_name, database] : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = true, .with_remote_databases = true}))
                 {
                     if (!element.except_databases.contains(database_name))
                     {
@@ -571,7 +571,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             /// Record REPLACE targets of refreshable materialized views from the create query, not
             /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
             /// from a ZooKeeper snapshot and may return null if not yet created on this replica.
-            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append
+            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->isAppend()
                 && create.hasTargetTableID(ViewTarget::To))
             {
                 StorageID target_id = create.getTargetTableID(ViewTarget::To);

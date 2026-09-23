@@ -1,0 +1,19 @@
+---
+slug: /faq/use-cases/key-value
+title: "Puis-je utiliser ClickHouse comme stockage clé-valeur ?"
+toc_hidden: true
+toc_priority: 101
+description: "Répond à la question fréquemment posée de savoir si ClickHouse peut ou non être utilisé comme stockage clé-valeur."
+doc_type: 'reference'
+keywords: ['clé-valeur', 'modèle de données', "cas d'utilisation", 'conception du schéma', 'modèle de stockage']
+---
+
+La réponse courte est **« non »**. La charge de travail clé-valeur figure parmi les principaux cas de la liste des situations dans lesquelles <span class="text-danger">**il ne faut PAS**</span> utiliser ClickHouse. C&#39;est avant tout un système [OLAP](/fr/resources/support-center/knowledge-base/general-faqs/olap), alors qu&#39;il existe de nombreux excellents systèmes de stockage clé-valeur.
+
+Cependant, il peut exister des situations où il reste judicieux d&#39;utiliser ClickHouse pour des requêtes de type clé-valeur. En général, il s&#39;agit de produits à petit budget dont la charge de travail principale est de nature analytique et convient bien à ClickHouse, mais qui comportent aussi un processus secondaire nécessitant un modèle clé-valeur, avec un débit de requêtes relativement faible et sans exigences strictes en matière de latence. Si vous disposiez d&#39;un budget illimité, vous auriez installé une base de données clé-valeur secondaire pour cette charge de travail secondaire, mais dans la réalité, la maintenance d&#39;un système de stockage supplémentaire a un coût additionnel (supervision, sauvegardes, etc.) qu&#39;il peut être souhaitable d&#39;éviter.
+
+Si vous décidez d&#39;aller à l&#39;encontre des recommandations et d&#39;exécuter des requêtes de type clé-valeur sur ClickHouse, voici quelques conseils :
+
+* La principale raison pour laquelle les requêtes ponctuelles sont coûteuses dans ClickHouse est son index primaire clairsemé de la [famille de moteurs de table MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree). Cet index ne peut pas pointer vers chaque ligne de données individuellement ; à la place, il pointe vers chaque N-ième ligne, et le système doit balayer depuis la N-ième ligne voisine jusqu&#39;à celle recherchée, en lisant au passage des données superflues. Dans un scénario clé-valeur, il peut être utile de réduire la valeur de N avec le paramètre `index_granularity`.
+* ClickHouse conserve chaque colonne dans un ensemble de fichiers distinct, donc pour reconstituer une ligne complète, il doit parcourir chacun de ces fichiers. Leur nombre augmente linéairement avec le nombre de colonnes ; dans un scénario clé-valeur, il peut donc être préférable d&#39;éviter d&#39;utiliser un grand nombre de colonnes et de placer toutes vos données dans une seule colonne `String`, encodée dans un format de sérialisation comme JSON, Protobuf ou tout autre format pertinent.
+* Il existe une autre approche qui consiste à utiliser le moteur de table [Join](/fr/reference/engines/table-engines/special/join) au lieu des tables `MergeTree` classiques, ainsi que la fonction [joinGet](/fr/reference/functions/regular-functions/other-functions#joinGet) pour récupérer les données. Elle peut offrir de meilleures performances de requête, mais peut aussi poser certains problèmes d&#39;ergonomie et de fiabilité. Voici un [exemple d&#39;utilisation](https://github.com/ClickHouse/ClickHouse/blob/master/tests/queries/0_stateless/00800_versatile_storage_join.sql#L49-L51).

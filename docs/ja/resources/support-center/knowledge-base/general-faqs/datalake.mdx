@@ -1,0 +1,17 @@
+---
+title: 'ClickHouse はデータレイクをサポートしていますか？'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/datalake
+description: 'ClickHouse は、Iceberg、Delta Lake、Apache Hudi、Apache Paimon、Hive を含むデータレイクをサポートしています'
+doc_type: 'reference'
+keywords: ['データレイク', 'レイクハウス']
+---
+
+ClickHouse は、Iceberg、Delta Lake、Apache Hudi、Apache Paimon、Hive を含むデータレイクをサポートしています。
+
+データの**読み取り**と**書き込み**をサポートしており、パーティションプルーニング、統計情報ベースのプルーニング、スキーマ進化、位置ベースの削除、等価削除、タイムトラベル、イントロスペクションにも完全対応しています。
+
+ClickHouse のデータレイクは、個別のテーブルに加えて、**Unity**、**AWS Glue**、**Rest**、**Polaris**、**Hive Metastore** のカタログでもサポートされています。
+
+データレイク上のクエリパフォーマンスは、分散処理、効率的なネイティブ Parquet リーダー、データファイルのキャッシュにより、非常に優れています。

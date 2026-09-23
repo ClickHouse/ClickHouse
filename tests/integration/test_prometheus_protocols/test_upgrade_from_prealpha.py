@@ -55,6 +55,7 @@ PREALPHA_TAGS_DEF = (
     " min_time SimpleAggregateFunction(min, Nullable(DateTime64(3))),"
     " max_time SimpleAggregateFunction(max, Nullable(DateTime64(3))))"
     " ENGINE=AggregatingMergeTree ORDER BY (metric_name, id)"
+    " SETTINGS allow_dimensions_outside_sorting_key = 1"
 )
 
 PREALPHA_METRICS_DEF = (
@@ -157,7 +158,8 @@ def create_and_fill_prealpha_time_series(time_series_columns=PREALPHA_COLUMNS,
     node.query("ATTACH TABLE prometheus")
 
     # The prealpha version's outer columns (`id`, `timestamp`, `value`, ...) must be replaced by the canonical
-    # current outer column `time_series Array(Tuple(timestamp, value))` during the load-time normalization.
+    # outer column `time_series Array(Tuple(timestamp, value))` during the load-time normalization
+    # (a prealpha table is a table of version 0, which names the column `time_series`, not `samples`).
     outer_columns = set(node.query(
         "SELECT name FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus'"
     ).split())

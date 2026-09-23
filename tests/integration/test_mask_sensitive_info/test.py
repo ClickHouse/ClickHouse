@@ -234,7 +234,6 @@ def test_backup_table_AzureBlobStorage():
 
 def test_create_table():
     password = new_password()
-    has_delta_lake = int(node.query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) > 0
     azure_conn_string = cluster.env_variables["AZURITE_CONNECTION_STRING"]
     azure_sas_conn_string = f"{azure_conn_string};SharedAccessSignature={password}"
     account_key_pattern = re.compile("AccountKey=.*?(;|$)")
@@ -264,7 +263,6 @@ def test_create_table():
         f"S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '{password}', format = 'CSV')",
         "S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')",
         f"S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '{password}')",
-        f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')" if has_delta_lake else (f"DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '{password}')", "UNKNOWN_STORAGE"),
         "S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'",
         "S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'",
         f"S3Queue('http://minio1:9001/root/data/', 'minio', '{password}', 'CSV') settings mode = 'ordered'",
@@ -374,7 +372,6 @@ def test_create_table():
             generate_create_table_numbered("(`x` int) ENGINE = S3(named_collection_6, url = 'http://minio1:9001/root/data/test8.csv', access_key_id = 'minio', secret_access_key = '[HIDDEN]', format = 'CSV')"),
             generate_create_table_numbered("(x int) ENGINE = S3('http://minio1:9001/root/data/test9.csv.gz', 'NOSIGN', 'CSV', 'gzip')"),
             generate_create_table_numbered("(`x` int) ENGINE = S3('http://minio1:9001/root/data/test10.csv.gz', 'minio', '[HIDDEN]')"),
-            generate_create_table_numbered("(`x` int) ENGINE = DeltaLake('http://minio1:9001/root/data/test11.csv.gz', 'minio', '[HIDDEN]')"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV') settings mode = 'ordered'"),
             generate_create_table_numbered("(x int) ENGINE = S3Queue('http://minio1:9001/root/data/', 'CSV', 'gzip') settings mode = 'ordered'"),
             # due to sensitive data substitution the query will be normalized, so not "settings" but "SETTINGS"
@@ -444,6 +441,7 @@ def test_create_database():
             f"Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '{password}'))",
             "DNS_ERROR",
         ),
+        f"URL('https://username:{password}@localhost:11111/x/')",
     ]
 
     def make_test_case(i):
@@ -472,6 +470,7 @@ def test_create_database():
             "CREATE DATABASE database3 ENGINE = S3(named_collection_2, secret_access_key = '[HIDDEN]', access_key_id = 'minio')",
             # "CREATE DATABASE database4 ENGINE = PostgreSQL('localhost:5432', 'postgres_db', 'postgres_user', '[HIDDEN]')",
             "CREATE DATABASE database4 ENGINE = Backup('', S3('http://minio1:9001/root/data/backup', 'minio', '[HIDDEN]'))",
+            "CREATE DATABASE database5 ENGINE = URL('https://username:[HIDDEN]@localhost:11111/x/')",
         ],
         must_not_contain=[password],
     )
@@ -1027,6 +1026,33 @@ def test_backup_table_s3_named_collection():
 
     node.query("DROP TABLE IF EXISTS backup_test_s3_nc")
     node.query("DROP NAMED COLLECTION IF EXISTS s3_backup_nc")
+
+
+def test_database_backup_engine_s3():
+    """Secrets in the nested S3(...) destination of the `Backup` database engine must be masked in logs,
+    both for the explicit-key form and for the named-collection form (including session_token and the
+    Google ADC secrets). The CREATE fails because the backup does not exist, but it is still logged."""
+    password = new_password()
+
+    queries = [
+        f"CREATE DATABASE backup_db_s3_1 ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '{password}'))",
+        f"CREATE DATABASE backup_db_s3_2 ENGINE = Backup('', S3(named_collection_6, url = 'http://minio1:9001/root/data/db_backup_nonexistent', access_key_id = 'minio', secret_access_key = '{password}', session_token = '{password}', google_adc_client_secret = '{password}'))",
+    ]
+    for query in queries:
+        node.query_and_get_answer_with_error(query)
+
+    check_logs(
+        must_contain=[
+            "ENGINE = Backup('', S3('http://minio1:9001/root/data/db_backup_nonexistent', 'minio', '[HIDDEN]'))",
+            "session_token = '[HIDDEN]'",
+            "secret_access_key = '[HIDDEN]'",
+            "google_adc_client_secret = '[HIDDEN]'",
+        ],
+        must_not_contain=[password],
+    )
+
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_1")
+    node.query("DROP DATABASE IF EXISTS backup_db_s3_2")
 
 
 def test_backup_table_azure_named_collection():

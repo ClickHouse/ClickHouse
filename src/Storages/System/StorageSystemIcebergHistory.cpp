@@ -27,6 +27,7 @@
 #include <Storages/SelectQueryInfo.h>
 #include <Storages/System/StorageSystemIcebergHistory.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Storages/System/extractTableNameFilter.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #if USE_AVRO
@@ -43,6 +44,7 @@ namespace Setting
 {
 extern const SettingsSeconds lock_acquire_timeout;
 extern const SettingsBool use_iceberg_metadata_files_cache;
+extern const SettingsBool database_datalake_require_metadata_access;
 }
 
 ColumnsDescription StorageSystemIcebergHistory::getColumnsDescription()
@@ -94,19 +96,26 @@ void StorageSystemIcebergHistory::fillData(
     if (!access->isGranted(AccessType::SHOW_TABLES))
         return;
 
-    auto add_history_record = [&](const String & database_name, const String & table_name, StorageObjectStorage * object_storage)
+    auto log = getLogger("SystemIcebergHistory");
+
+    auto try_add_history_record = [&](const String & database_name, const String & table_name, StoragePtr & storage)
     {
-        if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
-            return;
-
-        if (!object_storage->isIcebergStorage())
-            return;
-
         /// Unfortunately this try/catch is unavoidable. Iceberg tables can be broken in arbitrary way, it's impossible
         /// to handle properly all possible errors which we can get when attempting to read metadata of iceberg table
         try
         {
-            if (IcebergMetadata * iceberg_metadata = dynamic_cast<IcebergMetadata *>(object_storage->getExternalMetadata(context_copy));
+            TableLockHolder lock = storage->tryLockForShare(
+                context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
+            if (!lock)
+                // Table was dropped while acquiring the lock, skipping table
+                return;
+
+            auto * object_storage = dynamic_cast<StorageObjectStorage *>(storage.get());
+
+            if (!object_storage || !object_storage->isIcebergStorage())
+                return;
+
+            if (auto iceberg_metadata = std::dynamic_pointer_cast<IcebergMetadata>(object_storage->getExternalMetadata(context_copy));
                 iceberg_metadata)
             {
                 IcebergMetadata::IcebergHistory iceberg_history_items = iceberg_metadata->getHistory(context_copy);
@@ -137,75 +146,93 @@ void StorageSystemIcebergHistory::fillData(
         }
         catch (...)
         {
-            tryLogCurrentException(
-                getLogger("SystemIcebergHistory"),
-                fmt::format("Ignoring broken table {}", object_storage->getStorageID().getFullTableName()));
+            tryLogCurrentException(log, fmt::format("Ignoring broken table {}.{}", database_name, table_name));
         }
     };
 
-    /// Filter databases first: listing tables of a remote database (PostgreSQL/MySQL/...)
-    /// opens a connection, which a query filtering by database should not need to do.
-    MutableColumnPtr database_name_column = ColumnString::create();
-
-    auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = true});
-    for (const auto & [database_name, database] : databases)
-        database_name_column->insert(database_name);
-
-    Block databases_block{
-        {std::move(database_name_column), std::make_shared<DataTypeString>(), "database"},
-    };
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, databases_block, context_copy);
-    const ColumnString & filtered_databases = assert_cast<const ColumnString &>(*databases_block.getByName("database").column);
-
-    MutableColumnPtr database_column = ColumnString::create();
-    MutableColumnPtr table_column = ColumnString::create();
-
-    for (size_t i = 0; i < filtered_databases.size(); ++i)
+    auto filter_databases = [&]()
     {
-        const String database_name{filtered_databases.getDataAt(i)};
+        const auto & catalog = DatabaseCatalog::instance();
+        MutableColumnPtr database_column = ColumnString::create();
+        for (const auto & [name, db] : catalog.getDatabases({.with_datalake_catalogs = true, .with_remote_databases = false}))
+            database_column->insert(name);
+
+        Block databases_block{
+            {std::move(database_column), std::make_shared<DataTypeString>(), "database"},
+        };
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, databases_block, context_copy);
+        return databases_block;
+    };
+
+    auto filter_tables = [&]()
+    {
+        auto filtered_databases_block = filter_databases();
+        const auto & filtered_databases = assert_cast<const ColumnString &>(*filtered_databases_block.getByName("database").column);
+
+        const TablesFilter tables_filter = extractTableNameFilter(predicate, "table");
+
+        MutableColumnPtr database_column = ColumnString::create();
+        MutableColumnPtr table_column = ColumnString::create();
+
+        for (size_t i = 0; i < filtered_databases.size(); ++i)
+        {
+            auto database_name = filtered_databases.getDataAt(i);
+            DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
+            if (!database)
+                continue;
+
+            for (const auto & table_details : database->getLightweightTablesIteratorWithHint(context_copy, {}, true, tables_filter))
+            {
+                database_column->insert(database_name);
+                table_column->insert(table_details.name);
+            }
+        }
+
+        Block filtered_block{
+            {std::move(database_column), std::make_shared<DataTypeString>(), "database"},
+            {std::move(table_column), std::make_shared<DataTypeString>(), "table"},
+        };
+        VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context_copy);
+        return filtered_block;
+    };
+
+    auto filtered_block = filter_tables();
+
+    const auto & databases = assert_cast<const ColumnString &>(*filtered_block.getByName("database").column);
+    const auto & tables = assert_cast<const ColumnString &>(*filtered_block.getByName("table").column);
+
+    const bool rethrow_table_exception = settings_copy[Setting::database_datalake_require_metadata_access];
+
+    for (size_t i = 0; i < databases.size(); ++i)
+    {
+        const String database_name{databases.getDataAt(i)};
+        const String table_name{tables.getDataAt(i)};
+
+        if (!access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+            continue;
+
         DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
         if (!database)
             continue;
 
-        for (auto iterator = database->getTablesIterator(context_copy, {}, true); iterator->isValid(); iterator->next())
+        StoragePtr storage;
+
+        try
         {
-            database_column->insert(database_name);
-            table_column->insert(iterator->name());
+            storage = database->tryGetTable(table_name, context_copy);
+            if (!storage)
+                continue;
         }
-    }
-
-    Block filtered_block{
-        {std::move(database_column), std::make_shared<DataTypeString>(), "database"},
-        {std::move(table_column), std::make_shared<DataTypeString>(), "table"},
-    };
-    VirtualColumnUtils::filterBlockWithPredicate(predicate, filtered_block, context_copy);
-
-    const ColumnString & databases_to_read = assert_cast<const ColumnString &>(*filtered_block.getByName("database").column);
-    const ColumnString & tables_to_read = assert_cast<const ColumnString &>(*filtered_block.getByName("table").column);
-
-    for (size_t i = 0; i < databases_to_read.size(); ++i)
-    {
-        const String database_name{databases_to_read.getDataAt(i)};
-        const String table_name{tables_to_read.getDataAt(i)};
-
-        DatabasePtr database = DatabaseCatalog::instance().tryGetDatabase(database_name);
-        if (!database)
-            continue;
-
-        StoragePtr storage = database->tryGetTable(table_name, context_copy);
-        if (!storage)
-            continue;
-
-        TableLockHolder lock
-            = storage->tryLockForShare(context_copy->getCurrentQueryId(), context_copy->getSettingsRef()[Setting::lock_acquire_timeout]);
-        if (!lock)
-            // Table was dropped while acquiring the lock, skipping table
-            continue;
-
-        if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
+        catch (...)
         {
-            add_history_record(database_name, table_name, object_storage_table);
+            if (rethrow_table_exception)
+                throw;
+
+            tryLogCurrentException(log, fmt::format("Ignoring broken table {}.{}", database_name, table_name));
+            continue;
         }
+
+        try_add_history_record(database_name, table_name, storage);
     }
 #endif
 }

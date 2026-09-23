@@ -1,0 +1,60 @@
+---
+slug: '/examples/aggregate-function-combinators/sumForEach'
+title: 'sumForEach'
+description: 'Exemplo de uso da função de agregação sumForEach'
+keywords: ['sum', 'ForEach', 'combinador', 'exemplos', 'sumForEach']
+sidebarTitle: 'sumForEach'
+doc_type: 'reference'
+---
+
+import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCode.jsx";
+
+<div id="description">
+  ## Descrição
+</div>
+
+O combinador [`ForEach`](/pt-BR/reference/functions/aggregate-functions/combinators#-foreach)
+pode ser aplicado à função de agregação [`sum`](/pt-BR/reference/functions/aggregate-functions/sum) para transformá-la de uma função de agregação
+que opera sobre valores de linhas em uma função de agregação que opera sobre
+colunas do tipo Array, aplicando a agregação a cada elemento do array ao longo das linhas.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Para este exemplo, usaremos o conjunto de dados `hits` disponível em nosso [playground SQL](https://sql.clickhouse.com/).
+
+A tabela `hits` contém uma coluna chamada `isMobile` do tipo UInt8, que pode ser
+`0` para desktop ou `1` para dispositivos móveis:
+
+<RunnableCode>
+  ```sql
+  SELECT EventTime, IsMobile FROM metrica.hits ORDER BY rand() LIMIT 10
+  ```
+</RunnableCode>
+
+Usaremos a função de combinador de agregação `sumForEach` para analisar como
+o tráfego em desktop versus dispositivos móveis varia ao longo das horas do dia. Clique no botão de play
+abaixo para executar a consulta interativamente:
+
+<RunnableCode>
+  ```sql
+  SELECT
+      toHour(EventTime) AS hour_of_day,
+      -- Use sumForEach para contar visitas em desktop e em dispositivos móveis em uma única passagem
+      sumForEach([
+          IsMobile = 0, -- Visitas em desktop (IsMobile = 0)
+          IsMobile = 1  -- Visitas em dispositivos móveis (IsMobile = 1)
+      ]) AS device_counts
+  FROM metrica.hits
+  GROUP BY hour_of_day
+  ORDER BY hour_of_day;
+  ```
+</RunnableCode>
+
+<div id="see-also">
+  ## Veja também
+</div>
+
+* [`sum`](/pt-BR/reference/functions/aggregate-functions/sum)
+* [combinador `ForEach`](/pt-BR/reference/functions/aggregate-functions/combinators#-foreach)

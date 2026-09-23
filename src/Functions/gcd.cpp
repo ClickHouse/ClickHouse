@@ -32,10 +32,10 @@ using FunctionGCD = BinaryArithmeticOverloadResolver<GCDImpl, NameGCD, false, fa
 REGISTER_FUNCTION(GCD)
 {
     FunctionDocumentation::Description description = R"(
-    Returns the greatest common divisor of two values a and b.
+Returns the greatest common divisor of two values a and b.
 
-    An exception is thrown when dividing by zero or when dividing a minimal
-    negative number by minus one.
+An exception is thrown when dividing by zero or when dividing a minimal
+negative number by minus one.
     )";
     FunctionDocumentation::Syntax syntax = "gcd(x, y)";
     FunctionDocumentation::Argument argument1 = {"x", "First integer"};

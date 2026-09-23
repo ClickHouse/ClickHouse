@@ -3,6 +3,8 @@
 #include <Processors/Transforms/ExceptionKeepingTransform.h>
 #include <Core/Block_fwd.h>
 
+#include <vector>
+
 namespace DB
 {
 
@@ -25,6 +27,15 @@ public:
     ExpressionTransform(
         SharedHeader header_, ExpressionActionsPtr expression_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
 
+    /// Use this overload when the transformed header is already known (computed once per step)
+    /// to avoid recomputing it in every instance: the computation is linear in the size of the
+    /// expression's DAG, and a step creates one transform per stream.
+    ExpressionTransform(
+        SharedHeader input_header_,
+        SharedHeader transformed_header_,
+        ExpressionActionsPtr expression_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_ = nullptr);
+
     String getName() const override { return "ExpressionTransform"; }
 
     static Block transformHeader(const Block & header, const ActionsDAG & expression);
@@ -36,6 +47,10 @@ protected:
 
 private:
     ExpressionActionsPtr expression;
+
+    /// Mapping from required input slot to input-header position, precomputed once (the input header is fixed).
+    /// Lets transform() run the expression positionally without rebuilding a Block name index per chunk.
+    std::vector<ssize_t> input_positions;
 
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 };

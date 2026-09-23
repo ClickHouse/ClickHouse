@@ -1,0 +1,42 @@
+---
+title: 'Colunas geradas no Postgres: armadilhas e boas práticas'
+slug: /integrations/clickpipes/postgres/generated_columns
+description: 'Página que descreve considerações importantes ao usar colunas geradas do PostgreSQL em tabelas que estão sendo replicadas'
+doc_type: 'guide'
+keywords: ['clickpipes', 'postgresql', 'cdc', 'ingestão de dados', 'sincronização em tempo real']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+Ao usar colunas geradas do PostgreSQL em tabelas que estão sendo replicadas, há algumas considerações importantes a ter em mente. Essas armadilhas podem afetar o processo de replicação e a consistência dos dados nos sistemas de destino.
+
+<div id="the-problem-with-generated-columns">
+  ## O problema com colunas geradas
+</div>
+
+1. **Não são publicadas via `pgoutput`:** Colunas geradas não são publicadas pelo plugin de replicação lógica `pgoutput`. Isso significa que, ao replicar dados do PostgreSQL para outro sistema, os valores das colunas geradas não são incluídos no fluxo de replicação.
+
+2. **Problemas com chaves primárias:** Se uma coluna gerada fizer parte da sua chave primária, isso pode causar problemas de desduplicação no destino. Como os valores da coluna gerada não são replicados, o sistema de destino não terá as informações necessárias para identificar e desduplicar corretamente as linhas.
+
+3. **Problemas com alterações de esquema**: Se você adicionar uma coluna gerada a uma tabela que já está sendo replicada, a nova coluna não será preenchida no destino, pois o Postgres não nos fornece a `RelationMessage` da nova coluna. Se depois você adicionar uma nova coluna não gerada à mesma tabela, o ClickPipe, ao tentar reconciliar o esquema, não conseguirá encontrar a coluna gerada no destino, o que levará a uma falha no processo de replicação.
+
+<div id="best-practices">
+  ## Boas práticas
+</div>
+
+Para contornar essas limitações, considere as seguintes boas práticas:
+
+1. **Recrie as colunas geradas no destino:** Em vez de depender do processo de replicação para lidar com colunas geradas, recomenda-se recriar essas colunas no destino usando ferramentas como dbt (data build tool) ou outros mecanismos de transformação de dados.
+
+2. **Evite usar colunas geradas em chaves primárias:** Ao definir tabelas que serão replicadas, é melhor evitar incluir colunas geradas como parte da chave primária.
+
+<div id="upcoming-improvements-to-ui">
+  ## Próximas melhorias na UI
+</div>
+
+Nas próximas versões, planejamos adicionar uma UI para ajudar você com o seguinte:
+
+1. **Identificar tabelas com colunas geradas:** A UI terá um recurso para identificar tabelas que contêm colunas geradas. Isso ajudará você a entender quais tabelas são afetadas por esse problema.
+
+2. **Documentação e Boas Práticas:** A UI incluirá boas práticas para o uso de colunas geradas em tabelas replicadas, incluindo orientações sobre como evitar erros comuns.

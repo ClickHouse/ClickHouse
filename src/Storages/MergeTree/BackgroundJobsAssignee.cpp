@@ -30,8 +30,7 @@ BackgroundTaskSchedulingSettings BackgroundJobsAssignee::getSettings() const
         case Type::Moving:
             return getContext()->getBackgroundMoveTaskSchedulingSettings();
         case Type::Streaming:
-            /// TODO(michicosun): Change to streaming-specific settings.
-            return getContext()->getBackgroundProcessingTaskSchedulingSettings();
+            return getContext()->getBackgroundStreamingTaskSchedulingSettings();
     }
 }
 
@@ -116,16 +115,37 @@ String BackgroundJobsAssignee::toString(Type type)
 
 void BackgroundJobsAssignee::start()
 {
+    /// Read the cached id before taking holder_mutex so that the two locks are never nested.
+    const auto current_storage_id = getStorageID();
+
     std::lock_guard lock(holder_mutex);
     if (!holder)
-        holder = getContext()->getSchedulePool().createTask(storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+    {
+        switch (type)
+        {
+        case Type::DataProcessing:
+        case Type::Moving:
+            holder = getContext()->getSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+            break;
+        case Type::Streaming:
+            holder = getContext()->getStreamingSchedulePool()->createTask(current_storage_id, "BackgroundJobsAssignee:" + toString(type), [this]{ threadFunc(); });
+            break;
+        }
+    }
 
     holder->activateAndSchedule();
 }
 
 void BackgroundJobsAssignee::updateStorageID(const StorageID & new_id)
 {
+    std::lock_guard lock(storage_id_mutex);
     storage_id = new_id;
+}
+
+StorageID BackgroundJobsAssignee::getStorageID() const
+{
+    std::lock_guard lock(storage_id_mutex);
+    return storage_id;
 }
 
 void BackgroundJobsAssignee::finish()
@@ -144,10 +164,11 @@ void BackgroundJobsAssignee::finish()
     {
         local_holder->deactivate();
 
-        getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(storage_id);
-        getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(storage_id);
+        const auto current_storage_id = getStorageID();
+        getContext()->getMovesExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
+        getContext()->getFetchesExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
+        getContext()->getMergeMutateExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
+        getContext()->getCommonExecutor()->removeTasksCorrespondingToStorage(current_storage_id);
     }
 }
 

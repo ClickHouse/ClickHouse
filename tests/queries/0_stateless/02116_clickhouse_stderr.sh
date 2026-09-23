@@ -22,8 +22,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
     cd "$test_dir" || exit 1
 
     stderr=$(mktemp -t clickhouse.XXXXXX)
-    # It will fail to start because the port is already in use
-    $CLICKHOUSE_SERVER_BINARY -- --listen_host "${CLICKHOUSE_HOST}" --tcp_port "$CLICKHOUSE_PORT_TCP" --logger.stderr="$stderr" 2>/dev/null
+    # It will fail to start because 192.0.2.1 (a reserved documentation address, RFC 5737) cannot be
+    # bound. This is a deterministic post-logger-init failure on every OS, unlike relying on a port
+    # collision, which does not fire on macOS where the running server binds only IPv6 (::).
+    $CLICKHOUSE_SERVER_BINARY -- --listen_host 192.0.2.1 --tcp_port "$CLICKHOUSE_PORT_TCP" --logger.stderr="$stderr" 2>/dev/null
     # -s -- check that stderr was created and is not empty
     test -s "$stderr" || exit 2
     rm "$stderr"

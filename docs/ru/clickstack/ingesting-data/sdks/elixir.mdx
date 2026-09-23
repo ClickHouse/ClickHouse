@@ -1,0 +1,77 @@
+---
+slug: /use-cases/observability/clickstack/sdks/elixir
+description: 'SDK Elixir для ClickStack — стека обсервабилити ClickHouse'
+title: 'Elixir'
+doc_type: 'guide'
+keywords: ['Elixir ClickStack SDK', 'Elixir обсервабилити', 'HyperDX Elixir', 'Elixir SDK для логирования', 'Интеграция ClickStack с Elixir']
+---
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ Логи</td>
+      <td className="pe-2">✖️ Метрики</td>
+      <td className="pe-2">✖️ Трассировки</td>
+    </tr>
+  </tbody>
+</table>
+
+*🚧 Инструментирование метрик и трассировки OpenTelemetry скоро будет доступно!*
+
+<div id="getting-started">
+  ## Начало работы
+</div>
+
+<div id="install-hyperdx-logger-backend-package">
+  ### Установите пакет backend логгера ClickStack
+</div>
+
+Пакет можно установить, добавив `hyperdx` в список зависимостей в
+`mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:hyperdx, "~> 0.1.6"}
+  ]
+end
+```
+
+<div id="configure-logger">
+  ### Настройте логгер
+</div>
+
+Добавьте следующее в файл `config.exs`:
+
+```elixir
+# config/releases.exs
+
+config :logger,
+  level: :info,
+  backends: [:console, {Hyperdx.Backend, :hyperdx}]
+```
+
+<div id="configure-environment-variables">
+  ### Настройте переменные окружения
+</div>
+
+После этого вам нужно настроить следующие переменные окружения в
+оболочке, чтобы отправлять телеметрию в ClickStack через OpenTelemetry Collector:
+
+<Tabs>
+  <Tab title="Управляемый ClickStack">
+    ```shell
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+
+  <Tab title="ClickStack с открытым исходным кодом">
+    ```shell
+    export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+</Tabs>
+
+*Переменная окружения `OTEL_SERVICE_NAME` используется для идентификации вашего сервиса
+в приложении HyperDX; ей можно задать любое имя.*

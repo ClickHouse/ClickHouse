@@ -1,0 +1,45 @@
+---
+sidebarTitle: 'Umbrales de pago'
+slug: /cloud/billing/payment-thresholds
+title: 'Umbrales de pago'
+description: 'Umbrales de pago y facturación automática para ClickHouse Cloud.'
+keywords: ['facturación', 'umbrales de pago', 'facturación automática', 'factura']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/es/components/Image.jsx";
+
+<div id="threshholds">
+  ## Umbrales de pago
+</div>
+
+Si es cliente de pago por uso y el importe adeudado en un período de facturación de ClickHouse Cloud alcanza los $1,000 USD o su valor equivalente, se realizará automáticamente un cargo al método de pago configurado para su organización.
+
+<Tip>
+  Tras el primer pago satisfactorio de una factura, el umbral se eleva a $5,000 USD. Un segundo pago satisfactorio de una factura eleva el umbral a $10,000 USD. Si desea ajustar el importe de su umbral de pago, [contacte con soporte](mailto:support@clickhouse.com).
+</Tip>
+
+Si el cargo falla, sus servicios se suspenderán tras un período de gracia de 14 días.
+Si recibe varias facturas dentro de un mismo período de facturación, todas vencerán al recibirlas y deberán pagarse para mantener su organización de ClickHouse Cloud [en cumplimiento](/es/products/cloud/reference/billing/billing-compliance).
+
+Si el pago automático falla, puede deberse a un problema con la tarjeta de crédito configurada, a que no haya configurado un mandato electrónico en su tarjeta de crédito o a que su tarjeta no cumpla con el marco del Reserve Bank of India (RBI) para el procesamiento de mandatos electrónicos en transacciones recurrentes en línea.
+Si sus tarjetas de crédito no cumplen con los requisitos del RBI, deberá añadir un nuevo método de pago que sí los cumpla o seguir realizando pagos manuales hasta que pueda configurar el mandato electrónico en su tarjeta.
+
+En el ejemplo siguiente se muestra la UI de facturación en la Cloud Console:
+
+<Image img="/images/cloud/reference/billing_payment_threshhold.webp" size="sm" alt="Dónde encontrar la facturación en la UI" />
+
+<Image img="/images/cloud/reference/billing_payment_threshhold_2.webp" size="lg" alt="Factura" />
+
+Como puede ver en el ejemplo anterior, se envió una factura de umbral durante el período de facturación del 28 de febrero al 31 de marzo y, después, se envió otra factura durante ese mismo período por el uso restante por encima de $1,000 USD.
+
+<div id="threshholds-notifications">
+  ## Notificaciones del umbral de pago
+</div>
+
+Si su organización alcanza el 90 % del umbral de pago y va camino de superarlo a mitad del período, la dirección de correo electrónico del contacto de facturación asociado a la organización recibirá una notificación por correo electrónico.
+También recibirá una notificación por correo electrónico y una factura cuando supere el umbral de pago.
+
+<Note>
+  Las notificaciones del umbral de pago actualmente solo están disponibles para organizaciones con facturación a período vencido (PAYG)
+</Note>

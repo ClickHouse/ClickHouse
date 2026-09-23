@@ -1,0 +1,45 @@
+---
+description: 'Documentação do formato PuffinMetadata'
+keywords: ['PuffinMetadata']
+slug: /interfaces/formats/PuffinMetadata
+title: 'PuffinMetadata'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## Descrição
+</div>
+
+Formato de entrada especial para ler os metadados do rodapé de arquivos [Apache Iceberg Puffin](https://iceberg.apache.org/puffin-spec/).
+Produz uma linha para cada entrada de blob na lista `BlobMetadata` do rodapé.
+
+`deletion-vector-v1` é o único tipo de blob compatível: arquivos que contêm qualquer outro tipo de blob (por exemplo, `apache-datasketches-theta-v1`) são rejeitados.
+
+Colunas de saída fixas:
+
+* `blob_type` (`String`) - tipo do blob, por exemplo, `deletion-vector-v1`
+* `snapshot_id` (`Int64`) - ID do snapshot do blob
+* `sequence_number` (`Int64`) - número de sequência do blob
+* `fields` (`Array(Int32)`) - lista de IDs dos campos aos quais o blob se aplica
+* `offset` (`Int64`) - deslocamento do payload do blob no arquivo
+* `length` (`Int64`) - tamanho do payload do blob em bytes
+* `compression_codec` (`String`) - codec de compressão do payload do blob, se presente
+* `properties` (`Map(String, String)`) - propriedades específicas do blob
+
+As `FileMetadata.properties` opcionais de nível superior no rodapé (por exemplo, `created-by`) têm seu tipo verificado quando presentes, mas não são retornadas como colunas. Se a chave estiver presente, deverá ser um objeto JSON com valores de string (`null` é rejeitado).
+
+Há suporte a rodapés Puffin comprimidos com LZ4 e não comprimidos. O tamanho do payload do rodapé (e o tamanho declarado do conteúdo LZ4) é limitado por uma razão de compressão, quando aplicável, e por um limite absoluto; rodapés grandes demais são rejeitados antes da alocação.
+
+<div id="example-usage">
+  ## Exemplo de uso
+</div>
+
+Inspecione os blobs de rodapé:
+
+```sql
+SELECT blob_type, snapshot_id, sequence_number, offset, length, compression_codec,
+       mapKeys(properties), mapValues(properties)
+FROM file(deletes.puffin, PuffinMetadata);
+```
+
+Use com o formato `Puffin` para ler payloads de blobs `deletion-vector-v1`.

@@ -1,0 +1,20 @@
+---
+slug: /use-cases/observability/clickstack/deployment
+title: 'Opciones de despliegue'
+description: 'Despliegue de ClickStack - El stack de observabilidad de ClickHouse'
+doc_type: 'referencia'
+keywords: ['ClickStack', 'observabilidad']
+---
+
+ClickStack ofrece múltiples opciones de despliegue para adaptarse a distintos casos de uso.
+
+A continuación se resumen las distintas opciones de despliegue. La [Guía de inicio](/es/clickstack/getting-started/index) muestra específicamente las opciones 1 y 2. Se incluyen aquí para mayor completitud.
+
+| Nombre             | Descripción                                                                                                                     | Adecuado para                                                                            | Limitaciones                                                               | Enlace de ejemplo                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------- |
+| Managed ClickStack | ClickHouse y la UI de ClickStack (HyperDX) alojados en ClickHouse Cloud.                                                        | Despliegues en producción, demostraciones, pruebas de concepto                           | Ninguna                                                                    | [Managed](/es/clickstack/deployment/managed)                 |
+| All-in-One         | Un único contenedor Docker con todos los componentes de ClickStack integrados.                                                  | Despliegues no productivos, demostraciones, pruebas de concepto                          | No se recomienda para producción                                           | [All-in-One](/es/clickstack/deployment/all-in-one)           |
+| Helm               | gráfico de Helm oficial para despliegues basados en Kubernetes. Compatible con ClickHouse Cloud y con escalado para producción. | Despliegues de producción en Kubernetes                                                  | Requiere conocimientos de Kubernetes y personalización mediante Helm       | [Helm](/es/clickstack/deployment/helm)                       |
+| Docker Compose     | Despliegue individual de cada componente de ClickStack mediante Docker Compose.                                                 | Pruebas locales, pruebas de concepto, producción en un único servidor, ClickHouse propio | Sin tolerancia a fallos; requiere gestionar varios contenedores            | [Docker Compose](/es/clickstack/deployment/docker-compose)   |
+| HyperDX Only       | Use HyperDX de forma independiente con su propio ClickHouse y esquema.                                                          | Usuarios actuales de ClickHouse, pipelines de eventos personalizadas                     | No incluye ClickHouse; el usuario debe gestionar la ingestión y el esquema | [HyperDX Only](/es/clickstack/deployment/hyperdx-only)       |
+| Local Mode Only    | Se ejecuta íntegramente en el navegador con almacenamiento local. Sin backend ni persistencia.                                  | Demostraciones, depuración, desarrollo con HyperDX                                       | Sin autenticación, sin persistencia, sin alertas; solo para un usuario     | [Local Mode Only](/es/clickstack/deployment/local-mode-only) |

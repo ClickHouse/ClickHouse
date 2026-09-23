@@ -142,6 +142,13 @@ namespace Net
         poco_socket_t sockfd();
         /// Returns the underlying socket descriptor.
 
+        SSL * ssl() const;
+        /// Returns the underlying OpenSSL SSL object, or null if the SSL handshake
+        /// has not been performed yet.
+        ///
+        /// The object is normally guarded by the socket's mutex; a caller that uses it
+        /// directly must ensure the socket is not accessed concurrently.
+
         X509 * peerCertificate() const;
         /// Returns the peer's certificate.
 
@@ -211,6 +218,11 @@ namespace Net
 
 
     protected:
+        int completeHandshakeImpl(bool verifyPeer);
+        /// Completes the SSL handshake, and, if verifyPeer is true, validates the
+        /// peer certificate as a part of the same handshake, so that a validation
+        /// failure is accounted as a handshake failure.
+
         void acceptSSL();
         /// Assume per-object mutex is locked.
         /// Performs a server-side SSL handshake and certificate verification.
@@ -292,6 +304,12 @@ namespace Net
     inline poco_socket_t SecureSocketImpl::sockfd()
     {
         return _pSocket->sockfd();
+    }
+
+
+    inline SSL * SecureSocketImpl::ssl() const
+    {
+        return _pSSL;
     }
 
 

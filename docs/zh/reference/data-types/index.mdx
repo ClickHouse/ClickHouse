@@ -1,0 +1,65 @@
+---
+description: 'ClickHouse 数据类型文档'
+sidebarTitle: '数据类型列表'
+slug: /sql-reference/data-types/
+title: 'ClickHouse 中的数据类型'
+doc_type: 'reference'
+mode: wide
+---
+
+本节介绍 ClickHouse 支持的数据类型，例如[整数](/zh/reference/data-types/int-uint)、[浮点数](/zh/reference/data-types/float)和[字符串](/zh/reference/data-types/string)。
+
+不同的数据类型可受益于不同的[压缩编解码器](/zh/reference/statements/create/table/codec)。
+
+系统表 [system.data&#95;type&#95;families](/zh/reference/system-tables/data_type_families) 提供了所有可用数据类型的概览。
+它还会显示某种数据类型是否为另一种数据类型的别名，以及其名称是否区分大小写 (例如 `bool` 与 `BOOL`) 。
+
+<div id="data-type-categories">
+  ## 数据类型类别
+</div>
+
+<CardGroup cols={2}>
+  <Card title="数值类型">
+    存储[整数](/zh/reference/data-types/int-uint)、[浮点值](/zh/reference/data-types/float)、定点精度的 [`Decimal` 值](/zh/reference/data-types/decimal)以及 [`Bool` 标志](/zh/reference/data-types/boolean)。
+  </Card>
+
+  <Card title="String 类型">
+    存储可变长度的 [`String` 值](/zh/reference/data-types/string)或固定长度的 [`FixedString` 值](/zh/reference/data-types/fixedstring)。
+  </Card>
+
+  <Card title="日期和时间类型">
+    使用 [`Date`](/zh/reference/data-types/date) 和 [`Date32`](/zh/reference/data-types/date32) 表示日期，使用 [`DateTime`](/zh/reference/data-types/datetime) 和 [`DateTime64`](/zh/reference/data-types/datetime64) 表示时间戳，或使用 [`Time`](/zh/reference/data-types/time) 和 [`Time64`](/zh/reference/data-types/time64) 表示时间值。
+  </Card>
+
+  <Card title="网络类型">
+    以紧凑的二进制形式存储 [`IPv4`](/zh/reference/data-types/ipv4) 和 [`IPv6`](/zh/reference/data-types/ipv6) 地址。
+  </Card>
+
+  <Card title="复合类型">
+    在 [`Array`](/zh/reference/data-types/array)、[`Tuple`](/zh/reference/data-types/tuple)、[`Map`](/zh/reference/data-types/map) 和 [`Nested`](/zh/reference/data-types/nested-data-structures/index) 结构中组合值。
+  </Card>
+
+  <Card title="半结构化类型">
+    使用 [`JSON`](/zh/reference/data-types/newjson)、[`Dynamic`](/zh/reference/data-types/dynamic) 和 [`Variant`](/zh/reference/data-types/variant) 存储不断演变或异构的数据。
+  </Card>
+
+  <Card title="Nullable 和可选类型">
+    使用 [`Nullable`](/zh/reference/data-types/nullable) 表示缺失值，或使用 [`LowCardinality`](/zh/reference/data-types/lowcardinality) 减少重复值所需的存储空间。
+  </Card>
+
+  <Card title="专用类型">
+    对 [`UUID` 值](/zh/reference/data-types/uuid)、[`Enum` 值](/zh/reference/data-types/enum)、[地理对象](/zh/reference/data-types/geo)、[用于近似搜索的向量](/zh/reference/data-types/qbit)和[域](/zh/reference/data-types/domains/index)进行建模。
+  </Card>
+
+  <Card title="聚合函数类型">
+    使用 [`AggregateFunction`](/zh/reference/data-types/aggregatefunction) 和 [`SimpleAggregateFunction`](/zh/reference/data-types/simpleaggregatefunction) 存储中间聚合状态。
+  </Card>
+
+  <Card title="特殊数据类型">
+    了解用于中间查询结果的 [`Expression`](/zh/reference/data-types/special-data-types/expression)、[`Interval`](/zh/reference/data-types/special-data-types/interval)、[`Nothing`](/zh/reference/data-types/special-data-types/nothing) 和 [`Set`](/zh/reference/data-types/special-data-types/set)。
+  </Card>
+
+  <Card title="二进制编码">
+    有关每种数据类型的序列化表示，请参阅[二进制编码规范](/zh/reference/data-types/data-types-binary-encoding)。
+  </Card>
+</CardGroup>

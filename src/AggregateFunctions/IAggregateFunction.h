@@ -9,6 +9,7 @@
 #include <Core/IResolvedFunction.h>
 #include <Core/ValuesWithType.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/defines.h>
 #include <base/types.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
@@ -207,7 +208,19 @@ public:
     parallelizeMergePrepare(AggregateDataPtrs & /*places*/, ThreadPool & /*thread_pool*/, std::atomic<bool> & /*is_cancelled*/) const;
 
     /// Merges state (on which place points to) with other state of current aggregation function.
-    virtual void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
+    /// Non-virtual public entry point that asserts the source and destination states do not alias
+    /// (self-merging is undefined for aggregate functions whose `mergeImpl` reallocates the destination's
+    /// internal storage and then reads from it; e.g. `quantilesExact`, `groupArray`, `sequenceMatch`).
+    /// All overrides must be done on `mergeImpl` below.
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const
+    {
+        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        mergeImpl(place, rhs, arena);
+    }
+
+    /// Implementation of `merge` for a specific aggregate function. Must not be called directly;
+    /// use `merge` (or the batch variants) which performs the self-aliasing check.
+    virtual void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const = 0;
 
     /// Tells if merge() with thread pool parameter could be used.
     virtual bool isAbleToParallelizeMerge() const { return false; }
@@ -217,7 +230,21 @@ public:
     virtual bool canOptimizeEqualKeysRanges() const { return true; }
 
     /// Should be used only if isAbleToParallelizeMerge() returned true.
-    virtual void merge(
+    /// Non-virtual public entry point that asserts the source and destination states do not alias.
+    /// All overrides must be done on `mergeImpl` below.
+    void merge(
+        AggregateDataPtr __restrict place,
+        ConstAggregateDataPtr rhs,
+        ThreadPool & thread_pool,
+        std::atomic<bool> & is_cancelled,
+        Arena * arena) const
+    {
+        chassert(place != rhs, "IAggregateFunction::merge called with the same source and destination state");
+        mergeImpl(place, rhs, thread_pool, is_cancelled, arena);
+    }
+
+    /// Implementation of the parallel `merge` for a specific aggregate function.
+    virtual void mergeImpl(
         AggregateDataPtr __restrict /*place*/,
         ConstAggregateDataPtr /*rhs*/,
         ThreadPool & /*thread_pool*/,
@@ -267,6 +294,15 @@ public:
     /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const;
 
+    /// Undoes one insertResultInto(place, to): removes from `to` exactly the rows that call appended, in
+    /// the reverse of the order it appended them, and leaves every state still owned by `place` alive.
+    /// Callers invoke it from a `catch` block while an exception is in flight, so it must not allocate
+    /// and must not throw. Every insertResultInto appends exactly one top-level row, hence the default.
+    virtual void rollbackInsertResult(ConstAggregateDataPtr __restrict /*place*/, IColumn & to) const noexcept
+    {
+        to.popBack(1);
+    }
+
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(
@@ -303,6 +339,21 @@ public:
         const IColumn ** columns,
         Arena * arena,
         ssize_t if_argument_pos = -1) const = 0;
+
+    /** A version of `addBatch` for callers that guarantee that every entry in `places` is non-null.
+      * Implementations that don't benefit from this guarantee can use the default implementation.
+      */
+    virtual void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const
+    {
+        addBatch(row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
+    }
 
     /// The version of "addBatch", that handle sparse columns as arguments.
     virtual void addBatchSparse(
@@ -423,6 +474,18 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
+    /** Whether the function answers the same for the same input. `groupArraySample` without an explicit
+      * seed draws from a thread-local generator for every state it creates, so it does not - and an
+      * expression that runs it (`arrayReduce('groupArraySample(2)', ...)`) must not be presented to the
+      * optimizer as deterministic. Combinators propagate the wrapped function's answer.
+      */
+    virtual bool isDeterministic() const
+    {
+        if (auto nested = getNestedFunction())
+            return nested->isDeterministic();
+        return true;
+    }
+
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
@@ -529,6 +592,31 @@ public:
         }
     }
 
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (flags[i])
+                    static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+            }
+        }
+        else
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                static_cast<const Derived *>(this)->add(places[i] + place_offset, columns, i, arena);
+        }
+    }
+
     void serializeBatch(const PaddedPODArray<AggregateDataPtr> & data, size_t start, size_t size, WriteBuffer & buf, std::optional<size_t> version) const final // NOLINT
     {
         for (size_t i = start; i < size; ++i)
@@ -554,6 +642,10 @@ public:
             try
             {
                 static_cast<const Derived *>(this)->deserialize(place, buf, version, arena);
+
+                /// Appending the pointer allocates, so it can throw as well, and then the state
+                /// would be neither destroyed here nor owned by the column.
+                data.push_back(place);
             }
             catch (...)
             {
@@ -561,7 +653,6 @@ public:
                 throw;
             }
 
-            data.push_back(place);
             place += total_size_of_state;
         }
     }
@@ -598,10 +689,15 @@ public:
         {
             if (places[i])
             {
+                /// Devirtualized call to `mergeImpl`; the public non-virtual `merge` performs
+                /// the same self-aliasing check, but we add it here to keep the assertion
+                /// when calling `mergeImpl` directly bypasses the wrapper.
+                chassert(places[i] + place_offset != rhs[i],
+                         "IAggregateFunction::mergeBatch called with the same source and destination state");
                 if constexpr (Derived::parallelizeMergeWithKey())
-                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
+                    static_cast<const Derived *>(this)->mergeImpl(places[i] + place_offset, rhs[i], thread_pool, is_cancelled, arena);
                 else
-                    static_cast<const Derived *>(this)->merge(places[i] + place_offset, rhs[i], arena);
+                    static_cast<const Derived *>(this)->mergeImpl(places[i] + place_offset, rhs[i], arena);
             }
         }
     }
@@ -610,10 +706,12 @@ public:
     {
         for (size_t i = 0; i < size; ++i)
         {
+            chassert(dst_places[i] + offset != rhs_places[i] + offset,
+                     "IAggregateFunction::mergeAndDestroyBatch called with the same source and destination state");
             if constexpr (Derived::parallelizeMergeWithKey())
-                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
+                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, thread_pool, is_cancelled, arena);
             else
-                static_cast<const Derived *>(this)->merge(dst_places[i] + offset, rhs_places[i] + offset, arena);
+                static_cast<const Derived *>(this)->mergeImpl(dst_places[i] + offset, rhs_places[i] + offset, arena);
 
             static_cast<const Derived *>(this)->destroy(rhs_places[i] + offset);
         }

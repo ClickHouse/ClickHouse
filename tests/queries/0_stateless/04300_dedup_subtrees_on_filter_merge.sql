@@ -3,6 +3,7 @@
 
 SET query_plan_merge_filters=1; -- required for this optimization, happens on filter merges
 SET enable_analyzer = 1;
+SET explain_query_plan_default = 'legacy';
 
 SELECT count() FROM numbers(10000) AS l
 INNER JOIN (SELECT number FROM numbers(10000)) AS r

@@ -1,0 +1,263 @@
+---
+slug: /use-cases/observability/clickstack/sdks/golang
+description: 'ClickStack 的 Golang SDK - ClickHouse 可观测性栈'
+title: 'Golang'
+doc_type: 'guide'
+keywords: ['Golang ClickStack SDK', 'Go OpenTelemetry 集成', 'Golang 可观测性', 'Go trace 埋点', 'ClickStack Go SDK']
+---
+
+ClickStack 使用 OpenTelemetry 标准收集遥测数据 (日志和
+链路追踪) 。链路追踪可通过自动埋点自动生成，因此无需手动
+埋点也能发挥链路追踪的作用。
+
+**本指南集成：**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 日志</td>
+      <td className="pe-2">✅ 指标</td>
+      <td className="pe-2">✅ 链路追踪</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="getting-started">
+  ## 快速开始
+</div>
+
+<div id="install-opentelemetry">
+  ### 安装 OpenTelemetry instrumentation 包
+</div>
+
+要安装 OpenTelemetry 和 HyperDX 的 Go 包，请使用以下命令。建议查看[当前可用的 instrumentation 包](https://github.com/open-telemetry/opentelemetry-go-contrib/tree/v1.4.0/instrumentation#instrumentation-packages)，并安装所需的包，以确保 trace 信息能够正确关联。
+
+```shell
+go get -u go.opentelemetry.io/otel
+go get -u github.com/hyperdxio/otel-config-go
+go get -u github.com/hyperdxio/opentelemetry-go
+go get -u github.com/hyperdxio/opentelemetry-logs-go
+```
+
+<div id="native-http-server-example">
+  ### 原生 HTTP 服务器示例 (net/http)
+</div>
+
+在此示例中，我们将使用 `net/http/otelhttp`。
+
+```shell
+go get -u go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp
+```
+
+请参阅带注释的部分，了解如何为 Go 应用程序接入遥测采集。
+
+```go
+
+package main
+
+import (
+  "context"
+  "io"
+  "log"
+  "net/http"
+  "os"
+
+  "github.com/hyperdxio/opentelemetry-go/otelzap"
+  "github.com/hyperdxio/opentelemetry-logs-go/exporters/otlp/otlplogs"
+  "github.com/hyperdxio/otel-config-go/otelconfig"
+  "go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+  "go.opentelemetry.io/otel/trace"
+  "go.uber.org/zap"
+  sdk "github.com/hyperdxio/opentelemetry-logs-go/sdk/logs"
+  semconv "go.opentelemetry.io/otel/semconv/v1.21.0"
+  "go.opentelemetry.io/otel/sdk/resource"
+)
+
+// 为所有日志配置公共属性
+func newResource() *resource.Resource {
+  hostName, _ := os.Hostname()
+  return resource.NewWithAttributes(
+    semconv.SchemaURL,
+    semconv.ServiceVersion("1.0.0"),
+    semconv.HostName(hostName),
+  )
+}
+
+// 将 trace id 附加到日志
+func WithTraceMetadata(ctx context.Context, logger *zap.Logger) *zap.Logger {
+  spanContext := trace.SpanContextFromContext(ctx)
+  if !spanContext.IsValid() {
+    // ctx 不包含有效的 span。
+    // 没有可添加的 trace 元数据。
+    return logger
+  }
+  return logger.With(
+    zap.String("trace_id", spanContext.TraceID().String()),
+    zap.String("span_id", spanContext.SpanID().String()),
+  )
+}
+
+func main() {
+  // 初始化 otel 配置并在整个应用中使用
+  otelShutdown, err := otelconfig.ConfigureOpenTelemetry()
+  if err != nil {
+    log.Fatalf("error setting up OTel SDK - %e", err)
+  }
+  defer otelShutdown()
+
+  ctx := context.Background()
+
+  // 配置 opentelemetry 日志记录器提供商
+  logExporter, _ := otlplogs.NewExporter(ctx)
+  loggerProvider := sdk.NewLoggerProvider(
+    sdk.WithBatcher(logExporter),
+  )
+  // 程序退出前优雅关闭日志记录器，以刷新已积累的信号
+  defer loggerProvider.Shutdown(ctx)
+
+  // 使用 opentelemetry zap core 创建新的日志记录器并设置为全局
+  logger := zap.New(otelzap.NewOtelCore(loggerProvider))
+  zap.ReplaceGlobals(logger)
+  logger.Warn("hello world", zap.String("foo", "bar"))
+
+  http.Handle("/", otelhttp.NewHandler(wrapHandler(logger, ExampleHandler), "example-service"))
+
+  port := os.Getenv("PORT")
+  if port == "" {
+    port = "7777"
+  }
+
+  logger.Info("** Service Started on Port " + port + " **")
+  if err := http.ListenAndServe(":"+port, nil); err != nil {
+    logger.Fatal(err.Error())
+  }
+}
+
+// 使用此函数包装所有处理器，以向日志记录器添加 trace 元数据
+func wrapHandler(logger *zap.Logger, handler http.HandlerFunc) http.HandlerFunc {
+  return func(w http.ResponseWriter, r *http.Request) {
+    logger := WithTraceMetadata(r.Context(), logger)
+    logger.Info("request received", zap.String("url", r.URL.Path), zap.String("method", r.Method))
+    handler(w, r)
+    logger.Info("request completed", zap.String("path", r.URL.Path), zap.String("method", r.Method))
+  }
+}
+
+func ExampleHandler(w http.ResponseWriter, r *http.Request) {
+  w.Header().Add("Content-Type", "application/json")
+  io.WriteString(w, `{"status":"ok"}`)
+}
+```
+
+<div id="gin-application-example">
+  ### Gin 应用示例
+</div>
+
+在本示例中，我们将使用 `gin-gonic/gin`。
+
+```shell
+go get -u go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin
+```
+
+请参考文中带注释的部分，了解如何为你的 Go 应用程序接入遥测。
+
+```go
+
+package main
+
+import (
+  "context"
+  "log"
+  "net/http"
+
+  "github.com/gin-gonic/gin"
+  "github.com/hyperdxio/opentelemetry-go/otelzap"
+  "github.com/hyperdxio/opentelemetry-logs-go/exporters/otlp/otlplogs"
+  sdk "github.com/hyperdxio/opentelemetry-logs-go/sdk/logs"
+  "github.com/hyperdxio/otel-config-go/otelconfig"
+  "go.opentelemetry.io/contrib/instrumentation/github.com/gin-gonic/gin/otelgin"
+  "go.opentelemetry.io/otel/trace"
+  "go.uber.org/zap"
+)
+
+// 将 trace id 附加到日志
+func WithTraceMetadata(ctx context.Context, logger *zap.Logger) *zap.Logger {
+  spanContext := trace.SpanContextFromContext(ctx)
+  if !spanContext.IsValid() {
+    // ctx 不包含有效的 span。
+    // 没有可添加的 trace 元数据。
+    return logger
+  }
+  return logger.With(
+    zap.String("trace_id", spanContext.TraceID().String()),
+    zap.String("span_id", spanContext.SpanID().String()),
+  )
+}
+
+func main() {
+  // 初始化 otel 配置并在整个应用中使用
+  otelShutdown, err := otelconfig.ConfigureOpenTelemetry()
+  if err != nil {
+    log.Fatalf("error setting up OTel SDK - %e", err)
+  }
+
+  defer otelShutdown()
+
+  ctx := context.Background()
+
+  // 配置 OpenTelemetry 日志记录器提供商
+  logExporter, _ := otlplogs.NewExporter(ctx)
+  loggerProvider := sdk.NewLoggerProvider(
+    sdk.WithBatcher(logExporter),
+  )
+
+  // 优雅关闭日志记录器，在程序退出前将累积的信号全部 flush
+  defer loggerProvider.Shutdown(ctx)
+
+  // 使用 OpenTelemetry zap core 创建新的日志记录器并设置为全局
+  logger := zap.New(otelzap.NewOtelCore(loggerProvider))
+  zap.ReplaceGlobals(logger)
+
+  // 创建新的 Gin 路由器
+  router := gin.Default()
+
+  router.Use(otelgin.Middleware("service-name"))
+
+  // 定义响应根 URL GET 请求的路由
+  router.GET("/", func(c *gin.Context) {
+    _logger := WithTraceMetadata(c.Request.Context(), logger)
+    _logger.Info("Hello World!")
+    c.String(http.StatusOK, "Hello World!")
+  })
+
+  // 在 7777 端口启动服务器
+  router.Run(":7777")
+}
+```
+
+<div id="configure-environment-variables">
+  ### 配置环境变量
+</div>
+
+接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    ```
+  </Tab>
+
+  <Tab title="ClickStack 开源版">
+    ```shell
+    export OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>' \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>'
+    ```
+  </Tab>
+</Tabs>
+
+`OTEL_EXPORTER_OTLP_HEADERS` 环境变量包含 API 密钥，可在 HyperDX 应用的 `Team Settings → API Keys` 中获取。

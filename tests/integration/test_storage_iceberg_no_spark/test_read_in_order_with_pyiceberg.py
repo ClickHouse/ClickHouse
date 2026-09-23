@@ -16,7 +16,7 @@ from pyiceberg.types import (
 )
 from pyiceberg.partitioning import PartitionSpec
 from pyiceberg.table.sorting import SortOrder, SortField
-from pyiceberg.transforms import IdentityTransform
+from pyiceberg.transforms import IdentityTransform, TruncateTransform
 
 BASE_URL = "http://rest:8181/v1"
 
@@ -137,3 +137,112 @@ def test_sort_order(started_cluster_iceberg_no_spark):
     )
 
     assert result == list(sorted(result))
+
+
+def test_sort_order_special_char_column_name(started_cluster_iceberg_no_spark):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/110123
+    # An Iceberg table whose default sort order references a column that needs
+    # quoting (e.g. `@timestamp`) used to be unreadable: the synthesized storage
+    # ORDER BY was built from the raw column name and failed to parse with
+    # SYNTAX_ERROR. The column name must be backquoted.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="@timestamp", field_type=StringType(), required=False
+        ),
+        NestedField(field_id=2, name="long_col", field_type=LongType(), required=False),
+    )
+
+    partition_spec = PartitionSpec()
+    sort_order = SortOrder(SortField(source_id=1, transform=IdentityTransform()))
+    table = create_table(
+        catalog, root_namespace, "test_special", schema, partition_spec, sort_order
+    )
+
+    data = []
+    for _ in range(100):
+        data.append(
+            {
+                "@timestamp": f"ts{random.randint(1, 1000)}",
+                "long_col": random.randint(1000, 10000),
+            }
+        )
+
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(
+        started_cluster_iceberg_no_spark, instance, CATALOG_NAME
+    )
+
+    # Before the fix this failed with Code 62 (SYNTAX_ERROR) on any read.
+    assert (
+        instance.query(
+            f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.test_special`"
+        ).strip()
+        == "100"
+    )
+
+    result = (
+        instance.query(
+            f"SELECT `@timestamp` FROM {CATALOG_NAME}.`{root_namespace}.test_special` ORDER BY `@timestamp` SETTINGS optimize_read_in_order=1"
+        )
+        .strip()
+        .split("\n")
+    )
+    assert result == list(sorted(result))
+
+
+def test_sort_order_transform_special_char_column_name(started_cluster_iceberg_no_spark):
+    # Regression test for https://github.com/ClickHouse/ClickHouse/issues/110123
+    # Covers the transformed branch of getSortingKeyDescriptionFromMetadata: the
+    # synthesized ORDER BY wraps the column in a transform (e.g. icebergTruncate),
+    # so the quoted name must be produced inside the transform call too. Without
+    # the backquote the clause `icebergTruncate(4, @timestamp) ASC` fails to parse
+    # with SYNTAX_ERROR.
+    instance = started_cluster_iceberg_no_spark.instances["node1"]
+    root_namespace = f"clickhouse_{uuid.uuid4()}"
+    catalog = load_catalog_impl(started_cluster_iceberg_no_spark)
+
+    schema = Schema(
+        NestedField(
+            field_id=1, name="@timestamp", field_type=StringType(), required=False
+        ),
+        NestedField(field_id=2, name="long_col", field_type=LongType(), required=False),
+    )
+
+    partition_spec = PartitionSpec()
+    sort_order = SortOrder(
+        SortField(source_id=1, transform=TruncateTransform(width=4))
+    )
+    table = create_table(
+        catalog, root_namespace, "test_special_transform", schema, partition_spec, sort_order
+    )
+
+    data = []
+    for _ in range(100):
+        data.append(
+            {
+                "@timestamp": f"ts{random.randint(1, 1000)}",
+                "long_col": random.randint(1000, 10000),
+            }
+        )
+
+    df = pa.Table.from_pylist(data)
+    table.append(df)
+
+    create_clickhouse_iceberg_database(
+        started_cluster_iceberg_no_spark, instance, CATALOG_NAME
+    )
+
+    # Before the fix this failed with Code 62 (SYNTAX_ERROR) on any read because
+    # the transformed sort key was built as icebergTruncate(4, @timestamp).
+    assert (
+        instance.query(
+            f"SELECT count() FROM {CATALOG_NAME}.`{root_namespace}.test_special_transform`"
+        ).strip()
+        == "100"
+    )

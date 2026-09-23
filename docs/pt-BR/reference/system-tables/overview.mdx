@@ -1,0 +1,265 @@
+---
+description: 'Visão geral do que são as tabelas do sistema e por que são úteis.'
+keywords: ['tabelas do sistema', 'visão geral']
+sidebarTitle: 'Visão geral'
+slug: /operations/system-tables/overview
+title: 'Visão geral das tabelas do sistema'
+doc_type: 'reference'
+---
+
+<div id="system-tables-introduction">
+  ## Visão geral das tabelas do sistema
+</div>
+
+As tabelas do sistema fornecem informações sobre:
+
+* Estados, processos e ambiente do servidor.
+* Processos internos do servidor.
+* Opções usadas quando o binário do ClickHouse foi compilado.
+
+Tabelas do sistema:
+
+* Localizadas no banco de dados `system`.
+* Disponíveis somente para leitura.
+* Não podem ser removidas nem alteradas, mas podem ser desanexadas.
+
+A maioria das tabelas do sistema armazena seus dados na RAM. Um servidor ClickHouse cria essas tabelas do sistema na inicialização.
+
+Ao contrário de outras tabelas do sistema, as tabelas de log do sistema [metric&#95;log](/pt-BR/reference/system-tables/metric_log), [query&#95;log](/pt-BR/reference/system-tables/query_log), [query&#95;thread&#95;log](/pt-BR/reference/system-tables/query_thread_log), [trace&#95;log](/pt-BR/reference/system-tables/trace_log), [part&#95;log](/pt-BR/reference/system-tables/part_log), [crash&#95;log](/pt-BR/reference/system-tables/crash_log), [text&#95;log](/pt-BR/reference/system-tables/text_log) e [backup&#95;log](/pt-BR/reference/system-tables/backup_log) usam o motor de tabela [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) e armazenam seus dados em um sistema de arquivos por padrão. Se você remover uma tabela de um sistema de arquivos, o servidor ClickHouse criará uma tabela vazia novamente na próxima gravação de dados. Se o schema da tabela do sistema tiver mudado em um novo lançamento, o ClickHouse renomeará a tabela atual e criará uma nova.
+
+As tabelas de log do sistema podem ser personalizadas criando um arquivo de configuração com o mesmo nome da tabela em `/etc/clickhouse-server/config.d/` ou definindo os elementos correspondentes em `/etc/clickhouse-server/config.xml`. Os elementos que podem ser personalizados são:
+
+* `database`: banco de dados ao qual a tabela de log do sistema pertence. Esta opção está obsoleta no momento. Todas as tabelas de log do sistema ficam no banco de dados `system`.
+* `table`: tabela na qual inserir os dados.
+* `partition_by`: especifica a expressão [PARTITION BY](/pt-BR/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
+* `ttl`: especifica a expressão [TTL](/pt-BR/reference/statements/alter/ttl) da tabela.
+* `flush_interval_milliseconds`: intervalo para gravar os dados em disco.
+* `engine`: fornece a expressão completa do motor (começando com `ENGINE =` ) com parâmetros. Esta opção entra em conflito com `partition_by` e `ttl`. Se forem definidas juntas, o servidor gerará uma exceção e será encerrado.
+
+Um exemplo:
+
+```xml
+<clickhouse>
+    <query_log>
+        <database>system</database>
+        <table>query_log</table>
+        <partition_by>toYYYYMM(event_date)</partition_by>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+        <!--
+        <engine>ENGINE = MergeTree PARTITION BY toYYYYMM(event_date) ORDER BY (event_date, event_time) SETTINGS index_granularity = 1024</engine>
+        -->
+        <flush_interval_milliseconds>7500</flush_interval_milliseconds>
+        <max_size_rows>1048576</max_size_rows>
+        <reserved_size_rows>8192</reserved_size_rows>
+        <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
+        <flush_on_crash>false</flush_on_crash>
+    </query_log>
+</clickhouse>
+```
+
+Por padrão, o crescimento da tabela é ilimitado. Para controlar o tamanho de uma tabela, você pode usar as configurações de [TTL](/pt-BR/reference/statements/alter/ttl) para remover registros de log antigos. Você também pode usar o recurso de particionamento das tabelas com engine `MergeTree`.
+
+<div id="system-tables-sources-of-system-metrics">
+  ## Fontes de métricas do sistema
+</div>
+
+Para coletar métricas do sistema, o servidor ClickHouse usa:
+
+* a capability `CAP_NET_ADMIN`.
+* [procfs](https://en.wikipedia.org/wiki/Procfs) (apenas no Linux).
+
+**procfs**
+
+Se o servidor ClickHouse não tiver a capability `CAP_NET_ADMIN`, ele tentará usar `ProcfsMetricsProvider`. O `ProcfsMetricsProvider` permite coletar métricas do sistema por consulta (de CPU e I/O).
+
+Se o procfs for compatível e estiver habilitado no sistema, o servidor ClickHouse coletará estas métricas:
+
+* `OSCPUVirtualTimeMicroseconds`
+* `OSCPUWaitMicroseconds`
+* `OSIOWaitMicroseconds`
+* `OSReadChars`
+* `OSWriteChars`
+* `OSReadBytes`
+* `OSWriteBytes`
+
+<Note>
+  `OSIOWaitMicroseconds` vem desabilitada por padrão em kernels Linux a partir da versão 5.14.x.
+  Você pode habilitá-la usando `sudo sysctl kernel.task_delayacct=1` ou criando um arquivo `.conf` em `/etc/sysctl.d/` com `kernel.task_delayacct = 1`
+</Note>
+
+<div id="system-tables-in-clickhouse-cloud">
+  ## Tabelas do sistema no ClickHouse Cloud
+</div>
+
+No ClickHouse Cloud, as tabelas do sistema fornecem informações essenciais sobre o estado e o desempenho do serviço, assim como em implantações autogerenciadas. Algumas tabelas do sistema operam em nível de cluster, especialmente aquelas que obtêm seus dados dos nós Keeper, que gerenciam metadados distribuídos. Essas tabelas refletem o estado coletivo do cluster e devem apresentar consistência quando consultadas em nós individuais. Por exemplo, a [`parts`](/pt-BR/reference/system-tables/parts) deve ser consistente independentemente do nó em que for consultada:
+
+```sql
+SELECT hostname(), count()
+FROM system.parts
+WHERE `table` = 'pypi'
+
+┌─hostname()────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-vccsrty-0 │      26 │
+└───────────────────────────────┴─────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+
+SELECT
+ hostname(),
+    count()
+FROM system.parts
+WHERE `table` = 'pypi'
+
+┌─hostname()────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-w59bfco-0 │      26 │
+└───────────────────────────────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+Por outro lado, outras tabelas do sistema são específicas de cada nó, por exemplo, mantendo seus dados em memória ou persistindo-os com o motor de tabela MergeTree. Isso é típico de dados como logs e métricas. Essa persistência garante que os dados históricos continuem disponíveis para análise. No entanto, essas tabelas específicas de nó são, por natureza, exclusivas de cada nó.
+
+Em geral, as seguintes regras podem ser aplicadas para determinar se uma tabela do sistema é específica de nó:
+
+* Tabelas do sistema com o sufixo `_log`.
+* Tabelas do sistema que expõem métricas, por exemplo, `metrics`, `asynchronous_metrics`, `events`.
+* Tabelas do sistema que expõem processos em andamento, por exemplo, `processes`, `merges`.
+
+Além disso, novas versões de tabelas do sistema podem ser criadas em decorrência de upgrades ou mudanças no esquema. Essas versões são nomeadas com um sufixo numérico.
+
+Por exemplo, considere as tabelas `system.query_log`, que contêm uma linha para cada consulta executada pelo nó:
+
+```sql
+SHOW TABLES FROM system LIKE 'query_log%'
+
+┌─name─────────┐
+│ query_log    │
+│ query_log_1  │
+│ query_log_10 │
+│ query_log_2  │
+│ query_log_3  │
+│ query_log_4  │
+│ query_log_5  │
+│ query_log_6  │
+│ query_log_7  │
+│ query_log_8  │
+│ query_log_9  │
+└──────────────┘
+
+11 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="querying-multiple-versions">
+  ### Consultando várias versões
+</div>
+
+Podemos fazer consultas nessas tabelas usando a função [`merge`](/pt-BR/reference/functions/table-functions/merge). Por exemplo, a consulta abaixo identifica a consulta mais recente enviada ao nó de destino em cada tabela `query_log`:
+
+```sql
+SELECT
+    _table,
+    max(event_time) AS most_recent
+FROM merge('system', '^query_log')
+GROUP BY _table
+ORDER BY most_recent DESC
+
+┌─_table───────┬─────────most_recent─┐
+│ query_log    │ 2025-04-13 10:59:29 │
+│ query_log_1  │ 2025-04-09 12:34:46 │
+│ query_log_2  │ 2025-04-09 12:33:45 │
+│ query_log_3  │ 2025-04-07 17:10:34 │
+│ query_log_5  │ 2025-03-24 09:39:39 │
+│ query_log_4  │ 2025-03-24 09:38:58 │
+│ query_log_6  │ 2025-03-19 16:07:41 │
+│ query_log_7  │ 2025-03-18 17:01:07 │
+│ query_log_8  │ 2025-03-18 14:36:07 │
+│ query_log_10 │ 2025-03-18 14:01:33 │
+│ query_log_9  │ 2025-03-18 14:01:32 │
+└──────────────┴─────────────────────┘
+
+11 rows in set. Elapsed: 0.373 sec. Processed 6.44 million rows, 25.77 MB (17.29 million rows/s., 69.17 MB/s.)
+Peak memory usage: 28.45 MiB.
+```
+
+<Info>
+  **Não confie no sufixo numérico para ordenação**
+
+  Embora o sufixo numérico das tabelas possa sugerir a ordem dos dados, ele nunca deve ser usado como referência. Por esse motivo, sempre use a função de tabela `merge` combinada com um filtro de data ao consultar intervalos de datas específicos.
+</Info>
+
+É importante destacar que essas tabelas ainda são **locais em cada nó**.
+
+<div id="querying-across-nodes">
+  ### Consultando em todos os nós
+</div>
+
+Para ter uma visão abrangente de todo o cluster, os usuários podem usar a função [`clusterAllReplicas`](/pt-BR/reference/functions/table-functions/cluster) em combinação com a função `merge`. A função `clusterAllReplicas` permite consultar tabelas do sistema em todas as réplicas do cluster &quot;default&quot;, consolidando os dados específicos de cada nó em um resultado unificado. Quando combinada com a função `merge`, ela pode ser usada para abranger todos os dados de sistema de uma tabela específica em um cluster.
+
+Essa abordagem é particularmente valiosa para monitoramento e depuração de operações em todo o cluster, garantindo que os usuários possam analisar com eficácia a integridade e o desempenho da sua implantação no ClickHouse Cloud.
+
+<Note>
+  O ClickHouse Cloud fornece clusters com várias réplicas para redundância e failover. Isso viabiliza recursos como autoscaling dinâmico e upgrades sem tempo de inatividade. Em um determinado momento, novos nós podem estar sendo adicionados ao cluster ou removidos dele. Para ignorar esses nós, adicione `SETTINGS skip_unavailable_shards = 1` às consultas que usam `clusterAllReplicas`, como mostrado abaixo.
+</Note>
+
+Por exemplo, considere a diferença ao consultar a tabela `query_log`, muitas vezes essencial para a análise.
+
+```sql
+SELECT
+    hostname() AS host,
+    count()
+FROM system.query_log
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │  650543 │
+└───────────────────────────────┴─────────┘
+
+1 row in set. Elapsed: 0.010 sec. Processed 17.87 thousand rows, 71.51 KB (1.75 million rows/s., 7.01 MB/s.)
+
+SELECT
+    hostname() AS host,
+    count()
+FROM clusterAllReplicas('default', system.query_log)
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host SETTINGS skip_unavailable_shards = 1
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │  650543 │
+│ c-ecru-qn-34-server-6em4y4t-0 │  656029 │
+│ c-ecru-qn-34-server-iejrkg0-0 │  641155 │
+└───────────────────────────────┴─────────┘
+
+3 rows in set. Elapsed: 0.026 sec. Processed 1.97 million rows, 7.88 MB (75.51 million rows/s., 302.05 MB/s.)
+```
+
+<div id="querying-across-nodes-and-versions">
+  ### Consultando entre nós e versões
+</div>
+
+Devido ao versionamento da tabela do sistema, isso ainda não representa todos os dados do cluster. Ao combinar isso com a função `merge`, obtemos um resultado preciso para o nosso intervalo de datas:
+
+```sql
+SELECT
+    hostname() AS host,
+    count()
+FROM clusterAllReplicas('default', merge('system', '^query_log'))
+WHERE (event_time >= '2025-04-01 00:00:00') AND (event_time <= '2025-04-12 00:00:00')
+GROUP BY host SETTINGS skip_unavailable_shards = 1
+
+┌─host──────────────────────────┬─count()─┐
+│ c-ecru-qn-34-server-s5bnysl-0 │ 3008000 │
+│ c-ecru-qn-34-server-6em4y4t-0 │ 3659443 │
+│ c-ecru-qn-34-server-iejrkg0-0 │ 1078287 │
+└───────────────────────────────┴─────────┘
+
+3 rows in set. Elapsed: 0.462 sec. Processed 7.94 million rows, 31.75 MB (17.17 million rows/s., 68.67 MB/s.)
+```
+
+<div id="related-content">
+  ## Conteúdo relacionado
+</div>
+
+* Blog: [Tabelas do sistema e uma visão da estrutura interna do ClickHouse](https://clickhouse.com/blog/clickhouse-debugging-issues-with-system-tables)
+* Blog: [Consultas essenciais de monitoramento - parte 1 - consultas INSERT](https://clickhouse.com/blog/monitoring-troubleshooting-insert-queries-clickhouse)
+* Blog: [Consultas essenciais de monitoramento - parte 2 - consultas SELECT](https://clickhouse.com/blog/monitoring-troubleshooting-select-queries-clickhouse)

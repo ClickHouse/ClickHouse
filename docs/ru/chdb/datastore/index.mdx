@@ -1,0 +1,200 @@
+---
+title: 'DataStore: pandas-совместимый API с SQL-оптимизацией'
+sidebarTitle: 'Обзор'
+slug: /chdb/datastore
+description: 'DataStore предоставляет pandas-совместимый API с SQL-оптимизацией для высокопроизводительного анализа данных'
+keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'отложенное вычисление']
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+DataStore — это API chDB, совместимый с pandas, который сочетает привычный интерфейс pandas DataFrame с возможностями оптимизации SQL-запросов и позволяет писать код в стиле pandas, сохраняя производительность ClickHouse.
+
+<div id="key-features">
+  ## Ключевые возможности
+</div>
+
+* **Совместимость с pandas**: 209 методов pandas DataFrame, 56 методов `.str`, 42+ методов `.dt`
+* **SQL-оптимизация**: Операции автоматически компилируются в оптимизированные SQL-запросы
+* **Отложенное вычисление**: Операции откладываются до тех пор, пока не понадобятся результаты
+* **630+ методов API**: Широкий набор методов API для обработки данных
+* **Расширения ClickHouse**: Дополнительные аксессоры (`.arr`, `.json`, `.url`, `.ip`, `.geo`), недоступные в pandas
+
+<div id="architecture">
+  ## Архитектура
+</div>
+
+<Image size="md" img="/images/chdb/datastore_architecture.png" alt="Архитектура DataStore" />
+
+DataStore использует **отложенное вычисление** с **выполнением на двух движках**:
+
+1. **Цепочка отложенных операций**: операции фиксируются, а не выполняются сразу
+2. **Интеллектуальный выбор движка**: QueryPlanner направляет каждый сегмент в наиболее подходящий движок (chDB для SQL, Pandas для сложных операций)
+3. **Промежуточное кэширование**: результаты кэшируются на каждом шаге для быстрого итеративного анализа
+
+Подробности см. в разделе [Модель выполнения](/ru/chdb/datastore/execution-model).
+
+<div id="migration">
+  ## Миграция из Pandas в одну строку
+</div>
+
+```python
+# Before (pandas)
+import pandas as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+
+# After (DataStore) - just change the import!
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+result = df[df['age'] > 25].groupby('city')['salary'].mean()
+```
+
+Ваш существующий код pandas работает без изменений, но теперь использует движок ClickHouse.
+
+<div id="performance">
+  ## Сравнение производительности
+</div>
+
+DataStore обеспечивает значительный прирост производительности по сравнению с pandas, особенно при агрегации и в сложных конвейерах:
+
+| Операция         | Pandas  | DataStore | Ускорение  |
+| ---------------- | ------- | --------- | ---------- |
+| GroupBy count    | 347ms   | 17ms      | **19.93x** |
+| Сложный конвейер | 2,047ms | 380ms     | **5.39x**  |
+| Filter+Sort+Head | 1,537ms | 350ms     | **4.40x**  |
+| GroupBy agg      | 406ms   | 141ms     | **2.88x**  |
+
+*Бенчмарк на 10 млн строк. Подробности см. в [скрипте бенчмарка](https://github.com/chdb-io/chdb/blob/main/refs/benchmark_datastore_vs_pandas.py) и [руководстве по производительности](/ru/chdb/guides/pandas-performance).*
+
+<div id="when-to-use">
+  ## Когда использовать DataStore
+</div>
+
+**Используйте DataStore, когда:**
+
+* Работаете с большими датасетами (миллионы строк)
+* Выполняете агрегации и операции groupby
+* Запрашиваете данные из файлов, баз данных или облачного хранилища
+* Строите сложные конвейеры обработки данных
+* Вам нужен API pandas с более высокой производительностью
+
+**Используйте raw SQL API, когда:**
+
+* Вы предпочитаете писать SQL напрямую
+* Вам нужен более тонкий контроль над выполнением запроса
+* Работаете с возможностями ClickHouse, недоступными в API pandas
+
+<div id="comparison">
+  ## Сравнение возможностей
+</div>
+
+| Возможность                 | Pandas | Polars       | DuckDB | DataStore               |
+| --------------------------- | ------ | ------------ | ------ | ----------------------- |
+| Совместимость с API Pandas  | -      | Частичная    | Нет    | **Полная**              |
+| Отложенное вычисление       | Нет    | Да           | Да     | **Да**                  |
+| Поддержка SQL-запросов      | Нет    | Да           | Да     | **Да**                  |
+| Функции ClickHouse          | Нет    | Нет          | Нет    | **Да**                  |
+| Аксессоры String/DateTime   | Да     | Да           | Нет    | **Да + дополнительные** |
+| Array/JSON/URL/IP/Geo       | Нет    | Частично     | Нет    | **Да**                  |
+| Прямые запросы к файлам     | Нет    | Да           | Да     | **Да**                  |
+| Поддержка облачных хранилищ | Нет    | Ограниченная | Да     | **Да**                  |
+
+<div id="api-stats">
+  ## Статистика API
+</div>
+
+| Категория             | Количество | Покрытие                                              |
+| --------------------- | ---------- | ----------------------------------------------------- |
+| Методы DataFrame      | 209        | 100% от pandas                                        |
+| Аксессор Series.str   | 56         | 100% от pandas                                        |
+| Аксессор Series.dt    | 42+        | 100%+ (включая дополнительные возможности ClickHouse) |
+| Аксессор Series.arr   | 37         | специфично для ClickHouse                             |
+| Аксессор Series.json  | 13         | специфично для ClickHouse                             |
+| Аксессор Series.url   | 15         | специфично для ClickHouse                             |
+| Аксессор Series.ip    | 9          | специфично для ClickHouse                             |
+| Аксессор Series.geo   | 14         | специфично для ClickHouse                             |
+| **Всего методов API** | **630+**   | -                                                     |
+
+<div id="navigation">
+  ## Навигация по документации
+</div>
+
+<div id="getting-started">
+  ### Начало работы
+</div>
+
+* [Краткое руководство](/ru/chdb/datastore/quickstart) - Установка и базовое использование
+* [Миграция из Pandas](/ru/chdb/guides/migration-from-pandas) - Пошаговое руководство по миграции
+
+<div id="api-reference">
+  ### Справочник по API
+</div>
+
+* [Фабричные методы](/ru/chdb/datastore/factory-methods) - Создание DataStore из различных источников
+* [Построение запросов](/ru/chdb/datastore/query-building) - Операции с запросами в стиле SQL
+* [Совместимость с pandas](/ru/chdb/datastore/pandas-compat) - Все 209 методов, совместимых с pandas
+* [Аксессоры](/ru/chdb/datastore/accessors) - Аксессоры String, DateTime, Array, JSON, URL, IP и Geo
+* [Агрегация](/ru/chdb/datastore/aggregation) - Агрегатные и оконные функции
+* [Операции ввода-вывода](/ru/chdb/datastore/io) - Чтение и запись данных
+
+<div id="advanced-topics">
+  ### Дополнительные темы
+</div>
+
+* [Модель выполнения](/ru/chdb/datastore/execution-model) - Отложенные вычисления и кэширование
+* [Справочник класса](/ru/chdb/datastore/class-reference) - Полное описание API
+
+<div id="configuration-debugging">
+  ### Конфигурация и отладка
+</div>
+
+* [Конфигурация](/ru/chdb/configuration/index) - Все параметры
+* [Режим производительности](/ru/chdb/configuration/performance-mode) - Режим с приоритетом SQL для максимальной пропускной способности
+* [Отладка](/ru/chdb/debugging/index) - Explain, данные профилирования и логирование
+
+<div id="pandas-user-guides">
+  ### Руководства по Pandas
+</div>
+
+* [Pandas Cookbook](/ru/chdb/guides/pandas-cookbook) - Типовые приёмы
+* [Ключевые различия](/ru/chdb/guides/pandas-differences) - Важные отличия от Pandas
+* [Руководство по производительности](/ru/chdb/guides/pandas-performance) - Советы по оптимизации
+* [SQL для пользователей Pandas](/ru/chdb/guides/pandas-to-sql) - Понимание SQL, лежащего в основе операций Pandas
+
+<div id="quick-example">
+  ## Краткий пример
+</div>
+
+```python
+from chdb import datastore as pd
+
+# Read data from various sources
+ds = pd.read_csv("sales.csv")
+# or: ds = pd.DataStore.uri("s3://bucket/sales.parquet")
+# or: ds = pd.DataStore.from_mysql("mysql://user:pass@host/db/table")
+
+# Familiar pandas operations - automatically optimized to SQL
+result = (ds
+    .filter(ds['amount'] > 1000)           # WHERE amount > 1000
+    .groupby('region')                      # GROUP BY region
+    .agg({'amount': ['sum', 'mean']})       # SUM(amount), AVG(amount)
+    .sort_values('sum', ascending=False)    # ORDER BY sum DESC
+    .head(10)                               # LIMIT 10
+)
+
+# View the generated SQL
+print(result.to_sql())
+
+# Execute and get results
+df = result.to_df()  # Returns pandas DataFrame
+```
+
+<div id="next-steps">
+  ## Дальнейшие шаги
+</div>
+
+* **Впервые работаете с DataStore?** Начните с [краткого руководства](/ru/chdb/datastore/quickstart)
+* **Переходите с pandas?** Прочитайте [руководство по миграции](/ru/chdb/guides/migration-from-pandas)
+* **Хотите узнать больше?** Ознакомьтесь с [справочником по API](/ru/chdb/datastore/class-reference)

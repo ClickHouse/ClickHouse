@@ -1,0 +1,51 @@
+---
+title: 'Quelle syntaxe SQL est prise en charge par ClickHouse ?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/sql
+description: 'ClickHouse prend en charge 100 % de la syntaxe SQL'
+doc_type: 'référence'
+keywords: ['syntaxe SQL', 'ANSI SQL']
+---
+
+ClickHouse prend intégralement en charge la syntaxe SQL, y compris des fonctionnalités telles que :
+
+* SQL/JSON et le type de données JSON (SQL-2023)
+* fonctions de fenêtre (SQL-2003)
+* expressions de table communes et requêtes récursives (SQL-1999)
+* ROLLUP, CUBE et GROUPING SETS (SQL-1999)
+* prise en charge complète de RBAC (SQL-1999)
+* sous-requêtes corrélées (SQL-1992) ;
+
+Cette prise en charge est validée par les benchmarks TPC-H et TPC-DS, ainsi que par SQLTest.
+
+ClickHouse a introduit de nombreuses fonctionnalités avant leur normalisation ultérieure par l&#39;ISO/IEC, telles que :
+
+* fonctions d&#39;agrégation conditionnelles
+* fonctions d&#39;agrégation `any`
+* `least` et `greatest`
+* `GROUP BY ALL`
+* usage étendu des alias
+* traits de soulignement dans les littéraux numériques
+
+ClickHouse étend le SQL en y apportant d&#39;importantes améliorations de confort d&#39;utilisation :
+
+* utilisation sans restriction des alias
+* alias dans la clause WITH
+* combinateurs de fonctions d&#39;agrégation
+* fonctions d&#39;agrégation paramétrées
+* fonctions d&#39;agrégation approximatives
+* types de données numériques natifs et entiers de grande taille, Decimal à précision étendue
+* fonctions d&#39;ordre supérieur pour la manipulation des tableaux
+* clause ARRAY JOIN et fonction arrayJoin
+* agrégation de tableaux
+* clause LIMIT BY
+* GROUP BY WITH TOTALS
+* AS OF JOIN
+* ANY/ALL JOIN
+* syntaxe naturelle pour JSON
+* virgule finale dans la liste des colonnes
+* ordre des clauses FROM ... SELECT
+* paramètres de requête fortement typés et vues paramétrées
+
+Certaines d&#39;entre elles pourraient être intégrées aux prochaines normes SQL, tout en étant déjà disponibles pour les utilisateurs de ClickHouse.

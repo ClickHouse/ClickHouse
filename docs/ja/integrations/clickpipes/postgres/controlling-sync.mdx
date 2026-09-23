@@ -1,0 +1,80 @@
+---
+title: 'Postgres ClickPipe の同期を制御する'
+description: 'Postgres ClickPipe の同期を制御するためのドキュメント'
+slug: /integrations/clickpipes/postgres/sync_control
+sidebarTitle: '同期の制御'
+keywords: ['同期制御', 'postgres', 'clickpipes', 'バッチサイズ', '同期間隔']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+このドキュメントでは、Postgres ClickPipe が **CDC (変更データキャプチャ)  (実行中) モード** にある場合の同期制御方法について説明します。
+
+<div id="overview">
+  ## 概要
+</div>
+
+データベース ClickPipes は、ソースデータベースからデータを取得するプロセスと、移行先データベースへデータを書き込むプロセスという、2 つの並行プロセスで構成されています。取得プロセスは同期設定によって制御され、この設定で、データを取得する頻度と、1 回あたりに取得するデータ量を定義します。ここでいう「1 回あたり」とは 1 バッチを指します。ClickPipe はデータをバッチ単位で取得し、書き込むためです。
+
+Postgres ClickPipe の同期を制御する主な方法は 2 つあります。以下の設定のいずれかの条件を満たすと、ClickPipe は書き込みを開始します。
+
+<div id="interval">
+  ### 同期間隔
+</div>
+
+パイプの同期間隔は、ClickPipe がソースデータベースからレコードを取得する時間 (秒単位) を指します。取得したデータを ClickHouse にプッシュする時間は、この間隔には含まれません。
+
+デフォルトは **1 分** です。
+同期間隔には任意の正の整数値を設定できますが、10 秒より大きい値にすることを推奨します。
+
+<div id="batch-size">
+  ### プルのバッチサイズ
+</div>
+
+プルのバッチサイズは、ClickPipe が 1 回のバッチでソースデータベースから取得するレコード数です。ここでいうレコードには、パイプに含まれるテーブルに対する insert、更新、削除が含まれます。
+
+デフォルトは **100,000** レコードです。
+安全な上限は 1,000 万です。
+
+<div id="transactions">
+  ### 例外: ソース側で長時間実行されるトランザクション
+</div>
+
+ソースデータベースでトランザクションが実行されると、ClickPipe はそのトランザクションの COMMIT を受け取るまで待機してから処理を進めます。この動作は、同期間隔とプルのバッチサイズの両方よりも**優先**されます。
+
+<div id="configuring">
+  ### 同期設定の構成
+</div>
+
+ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔とプルのバッチサイズを設定できます。
+ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップに表示されます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="同期設定の作成" size="md" />
+
+既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="同期編集ボタン" size="md" />
+
+これにより、同期設定のフライアウトが開き、そこで同期間隔とプルのバッチサイズを変更できます。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="同期設定の編集" size="md" />
+
+<div id="tweaking">
+  ### レプリケーションスロットの肥大化を抑えるための同期設定の調整
+</div>
+
+ここでは、これらの設定を使って CDC パイプの大きくなったレプリケーションスロットに対処する方法を説明します。
+ClickHouse へのプッシュにかかる時間は、ソースデータベースからのプルにかかる時間に比例して増えるわけではありません。この性質を利用すると、大きなレプリケーションスロットのサイズを抑えられます。
+同期間隔とプルのバッチサイズの両方を大きくすると、ClickPipe はソースデータベースから一度に大量のデータをプルし、その後 ClickHouse にプッシュします。
+
+<div id="monitoring">
+  ### 同期制御の挙動の監視
+</div>
+
+各バッチにかかる時間は、ClickPipe の **Metrics** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間にはプッシュ時間が含まれます。また、受信する行がない場合は ClickPipe が待機し、その待機時間も所要時間に含まれる点に注意してください。
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs テーブル" size="md" />

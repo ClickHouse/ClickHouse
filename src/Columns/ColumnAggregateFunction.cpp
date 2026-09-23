@@ -1,12 +1,15 @@
 #include <IO/WriteHelpers.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/IDataType.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/MaskOperations.h>
 #include <IO/Operators.h>
+#include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -14,7 +17,6 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -31,7 +33,6 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
@@ -53,21 +54,11 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << func->getName();
 
-    const auto & parameters = func->getParameters();
-    const auto & argument_types = func->getArgumentTypes();
-    if (!parameters.empty())
-    {
-        stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
-        {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
-        }
-        stream << ')';
-    }
+    /// This name travels with every state serialized into a `Field`, so it must spell the state the
+    /// same way its state type does, or such a `Field` no longer matches the type it came from.
+    stream << DataTypeAggregateFunction::formatParameters(*func, func->getParameters());
 
-    for (const auto & argument_type : argument_types)
+    for (const auto & argument_type : func->getArgumentTypes())
         stream << ", " << argument_type->getName();
 
     stream << ')';
@@ -182,8 +173,14 @@ MutableColumnPtr ColumnAggregateFunction::convertToValues(MutableColumnPtr colum
     callback(*res);
     res->forEachMutableSubcolumnRecursively(callback);
 
+    /// Use `insertMergeResultInto` so every State-combinator state is copied into
+    /// `res`'s own arena. The pointer-sharing `insertResultInto` path is unsafe
+    /// here: a flag=0 row in `-OrFill` calls `res.insertDefault` ->
+    /// `res.ensureOwnership` which resets `res.src`, so any later flag=1 row would
+    /// dangle once the source column is destroyed (issue #105742). For non-State
+    /// functions `insertMergeResultInto` just delegates to `insertResultInto`.
     for (auto * val : data)
-        func->insertResultInto(val, *res, &column_aggregate_func.createOrGetArena());
+        func->insertMergeResultInto(val, *res, &column_aggregate_func.createOrGetArena());
 
     return res;
 }
@@ -447,9 +444,11 @@ INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    WriteBufferFromOwnString wbuf;
+    char window[1024];
+    SipHashingWriteBuffer wbuf(hash, sizeof(window), window);
     func->serialize(data[n], wbuf, version);
-    hash.update(wbuf.str().c_str(), wbuf.str().size());
+    /// Mandatory: the destructor discards whatever is still in the window unhashed.
+    wbuf.finalize();
 }
 
 void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
@@ -482,6 +481,36 @@ void ColumnAggregateFunction::updateHashFast(SipHash & hash) const
 size_t ColumnAggregateFunction::byteSize() const
 {
     return data.size() * sizeof(data[0]) + (my_arena ? my_arena->usedBytes() : 0);
+}
+
+size_t ColumnAggregateFunction::serializedSizeEstimate() const
+{
+    const size_t rows = data.size();
+    if (rows == 0)
+        return 0;
+
+    const size_t ptr_bytes = rows * sizeof(data[0]);
+
+    /// Fixed-layout states (trivial destructor, no arena) keep all their data in the sizeOfData() blob,
+    /// so size them from it without serializing. hasTrivialDestructor() reflects the combinator-wrapped
+    /// Data, so combinators are handled too.
+    if (func->hasTrivialDestructor() && !func->allocatesMemoryInArena())
+        return ptr_bytes + rows * func->sizeOfData();
+
+    /// Variable-size states (uniqExact, groupArray, quantiles, ...) have no cheap upper bound, and their
+    /// serialized sizes can be arbitrarily skewed: most groups tiny, a few huge. Sampling underestimates
+    /// such columns whenever a large state falls outside the sample, which lets oversized granules survive.
+    /// Sum the exact serialized size of every state instead. States are immutable on the write path, so
+    /// serializing them here is safe even if they live in shared arenas.
+    size_t total_serialized = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        NullWriteBuffer out;
+        func->serialize(data[i], out, version);
+        total_serialized += out.count();
+    }
+
+    return ptr_bytes + total_serialized;
 }
 
 size_t ColumnAggregateFunction::byteSizeAt(size_t) const
@@ -603,6 +632,12 @@ static void pushBackAndCreateState(ColumnAggregateFunction::Container & data, Ar
     }
 }
 
+bool ColumnAggregateFunction::acceptsStateTypeName(const String & state_type_name) const
+{
+    return type_string == state_type_name
+        || DataTypeAggregateFunction::nameMatchesState(state_type_name, func, version.value_or(func->getDefaultVersion()));
+}
+
 void ColumnAggregateFunction::insert(const Field & x)
 {
     if (x.getType() != Field::Types::AggregateFunctionState)
@@ -611,8 +646,8 @@ void ColumnAggregateFunction::insert(const Field & x)
             x.getTypeName(), Field::Types::AggregateFunctionState);
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
-        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert filed with type {} into column with type {}",
+    if (!acceptsStateTypeName(field_name))
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Cannot insert field with type {} into column with type {}",
                 field_name, type_string);
 
     ensureOwnership();
@@ -628,7 +663,7 @@ bool ColumnAggregateFunction::tryInsert(const DB::Field & x)
         return false;
 
     const auto & field_name = x.safeGet<AggregateFunctionStateData>().name;
-    if (type_string != field_name)
+    if (!acceptsStateTypeName(field_name))
         return false;
 
     ensureOwnership();
@@ -667,11 +702,6 @@ void ColumnAggregateFunction::deserializeAndInsertFromArena(ReadBuffer & in, con
     func->deserialize(data.back(), in, version, &dst_arena);
 }
 
-void ColumnAggregateFunction::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", getName());
-}
-
 void ColumnAggregateFunction::popBack(size_t n)
 {
     if (n > size())
@@ -685,6 +715,14 @@ void ColumnAggregateFunction::popBack(size_t n)
             func->destroy(data[i]);
 
     data.resize_assume_reserved(new_size);
+}
+
+void ColumnAggregateFunction::popBackWithoutDestroy(size_t n)
+{
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    data.resize_assume_reserved(data.size() - n);
 }
 
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const

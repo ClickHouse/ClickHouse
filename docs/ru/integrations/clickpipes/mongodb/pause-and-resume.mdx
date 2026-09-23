@@ -1,0 +1,51 @@
+---
+title: 'Приостановка и возобновление работы MongoDB ClickPipe'
+description: 'Приостановка и возобновление работы MongoDB ClickPipe'
+sidebarTitle: 'Приостановка таблицы'
+slug: /integrations/clickpipes/mongodb/pause_and_resume
+doc_type: 'guide'
+keywords: ['clickpipes', 'mongodb', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В некоторых случаях может быть полезно приостановить MongoDB ClickPipe. Например, вам может понадобиться выполнить анализ существующих данных в неизменном состоянии. Или вы можете проводить обновление MongoDB. Вот как приостановить и возобновить MongoDB ClickPipe.
+
+<div id="pause-clickpipe-steps">
+  ## Как приостановить MongoDB ClickPipe
+</div>
+
+1. На вкладке «Источники данных» выберите MongoDB ClickPipe, который нужно приостановить.
+2. Перейдите на вкладку **Настройки**.
+3. Нажмите кнопку **Приостановить**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+
+4. Появится диалоговое окно подтверждения. Ещё раз нажмите **Приостановить**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+
+4. Перейдите на вкладку **Метрики**.
+5. Дождитесь, пока статус пайпа не изменится на **Приостановлен**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+
+<div id="resume-clickpipe-steps">
+  ## Шаги для возобновления MongoDB ClickPipe
+</div>
+
+1. На вкладке источников данных нажмите MongoDB ClickPipe, который нужно возобновить. Изначально у mirror должен быть статус **приостановлен**.
+2. Перейдите на вкладку **настройки**.
+3. Нажмите кнопку **Resume**.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+
+4. Должно появиться диалоговое окно подтверждения. Нажмите Resume ещё раз.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+
+5. Перейдите на вкладку **метрики**.
+6. Дождитесь, пока статус пайпа не станет **Running**.

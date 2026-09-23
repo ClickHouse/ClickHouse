@@ -1,0 +1,89 @@
+---
+slug: /use-cases/observability/clickstack/sdks/java
+description: '适用于 ClickStack 的 Java SDK - ClickHouse 可观测性技术栈'
+title: 'Java'
+doc_type: 'guide'
+keywords: ['Java SDK ClickStack', 'Java OpenTelemetry ClickStack', 'Java 可观测性 SDK', 'ClickStack Java 集成', 'Java 应用监控']
+---
+
+ClickStack 使用 OpenTelemetry 标准来收集遥测数据 (日志和
+链路追踪) 。链路追踪可通过自动埋点自动生成，因此无需手动
+埋点即可从链路追踪中获益。
+
+**本指南集成了：**
+
+<table>
+  <tbody>
+    <tr>
+      <td className="pe-2">✅ 日志</td>
+      <td className="pe-2">✅ 指标</td>
+      <td className="pe-2">✅ 链路追踪</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="getting-started">
+  ## 快速开始
+</div>
+
+<Note>
+  目前，该集成仅支持 **Java 8+**
+</Note>
+
+<div id="download-opentelemetry-java-agent">
+  ### 下载 OpenTelemetry Java agent
+</div>
+
+下载 [`opentelemetry-javaagent.jar`](https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar)，
+并将该 JAR 文件放到你选择的目录中。该 JAR 文件包含 agent
+和插桩库。你也可以使用以下命令
+下载该 agent：
+
+```shell
+curl -L -O https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/latest/download/opentelemetry-javaagent.jar
+```
+
+<div id="configure-environment-variables">
+  ### 配置环境变量
+</div>
+
+接下来，你需要在 shell 中配置以下环境变量，以便通过 OpenTelemetry Collector 将遥测数据发送到 ClickStack：
+
+<Tabs>
+  <Tab title="托管 ClickStack">
+    ```shell
+    export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+
+  <Tab title="ClickStack 开源版">
+    ```shell
+    export JAVA_TOOL_OPTIONS="-javaagent:PATH/TO/opentelemetry-javaagent.jar" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=https://your-otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_HEADERS='authorization=<YOUR_INGESTION_API_KEY>' \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    ```
+  </Tab>
+</Tabs>
+
+*`OTEL_SERVICE_NAME` 环境变量用于在 HyperDX 应用中标识你的服务，可以设置为任意名称。*
+
+`OTEL_EXPORTER_OTLP_HEADERS` 环境变量中包含 API 密钥，可在 HyperDX 应用的 `Team Settings → API Keys` 中获取。
+
+<div id="run-the-application-with-otel-java-agent">
+  ### 使用 OpenTelemetry Java agent 运行应用
+</div>
+
+```shell
+java -jar target/<APPLICATION_JAR_FILE>
+```
+
+<br />
+
+在此处了解有关 Java OpenTelemetry 插桩的更多信息：[https://opentelemetry.io/docs/instrumentation/java/](https://opentelemetry.io/docs/instrumentation/java/)

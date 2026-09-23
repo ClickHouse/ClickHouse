@@ -9,6 +9,8 @@
 namespace DB
 {
 
+std::map<String, Command> KeeperClientBase::commands;
+
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;

@@ -1,0 +1,41 @@
+---
+title: Qu’est-ce qu’une base de données colonnaire ?
+description: "Une base de données colonnaire stocke séparément les données de chaque colonne. Cela permet de lire sur disque uniquement les données des colonnes utilisées dans une requête donnée."
+date: 2021-09-01
+tags: ['Concepts fondamentaux des données']
+keywords: ['Base de données colonnaire']
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Une base de données colonnaire stocke les données de chaque colonne indépendamment. Cela permet de ne lire sur le disque que les données des colonnes utilisées dans une requête donnée. En contrepartie, les opérations qui affectent des lignes entières deviennent proportionnellement plus coûteuses. Une base de données colonnaire est synonyme de système de gestion de base de données orienté colonnes. ClickHouse est un exemple typique de ce type de système.
+
+<div id="advantages-of-a-columnar-database">
+  ## Avantages d&#39;une base de données colonnaire
+</div>
+
+Les principaux avantages d&#39;une base de données colonnaire sont :
+
+* Des requêtes qui n&#39;utilisent qu&#39;un petit nombre de colonnes parmi beaucoup d&#39;autres.
+* Des requêtes d&#39;agrégation sur de grands volumes de données.
+* La compression des données par colonne.
+
+<div id="row-oriented-vs-column-oriented-databases">
+  ## Bases de données orientées lignes ou orientées colonnes
+</div>
+
+Voici une illustration de la différence entre les systèmes traditionnels orientés lignes et les bases de données colonnaires pour la création de rapports :
+
+**Traditionnel orienté lignes**
+
+<Image img="/images/row-oriented.webp" alt="Illustration du stockage traditionnel d'une base de données orientée lignes" size="md" />
+
+**Colonnaire**
+
+<Image img="/images/column-oriented.webp" alt="Illustration du stockage d'une base de données colonnaire" size="md" />
+
+Une base de données colonnaire est le choix privilégié pour les applications analytiques, car elle permet d’avoir de nombreuses colonnes dans une table au cas où, sans en payer le coût sur le temps d’exécution des requêtes de lecture lorsqu’elles ne sont pas utilisées (une base de données OLTP traditionnelle lit toutes les données lors des requêtes, car elles y sont stockées par lignes et non par colonnes). Les bases de données orientées colonnes sont conçues pour le traitement de grands volumes de données et l’entreposage de données. Elles montent souvent nativement en charge à l’aide de clusters distribués reposant sur du matériel peu coûteux afin d’augmenter le débit. ClickHouse le fait grâce à une combinaison de tables [distributed](/fr/reference/engines/table-engines/special/distributed) et [replicated](/fr/reference/engines/table-engines/mergetree-family/replication).

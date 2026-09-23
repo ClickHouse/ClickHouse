@@ -4,7 +4,6 @@ import os
 import time
 
 import pytest
-import requests
 
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_check
@@ -12,6 +11,9 @@ from helpers.cluster import ClickHouseCluster, get_docker_compose_path, run_and_
 DOCKER_COMPOSE_PATH = get_docker_compose_path()
 BEARER_PORT = 8001
 DLF_PORT = 8002
+
+# A listing walk that does not terminate never answers, so the paginated query is bounded.
+PAGED_QUERY_TIMEOUT = 60
 
 cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance("node", stay_alive=True, main_configs=[])
@@ -48,60 +50,13 @@ def test_paimon_rest_catalog(started_cluster):
     bearer_ip = cluster.get_instance_ip("paimon-rest-bearer")
     bearer_container_id = cluster.get_instance_docker_id("paimon-rest-bearer")
 
-    # clean warehouse data path
-    run_and_check(
-        [f'docker exec {bearer_container_id} bash -c "rm -rf /var/lib/clickhouse/user_files/warehouse/*"'],
-        shell=True,
-    )
-
+    # Both mock servers create their catalog table before accepting requests.
     node.query("DROP DATABASE IF EXISTS paimon_rest_db SYNC;")
     node.query(
         f"CREATE DATABASE paimon_rest_db ENGINE = DataLakeCatalog('http://{bearer_ip}:{BEARER_PORT}')"
         f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
         f" catalog_credential='bearer-token-xxx-xxx-xxx';",
         settings={"allow_experimental_database_paimon_rest_catalog": 1},
-    )
-
-    # create database via REST API
-    requests.post(
-        f"http://{bearer_ip}:{BEARER_PORT}/v1/paimon/databases",
-        json={"name": "test"},
-        headers={"Authorization": "Bearer bearer-token-xxx-xxx-xxx"},
-    )
-
-    # create table via REST API
-    requests.post(
-        f"http://{bearer_ip}:{BEARER_PORT}/v1/paimon/databases/test/tables",
-        json={
-            "identifier": {"database": "test", "object": "test_table"},
-            "schema": {
-                "fields": [
-                    {
-                        "id": 0,
-                        "name": "f_string",
-                        "type": "string",
-                        "description": "string",
-                    },
-                    {
-                        "id": 1,
-                        "name": "f_int",
-                        "type": "int",
-                        "description": "int",
-                    },
-                    {
-                        "id": 2,
-                        "name": "f_bigint",
-                        "type": "bigint",
-                        "description": "bigint",
-                    },
-                ],
-                "partitionKeys": ["f_string"],
-                "primaryKeys": [],
-                "options": {},
-                "comment": "test table",
-            },
-        },
-        headers={"Authorization": "Bearer bearer-token-xxx-xxx-xxx"},
     )
 
     assert (
@@ -138,6 +93,7 @@ def test_paimon_rest_catalog(started_cluster):
 
     # Test DLF authentication
     dlf_ip = cluster.get_instance_ip("paimon-rest-dlf")
+    dlf_container_id = cluster.get_instance_docker_id("paimon-rest-dlf")
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
     node.query(
         f"CREATE DATABASE paimon_rest_db_dlf ENGINE = DataLakeCatalog('http://{dlf_ip}:{DLF_PORT}')"
@@ -146,7 +102,48 @@ def test_paimon_rest_catalog(started_cluster):
         f" region='cn-hangzhou';",
         settings={"allow_experimental_database_paimon_rest_catalog": 1},
     )
-    node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
+    assert (
+        node.query("SHOW TABLES;", database="paimon_rest_db_dlf")
+        == "test_dlf.test_table\n"
+    )
+    assert (
+        node.query("EXISTS TABLE paimon_rest_db_dlf.`test_dlf.missing`;")
+        == "0\n"
+    )
+    with pytest.raises(QueryRuntimeException) as exc_info:
+        node.query("DESCRIBE TABLE paimon_rest_db_dlf.`test_dlf.missing`;")
+    message = str(exc_info.value)
+    assert "Code: 60" in message, message
+    assert "UNKNOWN_TABLE" in message, message
+
+    assert node.query(
+        "DESC `test_dlf.test_table`;", database="paimon_rest_db_dlf"
+    ) == (
+        "f_string\tNullable(String)\t\t\t\t\t\n"
+        "f_int\tNullable(Int32)\t\t\t\t\t\n"
+        "f_bigint\tNullable(Int64)\t\t\t\t\t\n"
+    )
+    assert (
+        node.query(
+            "SELECT count(1) FROM `test_dlf.test_table`;",
+            database="paimon_rest_db_dlf",
+        )
+        == "0\n"
+    )
+
+    insert_cmd = 'java -jar /opt/paimon/paimon-server.jar "insert" "file:///var/lib/clickhouse/user_files/warehouse/" "test_dlf" "test_table"'
+    run_and_check(
+        [f"docker exec {dlf_container_id} bash -c '{insert_cmd}'"],
+        shell=True,
+    )
+
+    assert (
+        node.query(
+            "SELECT count(1) FROM `test_dlf.test_table`;",
+            database="paimon_rest_db_dlf",
+        )
+        == "10\n"
+    )
 
     node.query("DROP DATABASE IF EXISTS paimon_rest_db_dlf SYNC;")
     with pytest.raises(QueryRuntimeException) as exc_info:
@@ -160,3 +157,37 @@ def test_paimon_rest_catalog(started_cluster):
     message = str(exc_info.value)
     assert "Code: 86" in message, message
     assert "401" in message, message
+
+
+def test_paginated_listing_terminates(started_cluster):
+    bearer_ip = cluster.get_instance_ip("paimon-rest-bearer")
+
+    node.query("DROP DATABASE IF EXISTS paimon_rest_db_paged SYNC;")
+    node.query(
+        f"CREATE DATABASE paimon_rest_db_paged ENGINE = DataLakeCatalog('http://{bearer_ip}:{BEARER_PORT}')"
+        f" SETTINGS catalog_type='paimon_rest', warehouse='restWarehouse',"
+        f" catalog_credential='bearer-token-xxx-xxx-xxx';",
+        settings={"allow_experimental_database_paimon_rest_catalog": 1},
+    )
+
+    # A page size of one makes every listing paginate: a Paimon REST catalog hands back the name of
+    # the last item of a page as `nextPageToken`, and a page that exactly fills `maxResults` still
+    # carries one. So the single database and the single table of this catalog each take two
+    # requests, and the second page comes back empty with no token at all. Walking them must
+    # terminate and yield every item exactly once - a cursor that is not cleared on the last page
+    # re-requests that page forever, hanging the query and duplicating its items.
+    node.query("SYSTEM ENABLE FAILPOINT datalake_paimon_list_page_size_one")
+    try:
+        # Covers both paginated walks: the database listing and the table listing of `test`.
+        assert (
+            node.query(
+                "SHOW TABLES;",
+                database="paimon_rest_db_paged",
+                timeout=PAGED_QUERY_TIMEOUT,
+            )
+            == "test.test_table\n"
+        )
+    finally:
+        node.query("SYSTEM DISABLE FAILPOINT datalake_paimon_list_page_size_one")
+
+    node.query("DROP DATABASE paimon_rest_db_paged SYNC;")

@@ -1,0 +1,57 @@
+---
+description: '대체 백업 또는 복원 방법에 대한 자세한 정보'
+sidebarTitle: '대체 방법'
+slug: /operations/backup/alternative_methods
+title: '대체 백업 또는 복원 방법'
+doc_type: 'reference'
+---
+
+ClickHouse는 데이터를 디스크에 저장하므로 디스크를 백업하는 방법은 다양합니다.
+다음은 과거에 사용되었으며,
+사용 사례에 적합할 수 있는 몇 가지 대체 방법입니다.
+
+<div id="duplicating-source-data-somewhere-else">
+  ### 소스 데이터를 다른 곳에 복제하기
+</div>
+
+ClickHouse로 수집되는 데이터는 대개 [Apache Kafka](https://kafka.apache.org)와 같은 영구
+큐를 통해 전달됩니다. 이 경우 ClickHouse에 기록되는 동안 동일한 데이터 스트림을 읽어
+별도의 콜드 스토리지에 저장하는 추가 구독자 집합을 구성할 수 있습니다. 대부분의 기업은
+이미 기본으로 권장하는 콜드 스토리지를 갖추고 있으며, 이는 객체 스토리지이거나
+[HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html)와 같은 분산 파일 시스템일 수 있습니다.
+
+<div id="filesystem-snapshots">
+  ### 파일 시스템 스냅샷
+</div>
+
+일부 로컬 파일 시스템은 스냅샷 기능을 제공합니다(예: [ZFS](https://en.wikipedia.org/wiki/ZFS)).
+하지만 실시간 쿼리를 처리하는 용도로는 최선의 선택이 아닐 수 있습니다. 가능한 해결 방법 중 하나는
+이러한 파일 시스템을 사용하는 추가 레플리카를 만들고, `SELECT` 쿼리에 사용되는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블에서 이를
+제외하는 것입니다.
+이러한 레플리카의 스냅샷은 데이터를 수정하는 어떤 쿼리의 영향도 받지 않습니다.
+추가로, 이러한 레플리카는 서버당 더 많은
+디스크가 연결된 특수한 하드웨어 구성을 사용할 수 있으므로 비용 효율적일 수 있습니다.
+
+데이터 양이 적은 경우에는, 원격 테이블에 대한 간단한 `INSERT INTO ... SELECT ...`
+방식도 잘 작동할 수 있습니다.
+
+<div id="manipulations-with-parts">
+  ### 파트 조작
+</div>
+
+ClickHouse에서는 `ALTER TABLE ... FREEZE PARTITION ...` 쿼리를 사용하여
+테이블 파티션의 로컬 복사본을 만들 수 있습니다. 이는 `/var/lib/clickhouse/shadow/`
+폴더에 대한 하드링크를 사용해 구현되므로, 일반적으로 기존 데이터에 대해 추가 디스크 공간을 차지하지 않습니다. 생성된
+파일 복사본은 ClickHouse 서버에서 관리되지 않으므로 그대로 두어도 됩니다:
+즉, 추가 외부 시스템 없이도 간단한 백업을 만들 수 있지만,
+여전히 하드웨어 문제에는 취약합니다. 따라서 이를
+원격의 다른 위치로 복사한 다음 로컬 복사본을 삭제하는 것이 좋습니다.
+이 용도로는 분산 파일 시스템과 객체 스토리지가 여전히 좋은 선택이며,
+용량이 충분한 일반적인 마운트형 파일 서버도 사용할 수 있습니다
+(이 경우 전송은 네트워크 파일 시스템 또는 [rsync](https://en.wikipedia.org/wiki/Rsync)를 통해 이루어질 수 있습니다).
+데이터는 `ALTER TABLE ... ATTACH PARTITION ...`을 사용하여 백업에서 복원할 수 있습니다
+
+파티션 조작과 관련된 쿼리에 대한 자세한 내용은
+[`ALTER` 문서](/ko/reference/statements/alter/partition)를 참조하십시오.
+
+이 방식을 자동화하는 서드파티 도구로 [clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)를 사용할 수 있습니다.

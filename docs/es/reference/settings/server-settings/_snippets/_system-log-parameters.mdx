@@ -1,0 +1,33 @@
+---
+title: Parámetros de logs del sistema
+---
+
+Los siguientes ajustes se pueden configurar mediante subetiquetas:
+
+| Configuración                      | Descripción                                                                                                                                                                   | Predeterminado      | Nota                                                                                                                                          |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `database`                         | Nombre de la base de datos.                                                                                                                                                   |                     |                                                                                                                                               |
+| `table`                            | Nombre de la tabla del sistema.                                                                                                                                               |                     |                                                                                                                                               |
+| `engine`                           | [Definición del motor MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-creating-a-table) para una tabla del sistema.             |                     | No se puede usar si se definen `partition_by` u `order_by`. Si no se especifica, se selecciona `MergeTree` de forma predeterminada            |
+| `partition_by`                     | [Clave de partición personalizada](/es/reference/engines/table-engines/mergetree-family/custom-partitioning-key) para una tabla del sistema.                                     |                     | Si se especifica `engine` para la tabla del sistema, el parámetro `partition_by` debe especificarse directamente dentro de &#39;engine&#39;   |
+| `ttl`                              | Especifica el [TTL](/es/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl) de la tabla.                                                      |                     | Si se especifica `engine` para la tabla del sistema, el parámetro `ttl` debe especificarse directamente dentro de &#39;engine&#39;            |
+| `order_by`                         | [Clave de ordenación personalizada](/es/reference/engines/table-engines/mergetree-family/mergetree#order_by) para una tabla del sistema. No se puede usar si se define `engine`. |                     | Si se especifica `engine` para la tabla del sistema, el parámetro `order_by` debe especificarse directamente dentro de &#39;engine&#39;       |
+| `storage_policy`                   | Nombre de la política de almacenamiento que se usará para la tabla (opcional).                                                                                                |                     | Si se especifica `engine` para la tabla del sistema, el parámetro `storage_policy` debe especificarse directamente dentro de &#39;engine&#39; |
+| `settings`                         | [Parámetros adicionales](/es/reference/engines/table-engines/mergetree-family/mergetree#settings) que controlan el comportamiento de MergeTree (opcional).                       |                     | Si se especifica `engine` para la tabla del sistema, el parámetro `settings` debe especificarse directamente dentro de &#39;engine&#39;       |
+| `flush_interval_milliseconds`      | Intervalo para volcar los datos del búfer en memoria a la tabla.                                                                                                              | `7500`              |                                                                                                                                               |
+| `max_size_rows`                    | Tamaño máximo en líneas para los logs. Cuando la cantidad de logs no volcados alcanza el tamaño máximo, los logs se vuelcan al disco.                                         | `1048576`           |                                                                                                                                               |
+| `reserved_size_rows`               | Tamaño de memoria preasignado en líneas para los logs.                                                                                                                        | `8192`              |                                                                                                                                               |
+| `buffer_size_rows_flush_threshold` | Umbral para la cantidad de líneas. Si se alcanza el umbral, el volcado de los logs al disco se inicia en segundo plano.                                                       | `max_size_rows / 2` |                                                                                                                                               |
+| `flush_on_crash`                   | Indica si los logs deben volcarse al disco en caso de fallo.                                                                                                                  | `false`             |                                                                                                                                               |
+
+Además, el siguiente ajuste a nivel de servidor controla la política de volcado predeterminada para todas las tablas de logs del sistema:
+
+```xml
+<default_system_log_flush_policy>
+    <skip_alias_columns>true</skip_alias_columns>
+</default_system_log_flush_policy>
+```
+
+| Configuración        | Descripción                                                                                                                                                       | Predeterminado |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `skip_alias_columns` | Cuando se establece en `true`, las columnas ALIAS se omiten de los esquemas de las tablas de logs del sistema. Necesario para los logs del sistema basados en S3. | `false`        |

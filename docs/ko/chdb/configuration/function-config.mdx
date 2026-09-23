@@ -1,0 +1,301 @@
+---
+title: '함수 수준 구성'
+sidebarTitle: '함수 구성'
+slug: /chdb/configuration/function-config
+description: '함수 수준에서 실행 엔진과 Dtype 보정을 구성합니다'
+keywords: ['chdb', 'DataStore', '함수', '구성', 'Dtype', '보정']
+doc_type: 'reference'
+---
+
+DataStore에서는 함수 수준에서 실행을 세밀하게 제어할 수 있으며, 여기에는 엔진 선택과 Dtype 보정이 포함됩니다.
+
+<div id="function-engine">
+  ## 함수 엔진 구성
+</div>
+
+특정 함수의 실행 엔진을 재정의합니다.
+
+<div id="setting-engines">
+  ### 함수 엔진 설정
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# 특정 함수가 chdb를 사용하도록 지정합니다
+function_config.use_chdb('length', 'substring', 'concat')
+
+# 특정 함수가 pandas를 사용하도록 지정합니다
+function_config.use_pandas('upper', 'lower', 'capitalize')
+
+# 기본 설정을 지정합니다
+function_config.prefer_chdb()    # 기본값으로 chdb를 사용합니다
+function_config.prefer_pandas()  # 기본값으로 pandas를 사용합니다
+
+# 자동 설정으로 되돌립니다
+function_config.reset()
+```
+
+<div id="when-to-use">
+  ### 사용 시점
+</div>
+
+**다음 경우에는 chdb를 강제로 사용하십시오:**
+
+* ClickHouse에서 성능이 더 좋은 함수
+* SQL 최적화의 이점을 활용할 수 있는 함수
+* 대규모 문자열/날짜·시간 연산
+
+**다음 경우에는 pandas를 강제로 사용하십시오:**
+
+* pandas 고유 동작이 있는 함수
+* pandas와의 정확한 호환성이 필요한 경우
+* 사용자 지정 문자열 연산
+
+<div id="function-example">
+  ### 예시
+</div>
+
+```python
+from chdb import datastore as pd
+from chdb.datastore.config import function_config
+
+# 함수 엔진을 설정합니다
+function_config.use_chdb('length', 'substring')
+function_config.use_pandas('upper')
+
+ds = pd.read_csv("data.csv")
+
+# length()는 chdb를 사용합니다
+ds['name_len'] = ds['name'].str.len()
+
+# substring()은 chdb를 사용합니다  
+ds['prefix'] = ds['name'].str.slice(0, 3)
+
+# upper()는 pandas를 사용합니다
+ds['name_upper'] = ds['name'].str.upper()
+```
+
+***
+
+<div id="overlapping">
+  ## 중복되는 함수
+</div>
+
+159개 이상의 함수를 chdb와 pandas 엔진 모두에서 사용할 수 있습니다:
+
+| 범주        | 함수                                                                                                                                      |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **문자열**   | `length`, `upper`, `lower`, `trim`, `ltrim`, `rtrim`, `concat`, `substring`, `replace`, `reverse`, `contains`, `startswith`, `endswith` |
+| **수학**    | `abs`, `round`, `floor`, `ceil`, `exp`, `log`, `log10`, `sqrt`, `pow`, `sin`, `cos`, `tan`                                              |
+| **날짜/시간** | `year`, `month`, `day`, `hour`, `minute`, `second`, `dayofweek`, `dayofyear`, `quarter`                                                 |
+| **집계**    | `sum`, `avg`, `min`, `max`, `count`, `std`, `var`, `median`                                                                             |
+
+중복되는 함수의 경우, 엔진은 다음 기준에 따라 선택됩니다:
+
+1. 명시적 함수 구성(설정된 경우)
+2. 전역 execution&#95;engine 설정
+3. 문맥에 따른 자동 선택
+
+***
+
+<div id="chdb-only">
+  ## chdb 전용 함수
+</div>
+
+일부 함수는 ClickHouse에서만 사용할 수 있습니다.
+
+| 범주       | 함수                                                                                 |
+| -------- | ---------------------------------------------------------------------------------- |
+| **배열**   | `arraySum`, `arrayAvg`, `arraySort`, `arrayDistinct`, `groupArray`, `arrayElement` |
+| **JSON** | `JSONExtractString`, `JSONExtractInt`, `JSONExtractFloat`, `JSONHas`               |
+| **URL**  | `domain`, `path`, `protocol`, `extractURLParameter`                                |
+| **IP**   | `IPv4StringToNum`, `IPv4NumToString`, `isIPv4String`                               |
+| **Geo**  | `greatCircleDistance`, `geoDistance`, `geoToH3`                                    |
+| **해시**   | `cityHash64`, `xxHash64`, `sipHash64`, `MD5`, `SHA256`                             |
+| **조건부**  | `sumIf`, `countIf`, `avgIf`, `minIf`, `maxIf`                                      |
+
+이 함수들은 구성과 관계없이 자동으로 chdb 엔진을 사용합니다.
+
+***
+
+<div id="pandas-only">
+  ## pandas 전용 함수
+</div>
+
+일부 함수는 pandas에서만 사용할 수 있습니다:
+
+| 범주                | 함수                      |
+| ----------------- | ----------------------- |
+| **Apply**         | 사용자 지정 람다 함수, 사용자 정의 함수 |
+| **복잡한 피벗**        | 사용자 지정 집계를 사용하는 피벗 테이블  |
+| **Stack/Unstack** | 복잡한 형태 변환 작업            |
+| **Interpolate**   | 시계열 보간 메서드              |
+
+이러한 함수는 구성과 관계없이 자동으로 pandas 엔진을 사용합니다.
+
+***
+
+<div id="dtype-correction">
+  ## Dtype 보정
+</div>
+
+DataStore가 엔진 간 데이터 타입을 보정하는 방식을 구성합니다.
+
+<div id="correction-levels">
+  ### 보정 수준
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# 수정 없음
+config.set_correction_level(CorrectionLevel.NONE)
+
+# 중요 타입만 (NULL 처리, 불리언)
+config.set_correction_level(CorrectionLevel.CRITICAL)
+
+# 높은 우선순위 (기본값) - 일반적인 타입 불일치
+config.set_correction_level(CorrectionLevel.HIGH)
+
+# 중간 - 더 적극적인 수정
+config.set_correction_level(CorrectionLevel.MEDIUM)
+
+# 전체 - 가능한 모든 타입 수정
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+<div id="level-details">
+  ### 보정 수준 세부 정보
+</div>
+
+| 수준           | 설명       | 수정되는 타입                      |
+| ------------ | -------- | ---------------------------- |
+| `NONE`       | 자동 수정 없음 | 없음                           |
+| `CRITICAL`   | 필수 수정    | NULL 처리, 불리언 변환              |
+| `HIGH` (기본값) | 일반적인 수정  | 정수/부동소수점 정밀도, 날짜/시간, 문자열 인코딩 |
+| `MEDIUM`     | 더 많은 수정  | Decimal 정밀도, 시간대 처리          |
+| `ALL`        | 최대 수정    | 모든 타입 차이                     |
+
+<div id="when-correction">
+  ### 타입 수정이 필요한 경우
+</div>
+
+다음과 같은 경우에는 타입 차이가 발생할 수 있습니다:
+
+1. **ClickHouse → pandas**: 정수 크기가 서로 다를 때(Int64 vs int64)
+2. **pandas → ClickHouse**: Python 객체를 SQL 타입으로 변환할 때
+3. **NULL 처리**: pandas의 NA와 ClickHouse의 NULL
+4. **Boolean**: 불리언 표현 방식이 다를 때
+5. **DateTime**: 시간대 차이
+
+<div id="function-example">
+  ### 예시
+</div>
+
+```python
+from chdb.datastore.dtype_correction.config import CorrectionLevel
+from chdb.datastore.config import config
+
+# 엄격 모드 - 정확한 유형 일치 필요
+config.set_correction_level(CorrectionLevel.NONE)
+
+# 완화 모드 - 유형 문제 자동 수정
+config.set_correction_level(CorrectionLevel.ALL)
+```
+
+***
+
+<div id="api">
+  ## Function 구성 API
+</div>
+
+<div id="function-config-object">
+  ### function_config 객체
+</div>
+
+```python
+from chdb.datastore.config import function_config
+
+# 함수에 엔진 강제 지정
+function_config.use_chdb(*function_names)
+function_config.use_pandas(*function_names)
+
+# 기본 선호도 설정
+function_config.prefer_chdb()
+function_config.prefer_pandas()
+
+# 기본값(자동)으로 초기화
+function_config.reset()
+
+# 구성 확인
+function_config.get_engine('length')  # 'chdb', 'pandas', 또는 'auto' 반환
+```
+
+<div id="per-call">
+  ### 호출 단위 재정의
+</div>
+
+일부 메서드에서는 호출마다 엔진을 재정의할 수 있습니다:
+
+```python
+# engine 매개변수 사용(지원되는 경우)
+ds['result'] = ds['col'].str.upper(engine='pandas')
+```
+
+***
+
+<div id="best-practices">
+  ## 권장 사항
+</div>
+
+<div id="start-with-defaults">
+  ### 1. 기본값으로 시작하기
+</div>
+
+```python
+# 자동 모드를 사용하고 DataStore가 결정하게 하세요
+config.use_auto()
+```
+
+<div id="configure-for-specific-workloads">
+  ### 2. 특정 워크로드에 맞게 구성하기
+</div>
+
+```python
+# ClickHouse에 최적화된 문자열 처리용
+function_config.use_chdb('length', 'substring', 'concat')
+
+# pandas 호환 문자열 동작용
+function_config.use_pandas('upper', 'lower')
+```
+
+<div id="use-appropriate-correction-level">
+  ### 3. 적절한 보정 수준을 사용하세요
+</div>
+
+```python
+# 개발: 더 허용적
+config.set_correction_level(CorrectionLevel.ALL)
+
+# 프로덕션: 더 엄격
+config.set_correction_level(CorrectionLevel.HIGH)
+```
+
+<div id="test-both-engines">
+  ### 4. 두 엔진을 모두 테스트하세요
+</div>
+
+```python
+# chdb를 사용해 테스트
+config.use_chdb()
+result_chdb = process_data()
+
+# pandas를 사용해 테스트
+config.use_pandas()
+result_pandas = process_data()
+
+# 결과를 비교
+assert result_chdb.equals(result_pandas)
+```

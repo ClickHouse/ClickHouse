@@ -9,6 +9,7 @@ from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import pg_pass
 from helpers.postgres_utility import get_postgres_conn
 from helpers.port_forward import PortForward
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance(
@@ -334,6 +335,55 @@ def test_postgres_dict_complex_key_with_single_quote(started_cluster):
     cursor.execute("DROP TABLE test_single_quote;")
 
 
+def test_postgres_dict_attribute_with_double_quote(started_cluster):
+    """An attribute name containing a '"' must reach PostgreSQL as one identifier.
+
+    PostgreSQL escapes a '"' inside a quoted identifier by doubling it and gives '\\' no meaning
+    there, so emitting the name as "v\\"al" ends the identifier at that quote and the rest is
+    parsed as SQL. The loader sends its query as COPY (<query>) TO STDOUT, i.e. over the
+    simple-query protocol, where a ';' in the remainder would start another statement.
+    """
+    conn = get_postgres_conn(
+        ip=started_cluster.postgres_ip,
+        database=True,
+        port=started_cluster.postgres_port,
+    )
+    cursor = conn.cursor()
+
+    cursor.execute(
+        'CREATE TABLE IF NOT EXISTS test_quoted_attribute (key Text PRIMARY KEY, "v""al" Text);'
+    )
+    cursor.execute("INSERT INTO test_quoted_attribute VALUES ('k', 'found it');")
+
+    query = node1.query
+    query(
+        f"""
+    CREATE DICTIONARY test_dict_quoted_attribute
+    (
+        key String,
+        `v"al` String DEFAULT ''
+    )
+    PRIMARY KEY key
+    LAYOUT(COMPLEX_KEY_DIRECT())
+    SOURCE(PostgreSQL(
+        DB 'postgres_database'
+        HOST '{started_cluster.postgres_ip}'
+        PORT {started_cluster.postgres_port}
+        USER 'postgres'
+        PASSWORD '{pg_pass}'
+        TABLE 'test_quoted_attribute'))
+    """
+    )
+
+    result = query(
+        """SELECT dictGet('test_dict_quoted_attribute', 'v"al', tuple('k'))"""
+    )
+    assert result == "found it\n", f"Unexpected result: {result!r}"
+
+    query("DROP DICTIONARY test_dict_quoted_attribute;")
+    cursor.execute("DROP TABLE test_quoted_attribute;")
+
+
 def test_invalidate_query(started_cluster):
     conn = get_postgres_conn(
         ip=started_cluster.postgres_ip,
@@ -352,52 +402,63 @@ def test_invalidate_query(started_cluster):
     # invalidate query: SELECT value FROM test0 WHERE id = 0
     dict_name = "dict0"
     create_dict(table_name)
+
+    def last_update():
+        # 1970-01-01 00:00:00 means the dictionary was never updated yet.
+        return node1.query(
+            "SELECT toTimeZone(last_successful_update_time, 'UTC') "
+            f"FROM system.dictionaries WHERE name = '{dict_name}'"
+        ).strip()
+
+    def wait_baseline_settled():
+        # SYSTEM RELOAD does a forced full reload but does not run the invalidate
+        # query, so the stored invalidate response is left empty. The first
+        # periodic check then always sees a "modified" source and reloads once
+        # more. Wait until the invalidate baseline settles, i.e.
+        # last_successful_update_time stops advancing across a full check period,
+        # so subsequent "no update" checks are reliable.
+        prev = last_update()
+        while True:
+            time.sleep(7)  # dict lifetime is 1s and the periodic check runs every 5s
+            cur = last_update()
+            if cur == prev:
+                return cur
+            prev = cur
+
+    def dict_get(key):
+        return node1.query(
+            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64({key}))"
+        ).strip()
+
     node1.query(f"SYSTEM RELOAD DICTIONARY {dict_name}")
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "0\n"
-    )
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
-        == "1\n"
-    )
+    wait_baseline_settled()
+    assert dict_get(0) == "0"
+    assert dict_get(1) == "1"
 
-    # update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
-    while True:
-        result = node1.query(
-            f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))"
-        )
-        if result != "0\n":
-            break
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "1\n"
+    # update should happen: the invalidate query result (value at id = 0) changes
+    cursor.execute(f"UPDATE {table_name} SET value = value + 1 WHERE id = 0")
+    assert_eq_with_retry(
+        node1, f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))", "1"
     )
+    settled = wait_baseline_settled()
+    assert dict_get(0) == "1"
 
-    # no update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value*2 WHERE id != 0")
-    time.sleep(5)
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "1\n"
-    )
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
-        == "1\n"
-    )
+    # no update should happen: the invalidate query result (value at id = 0) is
+    # unchanged, so the dictionary must not reload and pick up the change to
+    # other rows. Verify directly that no reload was triggered.
+    cursor.execute(f"UPDATE {table_name} SET value = value * 2 WHERE id != 0")
+    time.sleep(7)  # more than one periodic check period
+    assert last_update() == settled
+    assert dict_get(0) == "1"
+    assert dict_get(1) == "1"
 
-    # update should happen
-    cursor.execute(f"UPDATE {table_name} SET value=value+1 WHERE id = 0")
-    time.sleep(5)
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))")
-        == "2\n"
+    # update should happen: the invalidate query result (value at id = 0) changes
+    cursor.execute(f"UPDATE {table_name} SET value = value + 1 WHERE id = 0")
+    assert_eq_with_retry(
+        node1, f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(0))", "2"
     )
-    assert (
-        node1.query(f"SELECT dictGetUInt32('{dict_name}', 'value', toUInt64(1))")
-        == "2\n"
-    )
+    assert dict_get(0) == "2"
+    assert dict_get(1) == "2"
 
     node1.query(f"DROP TABLE IF EXISTS {table_name}")
     node1.query(f"DROP DICTIONARY IF EXISTS {dict_name}")

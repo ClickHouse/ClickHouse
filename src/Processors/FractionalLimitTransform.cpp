@@ -189,7 +189,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::prepare()
 
                 rows_processed += chunk_rows;
                 early_pushed_rows += chunk_rows;
-                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows)
+                /// Skip an empty chunk: there is no row to remember and the stored ties_last_row
+                /// is still the correct tie key for the boundary (avoids chunk_rows - 1 underflow).
+                if (with_ties && rows_processed == limit_rows_for_current_input + offset_rows && chunk_rows > 0)
                     ties_last_row = makeChunkWithPreviousRow(front_chunk, chunk_rows - 1);
 
                 output->push(std::move(front_chunk));
@@ -280,7 +282,7 @@ FractionalLimitTransform::Status FractionalLimitTransform::pullData(PortsData & 
 
     const UInt64 chunk_rows = data.current_chunk.getNumRows();
 
-    if (rows_before_limit_at_least)
+    if (rows_before_limit_at_least && !data.input_port_has_counter)
         rows_before_limit_at_least->add(chunk_rows);
 
     /// Process block.
@@ -351,7 +353,9 @@ FractionalLimitTransform::Status FractionalLimitTransform::pushData()
         {
             /// Return the whole chunk.
             /// Save the last row of current chunk to check if next block begins with the same row (for WITH TIES).
-            if (with_ties && rows_processed == offset_rows + limit_rows)
+            /// Skip an empty chunk: there is no row to remember and the stored ties_last_row
+            /// is still the correct tie key for the boundary (avoids chunk_rows - 1 underflow).
+            if (with_ties && rows_processed == offset_rows + limit_rows && chunk_rows > 0)
                 ties_last_row = makeChunkWithPreviousRow(chunk, chunk_rows - 1);
         }
         else

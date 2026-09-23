@@ -1,0 +1,240 @@
+---
+title: Why is my primary key not used? How can I check?
+description: "Covers a common reason why a primary key is not used in ordering and how we can confirm"
+date: 2024-12-12
+tags: ['Performance and Optimizations']
+keywords: ['Primary Key']
+---
+
+## Checking your Primary Key
+
+Users may see cases where their query is slower than expected, in the belief they are ordering or filtering by a primary key. In this article we show how users can confirm the key is used, highlighting common reasons its not.
+
+## Create table
+
+Consider the following simple table:
+
+```sql
+CREATE TABLE logs
+(
+    `code` LowCardinality(String),
+    `timestamp` DateTime64(3)
+)
+ENGINE = MergeTree
+ORDER BY (code, toUnixTimestamp(timestamp))
+```
+
+Note how our ordering key includes `toUnixTimestamp(timestamp)` as the second entry. 
+
+## Populate data
+
+Populate this table with 100m rows:
+
+```sql
+INSERT INTO logs SELECT
+ ['200', '404', '502', '403'][toInt32(randBinomial(4, 0.1)) + 1] AS code,
+    now() + toIntervalMinute(number) AS timestamp
+FROM numbers(100000000)
+
+0 rows in set. Elapsed: 15.845 sec. Processed 100.00 million rows, 800.00 MB (6.31 million rows/s., 50.49 MB/s.)
+
+SELECT count()
+FROM logs
+
+┌───count()─┐
+│ 100000000 │ -- 100.00 million
+└───────────┘
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+## Basic filtering
+
+If we filter by code we can see the number of rows scanned in the output. - `49.15 thousand`. Notice how this is a subset of the total 100m rows.
+
+```sql
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌────────c─┐
+│ 65607542 │ -- 65.61 million
+└──────────┘
+
+1 row in set. Elapsed: 0.021 sec. Processed 49.15 thousand rows, 49.17 KB (2.34 million rows/s., 2.34 MB/s.)
+Peak memory usage: 92.70 KiB.
+```
+
+Furthermore, we can confirm the use of the index with the `EXPLAIN indexes=1` clause:
+
+```sql
+EXPLAIN indexes = 1
+SELECT count() AS c
+FROM logs
+WHERE code = '200'
+
+┌─explain────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                          │
+│   AggregatingProjection                                            │
+│     Expression (Before GROUP BY)                                   │
+│       Filter ((WHERE + Change column names to column identifiers)) │
+│         ReadFromMergeTree (default.logs)                           │
+│         Indexes:                                                   │
+│           PrimaryKey                                               │
+│             Keys:                                                  │
+│               code                                                 │
+│             Condition: (code in ['200', '200'])                    │
+│             Parts: 3/3 │
+│             Granules: 8012/12209 │
+│     ReadFromPreparedSource (_minmax_count_projection)              │
+└────────────────────────────────────────────────────────────────────┘
+```
+
+Notice how the number of granules scanned `8012` is a fraction of the total `12209`. The section higlighted below, confirms use of the primary key code.
+
+```bash
+PrimaryKey
+  Keys: 
+   code 
+```
+
+Granules are the unit of data processing in ClickHouse, with each typically holding 8192 rows. For further details on granules and how they are filtered we recommend reading [this guide](/guides/clickhouse/data-modelling/sparse-primary-indexes#mark-files-are-used-for-locating-granules).
+
+<Note>
+Filtering on keys later in an ordering key will not be as efficient as filtering on those that are earlier in the tuple. For reasons why, see [here](/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)
+</Note>
+## Multi-key filtering
+
+Suppose we filter, by `code` and `timestamp`:
+
+```sql
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─count()─┐
+│  689742 │
+└─────────┘
+
+1 row in set. Elapsed: 0.008 sec. Processed 712.70 thousand rows, 6.41 MB (88.92 million rows/s., 799.27 MB/s.)
+
+EXPLAIN indexes = 1
+SELECT count()
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+
+┌─explain───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ Expression ((Project names + Projection))                                                                                                                         │
+│   Aggregating                                                                                                                                                     │
+│     Expression (Before GROUP BY)                                                                                                                                  │
+│       Expression                                                                                                                                                  │
+│         ReadFromMergeTree (default.logs)                                                                                                                          │
+│         Indexes:                                                                                                                                                  │
+│           PrimaryKey                                                                                                                                              │
+│             Keys:                                                                                                                                                 │
+│               code                                                                                                                                                │
+│               toUnixTimestamp(timestamp)                                                                                                                          │
+│             Condition: and((toUnixTimestamp(timestamp) in (-Inf, 1767225600]), and((toUnixTimestamp(timestamp) in [1735689600, +Inf)), (code in ['200', '200']))) │
+│             Parts: 3/3 │
+│             Granules: 87/12209 │
+└───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.002 sec.
+
+```
+
+In this case both ordering keys are used to filter rows, resulting in the need to only read `87` granules.
+
+## Using keys in sorting
+
+ClickHouse can also exploit ordering keys for efficient sorting. Specifically,
+
+When the [optimize_read_in_order](/reference/statements/select/order-by#optimization-of-data-reading) setting is enabled (by default), the ClickHouse server uses the table index and reads the data in order of the ORDER BY key. This allows us to avoid reading all data in case of specified LIMIT. So, queries on big data with small limits are processed faster. See [here](/reference/statements/select/order-by#optimization-of-data-reading) and [here](/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order#what-about-optimize_read_in_order) for further details.
+
+This, however, requires alignment of the keys used.
+
+For example, consider this query:
+
+```sql
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─code─┬───────────────timestamp─┐
+│ 200 │ 2025-01-01 00:00:01.000 │
+│ 200 │ 2025-01-01 00:00:45.000 │
+│ 200 │ 2025-01-01 00:01:01.000 │
+│ 200 │ 2025-01-01 00:01:45.000 │
+│ 200 │ 2025-01-01 00:02:01.000 │
+│ 200 │ 2025-01-01 00:03:01.000 │
+│ 200 │ 2025-01-01 00:03:45.000 │
+│ 200 │ 2025-01-01 00:04:01.000 │
+│ 200 │ 2025-01-01 00:05:45.000 │
+│ 200 │ 2025-01-01 00:06:01.000 │
+└──────┴─────────────────────────
+
+10 rows in set. Elapsed: 0.009 sec. Processed 712.70 thousand rows, 6.41 MB (80.13 million rows/s., 720.27 MB/s.)
+Peak memory usage: 125.50 KiB.
+```
+
+We can confirm that the optimization has not been exploited here by using `EXPLAIN pipeline`:
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY timestamp ASC
+LIMIT 10
+
+┌─explain───────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                  │
+│ ExpressionTransform                                                           │
+│   (Limit)                                                                     │
+│   Limit │
+│     (Sorting)                                                                 │
+│     MergingSortedTransform 12 → 1 │
+│       MergeSortingTransform × 12 │
+│         LimitsCheckingTransform × 12 │
+│           PartialSortingTransform × 12 │
+│             (Expression)                                                      │
+│             ExpressionTransform × 12 │
+│               (Expression)                                                    │
+│               ExpressionTransform × 12 │
+│                 (ReadFromMergeTree)                                           │
+│                 MergeTreeSelect(pool: ReadPool, algorithm: Thread) × 12 0 → 1 │
+└───────────────────────────────────────────────────────────────────────────────┘
+
+15 rows in set. Elapsed: 0.004 sec.
+```
+
+The line `MergeTreeSelect(pool: ReadPool, algorithm: Thread)` here does not indicate the use of the optimization but rather a standard read. This is caused by our table ordering key using `toUnixTimestamp(Timestamp)` **NOT** `timestamp`.  Rectifying this mismatch addresses the issue:
+
+```sql
+EXPLAIN PIPELINE
+SELECT *
+FROM logs
+WHERE (code = '200') AND (timestamp >= '2025-01-01 00:00:00') AND (timestamp <= '2026-01-01 00:00:00')
+ORDER BY toUnixTimestamp(timestamp) ASC
+LIMIT 10
+
+┌─explain──────────────────────────────────────────────────────────────────────────┐
+│ (Expression)                                                                     │
+│ ExpressionTransform                                                              │
+│   (Limit)                                                                        │
+│   Limit │
+│     (Sorting)                                                                    │
+│     MergingSortedTransform 3 → 1 │
+│       BufferChunks × 3 │
+│         (Expression)                                                             │
+│         ExpressionTransform × 3 │
+│           (Expression)                                                           │
+│           ExpressionTransform × 3 │
+│             (ReadFromMergeTree)                                                  │
+│             MergeTreeSelect(pool: ReadPoolInOrder, algorithm: InOrder) × 3 0 → 1 │
+└──────────────────────────────────────────────────────────────────────────────────┘
+
+13 rows in set. Elapsed: 0.003 sec.
+```

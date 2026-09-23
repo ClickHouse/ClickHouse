@@ -1,0 +1,66 @@
+---
+slug: '/examples/aggregate-function-combinators/argMaxIf'
+title: 'argMaxIf'
+description: 'argMaxIf 组合器的使用示例'
+keywords: ['argMax', 'if', 'combinator', 'examples', 'argMaxIf']
+sidebarTitle: 'argMaxIf'
+doc_type: 'reference'
+---
+
+<div id="description">
+  ## 说明
+</div>
+
+[`If`](/zh/reference/functions/aggregate-functions/combinators#-if) 组合器可应用于 [`argMax`](/zh/reference/functions/aggregate-functions/argMax)
+函数，使用 `argMaxIf` 聚合组合器函数查找在条件为 true 的行中与 `val` 最大值对应的 `arg` 值。
+
+当你需要在数据集中查找与最大值对应的值，
+但仅限于满足特定
+条件的行时，`argMaxIf` 函数非常有用。
+
+<div id="example-usage">
+  ## 示例用法
+</div>
+
+在本示例中，我们将使用一组产品销售示例数据来演示
+`argMaxIf` 的用法。我们将找出价格最高的产品名称，但
+仅限销量至少为 10 次的产品。
+
+```sql title="Query"
+CREATE TABLE product_sales
+(
+    product_name String,
+    price Decimal32(2),
+    sales_count UInt32
+) ENGINE = Memory;
+
+INSERT INTO product_sales VALUES
+    ('Laptop', 999.99, 10),
+    ('Phone', 499.99, 15),
+    ('Tablet', 299.99, 0),
+    ('Watch', 1199.99, 5),
+    ('Headphones', 79.99, 20);
+
+SELECT argMaxIf(product_name, price, sales_count >= 10) AS most_expensive_popular_product
+FROM product_sales;
+```
+
+`argMaxIf` 函数将返回在所有至少售出 10 次的产品 (sales&#95;count &gt;= 10) 中，
+价格最高的产品名称。
+在这种情况下，它将返回 &#39;Laptop&#39;，因为在这些热门产品中，
+它的价格最高 (999.99) 。
+
+```response title="Response"
+   ┌─most_expensi⋯lar_product─┐
+1. │ Laptop                   │
+   └──────────────────────────┘
+```
+
+<div id="see-also">
+  ## 另请参阅
+</div>
+
+* [`argMax`](/zh/reference/functions/aggregate-functions/argMax)
+* [`argMin`](/zh/reference/functions/aggregate-functions/argMin)
+* [`argMinIf`](/zh/guides/clickhouse/examples/aggregate-function-combinators/argMinIf)
+* [`If 组合器`](/zh/reference/functions/aggregate-functions/combinators#-if)

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <base/unaligned.h>
 #include <Common/HashTable/HashMap.h>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnString.h>
@@ -17,6 +18,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Core/Block.h>
+#include <IO/ReadBufferFromString.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
@@ -67,8 +69,8 @@ private:
 
     The main idea is that during fetch we create all columns, but fill only columns that client requested.
 
-    We need to create other columns during fetch, because in case of serialized storage we can skip
-    unnecessary columns serialized in cache with skipSerializedInArena method.
+    We need to create other columns during fetch, because in case of serialized storage the serialized
+    values of unnecessary columns are skipped using the header of serialized sizes that prefixes them.
 
     When result is fetched from the storage client of storage can filterOnlyNecessaryColumns
     and get only columns that match attributes_names_to_fetch.
@@ -228,14 +230,22 @@ static inline void insertDefaultValuesIntoColumns( /// NOLINT
     }
 }
 
-/// Deserialize column value and insert it in columns.
-/// Skip unnecessary columns that were not requested from deserialization.
+/// Deserialize column values and insert them into columns.
+/// The values are prefixed with a header of their serialized sizes,
+/// which is used to skip over columns that were not requested.
 static inline void deserializeAndInsertIntoColumns( /// NOLINT
     MutableColumns & columns,
     const DictionaryStorageFetchRequest & fetch_request,
-    ReadBuffer & in)
+    ReadBufferFromString & in)
 {
     size_t columns_size = columns.size();
+
+    /// The buffer is contiguous and never refills, so the header is read in
+    /// place and stays addressable while the values are deserialized.
+    size_t sizes_header_size = columns_size * sizeof(UInt32);
+    chassert(in.available() >= sizes_header_size);
+    const char * sizes_header = in.position();
+    in.ignore(sizes_header_size);
 
     for (size_t column_index = 0; column_index < columns_size; ++column_index)
     {
@@ -244,7 +254,7 @@ static inline void deserializeAndInsertIntoColumns( /// NOLINT
         if (fetch_request.shouldFillResultColumnWithIndex(column_index))
             column->deserializeAndInsertFromArena(in, nullptr);
         else
-            column->skipSerializedInArena(in);
+            in.ignore(unalignedLoad<UInt32>(sizes_header + column_index * sizeof(UInt32)));
     }
 }
 
@@ -696,7 +706,8 @@ Block mergeBlockWithPipe(
 /**
  * Returns ColumnVector data as PaddedPodArray.
 
- * If column is constant parameter backup_storage is used to store values.
+ * If the column has to be converted to a full one, parameter backup_storage is used to store values,
+ * because the converted column may not be owned by anything that outlives this call.
  */
 /// TODO: Remove
 template <typename T>
@@ -705,7 +716,6 @@ static const PaddedPODArray<T> & getColumnVectorData(
     const ColumnPtr column,
     PaddedPODArray<T> & backup_storage)
 {
-    bool is_const_column = isColumnConst(*column);
     auto full_column = removeSpecialRepresentations(column->convertToFullColumnIfConst());
     auto vector_col = checkAndGetColumn<ColumnVector<T>>(full_column.get());
 
@@ -717,12 +727,13 @@ static const PaddedPODArray<T> & getColumnVectorData(
             TypeName<T>);
     }
 
-    if (is_const_column)
+    /// A different pointer means a conversion happened (Const, Sparse or ColumnReplicated; a Tuple
+    /// never reaches here because the check above requires a ColumnVector), so the data may live
+    /// only in a column owned by `full_column` and die at return: copy it. An unconverted column is
+    /// kept alive by `column` itself.
+    if (full_column.get() != column.get())
     {
-        // With type conversion and const columns we need to use backup storage here
-        auto & data = vector_col->getData();
-        backup_storage.assign(data);
-
+        backup_storage.assign(vector_col->getData());
         return backup_storage;
     }
 

@@ -1,4 +1,5 @@
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Common/FieldVisitorToJSONElement.h>
 
 #include <IO/WriteHelpers.h>
@@ -108,9 +109,11 @@ String FieldVisitorToString::operator() (const IPv6 & x) const { return formatQu
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
 String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
+String FieldVisitorToString::operator() (const NumberLiteral & x) const { return x.value; }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
@@ -127,6 +130,7 @@ String FieldVisitorToString::operator() (const Array & x) const
 
 String FieldVisitorToString::operator() (const Tuple & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     // For single-element tuples we must use the explicit tuple() function,
@@ -153,6 +157,7 @@ String FieldVisitorToString::operator() (const Tuple & x) const
 
 String FieldVisitorToString::operator() (const Map & x) const
 {
+    checkStackSize();
     WriteBufferFromOwnString wb;
 
     wb << '[';
@@ -169,6 +174,7 @@ String FieldVisitorToString::operator() (const Map & x) const
 
 String FieldVisitorToString::operator() (const Object & x) const
 {
+    checkStackSize();
     /// We don't support Object literals in a form of {"a" : ...}.
     /// So we write Object as a String containing valid JSON.
     return formatQuoted(convertObjectToString(x));

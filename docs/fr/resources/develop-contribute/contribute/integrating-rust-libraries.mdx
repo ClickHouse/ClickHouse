@@ -1,0 +1,84 @@
+---
+description: 'Guide d’intégration de bibliothèques Rust dans ClickHouse'
+sidebarTitle: 'Bibliothèques Rust'
+slug: /development/integrating_rust_libraries
+title: 'Intégrer des bibliothèques Rust'
+doc_type: 'guide'
+---
+
+L’intégration de bibliothèques Rust est décrite ici à partir de l’intégration de la fonction de hash BLAKE3.
+
+La première étape consiste à ajouter la bibliothèque au dossier /rust. Pour cela, vous devez créer un projet Rust vide et inclure la bibliothèque requise dans Cargo.toml. Il faut également configurer la compilation de la nouvelle bibliothèque en bibliothèque statique en ajoutant `crate-type = ["staticlib"]` à Cargo.toml.
+
+Ensuite, vous devez lier la bibliothèque à CMake à l’aide de la bibliothèque Corrosion. La première étape consiste à ajouter le dossier de la bibliothèque dans le CMakeLists.txt situé dans le dossier /rust. Vous devez ensuite ajouter le fichier CMakeLists.txt au répertoire de la bibliothèque. Dans ce fichier, vous devez appeler la fonction d’importation de Corrosion. Les lignes suivantes ont été utilisées pour importer BLAKE3 :
+
+```CMake
+corrosion_import_crate(MANIFEST_PATH Cargo.toml NO_STD)
+
+target_include_directories(_ch_rust_blake3 INTERFACE include)
+add_library(ch_rust::blake3 ALIAS _ch_rust_blake3)
+```
+
+Ainsi, nous allons créer une cible CMake correcte à l’aide de Corrosion, puis la renommer sous un nom plus pratique. Notez que le nom `_ch_rust_blake3` provient de Cargo.toml, où il est utilisé comme nom de projet (`name = "_ch_rust_blake3"`).
+
+Comme les types de données Rust ne sont pas compatibles avec les types de données C/C++, nous utiliserons notre projet de bibliothèque vide pour créer des méthodes d’adaptation assurant la conversion des données reçues depuis le C/C++, l’appel des méthodes de la bibliothèque, ainsi que la conversion inverse des données de sortie. Par exemple, cette méthode a été écrite pour BLAKE3 :
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+```
+
+```rust
+#[no_mangle]
+pub unsafe extern "C" fn blake3_apply_shim(
+    begin: *const c_char,
+    _size: u32,
+    out_char_data: *mut u8,
+) -> *mut c_char {
+    if begin.is_null() {
+        let err_str = CString::new("input was a null pointer").unwrap();
+        return err_str.into_raw();
+    }
+    let mut hasher = blake3::Hasher::new();
+    let input_bytes = CStr::from_ptr(begin);
+    let input_res = input_bytes.to_bytes();
+    hasher.update(input_res);
+    let mut reader = hasher.finalize_xof();
+    reader.fill(std::slice::from_raw_parts_mut(out_char_data, blake3::OUT_LEN));
+    std::ptr::null_mut()
+}
+```
+
+Cette méthode prend en entrée une chaîne compatible C, sa taille et un pointeur vers la chaîne de sortie. Elle convertit ensuite les entrées compatibles C en types utilisés par les méthodes réelles de la bibliothèque, puis les appelle. Après cela, elle doit reconvertir les sorties des méthodes de la bibliothèque en types compatibles C. Dans ce cas précis, la bibliothèque permettait l’écriture directe dans le pointeur via la méthode fill(), la conversion n’était donc pas nécessaire. Le principal conseil ici est de créer le moins de méthodes possible, afin de réduire le nombre de conversions à effectuer à chaque appel et de limiter la surcharge.
+
+Il convient de noter que l’attribut `#[no_mangle]` et `extern "C"` sont obligatoires pour toutes ces méthodes. Sans eux, il ne sera pas possible d’effectuer une compilation correctement compatible avec C/C++. De plus, ils sont nécessaires pour l’étape suivante de l’intégration.
+
+Après avoir écrit le code des méthodes d’adaptation, nous devons préparer le fichier d’en-tête de la bibliothèque. Cela peut être fait manuellement, ou vous pouvez utiliser la bibliothèque cbindgen pour le générer automatiquement. Si vous utilisez cbindgen, vous devrez écrire un script de build build.rs et inclure cbindgen comme build-dependency.
+
+Un exemple de script de build pouvant générer automatiquement un fichier d’en-tête :
+
+```rust
+    let crate_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
+
+    let package_name = env::var("CARGO_PKG_NAME").unwrap();
+    let output_file = ("include/".to_owned() + &format!("{}.h", package_name)).to_string();
+
+    match cbindgen::generate(&crate_dir) {
+        Ok(header) => {
+            header.write_to_file(&output_file);
+        }
+        Err(err) => {
+            panic!("{}", err)
+        }
+    }
+```
+
+De plus, vous devez utiliser l’attribut #[no&#95;mangle] et `extern "C"` pour tout attribut destiné à être compatible avec C. Sans cela, la bibliothèque risque d’être mal compilée et cbindgen ne pourra pas lancer la génération automatique du fichier d’en-tête.
+
+Après toutes ces étapes, vous pouvez tester votre bibliothèque dans un petit projet afin de repérer d&#39;éventuels problèmes de compatibilité ou de génération de fichiers d&#39;en-tête. Si des problèmes surviennent lors de la génération de ces fichiers, vous pouvez essayer d&#39;ajuster cette génération à l&#39;aide du fichier cbindgen.toml (vous trouverez un modèle ici : [https://github.com/eqrion/cbindgen/blob/master/template.toml](https://github.com/eqrion/cbindgen/blob/master/template.toml)).
+
+Il convient également de signaler un problème rencontré lors de l&#39;intégration de BLAKE3 :
+MemorySanitizer peut provoquer de faux positifs, car il est incapable de déterminer si certaines variables en Rust sont initialisées ou non. Le problème a été résolu en écrivant une méthode dont la définition est plus explicite pour certaines variables, même si cette implémentation est plus lente et n&#39;est utilisée que pour corriger les builds avec MemorySanitizer.

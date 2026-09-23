@@ -51,3 +51,48 @@ select * from simple_agg_groupArrayLastArray order by key, value;
 select * from simple_agg_groupArrayLastArray final order by key, value;
 1	[7,8,3,4,5]
 2	[7,8,6,1,2]
+-- Deserializing broken states.
+SELECT
+    CAST(
+        CAST(
+            groupArrayLastState(1)(number) AS String
+        ) AS AggregateFunction(groupArrayLast(42), UInt64)
+    )
+FROM numbers(2)
+FORMAT Null; -- { serverError INCORRECT_DATA }
+SELECT
+    CAST(
+        CAST(
+            groupArrayLastState(1)(toString(number)) AS String
+        ) AS AggregateFunction(groupArrayLast(42), String)
+    )
+FROM numbers(2)
+FORMAT Null; -- { serverError INCORRECT_DATA }
+SELECT
+    CAST(
+        CAST(
+            groupArraySampleState(1)(number) AS String
+        ) AS AggregateFunction(groupArraySample(42), UInt64)
+    )
+FROM numbers(2)
+FORMAT Null; -- { serverError INCORRECT_DATA }
+SELECT
+    CAST(
+        CAST(
+            groupArraySampleState(1)(toString(number)) AS String
+        ) AS AggregateFunction(groupArraySample(42), String)
+    )
+FROM numbers(2)
+FORMAT Null; -- { serverError INCORRECT_DATA }
+WITH (
+    SELECT
+        CAST(
+            CAST(
+                groupArrayLastState(1)(number) AS String
+            ) AS AggregateFunction(groupArrayLast(42), UInt64)
+        )
+    FROM numbers(10)
+) AS s
+SELECT
+    length(groupArrayLastMerge(42)(s))
+FROM numbers(2); -- { serverError INCORRECT_DATA }

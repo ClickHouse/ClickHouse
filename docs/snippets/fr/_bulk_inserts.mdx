@@ -1,0 +1,15 @@
+---
+title: Insertions en lot
+---
+
+Les mécanismes décrits ci-dessus montrent qu&#39;il existe un surcoût constant, quelle que soit la taille de l&#39;insertion, ce qui fait de la taille des lots le facteur d&#39;optimisation le plus important pour le débit d&#39;ingestion. Le regroupement des insertions par lots réduit ce surcoût par rapport au temps total d&#39;insertion et améliore l&#39;efficacité du traitement.
+
+Nous recommandons d&#39;insérer les données par lots d&#39;au moins 1 000 lignes, et idéalement entre 10 000 et 100 000 lignes. Des insertions moins fréquentes et plus volumineuses réduisent le nombre de parts écrites, minimisent la charge de fusion et diminuent l&#39;utilisation globale des ressources système.
+
+**Pour qu&#39;une stratégie d&#39;insertion synchrone soit efficace, ce regroupement côté client est indispensable.**
+
+Si vous ne pouvez pas regrouper les données par lots côté client, ClickHouse prend en charge les insertions asynchrones, qui déplacent ce regroupement vers le serveur ([voir Insertions asynchrones](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)).
+
+<Tip>
+  Quelle que soit la taille de vos insertions, nous vous recommandons de maintenir le nombre de requêtes d&#39;insertion autour d&#39;une par seconde. Cette recommandation s&#39;explique par le fait que les parts créées sont fusionnées en arrière-plan en parts plus volumineuses (afin d&#39;optimiser vos données pour les requêtes de lecture), et qu&#39;un trop grand nombre de requêtes d&#39;insertion par seconde peut conduire à des situations où les fusions en arrière-plan ne parviennent plus à suivre le rythme de création des nouvelles parts. Toutefois, vous pouvez utiliser un taux plus élevé de requêtes d&#39;insertion par seconde avec les insertions asynchrones (voir [Insertions asynchrones](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts)).
+</Tip>

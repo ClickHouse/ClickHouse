@@ -1,0 +1,298 @@
+---
+title: Windows Active Directory のセキュリティグループを ClickHouse のロールにマッピングする
+description: "Windows Active Directory のセキュリティグループを ClickHouse のロールにマッピングする例"
+date: 2024-05-20
+tags: ['ツールとユーティリティ']
+keywords: ['Windows']
+---
+
+<div id="example">
+  ## 例
+</div>
+
+この例では、異なる AD セキュリティグループに属する AD ユーザーに、ClickHouse でロールベースのアクセス権を付与する方法を示します。あわせて、1 人のユーザーを複数の AD ユーザーグループに追加し、複数のロールに対応するアクセス権を持たせる方法も示します。
+
+この環境には、以下があります。
+
+* Windows Active Directory ドメイン: `marsnet2.local`
+* 1 分片、3 レプリカのクラスター構成で、3 ノードからなる ClickHouse クラスター `cluster_1S_3R`
+* 3 人の AD ユーザー
+
+| AD User                     | 説明                                        |
+| --------------------------- | ----------------------------------------- |
+| clickhouse&#95;ad&#95;admin | ClickHouse Admin ユーザー                     |
+| clickhouse&#95;db1&#95;user | db1.table1 へのアクセス権を持つユーザー                 |
+| clickhouse&#95;db2&#95;user | db2.table1 へのアクセス権を持つユーザー                 |
+| ch&#95;db1&#95;db2&#95;user | db1.table1 と db2.table1 の両方へのアクセス権を持つユーザー |
+
+* 3 つの AD セキュリティグループ
+
+| AD Group                            | 説明                          |
+| ----------------------------------- | --------------------------- |
+| clickhouse&#95;ad&#95;admins        | ClickHouse Admins グループ      |
+| clickhouse&#95;ad&#95;db1&#95;users | db1.table1 へのアクセス権に対応するグループ |
+| clickhouse&#95;ad&#95;db2&#95;users | db2.table1 へのアクセス権に対応するグループ |
+
+* AD 環境と OU 構造の例:
+
+<Image img={ad_env} size="md" alt="AD 環境と OU 構造の例" />
+
+* AD セキュリティグループ設定の例:
+
+<Image img={ad_group} size="md" alt="AD セキュリティグループ設定の例" />
+
+* AD ユーザー設定の例:
+
+<Image img={ad_user} size="md" alt="AD ユーザー設定の例" />
+
+1. Windows AD Users and Groups で、各ユーザーを対応するグループに追加します。これらのグループは ClickHouse のロールに対応付けられます (例は次の手順を参照してください) 。
+
+| AD Security Group           | ClickHouse Role                                                             |
+| --------------------------- | --------------------------------------------------------------------------- |
+| clickhouse&#95;ad&#95;admin | clickhouse&#95;ad&#95;admins                                                |
+| clickhouse&#95;db1&#95;user | clickhouse&#95;ad&#95;db1&#95;users                                         |
+| clickhouse&#95;db2&#95;user | clickhouse&#95;ad&#95;db2&#95;users                                         |
+| ch&#95;db1&#95;db2&#95;user | clickhouse&#95;ad&#95;db1&#95;users and clickhouse&#95;ad&#95;db2&#95;users |
+
+* ユーザーのグループメンバーシップの例:
+
+<Image img={ad_user_group} size="md" alt="ユーザーのグループメンバーシップの例" />
+
+2. ClickHouse の `config.xml` で、各 ClickHouse ノードに `ldap_servers` 設定を追加します。
+
+```
+<ldap_servers>
+	<marsnet2_ad>
+		<host>marsdc1.marsnet2.local</host>
+		<port>389</port>
+		<bind_dn>{user_name}@marsnet2.local</bind_dn>
+		<user_dn_detection>
+			<base_dn>OU=Users,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=user)(sAMAccountName={user_name}))</search_filter>
+		</user_dn_detection>
+		<enable_tls>no</enable_tls>
+	</marsnet2_ad>
+</ldap_servers>
+```
+
+| xml tag                   | 説明                                                              | 値の例                                                 |
+| ------------------------- | --------------------------------------------------------------- | --------------------------------------------------- |
+| ldap&#95;servers          | ClickHouse で使用する LDAP サーバーを定義するためのタグ                            | NA                                                  |
+| marsnet&#95;ad            | このタグは任意で、`<user_directories>` セクション内でサーバーを識別するためのラベルとして使用するだけです | NA                                                  |
+| host                      | Active Directory サーバーまたはドメインの FQDN または IP アドレス                  | marsdc1.marsnet2.local                              |
+| port                      | Active Directory のポート。通常、非 SSL は 389、SSL は 636                  | 389                                                 |
+| bind&#95;dn               | AD への bind に使用するユーザーです。通常のユーザーを使用できない場合は、専用ユーザーを指定できます          | `{user_name}@marsnet2.local`                        |
+| user&#95;dn&#95;detection | ClickHouse が AD ユーザーを検索する方法に関する設定                               | NA                                                  |
+| base&#95;dn               | ユーザー検索を開始する AD の OU パス                                          | OU=Users,OU=ClickHouse,DC=marsnet2,DC=local         |
+| search&#95;filter         | AD ユーザーを検索するための LDAP 検索フィルタ                                     | `(&(objectClass=user)(sAMAccountName={user_name}))` |
+
+利用可能なオプション一式については、ドキュメントを参照してください:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-server-definition)
+
+3. ClickHouse の `config.xml` で、各 ClickHouse ノードに `<ldap>` エントリを含む `<user_directories>` 設定を追加します。
+
+```
+<user_directories>
+	<users_xml>
+		<path>users.xml</path>
+	</users_xml>
+	<local_directory>
+		<path>/var/lib/clickhouse/access/</path>
+	</local_directory>
+	<ldap>
+		<server>marsnet2_ad</server>
+		<role_mapping>
+			<base_dn>OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local</base_dn>
+			<search_filter>(&amp;(objectClass=group)(member={user_dn}))</search_filter>
+			<attribute>CN</attribute>
+			<scope>subtree</scope>
+			<prefix>clickhouse_</prefix>
+		</role_mapping>
+	</ldap>
+</user_directories>
+```
+
+| xml tag              | 説明                                                             | 例の値                                          |
+| -------------------- | -------------------------------------------------------------- | -------------------------------------------- |
+| user&#95;directories | 使用する認証方式を定義します                                                 | NA                                           |
+| ldap                 | 使用する LDAP サーバーの設定を含みます。この例では AD に使用する設定です                      | NA                                           |
+| server               | `<ldap_servers>` セクションで定義したタグです                                | marsnet2&#95;ad                              |
+| role&#95;mapping     | 認証されたユーザーを AD グループと ClickHouse ロールの間でどのようにマッピングするかを定義します       | NA                                           |
+| base&#95;dn          | システムが AD グループの検索を開始する際に使用する AD パス                              | OU=Groups,OU=ClickHouse,DC=marsnet2,DC=local |
+| search&#95;filter    | AD グループを見つけるための LDAP 検索フィルタ                                    | `(&(objectClass=group)(member={user_dn}))`   |
+| attribute            | ユーザーの識別に使用する AD の属性フィールド                                       | CN                                           |
+| scope                | グループを検索する際に、ベース DN 配下のどの範囲をシステムが検索するかを指定します                    | subtree                                      |
+| prefix               | AD 内のグループ名に付くプレフィックスです。このプレフィックスは削除され、ClickHouse 内のロール名と照合されます | clickhouse&#95;                              |
+
+すべてのオプションについては、ドキュメントを参照してください:
+[https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory](https://clickhouse.com/docs/operations/external-authenticators/ldap#ldap-external-user-directory)
+
+**注記:::**
+この例では、AD のセキュリティグループに `clickhouse_ad_db1_users` のようなプレフィックスが付いています。システムがこれらを取得するとプレフィックスが削除され、`clickhouse_ad_db1_users` に対応するものとして、`ad_db1_users` という ClickHouse ロールが検索されます。
+**:::**
+
+4. サンプルのデータベースを作成します。
+
+```
+create database db1 on cluster 'cluster_1S_3R';
+create database db2 on cluster 'cluster_1S_3R';
+```
+
+5. サンプルのテーブルを作成します。
+
+```
+create table db1.table1 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+create table db2.table1 on cluster 'cluster_1S_3R
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+```
+
+6. サンプルデータを挿入します。
+
+```
+insert into db1.table1
+values
+(1, 'a');
+
+insert into db2.table1
+values
+(2, 'b');
+```
+
+7. ClickHouse のロールを作成します。
+
+```
+create role ad_admins on cluster 'cluster_1S_3R';
+create role ad_db1_users on cluster 'cluster_1S_3R';
+create role ad_db2_users on cluster 'cluster_1S_3R';
+```
+
+8. ロールに権限を付与します。
+
+```
+GRANT SHOW, SELECT, INSERT, ALTER, CREATE, DROP, UNDROP TABLE, TRUNCATE, OPTIMIZE, BACKUP, KILL QUERY, KILL TRANSACTION, MOVE PARTITION BETWEEN SHARDS, ACCESS MANAGEMENT, SYSTEM, dictGet, displaySecretsInShowAndSelect, INTROSPECTION, SOURCES, CLUSTER ON *.* on cluster 'cluster_1S_3R' TO ad_admins WITH GRANT OPTION;
+
+GRANT SELECT ON db1.table1 on cluster 'cluster_1S_3R' TO ad_db1_users;
+
+GRANT SELECT ON db2.table1 on cluster 'cluster_1S_3R' TO ad_db2_users;
+```
+
+9. 権限が制限された db1 ユーザーのアクセスをテストします。
+   例:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_db1_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_db1_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: b04b92d6-5b8b-40a2-a92a-f06f15774930
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: 7f7eaa44-7b47-4184-807a-6968a56057ad
+
+Elapsed: 0.115 sec.
+
+Received exception from server (version 24.1.3):
+Code: 497. DB::Exception: Received from chnode1.marsnet.local:9440. DB::Exception: clickhouse_db1_user: Not enough privileges. To execute this query, it's necessary to have the grant SELECT(id, column1) ON db2.table1. (ACCESS_DENIED)
+```
+
+10. db1 と db2 の両方のデータベースにアクセスできるユーザーで、アクセスをテストします。
+    たとえば、次のとおりです。
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user ch_db1_db2_user --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user ch_db1_db2_user.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) select * from db1.table1;
+
+SELECT *
+FROM db1.table1
+
+Query id: 23084744-08c2-48bd-8635-a23438812026
+
+┌─id─┬─column1─┐
+│  1 │ a       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.005 sec.
+
+clickhouse :) select * from db2.table1;
+
+SELECT *
+FROM db2.table1
+
+Query id: f9954ec4-d8d9-4b5a-9f68-a7aa79a1bb4a
+
+┌─id─┬─column1─┐
+│  2 │ b       │
+└────┴─────────┘
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+11. Admin ユーザーのアクセスを確認します。
+    例:
+
+```
+root@chnode1:/etc/clickhouse-server# clickhouse-client --user clickhouse_ad_admin --password MyPassword123  --secure --port 9440 --host chnode1.marsnet.local
+ClickHouse client version 24.1.3.31 (official build).
+Connecting to chnode1.marsnet.local:9440 as user clickhouse_ad_admin.
+Connected to ClickHouse server version 24.1.3.
+
+clickhouse :) create table db1.table2 on cluster 'cluster_1S_3R'
+(
+  id Int32,
+  column1 String
+)
+engine = MergeTree()
+order by id;
+
+CREATE TABLE db1.table2 ON CLUSTER cluster_1S_3R
+(
+    `id` Int32,
+    `column1` String
+)
+ENGINE = MergeTree
+ORDER BY id
+
+Query id: 6041fd32-4294-44bd-b442-3fdd41333e6f
+
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode1.marsnet.local │ 9440 │      0 │       │                   2 │                2 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode2.marsnet.local │ 9440 │      0 │       │                   1 │                1 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+┌─host──────────────────┬─port─┬─status─┬─error─┬─num_hosts_remaining─┬─num_hosts_active─┐
+│ chnode3.marsnet.local │ 9440 │      0 │       │                   0 │                0 │
+└───────────────────────┴──────┴────────┴───────┴─────────────────────┴──────────────────┘
+```

@@ -1,0 +1,123 @@
+---
+slug: /cloud/reference/shared-merge-tree
+sidebarTitle: 'SharedMergeTree'
+title: Движок таблицы SharedMergeTree
+keywords: ['SharedMergeTree']
+description: 'Описывает движок таблицы SharedMergeTree'
+doc_type: 'reference'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Семейство движков таблиц SharedMergeTree — это облачная замена движков ReplicatedMergeTree, оптимизированная для работы поверх общего хранилища (например, Amazon S3, Google Cloud Storage, MinIO, Azure Blob Storage). Для каждого конкретного типа движка MergeTree существует аналог SharedMergeTree, то есть SharedReplacingMergeTree заменяет ReplicatedReplacingMergeTree.
+
+Семейство движков таблиц SharedMergeTree лежит в основе ClickHouse Cloud. Конечному пользователю не нужно ничего менять, чтобы начать использовать семейство движков SharedMergeTree вместо движков на базе ReplicatedMergeTree. Оно даёт следующие дополнительные преимущества:
+
+* Более высокая пропускная способность при вставке данных
+* Более высокая производительность фоновых слияний
+* Более высокая производительность мутаций
+* Более быстрые операции scale-up и scale-down
+* Более легковесная строгая согласованность для запросов SELECT
+
+Важное улучшение SharedMergeTree состоит в том, что по сравнению с ReplicatedMergeTree он обеспечивает более глубокое разделение вычислительных ресурсов и хранилища. Ниже показано, как в ReplicatedMergeTree разделены вычислительные ресурсы и хранилище:
+
+<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="Диаграмма ReplicatedMergeTree" size="md" />
+
+Как видите, хотя данные в ReplicatedMergeTree хранятся в Объектном хранилище, метаданные по-прежнему находятся на каждом из серверов clickhouse-server. Это означает, что для каждой операции с репликацией метаданные также нужно реплицировать на все реплики.
+
+<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="Диаграмма ReplicatedMergeTree с метаданными" size="md" />
+
+В отличие от ReplicatedMergeTree, SharedMergeTree не требует, чтобы реплики взаимодействовали друг с другом. Вместо этого всё взаимодействие происходит через общее хранилище и clickhouse-keeper. SharedMergeTree реализует асинхронную безлидерную репликацию и использует clickhouse-keeper для координации и хранения метаданных. Это означает, что при scale-up и scale-down вашего сервиса метаданные не нужно реплицировать. За счёт этого быстрее выполняются репликация, мутации, слияния и операции scale-up. SharedMergeTree позволяет использовать сотни реплик для каждой таблицы, что делает возможным динамическое масштабирование без сегментов. В ClickHouse Cloud используется подход выполнения распределённого запроса, чтобы задействовать больше вычислительных ресурсов для одного запроса.
+
+<div id="introspection">
+  ## Интроспекция
+</div>
+
+Большинство системных таблиц, используемых для интроспекции ReplicatedMergeTree, доступны и для SharedMergeTree, за исключением `system.replication_queue` и `system.replicated_fetches`, поскольку здесь не происходит репликация данных и метаданных. Однако в SharedMergeTree есть соответствующие альтернативы этим двум таблицам.
+
+**system.virtual&#95;parts**
+
+Эта таблица служит альтернативой `system.replication_queue` для SharedMergeTree. В ней хранится информация о последнем наборе текущих частей, а также о будущих частях, находящихся в обработке, например при слиянии, мутациях и удалении партиций.
+
+**system.shared&#95;merge&#95;tree&#95;fetches**
+
+Эта таблица служит альтернативой `system.replicated_fetches` для SharedMergeTree. Она содержит информацию о текущих загрузках в память первичных ключей и контрольных сумм.
+
+<div id="enabling-sharedmergetree">
+  ## Включение SharedMergeTree
+</div>
+
+`SharedMergeTree` включен по умолчанию.
+
+Для сервисов, поддерживающих движок таблицы SharedMergeTree, вручную ничего включать не нужно. Вы можете создавать таблицы так же, как и раньше, а система автоматически будет использовать движок таблицы на базе SharedMergeTree, соответствующий движку, указанному в вашем запросе CREATE TABLE.
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ENGINE = MergeTree
+ORDER BY key
+```
+
+Это создаст таблицу `my_table` с движком таблицы SharedMergeTree.
+
+В ClickHouse Cloud не нужно указывать `ENGINE=MergeTree`, так как используется `default_table_engine=MergeTree`. Следующий запрос идентичен приведённому выше.
+
+```sql
+CREATE TABLE my_table(
+ key UInt64,
+ value String
+)
+ORDER BY key
+```
+
+Если вы используете таблицы Replacing, Collapsing, Aggregating, Summing, VersionedCollapsing или Graphite MergeTree, они будут автоматически преобразованы в соответствующий движок таблицы на базе SharedMergeTree.
+
+```sql
+CREATE TABLE myFirstReplacingMT
+(
+    `key` Int64,
+    `someCol` String,
+    `eventTime` DateTime
+)
+ENGINE = ReplacingMergeTree
+ORDER BY key;
+```
+
+Для данной таблицы можно проверить, какой движок таблицы указан в операторе `CREATE TABLE`, с помощью `SHOW CREATE TABLE`:
+
+```sql
+SHOW CREATE TABLE myFirstReplacingMT;
+```
+
+```sql
+CREATE TABLE default.myFirstReplacingMT
+( `key` Int64, `someCol` String, `eventTime` DateTime )
+ENGINE = SharedReplacingMergeTree('/clickhouse/tables/{uuid}/{shard}', '{replica}')
+ORDER BY key
+```
+
+<div id="settings">
+  ## Настройки
+</div>
+
+Поведение некоторых настроек существенно изменилось:
+
+* `insert_quorum` -- все вставки в SharedMergeTree являются кворумными (записываются в общее хранилище), поэтому эта настройка не нужна при использовании движка таблицы SharedMergeTree.
+* `insert_quorum_parallel` -- все вставки в SharedMergeTree являются кворумными (записываются в общее хранилище), поэтому эта настройка не нужна при использовании движка таблицы SharedMergeTree.
+* `select_sequential_consistency` -- не требует кворумных вставок, но создает дополнительную нагрузку на `clickhouse-keeper` при запросах `SELECT`
+
+<div id="consistency">
+  ## Согласованность
+</div>
+
+SharedMergeTree обеспечивает более строгую легковесную согласованность, чем ReplicatedMergeTree. При вставке в SharedMergeTree не нужно указывать такие настройки, как `insert_quorum` или `insert_quorum_parallel`. Вставки выполняются с кворумом: метаданные сохраняются в ClickHouse-Keeper и реплицируются как минимум на кворум узлов ClickHouse-Keeper. Каждая реплика в вашем кластере будет асинхронно получать новую информацию из ClickHouse-Keeper.
+
+В большинстве случаев использовать `select_sequential_consistency` или `SYSTEM SYNC REPLICA LIGHTWEIGHT` не следует. Асинхронная репликация покрывает большинство сценариев и отличается очень низкой задержкой. В редких случаях, когда вам критически важно исключить чтение устаревших данных, следуйте этим рекомендациям в порядке предпочтения:
+
+1. Если вы выполняете запросы в рамках одного и того же сеанса или на одном и том же узле и для чтения, и для записи, `select_sequential_consistency` не нужен, поскольку ваша реплика уже будет иметь самые свежие метаданные.
+
+2. Если вы записываете в одну реплику, а читаете из другой, можно использовать `SYSTEM SYNC REPLICA LIGHTWEIGHT`, чтобы принудительно заставить реплику получить метаданные из ClickHouse-Keeper.
+
+3. Используйте `select_sequential_consistency` как настройку в составе запроса.

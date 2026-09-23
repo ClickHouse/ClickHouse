@@ -1,0 +1,56 @@
+---
+slug: /use-cases/observability/clickstack/ingesting-data/trace-sampling
+title: 'Trace 采样'
+sidebarTitle: 'Trace 采样'
+description: '在 ClickStack 中为采样后的 trace 数据配置基于样本权重的聚合。'
+doc_type: 'guide'
+keywords: ['ClickStack', 'trace 采样', '尾部采样', '采样率', '加权聚合', 'OpenTelemetry', 'SampleRate']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+高吞吐服务每秒可生成数百万个 span。存储每个 span 的成本都很高，因此团队通常会运行 OpenTelemetry Collector 的 [尾部采样处理器](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor)，只保留每 N 个 span 中的 1 个。每个保留下来的 span 都带有一个 `SampleRate` 属性，用于记录 N。
+
+一旦数据被采样，直接做聚合就会出错：`count()` 返回的事件数只有实际发生数量的 1/N，`sum()` 和 `avg()` 会产生偏差，百分位数也会偏移。仪表盘上显示的请求数、吞吐量和错误率都会被误导性地压低。
+
+ClickStack 通过具备采样感知能力的查询引擎解决了这个问题。当你在 trace 数据源上配置采样率表达式时，查询构建器会改写 SQL 聚合，让每个 span 按其采样率进行加权——这一机制适用于仪表盘、告警和即席搜索。
+
+<div id="how-it-works">
+  ## 工作原理
+</div>
+
+当 trace 数据源配置了 `sampleRateExpression` 时，ClickStack 会将其封装为：
+
+```sql
+greatest(toUInt64OrZero(toString(expr)), 1)
+```
+
+不带 `SampleRate` 属性的 span 默认权重为 1，因此未采样的数据会得到与原始查询完全相同的结果。
+
+随后，查询构建器会将聚合改写为：
+
+| 聚合                 | 改写前                | 改写后 (采样校正后)                               |
+| ------------------ | ------------------ | ----------------------------------------- |
+| count              | `count()`          | `sum(weight)`                             |
+| count + condition  | `countIf(cond)`    | `sumIf(weight, cond)`                     |
+| avg                | `avg(col)`         | `sum(col * weight) / sum(weight)`         |
+| sum                | `sum(col)`         | `sum(col * weight)`                       |
+| quantile(p)        | `quantile(p)(col)` | `quantileTDigestWeighted(p)(col, weight)` |
+| min / max          | 不变                 | 不变                                        |
+| count&#95;distinct | 不变                 | 不变                                        |
+
+<Note>
+  在采样场景下，百分位数使用 `quantileTDigestWeighted`，这是一种近似的 T-Digest 摘要结构。结果会比较接近，但并非精确值。
+</Note>
+
+<div id="configuring">
+  ## 配置采样率表达式
+</div>
+
+在 **Source Settings** 中打开你的 trace 数据源，并在 **Sample Rate Expression** 字段中输入一个用于计算每个 span 采样率的 ClickHouse 表达式。
+
+例如，如果你的 OpenTelemetry 尾部采样处理器将该采样率写入 `SpanAttributes['SampleRate']`：
+
+<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="ClickStack Source Settings 中的 Sample Rate Expression 字段" size="lg" />
+
+配置完成后，所有图表、仪表盘、告警和服务仪表盘面板都会自动应用按采样率加权的聚合。无需修改单个查询。

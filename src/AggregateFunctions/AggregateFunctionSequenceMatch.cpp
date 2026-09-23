@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/array/length.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <base/range.h>
@@ -37,6 +38,7 @@ namespace ErrorCodes
     extern const int SYNTAX_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 namespace
@@ -117,13 +119,19 @@ struct AggregateFunctionSequenceMatchData final
         size_t size = 0;
         readBinary(size, buf);
 
+        /// The constant is arbitrary (mirrors `windowFunnel`).
+        if (size > 100'000'000)
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large size ({}) of the state of sequenceMatch/sequenceCount", size);
+
         /// If we lose these flags, functionality is broken
         /// If we serialize/deserialize these flags, we have compatibility issues
         /// If we set these flags to 1, we have a minor performance penalty, which seems acceptable
         conditions_met.set();
 
         events_list.clear();
-        events_list.reserve(size);
+        /// Reserving is only an optimization here, so it is derived from payload that already arrived.
+        events_list.reserve(std::min(size, buf.available() / (sizeof(Timestamp) + sizeof(UInt64))));
 
         for (size_t i = 0; i < size; ++i)
         {
@@ -169,7 +177,7 @@ public:
         this->data(place).add(timestamp, events);
     }
 
-    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
     {
         this->data(place).merge(this->data(rhs));
     }
@@ -268,8 +276,12 @@ private:
 
                     UInt64 duration = 0;
                     const auto * prev_pos = pos;
-                    pos = tryReadIntText(duration, pos, end);
-                    if (pos == prev_pos)
+                    ReadBufferFromMemory duration_buf(pos, end - pos);
+                    /// Both checks are load-bearing: a lone sign is consumed and then rejected,
+                    /// while a leading non-digit is rejected without consuming anything.
+                    const bool parsed_duration = tryReadIntText(duration, duration_buf);
+                    pos += duration_buf.count();
+                    if (pos == prev_pos || !parsed_duration)
                         throw_exception("Could not parse number");
 
                     if (actions.back().type != PatternActionType::SpecificEvent &&
@@ -288,7 +300,7 @@ private:
                     if (pos == prev_pos)
                         throw_exception("Could not parse number");
 
-                    if (event_number > arg_count - 1)
+                    if (event_number == 0 || event_number > arg_count - 1)
                         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Event number {} is out of range", event_number);
 
                     actions.emplace_back(PatternActionType::SpecificEvent, event_number - 1);
@@ -400,10 +412,10 @@ protected:
         VectorWithMemoryTracking<T> current_matched_events;
         VectorWithMemoryTracking<decltype(action_it)> current_matched_actions;
 
+        /// Records the match only. Adding a backtrack point here would let this traversal skip ahead
+        /// and accept chains the pattern does not authorise, and that the verdict traversal rejects.
         const auto do_push_event = [&]
         {
-            back_stack.emplace(action_it, events_it, base_it);
-
             current_matched_events.push_back(events_it->first);
             current_matched_actions.push_back(action_it);
             if (best_matched_events->size() < current_matched_events.size())
@@ -414,7 +426,7 @@ protected:
 
         const auto do_revert_event_if_needed = [&]
         {
-            if (current_matched_actions.size() > 0 && current_matched_actions.back() >= action_it)
+            while (!current_matched_actions.empty() && current_matched_actions.back() >= action_it)
             {
                 current_matched_events.pop_back();
                 current_matched_actions.pop_back();
@@ -855,9 +867,9 @@ AggregateFunctionPtr createAggregateFunctionSequenceBase(
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory);
 void registerAggregateFunctionsSequenceMatch(AggregateFunctionFactory & factory)
 {
-    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {}});
-    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {}});
-    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {}});
+    factory.registerFunction("sequenceMatch", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatch, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Checks whether the sequence of events, ordered by the timestamp argument, contains a chain of events matching the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceCount", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceCount, AggregateFunctionSequenceMatchData>, {.description = R"DOC(Counts the number of non-overlapping chains of events, ordered by the timestamp argument, that match the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
+    factory.registerFunction("sequenceMatchEvents", {createAggregateFunctionSequenceBase<AggregateFunctionSequenceMatchEvents, AggregateFunctionSequenceMatchData>, {.description = R"DOC(A variant of sequenceMatch that returns information about the events that matched the given pattern.)DOC", .category = FunctionDocumentation::Category::AggregateFunction}});
 }
 
 }

@@ -1,0 +1,14 @@
+FINAL filter limit:	1
+no FINAL:	0
+FINAL no filter:	0
+FINAL no limit:	0
+FINAL big limit:	0
+FINAL prewhere limit:	1
+winners:	10	10	10
+prewhere winners:	10	10	10
+full set equal:	1
+prewhere full set equal:	1
+is_deleted plan:	1
+is_deleted rows:	875	0
+row policy plan:	1
+row policy rows:	10	10	1

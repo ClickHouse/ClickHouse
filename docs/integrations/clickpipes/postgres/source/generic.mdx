@@ -1,0 +1,136 @@
+---
+sidebarTitle: 'Generic Postgres'
+description: 'Set up any Postgres instance as a source for ClickPipes'
+slug: /integrations/clickpipes/postgres/source/generic
+title: 'Generic Postgres source setup guide'
+doc_type: 'guide'
+keywords: ['postgres', 'clickpipes', 'logical replication', 'pg_hba.conf', 'wal level']
+integration:
+   - support_level: 'core'
+   - category: 'clickpipes'
+---
+
+<Info>
+
+If you use one of the supported providers (in the sidebar), please refer to the specific guide for that provider.
+</Info>
+
+ClickPipes supports Postgres version 12 and later.
+
+## Enable logical replication {#enable-logical-replication}
+
+1. To enable replication on your Postgres instance, we need to make sure that the following settings are set:
+
+    ```sql
+    wal_level = logical
+    ```
+   To check the same, you can run the following SQL command:
+    ```sql
+    SHOW wal_level;
+    ```
+
+   The output should be `logical`. If not, run:
+    ```sql
+    ALTER SYSTEM SET wal_level = logical;
+    ```
+
+2. Additionally, the following settings are recommended to be set on the Postgres instance:
+    ```sql
+    max_wal_senders > 1
+    max_replication_slots >= 4
+    ```
+   To check the same, you can run the following SQL commands:
+    ```sql
+    SHOW max_wal_senders;
+    SHOW max_replication_slots;
+    ```
+
+   If the values don't match the recommended values, you can run the following SQL commands to set them:
+    ```sql
+    ALTER SYSTEM SET max_wal_senders = 10;
+    ALTER SYSTEM SET max_replication_slots = 10;
+    ```
+3. If you have made any changes to the configuration as mentioned above, you NEED to RESTART the Postgres instance for the changes to take effect.
+
+## Creating a user with permissions and publication {#creating-a-user-with-permissions-and-publication}
+
+Connect to your Postgres instance as an admin user and execute the following commands:
+
+1. Create a dedicated user for ClickPipes:
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. Grant schema-level, read-only access to the user you created in the previous step. The following example shows permissions for the `public` schema. Repeat these commands for each schema containing tables you want to replicate:
+   
+    ```sql
+    GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+    GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+    ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+    ```
+
+3. Grant replication privileges to the user:
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. Create a [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html) with the tables you want to replicate. We strongly recommend only including the tables you need in the publication to avoid performance overhead.
+
+<Warning>
+   Any table included in the publication must either have a **primary key** defined _or_ have its **replica identity** configured to `FULL`. See the [Postgres FAQs](/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication) for guidance on scoping.
+</Warning>
+
+   - To create a publication for specific tables:
+
+      ```sql
+      CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+      ```
+
+   - To create a publication for all tables in a specific schema:
+
+      ```sql
+      CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+      ```
+
+   The `clickpipes` publication defines the set of tables whose change events will be streamed to ClickPipes. We recommend against using `FOR ALL TABLES` unless you intend to replicate every table, as including unnecessary tables increases WAL traffic from Postgres to ClickPipes and reduces overall replication efficiency.
+
+## Enabling connections in pg_hba.conf to the ClickPipes User {#enabling-connections-in-pg_hbaconf-to-the-clickpipes-user}
+
+If you're self serving, you need to allow connections to the ClickPipes user from the ClickPipes IP addresses by following the below steps. If you're using a managed service, you can do the same by following the provider's documentation.
+
+1. Make necessary changes to the `pg_hba.conf` file to allow connections to the ClickPipes user from the ClickPipes IP addresses. An example entry in the `pg_hba.conf` file would look like:
+    ```response
+    host    all   clickpipes_user     0.0.0.0/0          scram-sha-256
+    ```
+
+2. Reload the PostgreSQL instance for the changes to take effect:
+    ```sql
+    SELECT pg_reload_conf();
+    ```
+
+## Increase `max_slot_wal_keep_size` {#increase-max_slot_wal_keep_size}
+
+This is a recommended configuration change to ensure that large transactions/commits don't cause the replication slot to be dropped.
+
+You can increase the `max_slot_wal_keep_size` parameter for your PostgreSQL instance to a higher value (at least 100GB or `102400`) by updating the `postgresql.conf` file.
+
+```sql
+max_slot_wal_keep_size = 102400
+```
+
+You can reload the Postgres instance for the changes to take effect:
+```sql
+SELECT pg_reload_conf();
+```
+
+<Note>
+
+For better recommendation of this value you can contact the ClickPipes team.
+</Note>
+
+## What's next? {#whats-next}
+
+You can now [create your ClickPipe](/integrations/clickpipes/postgres/index) and start ingesting data from your Postgres instance into ClickHouse Cloud.
+Make sure to note down the connection details you used while setting up your Postgres instance as you will need them during the ClickPipe creation process.

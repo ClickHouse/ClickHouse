@@ -1,0 +1,199 @@
+---
+sidebarTitle: 'Из BigQuery в ClickHouse'
+slug: /integrations/google-dataflow/templates/bigquery-to-clickhouse
+description: 'Вы можете загружать данные из BigQuery в ClickHouse с помощью Template Google Dataflow'
+title: 'Template Dataflow: из BigQuery в ClickHouse'
+doc_type: 'guide'
+keywords: ['Dataflow', 'BigQuery']
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+Template BigQuery to ClickHouse — это батч-конвейер, предназначенный для приёма данных из таблицы BigQuery в таблицу ClickHouse.
+Template может читать всю таблицу или фильтровать определённые записи с помощью указанного SQL-запроса.
+
+<div id="pipeline-requirements">
+  ## Требования к конвейеру
+</div>
+
+* Исходная таблица BigQuery должна существовать.
+* Целевая таблица ClickHouse должна существовать.
+* Хост ClickHouse должен быть доступен с машин-воркеров Dataflow.
+
+<div id="template-parameters">
+  ## Параметры Template
+</div>
+
+<br />
+
+<br />
+
+| Имя параметра           | Описание параметра                                                                                                                                                                                                                                                                                                                                               | Обязательный | Примечания                                                                                                                                                                                                                                                     |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jdbcUrl`               | JDBC URL ClickHouse в формате `jdbc:clickhouse://<host>:<port>/<schema>`.                                                                                                                                                                                                                                                                                        | ✅            | Не добавляйте имя пользователя и пароль как параметры JDBC. Любые другие параметры JDBC можно добавить в конец JDBC URL. Для пользователей ClickHouse Cloud добавьте `ssl=true&sslmode=NONE` в `jdbcUrl`.                                                      |
+| `clickHouseUsername`    | Имя пользователя ClickHouse для аутентификации.                                                                                                                                                                                                                                                                                                                  | ✅            |                                                                                                                                                                                                                                                                |
+| `clickHousePassword`    | Пароль ClickHouse для аутентификации.                                                                                                                                                                                                                                                                                                                            | ✅            |                                                                                                                                                                                                                                                                |
+| `clickHouseTable`       | Целевая таблица ClickHouse, в которую будут вставляться данные.                                                                                                                                                                                                                                                                                                  | ✅            |                                                                                                                                                                                                                                                                |
+| `maxInsertBlockSize`    | Максимальный размер блока для вставки, если создание блоков для вставки контролируется нами (опция ClickHouseIO).                                                                                                                                                                                                                                                |              | Опция `ClickHouseIO`.                                                                                                                                                                                                                                          |
+| `insertDistributedSync` | Если настройка включена, запрос INSERT в `Distributed` будет ждать, пока данные не будут отправлены на все узлы cluster. (опция ClickHouseIO).                                                                                                                                                                                                                   |              | Опция `ClickHouseIO`.                                                                                                                                                                                                                                          |
+| `insertQuorum`          | Для запросов INSERT в replicated table ждать записи на указанное количество реплик и обеспечивать линейный порядок добавления данных. 0 — отключено.                                                                                                                                                                                                             |              | Опция `ClickHouseIO`. Эта настройка по умолчанию отключена в настройках сервера.                                                                                                                                                                               |
+| `insertDeduplicate`     | Для запросов INSERT в replicated table указывает, что для вставляемых блоков должна выполняться дедупликация.                                                                                                                                                                                                                                                    |              | Опция `ClickHouseIO`.                                                                                                                                                                                                                                          |
+| `maxRetries`            | Максимальное количество повторных попыток для одной вставки.                                                                                                                                                                                                                                                                                                     |              | Опция `ClickHouseIO`.                                                                                                                                                                                                                                          |
+| `InputTableSpec`        | Таблица BigQuery, из которой нужно читать данные. Укажите либо `inputTableSpec`, либо `query`. Если заданы оба параметра, приоритет имеет `query`. Пример: `<BIGQUERY_PROJECT>:<DATASET_NAME>.<INPUT_TABLE>`.                                                                                                                                                    |              | Читает данные напрямую из хранилища BigQuery с помощью [BigQuery Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage). Учитывайте [ограничения Storage Read API](https://cloud.google.com/bigquery/docs/reference/storage#limitations). |
+| `outputDeadletterTable` | Таблица BigQuery для сообщений, которые не удалось записать в выходную таблицу. Если таблица не существует, она создается во время выполнения конвейера. Если параметр не указан, используется `<outputTableSpec>_error_records`. Например, `<PROJECT_ID>:<DATASET_NAME>.<DEADLETTER_TABLE>`.                                                                    |              |                                                                                                                                                                                                                                                                |
+| `query`                 | SQL-запрос для чтения данных из BigQuery. Если набор данных BigQuery находится в другом проекте, чем задача Dataflow, укажите в SQL-запросе полное имя набора данных, например: `<PROJECT_ID>.<DATASET_NAME>.<TABLE_NAME>`. По умолчанию используется [GoogleSQL](https://cloud.google.com/bigquery/docs/introduction-sql), если `useLegacySql` не равно `true`. |              | Необходимо указать либо `inputTableSpec`, либо `query`. Если задать оба параметра, шаблон использует параметр `query`. Пример: `SELECT * FROM sampledb.sample_table`.                                                                                          |
+| `useLegacySql`          | Установите `true`, чтобы использовать legacy SQL. Этот параметр применяется только при использовании параметра `query`. По умолчанию — `false`.                                                                                                                                                                                                                  |              |                                                                                                                                                                                                                                                                |
+| `queryLocation`         | Требуется при чтении из authorized view без разрешения на базовую таблицу. Например, `US`.                                                                                                                                                                                                                                                                       |              |                                                                                                                                                                                                                                                                |
+| `queryTempDataset`      | Укажите существующий dataset для создания temporary table, в которой будут храниться результаты запроса. Например, `temp_dataset`.                                                                                                                                                                                                                               |              |                                                                                                                                                                                                                                                                |
+| `KMSEncryptionKey`      | Если чтение из BigQuery выполняется с использованием `query` в качестве источника, используйте этот ключ Cloud KMS для шифрования всех создаваемых временных таблиц. Например, `projects/your-project/locations/global/keyRings/your-keyring/cryptoKeys/your-key`.                                                                                               |              |                                                                                                                                                                                                                                                                |
+
+<Note>
+  Значения по умолчанию для всех параметров `ClickHouseIO` можно найти в [коннекторе Apache Beam `ClickHouseIO`](/ru/integrations/connectors/data-ingestion/etl-tools/apache-beam#clickhouseiowrite-parameters)
+</Note>
+
+<div id="source-and-target-tables-schema">
+  ## Схема исходной и целевой таблиц
+</div>
+
+Чтобы эффективно загрузить набор данных BigQuery в ClickHouse, конвейер выполняет процесс сопоставления столбцов в следующие этапы:
+
+1. Шаблоны формируют объект схемы на основе целевой таблицы ClickHouse.
+2. Шаблоны перебирают набор данных BigQuery и пытаются сопоставить столбцы по их именам.
+
+<br />
+
+<Warning>
+  При этом ваш набор данных BigQuery (будь то таблица или запрос) должен иметь в точности те же имена столбцов, что и целевая таблица ClickHouse.
+</Warning>
+
+<div id="data-types-mapping">
+  ## Сопоставление типов данных
+</div>
+
+Типы BigQuery преобразуются на основе определения таблицы ClickHouse. Поэтому в таблице выше приведено
+рекомендуемое сопоставление, которое должно использоваться в целевой таблице ClickHouse (для заданной таблицы/запроса BigQuery):
+
+| Тип BigQuery                                                                                                                    | Тип ClickHouse                                             | Примечания                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [**Тип Array**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#array_type)                            | [**Тип Array**](/ru/reference/data-types/array)               | Внутренний тип должен быть одним из поддерживаемых примитивных типов данных, перечисленных в этой таблице.                                                                                                                                                                                                                                                                                                                                                        |
+| [**Тип Boolean**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#boolean_type)                        | [**Тип Bool**](/ru/reference/data-types/boolean)              |                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| [**Тип Date**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#date_type)                              | [**Тип Date**](/ru/reference/data-types/date)                 |                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| [**Тип Datetime**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#datetime_type)                      | [**Тип Datetime**](/ru/reference/data-types/datetime)         | Также работает с `Enum8`, `Enum16` и `FixedString`.                                                                                                                                                                                                                                                                                                                                                                                                               |
+| [**Тип String**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#string_type)                          | [**Тип String**](/ru/reference/data-types/string)             | В BigQuery все типы Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) являются псевдонимами `INT64`. Мы рекомендуем выбирать в ClickHouse подходящий размер целочисленного типа, так как шаблон будет преобразовывать столбец на основе заданного типа столбца (`Int8`, `Int16`, `Int32`, `Int64`).                                                                                                                                              |
+| [**Numeric — целочисленные типы**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types)      | [**Целочисленные типы**](/ru/reference/data-types/int-uint)   | В BigQuery все типы Int (`INT`, `SMALLINT`, `INTEGER`, `BIGINT`, `TINYINT`, `BYTEINT`) являются псевдонимами `INT64`. Мы рекомендуем выбирать в ClickHouse подходящий размер целочисленного типа, так как шаблон будет преобразовывать столбец на основе заданного типа столбца (`Int8`, `Int16`, `Int32`, `Int64`). Шаблон также будет преобразовывать беззнаковые типы Int, если они используются в таблице ClickHouse (`UInt8`, `UInt16`, `UInt32`, `UInt64`). |
+| [**Numeric — типы с плавающей точкой**](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types) | [**Типы с плавающей точкой**](/ru/reference/data-types/float) | Поддерживаемые типы ClickHouse: `Float32` и `Float64`                                                                                                                                                                                                                                                                                                                                                                                                             |
+
+<div id="running-the-template">
+  ## Запуск Template
+</div>
+
+Template BigQuery to ClickHouse можно запустить через Google Cloud CLI.
+
+<Note>
+  Обязательно ознакомьтесь с этим документом, особенно с приведёнными выше разделами, чтобы полностью понять требования к конфигурации Template
+  и необходимые предварительные условия.
+</Note>
+
+<Tabs>
+  <Tab title="Google Cloud Console">
+    Войдите в Google Cloud Console и найдите DataFlow.
+
+    1. Нажмите кнопку `CREATE JOB FROM TEMPLATE`
+       <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="консоль DataFlow" />
+    2. Когда откроется форма Template, введите имя задачи и выберите нужный регион.
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp" border alt="начальная форма Template DataFlow" />
+    3. В поле `DataFlow Template` введите `ClickHouse` или `BigQuery`, затем выберите Template `BigQuery to ClickHouse`
+       <Image img="/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp" border alt="выбор Template BigQuery to ClickHouse" />
+    4. После выбора форма развернётся, и вы сможете указать дополнительные сведения:
+       * JDBC URL сервера ClickHouse в следующем формате: `jdbc:clickhouse://host:port/schema`.
+       * Имя пользователя ClickHouse.
+       * Имя целевой таблицы ClickHouse.
+
+    <br />
+
+    <Note>
+      Параметр пароля ClickHouse отмечен как необязательный — для случаев, когда пароль не настроен.
+      Чтобы добавить его, прокрутите страницу вниз до параметра `Password for ClickHouse Endpoint`.
+    </Note>
+
+    <Image img="/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp" border alt="расширенная форма Template BigQuery to ClickHouse" />
+
+    5. Настройте и добавьте все конфигурации, относящиеся к BigQuery/ClickHouseIO, как подробно описано в
+       разделе [Параметры Template](#template-parameters)
+  </Tab>
+
+  <Tab title="Google Cloud CLI">
+    ### Установка и настройка `gcloud` CLI
+
+    * Если `gcloud` CLI ещё не установлен, установите его по [инструкции](https://cloud.google.com/sdk/docs/install).
+    * Следуйте разделу `Before you begin`
+      в [этом руководстве](https://cloud.google.com/dataflow/docs/guides/templates/using-flex-templates#before-you-begin), чтобы настроить
+      необходимые конфигурации, параметры и разрешения для запуска Template DataFlow.
+
+    ### Запуск команды
+
+    Используйте команду [`gcloud dataflow flex-template run`](https://cloud.google.com/sdk/gcloud/reference/dataflow/flex-template/run),
+    чтобы запустить задачу Dataflow, использующую Flex Template.
+
+    Ниже приведён пример такой команды:
+
+    ```bash
+    gcloud dataflow flex-template run "bigquery-clickhouse-dataflow-$(date +%Y%m%d-%H%M%S)" \
+     --template-file-gcs-location "gs://clickhouse-dataflow-templates/bigquery-clickhouse-metadata.json" \
+     --parameters inputTableSpec="<bigquery table id>",jdbcUrl="jdbc:clickhouse://<clickhouse host>:<clickhouse port>/<schema>?ssl=true&sslmode=NONE",clickHouseUsername="<username>",clickHousePassword="<password>",clickHouseTable="<clickhouse target table>"
+    ```
+
+    ### Разбор команды
+
+    * **Имя задачи:** Текст после ключевого слова `run` — это уникальное имя задачи.
+    * **Файл Template:** JSON‑файл, указанный в `--template-file-gcs-location`, определяет структуру Template и
+      сведения о принимаемых параметрах. Указанный путь к файлу является общедоступным и готов к использованию.
+    * **Параметры:** Параметры разделяются запятыми. Для строковых параметров заключайте значения в двойные кавычки.
+
+    ### Ожидаемый ответ
+
+    После запуска команды вы должны увидеть ответ, похожий на следующий:
+
+    ```bash
+    job:
+      createTime: '2025-01-26T14:34:04.608442Z'
+      currentStateTime: '1970-01-01T00:00:00Z'
+      id: 2025-01-26_06_34_03-13881126003586053150
+      location: us-central1
+      name: bigquery-clickhouse-dataflow-20250126-153400
+      projectId: ch-integrations
+      startTime: '2025-01-26T14:34:04.608442Z'
+    ```
+  </Tab>
+</Tabs>
+
+<div id="monitor-the-job">
+  ### Отслеживание задачи
+</div>
+
+Перейдите на [вкладку Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) в Google Cloud Console, чтобы
+отслеживать состояние задачи. Там вы увидите сведения о задаче, включая ход выполнения и возможные ошибки:
+
+<Image img="/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp" size="lg" border alt="Консоль Dataflow с выполняющейся задачей BigQuery в ClickHouse" />
+
+<div id="troubleshooting">
+  ## Устранение неполадок
+</div>
+
+<div id="code-241-dbexception-memory-limit-total-exceeded">
+  ### Ошибка превышения общего лимита памяти (код 241)
+</div>
+
+Эта ошибка возникает, когда у ClickHouse заканчивается память при обработке больших батчей данных. Чтобы устранить проблему:
+
+* Увеличьте ресурсы инстанса: переведите ClickHouse server на более крупный инстанс с большим объёмом памяти, чтобы он справлялся с нагрузкой при обработке данных.
+* Уменьшите размер батча: настройте размер батча в конфигурации задачи Dataflow так, чтобы в ClickHouse отправлялись меньшие фрагменты данных и снижалось потребление памяти на каждый батч. Эти изменения помогут сбалансировать использование ресурсов во время ингестии данных.
+
+<div id="template-source-code">
+  ## Исходный код Template
+</div>
+
+Исходный код Template доступен в следующих репозиториях:
+
+* [`GoogleCloudPlatform/DataflowTemplates`](https://github.com/GoogleCloudPlatform/DataflowTemplates/tree/main/v2/googlecloud-to-clickhouse) — основной репозиторий Google Cloud Platform.
+* [`ClickHouse/DataflowTemplates`](https://github.com/ClickHouse/DataflowTemplates) — форк ClickHouse.

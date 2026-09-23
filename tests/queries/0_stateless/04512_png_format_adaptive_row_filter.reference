@@ -1,0 +1,4 @@
+signature ok
+pixels round-trip ok
+non-None filter used: yes
+adaptive much smaller than None: yes

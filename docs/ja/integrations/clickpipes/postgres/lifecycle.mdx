@@ -1,0 +1,85 @@
+---
+sidebarTitle: 'Postgres ClickPipeのライフサイクル'
+description: 'さまざまなパイプのステータスとその意味'
+slug: /integrations/clickpipes/postgres/lifecycle
+title: 'Postgres ClickPipeのライフサイクル'
+doc_type: 'guide'
+keywords: ['ClickPipes', 'PostgreSQL', 'CDC', 'データインジェスト', 'リアルタイム同期']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+このドキュメントでは、Postgres ClickPipeの各フェーズ、取り得るステータスの種類、それぞれの意味について説明します。
+
+<div id="provisioning">
+  ## プロビジョニング
+</div>
+
+`Create ClickPipe` ボタンをクリックすると、ClickPipe は `Provisioning` 状態で作成されます。プロビジョニングでは、サービスの ClickPipes を実行するための基盤となるインフラストラクチャを立ち上げるとともに、そのパイプの初期メタデータをいくつか登録します。サービス内では ClickPipes のコンピュートが共有されるため、2 つ目の ClickPipe は 1 つ目よりもはるかに速く作成されます。これは、インフラストラクチャがすでに整っているためです。
+
+<div id="setup">
+  ## セットアップ
+</div>
+
+パイプがプロビジョニングされると、`Setup` 状態に入ります。この状態では、宛先の ClickHouse テーブルを作成します。また、ここではソーステーブルのテーブル定義を取得して記録します。
+
+<div id="snapshot">
+  ## スナップショット
+</div>
+
+セットアップが完了すると、`Snapshot` 状態に入ります (CDC のみのパイプは `Running` に移行します) 。`Snapshot`、`Initial Snapshot`、`Initial Load` (こちらのほうが一般的です) は、同じ意味で使われます。この状態では、ソースデータベースのテーブルのスナップショットを取得し、ClickHouse にロードします。この処理では論理レプリケーションは使用しませんが、この段階でレプリケーションスロットが作成されるため、`max_slot_wal_keep_size` とストレージ関連のパラメータは、初期ロード中のスロットの増加を見込んで設定する必要があります。初期ロードの詳細については、[並列初期ロードのドキュメント](/ja/integrations/clickpipes/postgres/parallel-initial-load)を参照してください。再同期がトリガーされた場合や、既存のパイプに新しいテーブルが追加された場合にも、パイプは `Snapshot` 状態に入ります。
+
+<div id="running">
+  ## 実行中
+</div>
+
+初期ロードが完了すると、パイプは `Running` 状態になります (スナップショット専用のパイプの場合は `Completed` に遷移します) 。ここでパイプは `Change-Data Capture` (CDC) を開始します。この状態では、ソースデータベースから ClickHouse への論理レプリケーションが開始されます。CDC の制御方法については、[CDC の制御に関するドキュメント](/ja/integrations/clickpipes/postgres/controlling-sync)を参照してください。
+
+<div id="paused">
+  ## 一時停止
+</div>
+
+パイプが`Running`状態になると、一時停止できるようになります。これにより CDC プロセスが停止し、パイプは`Paused`状態に入ります。この状態では、ソースデータベースから新しいデータは取り込まれませんが、ClickHouse 内の既存データはそのまま保持されます。この状態からパイプを再開できます。
+
+<div id="paused">
+  ## 一時停止
+</div>
+
+<Note>
+  この状態は近日中に利用可能になる予定です。[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) を使用している場合は、リリース後もインテグレーションが引き続き動作するよう、今のうちにこの状態への対応を追加しておくことをご検討ください。
+</Note>
+
+Pause ボタンをクリックすると、パイプは `Pausing` 状態になります。これは一時的な状態で、CDC プロセスの停止処理が進行中であることを示します。CDC プロセスが完全に停止すると、パイプは `Paused` 状態になります。
+
+<div id="modifying">
+  ## 変更中
+</div>
+
+<Note>
+  この状態は近日公開予定です。[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) を使用している場合は、リリース後もインテグレーションが引き続き動作するよう、今のうちにこの状態への対応を追加しておくことを検討してください。
+</Note>
+
+現時点では、これはパイプがテーブルの削除処理中であることを示します。
+
+<div id="resync">
+  ## 再同期
+</div>
+
+<Note>
+  この状態は近日中に追加される予定です。[OpenAPI](/ja/products/cloud/features/admin-features/api/openapi) を使用している場合は、リリース後もインテグレーションが継続して動作するよう、今のうちにこの状態への対応を追加しておくことを検討してください。
+</Note>
+
+この状態は、パイプが再同期のフェーズにあり、元のテーブルと `_resync` テーブルをアトミックに入れ替えていることを示します。再同期の詳細については、[再同期のドキュメント](/ja/integrations/clickpipes/postgres/resync) を参照してください。
+
+<div id="completed">
+  ## 完了
+</div>
+
+この状態はスナップショット専用のパイプに適用され、スナップショットが完了し、これ以上行うべき作業がないことを示します。
+
+<div id="failed">
+  ## 失敗
+</div>
+
+パイプで回復不能なエラーが発生すると、`Failed` 状態に移行します。この状態から復旧するには、サポートに問い合わせるか、パイプを[再同期](/ja/integrations/clickpipes/postgres/resync)してください。

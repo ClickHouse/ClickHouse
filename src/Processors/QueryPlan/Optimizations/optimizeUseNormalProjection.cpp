@@ -1,4 +1,8 @@
 #include <Core/Settings.h>
+#include <Columns/ColumnConst.h>
+#include <Common/FailPoint.h>
+#include <Common/FieldAccurateComparison.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
@@ -18,6 +22,13 @@
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/SelectQueryInfo.h>
 #include <Interpreters/Context.h>
+#include <Functions/FunctionFactory.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/IAST.h>
+
 
 namespace DB
 {
@@ -26,13 +37,257 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
+    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
+}
+
+namespace FailPoints
+{
+    extern const char parallel_replicas_skip_aggregate_projection_on_follower[];
 }
 
 }
 
 namespace DB::QueryPlanOptimizations
 {
+
+/// Extract AND-connected conjuncts from an AST expression tree.
+/// For example, (a = 1 AND b = 2 AND c = 3) yields {a = 1, b = 2, c = 3}.
+static void extractConjunctsFromAST(const ASTPtr & expr, std::vector<ASTPtr> & result)
+{
+    if (const auto * func = expr->as<ASTFunction>(); func && func->name == "and" && func->arguments)
+    {
+        for (const auto & child : func->arguments->children)
+            extractConjunctsFromAST(child, result);
+    }
+    else
+    {
+        result.push_back(expr);
+    }
+}
+
+/// Strip a leading analyzer table qualifier (e.g. `__table1.`) from a column name.
+/// The analyzer decorates input column names with a per-table-expression qualifier that is
+/// absent from the projection's WHERE AST, so it must be ignored when comparing identifiers.
+static std::string_view stripTableQualifier(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix))
+        return name;
+
+    size_t pos = prefix.size();
+    while (pos < name.size() && isdigit(static_cast<unsigned char>(name[pos])))
+        ++pos;
+
+    if (pos > prefix.size() && pos < name.size() && name[pos] == '.')
+        return name.substr(pos + 1);
+
+    return name;
+}
+
+/// Structurally compare a query-filter DAG node against a projection-WHERE AST conjunct.
+///
+/// Textual comparison of names is unreliable here: the analyzer decorates query-filter DAG
+/// `result_name`s with table qualifiers (`__table1.event_type`) and literal type suffixes
+/// (`'pageview'_String`), none of which appear in the projection's WHERE AST. So we compare
+/// the structure instead, conservatively:
+///   - FUNCTION    vs ASTFunction:   same function name and positionally matching arguments;
+///   - INPUT       vs ASTIdentifier: same column name, ignoring a leading `__tableN.` qualifier;
+///   - COLUMN const vs ASTLiteral:   equal constant value (accurate, type-aware comparison).
+/// ALIAS nodes are unwrapped first. Any other node kind, or a mismatch, yields false.
+///
+/// This may reject some valid equivalences (e.g. reordered commutative arguments, or a predicate
+/// rewritten by the analyzer), but it never accepts a predicate that is not literally present in
+/// the query filter — preserving the conservative containment guarantee.
+static bool matchDAGNodeToAST(const ActionsDAG::Node * node, const ASTPtr & ast)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
+        node = node->children.front();
+
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base)
+            return false;
+        if (node->function_base->getName() != func->name)
+            return false;
+
+        const auto & ast_args = func->arguments ? func->arguments->children : ASTs{};
+        if (node->children.size() != ast_args.size())
+            return false;
+
+        for (size_t i = 0; i < ast_args.size(); ++i)
+            if (!matchDAGNodeToAST(node->children[i], ast_args[i]))
+                return false;
+
+        return true;
+    }
+
+    if (const auto * ident = ast->as<ASTIdentifier>())
+    {
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        return stripTableQualifier(node->result_name) == ident->name();
+    }
+
+    if (const auto * literal = ast->as<ASTLiteral>())
+    {
+        if (node->type != ActionsDAG::ActionType::COLUMN || !node->column)
+            return false;
+        const auto * const_col = typeid_cast<const ColumnConst *>(node->column.get());
+        if (!const_col)
+            return false;
+        return accurateEquals(const_col->getField(), literal->value);
+    }
+
+    return false;
+}
+
+/// Recursively check if an AST tree contains any aliases.
+/// If the projection WHERE uses aliases, textual conjunct matching becomes unsafe
+/// because the same expression may have different canonical representations when aliased.
+static bool containsAliases(const ASTPtr & expr)
+{
+    if (!expr)
+        return false;
+
+    if (!expr->tryGetAlias().empty())
+        return true;
+
+    for (const auto & child : expr->children)
+    {
+        if (containsAliases(child))
+            return true;
+    }
+
+    return false;
+}
+
+/// Recursively check if an AST tree contains calls to non-deterministic functions
+/// by querying function metadata via FunctionFactory.
+/// Non-deterministic predicates (rand(), now(), nowInBlock(), etc.) evaluate differently
+/// at materialization time vs query time, so textual conjunct matching is unsound for them.
+static bool containsNonDeterministicFunctions(const ASTPtr & expr, ContextPtr context)
+{
+    if (!expr)
+        return false;
+
+    if (const auto * func = expr->as<ASTFunction>())
+    {
+        /// Use FunctionFactory metadata instead of a hardcoded blacklist.
+        /// This automatically covers all current and future non-deterministic functions.
+        /// IFunctionOverloadResolver provides isDeterministic() and isDeterministicInScopeOfQuery()
+        /// without needing to resolve argument types.
+        auto resolver = FunctionFactory::instance().tryGet(func->name, context);
+        if (resolver)
+        {
+            if (!resolver->isDeterministic() || !resolver->isDeterministicInScopeOfQuery())
+                return true;
+        }
+        else
+        {
+            /// Unknown function — conservatively treat as non-deterministic.
+            return true;
+        }
+    }
+
+    for (const auto & child : expr->children)
+    {
+        if (containsNonDeterministicFunctions(child, context))
+            return true;
+    }
+
+    return false;
+}
+
+/// Check whether a query's WHERE condition logically implies a projection's WHERE condition.
+/// Uses CNF conjunct containment: every conjunct of the projection's WHERE must appear
+/// (as a textually identical sub-expression) among the conjuncts of the query's WHERE.
+///
+/// Both sides are compared using canonical column-name representations:
+/// - Projection WHERE conjuncts use ASTPtr::getColumnName() (canonical AST serialization)
+/// - Query filter conjuncts use ActionsDAG::Node::result_name (set by the analyzer)
+/// These produce identical strings for semantically equivalent expressions.
+///
+/// Safety guards:
+/// 1. Reject if projection WHERE contains aliases (may differ from analyzer representation)
+/// 2. Reject if projection WHERE contains non-deterministic functions (unsafe for implication)
+/// 3. Reject if projection has a non-empty WITH clause (aliases referenced by identifier in WHERE
+///    won't be detected by `containsAliases` and could cause false-positive matches)
+///
+/// This is a conservative check — it may reject some valid cases (e.g., range implications),
+/// but it is safe: it will never incorrectly accept a query that doesn't match the projection.
+static bool doesQueryFilterImplyProjectionWhere(
+    const ActionsDAG::Node * query_filter_node,
+    const ASTPtr & projection_where,
+    const ASTPtr & projection_query_ast,
+    ContextPtr context)
+{
+    if (!projection_where)
+        return true; /// No projection filter = always applicable
+
+    if (!query_filter_node)
+        return false; /// Projection has filter but query doesn't
+
+    /// Safety guard 1: reject if projection WHERE contains any aliases.
+    /// Aliases could cause the canonical column-name to differ from the analyzer's
+    /// result_name, leading to false positive implication matches.
+    if (containsAliases(projection_where))
+        return false;
+
+    /// Safety guard 2: reject if projection WHERE contains non-deterministic functions.
+    /// Such expressions evaluate differently at materialization time vs query time,
+    /// so textual equality does not imply semantic equivalence.
+    if (containsNonDeterministicFunctions(projection_where, context))
+        return false;
+
+    /// Safety guard 3: reject if the projection has a non-empty WITH clause,
+    /// or if its SELECT list defines aliases. An identifier in projection WHERE
+    /// could resolve to an alias rather than a table column, in which case textual
+    /// conjunct matching against the query's WHERE (where the same identifier refers
+    /// to a table column) would produce false-positive implications.
+    if (projection_query_ast)
+    {
+        if (const auto * projection_select = projection_query_ast->as<ASTSelectQuery>())
+        {
+            if (projection_select->with())
+                return false;
+
+            if (projection_select->select() && containsAliases(projection_select->select()))
+                return false;
+        }
+    }
+
+    /// Extract projection's WHERE conjuncts from the AST.
+    std::vector<ASTPtr> proj_conjuncts;
+    extractConjunctsFromAST(projection_where, proj_conjuncts);
+
+    /// Unwrap a leading ALIAS wrapper before splitting conjuncts. `QueryDAG::build` wraps the
+    /// query filter in an ALIAS named `_projection_filter`, and `extractConjunctionAtoms` only
+    /// descends into `and` functions, not aliases. Without unwrapping, a top-level `and` stays
+    /// hidden behind the alias, so the stricter-`AND` case would yield a single `and(...)` atom
+    /// instead of its individual conjuncts.
+    const auto * filter_root = query_filter_node;
+    while (filter_root->type == ActionsDAG::ActionType::ALIAS && !filter_root->children.empty())
+        filter_root = filter_root->children.front();
+
+    /// Extract query's filter conjuncts using ClickHouse's built-in DAG utility.
+    /// This is the same function used by the filter pushdown optimizer.
+    auto query_atoms = ActionsDAG::extractConjunctionAtoms(filter_root);
+
+    /// Every projection conjunct must structurally match at least one query conjunct.
+    for (const auto & proj_conj : proj_conjuncts)
+    {
+        bool found = std::any_of(
+            query_atoms.begin(),
+            query_atoms.end(),
+            [&](const auto * atom) { return matchDAGNodeToAST(atom, proj_conj); });
+
+        if (!found)
+            return false;
+    }
+
+    return true;
+}
 
 /// Normal projection analysis result in case it can be applied.
 /// For now, it is empty.
@@ -48,7 +303,7 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     /// This may happen e.g. if we have PREWHERE.
 
     size_t num_columns = main_header.columns();
-    /// This is a error; will have block structure mismatch later.
+    /// This is an error; will have block structure mismatch later.
     if (proj_header.columns() != num_columns)
         return {};
 
@@ -80,19 +335,46 @@ static std::optional<ActionsDAG> makeMaterializingDAG(const Block & proj_header,
     return dag;
 }
 
-std::optional<String> optimizeUseNormalProjections(
+UseProjectionsResult optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings)
 {
+    UseProjectionsResult result;
     const auto & frame = stack.back();
 
     auto * reading = typeid_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!reading)
-        return {};
+        return result;
 
-    if (!canUseProjectionForReadingStep(reading))
-        return {};
+    const auto metadata = reading->getStorageMetadata();
+    const auto & projections = metadata->projections;
+
+    std::vector<const ProjectionDescription *> normal_projections;
+    for (const auto & projection : projections)
+        if (projection.type == ProjectionDescription::Type::Normal)
+            normal_projections.push_back(&projection);
+
+    auto reject_all = [&](const String & reason)
+    {
+        rejectProjections(result.projection_reject_reasons, normal_projections, {}, reason);
+        return std::move(result);
+    };
+
+    if (normal_projections.empty())
+        return result;
+
+    if (auto can_use = canUseProjectionForReadingStep(reading); !can_use)
+        return reject_all(can_use.error());
+
+    /// Test hook: make a parallel-replicas follower skip the projection short-circuit (see the same
+    /// failpoint in optimizeUseAggregateProjections). Gated on the follower predicate so it never
+    /// affects the initiator's plan.
+    fiu_do_on(FailPoints::parallel_replicas_skip_aggregate_projection_on_follower,
+    {
+        if (reading->isParallelReplicasLocalPlanForFollower())
+            return reject_all("skipped on a parallel replicas follower by a failpoint");
+    });
 
     auto iter = stack.rbegin();
     while (std::next(iter) != stack.rend())
@@ -105,7 +387,7 @@ std::optional<String> optimizeUseNormalProjections(
 
     /// Dangling query plan node. This might be generated by StorageMerge.
     if (iter->node->step.get() == reading)
-        return {};
+        return reject_all("the read is a dangling node of a Merge table");
 
     /// Projection can be usable if it will satisfy requested order by.
     const SortingStep * outer_sorting_step = nullptr;
@@ -113,30 +395,10 @@ std::optional<String> optimizeUseNormalProjections(
         if (sort->getType() == SortingStep::Type::Full)
             outer_sorting_step = sort;
 
-    const auto metadata = reading->getStorageMetadata();
-    const auto & projections = metadata->projections;
-
-    std::vector<const ProjectionDescription *> normal_projections;
-    for (const auto & projection : projections)
-        if (projection.type == ProjectionDescription::Type::Normal)
-            normal_projections.push_back(&projection);
-
-    if (normal_projections.empty())
-        return {};
-
     ContextPtr context = reading->getContext();
-    auto it = std::find_if(
-        normal_projections.begin(),
-        normal_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != normal_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        normal_projections.clear();
-        normal_projections.push_back(preferred_projection);
-    }
+    const auto all_normal_projections = normal_projections;
+    filterProjectionCandidates(normal_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
+    rejectProjections(result.projection_reject_reasons, all_normal_projections, normal_projections, "the setting preferred_optimize_projection_name names another projection");
 
     Names required_columns = reading->getAllColumnNames();
 
@@ -164,7 +426,7 @@ std::optional<String> optimizeUseNormalProjections(
     {
         auto & child = iter->node->children[iter->next_child - 1];
         if (!query.build(*child))
-            return {};
+            return reject_all("the steps between the read and its consumer cannot be rewritten onto a projection");
 
         if (need_parent_part_offset)
         {
@@ -183,9 +445,9 @@ std::optional<String> optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
+    const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
 
-    if (!force_optimize_projection)
+    if (!relax_projection_checks)
     {
         /// A normal projection can help in two ways:
         ///     1. Pruning rows via a filter
@@ -193,7 +455,7 @@ std::optional<String> optimizeUseNormalProjections(
         bool has_filter = query.dag && query.filter_node;
         bool can_use_sort_order = outer_sorting_step && optimization_settings.read_in_order;
         if (!has_filter && !can_use_sort_order)
-            return {};
+            return reject_all("the query has neither a filter nor an ORDER BY a projection could serve");
     }
 
     std::list<NormalProjectionCandidate> candidates;
@@ -227,11 +489,11 @@ std::optional<String> optimizeUseNormalProjections(
         parent_reading_select_result->selected_ranges = parts.size();
     }
 
-    if (!force_optimize_projection)
+    if (!relax_projection_checks)
     {
         /// /// Nothing to read. Ignore projections.
         if (parent_reading_select_result->parts_with_ranges.empty())
-            return {};
+            return reject_all("the read selects no parts");
     }
 
     PartitionIdToMaxBlockPtr max_added_blocks = getMaxAddedBlocks(reading);
@@ -276,8 +538,23 @@ std::optional<String> optimizeUseNormalProjections(
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
+        /// Skip projections whose WHERE condition is not implied by the query's filter (Issue #74234).
+        /// A projection with WHERE stores only a subset of rows, so we can only use it
+        /// if the query's filter guarantees it won't need rows outside that subset.
+        if (projection->where_clause_ast)
+        {
+            if (!doesQueryFilterImplyProjectionWhere(query.filter_node, projection->where_clause_ast, projection->query_ast, context))
+            {
+                LOG_DEBUG(logger, "Projection {} skipped: query WHERE does not imply projection WHERE", projection->name);
+                result.projection_reject_reasons.try_emplace(projection->name, "the query WHERE does not imply the projection WHERE");
+                continue;
+            }
+        }
+
         if (!has_all_required_columns(projection))
         {
+            result.projection_reject_reasons.try_emplace(projection->name, "the projection does not contain all columns required by the query");
+
             /// Check if projection can be used to filter parts or building projection index filters
             if (query.filter_node && optimize_use_projection_filtering)
             {
@@ -305,12 +582,17 @@ std::optional<String> optimizeUseNormalProjections(
             reader,
             empty_mutations_snapshot,
             required_columns,
+            metadata,
             *parent_reading_select_result,
             projection_query_info,
+            reading->getTopKFilterInfo(),
             context);
 
         if (!analyzed)
+        {
+            result.projection_reject_reasons.try_emplace(projection->name, "no selected part has the projection materialized, or its analysis exceeded the read limits");
             continue;
+        }
 
         auto & stat = parent_reading_select_result->projection_stats.emplace_back();
         stat.name = candidate.projection->name;
@@ -333,10 +615,10 @@ std::optional<String> optimizeUseNormalProjections(
         bool sort_order_helps = projection_sort_order_useful(projection);
 
         /// Consider projections with equal read cost only if:
-        /// - `force_optimize_projection` is enabled, or
+        /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (candidate.sum_marks > parent_reading_marks)
+        if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -344,16 +626,18 @@ std::optional<String> optimizeUseNormalProjections(
                 candidate.sum_marks,
                 parent_reading_marks);
 
+            result.projection_reject_reasons.try_emplace(projection->name, stat.description);
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
+        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_projection_checks && !sort_order_helps)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
                 candidate.projection->name,
                 candidate.sum_marks);
 
+            result.projection_reject_reasons.try_emplace(projection->name, stat.description);
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
@@ -369,7 +653,7 @@ std::optional<String> optimizeUseNormalProjections(
     }
 
     if (!best_candidate)
-        return {};
+        return result;
 
     /// Identify projections selected as the best candidates and update their stat descriptions with appropriate logging
     for (const auto & candidate : candidates)
@@ -393,6 +677,7 @@ std::optional<String> optimizeUseNormalProjections(
                 candidate.sum_marks,
                 best_candidate->projection->name,
                 best_candidate->sum_marks);
+            result.projection_reject_reasons.try_emplace(candidate.projection->name, candidate.stat->description);
             LOG_DEBUG(logger, "{}", candidate.stat->description);
         }
     }
@@ -428,6 +713,19 @@ std::optional<String> optimizeUseNormalProjections(
         reading->isParallelReadingEnabled(),
         reading->getParallelReadingExtension());
 
+    /// `tryOptimizeTopK` runs in the first optimization pass, so this rewrite can replace a read that
+    /// is already stamped for TopK filtering. Carry the stamp and the query condition cache gate over,
+    /// otherwise the projection read would degrade into an apparent plain read: with
+    /// `use_query_condition_cache_for_top_k = 0` its reader would write plain-keyed cache entries the
+    /// setting is supposed to gate off, and with the setting enabled it would write threshold-dependent
+    /// entries under unsalted keys. The part-set salt in `condition_hash` was folded from the parent
+    /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
+    /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
+    /// by passing the stamp into `analyzeProjectionCandidate` above.)
+    if (projection_reading)
+        if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
+            projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
+
     /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
     filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
@@ -435,6 +733,9 @@ std::optional<String> optimizeUseNormalProjections(
     bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
     bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
+    /// True when the projection read is replaced by a prepared source that does not announce the
+    /// base-table stream itself. See the announcement call below.
+    bool projection_replaced_with_prepared_source = false;
     if (!projection_reading || should_skip_projection_reading_on_remote_replicas)
     {
         Pipe pipe(std::make_shared<NullSource>(std::make_shared<const Block>(proj_snapshot->getSampleBlockForColumns(required_columns))));
@@ -452,10 +753,16 @@ std::optional<String> optimizeUseNormalProjections(
                 });
         }
         projection_reading = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
+        projection_replaced_with_prepared_source = true;
     }
 
     if (has_parent_parts && optimization_settings.is_parallel_replicas_initiator_with_projection_support)
         fallbackToLocalProjectionReading(projection_reading);
+
+    /// `reading` is detached below without running initializePipeline(), so announce its empty read
+    /// set here instead (same guard as optimizeUseAggregateProjections; issue #110518).
+    if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
+        reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
     if (!query_info.is_internal && context->hasQueryContext())
     {
@@ -503,7 +810,10 @@ std::optional<String> optimizeUseNormalProjections(
         /// If they differ (e.g., different columns due to different query DAGs being applied),
         /// skip this optimization to avoid "Block structure mismatch" errors.
         if (!blocksHaveEqualStructure(*main_stream, **proj_stream))
-            return {};
+        {
+            result.projection_reject_reasons.try_emplace(best_candidate->projection->name, "the projection stream and the table stream have different headers");
+            return result;
+        }
 
         auto & union_node = nodes.emplace_back();
         SharedHeaders input_headers = {main_stream, *proj_stream};
@@ -514,7 +824,8 @@ std::optional<String> optimizeUseNormalProjections(
 
     /// Here we remove last steps from stack to be able to optimize again.
     stack.resize(iter.base() - stack.begin());
-    return best_candidate->projection->name;
+    result.applied_projection = best_candidate->projection->name;
+    return result;
 }
 
 }

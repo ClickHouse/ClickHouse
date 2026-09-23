@@ -1,8 +1,9 @@
-#include <Compression/CompressionFactory.h>
+#include <span>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
-#include <IO/ReadBuffer.h>
+#include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -10,11 +11,9 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Poco/String.h>
+#include <Common/typeid_cast.h>
 
 #include <Columns/IColumn.h>
-#include <algorithm>
-
-#include <boost/algorithm/string/join.hpp>
 
 #include "config.h"
 
@@ -27,11 +26,26 @@ namespace ErrorCodes
     extern const int UNKNOWN_CODEC;
     extern const int UNEXPECTED_AST_STRUCTURE;
     extern const int DATA_TYPE_CANNOT_HAVE_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
+    extern const int OPENSSL_ERROR;
 }
 
 CompressionCodecPtr CompressionCodecFactory::getDefaultCodec() const
 {
     return default_codec;
+}
+
+bool CompressionCodecFactory::isDefaultCodec(const ASTPtr & codec)
+{
+    /// No CODEC(...) clause: the default codec.
+    if (codec == nullptr)
+        return true;
+    /// CODEC(Default)
+    const auto * func = codec->as<ASTFunction>();
+    if (!func || func->name != "CODEC" || !func->arguments || func->arguments->children.size() != 1)
+        return false;
+    const auto * ident = func->arguments->children[0]->as<ASTIdentifier>();
+    return ident && ident->name() == DEFAULT_CODEC_NAME;
 }
 
 
@@ -87,18 +101,33 @@ CompressionCodecPtr CompressionCodecFactory::get(
             else
                 codec = getImpl(codec_family_name, codec_arguments, column_type);
 
-            if (only_generic && !codec->isGenericCompression())
-                continue;
+            std::span<const CompressionCodecPtr> expanded_codecs(&codec, 1);
 
-            codecs.emplace_back(codec);
+            /// `CODEC(ALP, Default)` with `default_compression_codec = 'LZ4, AES_128_GCM_SIV'` must become `ALP, LZ4, AES_128_GCM_SIV`.
+            /// Not a chain within a chain.
+            if (const auto * multiple = typeid_cast<const CompressionCodecMultiple *>(codec.get()))
+                expanded_codecs = multiple->getCodecs();
+
+            for (const auto & expanded_codec : expanded_codecs)
+            {
+                if (only_generic && !expanded_codec->isGenericCompression() && !expanded_codec->isEncryption())
+                    continue;
+
+                if (!column_type && expanded_codec->isLossyCompression())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/nullables "
+                        "of them); it can not be used as a marks, primary key or default compression codec, or in any "
+                        "other context where the column data type is unknown",
+                        codec_family_name);
+
+                codecs.emplace_back(expanded_codec);
+            }
         }
-
-        CompressionCodecPtr res;
 
         if (codecs.size() == 1)
             return codecs.back();
         if (codecs.size() > 1)
-            return std::make_shared<CompressionCodecMultiple>(codecs);
+            return std::make_shared<CompressionCodecMultiple>(std::move(codecs));
         return std::make_shared<CompressionCodecNone>();
     }
 
@@ -116,6 +145,30 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
+String CompressionCodecFactory::getGateSettingName(const String & family_name)
+{
+    return fmt::format("enable_{}_codec", Poco::toLower(family_name));
+}
+
+std::optional<SettingsTierType> CompressionCodecFactory::getGateTier(const String & gate_setting_name)
+{
+    const std::optional<SettingsTierType> tier = Settings::tryGetTierOfBuiltin(gate_setting_name);
+    if (tier == SettingsTierType::OBSOLETE)
+        return std::nullopt;
+    return tier;
+}
+
+Strings CompressionCodecFactory::getGateSettingNames() const
+{
+    Strings result;
+    for (const auto & family : family_name_with_codec)
+    {
+        if (String gate_setting_name = getGateSettingName(family.first); getGateTier(gate_setting_name))
+            result.push_back(std::move(gate_setting_name));
+    }
+    return result;
+}
+
 void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns) const
 {
     std::for_each(
@@ -124,7 +177,22 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
         [&](const auto &it)
         {
             const std::string &name = it.first;
-            CompressionCodecPtr tmp = it.second({}, nullptr);
+            CompressionCodecPtr tmp;
+            try
+            {
+                tmp = it.second({}, nullptr);
+            }
+            catch (const Exception & e)
+            {
+                /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
+                /// without SSL support. They cannot expose a description, so skip them rather than failing the whole
+                /// `system.codecs` query. Any other failure is unexpected and must propagate.
+                if (e.code() == ErrorCodes::OPENSSL_ERROR)
+                    return;
+                throw;
+            }
+
+            const SettingsTierType tier = getGateTier(getGateSettingName(name)).value_or(SettingsTierType::PRODUCTION);
 
             res_columns[0]->insert(name);
             res_columns[1]->insert(tmp->getMethodByte());
@@ -132,7 +200,7 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
             res_columns[3]->insert(tmp->isGenericCompression());
             res_columns[4]->insert(tmp->isEncryption());
             res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
-            res_columns[6]->insert(tmp->isExperimental());
+            res_columns[6]->insert(tier);
             res_columns[7]->insert(tmp->getDescription());
         }
     );
@@ -149,11 +217,14 @@ VectorWithMemoryTracking<std::pair<String, Documentation>> CompressionCodecFacto
         {
             codec = creator({}, nullptr);
         }
-        catch (...) // Ok: some codecs cannot be instantiated in this build configuration (e.g. the encryption codecs
-                    // register a creator that throws when the server is built without SSL support). They have no
-                    // documentation to expose, so skip them rather than failing the whole system.documentation query.
+        catch (const Exception & e)
         {
-            continue;
+            /// Ok: the encryption codecs register a creator that throws `OPENSSL_ERROR` when the server is built
+            /// without SSL support. They have no documentation to expose, so skip them rather than failing the whole
+            /// `system.documentation` query. Any other failure is unexpected and must propagate.
+            if (e.code() == ErrorCodes::OPENSSL_ERROR)
+                continue;
+            throw;
         }
 
         Documentation documentation;
@@ -253,8 +324,13 @@ CompressionCodecFactory::CompressionCodecFactory()
     registerCodecFPC(*this);
     registerCodecGCD(*this);
     registerCodecALP(*this);
+    registerCodecQuantized(*this);
+#if USE_SZ3
+    registerCodecSZ3(*this);
+#endif
+    registerCodecZXC(*this);
 
-    default_codec = get("LZ4", {});
+    default_codec = get("ZSTD", 3);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()

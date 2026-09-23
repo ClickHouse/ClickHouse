@@ -1,0 +1,55 @@
+---
+description: '其他 Backup 或恢复方法的详细信息'
+sidebarTitle: '其他方法'
+slug: /operations/backup/alternative_methods
+title: '其他 Backup 或恢复方法'
+doc_type: 'reference'
+---
+
+ClickHouse 将数据存储在磁盘上，而磁盘有很多备份方式。
+以下是一些过去使用过的替代方法，可能适合
+你的使用场景。
+
+<div id="duplicating-source-data-somewhere-else">
+  ### 将源数据复制到其他位置
+</div>
+
+通常，摄取到 ClickHouse 的数据会通过某种持久化队列传输，例如 [Apache Kafka](https://kafka.apache.org)。在这种情况下，可以额外配置一组订阅者，在相同数据流写入 ClickHouse 的同时读取这些数据，
+并将其存入其他位置的冷存储。大多数公司通常都已有默认推荐的冷存储方案，可能是对象存储，
+也可能是像 [HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) 这样的分布式文件系统。
+
+<div id="filesystem-snapshots">
+  ### 文件系统快照
+</div>
+
+某些本地文件系统提供快照功能 (例如 [ZFS](https://en.wikipedia.org/wiki/ZFS)) ，
+但它们未必是承载实时查询的最佳选择。一种可行的方案
+是使用这类文件系统创建额外的副本，并将其从用于 `SELECT` 查询的
+[Distributed](/zh/reference/engines/table-engines/special/distributed) 表中排除。
+这样一来，这些副本上的快照就不会被任何修改数据的查询触及。
+此外，这些副本还可以采用特殊的硬件配置，例如每台服务器挂载更多
+磁盘，从而更具成本效益。
+
+对于数据量较小的场景，直接对远程表执行简单的 `INSERT INTO ... SELECT ...`
+也可能可行。
+
+<div id="manipulations-with-parts">
+  ### 对 parts 的操作
+</div>
+
+ClickHouse 允许使用 `ALTER TABLE ... FREEZE PARTITION ...` 查询创建
+表分区的本地副本。该操作通过在 `/var/lib/clickhouse/shadow/`
+目录中创建硬链接来实现，因此通常不会为旧数据额外占用磁盘空间。创建出的
+文件副本不受 ClickHouse server 管理，因此你可以直接将它们保留在那里：
+这样就得到了一个简单的 Backup，不需要任何额外的外部系统，
+但它仍然容易受到硬件故障的影响。因此，最好将它们
+远程复制到其他位置，然后删除本地副本。
+分布式文件系统和对象存储仍然是不错的选择，
+但容量足够大的普通挂载文件服务器也同样可行
+(在这种情况下，传输将通过网络文件系统，或者也可以通过 [rsync](https://en.wikipedia.org/wiki/Rsync) 进行) 。
+可以使用 `ALTER TABLE ... ATTACH PARTITION ...` 从 Backup 中恢复数据
+
+有关分区操作相关查询的更多信息，请参阅
+[`ALTER` 文档](/zh/reference/statements/alter/partition)。
+
+还有一个第三方工具可用于自动化这种方法：[clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup)。

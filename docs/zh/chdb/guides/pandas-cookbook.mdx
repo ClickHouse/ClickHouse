@@ -1,0 +1,629 @@
+---
+title: 'Pandas 实用手册'
+sidebarTitle: 'Pandas 实用手册'
+slug: /chdb/guides/pandas-cookbook
+description: '常见 pandas 用法及其对应的 DataStore 写法'
+keywords: ['chdb', 'datastore', 'pandas', 'cookbook', 'patterns', 'examples']
+doc_type: 'guide'
+---
+
+常见的 pandas 用法及其对应的 DataStore 写法。大多数代码都可直接复用，无需修改！
+
+<div id="loading">
+  ## 数据加载
+</div>
+
+<div id="read-csv">
+  ### 读取 CSV
+</div>
+
+```python
+# Pandas
+import pandas as pd
+df = pd.read_csv("data.csv")
+
+# DataStore - 相同！
+from chdb import datastore as pd
+df = pd.read_csv("data.csv")
+```
+
+<div id="read-multiple-files">
+  ### 读取多个文件
+</div>
+
+```python
+# Pandas
+import glob
+dfs = [pd.read_csv(f) for f in glob.glob("data/*.csv")]
+df = pd.concat(dfs)
+
+# DataStore - 使用 glob pattern 效率更高
+df = pd.read_csv("data/*.csv")
+```
+
+***
+
+<div id="filtering">
+  ## 筛选
+</div>
+
+<div id="single-condition">
+  ### 单一条件
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df[df['age'] > 25]
+df[df['city'] == 'NYC']
+df[df['name'].str.contains('John')]
+```
+
+<div id="multiple-conditions">
+  ### 多个条件
+</div>
+
+```python
+# 与
+df[(df['age'] > 25) & (df['city'] == 'NYC')]
+
+# 或
+df[(df['age'] < 18) | (df['age'] > 65)]
+
+# 非
+df[~(df['status'] == 'inactive')]
+```
+
+<div id="using-query">
+  ### query() 的用法
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.query('age > 25 and city == "NYC"')
+df.query('salary > 50000')
+```
+
+<div id="isin">
+  ### isin()
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df[df['city'].isin(['NYC', 'LA', 'SF'])]
+```
+
+<div id="between">
+  ### between()
+</div>
+
+```python
+# Pandas 和 DataStore - 写法相同
+df[df['age'].between(18, 65)]
+```
+
+***
+
+<div id="selecting">
+  ## 选择列
+</div>
+
+<div id="single-column-select">
+  ### 单列
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['name']
+df.name  # 属性访问
+```
+
+<div id="multiple-columns-select">
+  ### 多列
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df[['name', 'age', 'city']]
+```
+
+<div id="select-and-filter">
+  ### 选择和过滤
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df[df['age'] > 25][['name', 'salary']]
+
+# DataStore 也支持 SQL 风格
+df.filter(df['age'] > 25).select('name', 'salary')
+```
+
+***
+
+<div id="sorting">
+  ## 排序
+</div>
+
+<div id="single-column-select">
+  ### 单列
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.sort_values('salary')
+df.sort_values('salary', ascending=False)
+```
+
+<div id="multiple-columns-select">
+  ### 多列
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.sort_values(['city', 'salary'], ascending=[True, False])
+```
+
+<div id="get-top-bottom-n">
+  ### 获取排名前/后 N 的项
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.nlargest(10, 'salary')
+df.nsmallest(5, 'age')
+```
+
+***
+
+<div id="groupby">
+  ## GroupBy 与聚合
+</div>
+
+<div id="simple-groupby">
+  ### 简单的 GroupBy
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df.groupby('city')['salary'].mean()
+df.groupby('city')['salary'].sum()
+df.groupby('city').size()  # 计数
+```
+
+<div id="multiple-aggregations">
+  ### 多重聚合
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.groupby('city')['salary'].agg(['sum', 'mean', 'count'])
+
+df.groupby('city').agg({
+    'salary': ['sum', 'mean'],
+    'age': ['min', 'max']
+})
+```
+
+<div id="named-aggregations">
+  ### 命名聚合
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df.groupby('city').agg(
+    total_salary=('salary', 'sum'),
+    avg_salary=('salary', 'mean'),
+    employee_count=('id', 'count')
+)
+```
+
+<div id="multiple-groupby-keys">
+  ### 多个 GroupBy 键
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.groupby(['city', 'department'])['salary'].mean()
+```
+
+***
+
+<div id="joining">
+  ## 连接数据
+</div>
+
+<div id="inner-join">
+  ### 内连接
+</div>
+
+```python
+# Pandas
+pd.merge(df1, df2, on='id')
+
+# DataStore - 相同的 API
+pd.merge(df1, df2, on='id')
+
+# DataStore 同样支持
+df1.join(df2, on='id')
+```
+
+<div id="left-join">
+  ### 左连接
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+pd.merge(df1, df2, on='id', how='left')
+```
+
+<div id="join-on-different-columns">
+  ### 基于不同列进行 连接
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+pd.merge(df1, df2, left_on='emp_id', right_on='id')
+```
+
+<div id="concat">
+  ### 拼接
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+pd.concat([df1, df2, df3])
+pd.concat([df1, df2], axis=1)
+```
+
+***
+
+<div id="string">
+  ## 字符串操作
+</div>
+
+<div id="case-conversion">
+  ### 大小写转换
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['name'].str.upper()
+df['name'].str.lower()
+df['name'].str.title()
+```
+
+<div id="substring">
+  ### 子串
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['name'].str[:3]        # 前 3 个字符
+df['name'].str.slice(0, 3)
+```
+
+<div id="search">
+  ### 搜索
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['name'].str.contains('John')
+df['name'].str.startswith('A')
+df['name'].str.endswith('son')
+```
+
+<div id="replace">
+  ### 替换
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['text'].str.replace('old', 'new')
+df['text'].str.replace(r'\d+', '', regex=True)  # 删除数字
+```
+
+<div id="split">
+  ### 拆分
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['name'].str.split(' ')
+df['name'].str.split(' ', expand=True)
+```
+
+<div id="length">
+  ### 时长
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['name'].str.len()
+```
+
+***
+
+<div id="datetime">
+  ## DateTime 运算
+</div>
+
+<div id="extract-components">
+  ### 提取各部分
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['date'].dt.year
+df['date'].dt.month
+df['date'].dt.day
+df['date'].dt.dayofweek
+df['date'].dt.hour
+```
+
+<div id="formatting">
+  ### 格式化
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['date'].dt.strftime('%Y-%m-%d')
+```
+
+***
+
+<div id="missing">
+  ## 数据缺失
+</div>
+
+<div id="check-missing">
+  ### 查看缺失值
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df['col'].isna()
+df['col'].notna()
+df.isna().sum()
+```
+
+<div id="drop-missing">
+  ### 删除缺失值
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.dropna()
+df.dropna(subset=['col1', 'col2'])
+```
+
+<div id="fill-missing">
+  ### 填充缺失值
+</div>
+
+```python
+# Pandas 和 DataStore - 相同
+df.fillna(0)
+df.fillna({'col1': 0, 'col2': 'Unknown'})
+df.fillna(method='ffill')
+```
+
+***
+
+<div id="new-columns">
+  ## 创建新列
+</div>
+
+<div id="simple-assignment">
+  ### 简单赋值
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df['total'] = df['price'] * df['quantity']
+df['age_group'] = df['age'] // 10 * 10
+```
+
+<div id="using-assign">
+  ### 使用 assign()
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df = df.assign(
+    total=df['price'] * df['quantity'],
+    is_adult=df['age'] >= 18
+)
+```
+
+<div id="conditional-where-mask">
+  ### 条件筛选 (where/mask)
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df['status'] = df['age'].where(df['age'] >= 18, 'minor')
+```
+
+<div id="apply-for-custom-logic">
+  ### 用于自定义逻辑的 apply()
+</div>
+
+```python
+# 有效，但会触发 pandas 执行
+df['category'] = df['amount'].apply(lambda x: 'high' if x > 1000 else 'low')
+
+# DataStore 替代方案（保持惰性执行）
+df['category'] = (
+    df.when(df['amount'] > 1000, 'high')
+      .otherwise('low')
+)
+```
+
+***
+
+<div id="reshaping">
+  ## 数据重塑
+</div>
+
+<div id="pivot-table">
+  ### 透视表
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df.pivot_table(
+    values='amount',
+    index='region',
+    columns='product',
+    aggfunc='sum'
+)
+```
+
+<div id="melt-unpivot">
+  ### 宽转长 (Unpivot)
+</div>
+
+```python
+# Pandas 和 DataStore - 完全一致
+df.melt(
+    id_vars=['name'],
+    value_vars=['score1', 'score2', 'score3'],
+    var_name='test',
+    value_name='score'
+)
+```
+
+<div id="explode">
+  ### 展开
+</div>
+
+```python
+# Pandas 和 DataStore - 完全一致
+df.explode('tags')  # 展开数组列
+```
+
+***
+
+<div id="window">
+  ## 窗口函数
+</div>
+
+<div id="rolling">
+  ### 滚动窗口
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df['rolling_avg'] = df['price'].rolling(window=7).mean()
+df['rolling_sum'] = df['amount'].rolling(window=30).sum()
+```
+
+<div id="explode">
+  ### 展开
+</div>
+
+```python
+# Pandas 与 DataStore：完全一致
+df['cumsum'] = df['amount'].expanding().sum()
+df['cummax'] = df['amount'].expanding().max()
+```
+
+<div id="shift">
+  ### 移位
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df['prev_value'] = df['value'].shift(1)   # 滞后
+df['next_value'] = df['value'].shift(-1)  # 超前
+```
+
+<div id="diff">
+  ### 差异
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df['change'] = df['value'].diff()
+df['pct_change'] = df['value'].pct_change()
+```
+
+***
+
+<div id="output">
+  ## 输出
+</div>
+
+<div id="to-csv">
+  ### 输出为 CSV
+</div>
+
+```python
+# Pandas 和 DataStore - 完全相同
+df.to_csv("output.csv", index=False)
+```
+
+<div id="to-parquet">
+  ### 转为 Parquet
+</div>
+
+```python
+# Pandas 和 DataStore - 完全一致
+df.to_parquet("output.parquet")
+```
+
+<div id="to-pandas-dataframe">
+  ### 转为 pandas DataFrame
+</div>
+
+```python
+# DataStore 专用
+pandas_df = ds.to_df()
+pandas_df = ds.to_pandas()
+```
+
+***
+
+<div id="extras">
+  ## DataStore 附加功能
+</div>
+
+<div id="view-sql">
+  ### 查看 SQL
+</div>
+
+```python
+# 仅适用于 DataStore
+print(ds.to_sql())
+```
+
+<div id="explain-plan">
+  ### 执行计划
+</div>
+
+```python
+# 仅适用于 DataStore
+ds.explain()
+```
+
+<div id="clickhouse-functions">
+  ### ClickHouse 函数
+</div>
+
+```python
+# 仅限 DataStore：额外访问器
+df['domain'] = df['url'].url.domain()
+df['json_value'] = df['data'].json.get_string('key')
+df['ip_valid'] = df['ip'].ip.is_ipv4_string()
+```
+
+<div id="universal-uri">
+  ### 通用 URI
+</div>
+
+```python
+# 仅限 DataStore - 可从任意位置读取
+ds = DataStore.uri("s3://bucket/data.parquet")
+ds = DataStore.uri("mysql://user:pass@host/db/table")
+```

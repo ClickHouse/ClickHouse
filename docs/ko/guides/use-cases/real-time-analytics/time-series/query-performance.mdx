@@ -1,0 +1,274 @@
+---
+title: '쿼리 성능 - 시계열'
+sidebarTitle: '쿼리 성능'
+description: '시계열 쿼리 성능 개선'
+slug: /use-cases/time-series/query-performance
+keywords: ['시계열', '쿼리 성능', '최적화', '인덱싱', '파티셔닝', '쿼리 튜닝', '성능']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+스토리지를 최적화한 후 다음 단계는 쿼리 성능을 개선하는 것입니다.
+이 섹션에서는 두 가지 핵심 기법인 `ORDER BY` 키 최적화와 materialized view 활용을 살펴봅니다.
+이러한 접근 방식을 통해 쿼리 시간을 수 초에서 밀리초 수준으로 줄이는 방법을 알아보겠습니다.
+
+<div id="time-series-optimize-order-by">
+  ## `ORDER BY` 키 최적화
+</div>
+
+다른 최적화를 시도하기 전에 ClickHouse가 최대한 빠르게 결과를 반환할 수 있도록 정렬 키를 최적화해야 합니다.
+적절한 키 선택은 주로 실행할 쿼리에 따라 달라집니다. 대부분의 쿼리가 `project` 및 `subproject` 컬럼을 기준으로 필터링된다고 가정해 보겠습니다.
+이 경우 이 컬럼들을 정렬 키에 추가하는 것이 좋습니다. 또한 시간 조건으로도 쿼리하므로 `time` 컬럼도 함께 추가하는 것이 좋습니다.
+
+이제 `wikistat`와 동일한 컬럼 타입을 가지지만 `(project, subproject, time)`으로 정렬되는 테이블의 다른 버전을 만들어 보겠습니다.
+
+```sql
+CREATE TABLE wikistat_project_subproject
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = MergeTree
+ORDER BY (project, subproject, time);
+```
+
+이제 여러 쿼리를 비교해 정렬 키 표현식이 성능에 얼마나 중요한지 살펴보겠습니다. 앞서 다룬 데이터 타입 및 코덱 최적화는 아직 적용하지 않았으므로, 쿼리 성능 차이는 정렬 순서에 따른 것뿐입니다.
+
+<table>
+  <thead>
+    <tr>
+      <th style={{ width: '36%' }}>쿼리</th>
+      <th style={{ textAlign: 'right', width: '32%' }}>`(time)`</th>
+      <th style={{ textAlign: 'right', width: '32%' }}>`(project, subproject, time)`</th>
+    </tr>
+  </thead>
+
+  <tbody>
+    <tr>
+      <td>
+        ```sql
+        SELECT project, sum(hits) AS h
+        FROM wikistat
+        GROUP BY project
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.381 sec</td>
+      <td style={{ textAlign: 'right' }}>1.660 sec</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT subproject, sum(hits) AS h
+        FROM wikistat
+        WHERE project = 'it'
+        GROUP BY subproject
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.148 sec</td>
+      <td style={{ textAlign: 'right' }}>0.058 sec</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT toStartOfMonth(time) AS m, sum(hits) AS h
+        FROM wikistat
+        WHERE (project = 'it') AND (subproject = 'zero')
+        GROUP BY m
+        ORDER BY m DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.192 sec</td>
+      <td style={{ textAlign: 'right' }}>0.012 sec</td>
+    </tr>
+
+    <tr>
+      <td>
+        ```sql
+        SELECT path, sum(hits) AS h
+        FROM wikistat
+        WHERE (project = 'it') AND (subproject = 'zero')
+        GROUP BY path
+        ORDER BY h DESC
+        LIMIT 10;
+        ```
+      </td>
+
+      <td style={{ textAlign: 'right' }}>2.968 sec</td>
+      <td style={{ textAlign: 'right' }}>0.010 sec</td>
+    </tr>
+  </tbody>
+</table>
+
+<div id="time-series-materialized-views">
+  ## materialized view
+</div>
+
+또 다른 방법은 materialized view를 사용해 자주 실행되는 쿼리의 결과를 집계하고 저장하는 것입니다. 이렇게 저장된 결과는 원본 테이블 대신 조회할 수 있습니다. 여기서는 다음 쿼리가 매우 자주 실행된다고 가정해 보겠습니다:
+
+```sql
+SELECT path, SUM(hits) AS v
+FROM wikistat
+WHERE toStartOfMonth(time) = '2015-05-01'
+GROUP BY path
+ORDER BY v DESC
+LIMIT 10
+```
+
+```text
+┌─path──────────────────┬────────v─┐
+│ -                     │ 89650862 │
+│ Angelsberg            │ 19165753 │
+│ Ana_Sayfa             │  6368793 │
+│ Academy_Awards        │  4901276 │
+│ Accueil_(homonymie)   │  3805097 │
+│ Adolf_Hitler          │  2549835 │
+│ 2015_in_spaceflight   │  2077164 │
+│ Albert_Einstein       │  1619320 │
+│ 19_Kids_and_Counting  │  1430968 │
+│ 2015_Nepal_earthquake │  1406422 │
+└───────────────────────┴──────────┘
+
+10 rows in set. Elapsed: 2.285 sec. Processed 231.41 million rows, 9.22 GB (101.26 million rows/s., 4.03 GB/s.)
+Peak memory usage: 1.50 GiB.
+```
+
+<div id="time-series-create-materialized-view">
+  ### materialized view 생성
+</div>
+
+다음과 같이 materialized view를 생성할 수 있습니다:
+
+```sql
+CREATE TABLE wikistat_top
+(
+    `path` String,
+    `month` Date,
+    hits UInt64
+)
+ENGINE = SummingMergeTree
+ORDER BY (month, hits);
+```
+
+```sql
+CREATE MATERIALIZED VIEW wikistat_top_mv 
+TO wikistat_top
+AS
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY path, month;
+```
+
+<div id="time-series-backfill-destination-table">
+  ### 대상 테이블 백필
+</div>
+
+이 대상 테이블은 `wikistat` 테이블에 새 레코드가 삽입될 때만 채워지므로, [백필](/ko/guides/clickhouse/data-modelling/backfilling)이 필요합니다.
+
+가장 쉬운 방법은 뷰의 `SELECT` 쿼리(변환)를 [사용해](https://github.com/ClickHouse/examples/tree/main/ClickHouse_vs_ElasticSearch/DataAnalytics#variant-1---directly-inserting-into-the-target-table-by-using-the-materialized-views-transformation-query) materialized view의 대상 테이블에 직접 삽입하는 [`INSERT INTO SELECT`](/ko/reference/statements/insert-into#inserting-the-results-of-select) SQL 문을 사용하는 것입니다:
+
+```sql
+INSERT INTO wikistat_top
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat
+GROUP BY path, month;
+```
+
+원시 데이터 세트의 카디널리티에 따라(여기서는 10억 개의 행입니다!), 이 방법은 메모리를 많이 사용할 수 있습니다. 대안으로, 메모리 사용량이 매우 적은 변형 방식을 사용할 수 있습니다:
+
+* Null table engine을 사용하는 임시 테이블 생성
+* 평소 사용하는 materialized view의 복사본을 해당 임시 테이블에 연결
+* `INSERT INTO SELECT` 쿼리를 사용해 원시 데이터 세트의 모든 데이터를 해당 임시 테이블로 복사
+* 임시 테이블과 임시 materialized view를 삭제합니다.
+
+이 방법을 사용하면 원시 데이터 세트의 행이 블록 단위로 임시 테이블에 복사되며(이 테이블은 이러한 행을 전혀 저장하지 않음), 각 행 블록마다 부분 상태가 계산되어 대상 테이블에 기록되고, 이 상태들은 백그라운드에서 점진적으로 머지됩니다.
+
+```sql
+CREATE TABLE wikistat_backfill
+(
+    `time` DateTime,
+    `project` String,
+    `subproject` String,
+    `path` String,
+    `hits` UInt64
+)
+ENGINE = Null;
+```
+
+다음으로, `wikistat_backfill`에서 데이터를 읽어 `wikistat_top`에 쓰는 materialized view를 생성합니다
+
+```sql
+CREATE MATERIALIZED VIEW wikistat_backfill_top_mv 
+TO wikistat_top
+AS
+SELECT
+    path,
+    toStartOfMonth(time) AS month,
+    sum(hits) AS hits
+FROM wikistat_backfill
+GROUP BY path, month;
+```
+
+마지막으로, 원래 `wikistat` 테이블을 사용해 `wikistat_backfill`을 채웁니다:
+
+```sql
+INSERT INTO wikistat_backfill
+SELECT * 
+FROM wikistat;
+```
+
+해당 쿼리가 완료되면 backfill 테이블과 materialized view를 삭제할 수 있습니다:
+
+```sql
+DROP VIEW wikistat_backfill_top_mv;
+DROP TABLE wikistat_backfill;
+```
+
+이제 원본 테이블 대신 materialized view를 쿼리할 수 있습니다:
+
+```sql
+SELECT path, sum(hits) AS hits
+FROM wikistat_top
+WHERE month = '2015-05-01'
+GROUP BY ALL
+ORDER BY hits DESC
+LIMIT 10;
+```
+
+```text
+┌─path──────────────────┬─────hits─┐
+│ -                     │ 89543168 │
+│ Angelsberg            │  7047863 │
+│ Ana_Sayfa             │  5923985 │
+│ Academy_Awards        │  4497264 │
+│ Accueil_(homonymie)   │  2522074 │
+│ 2015_in_spaceflight   │  2050098 │
+│ Adolf_Hitler          │  1559520 │
+│ 19_Kids_and_Counting  │   813275 │
+│ Andrzej_Duda          │   796156 │
+│ 2015_Nepal_earthquake │   726327 │
+└───────────────────────┴──────────┘
+
+10 rows in set. Elapsed: 0.004 sec.
+```
+
+여기서의 성능 향상은 매우 큽니다.
+이전에는 이 쿼리의 결과를 계산하는 데 2초가 조금 넘게 걸렸지만, 이제는 4밀리초밖에 걸리지 않습니다.
