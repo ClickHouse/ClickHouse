@@ -60,6 +60,8 @@ SCENARIOS = (
     "history-budget-covers-text",
     "superseded-activation-does-not-launch",
     "markdown-edit-backdrop-fences",
+    "notebook-change-survives-immediate-reload",
+    "save-load-round-trips-notebook",
 )
 
 

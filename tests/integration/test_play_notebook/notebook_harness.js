@@ -521,12 +521,13 @@ async function runScenario(js, config) {
     return { live: JSON.parse(live), persisted, persistedMeta, sandbox, stores, stats };
 }
 
-/// Wait for the next debounced `persist` (400 ms) after a post-startup interaction, then read back
-/// what it wrote. Used by the scenarios that assert what a reload would find in `IndexedDB`.
+/// Wait until the saves a post-startup interaction started have landed - the debounced `persist`
+/// (400 ms) if one is pending, or the immediate one a notebook change writes (`saveNow`, which
+/// takes over a pending debounce) - then read back what they wrote. Used by the scenarios that
+/// assert what a reload would find in `IndexedDB`.
 async function waitForNextPersist(r) {
-    const target = r.stats.persistCount + 1;
     const deadline = Date.now() + 5000;
-    while (r.stats.persistCount < target) {
+    while (vm.runInContext('save_timer', r.sandbox) !== null) {
         if (Date.now() > deadline) throw new Error('timed out waiting for the debounced persist');
         await sleep(25);
     }
@@ -952,7 +953,10 @@ async function main() {
             const duplicated_shape = shape(other);
             addCell(other, 'text', other.cells.length);
             await settle();
-            other.cells[other.cells.length - 1].text = 'other tab';
+            /// Typed into the new cell's editor, whose input handler schedules the save.
+            const typed = other.cells[other.cells.length - 1];
+            typed.textarea.value = 'other tab';
+            typed.textarea.dispatchEvent(new Event('input'));
             const other_shape = shape(other);
             const first_shape = shape(tab);
             const shared_cells = tab.cells.some(c => other.cells.includes(c));
@@ -1586,6 +1590,107 @@ async function main() {
         check(scenario, 'tilde fences follow the same rule',
               out.tilde.includes(code('~~~')) && out.tilde.includes(code('still code'))
               && !out.tilde.includes(code('done')), out.tilde);
+    }
+
+    /// Contract 9: a notebook change that keeps the active query cell - a Markdown cell added or
+    /// edited, a cell moved, an inactive query cell deleted - survives a reload made right after it,
+    /// before the debounced `persist`. No cell activation or run follows such a change, so nothing
+    /// else records it: both `IndexedDB` (what a reload restores) and the current history entry
+    /// (whose `cells` recreate the tab on Back/Forward) must be written at once. Each step below
+    /// snapshots both well inside the 400 ms debounce and reboots a fresh page from the snapshot.
+    {
+        const scenario = 'notebook-change-survives-immediate-reload';
+        const r = await runScenario(js, { href: base });
+        const shapeExpr = "tab.cells.map(c => c.type + ':' + (c.type === 'text' ? c.text : c.query))";
+        /// Two query cells to start from, persisted, so every step below begins from a saved state.
+        await evalJSONAsync(r.sandbox, `
+            const tab = getActiveTab();
+            query_area.value = 'SELECT 1';
+            addCell(tab, 'query', 1);
+            await new Promise(res => setTimeout(res, 30));
+            query_area.value = 'SELECT 2';
+            captureActiveTab();
+            return null;
+        `);
+        /// Past any debounce the setup armed, so each step starts from a settled, saved workspace.
+        await sleep(500);
+
+        const steps = [
+            ['adding a Markdown cell', `addCell(tab, 'text', 0);`],
+            ['editing a Markdown cell', `
+                const cell = tab.cells.find(c => c.type === 'text');
+                cell.editing = true;
+                renderTextCell(tab, cell);
+                cell.textarea.value = 'edited notes';
+                cell.textarea.dispatchEvent(new Event('input'));
+                cell.textarea.dispatchEvent(new Event('blur'));`],
+            ['moving a cell', `moveCell(tab, tab.cells[0], 1);`],
+            ['deleting an inactive query cell', `
+                deleteCell(tab, tab.cells.find(c => c.type === 'query' && c !== activeCell(tab)));`],
+        ];
+        for (const [what, action] of steps) {
+            const live = await evalJSONAsync(r.sandbox, `
+                const tab = getActiveTab();
+                ${action}
+                await new Promise(res => setTimeout(res, 30));
+                captureActiveTab();
+                return {
+                    shape: ${shapeExpr},
+                    history: (history.state && history.state.cells || [])
+                        .map(c => c.type + ':' + (c.type === 'text' ? c.text : c.query)),
+                };
+            `);
+            check(scenario, `the history entry records the notebook after ${what}`,
+                  JSON.stringify(live.history) === JSON.stringify(live.shape), live);
+            const records = [...r.stores.get('tabs').data.values()];
+            const meta = r.stores.get('meta').data.get('state') || null;
+            const reloaded = await runScenario(js, { href: r.sandbox.location.href, historyState: r.sandbox.history.state,
+                                                     seedTabs: records, seedMeta: meta });
+            const back = evalJSON(reloaded.sandbox, `const tab = getActiveTab(); return ${shapeExpr};`);
+            check(scenario, `a reload right after ${what} restores it`,
+                  JSON.stringify(back) === JSON.stringify(live.shape), { reloaded: back, expected: live.shape });
+        }
+    }
+
+    /// Contract 10: saving the workspace as Markdown and loading it back keeps a notebook whole -
+    /// every cell, in order, each with its type, and the parameters of the query cell they belong
+    /// to - while a single-query tab still writes exactly the document it did before notebooks.
+    {
+        const scenario = 'save-load-round-trips-notebook';
+        const r = await runScenario(js, { href: base });
+        const out = await evalJSONAsync(r.sandbox, `
+            const B = '\\u0060';
+            const settle = () => new Promise(res => setTimeout(res, 30));
+            const shape = (tab) => tab.cells.map(c => c.type === 'text' ? 'text:' + c.text
+                : 'query:' + c.query + ':' + JSON.stringify(c.params || {}));
+            const tab = getActiveTab();
+            query_area.value = 'SELECT 1';
+            const single = buildTabsMarkdown();
+            addCell(tab, 'text', 0);
+            await settle();
+            /// A Markdown cell holding a heading and a code block of its own: neither may turn into
+            /// a tab or a query cell on Load.
+            tab.cells[0].text = '# Notes\\n\\n' + B.repeat(3) + '\\nSELECT not a cell\\n' + B.repeat(3);
+            addCell(tab, 'query', 2);
+            await settle();
+            query_area.value = 'SELECT {n:UInt8}';
+            captureActiveTab();
+            activeCell(tab).params = { n: '7' };
+            const saved_shape = shape(tab);
+            const doc = buildTabsMarkdown();
+            globalThis.confirm = () => true;
+            const loaded = loadTabsFromMarkdown(doc);
+            await settle();
+            return { single, doc, saved_shape, loaded, tabs: tabs.length,
+                     loaded_shape: shape(tabs[0]), title: tabs[0].title };
+        `);
+        check(scenario, 'a single-query tab is saved as one heading and one code block',
+              out.single === '# Query A\n\n```\nSELECT 1\n```\n', out.single);
+        check(scenario, 'the notebook document is loaded', out.loaded === true && out.tabs === 1, out);
+        check(scenario, 'every cell comes back in order, with its type and parameters',
+              JSON.stringify(out.loaded_shape) === JSON.stringify(out.saved_shape),
+              { loaded: out.loaded_shape, saved: out.saved_shape, doc: out.doc });
+        check(scenario, 'the tab keeps its title', out.title === 'Query A', out.title);
     }
 
     if (failures) {

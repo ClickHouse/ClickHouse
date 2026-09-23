@@ -14639,13 +14639,15 @@ function renderTextCell(tab, cell) {
             autoGrow();
         };
         repaint();
+        /// Keystrokes are saved debounced, like the query editor's (see `onQueryInput`); finishing
+        /// the edit records it at once.
         textarea.addEventListener('input', () => { cell.text = textarea.value; repaint(); scheduleSave(); });
         /// Leaving the text area finishes editing and shows the rendered Markdown.
         textarea.addEventListener('blur', () => {
             cell.text = textarea.value;
             cell.editing = false;
             renderTextCell(tab, cell);
-            scheduleSave();
+            commitNotebookChange(tab);
         });
         textarea.addEventListener('keydown', (e) => {
             /// Escape and Ctrl/Cmd+Enter finish editing, like the run shortcut does for a query.
@@ -14756,8 +14758,14 @@ function addCell(tab, type, index) {
     cell.tab = tab;
     tab.cells.splice(index, 0, cell);
     renderNotebook(tab);
-    if (type === 'query') setActiveCell(tab, cell.id);
-    else { renderTabBar(); scheduleSave(); }
+    if (type === 'query') {
+        /// The activation stamps history; save once it has loaded the new cell into the editor
+        /// (before that, `persist`'s `captureActiveTab` would read the previous cell's text).
+        setActiveCell(tab, cell.id).then(activated => { if (activated) saveNow(); });
+    } else {
+        renderTabBar();
+        commitNotebookChange(tab);
+    }
 }
 
 function deleteCell(tab, cell) {
@@ -14796,13 +14804,15 @@ function deleteCell(tab, cell) {
         /// `setActiveCell` stamps history after its own activation. The invariant above guarantees
         /// a remaining query cell, so there is always a handover to wait for.
         activateCellState(tab, activeCell(tab)).then(activated => {
-            if (activated) refreshCurrentHistoryEntry(tab);
+            if (activated) commitNotebookChange(tab);
         });
+        renderTabBar();
+        scheduleSave();
     } else {
         renderNotebook(tab);
+        renderTabBar();
+        commitNotebookChange(tab);
     }
-    renderTabBar();
-    scheduleSave();
 }
 
 function moveCell(tab, cell, delta) {
@@ -14813,7 +14823,7 @@ function moveCell(tab, cell, delta) {
     tab.cells.splice(index, 1);
     tab.cells.splice(target, 0, cell);
     renderNotebook(tab);
-    scheduleSave();
+    commitNotebookChange(tab);
 }
 
 /// Give a cell the shared editor: fold the current draft back into the cell being left, load
@@ -16186,6 +16196,29 @@ let save_timer = null;
 function scheduleSave() {
     if (save_timer) return;
     save_timer = setTimeout(() => { save_timer = null; persist(); }, 400);
+}
+
+/// Persist right away, taking over a pending debounced save.
+function saveNow() {
+    if (save_timer) { clearTimeout(save_timer); save_timer = null; }
+    return persist();
+}
+
+/// A save still waiting for its debounce when the page goes away (a reload, a navigation, a closed
+/// window) would be dropped with the timer; start it now. The `IndexedDB` transaction is atomic,
+/// so one the browser does not let finish leaves the previous workspace intact.
+window.addEventListener('pagehide', () => { if (save_timer) saveNow(); });
+
+/// Record a notebook change that keeps the active query cell - a Markdown cell added, edited or
+/// deleted, a cell moved, an inactive query cell deleted - right away rather than at the next
+/// debounced save. Nothing else records it before then: no cell activation follows (which stamps
+/// history, see `setActiveCell`) and no run, so a reload inside the debounce window would find the
+/// pre-change notebook both in `IndexedDB` and in the current history entry, whose `cells`
+/// recreate the tab on Back/Forward. The entry is refreshed in place: a structural change is not a
+/// navigation step. The history entry follows the active tab only.
+function commitNotebookChange(tab) {
+    if (tab.id === activeTabId) refreshCurrentHistoryEntry(tab);
+    saveNow();
 }
 
 /// The persisted shape of one cell: its content and last result, never its DOM or run state.
@@ -20934,7 +20967,8 @@ function onQueryInput(e)
     /// the query into the URL hash, retitling the document and rebuilding the tab bar on each
     /// keypress; browsers also rate-limit `replaceState`. The entry is written when a query is
     /// successfully run (`saveHistory`) and on a structural tab change — switch, add, close,
-    /// rename — each of which captures the editor and writes history itself.
+    /// rename — each of which captures the editor and writes history itself, as does every change
+    /// to a notebook's cells (`setActiveCell`, `commitNotebookChange`).
     ///
     /// The draft is not lost by dropping the per-keystroke write: `scheduleSave` below persists it
     /// to `IndexedDB` (debounced), `reconcileStartup`'s stale-reload branch restores it as editor
