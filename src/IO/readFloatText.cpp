@@ -122,6 +122,9 @@ inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
     return static_cast<uint32_t>(val);
 }
 
+/// Classifying 16 bytes at once finds where a short token ends without a branch per character, which
+/// mispredicts when the lengths of the values vary. Written with clang vector extensions rather than
+/// intrinsics so that the same code compiles for x86 and aarch64.
 #if defined(__aarch64__)
 constexpr unsigned mask_bits_per_byte = 4;
 #else
@@ -133,25 +136,30 @@ template <typename Vector>
 inline uint64_t byteMask16(Vector bytes)
 {
 #if defined(__aarch64__)
-    /// NEON has no movemask; `shrn` narrows the byte mask to 4 bits per byte.
+    /// NEON has no movemask. Narrowing each 16-bit lane by 4 bits (`shrn`) keeps 4 bits of every byte, which
+    /// is as good for counting bytes with countr_zero / popcount. Credit: Danila Kutenin, "Porting x86 vector
+    /// bitmask optimizations to Arm NEON", Arm Community blog, 2022.
     using U16x8 = uint16_t __attribute__((vector_size(16)));
     using U8x8 = uint8_t __attribute__((vector_size(8)));
     return __builtin_bit_cast(uint64_t, __builtin_convertvector(__builtin_bit_cast(U16x8, bytes) >> 4, U8x8));
 #else
-    /// `pmovmskb` on x86.
+    /// Clang lowers this to `pmovmskb` on x86.
     using Bool16 = bool __attribute__((ext_vector_type(16)));
     return __builtin_bit_cast(uint16_t, __builtin_convertvector(bytes, Bool16));
 #endif
 }
 
 /// Value of the `n` <= 15 decimal digits at `p`, reading 16 bytes.
+/// Uses parse_eight_digits_unrolled above (credit: @aqrit), which needs exactly 8 digits. Right-aligning a
+/// shorter run behind leading zeros lets one or two such conversions handle any length without a loop.
 inline uint64_t parseDigits16(const char * p, unsigned n)
 {
     if (n == 0)
         return 0;
-    /// Subtract '0' from every byte, then move the digits to the end so that the start becomes leading
-    /// zeros. Borrows only go up from the bytes after the digits, which are shifted out.
+    /// Subtract '0' (0x30) from every byte, then shift the digits to the end so that zeros enter at the start.
+    /// Borrows only go up from the bytes after the digits, which are shifted out.
     /// parse_eight_digits_unrolled subtracts '0' itself, so it is added back (the compiler folds both).
+    /// Runs of at most 8 digits, the common case, need a single 64-bit conversion.
     if (n <= 8)
         return parse_eight_digits_unrolled(((unalignedLoad<uint64_t>(p) - 0x3030303030303030) << (8 * (8 - n))) + 0x3030303030303030);
     const unsigned __int128 zeros = (static_cast<unsigned __int128>(0x3030303030303030) << 64) | 0x3030303030303030;
@@ -160,48 +168,11 @@ inline uint64_t parseDigits16(const char * p, unsigned n)
         + parse_eight_digits_unrolled(static_cast<uint64_t>(digits >> 64) + 0x3030303030303030);
 }
 
-/// Bytes read from the start of a token by tryReadShortDecimal: sign, then two 16-byte loads.
-constexpr ptrdiff_t short_decimal_read_bytes = 33;
-
-/// Parses a `[-+]digits[.digits]` token of at most 15 digits (7 for float) and 15 chars after the sign.
-/// Such a mantissa and its power of ten are exact, so one division is correctly rounded (Clinger's fast path).
-/// Returns the end of the token, or nullptr for anything else, including exponents, for fast_float to handle.
-template <typename T>
-ALWAYS_INLINE inline const char * tryReadShortDecimal(T & x, const char * first)
-{
-    const bool negative = *first == '-';
-    const char * const begin = first + (negative || *first == '+');
-
-    /// The token is the run of digits and dots at `begin`.
-    using U8x16 = uint8_t __attribute__((vector_size(16)));
-    const auto bytes = unalignedLoad<U8x16>(begin);
-    const uint64_t digit_mask = byteMask16((bytes - '0') < 10);
-    const uint64_t dot_mask = byteMask16(bytes == '.');
-    const unsigned len = std::countr_zero(~(digit_mask | dot_mask)) / mask_bits_per_byte;
-    if (len >= 16)
-        return nullptr;
-
-    const unsigned num_digits = std::popcount(digit_mask & ((uint64_t(1) << (len * mask_bits_per_byte)) - 1)) / mask_bits_per_byte;
-    const unsigned int_len = std::countr_zero(~digit_mask) / mask_bits_per_byte;
-    const unsigned frac_len = num_digits - int_len;
-    const char * const end = begin + len;
-
-    /// At most one dot ("1.2.3" is left to fast_float), at least one digit, and no exponent.
-    constexpr unsigned max_digits = std::is_same_v<T, double> ? 15 : 7;
-    if (len - num_digits > 1 || num_digits == 0 || num_digits > max_digits || (*end | 0x20) == 'e')
-        return nullptr;
-
-    const uint64_t mantissa = parseDigits16(begin, int_len) * common::exp10_i64(frac_len) + parseDigits16(begin + int_len + 1, frac_len);
-    const T value = static_cast<T>(static_cast<int64_t>(mantissa)) / static_cast<T>(common::exp10_i64(frac_len));
-    x = negative ? -value : value;
-    return end;
-}
-
 /// A pure decimal integer of up to 38 digits fits exactly in unsigned __int128, and the conversion
 /// to double/float is correctly rounded. That is far cheaper than fast_float's big-integer path for
 /// long inputs (e.g. 19-20 digit integers), and exactly as correct.
 /// Returns true (and sets @x and @parse_end) on a pure integer; false to fall back otherwise
-/// (decimal point, exponent, sign issues, or more than 38 digits).
+/// (decimal point, exponent, or more than 38 digits).
 constexpr int max_u128_integer_digits = 38;
 
 /// A value of at most this many characters has at most this many significant digits, so
@@ -213,13 +184,6 @@ template <typename T>
 inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * last, const char *& parse_end)
 {
     const char * p = first;
-    bool negative = false;
-    if (p < last && (*p == '-' || *p == '+'))
-    {
-        negative = (*p == '-');
-        ++p;
-    }
-
     const char * const digits_begin = p;
     unsigned __int128 value = 0;
     /// Accumulate 8 digits at a time via SWAR (byteswap on big-endian; see parse_eight_digits_unrolled).
@@ -245,8 +209,7 @@ inline bool tryReadLongIntegerToFloat(T & x, const char * first, const char * la
     if (p < last && (*p == '.' || *p == 'e' || *p == 'E'))
         return false;
 
-    auto result = static_cast<T>(value);
-    x = negative ? -result : result;
+    x = static_cast<T>(value);
     parse_end = p;
     return true;
 }
@@ -263,13 +226,6 @@ template <typename T>
 inline bool tryReadBigIntegerToFloat(T & x, const char * first, const char * last, fast_float::from_chars_result_t<char> & result)
 {
     const char * p = first;
-    bool negative = false;
-    if (p < last && (*p == '-' || *p == '+'))
-    {
-        negative = (*p == '-');
-        ++p;
-    }
-
     const char * const integer_begin = p;
     while (p < last && *p == '0') /// leading zeros are part of the integer span but not significant
         ++p;
@@ -301,7 +257,7 @@ inline bool tryReadBigIntegerToFloat(T & x, const char * first, const char * las
     fast_float::parsed_number_string_t<char> pns;
     pns.valid = true;
     pns.too_many_digits = true;
-    pns.negative = negative;
+    pns.negative = false;
     pns.mantissa = mantissa;                       /// first 19 significant digits, truncated
     pns.exponent = total_significant - 19;         /// integer scaling, matching parse_number_string
     pns.lastmatch = p;
@@ -355,8 +311,6 @@ inline ptrdiff_t floatTokenClassLength(const char * first, const char * last)
 {
     const char * const scan_end = (last - first > max_u128_integer_digits + 2) ? first + (max_u128_integer_digits + 2) : last;
     const char * p = first;
-    if (p < scan_end && (*p == '-' || *p == '+'))
-        ++p;
     while (p + 8 <= scan_end && is_made_of_eight_digits_fast(p)) /// skip digit runs 8 at a time
         p += 8;
     while (p < scan_end && isNumericASCII(*p))
@@ -375,10 +329,12 @@ inline ptrdiff_t floatTokenClassLength(const char * first, const char * last)
 ///   - otherwise (long fraction / huge integer)      -> fromCharsLong (single parse).
 /// On big-endian, fast_float parsing directly to float can misbehave, so parse as double and
 /// narrow (the unsigned __int128 path is endian-independent and needs no such workaround).
+/// The token must not have a sign: callers apply it themselves (see parseFloatFromBuffer).
 template <typename T>
 inline fast_float::from_chars_result_t<char>
-parseFloatFromRange(T & x, const char * first, const char * last, fast_float::chars_format fmt)
+parseFloatFromRange(T & x, const char * first, const char * last)
 {
+    constexpr auto fmt = fast_float::chars_format::general;
     /// Classify by the token length, but only scan when the buffer holds more than a short token's
     /// worth of bytes (so short inputs cost nothing extra).
     const auto length = (last - first <= max_short_float_chars) ? (last - first) : floatTokenClassLength(first, last);
@@ -421,6 +377,85 @@ parseFloatFromRange(T & x, const char * first, const char * last, fast_float::ch
     }
 }
 
+
+/// Bytes that parseUnsignedFloatFromBuffer may read from the start of a token. The fraction's 16-byte load
+/// starts at most 15 bytes in (at most 14 integer digits and the dot), so it ends at most 31 bytes in.
+constexpr ptrdiff_t short_decimal_read_bytes = 31;
+
+/// Sets the sign with a bit flip: a conditional negation compiles to a branch that mispredicts on columns
+/// with mixed signs.
+template <typename T>
+ALWAYS_INLINE inline T withSign(T value, bool negative)
+{
+    using Bits = std::conditional_t<sizeof(T) == 8, uint64_t, uint32_t>;
+    return std::bit_cast<T>(std::bit_cast<Bits>(value) ^ (Bits(negative) << (sizeof(T) * 8 - 1)));
+}
+
+/// Parses a float without a sign at the start of [first, last), which may continue far past the token.
+/// A `digits[.digits]` token of at most 15 digits (7 for float) is parsed here. Such a mantissa and its power
+/// of ten are exact in the type (10^15 < 2^53 for double, 10^7 < 2^24 for float), so one division is
+/// correctly rounded: Clinger's fast path (William D. Clinger, "How to Read Floating Point Numbers
+/// Accurately", PLDI 1990), with the same bounds as fast_float's clinger_fast_path_impl. It skips fast_float's
+/// scan, which is a branch per digit. Anything else goes to fast_float directly, except a token starting with
+/// 16 digits, which may be a long integer for the unsigned __int128 paths of parseFloatFromRange.
+template <typename T>
+ALWAYS_INLINE inline fast_float::from_chars_result_t<char>
+parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last)
+{
+    /// The byte masks assume little-endian lane order.
+    if (std::endian::native != std::endian::little || unlikely(last - first < short_decimal_read_bytes))
+        return parseFloatFromRange(x, first, last);
+
+    /// The token is the run of digits and dots at `first`.
+    using U8x16 = uint8_t __attribute__((vector_size(16)));
+    const auto bytes = unalignedLoad<U8x16>(first);
+    const uint64_t digit_mask = byteMask16((bytes - '0') < 10);
+    const uint64_t dot_mask = byteMask16(bytes == '.');
+    const unsigned len = std::countr_zero(~(digit_mask | dot_mask)) / mask_bits_per_byte;
+    if (len >= 16)
+    {
+        /// Integers longer than max_short_float_chars are where the unsigned __int128 paths beat fast_float,
+        /// and they all start with 16 digits. Other long tokens have a dot early, and fast_float is faster
+        /// for them than parseFloatFromRange's own scan of the token.
+        constexpr uint64_t all_digits = mask_bits_per_byte == 1 ? 0xFFFF : ~uint64_t(0);
+        if (digit_mask == all_digits)
+            return parseFloatFromRange(x, first, last);
+        return fast_float::from_chars(first, last, x, fast_float::chars_format::general);
+    }
+
+    const unsigned num_digits = std::popcount(digit_mask & ((uint64_t(1) << (len * mask_bits_per_byte)) - 1)) / mask_bits_per_byte;
+    const unsigned int_len = std::countr_zero(~digit_mask) / mask_bits_per_byte;
+    const unsigned frac_len = num_digits - int_len;
+    const char * const end = first + len;
+
+    /// At most one dot (`len - num_digits` counts the dots; "1.2.3" is left to fast_float), at least one
+    /// digit, and no exponent (`| 0x20` maps 'E' to 'e').
+    constexpr unsigned max_digits = std::is_same_v<T, double> ? 15 : 7;
+    if (len - num_digits > 1 || num_digits == 0 || num_digits > max_digits || (*end | 0x20) == 'e')
+        return fast_float::from_chars(first, last, x, fast_float::chars_format::general);
+
+    const uint64_t mantissa = parseDigits16(first, int_len) * common::exp10_i64(frac_len) + parseDigits16(first + int_len + 1, frac_len);
+    x = static_cast<T>(static_cast<int64_t>(mantissa)) / static_cast<T>(common::exp10_i64(frac_len));
+    return {end, std::errc()};
+}
+
+/// Parses a float at the start of [first, last), which may continue far past the token. The sign is taken
+/// off before parsing and applied afterwards: fast_float's own sign test was the most mispredicted branch
+/// parsing mixed-sign decimals (seen with `perf record -b`), and plain `general` (no `allow_leading_plus`)
+/// selects fast_float's instantiation specialized for that format (fast_float PR 413).
+template <typename T>
+ALWAYS_INLINE inline fast_float::from_chars_result_t<char> parseFloatFromBuffer(T & x, const char * first, const char * last)
+{
+    const bool negative = *first == '-';
+    const char * const begin = first + (negative || *first == '+');
+    /// A lone sign or a second sign ("+-5", "--5") is invalid. Without a sign `*begin` is `*first`, which is
+    /// not a sign either, so this does not depend on whether there is one.
+    if (unlikely(begin == last || *begin == '-' || *begin == '+'))
+        return {first, std::errc::invalid_argument};
+    auto res = parseUnsignedFloatFromBuffer(x, begin, last);
+    x = withSign(x, negative);
+    return res;
+}
 
 constexpr int MAX_LENGTH = 316;
 
@@ -502,7 +537,7 @@ NO_INLINE ReturnType readFloatTextPreciseSlow(T & x, ReadBuffer & buf)
     }
 
     /// Sign was already consumed above (tracked in `negative`), so tmp_buf holds no leading sign.
-    auto res = parseFloatFromRange(x, tmp_buf, tmp_buf + num_copied_chars, fast_float::chars_format::general);
+    auto res = parseFloatFromRange(x, tmp_buf, tmp_buf + num_copied_chars);
     if (unlikely((res.ec != std::errc() && res.ec != std::errc::result_out_of_range) || res.ptr - tmp_buf != num_copied_chars))
     {
         if constexpr (throw_exception)
@@ -526,7 +561,6 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
 
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-    static constexpr auto float_fmt = fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus;
 
     /// Fast path (avoid copying) if the buffer has at least MAX_LENGTH bytes or the whole input is in memory.
     /// The bounds check comes first, so the virtual isMemoryBuffer() is only called near the end of the buffer.
@@ -535,19 +569,7 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         auto * initial_position = buf.position();
         auto * const buf_end = buf.buffer().end();
 
-        if constexpr (std::endian::native == std::endian::little)
-        {
-            if (likely(buf_end - initial_position >= short_decimal_read_bytes))
-            {
-                if (const char * end = tryReadShortDecimal(x, initial_position))
-                {
-                    buf.position() += end - initial_position;
-                    return ReturnType(true);
-                }
-            }
-        }
-
-        auto res = parseFloatFromRange(x, initial_position, buf_end, float_fmt);
+        auto res = parseFloatFromBuffer(x, initial_position, buf_end);
 
         /// result_out_of_range means overflow/underflow: fast_float has already set x to +-inf or +-0,
         /// matching strtod semantics. Only a genuine parse failure is an error.
