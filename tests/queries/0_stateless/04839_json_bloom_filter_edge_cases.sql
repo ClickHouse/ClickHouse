@@ -77,6 +77,13 @@ SELECT 'dynamic array hasAny typed', groupArray(id) FROM json_bf_edges WHERE has
 SELECT 'map string key', groupArray(id) FROM json_bf_edges WHERE j.map_s['second'] = 7 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'map string key unoptimized', groupArray(id) FROM json_bf_edges WHERE j.map_s['second'] = 7 SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0;
 SELECT 'map key separation', groupArray(id) FROM json_bf_edges WHERE j.map_s['missing'] = 7 SETTINGS force_data_skipping_indices = 'idx';
+-- The only granule stores `7` under other keys, so the map key must prune it.
+SELECT 'map key separation granules', trim(explain) FROM
+(
+    EXPLAIN indexes = 1 SELECT count() FROM json_bf_edges WHERE j.map_s['missing'] = 7
+    SETTINGS force_data_skipping_indices = 'idx', parallel_replicas_for_non_replicated_merge_tree = 0
+)
+WHERE trim(explain) = 'Granules: 0/2';
 SELECT 'map low cardinality key', groupArray(id) FROM json_bf_edges WHERE j.map_lc['second'] = 71 SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_bf_edges WHERE j.n = 42 AND j.map_s[123] = 7 SETTINGS force_data_skipping_indices = 'idx', optimize_functions_to_subcolumns = 0; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT 'tuple integer', groupArray(id) FROM json_bf_edges WHERE j.tup.a = 10 SETTINGS force_data_skipping_indices = 'idx';
@@ -121,6 +128,15 @@ SELECT count() FROM json_bf_dynamic_edges WHERE j.value = 7 SETTINGS force_data_
 SELECT count() FROM json_bf_dynamic_edges WHERE j.value = 'x' SETTINGS force_data_skipping_indices = 'idx'; -- { serverError TYPE_MISMATCH }
 SELECT 'dynamic negative zero', groupArray(id) FROM json_bf_dynamic_edges WHERE j.zero = 0.0 SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'scalar role', groupArray(id) FROM json_bf_dynamic_edges WHERE j.poly = 7 SETTINGS force_data_skipping_indices = 'idx', dynamic_throw_on_type_mismatch = 0;
+-- A scalar probe of a `Dynamic` path keeps granules with arrays, so check the role from the array side:
+-- row 1 stores the scalar `7`, and only the granule of row 2 must remain.
+SELECT 'array role', groupArray(id) FROM json_bf_dynamic_edges WHERE has(j.poly.:`Array(Nullable(Int64))`, 7) SETTINGS force_data_skipping_indices = 'idx';
+SELECT 'array role granules', trim(explain) FROM
+(
+    EXPLAIN indexes = 1 SELECT count() FROM json_bf_dynamic_edges WHERE has(j.poly.:`Array(Nullable(Int64))`, 7)
+    SETTINGS force_data_skipping_indices = 'idx', parallel_replicas_for_non_replicated_merge_tree = 0
+)
+WHERE trim(explain) = 'Granules: 1/5';
 SELECT 'nested path', groupArray(id) FROM json_bf_dynamic_edges WHERE j.nested.leaf = 'beta' SETTINGS force_data_skipping_indices = 'idx';
 SELECT 'array json leaf', groupArray(id) FROM json_bf_dynamic_edges WHERE has(j.items[].leaf, toInt64(-12)) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM json_bf_dynamic_edges WHERE j.value LIKE '%foo%'; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
