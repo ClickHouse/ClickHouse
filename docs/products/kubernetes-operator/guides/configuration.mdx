@@ -891,6 +891,26 @@ spec:
 * [YAML configuration examples](/concepts/features/configuration/server-config/configuration-files#example-1)
 * [All server settings](/reference/settings/server-settings/settings)
 
+### Reloadable extra configuration {#reloadable-extra-configuration}
+
+Any change to `extraConfig` restarts the ClickHouse pods, because the operator cannot know which settings apply at runtime. For settings ClickHouse reloads on the fly — `named_collections` is the common case — use `extraReloadableConfig` instead. The operator applies its changes through a configuration reload, without restarting pods:
+
+```yaml
+spec:
+  settings:
+    extraReloadableConfig:
+      named_collections:
+        customers:
+          url: "http://my-service.my-ns.svc:5400/Customers"
+          format: "JSONEachRow"
+```
+
+Keep each top-level section in exactly one of `extraConfig` and `extraReloadableConfig`; the operator warns when both set the same section.
+
+<Note>
+By using `extraReloadableConfig` you assert its settings are reload-safe. A restart-only setting placed here takes effect only at the next restart, without any error.
+</Note>
+
 ### Embedded extra users configuration {#embedded-extra-users-configuration}
 
 You can also specify additional ClickHouse users configuration using `extraUsersConfig`. This is useful for defining users, profiles, quotas, and grants directly in the cluster specification.
