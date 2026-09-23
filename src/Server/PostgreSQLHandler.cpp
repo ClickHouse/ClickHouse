@@ -451,14 +451,15 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
-    /// The deadline lives in the buffer, so carry what is left of it over to the replacement.
-    const UInt64 handshake_milliseconds_left = in ? in->handshakeMillisecondsLeft() : 0;
+    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
 
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
 
-    in->setHandshakeTimeout(handshake_milliseconds_left);
+    /// The deadline lives in the buffer, so carry it over to the replacement.
+    if (previous_in)
+        in->adoptHandshakeDeadlineFrom(*previous_in);
 }
 
 void PostgreSQLHandler::run()

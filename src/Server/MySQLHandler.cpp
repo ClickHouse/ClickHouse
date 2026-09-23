@@ -1081,7 +1081,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     max_packet_size = ssl_request.max_packet_size ? ssl_request.max_packet_size : MAX_PACKET_LENGTH;
     secure_connection = true;
 
-    const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
+    const std::shared_ptr<ReadBufferFromPocoSocket> previous_in = in;
 
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
     /// Not from the plaintext socket: the deadline clamped those, and they would be restored later.
@@ -1094,7 +1094,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     sequence_id = 2;
     packet_endpoint = std::make_shared<MySQLProtocol::PacketEndpoint>(*in, *out, sequence_id);
 
-    in->setHandshakeTimeout(handshake_milliseconds_left);
+    in->adoptHandshakeDeadlineFrom(*previous_in);
 
     /// Reading HandshakeResponse from the secure socket, bounded the same way as on the plaintext
     /// path: read the packet header, reject an oversized declared payload before reading it, and

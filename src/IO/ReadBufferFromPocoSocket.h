@@ -43,8 +43,10 @@ public:
     /// Bound the whole handshake phase, whether the peer trickles bytes or goes silent in a read.
     void setHandshakeTimeout(size_t timeout_milliseconds);
     void clearHandshakeTimeout();
-    UInt64 handshakeMillisecondsLeft() const;
-    /// For reads that bypass this buffer and so cannot rely on nextImpl doing it.
+    /// Take over a deadline from the buffer this one replaces mid-handshake.
+    void adoptHandshakeDeadlineFrom(const ReadBufferFromPocoSocketBase & other);
+    /// Throw if the deadline has passed, else hold the socket at the time left. Reads that bypass
+    /// this buffer have to call it themselves; nextImpl does it for the rest.
     void applyHandshakeDeadlineToSocket();
 
 private:

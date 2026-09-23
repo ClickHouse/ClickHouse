@@ -26,6 +26,14 @@ short_timeout_node = cluster.add_instance(
     user_configs=["configs/short_receive_timeout.xml"],
 )
 
+# The raw pre-SSL loop reads at most 36 bytes, so outlasting a budget with it needs a small one:
+# bytes have to arrive faster than the floor on the read window, or the read times out first.
+fast_deadline_node = cluster.add_instance(
+    "fast_deadline_node",
+    main_configs=["configs/fast_deadline.xml"],
+)
+FAST_DEADLINE = 1
+
 MYSQL_PORT = 9001
 POSTGRESQL_PORT = 9005
 SHORT_RECEIVE_TIMEOUT = 1
@@ -47,6 +55,7 @@ CLIENT_SSL = 0x00000800
 
 # Both silence cases log this, so each one waits for one more than the log already holds.
 SOCKET_TIMEOUT_LINE = "Timeout exceeded while reading from socket"
+HANDSHAKE_TIMEOUT_LINE = "Handshake timeout exceeded"
 
 
 @pytest.fixture(scope="module")
@@ -58,11 +67,12 @@ def started_cluster():
         cluster.shutdown()
 
 
-def connect_and_read_greeting():
+def connect_and_read_greeting(instance=None):
     """Open a MySQL connection and consume the server handshake packet."""
+    instance = instance or node
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(DISCONNECT_DEADLINE)
-    sock.connect((node.ip_address, MYSQL_PORT))
+    sock.connect((instance.ip_address, MYSQL_PORT))
     greeting = sock.recv(4096)
     # 3-byte payload length, 1-byte sequence id 0, then protocol version 10.
     assert len(greeting) > 5, f"No MySQL handshake packet: {greeting!r}"
@@ -140,6 +150,38 @@ def test_silence_after_packet_header_is_disconnected(started_cluster):
         sock.close()
 
     node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
+
+
+def test_trickled_first_bytes_are_disconnected(started_cluster):
+    """Trickling the pre-SSL bytes must be cut at the budget too.
+
+    They are read straight off the socket, so the deadline has to be enforced there and not only
+    re-applied: re-arming a floor-sized window per byte would outlast the budget.
+    """
+    seen = int(fast_deadline_node.count_in_log(HANDSHAKE_TIMEOUT_LINE))
+    sock = connect_and_read_greeting(fast_deadline_node)
+    started = time.monotonic()
+    try:
+        # A 36-byte SSLRequest, one byte at a time, so every read re-enters the raw loop. At 50 ms a
+        # byte it outlasts the 1 s budget while staying inside the 100 ms read window.
+        payload = struct.pack("<IIB", CLIENT_PROTOCOL_41 | CLIENT_SSL, 16777216, 45) + b"\x00" * 23
+        for byte in struct.pack("<I", len(payload) | (1 << 24)) + payload:
+            time.sleep(TRICKLE_INTERVAL)
+            if disconnected(sock):
+                break
+            try:
+                sock.sendall(bytes([byte]))
+            except OSError:
+                break
+        else:
+            wait_for_disconnect(sock)
+
+        elapsed = time.monotonic() - started
+        assert elapsed < 4 * FAST_DEADLINE, f"Raw handshake reads held for {elapsed} seconds"
+    finally:
+        sock.close()
+
+    fast_deadline_node.wait_for_log_line(HANDSHAKE_TIMEOUT_LINE, repetitions=seen + 1)
 
 
 def test_silence_before_any_bytes_is_disconnected(started_cluster):

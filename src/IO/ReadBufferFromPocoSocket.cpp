@@ -111,19 +111,7 @@ ssize_t ReadBufferFromPocoSocketBase::socketReceiveBytesImpl(char * ptr, size_t 
 
 bool ReadBufferFromPocoSocketBase::nextImpl()
 {
-    if (handshake_timeout_milliseconds > 0)
-    {
-        const UInt64 elapsed = handshake_stopwatch.elapsedMilliseconds();
-        if (elapsed >= handshake_timeout_milliseconds)
-            throw NetException(
-                ErrorCodes::SOCKET_TIMEOUT,
-                "Handshake timeout exceeded ({} milliseconds, peer: {})",
-                handshake_timeout_milliseconds,
-                peer_address.toString());
-
-        /// Per read: a byte sent just before each timeout would otherwise restart the socket timer.
-        clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds - elapsed);
-    }
+    applyHandshakeDeadlineToSocket();
 
     if (internal_buffer.size() > INT_MAX)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Buffer overflow");
@@ -199,19 +187,35 @@ void ReadBufferFromPocoSocketBase::setHandshakeTimeout(size_t timeout_millisecon
     clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds);
 }
 
-UInt64 ReadBufferFromPocoSocketBase::handshakeMillisecondsLeft() const
+void ReadBufferFromPocoSocketBase::adoptHandshakeDeadlineFrom(const ReadBufferFromPocoSocketBase & other)
 {
-    if (!handshake_timeout_milliseconds)
-        return 0;
+    if (!other.handshake_timeout_milliseconds)
+        return;
 
-    const UInt64 elapsed = handshake_stopwatch.elapsedMilliseconds();
-    return elapsed < handshake_timeout_milliseconds ? handshake_timeout_milliseconds - elapsed : 1;
+    handshake_timeout_milliseconds = other.handshake_timeout_milliseconds;
+    handshake_stopwatch = other.handshake_stopwatch;
+
+    if (!receive_timeout_before_handshake)
+        receive_timeout_before_handshake = socket.getReceiveTimeout();
+    if (!send_timeout_before_handshake)
+        send_timeout_before_handshake = socket.getSendTimeout();
 }
 
 void ReadBufferFromPocoSocketBase::applyHandshakeDeadlineToSocket()
 {
-    if (handshake_timeout_milliseconds)
-        clampReceiveTimeoutToHandshakeDeadline(handshakeMillisecondsLeft());
+    if (!handshake_timeout_milliseconds)
+        return;
+
+    const UInt64 elapsed = handshake_stopwatch.elapsedMilliseconds();
+    if (elapsed >= handshake_timeout_milliseconds)
+        throw NetException(
+            ErrorCodes::SOCKET_TIMEOUT,
+            "Handshake timeout exceeded ({} milliseconds, peer: {})",
+            handshake_timeout_milliseconds,
+            peer_address.toString());
+
+    /// Per read: a byte sent just before each timeout would otherwise restart the socket timer.
+    clampReceiveTimeoutToHandshakeDeadline(handshake_timeout_milliseconds - elapsed);
 }
 
 void ReadBufferFromPocoSocketBase::clampReceiveTimeoutToHandshakeDeadline(UInt64 milliseconds_left)
