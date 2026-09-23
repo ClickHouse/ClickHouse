@@ -5,22 +5,26 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# A password embedded in an HTTP URI must never appear in an error message, in SHOW CREATE output,
-# or in system.query_log. Only the masked form scheme://[HIDDEN]@host may be shown.
+# A credential embedded in an HTTP URI must never appear in an error message, in SHOW CREATE output,
+# or in system.query_log. Only the masked form scheme://[HIDDEN]@host (or X-Amz-Signature=[HIDDEN] for
+# a presigned URL) may be shown.
 
 PW="pwleakprobe9f2a"
 URI="http://leakuser:${PW}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping"
+USERINFO_SHAPE="[HIDDEN]@${CLICKHOUSE_HOST}"
 
-# Reads text from stdin and asserts it hides the password: no cleartext, and the masked marker present.
-assert_masked() {
-    local label="$1" text
+# Reads text from stdin and asserts the credential was present but masked: the cleartext secret is
+# absent and the required masked shape is present. Asserting the shape (not just that "[HIDDEN]" appears
+# somewhere) means a text that never carried the credential fails, so the check cannot pass vacuously.
+assert_shape() {
+    local label="$1" secret="$2" shape="$3" text
     text=$(cat)
-    if echo "$text" | grep -qF "$PW"; then
-        echo "$label: FAIL cleartext password"
-    elif echo "$text" | grep -qF '[HIDDEN]'; then
+    if echo "$text" | grep -qF "$secret"; then
+        echo "$label: FAIL cleartext"
+    elif echo "$text" | grep -qF "$shape"; then
         echo "$label: OK masked"
     else
-        echo "$label: FAIL no uri shown"
+        echo "$label: FAIL uri absent"
     fi
 }
 
@@ -28,14 +32,23 @@ assert_masked() {
 #    the exception as "(in file/uri ...)". Grep that line out of the exception - the client also echoes
 #    the user's own submitted query, which legitimately contains what the user typed.
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('${URI}', 'CSV', 'id UInt64, val String')" 2>&1 \
-    | grep -F 'in file/uri' | assert_masked "url_function"
+    | grep -F 'in file/uri' | assert_shape "url_function" "$PW" "$USERINFO_SHAPE"
 
 # 1b. An HTTP status failure (non-2xx) is reported by assertResponseIsOk as "Received error from
 #     remote server <uri>", a different code path than the CSV-parse suffix above. A request to an
 #     unknown path returns 404, so the URI in that exception must also be masked.
 URI_404="http://leakuser:${PW}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/no_such_handler_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('${URI_404}', 'CSV', 'id UInt64, val String')" 2>&1 \
-    | grep -F 'Received error from remote server' | assert_masked "url_status_failure"
+    | grep -F 'Received error from remote server' | assert_shape "url_status_failure" "$PW" "$USERINFO_SHAPE"
+
+# 1c. INSERT INTO url() writes through WriteBufferFromHTTP - the only path here that does - and a
+#     presigned URL carries its credential in the query parameters, not the userinfo. A request with a
+#     missing ?database returns 404 whose body does not echo the URI, so the signature can only appear
+#     through the URI in the exception, which must be masked to X-Amz-Signature=[HIDDEN].
+SIG="sigprobe${CLICKHOUSE_TEST_UNIQUE_NAME}"
+URI_SIG="http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/?database=no_such_db_${CLICKHOUSE_TEST_UNIQUE_NAME}&X-Amz-Signature=${SIG}"
+${CLICKHOUSE_CLIENT} --query "INSERT INTO TABLE FUNCTION url('${URI_SIG}', 'CSV', 'id UInt64') VALUES (1)" 2>&1 \
+    | grep -F 'Received error from remote server' | assert_shape "insert_presigned" "$SIG" "X-Amz-Signature=[HIDDEN]"
 
 # 2. A dictionary whose HTTP source URL carries credentials.
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS dict_uri_leak"
@@ -43,10 +56,10 @@ ${CLICKHOUSE_CLIENT} --query "CREATE DICTIONARY dict_uri_leak (id UInt64, val St
 
 # 2a. Reloading fails to parse; the URI must be masked in the exception.
 ${CLICKHOUSE_CLIENT} --query "SYSTEM RELOAD DICTIONARY dict_uri_leak" 2>&1 \
-    | grep -F 'in file/uri' | assert_masked "dictionary_reload"
+    | grep -F 'in file/uri' | assert_shape "dictionary_reload" "$PW" "$USERINFO_SHAPE"
 
 # 2b. SHOW CREATE must mask the password.
-${CLICKHOUSE_CLIENT} --query "SHOW CREATE DICTIONARY dict_uri_leak" 2>&1 | assert_masked "show_create"
+${CLICKHOUSE_CLIENT} --query "SHOW CREATE DICTIONARY dict_uri_leak" 2>&1 | assert_shape "show_create" "$PW" "$USERINFO_SHAPE"
 
 # 3. system.query_log must store neither the query text nor the exception with the cleartext password.
 #    The needle is split so that this checking query does not itself contain the contiguous secret.
