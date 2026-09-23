@@ -9,18 +9,32 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Common/ThreadPool.h>
 
+namespace arrow
+{
+class Array;
+class DataType;
+}
+
+namespace parquet
+{
+namespace arrow
+{
+    class FileWriter;
+}
+}
+
 namespace DB
 {
 
-class ParquetBlockOutputFormat final : public IOutputFormat
+class CHColumnToArrowColumn;
+
+class ParquetBlockOutputFormat : public IOutputFormat
 {
 public:
     ParquetBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_, FormatFilterInfoPtr format_filter_info_);
     ~ParquetBlockOutputFormat() override;
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
-
-    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
 
 private:
     struct MemoryToken
@@ -86,7 +100,7 @@ private:
         /// Otherwise we need to call writeColumnChunkBody().
         DataTypePtr column_type;
         std::string column_name;
-        Columns column_pieces;
+        std::vector<ColumnPtr> column_pieces;
 
         Parquet::ColumnChunkWriteState state;
 
@@ -96,11 +110,11 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
-    void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
     void writeRowGroup(std::vector<Chunk> chunks);
+    void writeUsingArrow(std::vector<Chunk> chunks);
     void writeRowGroupInOneThread(Chunk chunk);
     void writeRowGroupInParallel(std::vector<Chunk> chunks);
 
@@ -117,12 +131,12 @@ private:
     size_t staging_rows = 0;
     size_t staging_bytes = 0;
 
+    std::unique_ptr<parquet::arrow::FileWriter> file_writer;
+    std::unique_ptr<CHColumnToArrowColumn> ch_column_to_arrow_column;
+
     Parquet::WriteOptions options;
-    /// Filled in by the ctor and read-only afterwards, so the encoder threads can share it.
-    Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
-    std::unordered_map<String, size_t> column_sizes_on_disk;
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;

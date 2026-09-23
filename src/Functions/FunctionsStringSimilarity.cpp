@@ -176,7 +176,7 @@ struct NgramDistanceImpl
                         res &= ~(1u << (5 + 2 * CHAR_BIT));
                         [[fallthrough]];
                     case 2:
-                        res &= ~1u;
+                        res &= ~(1u);
                         res &= ~(1u << (5 + CHAR_BIT));
                         [[fallthrough]];
                     default:
@@ -571,7 +571,7 @@ For case-insensitive search or/and in UTF8 format use functions [`ngramDistanceC
         "SELECT ngramDistance('ClickHouse', 'ClickHouses')",
         R"(
 ┌─ngramDistance('ClickHouse', 'ClickHouses')─┐
-│                                 0.06666667 │
+│                                        0.1 │
 └────────────────────────────────────────────┘
         )"
     }
@@ -622,9 +622,9 @@ The smaller the returned value, the more similar the strings are.
         "Case-insensitive 4-gram distance",
         "SELECT ngramDistanceCaseInsensitive('ClickHouse','clickhouse')",
         R"(
-┌─ngramDistanceCaseInsensitive('ClickHouse', 'clickhouse')─┐
-│                                                        0 │
-└──────────────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitive('ClickHouse','clickhouse')─┐
+│                                                       0 │
+└─────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -649,7 +649,7 @@ The smaller the returned value, the more similar the strings are.
         "UTF-8 3-gram distance",
         "SELECT ngramDistanceUTF8('abcde','cde')",
         R"(
-┌─ngramDistanceUTF8('abcde', 'cde')─┐
+┌─ngramDistanceUTF8('abcde','cde')─┐
 │                               0.5 │
 └───────────────────────────────────┘
         )"
@@ -676,9 +676,9 @@ The smaller the returned value, the more similar the strings are.
         "Case-insensitive UTF-8 3-gram distance",
         "SELECT ngramDistanceCaseInsensitiveUTF8('abcde','CDE')",
         R"(
-┌─ngramDistanceCaseInsensitiveUTF8('abcde', 'CDE')─┐
-│                                              0.5 │
-└──────────────────────────────────────────────────┘
+┌─ngramDistanceCaseInsensitiveUTF8('abcde','CDE')─┐
+│                                             0.5 │
+└─────────────────────────────────────────────────┘
         )"
     }
     };
@@ -702,7 +702,7 @@ Checks if the 4-gram distance between two strings is less than or equal to a giv
         "Case-insensitive search using 4-grams",
         "SELECT ngramSearchCaseInsensitive('Hello World','hello')",
         R"(
-┌─ngramSearchCaseInsensitive('Hello World', 'hello')─┐
+┌─ngramSearchCaseInsensitive('Hello World','hello')─┐
 │                                                  1 │
 └────────────────────────────────────────────────────┘
         )"
@@ -729,7 +729,7 @@ Checks if the 3-gram distance between two UTF-8 strings is less than or equal to
         "SELECT ngramSearchUTF8('абвгдеёжз', 'гдеёзд')",
         R"(
 ┌─ngramSearchUTF8('абвгдеёжз', 'гдеёзд')─┐
-│                                    0.5 │
+│                                      1 │
 └────────────────────────────────────────┘
         )"
     }
@@ -755,7 +755,7 @@ Checks if the 3-gram distance between two UTF-8 strings is less than or equal to
         "SELECT ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')",
         R"(
 ┌─ngramSearchCaseInsensitiveUTF8('абвГДЕёжз', 'АбвгдЕЁжз')─┐
-│                                               0.57142854 │
+│                                                        1 │
 └──────────────────────────────────────────────────────────┘
         )"
     }
