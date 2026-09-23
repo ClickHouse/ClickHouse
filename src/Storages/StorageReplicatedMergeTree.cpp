@@ -2475,12 +2475,13 @@ String StorageReplicatedMergeTree::getChecksumsForZooKeeper(const MergeTreeDataP
         (*getSettings())[MergeTreeSetting::use_minimalistic_checksums_in_zookeeper]);
 }
 
-MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(const LogEntry & entry, PartsTemporaryRename & rename_parts) const
+MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFoundValidPart(
+    const LogEntry & entry, PartsTemporaryRename & rename_parts, bool exact_part_name) const
 {
     if (format_version != MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
         return {};
 
-    auto detached_parts = getDetachedParts();
+    auto detached_parts = getDetachedParts(exact_part_name ? std::optional<String>{entry.new_part_name} : std::nullopt);
 
     const MergeTreePartInfo actual_part_info = MergeTreePartInfo::fromPartName(entry.new_part_name, format_version);
     auto partition_id = actual_part_info.getPartitionId();
@@ -2550,6 +2551,12 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
         try
         {
             loadPartAndFixMetadataImpl(part, getContext());
+            if (exact_part_name)
+            {
+                bool is_broken_projection = false;
+                if (checkDataPart(part, /* require_checksums= */ true, is_broken_projection).empty())
+                    throw Exception(ErrorCodes::ABORTED, "Could not verify detached part {}", part->name);
+            }
         }
         catch (...)
         {
@@ -2906,7 +2913,8 @@ bool StorageReplicatedMergeTree::executeFetch(LogEntry & entry, bool need_to_che
                 /* to_detached= */ false,
                 entry.quorum,
                 /* zookeeper_ */ nullptr,
-                /* try_fetch_shared= */ true))
+                /* try_fetch_shared= */ true,
+                /* try_attach_from_detached= */ true))
             {
                 return false;
             }
@@ -5583,7 +5591,8 @@ bool StorageReplicatedMergeTree::fetchPart(
     bool to_detached,
     size_t quorum,
     zkutil::ZooKeeper::Ptr zookeeper_,
-    bool try_fetch_shared)
+    bool try_fetch_shared,
+    bool try_attach_from_detached)
 {
     if (isStaticStorage())
         throw Exception(ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY, "Table is in readonly mode due to static storage");
@@ -5628,13 +5637,15 @@ bool StorageReplicatedMergeTree::fetchPart(
     /// Logging
     Stopwatch stopwatch;
     MutableDataPartPtr part;
+    MutableDataPartPtr part_to_attach;
+    PartsTemporaryRename renamed_parts(*this, DETACHED_DIR_NAME);
     DataPartsVector replaced_parts;
     ProfileEventsScope profile_events_scope;
 
     auto write_part_log = [&] (const ExecutionStatus & execution_status)
     {
         writePartLog(
-            PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
+            part_to_attach ? PartLogElement::NEW_PART : PartLogElement::DOWNLOAD_PART, execution_status, stopwatch.elapsed(),
             part_name, part, replaced_parts, nullptr,
             profile_events_scope.getSnapshot(), {}, {});
     };
@@ -5653,13 +5664,14 @@ bool StorageReplicatedMergeTree::fetchPart(
         auto covered_part_info = part_info;
         covered_part_info.mutation = 0;
         auto source_part = getActiveContainingPart(covered_part_info);
+        const bool has_detached_part = try_attach_from_detached
+            && !to_detached
+            && format_version == MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING
+            && !getDetachedParts(std::optional<String>{part_name}).empty();
 
         /// Fetch for zero-copy replication is cheap and straightforward, so we don't use local clone here
-        if (source_part && !is_zero_copy_part(source_part))
+        if ((source_part && !is_zero_copy_part(source_part)) || has_detached_part)
         {
-            auto source_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
-                source_part->getColumns(), source_part->checksums);
-
             String part_path = fs::path(source_replica_path) / "parts" / part_name;
             String part_znode = zookeeper->get(part_path);
 
@@ -5686,14 +5698,42 @@ bool StorageReplicatedMergeTree::fetchPart(
             }
 
             /// Checking both checksums and columns hash. For example we can have empty part
-            /// with same checksums but different columns. And we attaching it exception will
-            /// be thrown.
-            if (desired_part_header
-                && source_part_header.getColumnsHash() == desired_part_header->getColumnsHash()
-                && source_part_header.getChecksums() == desired_part_header->getChecksums())
+            /// with same checksums but different columns.
+            if (source_part && !is_zero_copy_part(source_part) && desired_part_header)
             {
-                LOG_TRACE(log, "Found local part {} with the same checksums and columns hash as {}", source_part->name, part_name);
-                part_to_clone = source_part;
+                auto source_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
+                    source_part->getColumns(), source_part->checksums);
+                if (source_part_header.getColumnsHash() == desired_part_header->getColumnsHash()
+                    && source_part_header.getChecksums() == desired_part_header->getChecksums())
+                {
+                    LOG_TRACE(log, "Found local part {} with the same checksums and columns hash as {}", source_part->name, part_name);
+                    part_to_clone = source_part;
+                }
+            }
+
+            if (!part_to_clone && has_detached_part && desired_part_header)
+            {
+                LogEntry attach_entry;
+                attach_entry.new_part_name = part_name;
+                attach_entry.part_checksum = getHexUIntUppercase(desired_part_header->getChecksums().hash_of_all_files);
+
+                if (auto detached_part = attachPartHelperFoundValidPart(attach_entry, renamed_parts, /* exact_part_name= */ true))
+                {
+                    auto detached_part_header = ReplicatedMergeTreePartHeader::fromColumnsAndChecksums(
+                        detached_part->getColumns(), detached_part->checksums);
+                    if (detached_part_header.getColumnsHash() == desired_part_header->getColumnsHash()
+                        && detached_part_header.getChecksums() == desired_part_header->getChecksums())
+                    {
+                        part_to_attach = std::move(detached_part);
+                        part_to_attach->version->setAndStoreCreationTID(Tx::NonTransactionalTID, nullptr);
+                    }
+                    else
+                    {
+                        LOG_INFO(log, "Detached part {} has different columns or checksums from part {} on source replica",
+                            detached_part->name, part_name);
+                        renamed_parts.rollBackAll();
+                    }
+                }
             }
         }
     }
@@ -5706,7 +5746,11 @@ bool StorageReplicatedMergeTree::fetchPart(
     std::function<MutableDataPartPtr()> get_part;
     scope_guard part_directory_lock;
 
-    if (part_to_clone)
+    if (part_to_attach)
+    {
+        get_part = [part_to_attach] { return part_to_attach; };
+    }
+    else if (part_to_clone)
     {
         get_part = [&, part_to_clone]()
         {
@@ -5783,6 +5827,9 @@ bool StorageReplicatedMergeTree::fetchPart(
             chassert(!part_to_clone || !is_zero_copy_part(part));
             replaced_parts = checkPartChecksumsAndCommit(transaction, part, /*hardlinked_files*/ {}, /*replace_zero_copy_lock*/ true);
 
+            if (part_to_attach)
+                renamed_parts.old_and_new_names.front().old_dir.clear();
+
             /** If a quorum is tracked for this part, you must update it.
               * If you do not have time, in case of losing the session, when you restart the server - see the `ReplicatedMergeTreeRestartingThread::updateQuorumIfWeHavePart` method.
               */
@@ -5858,9 +5905,12 @@ bool StorageReplicatedMergeTree::fetchPart(
         throw;
     }
 
-    ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
+    if (!part_to_attach)
+        ProfileEvents::increment(ProfileEvents::ReplicatedPartFetches);
 
-    if (part_to_clone)
+    if (part_to_attach)
+        LOG_DEBUG(log, "Attached part {} from detached directory", part_name);
+    else if (part_to_clone)
         LOG_DEBUG(log, "Cloned part {} from {}{}", part_name, part_to_clone->name, to_detached ? " (to 'detached' directory)" : "");
     else
         LOG_DEBUG(log, "Fetched part {} from {}:{}{}", part_name, source_zookeeper_name, source_replica_path, to_detached ? " (to 'detached' directory)" : "");

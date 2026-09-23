@@ -10777,7 +10777,7 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(
     return res;
 }
 
-DetachedPartsInfo MergeTreeData::getDetachedParts() const
+DetachedPartsInfo MergeTreeData::getDetachedParts(const std::optional<String> & exact_part_name) const
 {
     auto component_guard = Coordination::setCurrentComponent("MergeTreeData::getDetachedParts");
     DetachedPartsInfo res;
@@ -10786,14 +10786,19 @@ DetachedPartsInfo MergeTreeData::getDetachedParts() const
     {
         /// While it is possible to have detached parts on readonly/write-once disks
         /// (if they were produced on another machine, where it wasn't readonly)
-        /// to avoid wasting resources for slow disks, avoid trying to enumerate them.
+        /// to avoid wasting resources for slow disks, avoid checking them.
         if (disk->isReadOnly() || disk->isWriteOnce())
             continue;
 
         String detached_path = fs::path(relative_data_path) / DETACHED_DIR_NAME;
 
         /// Note: we don't care about TOCTOU issue here.
-        if (disk->existsDirectory(detached_path))
+        if (exact_part_name)
+        {
+            if (disk->existsDirectory(fs::path(detached_path) / *exact_part_name))
+                res.push_back(DetachedPartInfo::parseDetachedPartName(disk, *exact_part_name, format_version));
+        }
+        else if (disk->existsDirectory(detached_path))
         {
             for (auto it = disk->iterateDirectory(detached_path); it->isValid(); it->next())
             {
