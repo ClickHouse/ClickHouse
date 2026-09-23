@@ -1796,6 +1796,27 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     modified_read_settings.use_page_cache_for_disks_without_file_cache = false;
     modified_read_settings.filesystem_cache_settings.boundary_alignment = settings[Setting::filesystem_cache_boundary_alignment];
 
+    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
+    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
+    /// instead of torn cross-generation data.
+    ///
+    /// `s3_validate_etag_on_read` chooses whether a plain read is protected from a torn read.
+    /// It does not govern `require_read_pinned_to_generation`: the caller that sets that flag acts
+    /// on the ingested generation after the read, so reading a different generation would lose a
+    /// file no matter how the setting is configured (and it can be turned off directly or through
+    /// `compatibility`).
+    String pinned_generation;
+    if (object_info.metadata.has_value()
+        && (settings[Setting::s3_validate_etag_on_read] || object_info.require_read_pinned_to_generation))
+        pinned_generation = object_info.metadata->etag;
+
+    if (object_info.require_read_pinned_to_generation && pinned_generation.empty())
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "Cannot read object {}: its read must be pinned to the generation that is processed "
+            "after it, but that generation is not known",
+            object_info.getPath());
+
     // Create a read buffer that will prefetch the first ~1 MB of the file.
     // When reading lots of tiny files, this prefetching almost doubles the throughput.
     // For bigger files, parallel reading is more useful.
@@ -1834,12 +1855,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// shows a useful name rather than an empty string.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
-
-    /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
-    /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
-    /// instead of torn cross-generation data.
-    if (settings[Setting::s3_validate_etag_on_read] && object_info.metadata.has_value())
-        stored_object.etag = object_info.metadata->etag;
+    stored_object.etag = pinned_generation;
     pipeline.setSource(object_storage, StoredObjects{stored_object}, modified_read_settings);
 
     /// Filesystem cache

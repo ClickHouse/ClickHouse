@@ -68,6 +68,8 @@ private:
 
     /// Move the data serialized into `out` to `send_queue` and reset `out`.
     void flushSerializedData();
+    /// Writes the end-of-stream packet and sends it; nothing follows it on the stream.
+    void sendEndOfStream();
 
     /// A buffer waiting to be sent: a packet column, shared with the sinks of the other destinations
     /// of a broadcast, or data the sink serialized itself.

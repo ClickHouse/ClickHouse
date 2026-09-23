@@ -74,6 +74,7 @@
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
 #include <Formats/registerFormats.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <boost/program_options/options_description.hpp>
 #include <base/argsToConfig.h>
 #include <filesystem>
@@ -1277,6 +1278,7 @@ try
     registerDictionaries();
     registerDisks(/* global_skip_access_check= */ true);
     registerFormats();
+    QueryPlanStepRegistry::registerPlanSteps();
 
     processConfig();
 

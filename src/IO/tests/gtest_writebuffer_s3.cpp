@@ -20,9 +20,14 @@
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/CopyObjectRequest.h>
 #include <aws/s3/model/UploadPartCopyRequest.h>
+#include <aws/s3/model/DeleteObjectRequest.h>
+#include <aws/s3/model/DeleteObjectsRequest.h>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/S3Errors.h>
+#include <aws/core/utils/stream/ResponseStream.h>
+#include <Poco/Net/HTTPBasicStreamBuf.h>
 
+#include <algorithm>
 #include <array>
 
 #include <IO/WriteBufferFromS3.h>
@@ -37,6 +42,11 @@
 #include <IO/S3/Client.h>
 #include <IO/S3/copyS3File.h>
 
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
@@ -71,6 +81,8 @@ namespace ErrorCodes
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
+    extern const int FILE_CHANGED_DURING_READ;
 }
 
 }
@@ -108,6 +120,19 @@ public:
     std::map<Key, Data> objects;
     /// Custom object metadata (`x-amz-meta-*`), stored alongside the object and served by HeadObject.
     std::map<Key, Metadata> object_metadata;
+    /// The `ETag` of the generation at each key, a new one for every write to the key, served by
+    /// HeadObject and checked by the copies against `x-amz-copy-source-if-match`. Quoted, as S3 quotes it.
+    std::map<Key, ETag> object_etags;
+    /// The versions of a key a versioned bucket keeps, by version id: a copy that addresses the
+    /// source as `key?versionId=...` copies the one it names, whatever is at the key now.
+    std::map<Key, std::map<std::string, Data>> object_versions;
+    /// The `If-None-Match` header of every PutObject that reached the store, empty for an
+    /// unconditional one, so a test can assert that a write was a create-if-absent one.
+    std::vector<std::string> put_if_none_match;
+    /// The `If-Match` of every `DeleteObject` that reached the store (the `ETag` element of every
+    /// object of a `DeleteObjects`), empty for an unconditional one, so a test can assert that a
+    /// delete was pinned to a generation.
+    std::vector<std::string> delete_if_match;
     std::map<MPU_ID, MPUPartsInProgress> multiPartUploads;
     /// Metadata of an in-flight upload, carried from CreateMultipartUpload onto the completed object
     /// the way real S3 does -- that is what makes a HEAD after completion see it.
@@ -132,13 +157,42 @@ public:
         return etag;
     }
 
-    void PutObject(const std::string & key, const std::string & data, const Metadata & metadata = {})
+    /// Returns the `ETag` of the generation the write created, the way the response to the write
+    /// reports it.
+    ETag PutObject(const std::string & key, const std::string & data, const Metadata & metadata = {})
     {
         objects[key] = data;
         object_metadata[key] = metadata;
+        return object_etags[key] = "\"" + sequencer.next_id() + "\"";
     }
 
-    void CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
+    /// Keeps what is at `key` now as version `version_id`, the way a versioned bucket keeps every
+    /// generation a write creates; the current version stays what it is.
+    void RecordVersion(const std::string & key, const std::string & version_id)
+    {
+        object_versions[key][version_id] = objects.at(key);
+    }
+
+    /// A delete as S3 evaluates it on general purpose buckets: `If-Match` is compared with the
+    /// generation that is at the key now, and nothing is deleted when it does not hold. Returns
+    /// whether the precondition held (a delete without one always holds, of a missing key too).
+    bool DeleteObject(const std::string & key, const std::string & if_match)
+    {
+        delete_if_match.push_back(if_match);
+        if (!if_match.empty())
+        {
+            auto it = object_etags.find(key);
+            if (it == object_etags.end() || it->second != if_match)
+                return false;
+        }
+        objects.erase(key);
+        object_metadata.erase(key);
+        object_etags.erase(key);
+        return true;
+    }
+
+    /// Returns the `ETag` of the completed object, the way the response to `CompleteMultipartUpload` reports it.
+    ETag CompleteMPU(const std::string & key, const std::string & upload_id, const std::vector<std::string> & etags)
     {
         MPUParts completedParts;
         completedParts.reserve(etags.size());
@@ -155,10 +209,12 @@ public:
 
         CompletedPartUploads.emplace_back(upload_id, std::move(completedParts));
         objects[key] = file_data.str();
+        const ETag etag = object_etags[key] = "\"" + sequencer.next_id() + "\"";
         if (auto it = multiPartUploadMetadata.find(upload_id); it != multiPartUploadMetadata.end())
             object_metadata[key] = it->second;
         multiPartUploads.erase(upload_id);
         multiPartUploadMetadata.erase(upload_id);
+        return etag;
     }
 
     void AbortMPU(const std::string & upload_id)
@@ -213,6 +269,7 @@ struct EventCounts
     size_t uploadParts = 0;
     size_t copyObject = 0;
     size_t uploadPartCopy = 0;
+    size_t deleteObject = 0;
     size_t writtenSize = 0;
 
     size_t totalRequestsCount() const
@@ -237,12 +294,25 @@ inline std::string readRequestBody(const std::shared_ptr<Aws::IOStream> & body, 
     return data;
 }
 
-/// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key".
+inline Aws::Client::AWSError<Aws::Client::CoreErrors> makePreconditionFailedError();
+
+/// A CopyObject / UploadPartCopy `CopySource` has the form "bucket/key", or "bucket/key?versionId=..."
+/// for a version of the source other than the current one. The version is not part of the key.
 inline std::pair<std::string, std::string> splitCopySource(const std::string & copy_source)
 {
     auto slash = copy_source.find('/');
     chassert(slash != std::string::npos);
-    return {copy_source.substr(0, slash), copy_source.substr(slash + 1)};
+    const auto version = copy_source.find("?versionId=", slash);
+    const auto key_end = version == std::string::npos ? copy_source.size() : version;
+    return {copy_source.substr(0, slash), copy_source.substr(slash + 1, key_end - slash - 1)};
+}
+
+/// The version a `CopySource` names, or empty for the current one.
+inline std::string copySourceVersionId(const std::string & copy_source)
+{
+    static const std::string marker = "?versionId=";
+    const auto version = copy_source.find(marker);
+    return version == std::string::npos ? std::string{} : copy_source.substr(version + marker.size());
 }
 
 struct InjectionModel
@@ -260,6 +330,8 @@ struct InjectionModel
     DeclareInjectCall(CompleteMultipartUpload)
     DeclareInjectCall(AbortMultipartUpload)
     DeclareInjectCall(UploadPart)
+    DeclareInjectCall(DeleteObject)
+    DeclareInjectCall(CopyObject)
 #undef DeclareInjectCall
 };
 
@@ -339,23 +411,86 @@ struct Client : DB::S3::Client
         }
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
+        bStore.put_if_none_match.push_back(request.GetIfNoneMatch());
+        /// `If-None-Match: *` as a real endpoint evaluates it: the write is refused with
+        /// `412 Precondition Failed` when a generation is at the key.
+        if (request.GetIfNoneMatch() == "*" && bStore.object_etags.contains(request.GetKey()))
+            return makePreconditionFailedError();
+
         const std::string data = readRequestBody(request.GetBody(), request.GetContentLength());
         BucketMemStore::Metadata metadata;
         for (const auto & [name, value] : request.GetMetadata())
             metadata[name] = value;
-        bStore.PutObject(request.GetKey(), data, metadata);
+        const auto etag = bStore.PutObject(request.GetKey(), data, metadata);
         counters.writtenSize += data.length();
 
-        Aws::S3::Model::PutObjectOutcome outcome;
-        Aws::S3::Model::PutObjectResult result(outcome.GetResultWithOwnership());
-        return result;
+        /// The `ETag` of the generation the write created, as S3 reports it in the response.
+        Aws::S3::Model::PutObjectResult result;
+        result.SetETag(etag);
+        return Aws::S3::Model::PutObjectOutcome(std::move(result));
     }
 
+    /// The body of a GetObject the way `ReadBufferFromIStream` reads it: it reads from the stream
+    /// buffer of a real HTTP response directly, and requires it to be a `Poco::Net::HTTPBasicStreamBuf`,
+    /// so a body served over a `std::stringstream` cannot be read by a `ReadBufferFromS3`.
+    class HTTPBodyStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+    {
+    public:
+        explicit HTTPBodyStreamBuf(String data_)
+            : Poco::Net::HTTPBasicStreamBuf(1024, std::ios::in)
+            , data(std::move(data_))
+        {
+        }
+
+    private:
+        int readFromDevice(char * buffer, std::streamsize length) override
+        {
+            const size_t n = std::min<size_t>(static_cast<size_t>(length), data.size() - pos);
+            memcpy(buffer, data.data() + pos, n);
+            pos += n;
+            return static_cast<int>(n);
+        }
+
+        String data;
+        size_t pos = 0;
+    };
+
+    /// The stream buffer is a base rather than a member so that it is constructed before the stream
+    /// that is initialised with it.
+    struct HTTPBodyStreamBufHolder
+    {
+        explicit HTTPBodyStreamBufHolder(String data) : buf(std::move(data)) {}
+        HTTPBodyStreamBuf buf;
+    };
+
+    class HTTPBodyStream : private HTTPBodyStreamBufHolder, public Aws::IOStream
+    {
+    public:
+        explicit HTTPBodyStream(String data)
+            : HTTPBodyStreamBufHolder(std::move(data))
+            , Aws::IOStream(&buf)
+        {
+        }
+    };
+
+    /// `If-Match`, as a real endpoint evaluates it: against the generation that is at the key now, with
+    /// `412 Precondition Failed` when it does not hold. `ReadBufferFromS3` tells that refusal apart by
+    /// the response code, so it is set here.
     Aws::S3::Model::GetObjectOutcome GetObject(const Aws::S3::Model::GetObjectRequest & request) const override
     {
         ++counters.getObject;
 
         auto & bStore = store->GetBucketStore(request.GetBucket());
+        if (const auto & if_match = request.GetIfMatch(); !if_match.empty())
+        {
+            auto it = bStore.object_etags.find(request.GetKey());
+            if (it == bStore.object_etags.end() || it->second != if_match)
+            {
+                auto error = makePreconditionFailedError();
+                error.SetResponseCode(Aws::Http::HttpResponseCode::PRECONDITION_FAILED);
+                return error;
+            }
+        }
         const String data = bStore.objects[request.GetKey()];
 
         size_t begin = 0;
@@ -369,12 +504,14 @@ struct Client : DB::S3::Client
             chassert(ret == 2);
         }
 
-        auto factory = request.GetResponseStreamFactory();
-        Aws::Utils::Stream::ResponseStream responseStream(factory);
-        responseStream.GetUnderlyingStream() << std::stringstream(data.substr(begin, end - begin + 1)).rdbuf();
+        const String body = data.substr(begin, end - begin + 1);
+        Aws::Utils::Stream::ResponseStream responseStream(Aws::New<HTTPBodyStream>("MockS3::GetObject", body));
 
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> awsStream(std::move(responseStream), Aws::Http::HeaderValueCollection());
         Aws::S3::Model::GetObjectResult getObjectResult(std::move(awsStream));
+        getObjectResult.SetContentLength(static_cast<Int64>(body.size()));
+        if (auto it = bStore.object_etags.find(request.GetKey()); it != bStore.object_etags.end())
+            getObjectResult.SetETag(it->second);
         return Aws::S3::Model::GetObjectOutcome(std::move(getObjectResult));
     }
 
@@ -395,6 +532,8 @@ struct Client : DB::S3::Client
         Aws::S3::Model::HeadObjectOutcome outcome;
         Aws::S3::Model::HeadObjectResult result(outcome.GetResultWithOwnership());
         result.SetContentLength(obj.length());
+        if (auto it = bStore.object_etags.find(request.GetKey()); it != bStore.object_etags.end())
+            result.SetETag(it->second);
         if (auto it = bStore.object_metadata.find(request.GetKey()); it != bStore.object_metadata.end())
         {
             Aws::Map<Aws::String, Aws::String> metadata;
@@ -469,10 +608,11 @@ struct Client : DB::S3::Client
         for (const auto & x: request.GetMultipartUpload().GetParts()) {
             etags.push_back(x.GetETag());
         }
-        bStore.CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
+        const auto etag = bStore.CompleteMPU(request.GetKey(), request.GetUploadId(), etags);
 
         Aws::S3::Model::CompleteMultipartUploadResult result;
-        return Aws::S3::Model::CompleteMultipartUploadOutcome(result);
+        result.SetETag(etag);
+        return Aws::S3::Model::CompleteMultipartUploadOutcome(std::move(result));
     }
 
     Aws::S3::Model::AbortMultipartUploadOutcome AbortMultipartUpload(const Aws::S3::Model::AbortMultipartUploadRequest & request) const override
@@ -496,16 +636,100 @@ struct Client : DB::S3::Client
 
     /// Whole-object server-side copy. A CopyObject request carries no byte range, so it always copies the
     /// entire source object -- modelling the real S3 behaviour that makes it unsafe for a partial range.
+    /// `x-amz-copy-source-if-match`, as a real endpoint evaluates it: against the generation that is at
+    /// the source key now, with `412 Precondition Failed` when it does not hold. The SDK produces that
+    /// error without a typed model code, see `makePreconditionFailedError`.
+    std::optional<Aws::Client::AWSError<Aws::Client::CoreErrors>> copySourcePreconditionFailure(
+        const std::string & src_bucket, const std::string & src_key, const Aws::String & if_match) const
+    {
+        if (if_match.empty())
+            return std::nullopt;
+        copy_source_if_match_headers.push_back(if_match);
+        const auto & etags = store->GetBucketStore(src_bucket).object_etags;
+        if (auto it = etags.find(src_key); it != etags.end() && it->second == if_match)
+            return std::nullopt;
+        return makePreconditionFailedError();
+    }
+
+    /// `If-Match` on a `DELETE`, as S3 evaluates it on general purpose buckets: against the generation
+    /// that is at the key now, with `412 Precondition Failed` and nothing deleted when it does not hold.
+    /// `deleteFileFromS3` tells that refusal apart by the response code, so it is set here.
+    Aws::S3::Model::DeleteObjectOutcome DeleteObject(const Aws::S3::Model::DeleteObjectRequest & request) const override
+    {
+        ++counters.deleteObject;
+
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+            {
+                return std::move(*opt_val);
+            }
+        }
+
+        auto & bStore = store->GetBucketStore(request.GetBucket());
+        if (!bStore.DeleteObject(request.GetKey(), request.GetIfMatch()))
+        {
+            auto error = makePreconditionFailedError();
+            error.SetResponseCode(Aws::Http::HttpResponseCode::PRECONDITION_FAILED);
+            return error;
+        }
+
+        Aws::S3::Model::DeleteObjectResult result;
+        return Aws::S3::Model::DeleteObjectOutcome(result);
+    }
+
+    /// The same for a batch: every object is evaluated on its own, the ones whose precondition held
+    /// are deleted and reported as such, the others are reported with the `PreconditionFailed` code
+    /// in the `Error` element of the response, the way S3 does.
+    Aws::S3::Model::DeleteObjectsOutcome DeleteObjects(const Aws::S3::Model::DeleteObjectsRequest & request) const override
+    {
+        auto & bStore = store->GetBucketStore(request.GetBucket());
+        Aws::S3::Model::DeleteObjectsResult result;
+        for (const auto & object : request.GetDelete().GetObjects())
+        {
+            ++counters.deleteObject;
+            if (bStore.DeleteObject(object.GetKey(), object.GetETag()))
+            {
+                Aws::S3::Model::DeletedObject deleted;
+                deleted.SetKey(object.GetKey());
+                result.AddDeleted(std::move(deleted));
+            }
+            else
+            {
+                Aws::S3::Model::Error error;
+                error.SetKey(object.GetKey());
+                error.SetCode("PreconditionFailed");
+                error.SetMessage("At least one of the pre-conditions you specified did not hold");
+                result.AddErrors(std::move(error));
+            }
+        }
+        return Aws::S3::Model::DeleteObjectsOutcome(std::move(result));
+    }
+
     Aws::S3::Model::CopyObjectOutcome CopyObject(const Aws::S3::Model::CopyObjectRequest & request) const override
     {
         ++counters.copyObject;
 
-        const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
-        const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
-        store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+            {
+                return std::move(*opt_val);
+            }
+        }
 
+        const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
+        if (auto refused = copySourcePreconditionFailure(src_bucket, src_key, request.GetCopySourceIfMatch()))
+            return *refused;
+        const String & src_data = copySourceData(src_bucket, src_key, copySourceVersionId(request.GetCopySource()));
+        const auto etag = store->GetBucketStore(request.GetBucket()).PutObject(request.GetKey(), src_data);
+
+        /// The `ETag` of the generation the copy created, in the `CopyObjectResult` element of the response.
+        Aws::S3::Model::CopyObjectResultDetails details;
+        details.SetETag(etag);
         Aws::S3::Model::CopyObjectResult result;
-        return Aws::S3::Model::CopyObjectOutcome(result);
+        result.SetCopyObjectResultDetails(std::move(details));
+        return Aws::S3::Model::CopyObjectOutcome(std::move(result));
     }
 
     /// Ranged server-side copy of one multipart part. Honours the `CopySourceRange` so only the requested
@@ -515,7 +739,9 @@ struct Client : DB::S3::Client
         ++counters.uploadPartCopy;
 
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
-        const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
+        if (auto refused = copySourcePreconditionFailure(src_bucket, src_key, request.GetCopySourceIfMatch()))
+            return *refused;
+        const String & src_data = copySourceData(src_bucket, src_key, copySourceVersionId(request.GetCopySource()));
 
         size_t begin = 0;
         size_t end = src_data.size() - 1;
@@ -536,8 +762,23 @@ struct Client : DB::S3::Client
         return Aws::S3::Model::UploadPartCopyOutcome(result);
     }
 
+    /// The bytes a copy source names: the version it selects, as a versioned bucket serves it, or
+    /// what is at the key now. Every version a copy names is recorded in `copy_source_version_ids`.
+    const String & copySourceData(const std::string & src_bucket, const std::string & src_key, const std::string & version_id) const
+    {
+        auto & bucket_store = store->GetBucketStore(src_bucket);
+        if (version_id.empty())
+            return bucket_store.objects[src_key];
+        copy_source_version_ids.push_back(version_id);
+        return bucket_store.object_versions.at(src_key).at(version_id);
+    }
+
     std::shared_ptr<S3MemStrore> store;
     mutable EventCounts counters;
+    /// Every non-empty `x-amz-copy-source-if-match` a CopyObject or UploadPartCopy carried.
+    mutable std::vector<std::string> copy_source_if_match_headers;
+    /// Every `?versionId=` a CopyObject or UploadPartCopy source named.
+    mutable std::vector<std::string> copy_source_version_ids;
     mutable std::shared_ptr<InjectionModel> injections;
     void resetCounters() const { counters = {}; }
 };
@@ -1965,30 +2206,172 @@ protected:
         };
     }
 
-    void runWholeCopy(const String & src_key, size_t size, const String & dst_key)
+    void runWholeCopy(
+        const String & src_key, size_t size, const String & dst_key, const String & src_etag = {}, const String & src_version_id = {})
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
         copyS3File(
-            client, bucket, src_key, size,
+            client, bucket, src_key, size, src_etag, src_version_id,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
             wholeSourceReader(src_key));
     }
 
-    void runRangeCopy(const String & src_key, size_t offset, size_t size, size_t src_object_size, const String & dst_key)
+    void runRangeCopy(
+        const String & src_key,
+        size_t offset,
+        size_t size,
+        size_t src_object_size,
+        const String & dst_key,
+        const String & src_etag = {},
+        const String & src_version_id = {})
     {
         auto request_settings = makeRequestSettings();
         client->resetCounters();
         copyS3FileRange(
-            client, bucket, src_key, offset, size, src_object_size,
+            client, bucket, src_key, offset, size, src_object_size, src_etag, src_version_id,
             /* dest_s3_client= */ client, bucket, dst_key,
             request_settings, ReadSettings{},
             /* blob_storage_log= */ nullptr, /* schedule= */ {},
             wholeSourceReader(src_key));
     }
+
+    /// The `ETag` of the generation at `key` now.
+    String generationAt(const String & key) { return client->store->GetBucketStore(bucket).object_etags.at(key); }
+
+    /// The error code a copy failed with, if it did.
+    template <typename Copy>
+    std::optional<int> errorCodeOf(Copy && copy)
+    {
+        try
+        {
+            copy();
+            return std::nullopt;
+        }
+        catch (const Exception & e)
+        {
+            return e.code();
+        }
+    }
 };
+
+/// A copy pinned to the generation that is at the source key carries it as `x-amz-copy-source-if-match`
+/// and goes through. This keeps the refusals below from passing by refusing every pinned copy.
+TEST_F(CopyS3FileRoutingTest, WholeCopyPinnedToTheCurrentGenerationGoesThrough)
+{
+    const String source = putSource("src", /* size= */ 100);
+    const String generation = generationAt("src");
+
+    runWholeCopy("src", source.size(), "dst", generation);
+
+    EXPECT_EQ(client->counters.copyObject, 1u);
+    EXPECT_EQ(client->copy_source_if_match_headers, std::vector<std::string>{generation});
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
+}
+
+/// The source is overwritten in place after the caller named its generation and before the copy: the
+/// endpoint refuses the `CopyObject` with `412`, and the copy fails with `S3_OBJECT_CHANGED_DURING_READ`
+/// rather than copying the newer generation - by another native route or through the read-and-write
+/// fallback, which would read whatever is at the key by then.
+TEST_F(CopyS3FileRoutingTest, WholeCopyPinnedToAReplacedGenerationIsRefused)
+{
+    const String source = putSource("src", /* size= */ 100);
+    const String replaced_generation = generationAt("src");
+    client->store->GetBucketStore(bucket).PutObject("src", String(source.size(), 'x'));
+    ASSERT_NE(generationAt("src"), replaced_generation);
+
+    const auto error_code = errorCodeOf([&] { runWholeCopy("src", source.size(), "dst", replaced_generation); });
+
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_OBJECT_CHANGED_DURING_READ);
+    EXPECT_EQ(client->counters.copyObject, 1u);
+    EXPECT_EQ(client->counters.uploadPartCopy, 0u);
+    EXPECT_EQ(client->counters.putObject, 0u);
+    EXPECT_EQ(client->counters.multiUploadCreate, 0u);
+    EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// The same for a ranged copy, which goes through `UploadPartCopy`: every part carries the generation,
+/// the first refused part fails the copy, and the multipart upload it belonged to is aborted, so the
+/// destination is not a splice of two generations of the source.
+TEST_F(CopyS3FileRoutingTest, RangedCopyPinnedToAReplacedGenerationIsRefused)
+{
+    const size_t source_size = min_source_size_for_range_copy + 1024;
+    putSource("src", source_size);
+    const String replaced_generation = generationAt("src");
+    client->store->GetBucketStore(bucket).PutObject("src", String(source_size, 'x'));
+
+    const auto error_code
+        = errorCodeOf([&] { runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source_size, "dst", replaced_generation); });
+
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_OBJECT_CHANGED_DURING_READ);
+    EXPECT_GE(client->counters.uploadPartCopy, 1u);
+    EXPECT_EQ(client->counters.copyObject, 0u);
+    EXPECT_EQ(client->counters.multiUploadComplete, 0u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 1u);
+    EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// A restore from `S3('...?versionId=...')` reads one version of every object of the backup, and its
+/// native copy to an S3 disk has to transfer that same version: the `CopyObject` names it on the copy
+/// source, so a newer version at the key - of the same size, which no size check would tell apart -
+/// is not what lands on the disk.
+TEST_F(CopyS3FileRoutingTest, WholeCopyOfAVersionedSourceCopiesThatVersion)
+{
+    const String selected_version = putSource("src", /* size= */ 100);
+    client->store->GetBucketStore(bucket).RecordVersion("src", "v1");
+    client->store->GetBucketStore(bucket).PutObject("src", String(selected_version.size(), 'x'));
+    ASSERT_NE(client->store->GetBucketStore(bucket).objects["src"], selected_version);
+
+    runWholeCopy("src", selected_version.size(), "dst", /* src_etag= */ {}, /* src_version_id= */ "v1");
+
+    EXPECT_EQ(client->counters.copyObject, 1u);
+    EXPECT_EQ(client->copy_source_version_ids, std::vector<std::string>{"v1"});
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], selected_version);
+}
+
+/// The same for a ranged copy: every `UploadPartCopy` names the version, so a restore of a range
+/// of a versioned backup file is not a splice of the selected and the latest version.
+TEST_F(CopyS3FileRoutingTest, RangedCopyOfAVersionedSourceCopiesThatVersion)
+{
+    const size_t source_size = min_source_size_for_range_copy + 1024;
+    const String selected_version = putSource("src", source_size);
+    client->store->GetBucketStore(bucket).RecordVersion("src", "v1");
+    client->store->GetBucketStore(bucket).PutObject("src", String(source_size, 'x'));
+
+    runRangeCopy("src", /* offset= */ 10, /* size= */ 20, source_size, "dst", /* src_etag= */ {}, /* src_version_id= */ "v1");
+
+    EXPECT_EQ(client->counters.copyObject, 0u);
+    EXPECT_GT(client->counters.uploadPartCopy, 0u);
+    ASSERT_FALSE(client->copy_source_version_ids.empty());
+    EXPECT_TRUE(std::all_of(
+        client->copy_source_version_ids.begin(), client->copy_source_version_ids.end(), [](const auto & v) { return v == "v1"; }));
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], selected_version.substr(10, 20));
+}
+
+/// A copy that selects no version names none, as before: the current version of the key is copied.
+TEST_F(CopyS3FileRoutingTest, UnversionedCopyNamesNoVersion)
+{
+    const String source = putSource("src", /* size= */ 100);
+    runWholeCopy("src", source.size(), "dst");
+
+    EXPECT_TRUE(client->copy_source_version_ids.empty());
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
+}
+
+/// An unpinned copy carries no precondition, as before: a caller that names no generation gets a copy
+/// of whatever is at the key.
+TEST_F(CopyS3FileRoutingTest, UnpinnedCopyCarriesNoPrecondition)
+{
+    const String source = putSource("src", /* size= */ 100);
+    runWholeCopy("src", source.size(), "dst");
+
+    EXPECT_TRUE(client->copy_source_if_match_headers.empty());
+    EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source);
+}
 
 TEST_F(CopyS3FileRoutingTest, WholeObjectUsesCopyObject)
 {
@@ -2037,6 +2420,560 @@ TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
 }
+
+/// The `plain_rewritable` metadata operations name the generation of a source blob before they copy
+/// it (`pinToTheGenerationThatIsThereNow`) and refuse one whose size is not the one the metadata of
+/// the file records (`refuseAGenerationOfAnotherSize`). This is exercised here on an `S3ObjectStorage`
+/// over the mock endpoint, which keeps a generation per key and evaluates
+/// `x-amz-copy-source-if-match` on the copies (the Azure counterpart lives in `gtest_azure_read_buffer.cpp`).
+class S3PlainRewritablePinningTest : public CopyS3FileRoutingTest
+{
+protected:
+    std::shared_ptr<S3ObjectStorage> objectStorageOverTheSameStore(std::shared_ptr<MockS3::InjectionModel> injections = nullptr)
+    {
+        /// A client of its own over the very same in-memory store, so the objects put through `client`
+        /// (and the generations `generationAt` reports) are the ones the object storage sees.
+        auto storage_client = std::make_unique<MockS3::Client>(client->store);
+        if (injections)
+            storage_client->setInjectionModel(std::move(injections));
+        S3::URI uri;
+        uri.bucket = bucket;
+        return std::make_shared<S3ObjectStorage>(
+            std::move(storage_client), std::make_unique<S3Settings>(), std::move(uri), S3Capabilities{},
+            ObjectStorageKeyGeneratorPtr{}, /* disk_name */ "s3_plain_rewritable");
+    }
+
+    const std::vector<String> & deleteIfMatchHeaders() { return client->store->GetBucketStore(bucket).delete_if_match; }
+
+    String dataAt(const String & key) { return client->store->GetBucketStore(bucket).objects.at(key); }
+
+    bool isThere(const String & key) { return client->store->GetBucketStore(bucket).object_etags.contains(key); }
+};
+
+/// One `HEAD` names the generation that is at the key together with its size, and a generation of the
+/// recorded size passes the check.
+TEST_F(S3PlainRewritablePinningTest, NamesTheGenerationAndItsSize)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+
+    EXPECT_EQ(source.remote_path, "src");
+    EXPECT_EQ(source.etag, generationAt("src"));
+    EXPECT_EQ(source.bytes_size, 100u);
+    EXPECT_NO_THROW(refuseAGenerationOfAnotherSize(source, /* recorded_size= */ 100, "dir/file"));
+}
+
+/// The blob was written over out of band with one of another size after the file was recorded: the
+/// generation that is at the key is not the file the metadata describes, and it is refused before
+/// anything is copied.
+TEST_F(S3PlainRewritablePinningTest, AGenerationOfAnotherSizeIsRefused)
+{
+    putSource("src", /* size= */ 100);
+    client->store->GetBucketStore(bucket).PutObject("src", String(200, 'x'));
+    auto object_storage = objectStorageOverTheSameStore();
+
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+    EXPECT_EQ(source.bytes_size, 200u);
+
+    const auto error_code = errorCodeOf([&] { refuseAGenerationOfAnotherSize(source, /* recorded_size= */ 100, "dir/file"); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::FILE_CHANGED_DURING_READ);
+}
+
+/// The blob is written over between the `HEAD` that named it and the copy: the copy carries the named
+/// generation as `x-amz-copy-source-if-match`, the endpoint refuses it, and nothing is copied - the
+/// target is neither recorded with the old size nor left holding the new generation.
+TEST_F(S3PlainRewritablePinningTest, ACopyOfAReplacedGenerationIsRefused)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+    ASSERT_NO_THROW(refuseAGenerationOfAnotherSize(source, /* recorded_size= */ 100, "dir/file"));
+
+    client->store->GetBucketStore(bucket).PutObject("src", String(200, 'x'));
+    ASSERT_NE(generationAt("src"), source.etag);
+
+    const auto error_code = errorCodeOf(
+        [&] { object_storage->copyObject(source, StoredObject("dst"), ReadSettings{}, WriteSettings{}); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_OBJECT_CHANGED_DURING_READ);
+    EXPECT_FALSE(client->store->GetBucketStore(bucket).objects.contains("dst"));
+}
+
+/// An endpoint that reports no `ETag` for the blob cannot pin anything, and the move is refused rather
+/// than made blind.
+TEST_F(S3PlainRewritablePinningTest, AnObjectWithoutAnETagCannotBePinned)
+{
+    putSource("src", /* size= */ 100);
+    client->store->GetBucketStore(bucket).object_etags.erase("src");
+    auto object_storage = objectStorageOverTheSameStore();
+
+    const auto error_code = errorCodeOf([&] { pinToTheGenerationThatIsThereNow(*object_storage, "src"); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_ERROR);
+}
+
+/// Rolling back a `plain_rewritable` operation on S3 after its remote delete succeeded, the same way
+/// `AzurePlainRewritableRollback` does on Azure. The key is free by then, so another writer can
+/// recreate it, and the blob it puts there is a generation this transaction has never seen. The
+/// restore is a create-if-absent write (`If-None-Match: *`) that the endpoint refuses while a
+/// generation is at the key, so the newer blob stays and the saved one is left aside.
+class S3PlainRewritableRollbackTest : public S3PlainRewritablePinningTest
+{
+protected:
+    /// The write buffer of `S3ObjectStorage::writeObject` schedules its uploads on the writer pool
+    /// of the global context, which the unit test does not have.
+    static WriteSettings inlineWriteSettings()
+    {
+        WriteSettings write_settings;
+        write_settings.s3_allow_parallel_part_upload = false;
+        return write_settings;
+    }
+
+    const std::vector<String> & putIfNoneMatchHeaders() { return client->store->GetBucketStore(bucket).put_if_none_match; }
+};
+
+TEST_F(S3PlainRewritableRollbackTest, ARecreatedKeyIsNotRestoredOver)
+{
+    putSource("tmp_blob", /* size= */ 100);
+    const String recreated = putSource("blob", /* size= */ 200);
+    const String recreated_generation = generationAt("blob");
+    auto object_storage = objectStorageOverTheSameStore();
+
+    ASSERT_FALSE(restoreTheSavedBlobWithoutWritingOver(*object_storage, "tmp_blob", "blob", ReadSettings{}, inlineWriteSettings()));
+
+    ASSERT_EQ(putIfNoneMatchHeaders(), std::vector<String>{"*"});
+    /// The generation that was recreated stays, and so does the saved blob, for a recovery by hand.
+    EXPECT_EQ(generationAt("blob"), recreated_generation);
+    EXPECT_EQ(dataAt("blob"), recreated);
+    EXPECT_TRUE(isThere("tmp_blob"));
+}
+
+/// The same rollback when the key really is free: nobody recreated the blob this transaction
+/// deleted, so the copy it saved aside is put back. This keeps the test above from passing for the
+/// wrong reason - by refusing every restore.
+TEST_F(S3PlainRewritableRollbackTest, AFreeKeyIsRestored)
+{
+    const String saved = putSource("tmp_blob", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+
+    ASSERT_TRUE(restoreTheSavedBlobWithoutWritingOver(*object_storage, "tmp_blob", "blob", ReadSettings{}, inlineWriteSettings()));
+
+    ASSERT_EQ(putIfNoneMatchHeaders(), std::vector<String>{"*"});
+    EXPECT_EQ(dataAt("blob"), saved);
+}
+
+/// The saved blob cannot be named - the endpoint reports no `ETag` for it - so its bytes cannot be
+/// read pinned to a generation, and nothing is written: a restore that could stitch together the
+/// saved blob with whatever was written over the temporary key since is not attempted.
+TEST_F(S3PlainRewritableRollbackTest, ASavedBlobWithoutAGenerationIsNotRestored)
+{
+    putSource("tmp_blob", /* size= */ 100);
+    client->store->GetBucketStore(bucket).object_etags.erase("tmp_blob");
+    auto object_storage = objectStorageOverTheSameStore();
+
+    ASSERT_FALSE(restoreTheSavedBlobWithoutWritingOver(*object_storage, "tmp_blob", "blob", ReadSettings{}, inlineWriteSettings()));
+
+    EXPECT_TRUE(putIfNoneMatchHeaders().empty());
+    EXPECT_FALSE(isThere("blob"));
+}
+
+
+/// The delete of a `StoredObject` that names a generation is pinned to it: `If-Match` on the
+/// `DeleteObject`, which S3 evaluates on general purpose buckets, and the `ETag` element of every
+/// object of a `DeleteObjects`. The `plain_rewritable` operations copy a generation and then delete
+/// it, and the delete must not take away a generation that another writer has put at the key since.
+class S3PlainRewritableDeleteTest : public S3PlainRewritablePinningTest
+{
+};
+
+TEST_F(S3PlainRewritableDeleteTest, DeletesTheGenerationItNamed)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+
+    object_storage->removeObjectIfExists(source);
+
+    EXPECT_FALSE(isThere("src"));
+    EXPECT_EQ(deleteIfMatchHeaders(), std::vector<String>{source.etag});
+}
+
+/// The blob is written over between the `HEAD` that named it and the delete: the endpoint refuses the
+/// delete, the newer generation stays, and the refusal is `FILE_CHANGED_DURING_READ` - not "does not
+/// exist", which `removeObjectIfExists` would swallow.
+TEST_F(S3PlainRewritableDeleteTest, RefusesAGenerationItDidNotName)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+    const StoredObject source = pinToTheGenerationThatIsThereNow(*object_storage, "src");
+
+    const String replaced = String(200, 'x');
+    client->store->GetBucketStore(bucket).PutObject("src", replaced);
+    const String replaced_generation = generationAt("src");
+    ASSERT_NE(replaced_generation, source.etag);
+
+    const auto error_code = errorCodeOf([&] { object_storage->removeObjectIfExists(source); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::FILE_CHANGED_DURING_READ);
+
+    EXPECT_EQ(deleteIfMatchHeaders(), std::vector<String>{source.etag});
+    EXPECT_EQ(generationAt("src"), replaced_generation);
+    EXPECT_EQ(dataAt("src"), replaced);
+}
+
+/// A batch delete carries the generation of every object that names one, deletes the ones whose
+/// precondition holds, and reports the replaced one once the rest are gone - it is not among the
+/// successful objects, and it stays in the bucket.
+TEST_F(S3PlainRewritableDeleteTest, ABatchDeletesWhatItCanAndReportsTheReplacedGeneration)
+{
+    putSource("a", /* size= */ 100);
+    putSource("b", /* size= */ 100);
+    putSource("c", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+    const StoredObject a = pinToTheGenerationThatIsThereNow(*object_storage, "a");
+    const StoredObject b = pinToTheGenerationThatIsThereNow(*object_storage, "b");
+    const StoredObject c = pinToTheGenerationThatIsThereNow(*object_storage, "c");
+
+    const String replaced = String(200, 'x');
+    client->store->GetBucketStore(bucket).PutObject("b", replaced);
+
+    StoredObjects successful;
+    const auto error_code = errorCodeOf([&] { object_storage->removeObjectsIfExist({a, b, c}, &successful); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::FILE_CHANGED_DURING_READ);
+
+    EXPECT_EQ(deleteIfMatchHeaders(), (std::vector<String>{a.etag, b.etag, c.etag}));
+    EXPECT_FALSE(isThere("a"));
+    EXPECT_FALSE(isThere("c"));
+    EXPECT_EQ(dataAt("b"), replaced);
+
+    std::vector<String> successful_paths;
+    for (const auto & object : successful)
+        successful_paths.push_back(object.remote_path);
+    std::sort(successful_paths.begin(), successful_paths.end());
+    EXPECT_EQ(successful_paths, (std::vector<String>{"a", "c"}));
+}
+
+/// An object without a generation is deleted by key, as it always was: the pinning costs nothing to
+/// the callers that do not name one.
+TEST_F(S3PlainRewritableDeleteTest, AnUnnamedObjectIsDeletedByKey)
+{
+    putSource("src", /* size= */ 100);
+    auto object_storage = objectStorageOverTheSameStore();
+
+    object_storage->removeObjectIfExists(StoredObject("src"));
+
+    EXPECT_FALSE(isThere("src"));
+    EXPECT_EQ(deleteIfMatchHeaders(), std::vector<String>{String{}});
+}
+
+namespace
+{
+
+/// Writes a new generation over `key` right before the delete of it runs, as another writer that gets
+/// in between the pinned copy of a move and the delete that follows it would.
+struct OverwriteBeforeDelete : MockS3::InjectionModel
+{
+    MockS3::BucketMemStore & store;
+    String key;
+    String data;
+
+    OverwriteBeforeDelete(MockS3::BucketMemStore & store_, String key_, String data_)
+        : store(store_), key(std::move(key_)), data(std::move(data_))
+    {
+    }
+
+    std::optional<Aws::S3::Model::DeleteObjectOutcome> call(const Aws::S3::Model::DeleteObjectRequest & request) override
+    {
+        if (request.GetKey() == key)
+            store.PutObject(key, data);
+        return std::nullopt;
+    }
+};
+
+/// Makes the `CopyObject` to `key` the way the store does, but answers it without an `ETag`, as an
+/// endpoint that does not name the generations it writes does. Every `HeadObject` is recorded so a
+/// test can assert that the destination was not named by one.
+struct CopyWithoutETag : MockS3::InjectionModel
+{
+    MockS3::BucketMemStore & store;
+    String key;
+    std::vector<String> head_keys;
+
+    CopyWithoutETag(MockS3::BucketMemStore & store_, String key_) : store(store_), key(std::move(key_)) { }
+
+    std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest & request) override
+    {
+        if (request.GetKey() != key)
+            return std::nullopt;
+        const auto [src_bucket, src_key] = MockS3::splitCopySource(request.GetCopySource());
+        store.PutObject(key, store.objects.at(src_key));
+        return Aws::S3::Model::CopyObjectOutcome(Aws::S3::Model::CopyObjectResult{});
+    }
+
+    std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & request) override
+    {
+        head_keys.push_back(request.GetKey());
+        return std::nullopt;
+    }
+};
+
+/// Makes the `CopyObject` to `key` the way the store does and reports the `ETag` of the generation
+/// it created, but another writer replaces the key with `data` before the response is delivered:
+/// by the time any request of the caller looks at the key again, the generation there is not the
+/// one the copy wrote. Every `HeadObject` is recorded so a test can assert that none looked.
+struct ReplaceRightAfterTheCopy : MockS3::InjectionModel
+{
+    MockS3::BucketMemStore & store;
+    String key;
+    String data;
+    String written_generation;
+    String replaced_generation;
+    std::vector<String> head_keys;
+
+    ReplaceRightAfterTheCopy(MockS3::BucketMemStore & store_, String key_, String data_)
+        : store(store_), key(std::move(key_)), data(std::move(data_))
+    {
+    }
+
+    std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest & request) override
+    {
+        if (request.GetKey() != key)
+            return std::nullopt;
+        const auto [src_bucket, src_key] = MockS3::splitCopySource(request.GetCopySource());
+        written_generation = store.PutObject(key, store.objects.at(src_key));
+        replaced_generation = store.PutObject(key, data);
+
+        Aws::S3::Model::CopyObjectResultDetails details;
+        details.SetETag(written_generation);
+        Aws::S3::Model::CopyObjectResult result;
+        result.SetCopyObjectResultDetails(std::move(details));
+        return Aws::S3::Model::CopyObjectOutcome(std::move(result));
+    }
+
+    std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & request) override
+    {
+        head_keys.push_back(request.GetKey());
+        return std::nullopt;
+    }
+};
+
+}
+
+/// The `plain_rewritable` move and hard link operations of production, driven against the S3 mock
+/// the way `AzurePlainRewritableMove` / `AzurePlainRewritableHardLinkRollback` drive them against
+/// the fake Azure endpoint: the disk holds one file, `from`, in its root directory, whose blob is at
+/// the key the layout builds for a root file.
+class S3PlainRewritableOperationTest : public S3PlainRewritablePinningTest
+{
+protected:
+    std::shared_ptr<FsSnapshot> fs_tree = std::make_shared<FsSnapshot>();
+    std::shared_ptr<PlainRewritableLayout> layout = std::make_shared<PlainRewritableLayout>("");
+    std::shared_ptr<PlainRewritableMetrics> metrics = createPlainRewritableMetrics(ObjectStorageType::S3);
+    StoredObjects removed_objects;
+
+    static constexpr size_t file_size = 100;
+
+    void SetUp() override
+    {
+        S3PlainRewritablePinningTest::SetUp();
+        fs_tree->recordDirectoryPath(
+            "",
+            DirectoryRemoteInfo{.remote_path = PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, .etag = {}, .last_modified = 0, .files = {}});
+        fs_tree->recordFile("from", FileRemoteInfo{.bytes_size = file_size, .last_modified = 0});
+        putSource(keyOf("from"), file_size);
+    }
+
+    String keyOf(const String & name) const { return layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, name); }
+};
+
+/// The happy path: one `HEAD` names the source, the copy carries that generation, and the delete is
+/// pinned to it too. The file is recorded at `to` and gone from `from`.
+TEST_F(S3PlainRewritableOperationTest, AMoveDeletesTheGenerationItCopied)
+{
+    const String data = dataAt(keyOf("from"));
+    const String source_generation = generationAt(keyOf("from"));
+    auto object_storage = objectStorageOverTheSameStore();
+
+    MetadataStorageFromPlainObjectStorageMoveFileOperation operation(
+        /* replaceable */ false, "from", "to", fs_tree, object_storage, layout, metrics, removed_objects);
+    operation.execute();
+
+    EXPECT_TRUE(fs_tree->existsFile("to"));
+    EXPECT_FALSE(fs_tree->existsFile("from"));
+    EXPECT_FALSE(isThere(keyOf("from")));
+    EXPECT_EQ(dataAt(keyOf("to")), data);
+    /// The one pinned delete so far is the one of the source, and it carried the generation the
+    /// copy was pinned to.
+    ASSERT_EQ(deleteIfMatchHeaders(), std::vector<String>{source_generation});
+}
+
+/// Another writer replaces the source between the pinned copy and the delete: the delete is refused,
+/// the newer generation stays, the move fails with `FILE_CHANGED_DURING_READ` and the file is still
+/// `from`. The rollback then removes the blob the copy wrote at `to` - pinned to the generation it
+/// named right after the copy - and does not restore the saved copy of the old generation over the
+/// source, which was never deleted.
+TEST_F(S3PlainRewritableOperationTest, AMoveDoesNotDeleteAGenerationItDidNotCopy)
+{
+    const String source_generation = generationAt(keyOf("from"));
+    const String replaced = String(200, 'y');
+    auto object_storage = objectStorageOverTheSameStore(
+        std::make_shared<OverwriteBeforeDelete>(client->store->GetBucketStore(bucket), keyOf("from"), replaced));
+
+    MetadataStorageFromPlainObjectStorageMoveFileOperation operation(
+        /* replaceable */ false, "from", "to", fs_tree, object_storage, layout, metrics, removed_objects);
+
+    const auto error_code = errorCodeOf([&] { operation.execute(); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::FILE_CHANGED_DURING_READ);
+
+    /// The delete of the source carried the generation the copy was pinned to, and was refused.
+    ASSERT_EQ(deleteIfMatchHeaders(), std::vector<String>{source_generation});
+    EXPECT_EQ(dataAt(keyOf("from")), replaced);
+    EXPECT_TRUE(fs_tree->existsFile("from"));
+
+    const String destination_generation = generationAt(keyOf("to"));
+    operation.undo();
+
+    /// The blob the copy wrote is taken back out of `to`, pinned to its generation; the source is
+    /// left as the other writer made it.
+    EXPECT_FALSE(isThere(keyOf("to")));
+    EXPECT_EQ(dataAt(keyOf("from")), replaced);
+    const auto & deletes = deleteIfMatchHeaders();
+    ASSERT_GE(deletes.size(), 2u);
+    EXPECT_EQ(deletes[1], destination_generation);
+}
+
+/// A rollback of a hard link deletes exactly the generation the copy wrote at the destination: a
+/// generation another writer has put at the key since the copy is refused and stays.
+TEST_F(S3PlainRewritableOperationTest, AHardLinkRollbackDeleteIsPinnedToWhatTheCopyWrote)
+{
+    auto object_storage = objectStorageOverTheSameStore();
+
+    MetadataStorageFromPlainObjectStorageCopyFileOperation operation("from", "to", fs_tree, object_storage, layout, metrics);
+    operation.execute();
+    ASSERT_TRUE(fs_tree->existsFile("to"));
+    const String written_generation = generationAt(keyOf("to"));
+
+    const String replaced = String(200, 'z');
+    client->store->GetBucketStore(bucket).PutObject(keyOf("to"), replaced);
+    const String replaced_generation = generationAt(keyOf("to"));
+    ASSERT_NE(replaced_generation, written_generation);
+
+    /// The refusal is logged, not thrown: the rollback has done what it safely could.
+    ASSERT_NO_THROW(operation.undo());
+
+    ASSERT_EQ(deleteIfMatchHeaders(), std::vector<String>{written_generation});
+    EXPECT_EQ(generationAt(keyOf("to")), replaced_generation);
+    EXPECT_EQ(dataAt(keyOf("to")), replaced);
+}
+
+/// The same rollback when nobody touched the destination: the blob the copy wrote is removed. This
+/// keeps the test above from passing by refusing every delete.
+TEST_F(S3PlainRewritableOperationTest, AHardLinkRollbackRemovesAnUntouchedDestination)
+{
+    auto object_storage = objectStorageOverTheSameStore();
+
+    MetadataStorageFromPlainObjectStorageCopyFileOperation operation("from", "to", fs_tree, object_storage, layout, metrics);
+    operation.execute();
+    const String written_generation = generationAt(keyOf("to"));
+
+    operation.undo();
+
+    EXPECT_FALSE(isThere(keyOf("to")));
+    ASSERT_EQ(deleteIfMatchHeaders(), std::vector<String>{written_generation});
+}
+
+/// The endpoint answers the copy without the `ETag` of the object it wrote: a rollback could then only
+/// delete the destination by key, which is the cross-generation loss the pinning exists to prevent, so
+/// the hard link is refused before the file is recorded - with `S3_ERROR` on S3, as the Azure
+/// counterpart is with `AZURE_BLOB_STORAGE_ERROR` - and the rollback leaves the blob the copy wrote
+/// at its key rather than deleting by the key alone whatever is there, although `load` brings the
+/// uncommitted file back on the next start. The store would name the generation on a `HeadObject`,
+/// and the operation does not ask: the response to the copy is the only thing that names what the
+/// copy wrote.
+TEST_F(S3PlainRewritableOperationTest, AHardLinkWhoseDestinationGenerationCannotBeNamedIsRefused)
+{
+    auto injection = std::make_shared<CopyWithoutETag>(client->store->GetBucketStore(bucket), keyOf("to"));
+    auto object_storage = objectStorageOverTheSameStore(injection);
+
+    MetadataStorageFromPlainObjectStorageCopyFileOperation operation("from", "to", fs_tree, object_storage, layout, metrics);
+
+    const auto error_code = errorCodeOf([&] { operation.execute(); });
+    ASSERT_TRUE(error_code.has_value());
+    EXPECT_EQ(*error_code, ErrorCodes::S3_ERROR);
+    EXPECT_FALSE(fs_tree->existsFile("to"));
+    EXPECT_TRUE(deleteIfMatchHeaders().empty());
+    /// The `HeadObject`s are of the source only (the one that names it, and the one `copyObject`
+    /// sizes it with): the destination is not asked about.
+    EXPECT_FALSE(injection->head_keys.empty());
+    EXPECT_TRUE(std::ranges::all_of(injection->head_keys, [&](const String & key) { return key == keyOf("from"); }));
+
+    operation.undo();
+
+    EXPECT_TRUE(isThere(keyOf("to")));
+    EXPECT_EQ(dataAt(keyOf("to")), dataAt(keyOf("from")));
+    EXPECT_TRUE(deleteIfMatchHeaders().empty());
+}
+
+/// Another writer replaces the destination right after the copy, before any request of the operation
+/// could look at the key again. The generation the rollback deletes is still the one the copy wrote,
+/// because it is named by the response to the copy and not by a `HeadObject` of the key afterwards,
+/// which would have named the newer generation and bound it to the operation: the delete carries the
+/// copy's `ETag`, the endpoint refuses it, and the newer generation stays.
+TEST_F(S3PlainRewritableOperationTest, AHardLinkRollbackDeleteIsPinnedToWhatTheCopyWroteWhenTheKeyIsReplacedRightAfterTheCopy)
+{
+    const String replaced = String(200, 'z');
+    auto injection = std::make_shared<ReplaceRightAfterTheCopy>(client->store->GetBucketStore(bucket), keyOf("to"), replaced);
+    auto object_storage = objectStorageOverTheSameStore(injection);
+
+    MetadataStorageFromPlainObjectStorageCopyFileOperation operation("from", "to", fs_tree, object_storage, layout, metrics);
+    operation.execute();
+    ASSERT_TRUE(fs_tree->existsFile("to"));
+    ASSERT_NE(injection->written_generation, injection->replaced_generation);
+    ASSERT_EQ(generationAt(keyOf("to")), injection->replaced_generation);
+    /// The destination is named without a request of its own: every `HeadObject` is of the source.
+    EXPECT_FALSE(injection->head_keys.empty());
+    EXPECT_TRUE(std::ranges::all_of(injection->head_keys, [&](const String & key) { return key == keyOf("from"); }));
+
+    ASSERT_NO_THROW(operation.undo());
+
+    ASSERT_EQ(deleteIfMatchHeaders(), std::vector<String>{injection->written_generation});
+    EXPECT_EQ(generationAt(keyOf("to")), injection->replaced_generation);
+    EXPECT_EQ(dataAt(keyOf("to")), replaced);
+}
+
+/// The same for a move: its rollback deletes the destination by the generation the copy reported.
+TEST_F(S3PlainRewritableOperationTest, AMoveRollbackDeleteIsPinnedToWhatTheCopyWroteWhenTheKeyIsReplacedRightAfterTheCopy)
+{
+    const String replaced = String(200, 'z');
+    auto injection = std::make_shared<ReplaceRightAfterTheCopy>(client->store->GetBucketStore(bucket), keyOf("to"), replaced);
+    auto object_storage = objectStorageOverTheSameStore(injection);
+
+    MetadataStorageFromPlainObjectStorageMoveFileOperation operation(
+        /* replaceable */ false, "from", "to", fs_tree, object_storage, layout, metrics, removed_objects);
+    operation.execute();
+    ASSERT_TRUE(fs_tree->existsFile("to"));
+    ASSERT_FALSE(fs_tree->existsFile("from"));
+    ASSERT_EQ(generationAt(keyOf("to")), injection->replaced_generation);
+    /// The destination is named without a request of its own: every `HeadObject` is of the source.
+    EXPECT_FALSE(injection->head_keys.empty());
+    EXPECT_TRUE(std::ranges::all_of(injection->head_keys, [&](const String & key) { return key == keyOf("from"); }));
+
+    ASSERT_NO_THROW(operation.undo());
+
+    /// The rollback deleted the destination pinned to what the copy wrote (the delete of the blob
+    /// copied aside, by its scratch key, follows it); that precondition did not hold, so the newer
+    /// generation stays.
+    const auto & if_match = deleteIfMatchHeaders();
+    EXPECT_TRUE(std::ranges::find(if_match, injection->written_generation) != if_match.end());
+    EXPECT_EQ(generationAt(keyOf("to")), injection->replaced_generation);
+    EXPECT_EQ(dataAt(keyOf("to")), replaced);
+}
+
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {
     setInjectionModel(std::make_shared<MockS3::UploadPartFailIngection>());

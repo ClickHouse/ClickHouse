@@ -169,6 +169,12 @@ struct RelativePathWithMetadata
     bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;
+    /// When set, the read of this object must be pinned to the generation named by
+    /// `metadata->etag`, whatever the read settings say. It is set by a caller that acts on the
+    /// generation it ingested after the read (the Azure `MOVE`/`DELETE` of `ObjectStorageQueue`),
+    /// for which reading another generation than the one the post-processing moves or deletes is
+    /// a lost file rather than a torn read.
+    bool require_read_pinned_to_generation = false;
 
     RelativePathWithMetadata() = default;
 
@@ -346,8 +352,16 @@ public:
         const StoredObjects & object,
         StoredObjects * successful_objects = nullptr) = 0;
 
-    /// Copy object with different attributes if required
-    virtual void copyObject( /// NOLINT
+    /// Copy object with different attributes if required.
+    ///
+    /// Returns the `ETag` of the generation the copy created at `object_to`, as the endpoint reported
+    /// it in the response to the write that created it (the `CopyObject`, `PutObject` or
+    /// `CompleteMultipartUpload` on S3, the `Copy Blob`, `Put Blob` or `Put Block List` on Azure), or
+    /// an empty string when the endpoint reported none or the object storage does not name
+    /// generations. A caller that has to address exactly that generation afterwards - a rollback
+    /// that deletes what the copy wrote - uses it instead of a `HEAD` of the key, which names
+    /// whatever generation is there by the time it runs.
+    virtual String copyObject( /// NOLINT
         const StoredObject & object_from,
         const StoredObject & object_to,
         const ReadSettings & read_settings,

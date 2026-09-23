@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -309,6 +310,10 @@ public:
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    /// A lambda keeps its body in an inner DAG that neither `getNodes()` nor a walk over `Node::children`
+    /// reaches, while the node holding it reports the `IFunctionBase` determinism defaults whatever the body
+    /// does. True when a body hidden below `node`, at any lambda depth, has a function `is_unsafe` accepts.
+    static bool hasUnsafeHiddenLambdaBody(const Node & node, const std::function<bool(const IFunctionBase &)> & is_unsafe);
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 
@@ -523,6 +528,8 @@ public:
       * to left and right streams.
       * @param equivalent_left_stream_column_to_right_stream_column - equivalent left stream column name to right stream column map.
       * @param equivalent_right_stream_column_to_left_stream_column - equivalent right stream column name to left stream column map.
+      * @param cross_type_equivalent_columns - the equivalent columns whose replacement is a cast of the opposite side's
+      * key rather than a rename of an equal-typed column.
       */
     ActionsForJOINFilterPushDown splitActionsForJOINFilterPushDown(
         const std::string & filter_name,
@@ -533,7 +540,8 @@ public:
         const Block & right_stream_header,
         const Names & equivalent_columns_to_push_down,
         const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_left_stream_column_to_right_stream_column,
-        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column);
+        const std::unordered_map<std::string, ColumnWithTypeAndName> & equivalent_right_stream_column_to_left_stream_column,
+        const NameSet & cross_type_equivalent_columns);
 
     /** Build filter dag from multiple filter dags.
       *

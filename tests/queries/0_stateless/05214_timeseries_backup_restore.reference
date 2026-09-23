@@ -1,0 +1,21 @@
+--- the table has four inner tables ---
+1
+1
+1
+1
+--- the restored table has the same definition ---
+version = 4
+definitions are equal
+--- the restored table has its own inner tables ---
+2
+2
+2
+2
+--- the restored table has the same data ---
+disk_usage_bytes	{'__name__':'disk_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',1)]	disk_usage_bytes	gauge	bytes	Disk usage
+memory_usage_bytes	{'__name__':'memory_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',10),('2026-01-01 00:00:15.000',12)]	memory_usage_bytes	gauge	bytes	Memory usage
+up	{'__name__':'up','job':'test'}	[('2026-01-01 00:00:00.000',1)]	up	gauge		Whether the target is up
+restored:
+disk_usage_bytes	{'__name__':'disk_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',1)]	disk_usage_bytes	gauge	bytes	Disk usage
+memory_usage_bytes	{'__name__':'memory_usage_bytes','instance':'a','job':'test'}	[('2026-01-01 00:00:00.000',10),('2026-01-01 00:00:15.000',12)]	memory_usage_bytes	gauge	bytes	Memory usage
+up	{'__name__':'up','job':'test'}	[('2026-01-01 00:00:00.000',1)]	up	gauge		Whether the target is up

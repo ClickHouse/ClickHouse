@@ -17,6 +17,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
@@ -1038,14 +1039,21 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             execute_locally,
             cancellation);
 
-        auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
+        /// The result must keep the order the main task sends it in (an `ORDER BY` result arrives
+        /// sorted), so it stays on one stream: the source hands its packets to one deserializer behind
+        /// it, and reading overlaps with deserializing. An exchange kind without a deserializer keeps
+        /// its plain-row source.
+        auto lazily_create_result_reader
+            = [result_header, exchange_lookup, result_stream_id, exchange_name = final_result_exchange.name, context]() -> QueryPipelineBuilder
         {
-            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
+            BuildQueryPipelineSettings settings(context);
+            settings.exchange_lookup = exchange_lookup;
+            VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
+            stream_ids.push_back(result_stream_id);
+            auto builder = receiveExchangeStreams(result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false);
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
-            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
-            QueryPipelineBuilder builder;
-            builder.init(std::move(read_result_from));
+            builder.addSimpleTransform([](const SharedHeader & header) { return makeSkipZeroRowChunksTransform(header); });
             return builder;
         };
         pipes.emplace_back(createDelayedPipe(result_header, lazily_create_result_reader, false, false));

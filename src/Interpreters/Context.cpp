@@ -190,6 +190,10 @@ namespace ProfileEvents
     extern const Event MergesThrottlerSleepMicroseconds;
     extern const Event MutationsThrottlerBytes;
     extern const Event MutationsThrottlerSleepMicroseconds;
+    extern const Event DistrCacheReadThrottlerBytes;
+    extern const Event DistrCacheReadThrottlerSleepMicroseconds;
+    extern const Event DistrCacheWriteThrottlerBytes;
+    extern const Event DistrCacheWriteThrottlerSleepMicroseconds;
     extern const Event QueryLocalReadThrottlerBytes;
     extern const Event QueryLocalReadThrottlerSleepMicroseconds;
     extern const Event QueryLocalWriteThrottlerBytes;
@@ -430,6 +434,8 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_replicated_fetches_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_replicated_sends_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_thread_pool_size;
+    extern const ServerSettingsUInt64 max_distributed_cache_read_bandwidth_for_server;
+    extern const ServerSettingsUInt64 max_distributed_cache_write_bandwidth_for_server;
     extern const ServerSettingsBool s3queue_disable_streaming;
     extern const ServerSettingsBool message_queue_disable_insertion;
     extern const ServerSettingsBool enable_read_through_distributed_cache;
@@ -1383,6 +1389,18 @@ struct ContextSharedPart : boost::noncopyable
 
         if (auto bandwidth = server_settings[ServerSetting::max_merges_bandwidth_for_server])
             merges_throttler = std::make_shared<Throttler>(bandwidth, ProfileEvents::MergesThrottlerBytes, ProfileEvents::MergesThrottlerSleepMicroseconds);
+
+        // Distributed cache client throttling.
+        // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
+        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
+            distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+        else
+            distributed_cache_read_throttler = remote_read_throttler;
+
+        if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
+            distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+        else
+            distributed_cache_write_throttler = remote_write_throttler;
     }
 };
 
@@ -5951,11 +5969,26 @@ ThrottlerPtr Context::getMergesThrottler() const
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
 {
-    return shared->distributed_cache_read_throttler;
+    ThrottlerPtr throttler;
+    {
+        SharedLockGuard lock(shared->mutex);
+        throttler = shared->distributed_cache_read_throttler;
+    }
+
+    /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
+    /// Writes do not need this here: `WriteBufferFromDistributedCache` also flushes through the
+    /// underlying object-storage writer, whose `write_settings.remote_throttler` already carries the
+    /// user-level throttler via `getRemoteWriteThrottler`. Splicing it onto the send socket too would
+    /// account each byte twice against the same token bucket.
+    if (auto process_list_element = getProcessListElementSafe())
+        addThrottler(throttler, process_list_element->getUserNetworkThrottler());
+
+    return throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheWriteThrottler() const
 {
+    SharedLockGuard lock(shared->mutex);
     return shared->distributed_cache_write_throttler;
 }
 
@@ -6003,6 +6036,33 @@ void Context::reloadLocalThrottlerConfig(size_t read_bandwidth, size_t write_ban
 
     if (shared->local_write_throttler)
         std::static_pointer_cast<Throttler>(shared->local_write_throttler)->setMaxSpeed(write_bandwidth);
+}
+
+void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_t write_bandwidth) const
+{
+    std::lock_guard lock(shared->mutex);
+
+    /// While distributed cache throttling is off the member aliases the remote throttler
+    /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
+    if (read_bandwidth)
+    {
+        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
+            shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+        else // Update throttler
+            std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
+    }
+    else if (shared->distributed_cache_read_throttler != shared->remote_read_throttler) // Delete throttler
+        shared->distributed_cache_read_throttler = shared->remote_read_throttler;
+
+    if (write_bandwidth)
+    {
+        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
+            shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+        else // Update throttler
+            std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
+    }
+    else if (shared->distributed_cache_write_throttler != shared->remote_write_throttler) // Delete throttler
+        shared->distributed_cache_write_throttler = shared->remote_write_throttler;
 }
 
 bool Context::hasDistributedDDL() const
