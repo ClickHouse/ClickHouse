@@ -48,6 +48,9 @@ public:
 
         /// Replace invalid UTF-8 sequences when a String or FixedString column is written as Arrow::String.
         bool replace_invalid_utf8_in_strings = false;
+
+        /// Output DateTime columns as Arrow timestamp with second precision.
+        bool output_datetime_as_timestamp = false;
     };
 
     static std::shared_ptr<arrow::Schema> calculateArrowSchema(

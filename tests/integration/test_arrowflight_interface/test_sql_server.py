@@ -1,6 +1,7 @@
 # coding: utf-8
 
 import base64
+import datetime
 import os
 import pytest
 import pyarrow as pa
@@ -509,7 +510,7 @@ def test_get_tables_with_schema():
         "int8_col": (pa.int8(), b"Int8", b"Int8"),
         "enum8_col": (pa.int8(), None, b"Enum8('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
-        "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+        "datetime_col": (pa.timestamp("s", tz="UTC"), b"DateTime", b"DateTime('UTC')"),
         "decimal_col": (pa.decimal128(18, 4), b"Decimal", b"Decimal(18, 4)"),
         "nullable_col": (pa.string(), b"String", b"Nullable(String)"),
     }
@@ -582,7 +583,7 @@ def test_statement_query_type_metadata(where_clause):
         "int16_col": (pa.int16(), b"Int16", b"Int16"),
         "enum16_col": (pa.int16(), None, b"Enum16('one' = 1, 'two' = 2)"),
         "uint32_col": (pa.uint32(), b"UInt32", b"UInt32"),
-        "datetime_col": (pa.uint32(), b"DateTime", b"DateTime('UTC')"),
+        "datetime_col": (pa.timestamp("s", tz="UTC"), b"DateTime", b"DateTime('UTC')"),
         "string_col": (pa.string(), b"String", b"String"),
     }
     for name, (arrow_type, type_name, clickhouse_type_name) in expected.items():
@@ -1161,20 +1162,31 @@ def test_datetime_data_types():
     """DateTime and DateTime64 round-trip."""
     client = get_client()
     client.execute_update(
-        "CREATE TABLE mytable (id UInt32, dt DateTime, dt64 DateTime64(3)) ENGINE = Memory"
+        "CREATE TABLE mytable ("
+        "id UInt32, dt DateTime('UTC'), dt64 DateTime64(3, 'UTC'), "
+        "nullable_dt Nullable(DateTime('UTC'))"
+        ") ENGINE = Memory"
     )
     client.execute_update(
-        "INSERT INTO mytable VALUES (1, '2024-01-15 10:30:00', '2024-01-15 10:30:00.123')"
+        "INSERT INTO mytable VALUES "
+        "(1, '2024-01-15 10:30:00', '2024-01-15 10:30:00.123', '2024-01-15 10:30:00'), "
+        "(2, '2024-01-15 10:30:00', '2024-01-15 10:30:00.123', NULL)"
     )
 
-    flight_info = client.execute("SELECT * FROM mytable")
+    flight_info = client.execute("SELECT * FROM mytable ORDER BY id")
     reader = client.do_get(flight_info.endpoints[0].ticket)
     table = reader.read_all()
 
-    assert table.num_rows == 1
-    # DateTime maps to uint32 (unix timestamp)
-    assert table.column("dt").type == pa.uint32()
-    assert table.column("dt")[0].as_py() == 1705314600
+    expected_dt = datetime.datetime(2024, 1, 15, 10, 30, tzinfo=datetime.timezone.utc)
+
+    assert table.num_rows == 2
+    # DateTime maps to Arrow timestamp with second precision and the type's time zone
+    assert table.column("dt").type == pa.timestamp("s", tz="UTC")
+    assert table.column("dt")[0].as_py() == expected_dt
+    # Nullable(DateTime) keeps the same Arrow type for both values and NULLs
+    assert table.column("nullable_dt").type == pa.timestamp("s", tz="UTC")
+    assert table.column("nullable_dt")[0].as_py() == expected_dt
+    assert table.column("nullable_dt")[1].as_py() is None
     # DateTime64 maps to Arrow timestamp
     assert pa.types.is_timestamp(table.column("dt64").type)
 

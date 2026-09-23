@@ -178,8 +178,8 @@ def test_roundtrip(group):
 # cannot check because the import casts to the destination header type anyway. Only the interesting
 # ones are listed; there is no value in restating that `Int32` is `int32`.
 DOGET_ARROW_TYPES = [
-    # Deliberately uint32 rather than date64/timestamp: seconds are all a DateTime carries.
-    ("dt", "DateTime('UTC')", "'2026-09-20 10:11:12'", pa.uint32()),
+    # Second precision is all a DateTime carries, and the zone is the type's effective time zone.
+    ("dt", "DateTime('UTC')", "'2026-09-20 10:11:12'", pa.timestamp("s", tz="UTC")),
     ("d", "Date", "'2026-09-20'", pa.date32()),
     ("d32", "Date32", "'2026-09-20'", pa.date32()),
     # One Arrow unit per scale, and time32 below milliseconds where Arrow requires it.
