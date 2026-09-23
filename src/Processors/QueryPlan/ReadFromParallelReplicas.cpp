@@ -67,6 +67,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -219,7 +220,13 @@ Pipe ReadFromParallelReplicasStep::createPipeForSingeReplica(
     {
         if (typeid_cast<const BlocksMarshallingStep *>(root->step.get()))
         {
-            chassert(root->children.size() == 1, "BlocksMarshalling is a unary step");
+            /// Throws rather than skipping the step: getting this wrong drops `AggregatedChunkInfo`
+            /// from every chunk of an aggregating fragment, which is silently wrong results.
+            if (root->children.size() != 1)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "BlocksMarshalling is a unary step, but the fragment root has {} children",
+                    root->children.size());
             root = root->children.front();
         }
 
