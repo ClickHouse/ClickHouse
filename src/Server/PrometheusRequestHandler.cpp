@@ -405,6 +405,17 @@ protected:
         return StorageID{full_name};
     }
 
+    /// URL path routing is supported only for remote write, so a `prometheus_api_v1` handler with
+    /// `enable_table_name_url_routing` is write-only. The check is done after authentication,
+    /// so an unauthenticated request gets the normal authentication response.
+    void rejectURLPathRoutingForNonWriteEndpoint()
+    {
+        if (config().enable_table_name_url_routing)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "URL path routing for prometheus_api_v1 is supported only for remote write");
+    }
+
     bool isTimeSeriesTableNameSetFromRequest() const
     {
         return params->has("database") || params->has("table");
@@ -537,6 +548,8 @@ public:
 
     void handlingRequestWithContext([[maybe_unused]] HTTPServerRequest & request, [[maybe_unused]] HTTPServerResponse & response) override
     {
+        rejectURLPathRoutingForNonWriteEndpoint();
+
 #if USE_PROMETHEUS_PROTOBUFS
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
@@ -659,6 +672,8 @@ public:
         /// This endpoint accepts user/password (and other secrets) as query-string parameters via
         /// authenticateUserByHTTP, so the URI must be masked before it reaches the logs.
         LOG_DEBUG(log(), "Processing Prometheus HTTP API query request: method={}, uri={}", request.getMethod(), maskSensitiveQueryParametersInURI(uri));
+
+        rejectURLPathRoutingForNonWriteEndpoint();
 
         response.setContentType("application/json");
 
@@ -914,11 +929,9 @@ private:
 
         if (path.ends_with("/write"))
             return write_impl;
-        if (config().enable_table_name_url_routing)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "URL path routing for prometheus_api_v1 is supported only for remote write");
 
+        /// With `enable_table_name_url_routing` the handler is write-only, but this is checked by the read
+        /// and query implementations after authentication, see `rejectURLPathRoutingForNonWriteEndpoint`.
         if (path.ends_with("/read"))
             return read_impl;
 
