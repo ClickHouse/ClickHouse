@@ -421,6 +421,9 @@ void checkPrometheusQueryDistributedRead(const IStorage & storage, const Context
 
     /// The read pins prefer_localhost_replica on and parallel replicas off, so a shard that is this server itself
     /// runs in-process on the caller's context: the selector's own grant is asked for here, before the probe.
+    /// It has no remote sibling to fall back to either: SelectStreamFactory falls back only when a local table
+    /// named by id is absent, while this read names a view() table function, whose local execution resolves the
+    /// selector and so asks for this same grant, or fails, on this server.
     /// A name that resolves to nothing is left to the probe, which reports it as a target the read has not got.
     const auto cluster = typeid_cast<const StorageDistributed &>(storage).getCluster();
     if (cluster->getLocalShardCount())
