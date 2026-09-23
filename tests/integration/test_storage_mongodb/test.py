@@ -781,8 +781,8 @@ def test_dates_casting(started_cluster):
         )
         == "0\n"
     )
-    # A sub-second bound, or a time of day against a `Date` column, is not pushed down truncated: the query
-    # is refused like any other predicate MongoDB cannot take, and evaluated in ClickHouse when allowed to.
+    # A sub-second bound is not pushed down truncated: the query is refused like any other predicate MongoDB
+    # cannot take, and evaluated in ClickHouse when allowed to.
     assert "NOT_IMPLEMENTED" in node.query_and_get_error(
         "SELECT COUNT() FROM dates_table WHERE k_dateTime >= toDateTime64('1999-02-28 11:23:16.5', 3)"
     )
@@ -794,15 +794,32 @@ def test_dates_casting(started_cluster):
     )
     assert (
         node.query(
-            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('1999-02-28 12:00:00')) SETTINGS mongodb_throw_on_unsupported_query = 0"
+            "SELECT COUNT() FROM dates_table WHERE k_date32 < toDateTime('1999-02-28 12:00:00') SETTINGS mongodb_throw_on_unsupported_query = 0"
+        )
+        == "1\n"
+    )
+
+    # A member converts as `IN` converts it: a time of day is the day of a `Date` column, and a sub-second
+    # member matches nothing. The stored dates carry a time of day, so a `Date` can only match a document
+    # stored at midnight.
+    dates_mongo_table.insert_one({k: datetime.datetime(2000, 1, 1) for k in data})
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_date IN (toDateTime('2000-01-01 12:00:00'))"
         )
         == "1\n"
     )
     assert (
         node.query(
-            "SELECT COUNT() FROM dates_table WHERE k_date32 < toDateTime('1999-02-28 12:00:00') SETTINGS mongodb_throw_on_unsupported_query = 0"
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
         )
-        == "1\n"
+        == "0\n"
+    )
+    assert (
+        node.query(
+            "SELECT COUNT() FROM dates_table WHERE k_dateTime NOT IN (toDateTime64('1999-02-28 11:23:16.5', 3))"
+        )
+        == "2\n"
     )
 
     node.query("DROP TABLE dates_table")
