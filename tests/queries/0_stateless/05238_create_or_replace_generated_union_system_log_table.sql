@@ -97,7 +97,8 @@ CREATE OR REPLACE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.all_query_log (event_
     COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
 
 SELECT count(), any(note) FROM {CLICKHOUSE_DATABASE_1:Identifier}.all_query_log;
-SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'all_query_log';
+-- Not the exact engine name: it may be replaced by another engine of the `MergeTree` family.
+SELECT engine LIKE '%MergeTree' FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'all_query_log';
 
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.all_query_log SYNC;
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.all_query_log (dummy UInt8) AS merge({CLICKHOUSE_DATABASE_1:String}, '^query_log(_[0-9]+)?$')
