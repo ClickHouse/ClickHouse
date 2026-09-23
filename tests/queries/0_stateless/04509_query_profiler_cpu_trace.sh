@@ -10,10 +10,13 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 query_id="04509_cpu_profiler_${CLICKHOUSE_DATABASE}"
 
 # CPU-bound query bounded to ~1s (break, not throw); settings pinned so randomized ones can't slow it.
+# 10ms CPU period: at a period near the signal handler's own CPU cost the timer overruns, and the
+# handler then sends only one sample per (overruns + 1) signals, which can be none at all for a
+# query this short. 10ms leaves that regime and still gives about 100 expirations per CPU second.
 ${CLICKHOUSE_CLIENT} --query_id="$query_id" --query "
     SELECT count() FROM numbers(1000000000000)
     SETTINGS query_profiler_real_time_period_ns = 0,
-             query_profiler_cpu_time_period_ns = 1000000,
+             query_profiler_cpu_time_period_ns = 10000000,
              trace_profile_events = 0,
              max_execution_time = 1,
              timeout_overflow_mode = 'break',
