@@ -1,0 +1,11 @@
+{'a':1.5}	1
+{}
+{'a':1.5}
+{'b':1.5,'b':2.5}
+[{'a':1.5},{'a':1.5},{'a':2.5}]
+AggregateFunction(groupArrayInsertAt([], 3), Map(String, Decimal(9, 1)), UInt32)
+[{'a':2.5},{},{}]
+[{'a':1}]
+[('a',1)]	1
+[[('a',1)],[('a',1)],[('b',2)]]
+AggregateFunction(1, sumMapFiltered([1, 2]), Array(UInt8), Array(UInt32))

@@ -750,17 +750,23 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (const DataTypeArray * type_array = typeid_cast<const DataTypeArray *>(&type))
     {
+        /// A Map is stored as [(key1, value1), ...], so it also reads as an array of key-value tuples.
+        const FieldVector * src_arr = nullptr;
         if (src.getType() == Field::Types::Array)
+            src_arr = &src.safeGet<Array>();
+        else if (src.getType() == Field::Types::Map)
+            src_arr = &src.safeGet<Map>();
+
+        if (src_arr)
         {
-            const Array & src_arr = src.safeGet<Array>();
-            size_t src_arr_size = src_arr.size();
+            size_t src_arr_size = src_arr->size();
 
             const auto & element_type = *(type_array->getNestedType());
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType(src_arr[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                res[i] = convertFieldToType((*src_arr)[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -963,13 +969,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     }
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
     {
+        /// The column-level CAST accepts an array of 2-element tuples here too (FunctionCast::createMapWrapper).
+        const FieldVector * map = nullptr;
         if (src.getType() == Field::Types::Map)
+            map = &src.safeGet<Map>();
+        else if (src.getType() == Field::Types::Array)
+            map = &src.safeGet<Array>();
+
+        if (map)
         {
             const auto & key_type = *type_map->getKeyType();
             const auto & value_type = *type_map->getValueType();
 
-            const auto & map = src.safeGet<Map>();
-            size_t map_size = map.size();
+            size_t map_size = map->size();
 
             Map res(map_size);
 
@@ -977,7 +989,15 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
             for (size_t i = 0; i < map_size; ++i)
             {
-                const auto & map_entry = map[i].safeGet<Tuple>();
+                const Field & entry = (*map)[i];
+                if (entry.getType() != Field::Types::Tuple || entry.safeGet<Tuple>().size() != 2)
+                    throw Exception(
+                        ErrorCodes::TYPE_MISMATCH,
+                        "Cannot convert {} to {}: a map entry must be a tuple of 2 elements",
+                        src.getTypeName(),
+                        type.getName());
+
+                const auto & map_entry = entry.safeGet<Tuple>();
 
                 const auto & key = map_entry[0];
                 const auto & value = map_entry[1];
