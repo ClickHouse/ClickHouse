@@ -1,0 +1,2 @@
+RollbackUserId	UInt64	\N	CREATE TYPE RollbackUserId AS UInt64
+RollbackUserId	UInt64

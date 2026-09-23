@@ -3496,6 +3496,8 @@ try
         /// Load user-defined SQL functions.
         global_context->loadUserDefinedExecutableFunctionDrivers(config());
         global_context->getUserDefinedSQLObjectsStorage().loadObjects();
+        /// Load user-defined types.
+        global_context->getUserDefinedTypesStorage().loadObjects();
 
         /// For driver-based executable UDFs persisted as ATTACH FUNCTION queries, ensure the
         /// dynamic configuration files exist; re-run their drivers if they are missing.

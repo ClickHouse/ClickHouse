@@ -21,6 +21,7 @@
 #include <Parsers/IAST.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateFunctionQuery.h>
+#include <Parsers/ParserCreateTypeQuery.h>
 
 #include <Poco/DirectoryIterator.h>
 
@@ -41,8 +42,6 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int DIRECTORY_DOESNT_EXIST;
-    extern const int FUNCTION_ALREADY_EXISTS;
-    extern const int UNKNOWN_FUNCTION;
 }
 
 
@@ -56,10 +55,24 @@ namespace
             canonical_directory_path += std::filesystem::path::preferred_separator;
         return canonical_directory_path;
     }
+
+    /// Objects of all kinds share one directory and are told apart by the file name prefix.
+    std::string_view getFilePrefix(UserDefinedSQLObjectType object_type)
+    {
+        switch (object_type)
+        {
+            case UserDefinedSQLObjectType::Function:
+                return "function_";
+            case UserDefinedSQLObjectType::Type:
+                return "type_";
+        }
+    }
+
+    constexpr std::string_view sql_extension = ".sql";
 }
 
-UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, const String & dir_path_)
-    : UserDefinedSQLObjectsStorageBase(global_context_)
+UserDefinedSQLObjectsDiskStorage::UserDefinedSQLObjectsDiskStorage(const ContextPtr & global_context_, UserDefinedSQLObjectType object_type_, const String & dir_path_)
+    : UserDefinedSQLObjectsStorageBase(global_context_, object_type_)
     , dir_path{makeDirectoryPathCanonical(dir_path_)}
     , log{getLogger("UserDefinedSQLObjectsLoaderFromDisk")}
 {
@@ -87,21 +100,30 @@ ASTPtr UserDefinedSQLObjectsDiskStorage::tryLoadObject(UserDefinedSQLObjectType 
         String object_create_query;
         readStringUntilEOF(object_create_query, in);
 
+        auto context = getContext();
+        auto parse = [&](IParser & parser)
+        {
+            return parseQuery(
+                parser,
+                object_create_query.data(),
+                object_create_query.data() + object_create_query.size(),
+                "",
+                0,
+                context->getSettingsRef()[Setting::max_parser_depth],
+                context->getSettingsRef()[Setting::max_parser_backtracks]);
+        };
+
         switch (object_type)
         {
             case UserDefinedSQLObjectType::Function:
             {
-                auto context = getContext();
                 ParserCreateFunctionQuery parser;
-                ASTPtr ast = parseQuery(
-                    parser,
-                    object_create_query.data(),
-                    object_create_query.data() + object_create_query.size(),
-                    "",
-                    0,
-                    context->getSettingsRef()[Setting::max_parser_depth],
-                    context->getSettingsRef()[Setting::max_parser_backtracks]);
-                return ast;
+                return parse(parser);
+            }
+            case UserDefinedSQLObjectType::Type:
+            {
+                ParserCreateTypeQuery parser;
+                return parse(parser);
             }
         }
     }
@@ -136,7 +158,8 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
         return;
     }
 
-    VectorWithMemoryTracking<std::pair<String, ASTPtr>> function_names_and_queries;
+    VectorWithMemoryTracking<std::pair<String, ASTPtr>> object_names_and_queries;
+    const auto prefix = getFilePrefix(storage_object_type);
 
     Poco::DirectoryIterator dir_end;
     for (Poco::DirectoryIterator it(dir_path); it != dir_end; ++it)
@@ -145,22 +168,20 @@ void UserDefinedSQLObjectsDiskStorage::loadObjectsImpl()
             continue;
 
         const String & file_name = it.name();
-        if (!startsWith(file_name, "function_") || !endsWith(file_name, ".sql"))
+        if (!file_name.starts_with(prefix) || !file_name.ends_with(sql_extension))
             continue;
 
-        size_t prefix_length = strlen("function_");
-        size_t suffix_length = strlen(".sql");
-        String function_name = unescapeForFileName(file_name.substr(prefix_length, file_name.length() - prefix_length - suffix_length));
+        String object_name = unescapeForFileName(file_name.substr(prefix.length(), file_name.length() - prefix.length() - sql_extension.length()));
 
-        if (function_name.empty())
+        if (object_name.empty())
             continue;
 
-        ASTPtr ast = tryLoadObject(UserDefinedSQLObjectType::Function, function_name, dir_path + it.name(), /* check_file_exists= */ false);
+        ASTPtr ast = tryLoadObject(storage_object_type, object_name, dir_path + it.name(), /* check_file_exists= */ false);
         if (ast)
-            function_names_and_queries.emplace_back(function_name, ast);
+            object_names_and_queries.emplace_back(object_name, ast);
     }
 
-    setAllObjects(function_names_and_queries);
+    setAllObjects(object_names_and_queries);
     objects_loaded = true;
 
     LOG_DEBUG(log, "User defined objects loaded");
@@ -203,7 +224,8 @@ bool UserDefinedSQLObjectsDiskStorage::storeObjectImpl(
     if (fs::exists(file_path))
     {
         if (throw_if_exists)
-            throw Exception(ErrorCodes::FUNCTION_ALREADY_EXISTS, "File {} for user-defined function '{}' already exists", file_path, object_name);
+            throw Exception(getUserDefinedSQLObjectAlreadyExistsErrorCode(object_type),
+                "File {} for user-defined {} '{}' already exists", file_path, getUserDefinedSQLObjectTypeName(object_type), object_name);
 
         if (!replace_if_exists)
             return false;
@@ -256,7 +278,8 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
     if (!existed)
     {
         if (throw_if_not_exists)
-            throw Exception(ErrorCodes::UNKNOWN_FUNCTION, "User-defined function '{}' doesn't exist", object_name);
+            throw Exception(getUnknownUserDefinedSQLObjectErrorCode(object_type),
+                "User-defined {} '{}' doesn't exist", getUserDefinedSQLObjectTypeName(object_type), object_name);
         return false;
     }
 
@@ -267,16 +290,7 @@ bool UserDefinedSQLObjectsDiskStorage::removeObjectImpl(
 
 String UserDefinedSQLObjectsDiskStorage::getFilePath(UserDefinedSQLObjectType object_type, const String & object_name) const
 {
-    String file_path;
-    switch (object_type)
-    {
-        case UserDefinedSQLObjectType::Function:
-        {
-            file_path = dir_path + "function_" + escapeForFileName(object_name) + ".sql";
-            break;
-        }
-    }
-    return file_path;
+    return dir_path + String{getFilePrefix(object_type)} + escapeForFileName(object_name) + String{sql_extension};
 }
 
 }
