@@ -49,16 +49,20 @@ SELECT a, a = CAST(map('a', toUInt8(1)), 'Array(Tuple(String, UInt8))') FROM t_a
 SELECT groupArrayInsertAt(map('a', 1), 3)(a, i)
 FROM (SELECT CAST([('b', 2)], 'Array(Tuple(String, UInt8))') AS a, toUInt32(2) AS i);
 
--- shapes CAST rejects stay rejected
-INSERT INTO t_map_05243 VALUES ([('a', 1, 2)]); -- { serverError TYPE_MISMATCH }
-INSERT INTO t_map_05243 VALUES ([1, 2]); -- { serverError TYPE_MISMATCH }
-INSERT INTO t_arr_of_pairs_05243 VALUES ([1, 2]); -- { serverError TYPE_MISMATCH }
+-- shapes CAST rejects stay rejected.
+-- Which side converts an inline VALUES block decides whether the rejection is a client or a
+-- server error, so pin the two settings that would move the conversion to the server:
+-- async_insert is on by default, and send_table_structure_on_insert_with_inline_data is randomized.
+SET async_insert = 0, send_table_structure_on_insert_with_inline_data = 1;
+INSERT INTO t_map_05243 VALUES ([('a', 1, 2)]); -- { clientError TYPE_MISMATCH }
+INSERT INTO t_map_05243 VALUES ([1, 2]); -- { clientError TYPE_MISMATCH }
+INSERT INTO t_arr_of_pairs_05243 VALUES ([1, 2]); -- { clientError TYPE_MISMATCH }
 
 CREATE TABLE t_arr_uint_05243 (a Array(UInt8)) ENGINE = Memory;
-INSERT INTO t_arr_uint_05243 VALUES (map('a', 1)); -- { serverError TYPE_MISMATCH }
+INSERT INTO t_arr_uint_05243 VALUES (map('a', 1)); -- { clientError TYPE_MISMATCH }
 
 CREATE TABLE t_tuple_05243 (t Tuple(UInt8, UInt8)) ENGINE = Memory;
-INSERT INTO t_tuple_05243 VALUES ([1, 2]); -- { serverError TYPE_MISMATCH }
+INSERT INTO t_tuple_05243 VALUES ([1, 2]); -- { clientError TYPE_MISMATCH }
 
 -- an array parameter still round-trips unchanged
 SELECT toTypeName(sumMapFilteredState([1, 2])(k, v)) FROM (SELECT [1] AS k, [toUInt32(5)] AS v);
