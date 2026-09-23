@@ -96,8 +96,8 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
 
 void ExternalDictionariesLoader::recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const
 {
-    local_context->addUsedServerLocalObject(
-        UsedServerLocalObjects::Kind::Dictionary,
+    local_context->addDistributedPlanLocalObject(
+        DistributedPlanLocalObject::Kind::Dictionary,
         qualifyDictionaryNameWithDatabase(dictionary_name, local_context->getCurrentDatabase()).getFullName());
 }
 
@@ -109,7 +109,7 @@ std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string 
 
 std::string ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    local_context->addUsedServerLocalObject(UsedServerLocalObjects::Kind::Dictionary, dictionary_name.getFullName());
+    local_context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::Dictionary, dictionary_name.getFullName());
     return resolveDictionaryName(dictionary_name);
 }
 

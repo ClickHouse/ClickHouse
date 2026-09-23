@@ -43,7 +43,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/UsedServerLocalObjects.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/SelectQueryInfo.h>
@@ -75,7 +75,7 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(const 
 std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
 {
-    if (optimization_settings.used_server_local_objects  == nullptr)
+    if (optimization_settings.distributed_plan_local_object  == nullptr)
     {
         LOG_TRACE(getLogger("makeDistributed"), "Could not evaluate default columns on initiator due to missing tracker for local objects");
         return std::nullopt;
@@ -106,13 +106,13 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
             read.getStorageID().getFullTableName(), e.message());
     }
 
-    const auto & used = optimization_settings.used_server_local_objects;
+    const auto & used = optimization_settings.distributed_plan_local_object;
     if (used && used->get().has_value())
     {
         const auto &entry = used->get();
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
-            UsedServerLocalObjects::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
+            DistributedPlanLocalObject::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
     }
     return std::nullopt;
 }
@@ -472,7 +472,7 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
     /// A dictionary, embedded dictionary or `Join` table the query resolved by name while it was analyzed exists on
     /// the initiator, not necessarily on a worker, and the fragment ships only the name. Read before the walk; the
     /// column-default check inside the walk records for reads whose defaults the query text never touched.
-    const auto & used = optimization_settings.used_server_local_objects;
+    const auto & used = optimization_settings.distributed_plan_local_object;
     if (!used)
     {
         /// No query context, so nothing could have been recorded; the plan is taken as free of such objects.
@@ -482,7 +482,7 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
     if (const auto & entry = used->get())
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator",
-            UsedServerLocalObjects::kindName(entry->kind), entry->name);
+            DistributedPlanLocalObject::kindName(entry->kind), entry->name);
 
     return std::nullopt;
 }

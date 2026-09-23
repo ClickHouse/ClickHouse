@@ -1,14 +1,14 @@
-#include <Interpreters/UsedServerLocalObjects.h>
+#include <Interpreters/DistributedPlanLocalObject.h>
 
 namespace DB
 {
 
-void UsedServerLocalObjects::add(Kind kind, const String & name)
+void DistributedPlanLocalObject::add(Kind kind, const String & name)
 {
     std::call_once(once, [&] { entry = Entry{kind, name}; });
 }
 
-std::string_view UsedServerLocalObjects::kindName(Kind kind)
+std::string_view DistributedPlanLocalObject::kindName(Kind kind)
 {
     switch (kind)
     {

@@ -40,7 +40,7 @@ public:
 
     /// Translates the name a query uses (`db.dict`, or `dict` against the current database) into the key the loader
     /// stores the dictionary under (the UUID for a DDL dictionary, the name for an XML one), recording the query's use of
-    /// the dictionary (`UsedServerLocalObjects`) on the way. Every consumer that names a dictionary goes through one of these.
+    /// the dictionary (`DistributedPlanLocalObject`) on the way. Every consumer that names a dictionary goes through one of these.
     std::string resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const;
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 

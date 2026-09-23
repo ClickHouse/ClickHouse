@@ -1462,7 +1462,7 @@ ContextData::ContextData(const ContextData &o) :
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
-    used_server_local_objects(o.used_server_local_objects),
+    distributed_plan_local_object(o.distributed_plan_local_object),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
     view_source(o.view_source),
@@ -3088,20 +3088,20 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
     suppress_query_factories_info = prev;
 }
 
-void Context::addUsedServerLocalObject(UsedServerLocalObjects::Kind kind, const String & name) const
+void Context::addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind kind, const String & name) const
 {
     /// Reading `system.functions` creates the resolver of every function to list its properties, which for `regionTo*`
     /// touches the embedded dictionaries; that enumeration is not a use by the query, so it runs under
     /// `SuppressQueryFactoriesInfoScope`, the same guard that keeps it out of `query_log.used_functions`. A context that
     /// was not copied from a query context has no record.
-    if (suppress_query_factories_info || !used_server_local_objects)
+    if (suppress_query_factories_info || !distributed_plan_local_object)
         return;
-    used_server_local_objects->add(kind, name);
+    distributed_plan_local_object->add(kind, name);
 }
 
-std::shared_ptr<const UsedServerLocalObjects> Context::getUsedServerLocalObjects() const
+std::shared_ptr<const DistributedPlanLocalObject> Context::getDistributedPlanLocalObject() const
 {
-    return used_server_local_objects;
+    return distributed_plan_local_object;
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
@@ -3996,7 +3996,7 @@ ContextMutablePtr Context::getBufferContext() const
 void Context::makeQueryContext()
 {
     query_context = shared_from_this();
-    used_server_local_objects = std::make_shared<UsedServerLocalObjects>();
+    distributed_plan_local_object = std::make_shared<DistributedPlanLocalObject>();
 
     /// Throttling should not be inherited, otherwise if you will set
     /// throttling for default profile you will not able to overwrite it
@@ -4107,13 +4107,13 @@ void Context::makeBackgroundContext(const Poco::Util::AbstractConfiguration & co
 const EmbeddedDictionaries & Context::getEmbeddedDictionaries() const
 {
     /// The `region*` functions take them here when they are created, i.e. while the query is analyzed.
-    addUsedServerLocalObject(UsedServerLocalObjects::Kind::EmbeddedDictionaries, "");
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 
 EmbeddedDictionaries & Context::getEmbeddedDictionaries()
 {
-    addUsedServerLocalObject(UsedServerLocalObjects::Kind::EmbeddedDictionaries, "");
+    addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::EmbeddedDictionaries, "");
     return getEmbeddedDictionariesImpl(false);
 }
 

@@ -172,7 +172,7 @@ getJoin(const ColumnsWithTypeAndName & arguments, ContextPtr context)
     if (!storage_join)
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Table {} should have engine StorageJoin", join_name);
     /// Resolved on the executing server: a `make_distributed_plan` worker would look it up in its own catalog.
-    context->addUsedServerLocalObject(UsedServerLocalObjects::Kind::JoinTable, storage_id.getFullTableName());
+    context->addDistributedPlanLocalObject(DistributedPlanLocalObject::Kind::JoinTable, storage_id.getFullTableName());
 
     String attr_name;
     if (const auto * name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
