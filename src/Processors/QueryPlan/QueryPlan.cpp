@@ -17,6 +17,7 @@
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/AnalyzePlanStats.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <QueryPipeline/receiveExchangeStreams.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistributedPlanSets.h>
@@ -38,6 +39,8 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Planner/Utils.h>
+
+#include <fmt/ranges.h>
 
 namespace ProfileEvents
 {
@@ -821,7 +824,7 @@ void QueryPlan::explainPipeline(WriteBuffer & buffer, const ExplainPipelineOptio
 namespace QueryPlanOptimizations
 {
 
-const IQueryPlanStep * findStepUnsupportedForRemoteExecution(const QueryPlan::Node & root);
+std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
 DistributedQueryPlan
 makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
@@ -883,7 +886,17 @@ bool QueryPlan::applyDistributedPlanFallbackToLocal(QueryPlanOptimizationSetting
         getLogger("makeDistributedPlan"), "Cannot make a distributed query plan, falling back to local execution: {}", reason->text);
     settings.make_distributed_plan = false;
     distributed_plan_decision = DistributedPlanDecision::FellBack;
+    for (const auto & context : resources.distributed_plan_decision_contexts)
+        context->setSetting("make_distributed_plan", false);
     return true;
+}
+
+void QueryPlan::takeContextsFrom(const QueryPlan & kept_aside_plan)
+{
+    for (const auto & context : kept_aside_plan.resources.interpreter_context)
+        addInterpreterContext(context);
+    for (const auto & context : kept_aside_plan.resources.distributed_plan_decision_contexts)
+        addDistributedPlanDecisionContext(context);
 }
 
 
@@ -932,10 +945,10 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
     /// A non-serializable step found here
     /// means either a caller skipped the call to `applyDistributedPlanFallbackToLocal`  or an optimization pass created the step after
     /// the plan was accepted. Neither may silently fall back, so abort the plan.
-    if (const auto * step = QueryPlanOptimizations::findStepUnsupportedForRemoteExecution(*root))
+    if (auto reason = QueryPlanOptimizations::getReasonPlanUnsupportedForRemoteExecution(*root); reason.has_value())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan error: plan became unsupported for distributed execution after optimization: {}.",
-            step->getName());
+            reason->text);
 
     /// Take the IN-subquery sets out of the plan before it is split into fragments, so the
     /// fragments never carry their placeholder steps; the sets are added back below.
@@ -1038,14 +1051,21 @@ void QueryPlan::convertToDistributed(const QueryPlanOptimizationSettings & optim
             execute_locally,
             cancellation);
 
-        auto lazily_create_result_reader = [result_header, exchange_lookup, result_stream_id]() -> QueryPipelineBuilder
+        /// The result must keep the order the main task sends it in (an `ORDER BY` result arrives
+        /// sorted), so it stays on one stream: the source hands its packets to one deserializer behind
+        /// it, and reading overlaps with deserializing. An exchange kind without a deserializer keeps
+        /// its plain-row source.
+        auto lazily_create_result_reader
+            = [result_header, exchange_lookup, result_stream_id, exchange_name = final_result_exchange.name, context]() -> QueryPipelineBuilder
         {
-            Pipe read_result_from(exchange_lookup->createSource(result_header, result_stream_id));
+            BuildQueryPipelineSettings settings(context);
+            settings.exchange_lookup = exchange_lookup;
+            VectorWithMemoryTracking<ExchangeStreamId> stream_ids;
+            stream_ids.push_back(result_stream_id);
+            auto builder = receiveExchangeStreams(result_header, exchange_name, stream_ids, settings, /*spread_over_max_threads=*/ false);
             /// An in-memory exchange source emits zero-row chunks as scheduling ticks while
             /// waiting for data; drop them so they do not reach the client as empty `Data` packets.
-            read_result_from.addTransform(makeSkipZeroRowChunksTransform(result_header));
-            QueryPipelineBuilder builder;
-            builder.init(std::move(read_result_from));
+            builder.addSimpleTransform([](const SharedHeader & header) { return makeSkipZeroRowChunksTransform(header); });
             return builder;
         };
         pipes.emplace_back(createDelayedPipe(result_header, lazily_create_result_reader, false, false));
