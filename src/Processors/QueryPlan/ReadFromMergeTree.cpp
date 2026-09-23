@@ -3120,6 +3120,14 @@ void ReadFromMergeTree::buildIndexes(
                     && top_k_filter_info->threshold_tracker->getCollator())
                     return false;
 
+                /// The `minmax` index leaves NaN out of the granule bounds. That is harmless while NaN ranks last,
+                /// but under NULLS FIRST a granule whose finite values are all beyond the threshold would be
+                /// skipped together with the NaN rows it holds, which rank before the threshold.
+                if (top_k_filter_info->threshold_tracker
+                    && isFloat(removeLowCardinality(top_k_filter_info->data_type))
+                    && top_k_filter_info->threshold_tracker->getNullsDirection() != top_k_filter_info->threshold_tracker->getDirection())
+                    return false;
+
                 return true;
         };
 
