@@ -93,7 +93,7 @@ ${CLICKHOUSE_CLIENT} --send_logs_level=fatal -q "RENAME TABLE ${POL}.ts TO ${POL
 # Nothing moved: every inner table is still on its source name and no destination name exists.
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.samples.ts\`"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.tags.ts\`"
-${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.metrics.ts\`"
+${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.metricfamilies.ts\`"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.ts"
 ${CLICKHOUSE_CLIENT} -q "EXISTS TABLE ${POL}.\`.inner.samples.ts2\`"
 # Both policies are still on the names they were created with.
