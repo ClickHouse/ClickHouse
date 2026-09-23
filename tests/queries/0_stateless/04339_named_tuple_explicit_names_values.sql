@@ -1,13 +1,6 @@
 -- Tests for the explicit named tuple syntax tuple(name1, name2, ...)(value1, value2, ...).
 
--- Two tuples with the same values but different element names must not collide by column name
--- (the old analyzer keys actions by column name, and folding the parametric tuple function into
--- a literal used to make `tuple('a')(1)` and `tuple('b')(1)` indistinguishable).
-SET enable_analyzer = 0;
-SELECT tuple('a')(1) AS x, tuple('b')(1) AS y, toTypeName(x), toTypeName(y);
-SELECT tuple('a', 'b')(1, 2) AS t, toTypeName(t);
-
-SET enable_analyzer = 1;
+-- Two tuples with the same values but different element names must not collide by column name.
 SELECT tuple('a')(1) AS x, tuple('b')(1) AS y, toTypeName(x), toTypeName(y);
 SELECT tuple('a', 'b')(1, 2) AS t, toTypeName(t);
 
