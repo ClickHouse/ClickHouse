@@ -89,22 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## 집계 {#aggregation}
 
-`인터벌` 컬럼에 대한 `avg`, `min`, `max`, `any`는 동일한 타입의 인터벌을 반환합니다.
-`avg`는 단위 수의 평균을 구한 뒤 그 결과를 정수 단위로 내림합니다:
+`Interval` 컬럼에 `sum`, `avg`, `min`, `max`, `any`를 적용하면 동일한 타입의 인터벌이 반환됩니다.
+`sum`은 단위 수를 합산하고, `avg`는 단위 수의 평균을 구한 뒤 결과를 정수 단위로
+반올림합니다:
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-단위가 서로 다른 인터벌은 서로 비교하거나 합칠 수 없습니다. 예를 들어 한 달은 고정된 일수가 아니므로 단위 간 변환이 불가능하며, 각 인터벌 유형은 개별적으로 집계됩니다.
+서로 다른 단위의 값은 집계되기 전에 공통 단위로 변환됩니다. 따라서
+1분과 1초를 합하면 61초가 됩니다. `Month`, `Quarter`, `Year`는 더 작은 단위와
+공통 단위가 없으므로(한 달의 일수는 고정되어 있지 않음) 더 작은 단위와는
+전혀 혼합할 수 없습니다.
 
 ## 혼합형 인터벌 {#mixed-type-intervals}
 
@@ -154,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 * [INTERVAL](/ko/reference/operators/index#interval) 연산자
 * [toInterval](/ko/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) 변환 함수
 * [avg](/ko/reference/functions/aggregate-functions/avg) 집계 함수
+* [sum](/ko/reference/functions/aggregate-functions/sum) 집계 함수

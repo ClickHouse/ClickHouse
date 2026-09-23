@@ -89,23 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## التجميع {#aggregation}
 
-تُرجع الدوال `avg` و`min` و`max` و`any` عند تطبيقها على column من النوع `Interval` فاصلًا زمنيًا من النوع نفسه.
-وتحسب `avg` متوسط عدد الوحدات ثم تقرّب النتيجة إلى عدد صحيح منها:
+عند تطبيق الدوال `sum` و`avg` و`min` و`max` و`any` على column من النوع `Interval`، فإنها تُرجع فاصلًا زمنيًا من النوع نفسه.
+تجمع `sum` عدد الوحدات، بينما تحسب `avg` متوسطها وتقرّب النتيجة إلى عدد صحيح
+من الوحدات:
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-الفواصل الزمنية ذات الوحدات المختلفة غير قابلة للقياس المشترك — فالشهر ليس عددًا ثابتًا من الأيام — لذا
-لا يوجد تحويل بينها، ويُجمَّع كل نوع من الفواصل الزمنية على حِدة.
+تُحوَّل القيم ذات الوحدات المختلفة إلى وحدة مشتركة قبل تجميعها، ولذلك
+فإن جمع دقيقة وثانية ينتج عنه 61 ثانية. أما `Month` و`Quarter` و`Year` فلا تجمعها وحدة مشتركة
+مع الوحدات الأصغر - إذ لا يتكوّن الشهر من عدد ثابت من الأيام - ولذا لا يمكن مزجها
+معها إطلاقًا.
 
 ## الفواصل الزمنية المختلطة النوع {#mixed-type-intervals}
 
@@ -155,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 * المشغّل [INTERVAL](/ar/reference/operators/index#interval)
 * دوال تحويل النوع [toInterval](/ar/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)
 * الدالة التجميعية [avg](/ar/reference/functions/aggregate-functions/avg)
+* الدالة التجميعية [sum](/ar/reference/functions/aggregate-functions/sum)

@@ -89,22 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## Agrégation {#aggregation}
 
-`avg`, `min`, `max` et `any` appliqués à une colonne `Interval` renvoient un intervalle du même type.
-`avg` calcule la moyenne du nombre d&#39;unités et arrondit le résultat à un nombre entier d&#39;unités :
+Appliquées à une colonne `Interval`, les fonctions `sum`, `avg`, `min`, `max` et `any` renvoient un intervalle du même type.
+`sum` additionne le nombre d&#39;unités, tandis que `avg` en calcule la moyenne et arrondit le résultat à un nombre entier
+d&#39;unités :
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-Les intervalles d&#39;unités différentes ne sont pas commensurables — un mois ne correspond pas à un nombre fixe de jours — il n&#39;existe donc aucune conversion entre eux et chaque type d&#39;intervalle est agrégé indépendamment.
+Les valeurs exprimées dans des unités différentes sont converties dans leur unité commune avant d&#39;être agrégées ; ainsi,
+la somme d&#39;une minute et d&#39;une seconde donne 61 secondes. `Month`, `Quarter` et `Year` n&#39;ont aucune unité
+commune avec les unités plus petites (un mois ne compte pas un nombre fixe de jours) et ne peuvent donc en aucun cas
+être combinées avec elles.
 
 ## Intervalles de type mixte {#mixed-type-intervals}
 
@@ -154,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 * opérateur [INTERVAL](/fr/reference/operators/index#interval)
 * fonctions de conversion de type [toInterval](/fr/reference/functions/regular-functions/type-conversion-functions#toIntervalYear)
 * fonction d&#39;agrégation [avg](/fr/reference/functions/aggregate-functions/avg)
+* fonction d&#39;agrégation [sum](/fr/reference/functions/aggregate-functions/sum)

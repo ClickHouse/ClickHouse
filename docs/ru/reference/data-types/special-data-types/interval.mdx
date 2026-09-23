@@ -89,23 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## Агрегация {#aggregation}
 
-`avg`, `min`, `max` и `any` по столбцу типа `Interval` возвращают интервал того же типа.
-`avg` усредняет количество единиц и округляет результат до целого числа единиц:
+Функции `sum`, `avg`, `min`, `max` и `any`, применённые к столбцу типа `Interval`, возвращают интервал того же типа.
+`sum` суммирует количество единиц, а `avg` вычисляет их среднее и округляет результат до целого числа
+единиц:
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-Интервалы в разных единицах несоизмеримы — месяц не равен фиксированному числу дней, — поэтому
-преобразование между ними невозможно, и каждый тип интервала агрегируется отдельно.
+Перед агрегированием значения в разных единицах приводятся к общей единице, поэтому
+сумма минуты и секунды даёт 61 секунду. У `Month`, `Quarter` и `Year` нет общей
+единицы с более мелкими единицами (число дней в месяце не фиксировано), поэтому
+смешивать их с ними вообще нельзя.
 
 ## Интервалы смешанных типов {#mixed-type-intervals}
 
@@ -155,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 * оператор [INTERVAL](/ru/reference/operators/index#interval)
 * [toInterval](/ru/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) функции преобразования типов
 * агрегатная функция [avg](/ru/reference/functions/aggregate-functions/avg)
+* агрегатная функция [sum](/ru/reference/functions/aggregate-functions/sum)

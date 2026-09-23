@@ -89,23 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## Agregación {#aggregation}
 
-`avg`, `min`, `max` y `any` sobre una columna `Interval` devuelven un intervalo del mismo tipo.
-`avg` promedia la cantidad de unidades y redondea el resultado a un número entero de ellas:
+`sum`, `avg`, `min`, `max` y `any` aplicadas a una columna `Interval` devuelven un intervalo del mismo tipo.
+`sum` suma el número de unidades, mientras que `avg` calcula su promedio y redondea el resultado a un número entero
+de unidades:
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-Los intervalos de unidades distintas no son conmensurables —un mes no equivale a un número fijo de días—, por lo que
-no existe conversión entre ellos y cada tipo de intervalo se agrega por separado.
+Los valores de distintas unidades se convierten a su unidad común antes de agregarse, por lo que
+sumar un minuto y un segundo da 61 segundos. `Month`, `Quarter` y `Year` no comparten ninguna unidad común
+con las unidades más pequeñas (un mes no tiene un número fijo de días), por lo que no pueden combinarse con
+ellas de ninguna manera.
 
 ## Intervalos de tipo mixto {#mixed-type-intervals}
 
@@ -155,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 * [INTERVAL](/es/reference/operators/index#interval), operador
 * [toInterval](/es/reference/functions/regular-functions/type-conversion-functions#toIntervalYear), funciones de conversión de tipos
 * [avg](/es/reference/functions/aggregate-functions/avg), función de agregación
+* [sum](/es/reference/functions/aggregate-functions/sum), función de agregación

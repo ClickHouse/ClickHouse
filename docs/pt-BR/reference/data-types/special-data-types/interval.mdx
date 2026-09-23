@@ -89,23 +89,29 @@ SELECT toIntervalMicrosecond(3600000000) = toIntervalHour(1);
 
 ## Agregação {#aggregation}
 
-`avg`, `min`, `max` e `any` aplicados a uma coluna `Interval` retornam um intervalo do mesmo tipo.
-`avg` calcula a média do número de unidades e arredonda o resultado para um número inteiro de unidades:
+`sum`, `avg`, `min`, `max` e `any` aplicadas a uma coluna `Interval` retornam um intervalo do mesmo tipo.
+`sum` soma o número de unidades, e `avg` calcula a média delas e arredonda o resultado para um número inteiro
+de unidades:
 
 ```sql
-SELECT avg(duration) AS avg_duration, toTypeName(avg_duration)
+SELECT
+    sum(duration) AS total_duration,
+    avg(duration) AS avg_duration,
+    toTypeName(total_duration)
 FROM VALUES('duration IntervalMillisecond',
     toIntervalMillisecond(100), toIntervalMillisecond(200), toIntervalMillisecond(300))
 ```
 
 ```text
-┌─avg_duration─┬─toTypeName(avg_duration)─┐
-│          200 │ IntervalMillisecond      │
-└──────────────┴──────────────────────────┘
+┌─total_duration─┬─avg_duration─┬─toTypeName(total_duration)─┐
+│            600 │          200 │ IntervalMillisecond        │
+└────────────────┴──────────────┴────────────────────────────┘
 ```
 
-Intervalos de unidades diferentes não são comensuráveis — um mês não corresponde a um número fixo de dias —, portanto
-não há conversão entre eles e cada tipo de intervalo é agregado separadamente.
+Valores de unidades diferentes são convertidos para uma unidade comum antes de serem agregados, de modo que
+somar um minuto e um segundo resulta em 61 segundos. `Month`, `Quarter` e `Year` não têm unidade
+comum com as unidades menores — um mês não corresponde a um número fixo de dias — e não podem ser combinados com
+elas de forma alguma.
 
 ## Intervalos de tipos mistos {#mixed-type-intervals}
 
@@ -155,3 +161,4 @@ SELECT INTERVAL '+1:30' HOUR TO MINUTE;
 * operador [INTERVAL](/pt-BR/reference/operators/index#interval)
 * [toInterval](/pt-BR/reference/functions/regular-functions/type-conversion-functions#toIntervalYear) funções de conversão de tipos
 * [avg](/pt-BR/reference/functions/aggregate-functions/avg) função de agregação
+* [sum](/pt-BR/reference/functions/aggregate-functions/sum) função de agregação
