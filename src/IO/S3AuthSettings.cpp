@@ -45,6 +45,7 @@ namespace DB
     DECLARE(String, google_adc_client_id, "", "", 0) \
     DECLARE(String, google_adc_client_secret, "", "", 0) \
     DECLARE(String, google_adc_refresh_token, "", "", 0) \
+    DECLARE(String, google_service_account_key, "", "", 0) \
 
 /// `max_connections` used to bound the per-endpoint session pool of the S3 client, which was
 /// removed in 21.4; the global pool that replaced it is bounded by the `disk_connections_*`,
@@ -221,6 +222,7 @@ void S3AuthSettings::clearServerManagedGcpOAuth()
     impl->set("google_adc_client_id", "");
     impl->set("google_adc_client_secret", "");
     impl->set("google_adc_refresh_token", "");
+    impl->set("google_service_account_key", "");
 }
 
 NormalizedHTTPHeaderEntries S3AuthSettings::getHeaders() const

@@ -1381,9 +1381,10 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
         /// `gcp_oauth` mints a bearer token from an explicit ADC triple if given, otherwise from the server's
         /// GCP metadata service. Matched case-insensitively, the same as PocoHTTPClientFactory.
         const bool uses_gcp_oauth = boost::iequals(configuration.http_client, "gcp_oauth");
-        const bool has_explicit_gcp_adc = !configuration.google_adc_client_id.empty()
+        const bool has_explicit_gcp_adc = (!configuration.google_adc_client_id.empty()
             && !configuration.google_adc_client_secret.empty()
-            && !configuration.google_adc_refresh_token.empty();
+            && !configuration.google_adc_refresh_token.empty())
+            || !configuration.google_service_account_key.empty();
 
         /// `role_arn`-based STS assume-role stays allowed even under the restriction: the target role must
         /// explicitly trust the identity the server runs under, and only the assumed role's credentials ever

@@ -48,6 +48,7 @@ namespace ErrorCodes
     DECLARE(String, google_adc_refresh_token, "", "Google Application Default Credentials refresh_token for BigLake. Required if using ADC authentication instead of metadata service", 0) \
     DECLARE(String, google_adc_quota_project_id, "", "Google Application Default Credentials quota_project_id for BigLake. Optional, used if google_project_id is not set", 0) \
     DECLARE(String, google_adc_credentials_file, "", "Deprecated setting, will throw an exception if used", 0) \
+    DECLARE(String, google_service_account_key, "", "Content of a Google Cloud service account JSON key file for BigLake. ClickHouse signs a JWT with the key and exchanges it for an access token, which it renews automatically. Used for both the catalog and the data files in Cloud Storage. An alternative to the ADC credentials (google_adc_client_id, google_adc_client_secret, google_adc_refresh_token) that works outside Google Cloud without a user refresh token", 0) \
     DECLARE(String, dlf_access_key_id, "", "Access id of DLF token for Paimon REST Catalog", 0) \
     DECLARE(String, dlf_access_key_secret, "", "Access secret of DLF token for Paimon REST Catalog", 0) \
     DECLARE(Bool, force_add_bucket, false, "When constructing object-storage URLs from the catalog-provided table location and storage_endpoint, prepend the bucket/container name even if the endpoint already contains it. Useful for catalogs that hand back paths without the bucket and expect it to be added at URL construction (Polaris-style paths).", 0) \

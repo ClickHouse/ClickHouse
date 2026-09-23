@@ -94,6 +94,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_refresh_token;
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
+    extern const DatabaseDataLakeSettingsString google_service_account_key;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
     extern const DatabaseDataLakeSettingsBool flat_namespaces;
 }
@@ -332,6 +333,7 @@ void DatabaseDataLake::initialize() const
             std::string google_adc_client_secret = settings[DatabaseDataLakeSetting::google_adc_client_secret].value;
             std::string google_adc_refresh_token = settings[DatabaseDataLakeSetting::google_adc_refresh_token].value;
             std::string google_adc_quota_project_id = settings[DatabaseDataLakeSetting::google_adc_quota_project_id].value;
+            std::string google_service_account_key = settings[DatabaseDataLakeSetting::google_service_account_key].value;
 
             if (settings[DatabaseDataLakeSetting::google_adc_credentials_file].changed)
             {
@@ -350,6 +352,7 @@ void DatabaseDataLake::initialize() const
                 google_adc_client_secret,
                 google_adc_refresh_token,
                 google_adc_quota_project_id,
+                google_service_account_key,
                 Context::getGlobalContextInstance(),
                 allow_server_credentials_in_user_queries);
             break;
@@ -899,7 +902,8 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         s3_configuration->setInitializationAsBigLake(
             biglake_catalog->getGoogleADCClientId(),
             biglake_catalog->getGoogleADCClientSecret(),
-            biglake_catalog->getGoogleADCRefreshToken()
+            biglake_catalog->getGoogleADCRefreshToken(),
+            biglake_catalog->getGoogleServiceAccountKey()
         );
 #else
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Server does not contain support for storage type S3 for Iceberg BigLake catalog");

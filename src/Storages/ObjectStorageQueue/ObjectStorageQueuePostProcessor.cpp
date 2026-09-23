@@ -52,6 +52,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString google_service_account_key;
 }
 
 #endif
@@ -370,6 +371,7 @@ void ObjectStorageQueuePostProcessor::moveS3Objects(const StoredObjects & object
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = "";
             s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = "";
+            s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = "";
             /// The move uses its own explicit keys, so also drop the request-auth material (headers/access
             /// headers and SSE-C/SSE-KMS keys) merged from the server `<s3>` config: otherwise the server's
             /// headers or encryption keys would be sent to the user-supplied move destination.

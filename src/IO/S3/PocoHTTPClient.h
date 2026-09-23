@@ -91,6 +91,8 @@ struct PocoHTTPClientConfiguration : public Aws::Client::ClientConfiguration
     String google_adc_client_id;
     String google_adc_client_secret;
     String google_adc_refresh_token;
+    /// Content of a Google service account JSON key file, an alternative to the ADC triple.
+    String google_service_account_key;
 
     /// See PoolBase::BehaviourOnLimit
     bool s3_use_adaptive_timeouts = true;
@@ -272,12 +274,14 @@ private:
     const String google_adc_client_id;
     const String google_adc_client_secret;
     const String google_adc_refresh_token;
+    const String google_service_account_key;
 
     mutable std::mutex mutex;
     mutable std::optional<BearerToken> bearer_token TSA_GUARDED_BY(mutex);
 
     BearerToken requestBearerToken() const TSA_REQUIRES(mutex);
     BearerToken requestBearerTokenFromADC() const;
+    BearerToken requestBearerTokenFromServiceAccountKey() const;
 };
 
 }

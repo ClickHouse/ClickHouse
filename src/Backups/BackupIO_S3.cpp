@@ -69,6 +69,7 @@ namespace S3AuthSetting
     extern const S3AuthSettingsString google_adc_client_id;
     extern const S3AuthSettingsString google_adc_client_secret;
     extern const S3AuthSettingsString google_adc_refresh_token;
+    extern const S3AuthSettingsString google_service_account_key;
 }
 
 namespace S3RequestSetting
@@ -234,6 +235,7 @@ private:
         client_configuration.google_adc_client_id = settings.auth_settings[S3AuthSetting::google_adc_client_id];
         client_configuration.google_adc_client_secret = settings.auth_settings[S3AuthSetting::google_adc_client_secret];
         client_configuration.google_adc_refresh_token = settings.auth_settings[S3AuthSetting::google_adc_refresh_token];
+        client_configuration.google_service_account_key = settings.auth_settings[S3AuthSetting::google_service_account_key];
 
         /// Drop a server-inherited `gcp_oauth` (so the backup uses its explicit keys). The ADC triple is only
         /// ever supplied by a named collection, which also sets `gcp_oauth_supplied_by_query`; so when the
@@ -251,6 +253,7 @@ private:
             client_configuration.google_adc_client_id.clear();
             client_configuration.google_adc_client_secret.clear();
             client_configuration.google_adc_refresh_token.clear();
+            client_configuration.google_service_account_key.clear();
         }
 
         S3::ClientSettings client_settings{

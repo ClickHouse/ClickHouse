@@ -325,6 +325,7 @@ public:
         const std::string & google_adc_client_secret_,
         const std::string & google_adc_refresh_token_,
         const std::string & google_adc_quota_project_id_,
+        const std::string & google_service_account_key_,
         DB::ContextPtr context_,
         bool allow_server_credentials_in_user_queries_);
 
@@ -338,6 +339,7 @@ public:
     const std::string & getGoogleADCClientId() const { return google_adc_client_id; }
     const std::string & getGoogleADCClientSecret() const { return google_adc_client_secret; }
     const std::string & getGoogleADCRefreshToken() const { return google_adc_refresh_token; }
+    const std::string & getGoogleServiceAccountKey() const { return google_service_account_key; }
 
 private:
     /// Parameters for Google Cloud OAuth2 (BigLake).
@@ -348,12 +350,20 @@ private:
     const std::string google_adc_client_secret;
     const std::string google_adc_refresh_token;
     const std::string google_adc_quota_project_id;
+    const std::string google_service_account_key;
     /// Effective `s3_allow_server_credentials_in_user_queries` captured when the database was created; the
     /// catalog is cached and holds the global context, whose settings never reflect the creating session.
     const bool allow_server_credentials_in_user_queries;
 
     AccessToken retrieveGoogleCloudAccessToken() const;
     AccessToken retrieveGoogleCloudAccessTokenFromRefreshToken() const;
+    AccessToken retrieveGoogleCloudAccessTokenFromServiceAccountKey() const;
+
+    /// Whether Google OAuth is explicitly configured; otherwise the generic REST catalog auth is used.
+    bool usesGoogleOAuth() const
+    {
+        return !google_project_id.empty() || !google_adc_client_id.empty() || !google_service_account_key.empty();
+    }
 };
 
 /// Databricks Delta Sharing exposes an Iceberg REST catalog with a flat, single-level namespace model

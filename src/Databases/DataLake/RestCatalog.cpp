@@ -980,6 +980,7 @@ BigLakeCatalog::BigLakeCatalog(
     const std::string & google_adc_client_secret_,
     const std::string & google_adc_refresh_token_,
     const std::string & google_adc_quota_project_id_,
+    const std::string & google_service_account_key_,
     DB::ContextPtr context_,
     bool allow_server_credentials_in_user_queries_)
     : RestCatalog(warehouse_, base_url_, "", "", false, /* flat_namespaces */false, context_)
@@ -990,11 +991,19 @@ BigLakeCatalog::BigLakeCatalog(
     , google_adc_client_secret(google_adc_client_secret_)
     , google_adc_refresh_token(google_adc_refresh_token_)
     , google_adc_quota_project_id(google_adc_quota_project_id_)
+    , google_service_account_key(google_service_account_key_)
     , allow_server_credentials_in_user_queries(allow_server_credentials_in_user_queries_)
 {
+    if (!google_service_account_key.empty()
+        && (!google_adc_client_id.empty() || !google_adc_client_secret.empty() || !google_adc_refresh_token.empty()))
+        throw DB::Exception(
+            DB::ErrorCodes::BAD_ARGUMENTS,
+            "BigLake credentials are ambiguous: specify either google_service_account_key or the ADC credentials "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token), not both");
+
     update_token_if_expired = true;
     // Get token before loading config so getAuthHeaders() can work
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         access_token.set(std::make_unique<AccessToken>(retrieveGoogleCloudAccessToken()));
     }
@@ -1007,9 +1016,9 @@ DB::HTTPHeaderEntries BigLakeCatalog::getAuthHeaders(const CatalogState & catalo
 {
     /// Google Cloud OAuth2 for BigLake.
     /// Uses GCP metadata service or Application Default Credentials to get access token.
-    /// Only use Google OAuth if explicitly configured (google_project_id or google_adc_client_id).
+    /// Only use Google OAuth if explicitly configured (google_project_id, google_adc_client_id or google_service_account_key).
     /// https://developers.google.com/identity/protocols/oauth2
-    if (!google_project_id.empty() || !google_adc_client_id.empty())
+    if (usesGoogleOAuth())
     {
         auto current = access_token.get();
         if (!current || update_token || current->isExpired())
@@ -1055,15 +1064,34 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromRefreshToken() con
     return token;
 }
 
+AccessToken BigLakeCatalog::retrieveGoogleCloudAccessTokenFromServiceAccountKey() const
+{
+    const auto & context = getContext();
+    auto [assertion, token_endpoint] = DB::makeGCPServiceAccountAssertion(google_service_account_key, DB::GCP_CLOUD_PLATFORM_OAUTH_SCOPE);
+    /// The token endpoint comes from the user-provided key, validate it against the allowed hosts.
+    context->getRemoteHostFilter().checkURL(Poco::URI(token_endpoint));
+
+    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
+    auto result = DB::fetchGCPOAuthTokenWithJWTAssertion(assertion, token_endpoint, timeouts);
+
+    AccessToken token;
+    token.token = std::move(result.access_token);
+    token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(result.expires_in * 9 / 10);
+    return token;
+}
+
 AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 {
     const auto & context = getContext();
 
-    /// An explicit Application Default Credentials triple is a user-supplied credential, so it is honored.
-    /// Fail closed if it does not work: do not fall back to the server's GCP metadata service, which would
-    /// mint a token with the server's own identity.
+    /// An explicit Application Default Credentials triple or a service account key is a user-supplied credential,
+    /// so it is honored. Fail closed if it does not work: do not fall back to the server's GCP metadata service,
+    /// which would mint a token with the server's own identity.
     if (!google_adc_client_id.empty() && !google_adc_client_secret.empty() && !google_adc_refresh_token.empty())
         return retrieveGoogleCloudAccessTokenFromRefreshToken();
+
+    if (!google_service_account_key.empty())
+        return retrieveGoogleCloudAccessTokenFromServiceAccountKey();
 
     /// Otherwise the token comes from the GCP metadata service, i.e. the server's own (ambient) identity.
     /// S3/GCS access that originates from user SQL must not use it (see shouldRestrictUserQueryS3Credentials),
@@ -1073,8 +1101,8 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
         throw DB::Exception(
             DB::ErrorCodes::ACCESS_DENIED,
             "BigLake catalog access from user queries is not allowed to mint a token from the server's GCP "
-            "metadata service. Provide an explicit Google ADC triple (google_adc_client_id, "
-            "google_adc_client_secret, google_adc_refresh_token)"
+            "metadata service. Provide google_service_account_key or an explicit Google ADC triple "
+            "(google_adc_client_id, google_adc_client_secret, google_adc_refresh_token)"
 #if CLICKHOUSE_CLOUD
             ".");
 #else
