@@ -6,6 +6,7 @@ namespace DB
 struct QueryFlags
 {
     bool internal = false; /// If true, this query is caused by another query and thus needn't be registered in the ProcessList.
+    bool inherit_process_list_element = false; /// If true, run under the process list element already present in the context.
     /// If true, the query was written by the user even though it is executed as an `internal` query, i.e. it is not
     /// initiated by the server itself. Subqueries of `PARALLEL WITH` are like that: they are re-executed as nested
     /// queries, but their text comes from the user. Such queries must be subject to all the restrictions of a regular
