@@ -37,12 +37,13 @@ LOG
 TABLE_FUNCTION="deltaLakeLocal('${ROOT}', 'Parquet', 'id Int32, process_time DateTime')"
 NULLABLE_TABLE_FUNCTION="deltaLakeLocal('${ROOT}', 'Parquet', 'id Int32, process_time Nullable(DateTime)')"
 
+# `allow_experimental_delta_kernel_rs` aliases `allow_delta_kernel_rs` and exists on every supported branch.
 for kernel in 0 1
 do
-    echo "-- allow_delta_kernel_rs = ${kernel}"
+    echo "-- allow_experimental_delta_kernel_rs = ${kernel}"
     # `session_timezone` is pinned because the two readers disagree on the zone a partition
     # timestamp is parsed in, which is a separate question from the type this test is about.
-    ${CLICKHOUSE_CLIENT} --allow_delta_kernel_rs="${kernel}" --session_timezone UTC --query "
+    ${CLICKHOUSE_CLIENT} --allow_experimental_delta_kernel_rs="${kernel}" --session_timezone UTC --query "
         SELECT toTypeName(process_time), * FROM ${TABLE_FUNCTION};
         SELECT * FROM ${TABLE_FUNCTION} WHERE process_time = '2026-09-21 09:00:00';
         SELECT * FROM ${TABLE_FUNCTION} WHERE toDateTime(process_time) = toDateTime('2026-09-21 09:00:00');
