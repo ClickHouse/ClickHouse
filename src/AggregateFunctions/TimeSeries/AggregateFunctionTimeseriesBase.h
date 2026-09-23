@@ -109,10 +109,6 @@ public:
         return Traits::getName();
     }
 
-    /// Timeseries parameters may carry DecimalField (from toDateTime64(...) casts), whose
-    /// default printed form collides with String literals — so we print parameters with ::Type.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     explicit AggregateFunctionTimeseriesBase(const DataTypes & argument_types_, const Array & parameters_,
         GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, GridScaleIntervalType grid_step_, GridScaleIntervalType window_, UInt32 grid_scale_,
         UInt32 column_timestamp_scale_)

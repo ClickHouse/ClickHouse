@@ -56,7 +56,7 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     /// This name travels with every state serialized into a `Field`, so it must spell the state the
     /// same way its state type does, or such a `Field` no longer matches the type it came from.
-    stream << DataTypeAggregateFunction::formatParameters(*func, func->getParameters());
+    stream << DataTypeAggregateFunction::formatParameters(func->getParameters());
 
     for (const auto & argument_type : func->getArgumentTypes())
         stream << ", " << argument_type->getName();
