@@ -224,6 +224,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     ddl_worker.updateHostIDs(entry.hosts);
     String node_path = ddl_worker.enqueueQuery(entry, params.retries_info);
 
+    if (params.out_node_path)
+        *params.out_node_path = node_path;
+
     return getDDLOnClusterStatus(node_path, ddl_worker.getReplicasDir(), entry, context);
 }
 

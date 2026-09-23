@@ -39,6 +39,11 @@ struct DDLQueryOnClusterParams
 
     /// Use retries when creating nodes "query-0000000000", "query-0000000001", "query-0000000002" in ZooKeeper.
     ZooKeeperRetriesInfo retries_info;
+
+    /// If set, receives the path of the node created in the distributed DDL queue. Useful for a caller
+    /// which doesn't wait for the query to finish (`distributed_ddl_task_timeout = 0`) but still wants to
+    /// read the per-host statuses written under that node.
+    String * out_node_path = nullptr;
 };
 
 /// Pushes distributed DDL query to the queue.

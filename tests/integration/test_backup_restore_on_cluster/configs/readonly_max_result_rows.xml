@@ -1,0 +1,12 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <constraints>
+                <!-- Applied to one host only, so a query the initiator accepts is refused there. -->
+                <max_result_rows>
+                    <readonly/>
+                </max_result_rows>
+            </constraints>
+        </default>
+    </profiles>
+</clickhouse>

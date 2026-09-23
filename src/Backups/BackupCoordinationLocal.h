@@ -31,7 +31,7 @@ public:
 
     ~BackupCoordinationLocal() override;
 
-    void setBackupQueryIsSentToOtherHosts() override {}
+    void setBackupQueryIsSentToOtherHosts(const String &) override {}
     bool isBackupQuerySentToOtherHosts() const override { return false; }
     Strings setStage(const String &, const String &, bool) override { return {}; }
     void setError(std::exception_ptr, bool) override { is_error_set = true; }  /// BackupStarter::onException() has already logged the error.
