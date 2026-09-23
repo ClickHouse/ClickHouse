@@ -447,7 +447,7 @@ IASTHash calculateASTHash(ASTPtr ast, const CurrentDatabaseInfo & current_databa
     /// tables (issue #64136)
     hash.update(current_database.getDatabasePart());
 
-    //// Same for the `USE db.namespace` prefix, the size first keeps (database, prefix) unambiguous
+    /// Same for the `USE db.namespace` prefix, the size first keeps (database, prefix) unambiguous
     const auto table_prefix = current_database.getTablePrefixPart();
     hash.update(table_prefix.size());
     hash.update(table_prefix);

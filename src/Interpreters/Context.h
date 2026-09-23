@@ -395,7 +395,7 @@ protected:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
-    /// the full name selected by USE and its frozen database / namespace split
+    /// the full name selected by `USE` and its frozen database / namespace split
     CurrentDatabaseInfo current_database;
     /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
@@ -1216,7 +1216,7 @@ public:
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
 
-    /// The current database: full name plus the frozen split, see CurrentDatabaseInfo
+    /// The current database: full name plus the frozen split, see `CurrentDatabaseInfo`
     CurrentDatabaseInfo getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 

@@ -16,6 +16,7 @@
 #include <Common/AsyncLoader.h>
 #include <Common/PoolId.h>
 #include <Common/SensitiveDataMasker.h>
+#include <Common/SettingsChanges.h>
 #include <Common/Macros.h>
 #include <Common/EventNotifier.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
@@ -3865,6 +3866,15 @@ void Context::setCurrentDatabase(const String & name)
 void Context::setCurrentDatabase(const String & name, bool allow_table_namespaces)
 {
     const auto info = validateCurrentDatabaseName(name, allow_table_namespaces, shared_from_this());
+
+    /// a quoted spelling resolved to another name: constraints on `database` must see what is selected
+    if (info.getFullName() != name)
+    {
+        SettingsChanges database_change;
+        database_change.setSetting("database", info.getFullName());
+        checkSettingsConstraints(std::as_const(database_change), SettingSource::QUERY);
+    }
+
     DatabaseCatalog::instance().assertDatabaseExists(String{info.getDatabasePart()});
 
     std::lock_guard lock(mutex);
