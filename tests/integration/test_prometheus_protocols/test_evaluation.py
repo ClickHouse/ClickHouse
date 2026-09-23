@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +13,9 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -176,6 +181,39 @@ def send_test_data():
     send_data(
         [
             (
+                {"__name__": "stale_marker_metric"},
+                {
+                    100: 1,
+                    120: 2,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "ordinary_nan_metric"},
+                {
+                    140: float("nan"),
+                },
+            ),
+            (
+                {"__name__": "stale_collision_a", "job": "x"},
+                {
+                    120: 1,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_collision_b", "job": "x"},
+                {
+                    120: 2,
+                    140: 3,
+                },
+            ),
+        ]
+    )
+
+    send_data(
+        [
+            (
                 {"__name__": "timestamps", "job": "test"},
                 {
                     110: 1764498605,
@@ -277,6 +315,14 @@ def send_test_data():
             (
                 {"__name__": "bar", "shape": "rectangle", "size": "l"},
                 {110: 9, 130: 90},
+            ),
+            (
+                {"__name__": "large_values", "id": "a"},
+                {120: 1e155},
+            ),
+            (
+                {"__name__": "large_values", "id": "b"},
+                {120: 1e155},
             ),
         ]
     )
@@ -855,6 +901,67 @@ def test_instant_selectors():
     )
 
 
+def test_stale_markers():
+    # Before the marker, the instant selector returns the newest real sample.
+    do_query_test(
+        "stale_marker_metric",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [125, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:05.000", "2"]],
+    )
+
+    # A stale marker is the end of the series for instant-selector semantics.
+    do_query_test(
+        "stale_marker_metric",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # An ordinary NaN is still a real sample. Only Prometheus's exact stale payload is absent.
+    do_query_test(
+        "ordinary_nan_metric",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "ordinary_nan_metric"}, "value": [145, "NaN"]}]}',
+        [["[('__name__','ordinary_nan_metric')]", "1970-01-01 00:02:25.000", "nan"]],
+    )
+
+    # Downstream presence-based operators must see the stale selector as absent too.
+    do_query_test(
+        "count(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale row must not participate in duplicate detection after a function drops
+    # the metric name. Only the live series remains after both names collapse to {job="x"}.
+    do_query_test(
+        'abs({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "3"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", "3"]],
+    )
+
+    # Range selectors omit stale markers, so range functions can still see older real samples.
+    do_query_test(
+        "last_over_time(stale_marker_metric[1m])",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [145, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:25.000", "2"]],
+    )
+
+    # In a range query, evaluation steps at and after the stale marker are absent.
+    do_range_query_test(
+        "stale_marker_metric",
+        100,
+        160,
+        20,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_marker_metric"}, "values": [[100, "1"], [120, "2"]]}]}',
+        [["[('__name__','stale_marker_metric')]", "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:00.000',2)]"]],
+    )
+
+
 def test_function_over_time():
     # last_over_time
     do_query_test(
@@ -1026,6 +1133,26 @@ def test_function_over_time():
         ],
     )
 
+    # sum_over_time
+    do_query_test(
+        "sum_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "2"], [135, "5"], [150, "9"], [165, "7"], [180, "4"], [195, "5"], [210, "18"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:15.000',5),('1970-01-01 00:02:30.000',9),('1970-01-01 00:02:45.000',7),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',18)]",
+            ]
+        ],
+    )
+
+    do_query_test(
+        "changes(vector(NaN)[80:10])",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "0"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 0]],
+    )
+
     # changes: `resets` also counts decreases as changes, unlike `resets()` below.
     do_query_test(
         "changes(resets[45s])[120s:15s]",
@@ -1035,6 +1162,33 @@ def test_function_over_time():
             [
                 "[('job','test')]",
                 "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',2),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+            ]
+        ],
+    )
+
+    # avg_over_time
+    do_query_test(
+        "avg_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1.6666666666666667"], [150, "2.25"], [165, "3.5"], [180, "4"], [195, "5"], [210, "6"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1.6666666666666667),('1970-01-01 00:02:30.000',2.25),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',6)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+    # count_over_time
+    do_query_test(
+        "count_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "2"], [135, "3"], [150, "4"], [165, "2"], [180, "1"], [195, "1"], [210, "3"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:15.000',3),('1970-01-01 00:02:30.000',4),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',3)]",
             ]
         ],
     )
@@ -1052,6 +1206,19 @@ def test_function_over_time():
         ],
     )
 
+    # Narrow windows leave grid points 150, 165, and 180 absent (NULL), not zero.
+    do_query_test(
+        "count_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
     # resets: only counts the decreases (8 -> 2 at 140, 10 -> 3 at 200) within each window.
     do_query_test(
         "resets(resets[45s])[120s:15s]",
@@ -1064,6 +1231,368 @@ def test_function_over_time():
             ]
         ],
     )
+
+    # max_over_time: uses `resets` (not `test`) because `test` never decreases, so max_over_time would equal
+    # last_over_time on it and not exercise the "extremum isn't the most recent sample" case.
+    do_query_test(
+        "max_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "5"], [135, "8"], [150, "8"], [165, "8"], [180, "6"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',5),('1970-01-01 00:02:15.000',8),('1970-01-01 00:02:30.000',8),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',6),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # min_over_time
+    do_query_test(
+        "min_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "2"], [180, "2"], [195, "10"], [210, "3"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',2),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',3)]",
+            ]
+        ],
+    )
+
+    # ts_of_min_over_time: among equal values the latest timestamp wins, e.g. at 210 the minimum 5 occurs
+    # at 190 and 200, so the result is 200.
+    do_query_test(
+        "ts_of_min_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "120"], [135, "120"], [150, "120"], [165, "130"], [180, "140"], [195, "190"], [210, "200"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',120),('1970-01-01 00:02:30.000',120),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',200)]",
+            ]
+        ],
+    )
+
+    # ts_of_max_over_time: `resets` decreases within windows, so the timestamp of the maximum differs from the
+    # last timestamp; the tags (except the metric name) are kept.
+    do_query_test(
+        "ts_of_max_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"job": "test"}, "values": [[120, "120"], [135, "130"], [150, "130"], [165, "130"], [180, "150"], [195, "190"], [210, "190"]]}]}',
+        [
+            [
+                "[('job','test')]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',130),('1970-01-01 00:02:30.000',130),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',150),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',190)]",
+            ]
+        ],
+    )
+
+    # Instant queries: the window (165, 210] of `test` holds 5@190, 5@200, 8@210, the same window of `resets`
+    # holds 10@190, 3@200, 9@210.
+    do_query_test(
+        "ts_of_max_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "210"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 210]],
+    )
+
+    do_query_test(
+        "ts_of_min_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "200"]}]}',
+        [["[('job','test')]", "1970-01-01 00:03:30.000", 200]],
+    )
+
+    # first_over_time: the earliest sample of each window, e.g. at 165 the window (120, 165] holds 3@130 and 4@140.
+    # Like last_over_time, it keeps the metric name.
+    do_query_test(
+        "first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "3"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',3),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # first_over_time on `resets`, which decreases within windows, so the first sample differs from
+    # the minimum and the maximum; all the tags are kept.
+    do_query_test(
+        "first_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "resets", "job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "8"], [180, "2"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('__name__','resets'),('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # step (15s) > window (10s): the sample at 140 is outside grid point 150's window (140, 150], so 150 must be empty.
+    do_query_test(
+        "first_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "3"], [195, "5"], [210, "8"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
+            ]
+        ],
+    )
+
+    # ts_of_first_over_time: the timestamp of the earliest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "110"], [135, "110"], [150, "110"], [165, "130"], [180, "140"], [195, "190"], [210, "190"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',110),('1970-01-01 00:02:15.000',110),('1970-01-01 00:02:30.000',110),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',190)]",
+            ]
+        ],
+    )
+
+    # ts_of_last_over_time: the timestamp of the latest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_last_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "120"], [135, "130"], [150, "140"], [165, "140"], [180, "140"], [195, "190"], [210, "210"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',130),('1970-01-01 00:02:30.000',140),('1970-01-01 00:02:45.000',140),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',210)]",
+            ]
+        ],
+    )
+
+    # Instant queries: the window (165, 210] of `test` holds 5@190, 5@200, 8@210, the same window of `resets`
+    # holds 10@190, 3@200, 9@210.
+    do_query_test(
+        "first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "resets", "job": "test"}, "value": [210, "10"]}]}',
+        [["[('__name__','resets'),('job','test')]", "1970-01-01 00:03:30.000", 10]],
+    )
+
+    do_query_test(
+        "ts_of_first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "190"]}]}',
+        [["[('job','test')]", "1970-01-01 00:03:30.000", 190]],
+    )
+
+    do_query_test(
+        "ts_of_last_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "210"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 210]],
+    )
+
+    # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
+    do_query_test(
+        "present_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "1"], [180, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time: the first sample is at 110, so only the first grid point (105) has an
+    # empty window (60, 105] and yields the synthetic 1.
+    do_query_test(
+        "absent_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time never infers labels from a subquery, even a selector-backed one:
+    # Prometheus derives them from a vector/matrix selector only, so job="api" is not copied.
+    do_query_test(
+        'absent_over_time(nonexistent_metric_name{job="api"}[45s:15s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # quantile_over_time with interpolation: at 150 the window holds {1,1,3,4} -> 2,
+    # at 165 it holds {3,4} -> 3.5.
+    do_query_test(
+        "quantile_over_time(0.5, test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # A level above 1 gives +Inf, a level below 0 gives -Inf and a NaN level gives NaN at every point whose
+    # window has samples, as in Prometheus.
+    do_query_test(
+        "quantile_over_time(2, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(-1, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(NaN, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "nan"]],
+    )
+
+    # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
+    # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
+    # arithmetic carries float noise (12.000000000000002), hence the epsilon.
+    do_query_test(
+        "predict_linear(test[25s], 30)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "10"], [150, "8"], [210, "12"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
+    )
+
+
+def test_function_absent():
+    # A non-empty input produces an empty vector.
+    do_query_test(
+        "absent(test)",
+        140,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # Only exact-match labels are inferred from a direct selector; the metric name
+    # and non-equality matchers are not copied to the synthetic series.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="api", instance=~".+", zone!="test"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [140, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Prometheus treats an exact matcher with an empty value as label absence,
+    # so the synthetic series does not contain job="".
+    do_query_test(
+        'absent(nonexistent_metric_name{job=""})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Offset modifiers still leave a selector simple enough for label inference.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="api"} offset 5m)',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [140, "1"]}]}',
+        [["[('job','api')]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # A second matcher for the same label makes that label ambiguous. Prometheus
+    # removes it from the inferred set, while keeping unrelated equality matchers.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="a", job="b", foo="bar"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"foo": "bar"}, "value": [140, "1"]}]}',
+        [["[('foo','bar')]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # For compatibility with Prometheus' historic order-sensitive behavior, a
+    # non-equality matcher before the first equality matcher does not suppress it.
+    do_query_test(
+        'absent(nonexistent_metric_name{job=~"a", job="b", foo="bar"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {"foo": "bar", "job": "b"}, "value": [140, "1"]}]}',
+        [
+            [
+                "[('foo','bar'),('job','b')]",
+                "1970-01-01 00:02:20.000",
+                1,
+            ]
+        ],
+    )
+
+    # Once an equality matcher has been accepted for a label, a later matcher
+    # can delete that inferred label but cannot unlock it for another equality
+    # matcher. This is Prometheus' historic, intentionally order-sensitive rule.
+    do_query_test(
+        'absent(nonexistent_metric_name{job="a", job=~"c", job="d"})',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Labels cannot be inferred through a more complex expression.
+    do_query_test(
+        'absent(sum(nonexistent_metric_name{job="api"}))',
+        140,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [140, "1"]}]}',
+        [["[]", "1970-01-01 00:02:20.000", 1]],
+    )
+
+    # Evaluate emptiness independently at each grid point. `foo` has no sample in
+    # the interval (130, 140], while every other step has at least one sample.
+    do_query_test(
+        "absent(last_over_time(foo[10]))[50:10]",
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[140, "1"]]}]}',
+        [["[]", "[('1970-01-01 00:02:20.000',1)]"]],
+    )
+
+
+@pytest.mark.parametrize(
+    ("query", "expected"),
+    [
+        (
+            'absent(nonexistent_metric_name{job="api"})',
+            '{"resultType": "vector", "result": [{"metric": {"job": "api"}, "value": [130, "1"]}]}',
+        ),
+        (
+            "scalar(nonexistent_metric_name)",
+            '{"resultType": "scalar", "result": [130, "NaN"]}',
+        ),
+    ],
+)
+def test_empty_aggregation_setting_does_not_change_promql(query, expected):
+    actual = execute_query_via_http_api(
+        node.ip_address,
+        9093,
+        "/api/v1/query",
+        query,
+        timestamp=130,
+        params={"empty_result_for_aggregation_by_empty_set": 1},
+    )
+    assert http_api_response_close_to(actual, expected)
 
 
 def test_literals():
@@ -1604,7 +2133,7 @@ def test_date_time_functions():
 # `vector(scalar(vector(time())))` below.)
 def test_date_time_functions_zero_arg_with_float32_scalar():
     node.query(
-        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+        "CREATE TABLE prometheus_f32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
     )
 
     try:
@@ -1687,6 +2216,54 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         node.query("DROP TABLE prometheus_f32 SYNC")
 
 
+# `predict_linear` and `quantile_over_time` accept a scalar argument that varies with the evaluation time (such as
+# `time()` in a range query). Such a scalar is carried as an array of one value per evaluation step, typed after the
+# TimeSeries table's value type, so on a Float32 table it is an Array(Float32).
+def test_range_functions_with_varying_scalar_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_range (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        # Series `m` rises by 1 per second: 10 at t=100, 20 at t=110, 30 at t=120.
+        # Series `q` carries the quantile level to use at each evaluation step: 0 at t=110 and 1 at t=120.
+        node.query(
+            "INSERT INTO prometheus_f32_range (metric_name, tags, samples) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)]), "
+            "('q', map('host', 'h1'), [(toDateTime64(110, 3), 0), (toDateTime64(120, 3), 1)])"
+        )
+
+        # The prediction horizon is the evaluation time itself, so the predicted values are the fitted value at
+        # t=110 plus 110 seconds of growth (20 + 110) and the fitted value at t=120 plus 120 seconds (30 + 120).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'predict_linear(m[30], time())', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',130),('1970-01-01 00:02:00.000',150)]",
+                ]
+            ],
+        )
+
+        # The quantile level is 0 at the first evaluation step and 1 at the second one, so the results are the
+        # smallest value in the first window (10) and the greatest value in the second one (30).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'quantile_over_time(scalar(q), m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',30)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_range SYNC")
+
+
 def test_math_functions():
     do_query_test(
         "abs(vector(-3))",
@@ -1724,6 +2301,20 @@ def test_math_functions():
         500,
         '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "-1"]}]}',
         [["[]", "1970-01-01 00:08:20.000", -1]],
+    )
+
+    do_query_test(
+        "sgn(vector(NaN))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "NaN"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "nan"]],
+    )
+
+    do_query_test(
+        "sgn(vector(-0))",
+        500,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [500, "-0"]}]}',
+        [["[]", "1970-01-01 00:08:20.000", "-0"]],
     )
 
     do_query_test(
@@ -3828,6 +4419,260 @@ def test_binary_operators_on_vectors_without_tags():
     )
 
 
+def test_aggregation_operator_count_values():
+    # The sample value is part of the grouping key and therefore changes from one
+    # grid point to another. This exercises unroll, regroup, and sparse repacking.
+    do_query_test(
+        'count_values("value", round(last_over_time(bar[10]), 100))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"value": "100"}, "values": [[130, "2"]]}, {"metric": {"value": "1000"}, "values": [[150, "1"]]}, {"metric": {"value": "700"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('value','0')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            ["[('value','100')]", "[('1970-01-01 00:02:10.000',2)]"],
+            ["[('value','1000')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('value','700')]", "[('1970-01-01 00:02:20.000',1)]"],
+        ],
+    )
+
+    # The destination label is set before `by`, so it overwrites an input label
+    # with the same name and is then used as the value bucket.
+    do_query_test(
+        '(count_values("shape", round(last_over_time(bar[10]), 100)) by (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"shape": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"shape": "100"}, "values": [[130, "2"]]}, {"metric": {"shape": "1000"}, "values": [[150, "1"]]}, {"metric": {"shape": "700"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('shape','0')]",
+                "[('1970-01-01 00:01:50.000',4),('1970-01-01 00:02:00.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            ["[('shape','100')]", "[('1970-01-01 00:02:10.000',2)]"],
+            ["[('shape','1000')]", "[('1970-01-01 00:02:30.000',1)]"],
+            ["[('shape','700')]", "[('1970-01-01 00:02:20.000',1)]"],
+        ],
+    )
+
+    # Independent `by` labels are retained alongside the changing value label.
+    do_query_test(
+        '(count_values("value", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','l'),('value','100')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('size','l'),('value','1000')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','700')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` can remove the newly added value label. Buckets that retain the
+    # same labels then collapse into a single count at each grid point.
+    do_query_test(
+        '(count_values("value", last_over_time(bar[10])) without (shape, value))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` removes only the listed labels and `__name__`, so a destination label
+    # which is neither is kept and the result matches the `by (size)` form above.
+    do_query_test(
+        '(count_values("value", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','l'),('value','100')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('size','l'),('value','1000')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('size','s'),('value','700')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl'),('value','0')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    do_query_test(
+        'count_values("value", nonexistent_metric_name)[50:10]',
+        150,
+        '{"resultType": "matrix", "result": []}',
+        [],
+    )
+
+    # Prometheus uses fixed, shortest-roundtrip formatting for value-label strings.
+    do_query_test(
+        'count_values("value", vector(0.00000001))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "0.00000001"}, "value": [120, "1"]}]}',
+        [["[('value','0.00000001')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test(
+        'count_values("value", vector(1000000000000000100))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "1000000000000000100"}, "value": [120, "1"]}]}',
+        [
+            [
+                "[('value','1000000000000000100')]",
+                "1970-01-01 00:02:00.000",
+                1,
+            ]
+        ],
+    )
+
+    do_query_test(
+        'count_values("value", vector(-0))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "-0"}, "value": [120, "1"]}]}',
+        [["[('value','-0')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test(
+        'count_values("value", vector(NaN))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "NaN"}, "value": [120, "1"]}]}',
+        [["[('value','NaN')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test(
+        'count_values("value", vector(+Inf))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value": "+Inf"}, "value": [120, "1"]}]}',
+        [["[('value','+Inf')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # The metric name is a valid destination label and must survive finalization.
+    do_query_test(
+        'count_values("__name__", vector(5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "5"}, "value": [120, "1"]}]}',
+        [["[('__name__','5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    # `by` implicitly keeps the destination label, so `__name__` stays in the result
+    # and every distinct value remains its own bucket.
+    do_query_test(
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "0", "size": "l"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "s"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "xl"}, "values": [[110, "1"], [150, "1"]]}, {"metric": {"__name__": "100", "size": "l"}, "values": [[130, "2"]]}, {"metric": {"__name__": "1000", "size": "l"}, "values": [[150, "1"]]}, {"metric": {"__name__": "700", "size": "s"}, "values": [[140, "1"]]}]}',
+        [
+            [
+                "[('__name__','0'),('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('__name__','0'),('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1)]",
+            ],
+            [
+                "[('__name__','0'),('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('__name__','100'),('size','l')]",
+                "[('1970-01-01 00:02:10.000',2)]",
+            ],
+            [
+                "[('__name__','1000'),('size','l')]",
+                "[('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('__name__','700'),('size','s')]",
+                "[('1970-01-01 00:02:20.000',1)]",
+            ],
+        ],
+    )
+
+    # `without` always removes `__name__`, including when it is the destination label,
+    # so the value buckets collapse into one count per remaining label set.
+    do_query_test(
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
+        150,
+        '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
+        [
+            [
+                "[('size','l')]",
+                "[('1970-01-01 00:01:50.000',2),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:10.000',2),('1970-01-01 00:02:30.000',1)]",
+            ],
+            [
+                "[('size','s')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:20.000',1)]",
+            ],
+            [
+                "[('size','xl')]",
+                "[('1970-01-01 00:01:50.000',1),('1970-01-01 00:02:30.000',1)]",
+            ],
+        ],
+    )
+
+    # Prometheus 3.x accepts any non-empty UTF-8 label name rather than only
+    # the legacy [A-Za-z_][A-Za-z0-9_]* form.
+    do_query_test(
+        'count_values("value label", vector(5))',
+        120,
+        '{"resultType": "vector", "result": [{"metric": {"value label": "5"}, "value": [120, "1"]}]}',
+        [["[('value label','5')]", "1970-01-01 00:02:00.000", 1]],
+    )
+
+    do_query_test_expect_error(
+        'count_values("", bar)',
+        120,
+        "invalid label name",
+        "invalid label name",
+    )
+
+
 def test_aggregation_operators():
     do_query_test(
         "sum(bar)",
@@ -3930,6 +4775,21 @@ def test_aggregation_operators():
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "7.25"], [120, "144"], [130, "400"], [140, "0"], [150, "235225"]]}]}',
         [["[]", "[('1970-01-01 00:01:50.000',7.25),('1970-01-01 00:02:00.000',144),('1970-01-01 00:02:10.000',400),('1970-01-01 00:02:20.000',0),('1970-01-01 00:02:30.000',235225)]"]],
         eps=1e-9,
+    )
+
+    # Squaring these equal finite values overflows Float64, but their variance is zero.
+    do_query_test(
+        "stddev(large_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 0]],
+    )
+
+    do_query_test(
+        "stdvar(large_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 0]],
     )
 
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.

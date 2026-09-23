@@ -1,0 +1,26 @@
+-- [CREATE TABLE, DROP TABLE ON db.t] replacing an existing table must succeed:
+succeeded
+2
+-- [CREATE TABLE, DROP TABLE ON db.t_new] creating a table that does not exist yet must succeed:
+succeeded
+1
+-- [CREATE TABLE, DROP TABLE ON db.t_replace] bare REPLACE TABLE must succeed:
+succeeded
+2
+-- [CREATE VIEW, DROP VIEW ON db.v] replacing a view must need no table grants:
+succeeded
+2
+-- [CREATE TABLE, DROP TABLE, INSERT ON db.t_populated] replacing with a populating SELECT must succeed:
+succeeded
+3
+-- [no DROP TABLE grant] replacing an existing table must be denied:
+ACCESS_DENIED
+-- [no DROP VIEW grant] replacing an existing view must be denied:
+ACCESS_DENIED
+-- [no INSERT grant] a populating replace must be denied:
+ACCESS_DENIED
+-- the denied queries left the replaced objects untouched and no temporary table behind:
+1
+1
+0
+0

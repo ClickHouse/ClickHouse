@@ -13,9 +13,9 @@ REGISTER_FUNCTION(ToStartOfYear)
     FunctionDocumentation::Description description = R"(
 Rounds down a date or date with time to the first day of the year. Returns the date as a `Date` object.
 
-:::note
+<Note>
 The return type can be configured by setting [`enable_extended_results_for_datetime_functions`](/reference/settings/session-settings/enable#enable_extended_results_for_datetime_functions).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "toStartOfYear(value)";
     FunctionDocumentation::Arguments arguments = {
