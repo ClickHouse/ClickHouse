@@ -749,19 +749,25 @@ ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge
     {
         const auto & arrival_number_description = spill_layout->getArrivalNumberSortDescription();
 
-        /// Restore arrival order after deduplication, spilling under the same memory policy as the runs.
-        /// These rows are distinct, so the limit hint can bound the sort that restores their order.
+        /// Restore arrival order under the same spill policy as input runs. Deduplication and
+        /// suppression leave only new distinct rows, so the sort can safely retain a hinted prefix.
+        /// Rows admitted during hashing already form the result's prefix and reduce the remaining hint.
+        chassert(!limit_hint || result_rows < limit_hint);
+        const UInt64 remaining_limit_hint = limit_hint ? limit_hint - result_rows : 0;
         prepared.order_restoration.emplace_back(
-            std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, limit_hint));
+            std::make_shared<PartialSortingTransform>(merged_header, arrival_number_description, remaining_limit_hint));
+
+        /// Remerge at the run-size threshold before considering another spill. The sorter stops
+        /// remerging when it cannot halve retained memory, avoiding repeated unproductive merges.
         prepared.order_restoration.emplace_back(std::make_shared<MergeSortingTransform>(
             merged_header,
             arrival_number_description,
             max_block_size_rows,
             preferred_block_bytes,
-            limit_hint,
+            remaining_limit_hint,
             /*increase_sort_description_compile_attempts=*/ false,
-            /*max_bytes_before_remerge_=*/ 0,
-            /*remerge_lowered_memory_bytes_ratio_=*/ 0.,
+            minBytesInRun(),
+            /*remerge_lowered_memory_bytes_ratio_=*/ 2.,
             minBytesInRun(),
             max_bytes_before_external_distinct,
             tmp_data,

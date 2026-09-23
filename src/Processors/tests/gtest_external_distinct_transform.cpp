@@ -622,6 +622,67 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
     });
 }
 
+TEST_F(ExternalDistinctTransformTest, OrderRestorationLimitsRowsAfterHashingPrefix)
+{
+    withQueryThread([&]
+    {
+        const auto u64 = std::make_shared<DataTypeUInt64>();
+        const auto header = std::make_shared<const Block>(Block{
+            ColumnWithTypeAndName(u64, "k"), ColumnWithTypeAndName(u64, "payload")});
+        constexpr size_t rows = 65536;
+        constexpr size_t unique_keys = 49153;
+        constexpr size_t limit_hint = 40000;
+        auto keys = ColumnUInt64::create(rows);
+        auto payload = ColumnUInt64::create(rows);
+        for (size_t row = 0; row < rows; ++row)
+        {
+            keys->getData()[row] = unique_keys - 1 - row % unique_keys;
+            payload->getData()[row] = row;
+        }
+        Chunk input(Columns{std::move(keys), std::move(payload)}, rows);
+        /// Retain upstream ownership while checked insertion filters the prefix and cuts its suffix.
+        auto shared_input = input.clone();
+        Chunks chunks;
+        chunks.push_back(std::move(input));
+        auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
+        constexpr UInt64 threshold = 256 << 20;
+        auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, limit_hint,
+            Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256,
+            /*preserve_input_order_=*/ true);
+        connect(source->getPort(), transform->getInputs().front());
+        auto * output_port = &transform->getOutputs().front();
+        auto processors = std::make_shared<Processors>();
+        processors->emplace_back(std::move(source));
+        processors->emplace_back(std::move(transform));
+        QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+        PullingPipelineExecutor executor(pipeline);
+
+        /// Checked insertion emits a prefix before table growth forces spilling. Order restoration
+        /// must account for that prefix when retaining the remaining rows under the limit hint.
+        const Int64 pressure = threshold - getCurrentQueryMemoryUsage() - (43 << 20);
+        ASSERT_GT(pressure, 0);
+        std::ignore = CurrentMemoryTracker::alloc(pressure);
+        SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+        Block block;
+        size_t output_rows = 0;
+        while (executor.pull(block))
+        {
+            if (output_rows == 0)
+            {
+                ASSERT_GT(block.rows(), 0);
+                ASSERT_LT(block.rows(), limit_hint);
+            }
+            for (size_t row = 0; row < block.rows(); ++row)
+            {
+                EXPECT_EQ(block.getByName("k").column->getUInt(row), unique_keys - 1 - output_rows);
+                EXPECT_EQ(block.getByName("payload").column->getUInt(row), output_rows);
+                ++output_rows;
+            }
+        }
+        EXPECT_EQ(output_rows, limit_hint);
+    });
+}
+
 TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
 {
     withQueryThread([&]
