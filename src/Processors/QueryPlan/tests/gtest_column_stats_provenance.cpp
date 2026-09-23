@@ -381,7 +381,7 @@ TEST(ColumnStatsProvenance, TransformationsAppendToBothFactsIdempotently)
     EXPECT_EQ(stats.at("synthetic").num_distinct_values, 2000);
 }
 
-TEST(ColumnStatsProvenance, GroupingKeyPreservesStatisticsAndRange)
+TEST(ColumnStatsProvenance, GroupingKeyPreservesDistinctCountAndRange)
 {
     const ColumnStats input{
         .num_distinct_values = 2000,
@@ -400,7 +400,7 @@ TEST(ColumnStatsProvenance, GroupingKeyPreservesStatisticsAndRange)
     EXPECT_EQ(estimated.min_value, input.min_value);
     EXPECT_EQ(estimated.max_value, input.max_value);
     EXPECT_EQ(estimated.range_provenance.transformations, input.range_provenance.transformations);
-    EXPECT_EQ(estimated.null_fraction, input.null_fraction);
+    EXPECT_FALSE(estimated.null_fraction.has_value());
 
     const auto exact = makeGroupingKeyStats(input, 1000, /*rows_exact=*/true);
     EXPECT_TRUE(exact.ndv_provenance.has(ExactRowCountClamp));

@@ -55,12 +55,14 @@ bool isRepresentativeValueRange(const ColumnStatsProvenance & provenance);
 
 /// GROUP BY preserves the distinct set and value range of a direct grouping key. When the input
 /// row count reduces the NDV, record whether that clamp came from an exact count or an estimate.
+/// The input NULL fraction is not preserved because all NULL keys collapse into one output group.
 inline ColumnStats makeGroupingKeyStats(
     const ColumnStats & input,
     std::optional<UInt64> estimated_input_rows,
     bool rows_exact)
 {
     ColumnStats result = input;
+    result.null_fraction.reset();
     if (estimated_input_rows && result.num_distinct_values > *estimated_input_rows)
     {
         result.num_distinct_values = *estimated_input_rows;
