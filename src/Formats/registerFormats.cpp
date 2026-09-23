@@ -78,6 +78,8 @@ void registerInputFormatRawBLOB(FormatFactory & factory);
 void registerOutputFormatRawBLOB(FormatFactory & factory);
 void registerInputFormatCustomSeparated(FormatFactory & factory);
 void registerOutputFormatCustomSeparated(FormatFactory & factory);
+void registerInputFormatColumnBinary(FormatFactory & factory);
+void registerOutputFormatColumnBinary(FormatFactory & factory);
 void registerInputFormatCapnProto(FormatFactory & factory);
 void registerOutputFormatCapnProto(FormatFactory & factory);
 void registerInputFormatNpy(FormatFactory & factory);
@@ -232,6 +234,8 @@ void registerFormats()
     registerOutputFormatRawBLOB(factory);
     registerInputFormatCustomSeparated(factory);
     registerOutputFormatCustomSeparated(factory);
+    registerInputFormatColumnBinary(factory);
+    registerOutputFormatColumnBinary(factory);
     registerInputFormatForm(factory);
 
     registerInputFormatORC(factory);
