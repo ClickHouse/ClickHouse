@@ -1,14 +1,16 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeVariant.h>
-#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
@@ -32,6 +34,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -235,7 +238,7 @@ bool canOptimizeToExpectedSubcolumn(
     const ColumnContext & ctx,
     const String & subcolumn_name,
     const SubcolumnPredicate & is_expected_subcolumn,
-    const DataTypePtr & expected_type = nullptr)
+    const DataTypePtr & expected_type)
 {
     auto storage_snapshot = getStorageSnapshotForColumnSource(ctx.column_source);
     if (!storage_snapshot)
@@ -245,7 +248,7 @@ bool canOptimizeToExpectedSubcolumn(
     if (!resolved || !resolved->isSubcolumn())
         return false;
 
-    if (expected_type && !resolved->type->equals(*expected_type))
+    if (!resolved->type->equals(*expected_type))
         return false;
 
     auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
@@ -381,10 +384,9 @@ void optimizeFunctionArrayElementForJSON(QueryTreeNodePtr & node, FunctionNode &
     optimizeJSONArrayElementChain(node, function_node, ctx, empty);
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeTuple & data_type_tuple)
+std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeTuple & data_type_tuple)
 {
     const auto & names = data_type_tuple.getElementNames();
-    const auto & types = data_type_tuple.getElements();
 
     if (value.getType() == Field::Types::String)
     {
@@ -394,38 +396,38 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
         if (!pos)
             return {};
 
-        return NameAndTypePair{name, types[*pos]};
+        return name;
     }
 
     if (value.getType() == Field::Types::UInt64)
     {
         size_t index = value.safeGet<UInt64>();
 
-        if (index == 0 || index > types.size())
+        if (index == 0 || index > names.size())
             return {};
 
-        return NameAndTypePair{names[index - 1], types[index - 1]};
+        return names[index - 1];
     }
 
-    /// Maybe negative index
+    /// Signed indices can address elements from the end of the tuple.
     if (value.getType() == Field::Types::Int64)
     {
         ssize_t index = value.safeGet<Int64>();
-        ssize_t size = types.size();
+        ssize_t size = names.size();
 
-        if (index == 0 || std::abs(index) > size)
+        if (index == 0 || index < -size || index > size)
             return {};
 
         if (index > 0)
-            return NameAndTypePair{names[index - 1], types[index - 1]};
+            return names[index - 1];
         else
-            return NameAndTypePair{names[size + index], types[size + index]};
+            return names[size + index];
     }
 
     return {};
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeVariant & data_type_variant)
+std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeVariant & data_type_variant)
 {
     if (value.getType() != Field::Types::String)
         return {};
@@ -436,10 +438,10 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (!discr)
         return {};
 
-    return NameAndTypePair{name, data_type_variant.getVariant(*discr)};
+    return name;
 }
 
-std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const DataTypeQBit & data_type_qbit)
+std::optional<String> getElementSubcolumnName(const Field & value, const DataTypeQBit & data_type_qbit)
 {
     size_t index = 0;
 
@@ -451,8 +453,7 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     if (index == 0 || index > data_type_qbit.getElementSize() * data_type_qbit.getNumStrides())
         return {};
 
-    /// Each subcolumn is one stride group's bit plane: a FixedString of ceil(stride / 8) bytes.
-    return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
+    return toString(index);
 }
 
 /// True when `element_name` and some nested path of `tuple` flatten to the same dotted name, so
@@ -489,10 +490,9 @@ bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const
 }
 
 template <typename DataType>
-void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+void optimizeElementToSubcolumn(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
-    /// Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)` with `tuple_argument.column_name`.
-    /// Replace `variantElement(variant_argument, string_literal)` with `variant_argument.column_name`.
+    /// Replace `tupleElement` and `variantElement` with reads of their element subcolumns.
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
     if (function_arguments_nodes.size() != 2)
@@ -502,16 +502,22 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     if (!second_argument_constant_node)
         return;
 
-    const auto & data_type_concrete = assert_cast<const DataType &>(*ctx.column.type);
-    auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), data_type_concrete);
-
-    if (!subcolumn)
+    const auto & result_type = function_node.getResultType();
+    /// `tupleElement` fills defaults for outer NULLs when the element cannot represent NULL,
+    /// whereas the corresponding storage subcolumn retains the values beneath the parent null map.
+    if (ctx.column.type->isNullable() && !canContainNull(*result_type))
         return;
 
-    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+    const auto & data_type_concrete = assert_cast<const DataType &>(*removeNullable(ctx.column.type));
+    auto subcolumn_name = getElementSubcolumnName(second_argument_constant_node->getValue(), data_type_concrete);
+
+    if (!subcolumn_name)
+        return;
+
+    NameAndTypePair column{ctx.column.name + "." + *subcolumn_name, result_type};
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
-        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
+        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, *subcolumn_name)
             || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
             || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
             return;
@@ -519,12 +525,12 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     /// ``Tuple(`t.a` UInt64, t Tuple(a UInt64))`` resolves `c.t.a` to the sibling, not to `t`.`a`.
     SubcolumnPredicate is_expected_subcolumn;
     if constexpr (std::is_same_v<DataType, DataTypeVariant>)
-        is_expected_subcolumn = [&](const auto & path) { return SerializationVariant::isElementSubcolumn(path, subcolumn->name); };
+        is_expected_subcolumn = [&](const auto & path) { return SerializationVariant::isElementSubcolumn(path, *subcolumn_name); };
     else
-        is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, subcolumn->name); };
+        is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, *subcolumn_name); };
 
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, function_node.getResultType()))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, column.type))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -552,6 +558,126 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
     resolveOrdinaryFunctionNodeByName(*function_array_sort_node, "arraySort", ctx.context);
 
     node = std::move(function_array_sort_node);
+}
+
+bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx)
+{
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    /// No case-insensitive check here: only the format readers (`File`, `URL`, object storage, `Hive`) bind
+    /// column names up to case, and every one of them reports supportsOptimizationToSubcolumns() = false,
+    /// so storageAllowsTransformer never lets a Map rewrite reach them. On every storage that gets here
+    /// name resolution is case-sensitive, so a top-level `M.keys` cannot shadow `m.keys`.
+    NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
+        return false;
+
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return false;
+
+    function_arguments_nodes[0] = std::make_shared<ColumnNode>(column, ctx.column_source);
+    return true;
+}
+
+void optimizeFunctionMapContainsKey(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`.
+    if (optimizeMapFunctionToKeys(function_node, ctx))
+        resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
+}
+
+void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `has(map_argument, argument)` and `notHas(map_argument, argument)` with the same
+    /// function over `map_argument.keys`.
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    /// The Map implementation removes LowCardinality before comparing keys. Rewriting to the
+    /// keys subcolumn would use the Array(LowCardinality) path and can change comparisons for
+    /// values such as a FixedString needle wider than the Map key type.
+    if (WhichDataType(data_type_map.getKeyType()).isLowCardinality())
+        return;
+
+    if (optimizeMapFunctionToKeys(function_node, ctx))
+    {
+        const auto function_name = function_node.getFunctionName();
+        resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
+    }
+}
+
+template <size_t map_element>
+void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    static_assert(map_element <= 1);
+
+    const auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    /// The Map LIKE adapter evaluates the pattern once per input row before traversing the Map.
+    /// Keep arbitrary expressions out of the synthesized lambda, where they would be evaluated
+    /// once per Map element (or not at all for an empty Map). Only physical columns and constants
+    /// preserve the original evaluation scope. An expression-backed ColumnNode, such as an ALIAS
+    /// column, has the same evaluation-scope problem as any other expression.
+    const auto & pattern_node = function_arguments_nodes[1];
+    if (const auto * pattern_column_node = pattern_node->as<ColumnNode>())
+    {
+        if (pattern_column_node->hasExpression())
+            return;
+
+        const auto pattern_source = pattern_column_node->getColumnSource();
+        if (!pattern_source->as<TableNode>() && !pattern_source->as<TableFunctionNode>())
+            return;
+    }
+    else if (!pattern_node->as<ConstantNode>())
+        return;
+
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+    auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
+    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep the
+    /// original path when the searched Map element or pattern is LowCardinality;
+    /// the unused Map element is not passed to LIKE.
+    /// It also propagates a NULL pattern, while arrayExists treats a NULL lambda result as false.
+    const auto & pattern_type = function_arguments_nodes[1]->getResultType();
+    if (WhichDataType(map_element_type).isLowCardinality()
+        || WhichDataType(pattern_type).isLowCardinality()
+        || WhichDataType(pattern_type).isNullable())
+        return;
+
+    auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
+
+    NameAndTypePair subcolumn{ctx.column.name + (map_element == 0 ? ".keys" : ".values"), subcolumn_type};
+    /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
+    if (sourceHasColumn(ctx.column_source, subcolumn.name)
+        || !canOptimizeToExpectedSubcolumn(
+            ctx,
+            subcolumn.name,
+            map_element == 0 ? SerializationMap::isKeysSubcolumn : SerializationMap::isValuesSubcolumn,
+            subcolumn.type))
+        return;
+
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"x"});
+    lambda_arguments->resolve(DataTypes{map_element_type});
+
+    auto lambda_element = std::make_shared<ColumnNode>(NameAndTypePair{"x", map_element_type}, lambda_arguments);
+
+    auto like_function = std::make_shared<FunctionNode>("like");
+    like_function->markAsOperator();
+    /// The resolved Map LIKE node may be shared by multiple alias references. Keep its pattern
+    /// argument intact while attaching the same node to the synthesized lambda.
+    like_function->getArguments().getNodes() = {std::move(lambda_element), function_arguments_nodes[1]};
+    resolveOrdinaryFunctionNodeByName(*like_function, "like", ctx.context);
+
+    auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{map_element_type}, like_function->getResultType());
+    auto lambda = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(like_function), true, std::move(lambda_type));
+
+    auto array_exists = std::make_shared<FunctionNode>("arrayExists");
+    array_exists->getArguments().getNodes() = {std::move(lambda), std::make_shared<ColumnNode>(subcolumn, ctx.column_source)};
+    resolveOrdinaryFunctionNodeByName(*array_exists, "arrayExists", ctx.context);
+
+    node = std::move(array_exists);
 }
 
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
@@ -614,15 +740,25 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContainsKey"},
+        {TypeIndex::Map, "mapContainsKey"}, optimizeFunctionMapContainsKey,
+    },
+    {
+        {TypeIndex::Map, "has"}, optimizeFunctionHasForMap,
+    },
+    {
+        {TypeIndex::Map, "notHas"}, optimizeFunctionHasForMap,
+    },
+    {
+        {TypeIndex::Map, "mapContainsValue"},
         [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
+            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
-            NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+            /// Case-sensitive check only, for the same reason as in optimizeMapFunctionToKeys.
+            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -633,24 +769,10 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContainsValue"},
-        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
-        {
-            /// Replace `mapContainsValue(map_argument, argument)` with `has(map_argument.values, argument)`
-            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
-
-            NameAndTypePair column{ctx.column.name + ".values", std::make_shared<DataTypeArray>(data_type_map.getValueType())};
-            if (sourceHasColumn(ctx.column_source, column.name)
-                || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
-                return;
-            auto & function_arguments_nodes = function_node.getArguments().getNodes();
-
-            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
-            function_arguments_nodes[0] = std::move(has_function_argument);
-
-            resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
-        },
+        {TypeIndex::Map, "mapContainsKeyLike"}, optimizeFunctionMapContainsLike<0>,
+    },
+    {
+        {TypeIndex::Map, "mapContainsValueLike"}, optimizeFunctionMapContainsLike<1>,
     },
     {
         {TypeIndex::Nullable, "count"},
@@ -677,15 +799,22 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
     },
     {
         {TypeIndex::Nullable, "isNull"},
-        [](QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
+        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
         {
-            /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
+            /// Replace `isNull(nullable_argument)` with `nullable_argument.null != 0`. The subcolumn
+            /// cannot stand in for the function on its own, because a null map byte only has to be
+            /// non-zero to mean NULL while `isNull` returns 0 or 1.
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
                 || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
-            node = std::make_shared<ColumnNode>(column, ctx.column_source);
+            auto & function_arguments_nodes = function_node.getArguments().getNodes();
+
+            function_arguments_nodes = {
+                std::make_shared<ColumnNode>(column, ctx.column_source),
+                std::make_shared<ConstantNode>(static_cast<UInt64>(0))};
+            resolveOrdinaryFunctionNodeByName(function_node, "notEquals", ctx.context);
         },
     },
     {
@@ -705,13 +834,20 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Tuple, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeTuple>,
+        {TypeIndex::Tuple, "tupleElement"}, optimizeElementToSubcolumn<DataTypeTuple>,
     },
     {
-        {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
+        {TypeIndex::Nullable, "tupleElement"}, [](QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+        {
+            if (isTuple(removeNullable(ctx.column.type)))
+                optimizeElementToSubcolumn<DataTypeTuple>(node, function_node, ctx);
+        },
     },
     {
-        {TypeIndex::QBit, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
+        {TypeIndex::Variant, "variantElement"}, optimizeElementToSubcolumn<DataTypeVariant>,
+    },
+    {
+        {TypeIndex::QBit, "tupleElement"}, optimizeElementToSubcolumn<DataTypeQBit>, /// QBit uses tupleElement for subcolumns
     },
     {
         {TypeIndex::Object, "distinctJSONPaths"}, optimizeDistinctJSONPaths,
@@ -753,9 +889,17 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Map, "mapContainsKey"},
+    {TypeIndex::Map, "has"},
+    {TypeIndex::Map, "notHas"},
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
+    /// Map LIKE rewrites only read the searched subcolumn, so they remain safe
+    /// when the full Map is read separately, for example by SELECT.
+    {TypeIndex::Map, "mapContainsKeyLike"},
+    {TypeIndex::Map, "mapContainsValueLike"},
     {TypeIndex::Tuple, "tupleElement"},
+    {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
 };
@@ -1013,11 +1157,12 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
-bool storageAllowsTransformer(const IStorage & storage, TypeIndex type_id, const String & function_name)
+bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
 {
     if (storage.supportsOptimizationToSubcolumns())
         return true;
-    return storage.supportsOptimizationToTupleElementSubcolumns() && type_id == TypeIndex::Tuple && function_name == "tupleElement";
+    /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
+    return storage.supportsOptimizationToTupleElementSubcolumns() && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
 }
 
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
@@ -1057,7 +1202,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -1119,7 +1264,7 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 

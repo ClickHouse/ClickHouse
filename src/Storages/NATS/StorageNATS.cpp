@@ -343,11 +343,40 @@ void StorageNATS::initializeConsumersFunc()
 
 void StorageNATS::createConsumersConnection()
 {
+    /// The NATS client library closes a connection for good once the server has rejected the same
+    /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
+    /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
+    /// the table would stay silently idle until it is detached and attached again.
+    if (consumers_connection && consumers_connection->isClosed())
+    {
+        /// The table name is in the logger. The error handler of the client library reports the
+        /// rejected credentials too, but it knows only the connection, so this is the line which
+        /// tells an operator which table lost its connection and why.
+        LOG_WARNING(
+            log,
+            "The NATS client library closed the connection to {} for good. Last error: {}. Creating a new one",
+            consumers_connection->connectionInfoForLog(),
+            consumers_connection->lastErrorForLog());
+
+        dropConsumers();
+        consumers_connection.reset();
+    }
+
     if (consumers_connection)
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
     consumers_connection = connect_future.get();
+}
+
+void StorageNATS::dropConsumers()
+{
+    unsubscribeConsumers();
+
+    /// A consumer subscribes through the connection it was created with, so it cannot outlive it.
+    const size_t num_consumers_to_drop = num_created_consumers.exchange(0);
+    for (size_t i = 0; i < num_consumers_to_drop; ++i)
+        popConsumer();
 }
 
 void StorageNATS::createConsumers()
@@ -717,6 +746,31 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 void StorageNATS::threadFunc()
 {
     auto table_id = getStorageID();
+
+    /// A closed connection is dead for good, and the cycle below only waits for one to reconnect,
+    /// so build a new connection and new consumers here. Only the connection: whether the new
+    /// consumers subscribe is decided below, the same way as for any other cycle. A stopped or
+    /// paused table must hold no subscription - with core NATS a message delivered to it is
+    /// dropped, and in a queue group it is taken away from the members which are still running -
+    /// but it does keep its connection, so it can still run the one-shot cycle a `SYSTEM REFRESH`
+    /// entitles it to, and `SYSTEM START` finds it ready.
+    ///
+    /// No connection at all means a previous attempt dropped the closed one and then failed to
+    /// connect, so try again.
+    if (!shutdown_called && (!consumers_connection || consumers_connection->isClosed()))
+    {
+        try
+        {
+            createConsumersConnection();
+            createConsumers();
+        }
+        catch (...)
+        {
+            LOG_WARNING(log, "Cannot reinitialize consumers: {}", getCurrentExceptionMessage(false));
+            streaming_task->scheduleAfter(RESCHEDULE_MS);
+            return;
+        }
+    }
 
     bool consumers_queues_are_empty = false;
 
@@ -1209,7 +1263,8 @@ void registerStorageNATS(StorageFactory & factory)
         else if (!args.storage_def->settings)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "NATS engine must have settings");
 
-        nats_settings->loadFromQuery(*args.storage_def);
+        if (args.storage_def->settings)
+            nats_settings->loadFromQuery(*args.storage_def);
 
         /// A credential source assigned in the `SETTINGS` clause is query-level even when the named
         /// collection provides the same key: the clause is applied on top of the collection values,
