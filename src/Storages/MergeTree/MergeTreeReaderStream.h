@@ -31,8 +31,7 @@ public:
         size_t file_size_,
         MergeTreeMarksLoaderPtr marks_loader_,
         const ReadBufferFromFileBase::ProfileCallback & profile_callback_,
-        clockid_t clock_type_,
-        std::optional<size_t> initial_right_mark_ = {});
+        clockid_t clock_type_);
 
     virtual ~MergeTreeReaderStream();
 
@@ -86,10 +85,6 @@ private:
 
     bool initialized = false;
     std::optional<size_t> last_right_offset;
-
-    /// If set, the stream bounds its read at this mark and seeks to its start when it is first read
-    /// rather than when it is created: a skip index substream is not necessarily read at all.
-    const std::optional<size_t> initial_right_mark;
 
 protected:
     void init();
