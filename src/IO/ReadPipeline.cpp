@@ -23,7 +23,6 @@
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/FileEncryptionCommon.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
