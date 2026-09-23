@@ -10,6 +10,7 @@ ReplicatedMergeTree so reportBroken() is observable (plain MergeTree's callback 
 """
 import os
 import time
+import uuid
 
 import pytest
 
@@ -26,6 +27,7 @@ node = cluster.add_instance(
     main_configs=[
         os.path.join(SCRIPT_DIR, "configs", "azure_disk.xml"),
         os.path.join(SCRIPT_DIR, "configs", "blob_log.xml"),
+        os.path.join(SCRIPT_DIR, "configs", "text_log.xml"),
     ],
     with_azurite=True,
     with_zookeeper=True,
@@ -64,6 +66,8 @@ ALL_FAILPOINTS = [fp for triple in ERROR_KINDS.values() for fp in triple[:2]] + 
 BROKEN_PART_LOG = "looks broken. Removing it and will try to fetch"
 # One line per failed Azure read attempt; substring matches both Read and Download variants.
 RETRY_LOG = "Exception caught during Azure"
+# One line per Azure write attempt that failed and was retried by the ClickHouse write loop.
+WRITE_RETRY_LOG = "Write at attempt"
 
 
 @pytest.fixture(scope="module")
@@ -263,22 +267,39 @@ def test_permanent_forbidden_on_write_fails(started_cluster):
 
 
 def test_transient_forbidden_on_write_succeeds(started_cluster):
-    # nosdk (SDK retry off) so the one-shot 403 must reach execWithRetry; the "Write at attempt" log proves the
-    # CH write loop recovered. stop_merges keeps the upload PUT the only in-flight Azure traffic.
-    _create_table("t_write_transient", stop_merges=True, policy="azure_policy_nosdk")
+    # nosdk (SDK retry off) so the one-shot 403 must reach execWithRetry; the WRITE_RETRY_LOG line proves the
+    # CH write loop recovered. The one-shot is process-global and any other Azure request takes it silently
+    # (403 is retryable in the SDK), so each round is a fresh table plus a fresh arming: repeat until the write
+    # is the request that takes it. Every round writes three setup parts before arming and the server logs
+    # asynchronously, so the witness is the line carrying this INSERT's own query id, read through the
+    # SYSTEM FLUSH LOGS drain rather than by grepping the log file.
+    retried = False
+    for _ in range(10):
+        _create_table("t_write_transient", stop_merges=True, policy="azure_policy_nosdk")
+        query_id = f"t_write_transient_{uuid.uuid4()}"
 
-    node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response_once")
-    try:
-        node.query(
-            "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)"
+        node.query("SYSTEM ENABLE FAILPOINT azure_inject_forbidden_response_once")
+        try:
+            node.query(
+                "INSERT INTO t_write_transient SELECT number + 300, toString(number) FROM numbers(100)",
+                query_id=query_id,
+            )
+        finally:
+            node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")
+
+        node.query("SYSTEM FLUSH LOGS text_log")
+        retried = (
+            node.query(
+                f"SELECT count() FROM system.text_log "
+                f"WHERE query_id = '{query_id}' AND message LIKE '%{WRITE_RETRY_LOG}%'"
+            ).strip()
+            != "0"
         )
-    finally:
-        node.query("SYSTEM DISABLE FAILPOINT azure_inject_forbidden_response_once")
+        if retried:
+            break
 
     assert node.query("SELECT count() FROM t_write_transient").strip() == "400"
-    assert node.contains_in_log(
-        "Write at attempt"
-    ), "the CH-level write retry loop was never exercised"
+    assert retried, "the CH-level write retry loop was never exercised"
     assert not node.contains_in_log(BROKEN_PART_LOG)
 
 
