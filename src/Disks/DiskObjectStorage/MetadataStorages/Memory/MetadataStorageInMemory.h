@@ -32,6 +32,9 @@ public:
 
     MetadataStorageType getType() const override { return MetadataStorageType::Memory; }
 
+    /// The metadata is kept in the memory of this process, no network interaction is involved.
+    bool isRemote() const override { return false; }
+
     /// Everything lives in RAM, so nothing survives a restart.
     bool keepsMetadataAcrossRestarts() const override { return false; }
 

@@ -227,7 +227,9 @@ void BorrowFromCacheObjectStorage::removeObjectIfExists(const StoredObject & obj
     }
 }
 
-void BorrowFromCacheObjectStorage::removeObjectsIfExist(const StoredObjects & objects)
+void BorrowFromCacheObjectStorage::removeObjectsIfExist( /// NOLINT
+    const StoredObjects & objects,
+    StoredObjects * successful_objects)
 {
     auto blob_storage_log = BlobStorageLogWriter::create(name);
 
@@ -237,6 +239,9 @@ void BorrowFromCacheObjectStorage::removeObjectsIfExist(const StoredObjects & ob
         for (const auto & object : objects)
             entries.erase(object.remote_path);
     }
+
+    if (successful_objects)
+        successful_objects->insert(successful_objects->end(), objects.begin(), objects.end());
 
     if (blob_storage_log)
     {

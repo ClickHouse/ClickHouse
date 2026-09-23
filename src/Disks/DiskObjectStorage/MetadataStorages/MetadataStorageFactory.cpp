@@ -277,7 +277,8 @@ static void registerMetadataStorageInMemory(MetadataStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ClusterConfigurationPtr & cluster,
-        const ObjectStorageRouterPtr & object_storages) -> MetadataStoragePtr
+        const ObjectStorageRouterPtr & object_storages,
+        bool /* run_local_paths_check */) -> MetadataStoragePtr
     {
         checkSingleLocation(cluster);
 
