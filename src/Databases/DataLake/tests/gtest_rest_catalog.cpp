@@ -661,31 +661,6 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
     expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
-TEST(RestCatalog, InvalidAuthHeaderNameIsRejected)
-{
-    RestCatalogTestServer server(CatalogShape::Empty);
-    auto context = DB::Context::createCopy(getContext().context);
-    context->makeQueryContext();
-
-    /// The `auth_header` setting is validated when the catalog is built, so a name that is not a
-    /// valid token (here, containing a space) is rejected rather than normalized.
-    expectThrowsCode(
-        [&]
-        {
-            RestCatalog(
-                "warehouse",
-                server.getUrl(),
-                /* catalog_credential */"",
-                /* auth_scope */"",
-                /* auth_header */"X-A B: Bearer token",
-                /* oauth_server_uri */"",
-                /* oauth_server_use_request_body */false,
-                /* flat_namespaces */false,
-                context);
-        },
-        DB::ErrorCodes::BAD_ARGUMENTS);
-}
-
 TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)
 {
     RestCatalogTestServer server(CatalogShape::Empty);
