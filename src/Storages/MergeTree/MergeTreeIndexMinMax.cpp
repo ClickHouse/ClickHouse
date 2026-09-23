@@ -401,15 +401,19 @@ ExpressionActionsPtr tryBuildMinMaxActions(
                 auto [intersects, contains] = buildIntersectsAndContains(dag, element, index_data_types, inputs, context);
                 if (!intersects || !contains)
                     return nullptr;
-                const auto & cbf = addNamedFunction(dag, "not", {contains}, context);
+                /// Same as `KeyCondition::relaxAtomsOverNaNHidingColumns` for the scalar path: the bounds come
+                /// from `getExtremes`, which skips NaN, so a granule may hold a row outside of them.
+                const ActionsDAG::Node * cbf = KeyCondition::typeMayHideNaN(index_data_types[element.getKeyColumn()])
+                    ? &addConstUInt8(dag, 1, "nan_hiding_cbf")
+                    : &addNamedFunction(dag, "not", {contains}, context);
                 if (element.function == Function::FUNCTION_NOT_IN_RANGE)
                 {
                     /// BoolMask negation: swap (ctr, cbf).
-                    stack.emplace_back(&cbf, intersects);
+                    stack.emplace_back(cbf, intersects);
                 }
                 else
                 {
-                    stack.emplace_back(intersects, &cbf);
+                    stack.emplace_back(intersects, cbf);
                 }
                 break;
             }
@@ -469,8 +473,13 @@ MergeTreeIndexConditionMinMax::MergeTreeIndexConditionMinMax(
     : index_data_types(index.data_types)
     , condition(buildCondition(index, filter_dag, context))
 {
+    /// Built before the NaN relaxation below, which `tryBuildMinMaxActions` mirrors itself: a relaxed
+    /// atom is rejected there because the relaxation may come from a transformed constant.
     if (context->getSettingsRef()[Setting::use_minmax_index_bulk_filtering] && !alwaysUnknownOrTrue())
         minmax_actions = tryBuildMinMaxActions(condition, index_data_types, context);
+
+    /// The granule bound comes from `getExtremes`, which skips NaN.
+    condition.relaxAtomsOverNaNHidingColumns(index_data_types);
 }
 
 bool MergeTreeIndexConditionMinMax::alwaysUnknownOrTrue() const
