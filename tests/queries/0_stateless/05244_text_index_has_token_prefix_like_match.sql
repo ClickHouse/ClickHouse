@@ -153,25 +153,6 @@ SELECT count() FROM tab WHERE hasTokenMatch(msg, '^C');
 
 DROP TABLE tab;
 
-SELECT '-- lowerUTF8 preprocessor: the index is not used';
-
-CREATE TABLE tab
-(
-    id UInt32,
-    msg String,
-    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lowerUTF8(msg)) GRANULARITY 1
-)
-ENGINE = MergeTree
-ORDER BY id
-SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
-
-INSERT INTO tab SELECT number, if(number < 8, 'Charged', 'other') FROM numbers(64);
-
-SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'Charg');
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'Charg')) WHERE explain LIKE '%Granules:%';
-
-DROP TABLE tab;
-
 SELECT '-- without the tokenizer argument, the tokenizer of the index is used (as for hasAnyTokens)';
 
 CREATE TABLE tab

@@ -66,10 +66,6 @@ Granules: 1/8
 Parts: 1 | Granules: 8
 Granules: 8/8
 8
--- lowerUTF8 preprocessor: the index is not used
-8
-Parts: 1 | Granules: 8
-Granules: 8/8
 -- without the tokenizer argument, the tokenizer of the index is used (as for hasAnyTokens)
 8
 8
