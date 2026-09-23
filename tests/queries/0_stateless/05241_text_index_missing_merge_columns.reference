@@ -1,0 +1,42 @@
+horizontal nullable
+0	0
+0	0
+2	11
+2	11
+0	0
+1
+horizontal expression
+4	10
+4	10
+2	11
+2	11
+4	10
+1
+horizontal two_inputs
+4	10
+4	10
+2	11
+2	11
+4	10
+1
+vertical nullable
+0	0
+0	0
+2	11
+2	11
+0	0
+1
+vertical expression
+4	10
+4	10
+2	11
+2	11
+4	10
+1
+vertical two_inputs
+4	10
+4	10
+2	11
+2	11
+4	10
+1

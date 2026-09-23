@@ -465,10 +465,16 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColu
         {
             global_ctx->text_indexes_to_merge.push_back(index);
 
-            if (index_columns.size() > 1)
+            for (const auto & index_column : index_columns)
             {
-                for (const auto & index_column : index_columns)
-                    key_columns.insert(getColumnNameInStorage(index_column, storage_columns, virtual_columns));
+                auto column_name = getColumnNameInStorage(index_column, storage_columns, virtual_columns);
+                /// Text indexes are built before TTL restores omitted columns in the merged stream.
+                /// Keep their inputs even when absent in every source part. Such columns must run
+                /// in the horizontal stage because expired columns are not gathered vertically.
+                /// Wide-part finalization can still remove their default-valued physical streams.
+                global_ctx->merge_required_columns.insert(column_name);
+                if (index_columns.size() > 1 || global_ctx->new_data_part->expired_columns.contains(column_name))
+                    key_columns.insert(std::move(column_name));
             }
         }
         else if (index_columns.size() == 1)
