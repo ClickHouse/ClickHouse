@@ -147,6 +147,7 @@ public:
         JoinPtr join,
         SharedHeader & output_header,
         size_t max_block_size,
+        bool build_all_shards_before_probing,
         IQueryPlanStep * join_step,
         Processors * collected_processors = nullptr);
 

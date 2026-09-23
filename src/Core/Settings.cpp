@@ -2817,6 +2817,10 @@ is added so the join order optimizer can consider direct (A JOIN C) plans.
 Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both tables. Supported for hash, parallel_hash, full_sorting_merge and parallel_full_sorting_merge algorithms. Usually does not speed up queries but may lower memory consumption.
 )", 0) \
     \
+    DECLARE(Bool, query_plan_join_shard_by_partitions, false, R"(
+Execute a hash JOIN of two `MergeTree` tables partition by partition when both tables are partitioned by the same deterministic function of the join keys (e.g. both `PARTITION BY toYYYYMM(date)` and `ON l.date = r.date`). Rows with equal keys always lie in the same partition on both sides, so both tables are read as the same groups of partitions, one stream per group, and every group is joined with an independent hash table built only from the matching group of the right table. Partitions that cannot produce output (e.g. a partition present only in one table for an `INNER` join) are not read. Supported for the `hash` algorithm, and for `parallel_hash` except `LEFT` joins and joins with runtime filters, where a single `parallel_hash` join is faster. Not applied when the join may spill to disk (`max_bytes_before_external_join`, `max_bytes_ratio_before_external_join`).
+)", 0) \
+    \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
 Show internal aliases (such as __table1) in EXPLAIN PLAN instead of those specified in the original query.
 )", 0) \

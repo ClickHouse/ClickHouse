@@ -40,7 +40,7 @@ static ReadFromMergeTree * findReadingStep(const QueryPlan::Node & node)
         /// port, consumed positionally by the steps above, so a single read can satisfy only one of
         /// them: partitions generally do not form primary-key ranges, and there is no repartitioning
         /// step between the two consumers that could convert one port layout into the other.
-        if (reading->willOutputEachPartitionThroughSeparatePort())
+        if (reading->hasRequestedOutputPortLayout())
             return nullptr;
 
         return reading;
@@ -108,7 +108,7 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
 /// which is also used in JOIN equality condition.
 ///
 /// Only the prefix size is needed, but here we additionally return names for debugging.
-static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
+static JoinStep::JoinSharding findCommonPrimaryKeyPrefixByJoinKey(
     ReadFromMergeTree * lhs_reading, const ActionsDAG & lhs_dag,
     ReadFromMergeTree * rhs_reading, const ActionsDAG & rhs_dag,
     const TableJoin::JoinOnClause & clause)
@@ -137,7 +137,7 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     const auto & rhs_pk_colum_names = rhs_pk.column_names;
     auto rhs_matches = matchTrees(rhs_pk_dag.getOutputs(), rhs_dag, false);
 
-    JoinStep::PrimaryKeySharding sharding;
+    JoinStep::JoinSharding sharding;
 
     bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
@@ -223,7 +223,7 @@ struct JoinsAndSourcesWithCommonPrimaryKeyPrefix
     struct JoinAndSharding
     {
         JoinStep * join;
-        JoinStep::PrimaryKeySharding sharding;
+        JoinStep::JoinSharding sharding;
     };
 
     std::list<JoinAndSharding> joins;
@@ -414,7 +414,7 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 
             // std::cerr << "can_split_join " << can_split_join << std::endl;
 
-            JoinStep::PrimaryKeySharding sharding;
+            JoinStep::JoinSharding sharding;
             if (can_split_join)
             {
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
@@ -601,7 +601,7 @@ void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_sha
                         left_sort->convertToScatteredFullSort(num_shards);
                         right_sort->convertToScatteredFullSort(num_shards);
 
-                        JoinStep::PrimaryKeySharding sharding;
+                        JoinStep::JoinSharding sharding;
                         for (size_t i = 0; i < clause.key_names_left.size(); ++i)
                             sharding.emplace_back(clause.key_names_left[i], clause.key_names_right[i]);
                         join_step->enableJoinByLayers(std::move(sharding));

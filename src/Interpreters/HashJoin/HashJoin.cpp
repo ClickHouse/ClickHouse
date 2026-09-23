@@ -14,6 +14,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnString.h>
+#include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/HashTable/FixedHashMap.h>
@@ -1177,6 +1178,17 @@ bool HashJoin::addBlockToJoin(const Block & block, ScatteredBlock::Selector sele
     }
     data->keys_to_join = total_rows;
     shrinkStoredBlocksToFit(total_bytes);
+
+    if (shards_size)
+    {
+        const Int64 rows_delta = static_cast<Int64>(total_rows) - static_cast<Int64>(shard_rows_in_shards_size);
+        const Int64 bytes_delta = static_cast<Int64>(total_bytes) - static_cast<Int64>(shard_bytes_in_shards_size);
+        shard_rows_in_shards_size = total_rows;
+        shard_bytes_in_shards_size = total_bytes;
+        total_rows = static_cast<size_t>(shards_size->rows.fetch_add(rows_delta) + rows_delta);
+        total_bytes = static_cast<size_t>(shards_size->bytes.fetch_add(bytes_delta) + bytes_delta);
+    }
+
     return table_join->sizeLimits().check(total_rows, total_bytes, "JOIN", ErrorCodes::SET_SIZE_LIMIT_EXCEEDED);
 }
 
@@ -1444,6 +1456,46 @@ JoinResultPtr HashJoin::runJoinDispatch(ScatteredBlock block)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination: {} {}", strictness, kind);
 
     return res;
+}
+
+std::shared_ptr<HashJoin> HashJoin::createForShard(
+    const std::shared_ptr<TableJoin> & table_join_,
+    SharedHeader right_sample_block_,
+    bool any_take_last_row_,
+    const HashJoinStatsCollectingParams & stats_collecting_params_,
+    size_t shard,
+    JoinShardsSizePtr shards_size_)
+{
+    HashJoinStatsCollectingParams params = stats_collecting_params_;
+    params.match.disable();
+
+    size_t reserve = 0;
+    if (params.build.isCollectionAndUseEnabled())
+    {
+        SipHash hash;
+        hash.update(params.build.key);
+        hash.update(shard);
+        params.build.setKey(hash.get64());
+
+        if (auto hint = getSizeHint(params.build); hint && hint->ht_size <= params.build.max_size_to_preallocate)
+        {
+            /// A preallocated table is slower to fill than a growing one, which stays small and cache-friendly for
+            /// longer. It pays off only when it is smaller than the grown table: small tables grow by 4x, so a
+            /// shard often ends up with 4 times the cells it needs.
+            HashTableGrowerWithPrecalculation<> grown;
+            while (grown.overflow(hint->ht_size))
+                grown.increaseSize();
+            HashTableGrowerWithPrecalculation<> preallocated;
+            preallocated.set(hint->ht_size);
+            if (preallocated.bufSize() < grown.bufSize())
+                reserve = hint->ht_size;
+        }
+    }
+
+    auto join = std::make_shared<HashJoin>(
+        table_join_, right_sample_block_, any_take_last_row_, reserve, /*instance_id_=*/"", /*is_concurrent_hash_join_=*/false, params);
+    join->shards_size = std::move(shards_size_);
+    return join;
 }
 
 HashJoin::~HashJoin()

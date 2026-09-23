@@ -111,6 +111,12 @@ public:
         return std::make_shared<HashJoin>(table_join_, right_sample_block_, any_take_last_row);
     }
 
+    std::shared_ptr<IJoin> cloneForShard(
+        const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_, size_t shard, JoinShardsSizePtr shards_size_) const override
+    {
+        return HashJoin::createForShard(table_join_, right_sample_block_, any_take_last_row, stats_collecting_params, shard, std::move(shards_size_));
+    }
+
     void onBuildPhaseFinish() override;
 
     /// See `HashJoin::keepRightBlocksForAnotherAlgorithm`.

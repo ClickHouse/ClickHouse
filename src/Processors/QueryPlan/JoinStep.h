@@ -69,20 +69,29 @@ public:
     /// Swap automatically if not set, otherwise always or never, depending on the value
     std::optional<bool> swap_join_tables = false;
 
-    struct PrimaryKeyNamesPair
+    struct JoinShardingKeyPair
     {
         std::string lhs_name;
         std::string rhs_name;
     };
 
-    struct PrimaryKeySharding : std::vector<PrimaryKeyNamesPair>
+    struct JoinSharding : std::vector<JoinShardingKeyPair>
     {
+        /// What the shards are made of: ranges or hashes of the keys, or groups of partitions.
+        enum class Kind : uint8_t { Keys, Partitions };
+
+        Kind kind = Kind::Keys;
         bool is_reverse_order = false;
+        bool build_all_shards_before_probing = false;
     };
 
-    /// Set names of PK columns for optimized for JOIN sharder by PK ranges.
-    /// Names are required for EXPLAIN only.
-    void enableJoinByLayers(PrimaryKeySharding sharding) { primary_key_sharding = std::move(sharding); }
+    /// Execute the join shard by shard, pairing the input ports positionally.
+    /// The names of the key columns are required for EXPLAIN only.
+    void enableJoinByLayers(JoinSharding sharding_) { sharding = std::move(sharding_); }
+    bool isJoinByLayersEnabled() const { return !sharding.empty(); }
+
+    /// If true, the left side of the `TableJoin` is the second child of the step.
+    bool areStreamsSwapped() const { return swap_streams; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }
@@ -132,7 +141,7 @@ public:
 
     bool swap_streams = false;
     bool useJoinDisjunctionsPushDown() const { return use_join_disjunctions_push_down; }
-    PrimaryKeySharding primary_key_sharding;
+    JoinSharding sharding;
 };
 
 /// Special step for the case when Join is already filled.

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,6 +27,15 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
+
+/// The size of the right side summed over the shards of a join executed shard by shard, so that
+/// `max_rows_in_join` and `max_bytes_in_join` limit the whole right side rather than each shard.
+struct JoinShardsSize
+{
+    std::atomic<Int64> rows = 0;
+    std::atomic<Int64> bytes = 0;
+};
+using JoinShardsSizePtr = std::shared_ptr<JoinShardsSize>;
 
 enum class JoinPipelineType : uint8_t
 {
@@ -121,6 +131,13 @@ public:
     virtual std::shared_ptr<IJoin> cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader left_sample_block_,
         SharedHeader right_sample_block_) const { return clone(table_join_, left_sample_block_, right_sample_block_); }
+
+    /// Clone for one of the shards that together hold the right side (see `QueryPipelineBuilder::joinPipelinesByShards`).
+    virtual std::shared_ptr<IJoin> cloneForShard(const std::shared_ptr<TableJoin> & table_join_,
+        SharedHeader left_sample_block_,
+        SharedHeader right_sample_block_,
+        size_t /*shard*/,
+        JoinShardsSizePtr /*shards_size*/) const { return cloneNoParallel(table_join_, left_sample_block_, right_sample_block_); }
 
     /// Add block of data from right hand of JOIN.
     /// @returns false, if some limit was exceeded and you should not insert more data.

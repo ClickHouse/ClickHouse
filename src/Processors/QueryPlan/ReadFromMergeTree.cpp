@@ -4520,6 +4520,52 @@ Pipe ReadFromMergeTree::groupStreamsByPartition(
     return Pipe::unitePipes(std::move(pipes));
 }
 
+Pipe ReadFromMergeTree::readByPartitionGroups(
+    AnalysisResult & result,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    std::optional<ActionsDAG> & result_projection)
+{
+    std::unordered_map<std::string_view, size_t> partition_to_group;
+    for (size_t group = 0; group < partition_groups.size(); ++group)
+        for (const auto & partition_id : partition_groups[group])
+            partition_to_group.emplace(partition_id, group);
+
+    std::vector<RangesInDataParts> parts_by_group(partition_groups.size());
+    for (auto & part : result.parts_with_ranges)
+        parts_by_group[partition_to_group.at(part.data_part->info.getPartitionId())].push_back(std::move(part));
+    result.parts_with_ranges.clear();
+
+    const size_t num_streams_per_group = std::max<size_t>(1, requested_num_streams / partition_groups.size());
+
+    Pipes pipes;
+    pipes.reserve(partition_groups.size());
+    SharedHeader header;
+    for (auto & group_parts : parts_by_group)
+    {
+        auto & pipe = pipes.emplace_back();
+        if (group_parts.empty())
+            continue;
+
+        pipe = spreadMarkRanges(std::move(group_parts), index_build_context, num_streams_per_group, result, result_projection);
+        if (!pipe.empty())
+        {
+            pipe.resize(1);
+            if (!header)
+                header = pipe.getSharedHeader();
+        }
+    }
+
+    if (!header)
+        return {};
+
+    /// The ports of the two sides of the join are paired positionally.
+    for (auto & pipe : pipes)
+        if (pipe.empty())
+            pipe = Pipe(std::make_shared<NullSource>(header));
+
+    return Pipe::unitePipes(std::move(pipes));
+}
+
 QueryPlanStepPtr ReadFromMergeTree::clone() const
 {
     AnalysisResultPtr analysis_result_copy;
@@ -4578,6 +4624,7 @@ QueryPlanStepPtr ReadFromMergeTree::clone() const
     /// TopK threshold. `condition_hash` already has the part-set salt folded in by `setTopKColumn`, so
     /// copy the value instead of calling `setTopKColumn` again (which would fold it in twice).
     cloned_step->top_k_filter_info = top_k_filter_info;
+    cloned_step->partition_groups = partition_groups;
     /// Carry over the text-index read tasks for the same reason. `processAndOptimizeTextIndexFunctions`
     /// runs in the second optimization pass before `materializeQueryPlanReferences`, so a clone can
     /// already have a predicate rewritten to `__text_index_*` virtual columns; those columns are
@@ -4929,6 +4976,9 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
     /// source that reads nothing at all must produce one port per layer as well: collapsing it to a single
     /// port makes the two sides disagree on the number of shards. The same reasoning does not apply to a
     /// read coordinated across parallel replicas, which ignores the layers (see `spreadMarkRanges`).
+    if (usePartitionGroups())
+        return partition_groups.size();
+
     if (result.split_parts.layers.empty() || is_parallel_reading_from_replicas)
         return 1;
 
@@ -5047,6 +5097,18 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
 
         /// Cannot cache PREWHERE results when ranges are pinned per bucket.
         reader_settings.use_query_condition_cache = false;
+    }
+
+    if (usePartitionGroups())
+    {
+        std::unordered_set<std::string_view> partitions_to_read;
+        for (const auto & group : partition_groups)
+            partitions_to_read.insert(group.begin(), group.end());
+
+        std::erase_if(result.parts_with_ranges, [&](const RangesInDataPart & part)
+        {
+            return !partitions_to_read.contains(part.data_part->info.getPartitionId());
+        });
     }
 
     /// Do not keep data parts in snapshot.
@@ -5406,6 +5468,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipe = groupPartitionsByStreams(result);
     else if (output_each_partition_through_separate_port)
         pipe = groupStreamsByPartition(result, index_build_context, result_projection);
+    else if (usePartitionGroups())
+        pipe = readByPartitionGroups(result, index_build_context, result_projection);
     else
         pipe = spreadMarkRanges(std::move(result.parts_with_ranges), index_build_context, requested_num_streams, result, result_projection);
 
@@ -5597,6 +5661,9 @@ void ReadFromMergeTree::describeActions(FormatSettings & format_settings) const
     if (output_each_partition_through_separate_port)
         format_settings.out << prefix << "Read each partition through separate port: 1\n";
 
+    if (!partition_groups.empty())
+        format_settings.out << prefix << "Partition groups read through separate ports: " << partition_groups.size() << '\n';
+
     if (format_settings.pretty)
         QueryPlanFormat::formatOutputColumns(format_settings.pretty_names, format_settings.out, *this, prefix);
 
@@ -5719,6 +5786,9 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
 
     if (output_each_partition_through_separate_port)
         map.add("Read each partition through separate port", true);
+
+    if (!partition_groups.empty())
+        map.add("Partition groups read through separate ports", partition_groups.size());
 
     std::unique_ptr<JSONBuilder::JSONMap> prewhere_info_map;
     if (query_info.prewhere_info || query_info.row_level_filter)

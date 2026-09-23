@@ -786,6 +786,7 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
     JoinPtr join,
     SharedHeader & output_header,
     size_t max_block_size,
+    bool build_all_shards_before_probing,
     IQueryPlanStep * join_step,
     Processors * collected_processors)
 {
@@ -824,12 +825,23 @@ std::unique_ptr<QueryPipelineBuilder> QueryPipelineBuilder::joinPipelinesByShard
 
     SharedHeader left_header = left->getSharedHeader();
     VectorWithMemoryTracking<JoinPtr> joins;
+    auto shards_size = std::make_shared<JoinShardsSize>();
     right->addSimpleTransform([&](const SharedHeader & header)
     {
-        joins.push_back(join->cloneNoParallel(std::make_shared<TableJoin>(join->getTableJoin()), left->getSharedHeader(), header));
+        auto table_join = std::make_shared<TableJoin>(join->getTableJoin());
+        /// The hash table of a shard holds only a part of the right side, so it must not replace the runtime filter.
+        table_join->clearSharedRuntimeFilterDescriptors();
+        joins.push_back(join->cloneForShard(std::move(table_join), left->getSharedHeader(), header, joins.size(), shards_size));
         auto finish_counter = std::make_shared<FinishCounter>(1);
         return std::make_shared<FillingRightJoinSideTransform>(header, joins.back(), finish_counter);
     });
+
+    /// No shard starts probing until all shards are built, so that the runtime filters built from the whole right side are ready.
+    if (build_all_shards_before_probing)
+    {
+        right->resize(1);
+        right->resize(num_streams);
+    }
 
     auto lit = left->pipe.output_ports.begin();
     auto rit = right->pipe.output_ports.begin();

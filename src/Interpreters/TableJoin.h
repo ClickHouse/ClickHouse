@@ -362,6 +362,12 @@ public:
         return join_operator ? join_operator->shared_runtime_filter_descriptors : empty;
     }
 
+    void clearSharedRuntimeFilterDescriptors()
+    {
+        if (join_operator)
+            join_operator->shared_runtime_filter_descriptors.clear();
+    }
+
     bool oneDisjunct() const;
 
     ASTTableJoin & getTableJoin() { return table_join; }
