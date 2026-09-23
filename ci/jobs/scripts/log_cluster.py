@@ -48,11 +48,12 @@ class LogClusterUnavailable(LogClusterError):
 class LogClusterQueryError(LogClusterError):
     """The cluster answered by rejecting the query.
 
-    Bad SQL, a missing table, denied access, a limit the query itself exceeded:
-    a defect no retry can fix, and one that must stay visible. Note that the
-    status alone does not identify it - the server reports several of its own
-    verdicts on a query, among them 164, 158, 241 and 395, as a 500 - which is
-    why the classification keys on the exception code instead.
+    Bad SQL, a missing table, denied access, a limit the query itself exceeded,
+    a timeout or a socket timeout on a query the server accepted: a defect no
+    retry can fix, and one that must stay visible. Note that the status alone
+    does not identify it - the server reports several of its own verdicts on a
+    query, among them 164, 158, 241 and 395, as a 500 - which is why the
+    classification keys on the exception code instead.
     """
 
 
@@ -343,8 +344,14 @@ class LogCluster:
 
     EXCEPTION_CODE_HEADER = "X-ClickHouse-Exception-Code"
     # Codes the shared cluster returns about its own load rather than about the
-    # query. Anything else is its verdict on this very query: fail closed.
-    TRANSIENT_EXCEPTION_CODES = frozenset({159, 202, 209, 241})
+    # query: 202 for too many simultaneous queries, 241 for the server-wide
+    # memory-pressure windows. Anything else is its verdict on this very query
+    # - including the codes that merely look load-shaped, 159
+    # (`TIMEOUT_EXCEEDED`) and 209 (`SOCKET_TIMEOUT`), which the server reports
+    # about a query it accepted and would let a reporting `SELECT` that
+    # regressed into a timeout report the check green. Fail closed on all of
+    # them: an outage never answers at all, and that path does not reach here.
+    TRANSIENT_EXCEPTION_CODES = frozenset({202, 241})
 
     def _classify(self, response):
         """Tell an outage of the shared cluster from its verdict on the query.
