@@ -485,8 +485,9 @@ void StorageMergeTree::alter(
     checkMetadataDoesNotExceedMaxQuerySize(table_id, new_metadata, local_context);
 
     /// Set for a settings `ALTER` of a read-only table, see the branch below. Declared here so that
-    /// the window it opens is closed only after the post-commit tail at the end of this method has
-    /// restored the background workers, not already when the settings branch exits.
+    /// the window it opens is closed only when this method returns, after the post-commit tail at
+    /// its end has restored the background workers and done the disk cleanup, not already when the
+    /// settings branch exits.
     bool commit_of_readonly_table = false;
     SCOPE_EXIT({ if (commit_of_readonly_table) readonly_commit_in_flight = false; });
 
@@ -510,8 +511,8 @@ void StorageMergeTree::alter(
         /// this method enables them and reschedules the part loaders. A command that ran in that gap
         /// would see a writable table whose `waitForOutdatedPartsToBeLoaded` still takes the
         /// "nothing is loading" fast path, and could therefore drop or replace a partition before the
-        /// deferred outdated parts were loaded. So the flag is cleared by the tail, once the workers
-        /// are back, or by the scope guard above on any path that does not reach it.
+        /// deferred outdated parts were loaded. So the flag is cleared only by the scope guard above,
+        /// when the statement returns or unwinds, after the tail has brought the workers back.
         commit_of_readonly_table = (*old_storage_settings)[MergeTreeSetting::table_readonly];
         if (commit_of_readonly_table)
         {
@@ -945,13 +946,11 @@ void StorageMergeTree::alter(
             enableBackgroundWorkers();
             wakeupBackgroundWorkers();
 
-            /// The transition is complete: the table is durably writable and every worker that a
-            /// writable table runs is back, so the part loaders make progress again and the waits on
-            /// them block as they should. Open the table to the commands that `isTableReadonly` kept
-            /// out for the duration of the `ALTER`. The scope guard above would do it as well, but
-            /// only at the end of this method, after the disk cleanup below.
-            readonly_commit_in_flight = false;
-            commit_of_readonly_table = false;
+            /// The table is durably writable and every worker that a writable table runs is back, but
+            /// `readonly_commit_in_flight` stays set until the scope guard at the top of this method
+            /// clears it when the statement returns (or unwinds). `INSERT` does not take the `alter_lock`,
+            /// so clearing it here would let writes in while the disk cleanup below is still running,
+            /// contrary to the documented contract of `table_readonly`.
 
             /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
             if (!cleanup_thread.isCleanupCancelled())
