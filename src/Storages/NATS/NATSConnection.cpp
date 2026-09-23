@@ -3,6 +3,9 @@
 #include <IO/WriteHelpers.h>
 #include <Common/logger_useful.h>
 
+#include <boost/algorithm/string/join.hpp>
+
+
 namespace DB
 {
 
@@ -19,9 +22,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
         natsOptions_SetToken(options.get(), configuration.token.c_str());
-    if (!configuration.credentials.empty())
-        natsOptions_SetUserCredentialsFromMemory(options.get(), configuration.credentials.c_str());
-    else if (!configuration.credential_file.empty())
+    if (!configuration.credential_file.empty())
         natsOptions_SetUserCredentialsFromFiles(options.get(), configuration.credential_file.c_str(), nullptr);
 
     if (configuration.secure)
@@ -63,6 +64,12 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
+    /// Without this the library reports asynchronous errors - a rejected authentication, most
+    /// notably - by printing them to `stderr`, which leaves a table that has stopped consuming
+    /// without an explanation in the server log. The handler knows only the connection, not the
+    /// table: `StorageNATS` names the table when it replaces the connection the library closed,
+    /// and reports the error recorded on it, see `lastErrorForLog`.
+    natsOptions_SetErrorHandler(options.get(), errorCallback, this);
 }
 NATSConnection::~NATSConnection()
 {
@@ -74,9 +81,20 @@ String NATSConnection::connectionInfoForLog() const
 {
     if (!configuration.url.empty())
     {
-        return "url: [hidden]";
+        return "url : " + configuration.url;
     }
-    return "cluster: [hidden]";
+    return "cluster: " + boost::algorithm::join(configuration.servers, ", ");
+}
+
+String NATSConnection::lastErrorForLog()
+{
+    std::lock_guard lock(mutex);
+    if (!connection)
+        return "none";
+
+    const char * last_error = nullptr;
+    natsConnection_GetLastError(connection.get(), &last_error);
+    return last_error && *last_error ? last_error : "none";
 }
 
 bool NATSConnection::isConnected()
@@ -133,7 +151,7 @@ void NATSConnection::connectImpl(const Lock &)
     if (status != NATS_OK)
     {
         LOG_DEBUG(log, "New connection to {} failed. Nats status text: {}. Last error message: {}",
-                  connectionInfoForLog(), natsStatus_GetText(status), getNATSLastError());
+                  connectionInfoForLog(), natsStatus_GetText(status), nats_GetLastError(nullptr));
         return;
     }
     connection.reset(new_conection);
@@ -157,6 +175,19 @@ void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
 {
     LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
+}
+
+void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void * connection)
+{
+    const char * last_error = nullptr;
+    natsConnection_GetLastError(nats_connection, &last_error);
+
+    LOG_ERROR(
+        callback_logger,
+        "Connection {} got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
+        connection,
+        natsStatus_GetText(status),
+        last_error && *last_error ? last_error : "none");
 }
 
 }

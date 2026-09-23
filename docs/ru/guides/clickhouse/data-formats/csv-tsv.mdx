@@ -79,7 +79,7 @@ clickhouse-client -q "INSERT INTO sometable FORMAT CSVWithNames" < data_small_he
   ### CSV-файлы с пользовательскими разделителями
 </div>
 
-Если в CSV-файле в качестве разделителя используется не запятая, можно воспользоваться параметром [format&#95;csv&#95;delimiter](/ru/reference/settings/formats/format-csv#format_csv_delimiter), чтобы указать нужный символ:
+Если в CSV-файле в качестве разделителя используется не запятая, можно воспользоваться параметром [format&#95;csv&#95;delimiter](/ru/reference/settings/formats#format_csv_delimiter), чтобы указать нужный символ:
 
 ```sql
 SET format_csv_delimiter = ';'
@@ -91,7 +91,7 @@ SET format_csv_delimiter = ';'
   ### Пропуск строк в CSV-файле
 </div>
 
-Иногда при импорте данных из CSV-файла требуется пропустить определённое количество строк. Это можно сделать с помощью настройки [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ru/reference/settings/formats/input-format#input_format_csv_skip_first_lines):
+Иногда при импорте данных из CSV-файла требуется пропустить определённое количество строк. Это можно сделать с помощью настройки [input&#95;format&#95;csv&#95;skip&#95;first&#95;lines](/ru/reference/settings/formats#input_format_csv_skip_first_lines):
 
 ```sql
 SET input_format_csv_skip_first_lines = 10
@@ -119,7 +119,7 @@ SELECT count(*) FROM file('data-small.csv', CSV)
   ### Обработка значений NULL в CSV-файлах
 </div>
 
-Значения NULL могут кодироваться по-разному в зависимости от приложения, в котором был создан файл. По умолчанию ClickHouse использует `\N` в качестве значения NULL в CSV. Но это можно изменить с помощью параметра [format&#95;csv&#95;null&#95;representation](/ru/reference/settings/formats/format-csv#format_csv_null_representation).
+Значения NULL могут кодироваться по-разному в зависимости от приложения, в котором был создан файл. По умолчанию ClickHouse использует `\N` в качестве значения NULL в CSV. Но это можно изменить с помощью параметра [format&#95;csv&#95;null&#95;representation](/ru/reference/settings/formats#format_tsv_null_representation).
 
 Предположим, у нас есть следующий CSV-файл:
 
@@ -174,7 +174,7 @@ SELECT * FROM file('nulls.csv')
 clickhouse-client -q "INSERT INTO sometable FORMAT TabSeparated" < data_small.tsv
 ```
 
-Существует также формат [TabSeparatedWithNames](/ru/reference/formats/TabSeparated/TabSeparatedWithNames), который позволяет работать с файлами в формате TSV с заголовками. И, как и в случае с CSV, можно пропустить первые X строк с помощью параметра [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ru/reference/settings/formats/input-format#input_format_tsv_skip_first_lines).
+Существует также формат [TabSeparatedWithNames](/ru/reference/formats/TabSeparated/TabSeparatedWithNames), который позволяет работать с файлами в формате TSV с заголовками. И, как и в случае с CSV, можно пропустить первые X строк с помощью параметра [input&#95;format&#95;tsv&#95;skip&#95;first&#95;lines](/ru/reference/settings/formats#input_format_tsv_skip_first_lines).
 
 <div id="raw-tsv">
   ### Неэкранированный TSV
@@ -244,7 +244,7 @@ FORMAT CSVWithNames
   ### Экспорт CSV с пользовательскими разделителями
 </div>
 
-Если нужно использовать разделители, отличные от запятой, можно воспользоваться параметром [format&#95;csv&#95;delimiter](/ru/reference/settings/formats/format-csv#format_csv_delimiter):
+Если нужно использовать разделители, отличные от запятой, можно воспользоваться параметром [format&#95;csv&#95;delimiter](/ru/reference/settings/formats#format_csv_delimiter):
 
 ```sql
 SET format_csv_delimiter = '|'
@@ -271,7 +271,7 @@ FORMAT CSV
   ### Экспорт CSV для Windows
 </div>
 
-Если нужно, чтобы CSV-файл корректно работал в среде Windows, стоит включить параметр [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ru/reference/settings/formats/output-format#output_format_csv_crlf_end_of_line). В этом случае в качестве перевода строки будет использоваться `\r\n` вместо `\n`:
+Если нужно, чтобы CSV-файл корректно работал в среде Windows, стоит включить параметр [output&#95;format&#95;csv&#95;crlf&#95;end&#95;of&#95;line](/ru/reference/settings/formats#output_format_csv_crlf_end_of_line). В этом случае в качестве перевода строки будет использоваться `\r\n` вместо `\n`:
 
 ```sql
 SET output_format_csv_crlf_end_of_line = 1;
@@ -301,7 +301,7 @@ DESCRIBE file('data-small.csv', CSV)
 SET input_format_csv_use_best_effort_in_schema_inference = 0
 ```
 
-В этом случае все типы столбцов будут рассматриваться как `String`.
+В этом случае типы всех столбцов будут считаться `String`.
 
 <div id="exporting-and-importing-csv-with-explicit-column-types">
   ### Экспорт и импорт CSV с явным указанием типов столбцов

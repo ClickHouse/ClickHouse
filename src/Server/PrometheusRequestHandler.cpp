@@ -332,7 +332,11 @@ public:
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
         }
 
-        protocol.write(write_request.timeseries(), write_request.metadata());
+        if (write_request.timeseries_size())
+            protocol.writeTimeSeries(write_request.timeseries());
+
+        if (write_request.metadata_size())
+            protocol.writeMetricsMetadata(write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
@@ -422,7 +426,7 @@ public:
 };
 
 /// Handles the read-only query and metadata endpoints of the Prometheus HTTP API
-/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values, /api/v1/metadata).
+/// (/api/v1/query, /api/v1/query_range, /api/v1/series, /api/v1/labels, /api/v1/label/<name>/values).
 class PrometheusRequestHandler::QueryImpl : public ImplWithContext
 {
 public:
@@ -444,25 +448,9 @@ public:
             return false;
 
         /// Some parameters (default_format, everything used in the code above) do not belong to the
-        /// Settings class. `limit` is defined by Prometheus on these endpoints, so it must not fall through to the ClickHouse setting.
-        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "match[]", "limit", "limit_per_metric", "metric", "lookback_delta", "database", "table"};
+        /// Settings class.
+        static const NameSet reserved_param_names{"user", "password", "query", "time", "start", "end", "step", "database", "table"};
         return !reserved_param_names.contains(name);
-    }
-
-    /// Parses the optional `limit` parameter of the metadata endpoints: the maximum number of returned items,
-    /// with 0 (the default) meaning no limit.
-    UInt64 getLimitParam() const
-    {
-        String limit_param = params->get("limit", "");
-        if (limit_param.empty())
-            return 0;
-
-        Int64 parsed_limit = 0;
-        if (!tryParse(parsed_limit, limit_param.data(), limit_param.size()) || (parsed_limit < 0))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid value of the 'limit' parameter: '{}', expected a non-negative integer",
-                            limit_param);
-        return static_cast<UInt64>(parsed_limit);
     }
 
     void handlingRequestWithContext(HTTPServerRequest & request, HTTPServerResponse & response) override
@@ -496,11 +484,11 @@ public:
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
-                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
                 /// - limit=<number>: Maximum number of returned series
+                /// - lookback_delta=<number>: Override for the lookback period for this query.
 
                 PrometheusHTTPProtocolAPI::Params params
                 {
@@ -510,7 +498,6 @@ public:
                     .start_param = start,
                     .end_param = end,
                     .step_param = step,
-                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -519,7 +506,6 @@ public:
             {
                 String query = params->get("query", "");
                 String time = params->get("time", "");
-                String lookback_delta = params->get("lookback_delta", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -531,7 +517,6 @@ public:
                     .start_param = "",
                     .end_param = "",
                     .step_param = "",
-                    .lookback_delta_param = lookback_delta,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -546,30 +531,21 @@ public:
             }
             else if (uri_path.ends_with("/series"))
             {
-                Strings match = params->getAll("match[]");
+                String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
-                UInt64 limit = getLimitParam();
 
-                protocol.getSeries(getOutputStream(response), match, start, end, limit, query_finish_callback);
-            }
-            else if (uri_path.ends_with("/metadata"))
-            {
-                String metric = params->get("metric", "");
-                /// Both limit parameters are optional; negative values are accepted and mean "no limit", like in Prometheus.
-                Int64 limit = getMetadataLimitParam("limit");
-                Int64 limit_per_metric = getMetadataLimitParam("limit_per_metric");
+                /// TODO: Support limit=<number> optional parameter
 
-                protocol.getMetadata(getOutputStream(response), metric, limit, limit_per_metric, query_finish_callback);
+                protocol.getSeries(getOutputStream(response), match, start, end);
             }
             else if (uri_path.ends_with("/labels"))
             {
-                Strings match = params->getAll("match[]");
+                String match = params->get("match[]", "");
                 String start = params->get("start", "");
                 String end = params->get("end", "");
-                UInt64 limit = getLimitParam();
 
-                protocol.getLabels(getOutputStream(response), match, start, end, limit, query_finish_callback);
+                protocol.getLabels(getOutputStream(response), match, start, end);
             }
             else if (auto label_name = extractLabelValuesName(uri_path))
             {
@@ -612,20 +588,6 @@ public:
     }
 
 private:
-    /// Parses an optional integer parameter of the metadata endpoint; an absent parameter defaults to -1 (no limit).
-    Int64 getMetadataLimitParam(const String & name) const
-    {
-        String value = params->get(name, "");
-        if (value.empty())
-            return -1;
-
-        Int64 result = 0;
-        if (!tryParse(result, value.data(), value.size()))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                            "Invalid value of the '{}' parameter: '{}', expected an integer", name, value);
-        return result;
-    }
-
     /// Extracts the label name from a label-values endpoint path ".../label/<name>/values".
     /// Returns std::nullopt when `uri_path` isn't a valid label-values endpoint.
     static std::optional<String> extractLabelValuesName(std::string_view uri_path)
@@ -705,7 +667,7 @@ private:
         if (path.ends_with("/read"))
             return read_impl;
 
-        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values, metadata)
+        /// All other /api/v1/* endpoints (query, query_range, series, labels, label/<name>/values)
         /// are served by the Query implementation, which itself returns 404 for unknown paths.
         return query_impl;
     }

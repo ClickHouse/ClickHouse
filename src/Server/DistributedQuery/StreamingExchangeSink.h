@@ -2,9 +2,7 @@
 
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
-#include <Common/Epoll.h>
 #include <Common/Logger.h>
-#include <Common/WakeupFd.h>
 #include <Core/Types.h>
 #include <Processors/ISink.h>
 #include <Processors/Port.h>
@@ -23,7 +21,6 @@ public:
         , future_connection(std::move(future_connection_))
         , stream_name(std::move(stream_name_))
     {
-        wait_events_epoll.add(port_update_wakeup.fd());
     }
 
     ~StreamingExchangeSink() override;
@@ -32,7 +29,6 @@ public:
 
     Status prepare() override;
     std::tuple<int, uint32_t, Int64> scheduleForEvent() override;
-    void onUpdatePorts() override;
 
 private:
     void consume(Chunk chunk) override;
@@ -62,13 +58,6 @@ private:
     /// Extract socket from future connection
     void extractSocket();
 
-    /// (Re)register the socket in `wait_events_epoll`: always listen for inbound control
-    /// packets and errors; poll for writability only when there are unsent bytes, otherwise a
-    /// writable idle socket would wake the executor in a busy loop.
-    void updateSocketWaitEvents();
-
-    bool hasUnsentBytes() const { return current_send_position_in_buffer < current_send_buffer.size() || out->count() > 0; }
-
     FutureConnectionPtr future_connection;
     std::unique_ptr<Poco::Net::StreamSocket> socket;
     const String stream_name;
@@ -95,15 +84,6 @@ private:
     /// Accumulator for the inbound NoMoreDataNeeded packet (single UInt64, no body).
     UInt64 incoming_packet_type = 0;
     size_t incoming_packet_bytes_filled = 0;
-
-    /// Combines the socket and the port-update wakeup into one fd that the executor polls
-    /// while the sink waits in `Async`.
-    Epoll wait_events_epoll;
-    /// Written by `onUpdatePorts` (possibly from another thread) to wake the waiting sink
-    /// when its input port is updated; drained in `work`.
-    WakeupFd port_update_wakeup;
-    /// Events the socket is currently registered with in `wait_events_epoll`.
-    uint32_t registered_socket_events = 0;
 
     LoggerPtr log = getLogger("StreamingExchangeSink");
 };

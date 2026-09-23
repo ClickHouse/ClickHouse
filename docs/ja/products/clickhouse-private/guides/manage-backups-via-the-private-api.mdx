@@ -1,0 +1,200 @@
+---
+noindex: true
+title: "Private API によるバックアップ管理"
+sidebarTitle: "API によるバックアップ管理"
+description: "Private API を使用して ClickHouse のバックアップを作成、監視、スケジュール、復元します。"
+---
+
+Private API を使用して ClickHouse のバックアップを作成、監視、スケジュール、復元します。
+
+API を使用せずに手動でバックアップ操作を行う場合は、[Backup and Restore](/ja/products/clickhouse-private/guides/back-up-and-restore-clickhouse-manual) を参照してください。
+
+<div id="prerequisites">
+  ## 前提条件
+</div>
+
+* ClickHouse Private API がインストール済みで、アクセス可能であること (例：`http://localhost:8080/` へのポートフォワード経由)
+* 少なくとも 1 つの ClickHouse クラスターがデプロイされていること (このガイドでは `default-xx-01` を使用)
+
+<div id="create-a-full-backup">
+  ## フルバックアップを作成する
+</div>
+
+```json
+{
+    "incremental": false
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    -d '{"incremental": false}'
+```
+
+レスポンスには、バックアップを識別するUUIDが含まれます。
+
+<div id="check-backup-status">
+  ## バックアップのステータスを確認する
+</div>
+
+UUID を指定して特定のバックアップを照会します：
+
+```bash
+curl "http://localhost:8080/api/v1/backups/{uuid}?instance_id=default-xx-01"
+```
+
+バックアップが正常に完了すると、`status.state` フィールドの値は `Ready` になります。
+
+<div id="list-all-backups">
+  ## すべてのバックアップを一覧表示する
+</div>
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01"
+```
+
+このエンドポイントは、絞り込みとソート用のクエリパラメータに対応しています。たとえば、直近で成功したバックアップを見つけるには:
+
+```bash
+curl "http://localhost:8080/api/v1/backups?instance_id=default-xx-01&status__state__eq=Ready&sort=status__finishTime&limit=1"
+```
+
+<div id="create-incremental-backups">
+  ## インクリメンタルバックアップを作成する
+</div>
+
+インクリメンタルバックアップは、前回のバックアップ以降に変更されたデータのみを対象とし、フルバックアップを起点とするチェーンを構成します。
+
+```json
+{
+    "incremental": true,
+    "baseBackupUuid": "<uuid of previous backup>"
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="back-up-specific-tables-or-databases">
+  ## 特定のテーブルまたはデータベースをバックアップする
+</div>
+
+`databases` フィールドと `tables` フィールドを使って、バックアップする対象を指定できます。テーブル名は完全修飾名 (つまり `db.table`) で指定する必要があります。
+
+```json
+{
+    "incremental": false,
+    "databases": ["mydb"],
+    "tables": ["mydb2.table"]
+}
+```
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups?instance_id=default-xx-01" \
+    -H "Content-Type: application/json" \
+    --data-binary "@backup.json"
+```
+
+<div id="schedule-backups-with-a-cronjob">
+  ## CronJob を使ってバックアップを定期的に作成する
+</div>
+
+Kubernetes の CronJob を使用して、バックアップの作成を自動化します。
+
+```yaml
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: clickhouse-daily-backup
+  namespace: clickhouse-private-api
+spec:
+  schedule: "0 2 * * *"  # Run daily at 2 AM
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          containers:
+          - name: backup
+            image: curlimages/curl:latest
+            command:
+            - /bin/sh
+            - -c
+            - |
+              curl -X POST "http://clickhouse-private-api-airgap-management:8080/api/v1/backups?instance_id=default-xx-01" \
+                -H "Content-Type: application/json" \
+                -d '{
+                  "incremental": false
+                }'
+          restartPolicy: OnFailure
+```
+
+これにより、毎日午前2時にフルバックアップが実行されるようにスケジュールされます。`http://clickhouse-private-api-airgap-management:8080` 経由で Private API にアクセスできることを前提としています。
+
+<div id="restore-from-a-backup">
+  ## バックアップからの復元
+</div>
+
+<div id="via-the-api">
+  ### API 経由
+</div>
+
+API では、バックアップを別の対象インスタンスに復元するための復元用エンドポイントが提供されています。
+
+```bash
+curl -X POST "http://localhost:8080/api/v1/backups/{uuid}/restore?instance_id=default-xx-01&target_instance_id=default-xx-02"
+```
+
+安全のため、API では同じインスタンスへの復元は許可されていません。元のクラスターに負荷がかかりすぎるのを避けるため、復元先として新しいクラスターを立ち上げることを推奨します。
+
+<div id="manual-sql-alternative">
+  ### SQLを使った手動の代替方法
+</div>
+
+より細かく制御したい場合は、SQL を使って直接復元します。たとえば、単一のデータベースを新しい名前で復元するには、次のようにします。
+
+```sql
+RESTORE DATABASE example
+AS example_restored
+FROM S3('https://<bucket_name>.s3.amazonaws.com/backups/<uuid>')
+```
+
+<div id="manage-backup-lifecycle">
+  ## バックアップのライフサイクル管理
+</div>
+
+<div id="s3-lifecycle-policy">
+  ### S3 ライフサイクルポリシー
+</div>
+
+S3 のライフサイクルポリシーを使用すると、古いバックアップを自動的に移行し、期限切れにできます。
+
+```json
+{
+  "Rules": [
+    {
+      "ID": "ClickHouseBackupLifecycle",
+      "Prefix": "backups/",
+      "Status": "Enabled",
+      "Transitions": [
+        { "Days": 7, "StorageClass": "STANDARD_IA" },
+        { "Days": 30, "StorageClass": "GLACIER_IR" }
+      ],
+      "Expiration": { "Days": 90 }
+    }
+  ]
+}
+```
+
+この例では、バックアップは7日後にStandard-IAに、30日後にGlacierに移行され、90日後に削除されます。
+
+<div id="backup-chain-integrity-warning">
+  ### バックアップチェーンの整合性に関する警告
+</div>
+
+S3 のライフサイクルポリシーは、インクリメンタルバックアップチェーンを考慮しません。チェーンの起点となるフルバックアップが、インクリメンタルバックアップからまだ参照されている状態で削除されると、それらのインクリメンタルバックアップは復元できなくなります。
+
+フルバックアップの保持期間は、フルバックアップの実行間隔より長くなるようにしてください。バックアップを復元できることを定期的に確認してください。

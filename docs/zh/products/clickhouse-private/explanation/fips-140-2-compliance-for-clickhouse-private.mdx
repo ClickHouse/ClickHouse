@@ -1,0 +1,96 @@
+---
+noindex: true
+title: "ClickHouse Private 的 FIPS 140-2 合规性"
+sidebarTitle: "FIPS 合规性"
+description: "本文说明 FIPS 140-2 合规性在 ClickHouse Private 中的含义，以及以符合 FIPS 标准的配置进行部署时会发生哪些变化。"
+---
+
+本文说明 FIPS 140-2 合规性在 ClickHouse Private 中的含义，以及以符合 FIPS 标准的配置进行部署时会发生哪些变化。
+
+<div id="what-fips-140-2-means-for-clickhouse-private">
+  ## FIPS 140-2 对 ClickHouse Private意味着什么
+</div>
+
+FIPS 140-2 (联邦信息处理标准) 是美国政府针对密码模块制定的一项标准。在政府环境 (例如 AWS GovCloud) 中运营的组织，或处理敏感政府数据的组织，通常需要确保所有加密操作都使用经过 FIPS 验证的算法和实现。
+
+当 ClickHouse Private以 FIPS 模式部署时，所有加密操作——包括组件之间的 TLS 连接、与 AWS 服务的连接以及证书生成——都必须使用符合 FIPS 标准的算法和库。
+
+<div id="what-changes-in-a-fips-deployment">
+  ## FIPS 部署有哪些不同
+</div>
+
+FIPS 部署与标准的 ClickHouse Private部署在几个关键方面有所不同：
+
+<div id="fips-server-images">
+  ### FIPS 服务器镜像
+</div>
+
+ClickHouse server 和 Keeper 镜像必须使用 FIPS 专用版本。这些版本通过镜像标签中的 `-fips` 后缀来标识 (例如，server 使用 `25.12.1.1497-fips`，keeper 使用 `26.2.1.258-fips`) 。FIPS 镜像基于经过 FIPS 验证的加密库构建。operator 镜像没有单独的 FIPS 版本。
+
+<div id="fips-ecr-endpoints">
+  ### FIPS ECR 端点
+</div>
+
+从亚马逊 ECR 拉取容器镜像时，必须使用符合 FIPS 标准的 ECR 端点。这些端点的格式为 `0000000000.dkr-ecr-fips.<region>.on.aws`，而不是标准的 ECR 主机名。
+
+<div id="fips-s3-endpoints">
+  ### FIPS S3 端点
+</div>
+
+ClickHouse 将数据存储在 S3 中；在 FIPS 模式下，必须配置符合 FIPS 标准的 S3 端点。AWS 在 [https://aws.amazon.com/compliance/fips/](https://aws.amazon.com/compliance/fips/) 上发布了各项服务和各个区域的 FIPS 端点列表。
+
+<div id="s3-bucket-naming-restriction">
+  ### S3 bucket 命名限制
+</div>
+
+在 FIPS 模式下，**S3 bucket 名称中不得包含句点** (`.`) 。之所以有此限制，是因为 FIPS S3 端点要求使用虚拟主机式寻址 (例如 `https://my-bucket.s3-fips.us-gov-west-1.amazonaws.com`) 。当 bucket 名称中包含句点时，会导致虚拟主机式 URL 的 TLS 证书校验失败，因为这些句点会增加额外的子域级别，与通配符证书不匹配。
+
+这是设置 S3 基础设施时需要特别注意的一点。如果现有 bucket 的名称中包含句点，就无法将其与 FIPS S3 端点配合使用。
+
+<div id="certificate-requirements">
+  ## 证书要求
+</div>
+
+FIPS 部署要求使用 TLS 证书，以便在所有 ClickHouse 组件之间进行加密通信。必须生成三组证书：
+
+| Certificate Set | Purpose                                               | Files                      |
+| --------------- | ----------------------------------------------------- | -------------------------- |
+| **服务器**         | 用于保护与 clickhouse-server 的入站连接                         | `server.crt`, `server.key` |
+| **Keeper**      | 用于保护与 clickhouse-keeper 的连接                           | `keeper.crt`, `keeper.key` |
+| **客户端**         | 供 clickhouse-server 用于出站连接 (例如连接到 keeper 或 HTTPS 字典)  | `client.crt`, `client.key` |
+
+这三组证书均由同一个证书颁发机构 (`ca.crt`) 签名。
+
+<div id="fips-compliant-algorithm-requirements">
+  ### 符合 FIPS 标准的算法要求
+</div>
+
+当需要符合 FIPS 合规要求时，所有证书都必须：
+
+* **使用符合 FIPS 标准的算法生成** -- 例如，使用密钥长度至少为 3072 位的 RSA。
+* **在启用 FIPS 的环境中创建** -- 在密钥生成和签名过程中，加密操作必须使用经过 FIPS 验证的模块。一种做法是使用启用了 FIPS 模式的 Red Hat UBI 容器。
+* **由证书颁发机构签名**，且该机构自身的私钥也必须以符合 FIPS 标准的方式生成。
+
+<div id="subject-alternative-names-sans">
+  ### 主题备用名称 (SAN)
+</div>
+
+每个证书都必须包含正确的 SAN 条目，以确保 Kubernetes 集群内组件间通信的 TLS 验证能够顺利通过。SAN 格式如下：
+
+* Server: `*.c-<cluster-name>-server-headless.ns-<cluster-name>.svc.cluster.local` and `c-<cluster-name>-server-any.ns-<cluster-name>.svc.cluster.local`
+* Keeper: `*.c-<cluster-name>-keeper-headless.ns-<cluster-name>.svc.cluster.local`
+
+必须为每个正在部署的 ClickHouse 集群创建一组唯一的证书 (CA 证书除外) 。
+
+<div id="certificate-expiration">
+  ### 证书到期
+</div>
+
+证书都有明确的有效期。你应建立一套流程来监控证书的到期时间，并在证书到期前完成轮换。常见的默认有效期为 365 天，但应根据所在组织的安全要求进行调整。
+
+<div id="further-reading">
+  ## 延伸阅读
+</div>
+
+* 如需了解如何逐步生成符合 FIPS 标准的证书，请参阅[配置 FIPS 证书](/zh/products/clickhouse-private/guides/generate-fips-compliant-certificates-for-clickhouse)操作指南。
+* 如需了解 PKI 和 mTLS 在 ClickHouse Private 中的工作原理——包括证书用途、验证模式和轮换行为——请参阅[ClickHouse Private 中的 PKI 和 mTLS](/zh/products/clickhouse-private/explanation/pki-and-mtls-in-clickhouse-private)。

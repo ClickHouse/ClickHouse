@@ -44,54 +44,9 @@ MergeTreeDataPartWide::MergeTreeDataPartWide(
     const String & name_,
     const MergeTreePartInfo & info_,
     const MutableDataPartStoragePtr & data_part_storage_,
-    const IMergeTreeDataPart * parent_part_,
-    PartDirIntent intent)
-    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Wide, parent_part_, intent)
+    const IMergeTreeDataPart * parent_part_)
+    : IMergeTreeDataPart(storage_, storage_settings, name_, info_, data_part_storage_, Type::Wide, parent_part_)
 {
-}
-
-Strings MergeTreeDataPartWide::getPreferredFileOrder() const
-{
-    Strings preferred_order = COMMON_METADATA_FILES;
-
-    /// Files for partition key columns MinMax indices
-    preferred_order.append_range(getMinMaxIndex()->getProbablyWrittenFiles(*this));
-
-    /// First column's marks file is used for loadIndexGranularity, so it is better to have it first.
-    const auto & part_columns = getColumns();
-    auto first_column_file = getFileNameForColumn(part_columns.front());
-    if (first_column_file)
-        preferred_order.push_back(*first_column_file + getMarksFileExtension());
-
-    preferred_order.push_back("primary" + getIndexExtension(true));
-    preferred_order.push_back("primary" + getIndexExtension(false));
-
-    /// Files with statistics. Statistics are written as separate files
-    /// in packed parts to avoid double bufferization in packed archive.
-    /// Move statistics files before marks and data files.
-    for (const auto & [filename, _] : checksums.files)
-    {
-        if (filename.ends_with(STATS_FILE_SUFFIX))
-            preferred_order.push_back(filename);
-    }
-
-    /// Move all marks for the rest of columns before all data files.
-    for (auto column_it = std::next(part_columns.begin()); column_it != part_columns.end(); ++column_it)
-    {
-        auto column_file = getFileNameForColumn(*column_it);
-        if (column_file)
-            preferred_order.push_back(*column_file + getMarksFileExtension());
-    }
-
-    /// Files for projection columns
-    auto metadata_snapshot = storage.getInMemoryMetadataPtr(CurrentThread::tryGetQueryContext(), false);
-    for (const auto & projection : metadata_snapshot->getProjections())
-    {
-        for (const String & name : projection.sample_block.getNames())
-            preferred_order.push_back(name + getMarksFileExtension());
-    }
-
-    return preferred_order;
 }
 
 MergeTreeReaderPtr createMergeTreeReaderWide(
@@ -201,13 +156,13 @@ ColumnSize MergeTreeDataPartWide::getColumnSizeImpl(
     if (checksums.empty())
         return size;
 
-    if (column.type->hasDynamicSubcolumns() && !getColumnsSubstreams().empty())
+    if (column.type->hasDynamicSubcolumns() && !columns_substreams.empty())
     {
         auto column_position = getColumnPosition(column.name);
         if (!column_position)
             return size;
 
-        const auto & substreams = getColumnsSubstreams().getColumnSubstreams(*column_position);
+        const auto & substreams = columns_substreams.getColumnSubstreams(*column_position);
         for (const auto & substream : substreams)
         {
             if (auto stream_name = IMergeTreeDataPart::getStreamNameOrHash(substream, DATA_FILE_EXTENSION, checksums))
@@ -313,14 +268,14 @@ void MergeTreeDataPartWide::loadIndexGranularityImpl(
 
 void MergeTreeDataPartWide::loadIndexGranularity()
 {
-    if (getColumns().empty())
+    if (columns.empty())
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART, "No columns in part {}", name);
 
-    auto any_column_filename = getFileNameForColumn(getColumns().front());
+    auto any_column_filename = getFileNameForColumn(columns.front());
     if (!any_column_filename)
         throw Exception(ErrorCodes::NO_FILE_IN_DATA_PART,
             "There are no files for column {} in part {}",
-            getColumns().front().name, getDataPartStorage().getFullPath());
+            columns.front().name, getDataPartStorage().getFullPath());
 
     loadIndexGranularityImpl(index_granularity, index_granularity_info, getDataPartStorage(), *any_column_filename, *storage.getSettings());
 }
@@ -375,7 +330,8 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
     if (!mark_cache)
         return;
 
-    getSerializations().forEach([&](const String & column_name, const SerializationPtr & serialization)
+    const auto & serializations = getSerializations();
+    for (const auto & [column_name, serialization] : serializations)
     {
         serialization->enumerateStreams([&](const auto & subpath)
         {
@@ -387,7 +343,7 @@ void MergeTreeDataPartWide::removeMarksFromCache(MarkCache * mark_cache) const
             auto key = MarkCache::hash(getDataPartStorage().getDiskName() + ":" + (fs::path(getRelativePathOfActivePart()) / mark_path).string());
             mark_cache->remove(key);
         });
-    });
+    }
 }
 
 bool MergeTreeDataPartWide::isStoredOnRemoteDisk() const
@@ -432,7 +388,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 /// This is more reliable than enumerateStreams for types with dynamic structure (JSON, Dynamic)
                 /// because enumerateStreams requires deserialization state to correctly enumerate dynamic substreams.
                 size_t col_idx = 0;
-                for (const auto & name_type : getColumns())
+                for (const auto & name_type : columns)
                 {
                     const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                     for (const auto & substream : substreams)
@@ -467,7 +423,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                 /// against checksums.txt.
                 ISerialization::EnumerateStreamsSettings settings;
                 settings.enumerate_dynamic_streams = false;
-                for (const auto & name_type : getColumns())
+                for (const auto & name_type : columns)
                 {
                     auto serialization = getSerialization(name_type.name);
                     auto data = ISerialization::SubstreamData(serialization)
@@ -505,7 +461,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
         {
             /// Use columns_substreams.txt as the source of truth.
             std::optional<UInt64> marks_size;
-            for (size_t col_idx = 0; col_idx != getColumns().size(); ++col_idx)
+            for (size_t col_idx = 0; col_idx != columns.size(); ++col_idx)
             {
                 const auto & substreams = cols_substreams.getColumnSubstreams(col_idx);
                 for (const auto & substream : substreams)
@@ -539,7 +495,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
             ISerialization::EnumerateStreamsSettings settings;
             settings.enumerate_dynamic_streams = false;
             std::optional<UInt64> marks_size;
-            for (const auto & name_type : getColumns())
+            for (const auto & name_type : columns)
             {
                 auto serialization = getSerialization(name_type.name);
                 auto data = ISerialization::SubstreamData(serialization)
@@ -639,7 +595,7 @@ std::optional<String> MergeTreeDataPartWide::getFileNameForColumn(const NameAndT
 void MergeTreeDataPartWide::calculateEachColumnSizes(ColumnSizeByName & each_columns_size, ColumnSize & total_size) const
 {
     std::unordered_set<String> processed_substreams;
-    for (const auto & column : getColumns())
+    for (const auto & column : columns)
     {
         ColumnSize size = getColumnSizeImpl(column, &processed_substreams);
         each_columns_size[column.name] = size;

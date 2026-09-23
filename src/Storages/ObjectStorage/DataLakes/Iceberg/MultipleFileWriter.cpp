@@ -5,7 +5,6 @@
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <IO/WriteBufferFromFileBase.h>
 
 
 namespace DB
@@ -28,7 +27,7 @@ MultipleFileWriter::MultipleFileWriter(
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
     , stats(schema_)
-    , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
+    , column_mapper(std::make_shared<ColumnMapper>())
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -37,6 +36,7 @@ MultipleFileWriter::MultipleFileWriter(
     , write_format(std::move(write_format_))
     , sample_block(sample_block_)
 {
+    column_mapper->setStorageColumnEncoding(Iceberg::IcebergSchemaProcessor::traverseSchema(schema_));
 }
 
 void MultipleFileWriter::startNewFile()
@@ -60,8 +60,6 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
-    /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
-    /// the column mapper, so it covers the compaction/mutation rewrite paths too.
     FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
         write_format, *buffer, *sample_block, context, format_settings, format_filter_info);
@@ -86,21 +84,8 @@ void MultipleFileWriter::finalize()
     output_format->flush();
     output_format->finalize();
     buffer->finalize();
-    auto buffer_bytes = buffer->count();
-    UInt64 file_bytes = 0;
-    if (buffer_bytes > 0)
-    {
-        file_bytes = buffer_bytes;
-        total_bytes += file_bytes;
-    }
-    else if (!data_file_names.empty())
-    {
-        /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
-        /// Fall back to querying the actual object size.
-        auto obj_metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file_names.back()), /*with_tags=*/false);
-        file_bytes = obj_metadata.size_bytes;
-        total_bytes += file_bytes;
-    }
+    UInt64 file_bytes = buffer->count();
+    total_bytes += file_bytes;
 
     if (current_file_stats)
         completed_file_stats.push_back(std::move(current_file_stats));

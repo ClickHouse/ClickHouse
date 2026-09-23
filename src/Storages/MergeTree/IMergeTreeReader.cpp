@@ -61,7 +61,6 @@ IMergeTreeReader::IMergeTreeReader(
     , storage_settings(storage_settings_)
     , storage_snapshot(storage_snapshot_)
     , all_mark_ranges(all_mark_ranges_)
-    , last_mark_to_read(getLastMark(all_mark_ranges_))
     , alter_conversions(data_part_info_for_read->getAlterConversions())
     , original_requested_columns(columns_)
     , converted_requested_columns((*storage_settings_)[MergeTreeSetting::share_nested_offsets]
@@ -107,11 +106,6 @@ bool IMergeTreeReader::isColumnDroppedByPendingMutation(size_t pos) const
 
     bool share_nested = (*storage_settings)[MergeTreeSetting::share_nested_offsets];
     return alter_conversions && alter_conversions->isColumnDropped(columns_to_read[pos].getNameInStorage(), share_nested);
-}
-
-bool IMergeTreeReader::isSystemColumnInvalidated(size_t pos) const
-{
-    return data_part_info_for_read->isSystemColumnInvalidated(columns_to_read[pos].getNameInStorage());
 }
 
 void IMergeTreeReader::fillVirtualColumns(Columns & columns, size_t rows) const
@@ -447,7 +441,7 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
         {
             if (res_columns[pos] == nullptr)
                 continue;
-            const auto & column_in_part = columns_to_read[pos];
+            auto column_in_part = getColumnInPart(*name_and_type);
             if (column_in_part.type->equals(*name_and_type->type))
                 continue;
             copy_block.insert({res_columns[pos], column_in_part.type, name_and_type->name});
@@ -476,12 +470,6 @@ void IMergeTreeReader::performRequiredConversions(Columns & res_columns) const
             + " of type " + part_storage->getDiskType() + ")");
         throw;
     }
-}
-
-void IMergeTreeReader::updateAllMarkRanges(const MarkRanges & ranges)
-{
-    all_mark_ranges = ranges;
-    last_mark_to_read = getLastMark(all_mark_ranges);
 }
 
 std::optional<IMergeTreeReader::ColumnForOffsets>
@@ -555,17 +543,18 @@ void IMergeTreeReader::checkNumberOfColumns(size_t num_columns_to_read) const
             num_columns_to_read);
 }
 
-String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read) const
+String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, size_t max_rows_to_read, size_t offset) const
 {
     const auto & data_part_storage = data_part_info_for_read->getDataPartStorage();
     return fmt::format(
-        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {})",
+        "(while reading from part {} in table {} located on disk {} of type {}, from mark {} with max_rows_to_read = {}, offset = {})",
         data_part_storage->getFullPath(),
         data_part_info_for_read->getTableName(),
         data_part_storage->getDiskName(),
         data_part_storage->getDiskType(),
         from_mark,
-        max_rows_to_read);
+        max_rows_to_read,
+        offset);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(
