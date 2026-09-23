@@ -1033,7 +1033,7 @@ When moving conditions from WHERE to PREWHERE, allow reordering them to optimize
 )", 0) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
-Allows you to specify the wait behavior for actions that are to be executed on replicas by [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize) or [`TRUNCATE`](/reference/statements/truncate) queries.
+Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
 
 Possible values:
 
@@ -1045,7 +1045,7 @@ Possible values:
 Cloud default value: `0`.
 
 <Note>
-`alter_sync` is applicable to `Replicated` and `SharedMergeTree` tables only, it does nothing to alter non `Replicated` or `Shared` tables.
+`alter_sync` applies to `ALTER` queries on `MergeTree`-family tables. Values `2` and `3` wait for replicas only on `ReplicatedMergeTree` and `SharedMergeTree` tables.
 </Note>
 )", 0, replication_alter_partitions_sync) \
     DECLARE(Int64, replication_wait_for_inactive_replica_timeout, 120, R"(
@@ -3776,6 +3776,8 @@ Enables the `fuzzQuery` function that applies random AST mutations to a query st
     \
     DECLARE(UInt64, readonly, 0, R"(
 0 - no read-only restrictions. 1 - only read requests, as well as changing explicitly allowed settings. 2 - only read requests, as well as changing settings, except for the 'readonly' setting.
+
+Do not make `readonly` itself changeable under `readonly = 1`: a session can then clear it with `SET readonly = 0`, unless the same constraint also forbids `0`. See [constraints on settings](/concepts/features/configuration/settings/constraints-on-settings#readonly-changeable-in-readonly).
 )", 0) \
     \
     DECLARE(UInt64, max_rows_in_set, 0, R"(
@@ -5153,7 +5155,7 @@ Enabled by default.
 If it is set to true, it will respect aliases in WHERE/GROUP BY/ORDER BY, that will help with partition pruning/secondary indexes/optimize_aggregation_in_order/optimize_read_in_order/optimize_trivial_count
 )", 0) \
     DECLARE(UInt64, mutations_sync, 0, R"(
-Allows to execute `ALTER TABLE ... UPDATE|DELETE|MATERIALIZE INDEX|MATERIALIZE PROJECTION|MATERIALIZE COLUMN|MATERIALIZE STATISTICS` queries ([mutations](/reference/statements/alter/index#mutations)) synchronously.
+Controls how the client waits for mutations created by [`ALTER TABLE`](/reference/statements/alter/index) operations such as `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, and `MATERIALIZE STATISTICS`.
 
 Possible values:
 
@@ -5549,11 +5551,6 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 
 </profiles>
 ```
-)", 0) \
- DECLARE(Bool, validate_mutation_query, true, R"(
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query can cause mutations to get stuck, requiring manual intervention.
-
-Only change this setting if you encounter a backward-incompatible bug.
 )", 0) \
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
@@ -7160,6 +7157,11 @@ Use in-memory buffer for correlated subquery input to avoid its repeated evaluat
     DECLARE(Bool, optimize_qbit_distance_function_reads, true, R"(
 Replace distance functions on `QBit` data type with equivalent ones that only read the columns necessary for the calculation from the storage.
 )", 0) \
+    DECLARE(Bool, qbit_one_bit_symmetric_distance, false, R"(
+When a `QBit` distance function (`L2DistanceTransposed`, `cosineDistanceTransposed`, `dotProductTransposed` and their `...Quantized` variants) is called with precision 1, also reduce the reference vector to the signs of its elements and derive the result from the Hamming distance between the two sign vectors, computed with XOR and popcount.
+
+By default the reference vector keeps its full precision at precision 1 and only the stored vector is reduced to signs (an asymmetric distance). The symmetric distance is several times faster, but it ignores the magnitudes of the reference elements: a dimension where the reference is large counts as much as one where it is close to zero.
+)", 0) \
     \
     DECLARE(UInt64, regexp_max_matches_per_row, 1000, R"(
 Sets the maximum number of matches for a single regular expression per row. Use it to protect against memory overload when using greedy regular expression in the [extractAllGroupsHorizontal](/reference/functions/regular-functions/string-search-functions#extractAllGroupsHorizontal) function.
@@ -8736,7 +8738,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. The derived comparisons are wrapped in `indexHint`: they participate in index analysis (primary key, partition key, skipping indexes) and prune the read set, but cost nothing per row and do not affect PREWHERE. A comparison derived through expressions of different tables stays executable (`(t1.a < t2.b) AND (t2.b < 5)` derives plain `t1.a < 5`): it is the only condition that can be pushed below the join, where it filters a join input the original chain cannot reach. Derived comparisons that contradict an existing condition are also added as plain conditions, so the `AND` folds to `false`.
 )", 0) \
     DECLARE(Bool, optimize_redundant_comparisons, true, R"(
-Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
+Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`. A contradiction between two `equals` on the same expression (for example, `a = 1 AND a = 2`) is detected independently of this setting.
 )", 0) \
     DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
 Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
@@ -9597,6 +9599,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
     MAKE_OBSOLETE(M, Bool, allow_deprecated_snowflake_conversion_functions, false) \
+    MAKE_OBSOLETE(M, Bool, validate_mutation_query, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \
