@@ -5,6 +5,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTPartition.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/TokenIterator.h>
 #include <Common/checkStackSize.h>
@@ -92,6 +93,33 @@ ASTPtr JSONObjectReader::readExpressionChild(const char * key) const
     if (child)
         rejectArgumentlessFunctions(*child, key);
     return child;
+}
+
+ASTs JSONObjectReader::readExpressionChildren() const
+{
+    ASTs result = readChildren();
+    for (const auto & child : result)
+    {
+        if (child)
+            rejectArgumentlessFunctions(*child, "children");
+    }
+    return result;
+}
+
+ASTPtr JSONObjectReader::readFunctionChildWithExpressionArguments(const char * key) const
+{
+    ASTPtr child = readChildOfType<ASTFunction>(key);
+    if (child)
+    {
+        if (const auto & arguments = child->as<ASTFunction &>().arguments)
+            rejectArgumentlessFunctions(*arguments, key);
+    }
+    return child;
+}
+
+void JSONObjectReader::screenArgumentlessFunctions(const IAST & ast, const char * key)
+{
+    rejectArgumentlessFunctions(ast, key);
 }
 
 ASTPtr JSONObjectReader::readStringLiteralChild(const char * key) const

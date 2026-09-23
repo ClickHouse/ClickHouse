@@ -30,6 +30,7 @@ namespace ErrorCodes
 extern const int BAD_TYPE_OF_FIELD;
 extern const int BAD_GET;
 extern const int CANNOT_RESTORE_FROM_FIELD_DUMP;
+extern const int CANNOT_PARSE_NUMBER;
 extern const int DECIMAL_OVERFLOW;
 extern const int INCORRECT_DATA;
 extern const int NOT_IMPLEMENTED;
@@ -843,6 +844,9 @@ Field Field::resolveNumberLiteral() const
 
     const auto & num = get<NumberLiteral>();
     const String & s = num.value;
+
+    if (s.empty())
+        throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Empty numeric literal");
 
     /// Check if this looks like a pure integer (no decimal point or exponent).
     bool is_integer = true;

@@ -470,7 +470,7 @@ SET TIME ZONE 'America/New_York';
 SELECT getSetting('session_timezone');
 ```
 
-The timezone value must be a valid name from the [IANA Time Zone Database](https://www.iana.org/time-zones). An invalid timezone name will result in an error.
+The time zone value must be a name that `system.time_zones` lists - the [IANA Time Zone Database](https://www.iana.org/time-zones) that is shipped with the server - or a fixed offset spelled `Fixed/UTC±HH:MM:SS`. Any other value, including a name that only the operating system's time zone database has, results in an error.
 
 For more information about the `session_timezone` setting, see [session_timezone](/reference/settings/session-settings/other#session_timezone).
 
