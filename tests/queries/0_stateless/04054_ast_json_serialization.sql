@@ -1286,8 +1286,10 @@ SELECT 'TableOverride' AS t, 1; -- placeholder: ASTTableOverride is tested via r
 -- Fields: name(string), children(array)
 -- ==========================================================================
 
--- ASTForeignKeyDeclaration is present in the parser but not widely used
-SELECT 'ForeignKeyDeclaration' AS t, 1; -- placeholder: tested via round-trip below
+-- The parser drops the node, so `parseQueryToJSON` never emits this type; deserializing it is rejected
+-- (05229_ast_json_foreign_key_declaration_rejected).
+SELECT 'ForeignKeyDeclaration' AS t,
+    position(parseQueryToJSON('CREATE TABLE child (id Int32, pid Int32, FOREIGN KEY (pid) REFERENCES parent (pid)) ENGINE = MergeTree'), 'ForeignKeyDeclaration') AS present;
 
 
 -- ==========================================================================

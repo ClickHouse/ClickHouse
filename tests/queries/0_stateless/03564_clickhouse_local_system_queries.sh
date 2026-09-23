@@ -121,4 +121,16 @@ $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR MARK CACHE;"
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR UNCOMPRESSED CACHE;"
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR QUERY CACHE;"
 $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR SCHEMA CACHE;"
-$CLICKHOUSE_LOCAL --query "SYSTEM CLEAR FORMAT SCHEMA CACHE;"
+
+# The format schema cache of clickhouse-local is `__cache__` under the working directory, and the
+# unscoped clear deletes every regular file in it, so it must not run where a parallel run shares it.
+WORKDIR="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
+rm -rf "$WORKDIR"
+mkdir -p "$WORKDIR/__cache__"
+# The clear must delete this sentinel, which cannot happen if the statement runs anywhere else.
+touch "$WORKDIR/__cache__/sentinel.capnp"
+(cd "$WORKDIR" && $CLICKHOUSE_LOCAL --query "SYSTEM CLEAR FORMAT SCHEMA CACHE;")
+if [ -f "$WORKDIR/__cache__/sentinel.capnp" ]; then
+    echo "FAIL: SYSTEM CLEAR FORMAT SCHEMA CACHE did not clear the cache directory it ran in"
+fi
+rm -rf "$WORKDIR"
