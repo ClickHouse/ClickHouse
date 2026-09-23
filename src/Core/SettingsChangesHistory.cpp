@@ -54,6 +54,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"allow_experimental_geo_replication_control", false, false, "New setting to gate the experimental geo-location-aware fetching of `ReplicatedMergeTree` (a non-empty `geo_replication_control_region` table setting)."},
+            {"enable_geo_replication_control", false, false, "Added an alias for setting `allow_experimental_geo_replication_control`."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -1534,6 +1536,15 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"geo_replication_control_region", "", "", "New setting for geo-location-aware fetching: the region this replica belongs to. Empty (the default) disables geo replication control, so the previous behavior is preserved."},
+            {"geo_replication_control_leader_election_period_ms", 10000, 10000, "New setting for geo-location-aware fetching: how often a replica triggers a region leader election when there is no leader. Has no effect unless `geo_replication_control_region` is set."},
+            {"geo_replication_control_leader_wait", 5, 5, "New setting for geo-location-aware fetching: how long a follower waits before retrying a log entry when the target part is not yet available within the region. Has no effect unless `geo_replication_control_region` is set."},
+            {"geo_replication_control_leader_wait_timeout", 300, 300, "New setting for geo-location-aware fetching: the maximum time a follower waits to fetch within the region before falling back to fetching from any replica. Has no effect unless `geo_replication_control_region` is set."},
+            {"fetch_merged_part_within_region_only", true, true, "New setting for geo-location-aware fetching: fetch merged parts from the same region only unless a consistent part must be fetched from elsewhere. Has no effect unless `geo_replication_control_region` is set."},
+            {"fetch_covered_part_within_region_only", true, true, "New setting for geo-location-aware fetching: look for a covered part only within the same region unless the exact part cannot be found on any replica. Has no effect unless `geo_replication_control_region` is set."},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

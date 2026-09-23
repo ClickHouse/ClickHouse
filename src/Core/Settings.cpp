@@ -9128,6 +9128,9 @@ implementation.
     DECLARE_WITH_ALIAS(Bool, enable_unique_key, false, R"(
 Allows creation of tables with the `UNIQUE KEY` clause on MergeTree-family engines.
 )", EXPERIMENTAL, allow_experimental_unique_key) \
+    DECLARE_WITH_ALIAS(Bool, enable_geo_replication_control, false, R"(
+Allows creation of `ReplicatedMergeTree` tables with a non-empty `geo_replication_control_region` setting, which enables the geo-location-aware fetching: region leader election and fetching parts within the region only.
+)", EXPERIMENTAL, allow_experimental_geo_replication_control) \
     DECLARE(Bool, enable_alp_codec, false, R"(
 Enables the `ALP` compression codec.
 )", BETA) \
