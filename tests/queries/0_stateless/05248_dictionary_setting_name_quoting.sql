@@ -38,6 +38,18 @@ SELECT formatQuerySingleLine(q), formatQuerySingleLine(formatQuerySingleLine(q))
 WITH 'CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(host 1)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(a.b = 1)' AS q
 SELECT formatQuerySingleLine(q), formatQuerySingleLine(formatQuerySingleLine(q)) = formatQuerySingleLine(q);
 
+-- A name whose last dot-separated part is empty. Formatting it as the remaining parts is a fixed
+-- point of a shorter name, so the printed name, not the fixed point, is what this case asserts.
+WITH 'CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(host 1)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(`a.` = 1)' AS q
+SELECT formatQuerySingleLine(q), formatQuerySingleLine(formatQuerySingleLine(q)) = formatQuerySingleLine(q);
+
+WITH 'CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(host 1)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(`a.b.` = 1)' AS q
+SELECT formatQuerySingleLine(q), formatQuerySingleLine(formatQuerySingleLine(q)) = formatQuerySingleLine(q);
+
+-- An empty first part, and an empty part between two others, keep the quoting they already had.
+WITH 'CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(host 1)) LAYOUT(FLAT()) LIFETIME(0) SETTINGS(`.a` = 1, `a..b` = 2)' AS q
+SELECT formatQuerySingleLine(q), formatQuerySingleLine(formatQuerySingleLine(q)) = formatQuerySingleLine(q);
+
 -- A realistic definition, which also shows that the key, source and layout names are formatted as
 -- before.
 WITH 'CREATE DICTIONARY d (k UInt64) PRIMARY KEY k SOURCE(CLICKHOUSE(host ''localhost'' port 9000 table ''ids'')) LAYOUT(COMPLEX_KEY_HASHED()) LIFETIME(MIN 1 MAX 10) SETTINGS(max_threads = 8)' AS q
