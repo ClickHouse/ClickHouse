@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"enable_bytestreamsplit_codec", false, false, "New setting to enable the experimental `ByteStreamSplit` compression codec individually, without the `allow_experimental_codecs`."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -78,7 +79,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"create_token_default_ttl_seconds", 1800, 1800, "New setting giving a lifetime to a token created by `CREATE TOKEN` without an explicit `VALID UNTIL` or `VALID FOR` clause. The statement is new, so there is no earlier behavior to restore and the previous value is the default itself: a `compatibility` with an older version must not turn tokens into never-expiring ones."},
             {"enable_hash_join_row_store", false, true, "New setting to enable transforming the payload of a hash join into a row-major layout."},
             {"min_rows_ratio_for_hash_join_row_store", 5.0, 5.0, "New setting to control the minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed."},
-            {"enable_bytestreamsplit_codec", false, false, "New setting to enable the experimental `ByteStreamSplit` compression codec individually, without the `allow_experimental_codecs`."},
             {"enable_sharding_aggregator", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."},
             {"allow_preliminary_distinct_abandoning", false, true, "New setting that lets the preliminary `DISTINCT` give up deduplicating mostly-unique input, because the final `DISTINCT` deduplicates its output again."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
