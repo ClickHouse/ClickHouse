@@ -1,20 +1,17 @@
--- A text index `preprocessor`/`postprocessor` expression must be authorized against the user who
--- submits the DDL, not resolved under the global full-access context.
---
--- `allow_introspection_functions` and the per-function grant are enforced side by side in
--- `ContextAccess::checkAccessImplHelper`, past the `full_access` short-circuit that used to be taken,
--- so the setting reaches the same gate without needing a second user.
+-- A text index `preprocessor`/`postprocessor` must be authorized against the user declaring it.
+-- `allow_introspection_functions` and the per-function grant share the gate the bug skipped, so the
+-- setting stands in for a second user.
 
 DROP TABLE IF EXISTS tab;
 
--- Not the default in the test configuration, see tests/config/users.d/allow_introspection_functions.yaml.
+-- The test configuration sets this to 1.
 SET allow_introspection_functions = 0;
 
-SELECT '1. The boundary: a direct call is denied.';
+SELECT '1. Direct call denied.';
 
 SELECT demangle('_ZNK2DB7Context9getAccessEv'); -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '2. The same function in a preprocessor is denied too.';
+SELECT '2. Denied in a preprocessor.';
 
 CREATE TABLE tab
 (
@@ -24,7 +21,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '3. And in a postprocessor.';
+SELECT '3. Denied in a postprocessor.';
 
 CREATE TABLE tab
 (
@@ -34,9 +31,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '4. A privileged call nested below a String-typed top level is denied.';
+SELECT '4. Denied when nested under a String result.';
 
--- The result type gate only constrains the top of the expression, so it bounds nothing on its own.
 CREATE TABLE tab
 (
     id UInt64,
@@ -45,7 +41,7 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree ORDER BY id; -- { serverError FUNCTION_NOT_ALLOWED }
 
-SELECT '5. ALTER ... ADD INDEX is denied on the same grounds.';
+SELECT '5. Denied via ALTER ADD INDEX.';
 
 CREATE TABLE tab (id UInt64, val String) ENGINE = MergeTree ORDER BY id;
 
@@ -53,7 +49,7 @@ ALTER TABLE tab ADD INDEX idx(val) TYPE text(tokenizer = 'splitByNonAlpha', prep
 
 DROP TABLE tab;
 
-SELECT '6. An unprivileged expression is unaffected.';
+SELECT '6. Unprivileged expression unaffected.';
 
 CREATE TABLE tab
 (
@@ -68,11 +64,11 @@ SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
 DROP TABLE tab;
 
-SELECT '7. With the privilege the same expression is accepted: this is authorization, not a blocklist.';
+SELECT '7. Accepted with the privilege, so not a blocklist.';
 
 SET allow_introspection_functions = 1;
 
--- `demangle` returns a non-mangled argument unchanged, so the tokens here are just the words.
+-- `demangle` returns a non-mangled argument unchanged.
 CREATE TABLE tab
 (
     id UInt64,
@@ -84,25 +80,25 @@ ENGINE = MergeTree ORDER BY id;
 INSERT INTO tab VALUES (1, 'hello world');
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
-SELECT '8. An existing index stays readable without the privilege: it is authorized when defined, not per reader.';
+SELECT '8. Existing index stays readable without the privilege.';
 
 SET allow_introspection_functions = 0;
 
 SELECT count() FROM tab WHERE hasAllTokens(val, ['hello']);
 
-SELECT '9. An unrelated ALTER on such a table does not re-authorize the index.';
+SELECT '9. Unrelated ALTER does not re-authorize.';
 
 ALTER TABLE tab ADD COLUMN extra UInt8 DEFAULT 0;
 ALTER TABLE tab RENAME COLUMN val TO val2;
 SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
 
-SELECT '10. Nor does detaching and attaching the stored definition.';
+SELECT '10. Neither does DETACH/ATTACH.';
 
 DETACH TABLE tab;
 ATTACH TABLE tab;
 SELECT count() FROM tab WHERE hasAllTokens(val2, ['hello']);
 
-SELECT '11. Redeclaring the index with a privileged function is still denied.';
+SELECT '11. Redeclaring with a privileged function is denied.';
 
 ALTER TABLE tab DROP INDEX idx,
                 ADD INDEX idx(val2) TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = demangle(val2)) GRANULARITY 1; -- { serverError FUNCTION_NOT_ALLOWED }

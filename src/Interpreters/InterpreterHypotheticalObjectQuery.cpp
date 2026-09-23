@@ -125,7 +125,7 @@ BlockIO createHypotheticalIndex(
     /// validate() must run before get(): index creators assume their arguments were already
     /// validated and read them unguarded (e.g. set/bloom_filter index.arguments->children[0]),
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
-    MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree.getSettings(), context);
+    MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree.getSettings());
 
     /// fail closed, a newly registered index type is rejected until someone checks it
     static constexpr std::string_view supported_types[]

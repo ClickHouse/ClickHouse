@@ -390,10 +390,8 @@ class MergeTreeIndexFactory : private boost::noncopyable
 public:
     static MergeTreeIndexFactory & instance();
 
-    /// `context` authorises user-supplied expressions in index arguments, so on CREATE/ALTER/ATTACH it
-    /// must be the submitter's. It carries no user on server load, where they were authorised already.
-    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context)>;
-    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context) const;
+    using Validator = std::function<void(const IndexDescription & index, bool attach, const MergeTreeSettings & settings)>;
+    void validate(const IndexDescription & index, bool attach, const MergeTreeSettings & settings) const;
 
     using Creator = std::function<MergeTreeIndexPtr(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings)>;
     MergeTreeIndexPtr get(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings) const;
@@ -420,27 +418,32 @@ private:
 };
 
 MergeTreeIndexPtr minmaxIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void minmaxIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr setIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void setIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void bloomFilterIndexTextValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr bloomFilterIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 #if USE_USEARCH
 MergeTreeIndexPtr vectorSimilarityIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void vectorSimilarityIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 #endif
 
 MergeTreeIndexPtr ginIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void ginIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
+
+/// Authorises the expressions an index carries in its arguments (the text index
+/// `preprocessor`/`postprocessor`). Call only where a user declares an index: everything downstream
+/// resolves them under the global full-access context, and revalidation would check the wrong user.
+void checkIndexArgumentsAccess(const IndexDescription & index, ContextPtr context);
 
 String getIndexFileName(const String & index_name, bool escape_filename);
 

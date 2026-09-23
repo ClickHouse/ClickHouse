@@ -49,6 +49,7 @@
 
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
@@ -1208,6 +1209,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// still attaches.
     if (isFreshTableDefinition(mode, create.attach_short_syntax))
         properties.constraints.checkExpressionsPreserveRowCount();
+
+    /// Same screening, for the expressions an index carries in its arguments.
+    if (isFreshTableDefinition(mode, create.attach_short_syntax))
+        for (const auto & index : properties.indices)
+            checkIndexArgumentsAccess(index, getContext());
 
     ASTPtr new_columns = formatColumns(properties.columns);
     ASTPtr new_indices = formatIndices(properties.indices);

@@ -17,8 +17,7 @@ void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name,
 /// and removes unused actions.
 ///
 /// Resolving a function name runs its `create`, where a grant-checked function performs its
-/// `checkAccess`, so `context` decides who the expression is authorised as. No default, because the
-/// global context is a full-access context and would authorise anything.
+/// `checkAccess`, so `context` decides who the expression is authorised as.
 ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns, ContextPtr context);
 
 /// Validates common text-index transform requirements shared by preprocessor and postprocessor

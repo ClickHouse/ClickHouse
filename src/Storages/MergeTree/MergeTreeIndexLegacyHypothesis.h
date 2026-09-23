@@ -25,6 +25,6 @@ public:
 };
 
 MergeTreeIndexPtr legacyHypothesisIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
-void legacyHypothesisIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings, ContextPtr context);
+void legacyHypothesisIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
 }

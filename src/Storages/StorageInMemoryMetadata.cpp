@@ -997,7 +997,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForColumn(const ColumnDescriptio
             try
             {
                 static const MergeTreeSettings default_settings;
-                MergeTreeIndexFactory::instance().validate(index, false, default_settings, context);
+                MergeTreeIndexFactory::instance().validate(index, false, default_settings);
             }
             catch (const Exception & e)
             {
@@ -1042,7 +1042,7 @@ void StorageInMemoryMetadata::addImplicitIndicesForVirtualColumns(ContextPtr con
         const auto columns_to_analyze = virtuals.toColumnsDescription(VirtualsKind::All, VirtualsMaterializationPlace::All);
         auto index = createImplicitMinMaxIndexDescription(column_name, columns_to_analyze, escape_index_filenames, context);
         static const MergeTreeSettings default_settings;
-        MergeTreeIndexFactory::instance().validate(index, false, default_settings, context);
+        MergeTreeIndexFactory::instance().validate(index, false, default_settings);
 
         secondary_indices.push_back(std::move(index));
     };

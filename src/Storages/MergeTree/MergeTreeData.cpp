@@ -184,7 +184,6 @@
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Net/NetException.h>
-#include <Poco/String.h>
 
 #if USE_AZURE_BLOB_STORAGE
 #endif
@@ -492,38 +491,6 @@ void checkSuspiciousIndices(const ASTFunction * index_function)
     }
 }
 
-static void collectFunctionNames(const IAST * ast, std::unordered_set<String> & names)
-{
-    if (!ast)
-        return;
-    if (const auto * function = ast->as<ASTFunction>())
-        names.insert(Poco::toLower(function->name));
-    for (const auto & child : ast->children)
-        collectFunctionNames(child.get(), names);
-}
-
-/// True when `index` names a function the same-named index in `old_metadata` did not, which is what
-/// has to be authorised against the submitter. Comparing the definitions themselves would not work:
-/// `RENAME COLUMN` rewrites an index AST in place without redeclaring it, and that identifier change
-/// would make every later statement re-authorise. Function names survive such a rewrite.
-static bool indexIntroducesFunctions(const StorageInMemoryMetadata & old_metadata, const IndexDescription & index)
-{
-    const IndexDescription * old_index = nullptr;
-    for (const auto & candidate : old_metadata.secondary_indices)
-        if (candidate.name == index.name)
-            old_index = &candidate;
-
-    if (!old_index || !old_index->definition_ast || !index.definition_ast)
-        return true;
-
-    std::unordered_set<String> old_names;
-    std::unordered_set<String> new_names;
-    collectFunctionNames(old_index->definition_ast.get(), old_names);
-    collectFunctionNames(index.definition_ast.get(), new_names);
-
-    return std::ranges::any_of(new_names, [&](const String & name) { return !old_names.contains(name); });
-}
-
 static void checkSampleExpression(const StorageInMemoryMetadata & metadata, bool allow_sampling_expression_not_in_primary_key, bool check_sample_column_is_correct)
 {
     if (metadata.sampling_key.column_names.empty())
@@ -825,7 +792,6 @@ MergeTreeData::MergeTreeData(
     const StorageID & table_id_,
     StorageInMemoryMetadata metadata_,
     ContextMutablePtr context_,
-    ContextPtr local_context_,
     const String & date_column_name,
     const MergingParams & merging_params_,
     std::unique_ptr<MergeTreeSettings> storage_settings_,
@@ -871,7 +837,7 @@ MergeTreeData::MergeTreeData(
         try
         {
             checkPartitionKeyAndInitMinMax(metadata_.partition_key);
-            setProperties(metadata_, metadata_, !sanity_checks, local_context_, /*defining_indices=*/true);
+            setProperties(metadata_, metadata_, !sanity_checks);
             if (minmax_idx_date_column_pos == -1)
                 throw Exception(ErrorCodes::BAD_TYPE_OF_FIELD, "Could not find Date column");
         }
@@ -887,7 +853,7 @@ MergeTreeData::MergeTreeData(
         is_custom_partitioned = true;
         checkPartitionKeyAndInitMinMax(metadata_.partition_key);
     }
-    setProperties(metadata_, metadata_, !sanity_checks, local_context_, /*defining_indices=*/true);
+    setProperties(metadata_, metadata_, !sanity_checks);
 
     /// NOTE: using the same columns list as is read when performing actual merges.
     merging_params.check(*settings, metadata_, sanity_checks);
@@ -1117,7 +1083,6 @@ void MergeTreeData::checkProperties(
     bool allow_empty_sorting_key,
     bool allow_nullable_key_,
     ContextPtr local_context,
-    bool defining_indices,
     const MergeTreeSettings * alter_effective_settings) const
 {
     if (!new_metadata.sorting_key.definition_ast && !allow_empty_sorting_key)
@@ -1132,11 +1097,9 @@ void MergeTreeData::checkProperties(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key must be a prefix of the sorting key, but its length: "
             "{} is greater than the sorting key length: {}", primary_key_size, sorting_key_size);
 
-    /// Either source permitting is enough, as for `allow_minmax_index_for_json` below: in `CREATE TABLE
-    /// ... SETTINGS allow_suspicious_indices = 1` the clause sets the MergeTree setting, not the query one.
     bool allow_suspicious_indices = (*getSettings())[MergeTreeSetting::allow_suspicious_indices];
     if (local_context)
-        allow_suspicious_indices |= local_context->getSettingsRef()[Setting::allow_suspicious_indices];
+        allow_suspicious_indices = local_context->getSettingsRef()[Setting::allow_suspicious_indices];
 
     bool allow_minmax_index_for_json = (*getSettings())[MergeTreeSetting::allow_minmax_index_for_json];
     if (local_context)
@@ -1278,14 +1241,7 @@ void MergeTreeData::checkProperties(
 
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
-
-                /// Every index is revalidated on every ALTER, including ones this statement does not
-                /// touch. Authorising those against the submitter would make an unrelated ALTER fail
-                /// for anyone lacking the grants the index author held, so only a definition this
-                /// statement introduces or changes is authorised; the rest use the global context.
-                const bool is_defined_here = defining_indices || indexIntroducesFunctions(old_metadata, index);
-                MergeTreeIndexFactory::instance().validate(
-                    index, attach, *getSettings(), is_defined_here ? local_context : getContext());
+                MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
 
                 /// An index the server generates from a setting is not the user's declaration, so it
                 /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
@@ -1390,8 +1346,7 @@ void MergeTreeData::checkProperties(
                 attach,
                 is_aggregate,
                 true /* allow_nullable_key */,
-                local_context,
-                defining_indices);
+                local_context);
 
             projections_names.insert(projection.name);
         }
@@ -1570,16 +1525,14 @@ void MergeTreeData::checkMetadataProperties(
         /*attach=*/false,
         /*allow_empty_sorting_key=*/false,
         allow_nullable_key,
-        local_context,
-        /*defining_indices=*/false);
+        local_context);
 }
 
 void MergeTreeData::setProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
     bool attach,
-    ContextPtr local_context,
-    bool defining_indices)
+    ContextPtr local_context)
 {
     /// Route the table-level metadata clones produced here (the new `StorageInMemoryMetadata`
     /// stored in `metadata.set(...)`, the cloned `ColumnsDescription`, `VirtualColumnsDescription`,
@@ -1593,8 +1546,7 @@ void MergeTreeData::setProperties(
         attach,
         false,
         allow_nullable_key,
-        local_context,
-        defining_indices);
+        local_context);
 
     {
         /// Publish the new metadata and clear the cache of effective sorting keys atomically.
@@ -6362,7 +6314,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
-    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, /*defining_indices=*/false, alter_effective_settings.get());
+    checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
     if (!columns_to_check_conversion.empty())

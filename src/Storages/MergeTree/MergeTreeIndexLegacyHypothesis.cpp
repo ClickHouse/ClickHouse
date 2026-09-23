@@ -33,7 +33,7 @@ MergeTreeIndexPtr legacyHypothesisIndexCreator(StorageMetadataPtr metadata_snaps
     return std::make_shared<MergeTreeIndexLegacyHypothesis>(std::move(metadata_snapshot), index);
 }
 
-void legacyHypothesisIndexValidator(const IndexDescription &, bool attach, const MergeTreeSettings & /*settings*/, ContextPtr /*context*/)
+void legacyHypothesisIndexValidator(const IndexDescription &, bool attach, const MergeTreeSettings & /*settings*/)
 {
     if (!attach)
         throw Exception(ErrorCodes::ILLEGAL_INDEX, "Index of type 'hypothesis' is no longer supported. Please drop the index");

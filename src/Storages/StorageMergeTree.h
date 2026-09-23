@@ -48,7 +48,6 @@ public:
         const StorageInMemoryMetadata & metadata,
         LoadingStrictnessLevel mode,
         ContextMutablePtr context_,
-        ContextPtr local_context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_);

@@ -110,7 +110,6 @@ public:
         const String & relative_data_path_,
         const StorageInMemoryMetadata & metadata_,
         ContextMutablePtr context_,
-        ContextPtr local_context_,
         const String & date_column_name,
         const MergingParams & merging_params_,
         std::unique_ptr<MergeTreeSettings> settings_,
