@@ -1,5 +1,6 @@
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
@@ -36,6 +37,20 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
 }
 
+namespace
+{
+
+/// A table of a database with `lazy_load_tables` is kept in the catalog as a stand-in that creates the
+/// real storage on first access, so an engine predicate asked of the catalog pointer describes the stand-in.
+StoragePtr resolveLazyStandIn(const StoragePtr & storage)
+{
+    if (const auto stand_in = std::dynamic_pointer_cast<StorageTableProxy>(storage))
+        return stand_in->getNested();
+    return storage;
+}
+
+}
+
 StorageAlias::StorageAlias(
     const StorageID & table_id_,
     ContextPtr context_,
@@ -46,6 +61,12 @@ StorageAlias::StorageAlias(
     , target_database(target_database_)
     , target_table(target_table_)
 {
+}
+
+bool StorageAlias::isMergeTree() const
+{
+    auto target = tryGetTargetTable();
+    return target && resolveLazyStandIn(target)->isMergeTree();
 }
 
 StoragePtr StorageAlias::getTargetTable(std::optional<TargetAccess> access_check) const
@@ -303,7 +324,7 @@ void StorageAlias::truncate(
     /// locks; every other engine needs its readers excluded while its data goes away.
     TableExclusiveLockHolder target_excl_lock;
     TableLockHolder target_shared_lock;
-    if (target_storage->isMergeTree())
+    if (resolveLazyStandIn(target_storage)->isMergeTree())
         target_shared_lock = target_storage->lockForShare(
             local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
     else
