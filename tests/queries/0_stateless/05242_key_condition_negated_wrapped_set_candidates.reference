@@ -1,0 +1,42 @@
+scalar, multiple atoms = 0
+64
+16
+64
+16
+64
+16
+scalar, multiple atoms = 1
+17
+16
+17
+16
+17
+16
+whole tuple, multiple atoms = 0
+64
+16
+64
+16
+64
+16
+whole tuple, multiple atoms = 1
+17
+16
+17
+16
+17
+16
+tuple component, multiple atoms = 1
+64
+16
+64
+16
+64
+16
+non-injective, multiple atoms = 1
+64
+16
+64
+16
+64
+16
