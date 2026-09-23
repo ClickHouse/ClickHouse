@@ -1,0 +1,26 @@
+=== with the non-intersecting part
+-- expected result
+65	4250027
+-- lazy branch
+65	4250027
+-- fallback branch
+65	4250027
+-- lazy branch log
+Lazy FINAL enabled
+findPKRangesForFinalAfterSkipIndex: 0
+-- fallback branch log
+Lazy FINAL disabled
+findPKRangesForFinalAfterSkipIndex: 1
+=== without the non-intersecting part
+-- expected result
+25	168806
+-- lazy branch
+25	168806
+-- fallback branch
+25	168806
+-- lazy branch log
+Lazy FINAL enabled
+findPKRangesForFinalAfterSkipIndex: 0
+-- fallback branch log
+Lazy FINAL disabled
+findPKRangesForFinalAfterSkipIndex: 1

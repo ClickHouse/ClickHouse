@@ -47,6 +47,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/Sources/NullSource.h>
+#include <Processors/Sources/OnDemandPipelineSource.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/Transforms/ReverseTransform.h>
@@ -2715,6 +2716,35 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
     return merging_pipes.empty() ? Pipe::unitePipes(std::move(no_merging_pipes)) : Pipe::unitePipes(std::move(merging_pipes));
 }
 
+/// Fills the totals of the selected ranges from `result.parts_with_ranges`.
+static void updateSelectedTotals(ReadFromMergeTree::AnalysisResult & result, bool add_index_stat_row_for_pk_expand)
+{
+    size_t sum_marks = 0;
+    size_t sum_ranges = 0;
+    size_t sum_rows = 0;
+
+    for (const auto & part : result.parts_with_ranges)
+    {
+        sum_ranges += part.ranges.size();
+        sum_marks += part.getMarksCount();
+        sum_rows += part.getRowsCount();
+    }
+
+    if (add_index_stat_row_for_pk_expand)
+    {
+        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
+            .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
+            .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
+            .num_parts_after = result.parts_with_ranges.size(),
+            .num_granules_after = sum_marks});
+    }
+
+    result.selected_parts = result.parts_with_ranges.size();
+    result.selected_ranges = sum_ranges;
+    result.selected_marks = sum_marks;
+    result.selected_rows = sum_rows;
+}
+
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool find_exact_ranges) const
 {
     analyzed_result_ptr = selectRangesToRead(
@@ -2739,6 +2769,55 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(bool 
         /*check_row_limits=*/true);
 
     return analyzed_result_ptr;
+}
+
+ReadFromMergeTree::AnalysisWithoutFinalExpansion ReadFromMergeTree::selectRangesToReadWithoutFinalExpansion() const
+{
+    auto result = selectRangesToRead(
+        getParts(),
+        mutations_snapshot,
+        vector_search_parameters,
+        top_k_filter_info,
+        storage_snapshot->metadata,
+        query_info,
+        context,
+        requested_num_streams,
+        max_block_numbers_to_read,
+        data,
+        data_settings,
+        all_column_names,
+        log,
+        indexes,
+        /*find_exact_ranges=*/false,
+        is_parallel_reading_from_replicas,
+        allow_query_condition_cache,
+        supportsSkipIndexesOnDataRead(),
+        /*check_row_limits=*/true,
+        /*defer_final_exact_mode_expansion=*/true);
+
+    /// `indexes` are built by the analysis above.
+    if (indexes && indexes->use_skip_indexes_if_final_exact_mode)
+        return {.result = std::move(result), .final_expansion_deferred = true};
+
+    analyzed_result_ptr = result;
+    return {.result = std::move(result), .final_expansion_deferred = false};
+}
+
+void ReadFromMergeTree::setAnalyzedResultWithFinalExpansion(const AnalysisResult & result)
+{
+    auto expanded = std::make_shared<AnalysisResult>(result);
+    const auto & metadata_snapshot = storage_snapshot->metadata;
+    expanded->parts_with_ranges = findPKRangesForFinalAfterSkipIndex(
+        metadata_snapshot->getPrimaryKey(), metadata_snapshot->getSortingKey(), expanded->parts_with_ranges, log);
+    updateSelectedTotals(*expanded, /*add_index_stat_row_for_pk_expand=*/ true);
+    expanded->has_exact_ranges = expanded->selected_parts == 0;
+    analyzed_result_ptr = std::move(expanded);
+}
+
+void ReadFromMergeTree::resetParts(RangesInDataParts parts)
+{
+    prepared_parts = std::make_shared<const RangesInDataParts>(std::move(parts));
+    analyzed_result_ptr = nullptr;
 }
 
 ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::estimateRangesToReadWithoutQueryConditionCache() const
@@ -3428,7 +3507,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     bool is_parallel_reading_from_replicas_,
     bool allow_query_condition_cache_,
     bool supports_skip_indexes_on_data_read,
-    bool check_row_limits)
+    bool check_row_limits,
+    bool defer_final_exact_mode_expansion)
 {
     ProfileEvents::increment(ProfileEvents::IndexAnalysisRounds);
 
@@ -3645,7 +3725,7 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         {
             result.parts_with_ranges = MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipIndexes(filter_context, res_parts, result.index_stats);
 
-            if (final_second_pass)
+            if (final_second_pass && !defer_final_exact_mode_expansion)
             {
                 result.parts_with_ranges
                     = findPKRangesForFinalAfterSkipIndex(primary_key, metadata_snapshot->getSortingKey(), result.parts_with_ranges, log);
@@ -3869,34 +3949,12 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         if (stat.type == IndexType::PrimaryKey)
             sum_marks_pk = stat.num_granules_after;
 
-    size_t sum_marks = 0;
-    size_t sum_ranges = 0;
-    size_t sum_rows = 0;
-
-    for (const auto & part : result.parts_with_ranges)
-    {
-        sum_ranges += part.ranges.size();
-        sum_marks += part.getMarksCount();
-        sum_rows += part.getRowsCount();
-    }
-
-    if (add_index_stat_row_for_pk_expand)
-    {
-        result.index_stats.emplace_back(ReadFromMergeTree::IndexStat{
-            .type = ReadFromMergeTree::IndexType::PrimaryKeyExpand,
-            .description = "Selects all granules that intersect by PK values with the previous skip indexes selection",
-            .num_parts_after = result.parts_with_ranges.size(),
-            .num_granules_after = sum_marks});
-    }
+    updateSelectedTotals(result, add_index_stat_row_for_pk_expand);
 
     result.total_parts = total_parts;
     result.parts_before_pk = parts_before_pk;
-    result.selected_parts = result.parts_with_ranges.size();
-    result.selected_ranges = sum_ranges;
-    result.selected_marks = sum_marks;
     result.selected_marks_pk = sum_marks_pk;
     result.total_marks_pk = total_marks_pk;
-    result.selected_rows = sum_rows;
     result.has_exact_ranges = result.selected_parts == 0 || find_exact_ranges;
 
     if (query_info_.input_order_info)
@@ -4926,6 +4984,47 @@ size_t ReadFromMergeTree::getNumStreamsWhenNothingToRead(const AnalysisResult & 
 
 void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[maybe_unused]] const BuildQueryPipelineSettings & settings)
 {
+    if (build_pipeline_on_demand)
+    {
+        /// The query plan may be destroyed before the execution, so the pipeline is built from a copy of this step.
+        auto reading = std::make_shared<ReadFromMergeTree>(*this);
+        reading->build_pipeline_on_demand = false;
+        auto header = getOutputHeader();
+
+        auto creator = [reading, header, settings]
+        {
+            QueryPipelineBuilder builder;
+            reading->initializePipeline(builder, settings);
+
+            /// The pipeline can have more columns than the step, e.g. with a deferred row-level filter.
+            if (!blocksHaveEqualStructure(builder.getHeader(), *header))
+            {
+                auto converting = std::make_shared<ExpressionActions>(ActionsDAG::makeConvertingActions(
+                    builder.getHeader().getColumnsWithTypeAndName(),
+                    header->getColumnsWithTypeAndName(),
+                    ActionsDAG::MatchColumnsMode::Name,
+                    nullptr));
+                builder.addSimpleTransform([&](const SharedHeader & input_header)
+                {
+                    return std::make_shared<ExpressionTransform>(input_header, converting);
+                });
+            }
+
+            return builder;
+        };
+
+        Pipe pipe(std::make_shared<OnDemandPipelineSource>(header, std::move(creator)));
+        /// Keep the number of streams that the steps above expect from this read.
+        if (requested_num_streams > 1)
+            pipe.resize(requested_num_streams);
+
+        for (const auto & processor : pipe.getProcessors())
+            processors.emplace_back(processor);
+
+        pipeline.init(std::move(pipe));
+        return;
+    }
+
     auto & result = getAnalysisResult();
 
     /// `spreadMarkRanges` consumes `result.split_parts`, so remember the number of ports the plan expects
@@ -5546,8 +5645,6 @@ static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
             return "Skip";
         case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
             return "PrimaryKeyExpand";
-        case ReadFromMergeTree::IndexType::NonIntersectingSplit:
-            return "NonIntersectingSplit";
     }
 }
 

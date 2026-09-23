@@ -123,7 +123,6 @@ public:
         Skip,
         PrimaryKeyExpand,
         Statistics,
-        NonIntersectingSplit,
     };
 
     struct DistributedIndexStat
@@ -356,10 +355,28 @@ public:
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
         bool supports_skip_indexes_on_data_read,
-        bool check_row_limits);
+        bool check_row_limits,
+        bool defer_final_exact_mode_expansion = false);
 
 
     AnalysisResultPtr selectRangesToRead(bool find_exact_ranges = false) const;
+
+    struct AnalysisWithoutFinalExpansion
+    {
+        AnalysisResultPtr result;
+        /// With `use_skip_indexes_if_final_exact_mode`, the granules rejected by skip indexes were not added back
+        /// (see `findPKRangesForFinalAfterSkipIndex`). Then `result` is not valid for a `FINAL` read and is not
+        /// memoized, and `ranges_snapshot_after_pk_analysis` of each part holds the ranges selected by the primary key.
+        bool final_expansion_deferred = false;
+    };
+
+    /// The same as `selectRangesToRead`, but does not add back the granules rejected by skip indexes for
+    /// `use_skip_indexes_if_final_exact_mode`. Used by lazy `FINAL`, which reads the selected rows without `FINAL`.
+    AnalysisWithoutFinalExpansion selectRangesToReadWithoutFinalExpansion() const;
+
+    /// Adds back the granules rejected by skip indexes to a result of `selectRangesToReadWithoutFinalExpansion`
+    /// that has `final_expansion_deferred`, and memoizes it as the analysis of this step.
+    void setAnalyzedResultWithFinalExpansion(const AnalysisResult & result);
     /// Analyze ranges only for an intermediate cardinality estimate, without enforcing row limits
     /// or memoizing the result. The executed read analyzes again after its final mode is known.
     AnalysisResultPtr selectRangesToReadForEstimation() const;
@@ -426,6 +443,15 @@ public:
     AnalysisResultPtr getOrCreateAnalyzedResult() const { return analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead(); }
 
     const RangesInDataParts & getParts() const { return analyzed_result_ptr ? analyzed_result_ptr->parts_with_ranges : *prepared_parts; }
+
+    /// Replaces the parts to read and drops the analysis result, so the step analyzes the new parts again.
+    void resetParts(RangesInDataParts parts);
+
+    /// Build the pipeline of this step only when its output is needed for the first time during execution.
+    /// Index analysis, if it did not run yet, runs then too. Used for the fallback read of lazy `FINAL`,
+    /// which most queries do not use.
+    void buildPipelineOnDemand() { build_pipeline_on_demand = true; }
+
     MergeTreeData::MutationsSnapshotPtr getMutationsSnapshot() const { return mutations_snapshot; }
 
     const MergeTreeData & getMergeTreeData() const { return data; }
@@ -757,6 +783,7 @@ private:
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
+    bool build_pipeline_on_demand = false;
 
     LazyMaterializingRowsPtr lazy_materializing_rows;
 
