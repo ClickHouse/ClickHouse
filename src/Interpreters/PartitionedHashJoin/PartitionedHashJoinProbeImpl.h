@@ -1029,11 +1029,13 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
         scattered_block,
         is_join_get ? *join_get_columns : join.sample_block_with_columns_to_add,
         join.savedBlockSample(),
-        join,
+        join.getTableJoin(),
+        *join.data,
+        join.enableSoftwarePrefetch(),
         std::move(join_on_keys),
         table_join->getMixedJoinExpression(),
         join.additional_filter_required_rhs_pos,
-        join_features.is_asof_join,
+        join_features.is_asof_join ? &join.rightAsofKeyColumn() : nullptr,
         is_join_get,
         record_refs_for_stats);
     if (matched_rows_stats && matched_rows_stats->hasRightFlags())
