@@ -10781,6 +10781,11 @@ std::map<std::string, MutationCommands> StorageReplicatedMergeTree::getUnfinishe
 
 Strings StorageReplicatedMergeTree::getMutationsWithLegacyPartitionScope() const
 {
+    /// The local set of mutations is refreshed asynchronously, so a legacy entry already in
+    /// `/mutations` may not be loaded yet. `alter` does not pull it for a `MODIFY COLUMN` either, and
+    /// the partition key type change allowed on a stale view would make that entry undecodable once it
+    /// is loaded. Load the new entries from ZooKeeper first.
+    const_cast<ReplicatedMergeTreeQueue &>(queue).updateMutations(getZooKeeper());
     return queue.getMutationsWithLegacyPartitionScope();
 }
 
