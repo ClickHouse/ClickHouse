@@ -159,6 +159,7 @@ static struct InitFiu
     PAUSEABLE(scalar_subquery_before_cardinality_check) \
     PAUSEABLE_ONCE(creating_sets_transform_after_first_chunk) \
     REGULAR(prefetched_reader_pool_failpoint) \
+    PAUSEABLE_ONCE(read_buffer_from_http_before_request) \
     PAUSEABLE_ONCE(merge_tree_read_pool_pause_after_cancel) \
     PAUSEABLE_ONCE(merge_tree_reader_pause_before_report_broken) \
     PAUSEABLE_ONCE(merge_tree_sink_after_commit_part) \

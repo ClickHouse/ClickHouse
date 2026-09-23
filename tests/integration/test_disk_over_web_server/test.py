@@ -1,3 +1,6 @@
+import signal
+import uuid
+
 import pytest
 
 from helpers.cluster import CLICKHOUSE_CI_MIN_TESTED_VERSION, ClickHouseCluster
@@ -149,6 +152,79 @@ def test_usage(cluster, node_name):
 
         node2.query("DROP TABLE test{} SYNC".format(i))
         print(f"Ok {i}")
+
+
+@pytest.mark.parametrize("read_method", ["read", "threadpool"])
+def test_remote_read_stops_after_partial_result_cancel(cluster, read_method):
+    node = cluster.instances["node2"]
+    table = f"web_partial_cancel_{read_method}"
+    query_id = uuid.uuid4().hex
+    read_failpoint = "read_buffer_from_http_before_request"
+    pool_cancel_failpoint = "merge_tree_read_pool_pause_after_cancel"
+
+    global uuids
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"CREATE TABLE {table} UUID '{uuids[0]}' (id Int32) "
+        "ENGINE = MergeTree() ORDER BY id SETTINGS storage_policy = 'web'"
+    )
+
+    node.query(f"SYSTEM ENABLE FAILPOINT {read_failpoint}")
+    node.query(f"SYSTEM ENABLE FAILPOINT {pool_cancel_failpoint}")
+    query_request = node.get_query_request(
+        f"SELECT sum(id) FROM {table} SETTINGS max_threads=1, "
+        f"remote_filesystem_read_method='{read_method}', "
+        "remote_filesystem_read_prefetch=0, enable_filesystem_cache=0, "
+        "use_page_cache_for_disks_without_file_cache=0, use_uncompressed_cache=0, "
+        "allow_prefetched_read_pool_for_remote_filesystem=0, "
+        "partial_result_on_first_cancel=1",
+        query_id=query_id,
+        timeout=180,
+    )
+
+    try:
+        node.query(f"SYSTEM WAIT FAILPOINT {read_failpoint} PAUSE", timeout=60)
+        query_request.process.send_signal(signal.SIGINT)
+        node.query(
+            f"SYSTEM WAIT FAILPOINT {pool_cancel_failpoint} PAUSE", timeout=60
+        )
+
+        assert (
+            node.query(
+                "SELECT is_cancelled FROM system.processes "
+                f"WHERE query_id='{query_id}'"
+            ).strip()
+            == "0"
+        )
+        requests_at_cancellation = node.query(
+            "SELECT ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+            f"FROM system.processes WHERE query_id='{query_id}'"
+        ).strip()
+
+        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+
+        answer, error = query_request.get_answer_and_error()
+        assert answer.strip() == "0", answer
+        assert error == "", error
+    finally:
+        node.query(f"SYSTEM NOTIFY FAILPOINT {read_failpoint}")
+        node.query(f"SYSTEM NOTIFY FAILPOINT {pool_cancel_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {read_failpoint}")
+        node.query(f"SYSTEM DISABLE FAILPOINT {pool_cancel_failpoint}")
+        if query_request.process.poll() is None:
+            query_request.process.kill()
+        node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+
+    node.query("SYSTEM FLUSH LOGS")
+    assert (
+        node.query(
+            "SELECT type, ProfileEvents['ReadWriteBufferFromHTTPRequestsSent'] "
+            "FROM system.query_log "
+            f"WHERE query_id='{query_id}' AND type!='QueryStart'"
+        ).strip()
+        == f"QueryFinish\t{requests_at_cancellation}"
+    )
 
 
 def test_incorrect_usage(cluster):

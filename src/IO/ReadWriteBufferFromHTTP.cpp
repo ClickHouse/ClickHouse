@@ -3,6 +3,8 @@
 #include <IO/HTTPCommon.h>
 #include <IO/WriteHelpers.h>
 #include <IO/parseHTTPDate.h>
+#include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Poco/Net/NetException.h>
 #include <Common/ProxyConfigurationResolverProvider.h>
@@ -62,6 +64,11 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int SEEK_POSITION_OUT_OF_BOUND;
+}
+
+namespace FailPoints
+{
+    extern const char read_buffer_from_http_before_request[];
 }
 
 std::unique_ptr<ReadBuffer> ReadWriteBufferFromHTTP::CallResult::transformToReadBuffer(size_t buf_size) &&
@@ -260,6 +267,9 @@ ReadWriteBufferFromHTTP::ReadWriteBufferFromHTTP(
 ReadWriteBufferFromHTTP::CallResult ReadWriteBufferFromHTTP::callImpl(
     Poco::Net::HTTPResponse & response, const std::string & method_, const std::optional<HTTPRange> & range, bool allow_redirects) const
 {
+    FailPointInjection::pauseFailPoint(FailPoints::read_buffer_from_http_before_request);
+    read_settings.read_cancellation.checkIfNotCancelled();
+
     if (remote_host_filter)
         remote_host_filter->checkURL(current_uri);
 
@@ -365,6 +375,9 @@ void ReadWriteBufferFromHTTP::doWithRetries(std::function<void()> && callable,
         }
 
         chassert(exception);
+
+        if (CurrentThread::isQueryCancellationException(exception))
+            std::rethrow_exception(exception);
 
         if (last_attempt || !is_retriable)
         {
