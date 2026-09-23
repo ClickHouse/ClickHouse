@@ -40,11 +40,11 @@ INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
         (toDateTime64(140, 3), 0, -53, 0., 12., 30., 0., [(0, 3)], [1., 3., 8.], [], [], [1., 2., 4.], 12, 0, [1, 3, 8], [])]);
 
 -- pure_float{job='float'}: 4@110, 8@120, 14@140.
-INSERT INTO ts_nh_rate (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_rate (metric_name, tags, samples) VALUES
     ('pure_float', map('job', 'float'), [(toDateTime64(110, 3), 4), (toDateTime64(120, 3), 8), (toDateTime64(140, 3), 14)]);
 
 -- mixed{job='mixed'}: a float sample at 108 and histograms at 130/140 (e3/e4).
-INSERT INTO ts_nh_rate (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_rate (metric_name, tags, samples) VALUES
     ('mixed', map('job', 'mixed'), [(toDateTime64(108, 3), 100)]);
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
     ('mixed', map('job', 'mixed'), [
@@ -52,7 +52,7 @@ INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
         (toDateTime64(140, 3), 0, 0, 0., 5., 11., 0., [(0, 2)], [2., 3.], [], [], [], 5, 0, [2, 3], [])]);
 
 -- mixed2{job='mixed2'}: a histogram at 110 (e1) and a float at 140.
-INSERT INTO ts_nh_rate (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_rate (metric_name, tags, samples) VALUES
     ('mixed2', map('job', 'mixed2'), [(toDateTime64(140, 3), 50)]);
 INSERT INTO ts_nh_rate (metric_name, tags, histograms) VALUES
     ('mixed2', map('job', 'mixed2'), [(toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
@@ -99,10 +99,10 @@ SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_rate', 'rat
 
 SELECT '-- range query over the counter series: rate at every step; steps whose window holds fewer';
 SELECT '-- than two samples emit nothing, and the float arm stays empty throughout';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_rate', 'rate(nh_counter[45s])', 100, 200, 10);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_rate', 'rate(nh_counter[45s])', 100, 200, 10);
 
 SELECT '-- range query over the mixed series: steps whose window mixes float and histogram samples';
 SELECT '-- are dropped from BOTH arms (upstream NewMixedFloatsHistogramsWarning)';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_rate', 'rate(mixed[45s])', 100, 200, 10);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_rate', 'rate(mixed[45s])', 100, 200, 10);
 
 DROP TABLE ts_nh_rate;
