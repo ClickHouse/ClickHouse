@@ -57,7 +57,8 @@ struct ConnectedDistinct
 
     explicit ConnectedDistinct(TemporaryDataOnDiskScopePtr tmp_data, UInt64 limit_hint = 0, UInt64 threshold = default_spill_threshold)
         : transform(header, SizeLimits{}, limit_hint, Names{}, threshold,
-            std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false)
+            std::move(tmp_data), /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 2,
+            /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256, /*preserve_input_order_=*/ false)
     {
         connect(upstream, transform.getInputs().front());
         connect(transform.getOutputs().front(), downstream);
@@ -359,7 +360,8 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeLowCardinalityBitmapAllocation
         const UInt64 threshold = query.get() + 128 * 1024;
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{},
             threshold, tmp_data, /*min_free_disk_space_=*/ 0,
-            /*max_block_size_rows_=*/ 3, /*preserve_input_order_=*/ false);
+            /*max_block_size_rows_=*/ 3, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
+            /*preserve_input_order_=*/ false);
         OutputPort upstream{header};
         InputPort downstream{header};
         connect(upstream, transform.getInputs().front());
@@ -419,7 +421,8 @@ TEST_F(ExternalDistinctTransformTest, SpillsBeforeFilteringWithSpareTableCapacit
             const UInt64 threshold = query.get() + materialization_bytes + filtering_bytes / 4 + 65536;
             ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
                 threshold, tmp_data, /*min_free_disk_space_=*/ 0,
-                /*max_block_size_rows_=*/ 2, /*preserve_input_order_=*/ false);
+                /*max_block_size_rows_=*/ 2, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
+                /*preserve_input_order_=*/ false);
             OutputPort upstream{header};
             InputPort downstream{header};
             connect(upstream, transform.getInputs().front());
@@ -453,7 +456,8 @@ TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFiltered
         constexpr UInt64 threshold = 256 << 20;
         ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
             threshold, tmp_data, /*min_free_disk_space_=*/ 0,
-            /*max_block_size_rows_=*/ 8, /*preserve_input_order_=*/ false);
+            /*max_block_size_rows_=*/ 8, /*preferred_block_bytes_=*/ DEFAULT_BLOCK_SIZE * 256,
+            /*preserve_input_order_=*/ false);
         OutputPort upstream{header};
         InputPort downstream{header};
         connect(upstream, transform.getInputs().front());
@@ -524,7 +528,7 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
             auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
             constexpr UInt64 threshold = 256 << 20;
             auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, /*limit_hint_=*/ 0,
-                Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, ordered);
+                Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, DEFAULT_BLOCK_SIZE * 256, ordered);
             connect(source->getPort(), transform->getInputs().front());
             auto * output_port = &transform->getOutputs().front();
             auto processors = std::make_shared<Processors>();
@@ -563,6 +567,103 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
                 }
             }
             EXPECT_EQ(output_rows, unique_keys);
+        }
+    });
+}
+
+TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
+{
+    withQueryThread([&]
+    {
+        for (const bool suppression : {false, true})
+        for (const bool uneven : {false, true})
+        for (const size_t preferred_bytes : {0, 65536})
+        {
+            SCOPED_TRACE(::testing::Message() << "suppression=" << suppression << ", uneven=" << uneven
+                << ", preferred_bytes=" << preferred_bytes);
+            const auto header = std::make_shared<const Block>(Block{
+                ColumnWithTypeAndName(std::make_shared<DataTypeString>(), "k"),
+                ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "payload")});
+            constexpr size_t rows = 512;
+            auto columns = header->cloneEmptyColumns();
+            Strings expected_keys;
+            for (size_t row = 0; row < rows; ++row)
+            {
+                auto key = std::to_string(row);
+                key.resize(uneven && row % 8 == 0 ? 8192 : 1024, 'x');
+                expected_keys.push_back(key);
+                columns[0]->insert(key);
+                columns[1]->insert(UInt64(row));
+            }
+            std::ranges::sort(expected_keys);
+            Chunk input(std::move(columns), rows);
+            constexpr size_t hashing_threshold = 128 << 20;
+            ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"},
+                suppression ? hashing_threshold : 1, tmp_data, /*min_free_disk_space_=*/ 0,
+                /*max_block_size_rows_=*/ rows, preferred_bytes, /*preserve_input_order_=*/ false);
+            OutputPort upstream{header};
+            InputPort downstream{header};
+            connect(upstream, transform.getInputs().front());
+            connect(transform.getOutputs().front(), downstream);
+            downstream.setNeeded();
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+            upstream.push(input.clone());
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+            transform.work();
+
+            /// Suppression runs contain keys already emitted during hashing. Memory used by another
+            /// operator forces the next chunk to spill while the retained keys still need extraction.
+            if (suppression)
+            {
+                ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+                ASSERT_TRUE(downstream.hasData());
+                ASSERT_EQ(downstream.pull().getNumRows(), rows);
+                upstream.push(input.clone());
+            }
+            const Int64 pressure = suppression ? hashing_threshold : 0;
+            std::ignore = CurrentMemoryTracker::alloc(pressure);
+            SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+            transform.work();
+
+            ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+            auto update = transform.updatePipeline();
+            auto sink_it = std::ranges::find_if(update.to_add, [](const auto & processor)
+            {
+                return typeid_cast<BufferingToFileSink *>(processor.get());
+            });
+            ASSERT_NE(sink_it, update.to_add.end());
+            auto & sink = assert_cast<BufferingToFileSink &>(**sink_it);
+            while (true)
+            {
+                const auto sink_status = sink.prepare();
+                if (sink_status == IProcessor::Status::Finished)
+                    break;
+                if (sink_status == IProcessor::Status::Ready)
+                    sink.work();
+                else
+                    ASSERT_EQ(sink_status, IProcessor::Status::NeedData);
+                const auto status = transform.prepare();
+                if (status == IProcessor::Status::Ready)
+                    transform.work();
+                else
+                    ASSERT_TRUE(status == IProcessor::Status::NeedData || status == IProcessor::Status::PortFull);
+            }
+
+            /// Inspect the serialized blocks themselves: reducing only final output sizes would not
+            /// reduce the decoded block retained by each temporary-file reader.
+            auto reader = sink.getHolder().getReadStream();
+            Strings actual_keys;
+            size_t blocks = 0;
+            for (auto block = reader->read(); !block.empty(); block = reader->read())
+            {
+                EXPECT_LE(block.rows(), preferred_bytes ? 128 : rows);
+                for (size_t row = 0; row < block.rows(); ++row)
+                    actual_keys.emplace_back(block.getByName("k").column->getDataAt(row));
+                ++blocks;
+            }
+            EXPECT_EQ(blocks, preferred_bytes ? 4 : 1);
+            EXPECT_EQ(actual_keys, expected_keys);
         }
     });
 }

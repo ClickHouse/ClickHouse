@@ -244,3 +244,19 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)
         serializeStep(with_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ false),
         serializeStep(without_flag, current_version, /*step_version=*/ 1, /*for_cache_key=*/ false));
 }
+
+TEST(ExternalDistinctPlanSetting, SpillBlockByteTargetRoundTrips)
+{
+    for (const UInt64 bytes : {UInt64{0}, UInt64{1048576}})
+    {
+        DistinctStep::Settings original;
+        original.prefer_external_sort_block_bytes = bytes;
+        const auto settings = serializeDistinctStep(original, current_version);
+        WriteBufferFromOwnString out;
+        settings.writeChangedBinary(out);
+        ReadBufferFromString in(out.str());
+        QueryPlanSerializationSettings restored;
+        restored.readBinary(in);
+        EXPECT_EQ(DistinctStep::Settings(restored).prefer_external_sort_block_bytes, bytes);
+    }
+}

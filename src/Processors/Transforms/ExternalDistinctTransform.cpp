@@ -52,6 +52,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     TemporaryDataOnDiskScopePtr tmp_data_,
     size_t min_free_disk_space_,
     size_t max_block_size_rows_,
+    size_t preferred_block_bytes_,
     bool preserve_input_order_)
     : IProcessor({header_}, {header_})
     , state(std::in_place_type<Hashing>, *header_, columns_, set_size_limits_)
@@ -61,6 +62,7 @@ ExternalDistinctTransform::ExternalDistinctTransform(
     , tmp_data(std::move(tmp_data_))
     , min_free_disk_space(min_free_disk_space_)
     , max_block_size_rows(max_block_size_rows_)
+    , preferred_block_bytes(preferred_block_bytes_)
     , preserve_input_order(preserve_input_order_)
 {
 }
@@ -567,7 +569,7 @@ ExternalDistinctTransform::PreparedRun ExternalDistinctTransform::prepareRun(
     TemporaryBlockStreamHolder tmp_stream(run_header, tmp_data, bytes + min_free_disk_space);
     /// The final merge applies the hint after suppression, which can remove keys from ordinary runs.
     auto merger = std::make_unique<MergeSorter>(
-        run_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode);
+        run_header, std::move(chunks), description, max_block_size_rows, /*limit=*/ 0, mode, preferred_block_bytes);
     auto sink = std::make_shared<BufferingToFileSink>(run_header, std::move(tmp_stream), log);
     auto source = std::make_shared<BufferingFromFileSource>(run_header, sink->getHolder(), log);
     PreparedRun run{
@@ -612,7 +614,7 @@ void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
     /// The tail is merged into unique chunks under the same contract as ordinary disk runs.
     auto source = std::make_shared<MergeSorterSource>(
         spill_layout->getInputRunHeader(), std::move(tail.chunks), spill_layout->getKeySortDescription(),
-        max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks);
+        max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks, preferred_block_bytes);
     state.emplace<ConnectingTail>(std::move(source));
 }
 
@@ -656,7 +658,7 @@ ExternalDistinctTransform::PreparedMerge ExternalDistinctTransform::prepareMerge
             merged_header,
             arrival_number_description,
             max_block_size_rows,
-            /*max_block_bytes=*/ 0,
+            preferred_block_bytes,
             limit_hint,
             /*increase_sort_description_compile_attempts=*/ false,
             /*max_bytes_before_remerge_=*/ 0,

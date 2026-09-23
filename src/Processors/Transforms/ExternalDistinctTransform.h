@@ -47,6 +47,7 @@ public:
         TemporaryDataOnDiskScopePtr tmp_data_,
         size_t min_free_disk_space_,
         size_t max_block_size_rows_,
+        size_t preferred_block_bytes_,
         bool preserve_input_order_);
 
     ~ExternalDistinctTransform() override;
@@ -201,6 +202,7 @@ private:
     TemporaryDataOnDiskScopePtr tmp_data;
     const size_t min_free_disk_space;
     const size_t max_block_size_rows;
+    const size_t preferred_block_bytes;
     const bool preserve_input_order;
     /// Created at the first spill from the representation selected by the initialized set.
     std::optional<DistinctSpillLayout> spill_layout;
