@@ -888,6 +888,8 @@ void Reader::prepareBloomFilterCondition()
         const PrimitiveColumnInfo & column_info = primitive_columns[primitive_idx];
         if (!column_info.used_by_key_condition)
             continue;
+        if (!column_info.decoder.allow_hash_filters)
+            continue;
 
         /// We hash query constants for any column that has either a bloom filter or a usable
         /// dictionary page in at least one surviving row group, so that the same hashes can later be
@@ -917,13 +919,6 @@ void Reader::prepareBloomFilterCondition()
             continue;
 
         parquet::ColumnDescriptor desc = makeColumnDescriptor(file_metadata, column_info);
-
-        if (!parquetHashFilterOutputTypeIsExact(
-                column_info.decoded_type,
-                extended_sample_block_data_types.at(column_info.idx_in_output_block),
-                desc.physical_type()))
-            continue;
-
         bf_eligible_columns[column_info.idx_in_output_block].emplace(primitive_idx, std::move(desc));
         dict_filter_eligible_columns[column_info.idx_in_output_block] = any_row_group_dict_eligible;
         any_column_eligible_for_bf = true;

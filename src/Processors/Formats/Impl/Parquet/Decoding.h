@@ -180,6 +180,11 @@ struct PageDecoderInfo
     /// So we have a small allowlist of type conversions (dispatched in SchemaConverter).
     bool allow_stats = false;
 
+    /// True if we can use the bloom filter and the dictionary page to skip row groups.
+    /// The stored side is hashed in the parquet physical type and query constants in the output block's
+    /// type, so the two agree only for conversions that preserve the physical value.
+    bool allow_hash_filters = false;
+
     /// If true, we need to call tryConvertFieldToType on the output of
     /// FixedSizeConverter/StringConverter's convertField.
     /// The conversion is from type PrimitiveColumnInfo::decoded_type to the column's type in the

@@ -132,6 +132,12 @@ insert into function file(currentDatabase() || '_05241_c_str.parquet', Parquet, 
 insert into function file(currentDatabase() || '_05241_c_ipv6.parquet', Parquet, 'x IPv6')
     select toIPv6('2001:db8::' || lower(hex(toUInt16(number)))) as x from numbers(4000)
     settings output_format_parquet_row_group_size = 1000, output_format_parquet_write_bloom_filter = 1;
+insert into function file(currentDatabase() || '_05241_c_i64.parquet', Parquet, 'x Int64')
+    select toInt64(number) as x from numbers(4000)
+    settings output_format_parquet_row_group_size = 1000, output_format_parquet_write_bloom_filter = 1;
+insert into function file(currentDatabase() || '_05241_c_fs8.parquet', Parquet, 'x FixedString(8)')
+    select leftPad(toString(number), 8, '0')::FixedString(8) as x from numbers(256)
+    settings output_format_parquet_row_group_size = 64, output_format_parquet_write_bloom_filter = 1;
 
 -- value_preserving with the requested type equal to the decoded one, at the declared width and at the
 -- physical width.
@@ -287,6 +293,28 @@ select count() from file(currentDatabase() || '_05241_c_ipv6.parquet', Parquet, 
              input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 1,
              input_format_parquet_dictionary_filter_push_down = 0;
 
+-- Int64 and FixedString are the two types ClickHouse writes without any parquet annotation, so these are
+-- the only controls that read a column whose width the file itself never declares.
+select count() from file(currentDatabase() || '_05241_c_i64.parquet', Parquet, 'x Int64') where x = 3500
+    settings log_comment = 'hfilter_d_16_i64_i64', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 1048576;
+select count() from file(currentDatabase() || '_05241_c_i64.parquet', Parquet, 'x Int64') where x = 3500
+    settings log_comment = 'hfilter_b_16_i64_i64', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 1,
+             input_format_parquet_dictionary_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05241_c_fs8.parquet', Parquet, 'x FixedString(8)')
+    where x = '00000200'
+    settings log_comment = 'hfilter_d_17_fs8_fs8', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 1048576;
+
+-- The same file read with no structure hint at all, where the requested type is the inferred one.
+select count() from file(currentDatabase() || '_05241_c_fs8.parquet', Parquet) where x = '00000200'
+    settings log_comment = 'hfilter_d_18_fs8_inferred', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 1048576;
+
 -- The same two controls with both hash legs off as well, so that the rows below have a no-pruning
 -- baseline to be read against.
 select count() from file(currentDatabase() || '_05241_c_u8.parquet', Parquet, 'x UInt8') where x = 200
@@ -295,6 +323,15 @@ select count() from file(currentDatabase() || '_05241_c_u8.parquet', Parquet, 'x
              input_format_parquet_dictionary_filter_push_down = 0;
 select count() from file(currentDatabase() || '_05241_c_u32.parquet', Parquet, 'x UInt32') where x = 3500
     settings log_comment = 'hfilter_n_02_u32_u32', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05241_c_i64.parquet', Parquet, 'x Int64') where x = 3500
+    settings log_comment = 'hfilter_n_03_i64_i64', input_format_parquet_filter_push_down = 0,
+             input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
+             input_format_parquet_dictionary_filter_push_down = 0;
+select count() from file(currentDatabase() || '_05241_c_fs8.parquet', Parquet, 'x FixedString(8)')
+    where x = '00000200'
+    settings log_comment = 'hfilter_n_04_fs8_fs8', input_format_parquet_filter_push_down = 0,
              input_format_parquet_page_filter_push_down = 0, input_format_parquet_bloom_filter_push_down = 0,
              input_format_parquet_dictionary_filter_push_down = 0;
 

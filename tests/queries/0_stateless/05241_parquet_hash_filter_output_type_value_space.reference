@@ -46,6 +46,12 @@
 1
 1
 1
+1
+1
+1
+1
+1
+1
 hfilter_b_01_u8_u8	0	64
 hfilter_b_02_u32_u32	0	1000
 hfilter_b_03_u8_i16	0	64
@@ -61,6 +67,7 @@ hfilter_b_12_u32_nu32	0	1000
 hfilter_b_13_str_lcstr	0	1000
 hfilter_b_14_str_str	0	1000
 hfilter_b_15_ipv6_ipv6	0	1000
+hfilter_b_16_i64_i64	0	1000
 hfilter_d_01_u8_u8	0	64
 hfilter_d_02_u32_u32	0	1000
 hfilter_d_03_u8_i16	0	64
@@ -76,5 +83,10 @@ hfilter_d_12_u32_nu32	0	1000
 hfilter_d_13_str_lcstr	0	1000
 hfilter_d_14_str_str	0	1000
 hfilter_d_15_ipv6_ipv6	0	1000
+hfilter_d_16_i64_i64	0	1000
+hfilter_d_17_fs8_fs8	0	64
+hfilter_d_18_fs8_inferred	0	64
 hfilter_n_01_u8_u8	0	256
 hfilter_n_02_u32_u32	0	4000
+hfilter_n_03_i64_i64	0	4000
+hfilter_n_04_fs8_fs8	0	256
