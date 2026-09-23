@@ -54,6 +54,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"enable_reader_executor_log", false, false, "New experimental setting to write one row per `ReaderExecutor` at destruction into `system.reader_executor_log`."},
+            {"reader_executor_plan_look_ahead_max_window", 33554432, 33554432, "New experimental setting: plan look-ahead target for the `ReaderExecutor` (floored at `reader_executor_window_size`); the default keeps the plan wider than the fill-ahead lead."},
+            {"reader_executor_hold_consumed", 0, 0, "New experimental setting: trailing retention window of the `ReaderExecutor` read buffer - consumed bytes kept in memory for cheap backward seeks."},
+            {"reader_executor_use_fibers", false, false, "New experimental `ReaderExecutor` setting (off by default): run read-ahead fetch steps as Silk fibers instead of prefetch pool threads."},
+            {"reader_executor_max_tail_for_drain", 1048576, 524288, "Lowered the drain bound: draining more than 512 KiB to complete a dropped long connection costs more than a reopen."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -1534,6 +1539,14 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"merge_reader_executor_window_size", 1048576, 1048576, "New setting. Read window size for merge/mutation reads through the experimental `ReaderExecutor`."},
+            {"merge_reader_executor_plan_look_ahead_max_window", 8388608, 8388608, "New setting. Plan window size for merge/mutation reads through the experimental `ReaderExecutor`."},
+            {"merge_reader_executor_fill_ahead_lead", 2097152, 2097152, "New setting. Fill-ahead lead for merge/mutation reads through the experimental `ReaderExecutor`."},
+            {"merge_reader_executor_hold_consumed", 0, 0, "New setting. Consumed-bytes retention for merge/mutation reads through the experimental `ReaderExecutor`."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

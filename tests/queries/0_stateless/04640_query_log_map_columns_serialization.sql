@@ -22,6 +22,8 @@ SET SQL_query_log_maps_probe = 'probe_value';
 --   * allow_prefetched_read_pool_for_* must be on;
 --   * the PartsSplitter fault injection must be off - it takes precedence in ReadFromMergeTree and
 --     reads ReadType::InOrder, which uses no prefetch pool at all;
+--   * the experimental ReaderExecutor must be off - as the read path it replaces the
+--     prefetched read pool entirely, so the counters this test asserts never populate.
 --   * the plan's stream count must survive memory pressure - max_threads_min_free_memory_per_thread
 --     lowers max_threads, and at one stream ReadFromMergeTree bypasses both read pools.
 -- The scan's own result is not asserted. It is corrupted by the open read-path bug
@@ -40,7 +42,8 @@ SETTINGS log_comment = '04640_settings_probe',
          merge_tree_min_rows_for_concurrent_read = 1,
          merge_tree_min_bytes_for_concurrent_read = 1,
          max_threads = 4,
-         max_threads_min_free_memory_per_thread = 0
+         max_threads_min_free_memory_per_thread = 0,
+         use_reader_executor = 0
 FORMAT Null;
 
 -- Control: the same scan with the prefetched read pool off, so it reads through the ordinary pool.
@@ -58,7 +61,8 @@ SETTINGS log_comment = '04640_settings_probe_control',
          merge_tree_min_rows_for_concurrent_read = 1,
          merge_tree_min_bytes_for_concurrent_read = 1,
          max_threads = 4,
-         max_threads_min_free_memory_per_thread = 0
+         max_threads_min_free_memory_per_thread = 0,
+         use_reader_executor = 0
 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;

@@ -8,13 +8,14 @@
 --
 -- Checks that the experimental ReaderExecutor emits its observability metrics.
 -- Reads a MergeTree table with `use_reader_executor = 1` and verifies, via the
--- per-query ProfileEvents in `system.query_log`, that the live counters moved and
--- the KPI inputs hold their invariants. Long connections are off here so the
--- base-executor metrics stay deterministic (no gap-bridging over-read, no held
--- connections to drop) under randomized settings like `max_threads`; the reuse
--- path is covered by 04341/04342 and the gtests. The exact modeled-cost formula
--- and the KPI ratio are checked deterministically in the gtest (single executor);
--- here the per-executor integer rounding makes only sign / relational checks reliable.
+-- per-query ProfileEvents in `system.query_log`, that the live counters moved,
+-- the KPI inputs hold their invariants, and the disabled cache tiers stay 0.
+-- Long connections are off here so the base-executor metrics stay deterministic
+-- (no gap-bridging over-read, no held connections to drop) under randomized
+-- settings like `max_threads`; the reuse path is covered by 04341/04342 and the
+-- gtests. The exact modeled-cost formula and the KPI ratio are checked
+-- deterministically in the gtest (single executor); here the per-executor
+-- integer rounding makes only sign / relational checks reliable.
 
 DROP TABLE IF EXISTS t_reader_executor_metrics;
 
@@ -52,20 +53,22 @@ SYSTEM FLUSH LOGS query_log;
 -- Columns (all expected 1):
 --   1: source requests happened
 --   2: bytes were read from source
---   3: requested bytes == source bytes (no over-read: gap-bridging needs long connections, off here)
+--   3: requested bytes == source bytes (no over-read / cache divergence: the
+--      filesystem cache is disabled and gap-bridging needs long connections, off here)
 --   4: total work time was recorded
---   5: modeled cost >= 30ms-per-source-request floor (the byte term only adds to it)
---   6,7: cache get / cache populate stay 0 (not implemented)
---   8: incomplete connections stay 0 (no held connections to drop with long connections off)
+--   5: modeled cost >= the per-request and per-incomplete-connection floor (the
+--      byte term only adds to it). Incomplete connections are NOT asserted zero:
+--      even with long connections off, an unbounded one-shot stream abandoned
+--      before EOF counts as incomplete, and that varies with `max_threads`.
+--   6,7: cache get / cache populate stay 0 (the cache tiers are disabled here)
 SELECT
     ProfileEvents['ReaderExecutorSourceRequests'] > 0,
     ProfileEvents['ReaderExecutorBytesFromSource'] > 0,
     ProfileEvents['ReaderExecutorDeliveredBytes'] = ProfileEvents['ReaderExecutorBytesFromSource'],
     ProfileEvents['ReaderExecutorWorkMicroseconds'] > 0,
-    ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests'],
+    ProfileEvents['ReaderExecutorModeledCostMicroseconds'] >= 30000 * ProfileEvents['ReaderExecutorSourceRequests'] + 5000 * ProfileEvents['ReaderExecutorIncompleteConnections'],
     ProfileEvents['ReaderExecutorCacheGetRequests'] = 0,
-    ProfileEvents['ReaderExecutorCachePopulateRequests'] = 0,
-    ProfileEvents['ReaderExecutorIncompleteConnections'] = 0
+    ProfileEvents['ReaderExecutorCachePopulateRequests'] = 0
 FROM system.query_log
 WHERE log_comment = '04327_reader_executor_metrics_probe'
   AND type = 'QueryFinish'

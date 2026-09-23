@@ -1,5 +1,7 @@
 #pragma once
 #include <cstddef>
+#include <utility>
+#include <vector>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -32,6 +34,16 @@ struct MergeTreeReaderSettings
 {
     /// Common read settings.
     ReadSettings read_settings;
+    /// The last mark any task of this part will read (see
+    /// `MergeTreeReadTaskInfo::planned_last_mark`); rides the per-part copy of
+    /// the reader settings into the streams. 0 = unknown.
+    size_t planned_last_mark = 0;
+    /// The REQUEST MAP in marks: the exact ranges this reader's assignment will
+    /// read from the part (the pool's per-thread stripe, captured at fill time).
+    /// Empty = unknown = assume the whole part. Streams convert it to their own
+    /// file offsets and advertise it to the read layer (advisory: it bounds
+    /// speculation and fill sizing, never service).
+    std::vector<std::pair<size_t, size_t>> planned_mark_ranges;
     /// If save_marks_in_cache is false, then, if marks are not in cache,
     ///  we will load them but won't save in the cache, to avoid evicting other data.
     bool save_marks_in_cache = false;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-random-merge-tree-settings, no-random-settings, no-parallel
+# Tags: no-random-merge-tree-settings, no-random-settings, no-parallel, no-flaky-check
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -10,6 +10,9 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 ${CLICKHOUSE_CLIENT} -n --query "
 DROP TABLE IF EXISTS t_lightweight_mut_1;
+
+-- this test checks query_log ProfileEvents counters (FileOpen) incompatible with ReaderExecutor
+SET use_reader_executor = 0;
 
 SET apply_mutations_on_fly = 1;
 

@@ -26,6 +26,22 @@ public:
 
 private:
     MergeTreeReaderStream & getStream(const NameAndTypePair &) override { return *stream; }
+
+    void updatePlannedLastMark(size_t planned_last_mark) override
+    {
+        /// Keep the settings current for the lazily-created stream (`init`),
+        /// and re-announce on the live one.
+        settings.planned_last_mark = planned_last_mark;
+        if (stream)
+            stream->updatePlannedLastMark(planned_last_mark);
+    }
+
+    void updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges) override
+    {
+        settings.planned_mark_ranges = mark_ranges;
+        if (stream)
+            stream->updateRequestMap(std::move(mark_ranges));
+    }
     void init();
 
     bool initialized = false;

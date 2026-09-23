@@ -41,6 +41,9 @@ public:
 
     void prefetchBeginOfRange(Priority priority) override;
 
+    void updatePlannedLastMark(size_t planned_last_mark) override;
+    void updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges) override;
+
     /// Return map (column to read) -> (list of all streams required to read this column).
     std::unordered_map<String, std::vector<String>> getAllColumnsSubstreams();
 
@@ -66,6 +69,9 @@ private:
         void markPrefetched(const String & stream_name);
         void unmarkPrefetched(const String & stream_name);
         void clearPrefetched();
+
+        /// Runs `callback` on every existing stream with the mutex held.
+        void forEach(const std::function<void(MergeTreeReaderStream &)> & callback);
 
     private:
         mutable std::mutex mutex;

@@ -258,6 +258,14 @@ ChainedBuffers ChainedBuffers::slice(ByteRange req) const
     /// Bytes before the consumed frontier are not slice-able; clamp every node to it (with
     /// overlap a later node can start before it too, not just the front).
     const size_t cursor = consumed_pos;
+    /// The result delivers each byte AT MOST ONCE. Nodes can overlap (a bank re-fetch, a
+    /// rewind-kept node), and appending each node's full overlap with `req` would duplicate
+    /// the shared bytes - a consumer assembling by concatenation would then shift everything
+    /// after them. Nodes are sorted by start, so clipping every contribution to begin at the
+    /// high-water mark of what is already appended is exact: a byte below the mark was
+    /// appended by an earlier node, and a hole is never re-covered by a later node (its
+    /// start is >= every earlier start).
+    size_t appended_end = req.offset;
     for (const auto & node : nodes)
     {
         size_t effective_buffer_offset = node.buffer_offset;
@@ -282,8 +290,10 @@ ChainedBuffers ChainedBuffers::slice(ByteRange req) const
         if (node_end <= req.offset)
             continue;
 
-        size_t overlap_start = std::max(node_start, req.offset);
+        size_t overlap_start = std::max({node_start, req.offset, appended_end});
         size_t overlap_end = std::min(node_end, req_end);
+        if (overlap_start >= overlap_end)
+            continue;  /// fully behind the high-water mark: already delivered
         size_t trim_front = overlap_start - node_start;
 
         ChainedBufferNode sliced;
@@ -291,6 +301,7 @@ ChainedBuffers ChainedBuffers::slice(ByteRange req) const
         sliced.buffer_offset = effective_buffer_offset + trim_front;
         sliced.size = overlap_end - overlap_start;
         sliced.logical_offset = overlap_start;
+        appended_end = overlap_end;
         /// Go through `append` so intervals on the result are maintained.
         result.append(std::move(sliced));
     }

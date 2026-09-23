@@ -1,7 +1,11 @@
 #include <Server.h>
 #include <Common/CurrentThread.h>
 #include <Common/QueryScope.h>
+#include <Common/MemoryPressureMonitor.h>
+#include <Common/SilkScheduler.h>
+#include <IO/LongConnectionLimit.h>
 
+#include <atomic>
 #include <memory>
 #include <Interpreters/ClientInfo.h>
 #include <sys/resource.h>
@@ -32,7 +36,6 @@
 #include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
@@ -255,6 +258,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 disk_connections_warn_limit;
     extern const ServerSettingsUInt64 disk_connections_rcvbuf;
     extern const ServerSettingsUInt64 disk_connections_sndbuf;
+    extern const ServerSettingsBool disk_connections_use_silk;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv4;
     extern const ServerSettingsBool dns_allow_resolve_names_to_ipv6;
     extern const ServerSettingsUInt64 dns_cache_max_entries;
@@ -1677,6 +1681,27 @@ try
         server_settings[ServerSetting::max_backups_io_thread_pool_free_size],
         server_settings[ServerSetting::backups_io_thread_pool_queue_size]);
 
+    if (server_settings[ServerSetting::disk_connections_use_silk])
+    {
+#if USE_SILK
+        /// Failure here is intentional fail-close (see `initializeSilkScheduler`'s doc comment):
+        /// e.g. an io_uring probe failure propagates out of this call and aborts server startup
+        /// via the top-level `catch (...)` below, rather than starting a scheduler that can't
+        /// actually submit I/O.
+        initializeSilkScheduler();
+        LOG_INFO(log, "Silk fiber scheduler started (disk_connections_use_silk = 1)");
+#else
+        LOG_WARNING(log, "Setting disk_connections_use_silk is ignored: the build has no Silk support");
+#endif
+    }
+
+    /// Latched once, here, and never re-evaluated: fiber sockets on the disk connection group
+    /// take effect only at server startup, because the scheduler above is only ever started once.
+    /// The config-reload lambda below must keep pushing exactly this value to
+    /// `HTTPConnectionPools`, never whatever `disk_connections_use_silk` reads as at reload time.
+    const bool silk_disk_sockets_boot_effective
+        = server_settings[ServerSetting::disk_connections_use_silk] && isSilkSchedulerInitialized();
+
     getFetchPartitionThreadPool().initialize(
         server_settings[ServerSetting::max_fetch_partition_thread_pool_size],
         0, // FETCH PARTITION is relatively rare, no need to keep threads
@@ -2521,6 +2546,9 @@ try
             validatePrometheusConstantLabels(
                 *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
 
+            /// Keep the file layer being replaced: the merged-view check below runs after the
+            /// replacement and needs to undo it on rejection.
+            Poco::Util::LayeredConfiguration::ConfigPtr previous_config = config().find("default");
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
             ServerSettings new_server_settings;
@@ -2528,11 +2556,23 @@ try
 
             /// The check above sees the incoming file alone. A triple split across the file and the
             /// command-line layer can have each source valid and the merge out of order, so check the
-            /// merged view too - here, before the first live setting below is touched.
-            validateMemoryPressureThresholds(
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
-                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
+            /// merged view too - here, before the first live setting below is touched. The merged view
+            /// only exists once the layer is replaced, so a rejection here restores the previous file
+            /// layer: otherwise the failed reload would keep publishing the rejected values through
+            /// `config()` and `system.server_settings` while every live consumer keeps the old ones.
+            try
+            {
+                validateMemoryPressureThresholds(
+                    new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                    new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                    new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
+            }
+            catch (...)
+            {
+                if (previous_config)
+                    config().replace("default", previous_config, PRIO_DEFAULT, true);
+                throw;
+            }
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
@@ -2920,6 +2960,64 @@ try
                     new_server_settings[ServerSetting::http_connections_rcvbuf],
                     new_server_settings[ServerSetting::http_connections_sndbuf],
                 });
+
+            /// `disk_connections_use_silk` takes effect only at server startup (see
+            /// `silk_disk_sockets_boot_effective` above): a reload can never start or stop the
+            /// scheduler, so it must never change which sockets `HTTPConnectionPools` hands out
+            /// either - only the latched boot value is ever pushed below. When the freshly
+            /// reloaded config disagrees with that boot value, warn once per state change (not
+            /// every reload tick) instead of silently ignoring the operator's config change.
+#if USE_SILK
+            /// Builds without Silk skip the mismatch check: there the effective value is a
+            /// hard-wired false, so it would fire spuriously on the first reload tick of every
+            /// boot with the setting configured. They warn about the setting having no effect
+            /// in the `#else` below instead.
+            {
+                static std::atomic<bool> silk_disk_sockets_reload_mismatch{false};
+                const bool silk_disk_sockets_configured = new_server_settings[ServerSetting::disk_connections_use_silk];
+                /// Fix-1's half-state: the setting is on, but sockets stay off because the
+                /// scheduler was never started at boot (as opposed to the setting being off).
+                setSilkConfiguredButNotStarted(silk_disk_sockets_configured && !silk_disk_sockets_boot_effective);
+                if (silk_disk_sockets_configured != silk_disk_sockets_boot_effective)
+                {
+                    if (!silk_disk_sockets_reload_mismatch.exchange(true))
+                        global_context->addOrUpdateWarningMessage(
+                            Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD,
+                            PreformattedMessage::create(
+                                "disk_connections_use_silk changed by config reload from {} to {}; the setting "
+                                "takes effect only at server startup - restart required",
+                                silk_disk_sockets_boot_effective,
+                                silk_disk_sockets_configured));
+                }
+                else if (silk_disk_sockets_reload_mismatch.exchange(false))
+                    global_context->addOrUpdateWarningMessage(Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD, std::nullopt);
+            }
+#else
+            /// A build without Silk cannot honour the setting at all, and its one-shot boot warning
+            /// only fires when the setting was already on at startup. Turning it on by a reload would
+            /// otherwise be silent: `system.server_settings` would show the new value while nothing
+            /// changed, so warn here too (and withdraw the warning once it is turned back off).
+            {
+                static std::atomic<bool> silk_unsupported_warned{false};
+                const bool silk_disk_sockets_configured = new_server_settings[ServerSetting::disk_connections_use_silk];
+                if (silk_disk_sockets_configured)
+                {
+                    if (!silk_unsupported_warned.exchange(true))
+                        global_context->addOrUpdateWarningMessage(
+                            Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD,
+                            PreformattedMessage::create(
+                                "disk_connections_use_silk is set, but this build has no Silk support, so it has "
+                                "no effect"));
+                }
+                else if (silk_unsupported_warned.exchange(false))
+                    global_context->addOrUpdateWarningMessage(Context::WarningType::DISK_CONNECTIONS_USE_SILK_CHANGED_BY_RELOAD, std::nullopt);
+            }
+#endif
+
+            HTTPConnectionPools::instance().setUseSilkSockets(
+                silk_disk_sockets_boot_effective,
+                /*storage*/ false,
+                /*http*/ false);
 
             DNSResolver::instance().setFilterSettings(new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv4], new_server_settings[ServerSetting::dns_allow_resolve_names_to_ipv6]);
 

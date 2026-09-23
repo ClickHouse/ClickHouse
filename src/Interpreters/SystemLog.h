@@ -26,6 +26,7 @@
     M(BucketedMetricLog,     bucketed_metric_log,  "Contains history of metrics values from tables system.metrics and system.events. Periodically flushed to disk. Single Map column form of system.metric_log with bucketed serialization.") \
     M(ErrorLog,              error_log,            DB::SYSTEM_LOG_DOCUMENTATION_ERROR_LOG) \
     M(FilesystemCacheLog,    filesystem_cache_log, DB::SYSTEM_LOG_DOCUMENTATION_FILESYSTEM_CACHE_LOG) \
+    M(ReaderExecutorLog,     reader_executor_log,  DB::SYSTEM_LOG_DOCUMENTATION_READER_EXECUTOR_LOG) \
     M(FilesystemReadPrefetchesLog, filesystem_read_prefetches_log, DB::SYSTEM_LOG_DOCUMENTATION_FILESYSTEM_READ_PREFETCHES_LOG) \
     M(ObjectStorageQueueLog, s3queue_log,          DB::SYSTEM_LOG_DOCUMENTATION_S3QUEUE_LOG) \
     M(ObjectStorageQueueLog, azure_queue_log,      DB::SYSTEM_LOG_DOCUMENTATION_AZURE_QUEUE_LOG) \
@@ -640,6 +641,13 @@ last_error_trace:    [100506790044914,100506534488542,100506409937998,1005064099
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_FILESYSTEM_CACHE_LOG[] = R"DOCS_MD(
 .description
 Contains a history of all events occurred with filesystem cache for objects on a remote filesystem.
+
+It is safe to truncate or drop this table at any time.
+)DOCS_MD";
+
+inline constexpr char SYSTEM_LOG_DOCUMENTATION_READER_EXECUTOR_LOG[] = R"DOCS_MD(
+.description
+Contains one row per ReaderExecutor at destruction, with per-reader byte counters split by tier (page cache, filesystem cache, source), request counts and a time breakdown.
 
 It is safe to truncate or drop this table at any time.
 )DOCS_MD";

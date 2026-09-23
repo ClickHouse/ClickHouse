@@ -277,6 +277,21 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
+void MergeTreeReaderWide::updatePlannedLastMark(size_t planned_last_mark)
+{
+    /// Also keep the reader's own settings current: streams are added lazily
+    /// (`getOrAddStream` during reads), and a stream born after this update must
+    /// start from the task series' current planned end, not the creation-time one.
+    settings.planned_last_mark = planned_last_mark;
+    streams.forEach([&](MergeTreeReaderStream & stream) { stream.updatePlannedLastMark(planned_last_mark); });
+}
+
+void MergeTreeReaderWide::updateRequestMap(std::vector<std::pair<size_t, size_t>> mark_ranges)
+{
+    settings.planned_mark_ranges = mark_ranges;
+    streams.forEach([&](MergeTreeReaderStream & stream) { stream.updateRequestMap(mark_ranges); });
+}
+
 MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
 {
     {
@@ -336,6 +351,13 @@ void MergeTreeReaderWide::FileStreams::clearPrefetched()
 {
     std::lock_guard lock(mutex);
     prefetched.clear();
+}
+
+void MergeTreeReaderWide::FileStreams::forEach(const std::function<void(MergeTreeReaderStream &)> & callback)
+{
+    std::lock_guard lock(mutex);
+    for (auto & [_, stream] : streams)
+        callback(*stream);
 }
 
 MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
