@@ -27,8 +27,23 @@ namespace ErrorCodes
 namespace
 {
 
+/** Profile instrumentation (WITH_COVERAGE) must not touch the remap machinery.
+  * remapToHugeStep2 and the scratch copy of our_syscall execute at a shifted
+  * address while the original text is unmapped: an instrumented prologue's
+  * RIP-relative counter access (and the __llvm_profile_counter_bias load under
+  * runtime counter relocation) then dereferences a shifted, unrelated address -
+  * a deterministic segfault with relocation, silent memory corruption without.
+  * Step1/Step3 run at original addresses, but are excluded too so the whole
+  * mechanism stays uninstrumented.
+  */
+#if defined(__clang__)
+#    define NO_PROFILE_INSTRUMENTATION __attribute__((no_profile_instrument_function))
+#else
+#    define NO_PROFILE_INSTRUMENTATION
+#endif
+
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
-__attribute__((__noinline__)) int64_t our_syscall(...)
+NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
         movq %%rdi,%%rax;
@@ -45,7 +60,7 @@ __attribute__((__noinline__)) int64_t our_syscall(...)
 }
 
 
-__attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
+NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
 {
     /// The function should not use the stack, otherwise various optimizations, including "omit-frame-pointer" may break the code.
 
@@ -59,17 +74,22 @@ __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size,
 }
 
 
-__attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch)
+NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, void * scratch, void * syscall_in_scratch, void * step3_in_place)
 {
     /** Unmap old memory region with the code of our program.
       * Our instruction pointer is located inside scratch area and this function can execute after old code is unmapped.
       * But it cannot call any other functions because they are not available at usual addresses
       * - that's why we have to use "our_syscall" function and a substitution for memcpy.
       * (Relative addressing may continue to work but we should not assume that).
+      *
+      * The callee addresses (our_syscall in the scratch copy, and step3 in its original place) are captured by
+      * step1 while it still runs from the original mapping and passed in here. We must not recompute them here:
+      * in position-independent (PIE) builds a reference to our_syscall/step3 taken while running from scratch
+      * resolves into the scratch copy, so adding the offset again would double-count and jump into garbage.
       */
 
     int64_t offset = reinterpret_cast<intptr_t>(scratch) - reinterpret_cast<intptr_t>(begin);
-    int64_t (*syscall_func)(...) = reinterpret_cast<int64_t (*)(...)>(reinterpret_cast<intptr_t>(our_syscall) + offset);
+    int64_t (*syscall_func)(...) = reinterpret_cast<int64_t (*)(...)>(syscall_in_scratch);
 
     int64_t munmap_res = syscall_func(SYS_munmap, begin, size);
     if (munmap_res != 0)
@@ -110,12 +130,12 @@ __attribute__((__noinline__)) void remapToHugeStep2(void * begin, size_t size, v
       * To do it, we obtain its pointer and call by pointer.
       */
 
-    void(* volatile step3)(void*, size_t, size_t) = remapToHugeStep3;
+    void(* volatile step3)(void*, size_t, size_t) = reinterpret_cast<void(*)(void*, size_t, size_t)>(step3_in_place);
     step3(scratch, size, offset);
 }
 
 
-__attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
+NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 {
     /// Allocate scratch area and copy the code there.
 
@@ -129,9 +149,17 @@ __attribute__((__noinline__)) void remapToHugeStep1(void * begin, size_t size)
 
     int64_t offset = reinterpret_cast<intptr_t>(scratch) - reinterpret_cast<intptr_t>(begin);
 
+    /// Capture callee addresses here, while we still run from the original mapping, so they stay valid once
+    /// step2 executes from the scratch copy. our_syscall is relocated into scratch (+offset); step3 must be
+    /// called at its original place (the code is restored before step3 runs). In PIE builds these references
+    /// cannot be recomputed inside step2, hence we pass them as plain pointers.
+    void * syscall_in_scratch = reinterpret_cast<void *>(reinterpret_cast<intptr_t>(our_syscall) + offset);
+    void * step3_in_place = reinterpret_cast<void *>(remapToHugeStep3);
+
     /// Jump to the next function inside the scratch area.
 
-    reinterpret_cast<void(*)(void*, size_t, void*)>(reinterpret_cast<intptr_t>(remapToHugeStep2) + offset)(begin, size, scratch);
+    reinterpret_cast<void(*)(void*, size_t, void*, void*, void*)>(reinterpret_cast<intptr_t>(remapToHugeStep2) + offset)(
+        begin, size, scratch, syscall_in_scratch, step3_in_place);
 }
 
 }

@@ -1,6 +1,7 @@
 #include <Storages/ProjectionsDescription.h>
 #include <DataTypes/DataTypeString.h>
 
+#include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
 #include <Common/iota.h>
@@ -125,13 +126,16 @@ ProjectionsDescription ProjectionsDescription::clone() const
     ProjectionsDescription other;
     for (const auto & projection : projections)
         other.add(projection.clone());
+    for (const auto & definition_ast : unavailable)
+        other.addUnavailable(definition_ast->clone());
 
     return other;
 }
 
 bool ProjectionDescription::operator==(const ProjectionDescription & other) const
 {
-    return name == other.name && definition_ast->formatWithSecretsOneLine() == other.definition_ast->formatWithSecretsOneLine();
+    return name == other.name
+        && definition_ast->formatIgnoringRedundantParentheses() == other.definition_ast->formatIgnoringRedundantParentheses();
 }
 
 namespace
@@ -245,7 +249,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
     const ColumnsDescription & columns,
     const KeyDescription * partition_key,
     const ContextPtr & query_context,
-    LoadingStrictnessLevel mode)
+    LoadingStrictnessLevel mode,
+    bool attach_short_syntax)
 {
     const auto * projection_definition = definition_ast->as<ASTProjectionDeclaration>();
 
@@ -254,6 +259,11 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
 
     if (projection_definition->name.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Projection must have name in definition.");
+
+    /// The name is used unescaped as a directory name (`getDirectoryName`) inside a part directory,
+    /// so a '/' in it would address files outside of the part and outside of the data directory.
+    if (projection_definition->name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Projection name ({}) cannot contain '/'", projection_definition->name);
 
     ProjectionDescription result;
     result.definition_ast = projection_definition->clone();
@@ -295,7 +305,8 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
         fillProjectionDescriptionByQuery(result, projection_definition->query->as<ASTProjectionSelectQuery &>(), columns, partition_key, query_context, *merge_tree_settings);
     }
 
-    if (mode <= LoadingStrictnessLevel::CREATE)
+    /// `WITH SETTINGS` is part of the table definition, so it is checked whenever that is
+    if (isFreshTableDefinition(mode, attach_short_syntax))
     {
         static const std::unordered_set<std::string_view> ALLOWED_PROJECTION_SETTINGS = {
             "index_granularity",
@@ -327,14 +338,13 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is not allowed for projections", change.name);
         }
 
-        const auto & ac = query_context->getAccessControl();
-        bool allow_experimental = ac.getAllowExperimentalTierSettings();
-        bool allow_beta = ac.getAllowBetaTierSettings();
+        /// What `WITH SETTINGS` changes from the defaults this projection would otherwise have.
+        auto default_settings = result.index ? result.index->getDefaultSettings() : std::make_shared<MergeTreeSettings>();
+        query_context->checkMergeTreeSettingsConstraints(*default_settings, merge_tree_settings->changesFrom(*default_settings));
+
         query_context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
         merge_tree_settings->sanityCheck(
             query_context->getMergeMutateExecutor()->getMaxTasksCount(),
-            allow_experimental,
-            allow_beta,
             query_context->wasBackgroundPoolAutoLowered());
     }
 
@@ -561,7 +571,11 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
 
     auto select_query = make_intrusive<ASTProjectionSelectQuery>();
     ASTPtr select_expression_list = make_intrusive<ASTExpressionList>();
-    for (const auto & column : minmax_columns)
+    /// The i-th min/max pair below is answered from slot i of the part min-max index, whose own order is
+    /// derived the same way: from the partition key column names, never from the table column order.
+    Names sorted_minmax_columns = minmax_columns;
+    ::sort(sorted_minmax_columns.begin(), sorted_minmax_columns.end());
+    for (const auto & column : sorted_minmax_columns)
     {
         select_expression_list->children.push_back(makeASTFunction("min", make_intrusive<ASTIdentifier>(column)));
         select_expression_list->children.push_back(makeASTFunction("max", make_intrusive<ASTIdentifier>(column)));
@@ -807,7 +821,7 @@ String ProjectionsDescription::toString() const
     for (const auto & projection : projections)
         list.children.push_back(projection.definition_ast);
 
-    return list.formatWithSecretsOneLine();
+    return list.formatIgnoringRedundantParentheses();
 }
 
 ProjectionsDescription ProjectionsDescription::parse(
@@ -862,6 +876,19 @@ void ProjectionsDescription::add(ProjectionDescription && projection, const Stri
             ErrorCodes::ILLEGAL_PROJECTION, "Cannot add projection {}: projection with this name already exists", projection.name);
     }
 
+    for (const auto & definition_ast : unavailable)
+    {
+        if (definition_ast->as<const ASTProjectionDeclaration &>().name != projection.name)
+            continue;
+        if (if_not_exists)
+            return;
+        throw Exception(
+            ErrorCodes::ILLEGAL_PROJECTION,
+            "Cannot add projection {}: a projection with this name is declared but could not be analyzed when the table "
+            "was loaded. Drop it first, or remove the cause recorded in the server log and restart the server",
+            projection.name);
+    }
+
     auto insert_it = projections.cend();
 
     if (first)
@@ -886,6 +913,14 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
     auto it = map.find(projection_name);
     if (it == map.end())
     {
+        for (auto unavailable_it = unavailable.begin(); unavailable_it != unavailable.end(); ++unavailable_it)
+        {
+            if ((*unavailable_it)->as<const ASTProjectionDeclaration &>().name != projection_name)
+                continue;
+            unavailable.erase(unavailable_it);
+            return;
+        }
+
         if (if_exists)
             return;
 
@@ -898,6 +933,33 @@ void ProjectionsDescription::remove(const String & projection_name, bool if_exis
 
     projections.erase(it->second);
     map.erase(it);
+}
+
+void ProjectionsDescription::addUnavailable(ASTPtr definition_ast)
+{
+    unavailable.push_back(std::move(definition_ast));
+}
+
+Names ProjectionsDescription::getUnavailableNames() const
+{
+    Names names;
+    names.reserve(unavailable.size());
+    for (const auto & definition_ast : unavailable)
+        names.push_back(definition_ast->as<const ASTProjectionDeclaration &>().name);
+    return names;
+}
+
+void ProjectionsDescription::replace(ProjectionDescription && projection)
+{
+    auto it = map.find(projection.name);
+    if (it == map.end())
+        throw Exception(
+            ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+            "There is no projection {} in table{}",
+            projection.name,
+            getHintsMessage(projection.name));
+
+    *it->second = std::move(projection);
 }
 
 VectorWithMemoryTracking<String> ProjectionsDescription::getAllRegisteredNames() const

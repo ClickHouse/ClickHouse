@@ -88,6 +88,8 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
+    StoragePtr getDestinationTable() const;
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -99,6 +101,8 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
+    size_t flushBufferedRowsBeforeShutdown() override;
+
     void flushAndPrepareForShutdown() override;
     bool optimize(
         const ASTPtr & query,
@@ -131,12 +135,13 @@ public:
     /// initiator must not rewrite functions to subcolumns when the destination opts out (e.g.
     /// Distributed). Fails closed like supportsPrewhere(): no destination means no rewrite.
     bool supportsOptimizationToSubcolumns() const override;
+    bool supportsOptimizationToTupleElementSubcolumns() const override;
     bool supportsFinal() const override { return true; }
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
 
     /// The structure of the subordinate table is not checked and does not change.
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
@@ -206,9 +211,7 @@ private:
     void backgroundFlush();
     void reschedule(size_t min_delay);
 
-    StoragePtr getDestinationTable() const;
-
-    BackgroundSchedulePool & bg_pool;
+    BackgroundSchedulePoolPtr bg_pool;
     BackgroundSchedulePoolTaskHolder flush_handle;
 
     static constexpr size_t BACKGROUND_RESCHEDULE_MIN_DELAY = 1;

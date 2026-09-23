@@ -432,7 +432,7 @@ The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, v
     FunctionDocumentation::ReturnedValue returned_value_mapFromArrays = {"Returns a map with keys and values constructed from the key array and value array/map.", {"Map"}};
     FunctionDocumentation::Examples examples_mapFromArrays = {
         {"Basic usage", "SELECT mapFromArrays(['a', 'b', 'c'], [1, 2, 3])", "{'a':1,'b':2,'c':3}"},
-        {"With map inputs", "SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))", "{1:('a', 1), 2:('b', 2), 3:('c', 3)}"}
+        {"With map inputs", "SELECT mapFromArrays([1, 2, 3], map('a', 1, 'b', 2, 'c', 3))", "{1:('a',1),2:('b',2),3:('c',3)}"}
     };
     FunctionDocumentation::IntroducedIn introduced_in_mapFromArrays = {23, 3};
     FunctionDocumentation::Category category_mapFromArrays = FunctionDocumentation::Category::Map;

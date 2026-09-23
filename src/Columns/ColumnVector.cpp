@@ -64,12 +64,6 @@ void ColumnVector<T>::deserializeAndInsertFromArena(ReadBuffer & in, const IColu
 }
 
 template <typename T>
-void ColumnVector<T>::skipSerializedInArena(ReadBuffer & in) const
-{
-    in.ignore(sizeof(T));
-}
-
-template <typename T>
 void ColumnVector<T>::updateHashWithValue(size_t n, SipHash & hash) const
 {
     hash.update(data[n]);
@@ -462,6 +456,23 @@ size_t ColumnVector<T>::getEqualRangeEndAssumeSorted(size_t begin, size_t end, i
 }
 
 template <typename T>
+Int64 ColumnVector<T>::compareTrackAt(size_t n, size_t m, const IColumn & rhs_, int nan_direction_hint) const
+{
+    const auto & rhs = assert_cast<const Self &>(rhs_);
+    const T * lhs_data = data.data();
+    const T * rhs_data = rhs.data.data();
+    const T lhs_value = lhs_data[n];
+    const T rhs_value = rhs_data[m];
+    static constexpr size_t linear_probe = 16;
+
+    return compareTrackAtImpl(
+        CompareHelper<T>::compare(lhs_value, rhs_value, nan_direction_hint),
+        n, m, data.size(), rhs.data.size(), linear_probe,
+        [&](size_t row) { return CompareHelper<T>::less(lhs_data[row], rhs_value, nan_direction_hint); },
+        [&](size_t row) { return CompareHelper<T>::greater(lhs_value, rhs_data[row], nan_direction_hint); });
+}
+
+template <typename T>
 void ColumnVector<T>::getPermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
                                     size_t limit, int nan_direction_hint, IColumn::Permutation & res) const
 {
@@ -573,8 +584,9 @@ void ColumnVector<T>::updatePermutation(IColumn::PermutationSortDirection direct
             /// Thresholds on size. Lower threshold is arbitrary. Upper threshold is chosen by the type for histogram counters.
             if (range_size >= 256 && range_size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
             {
-                bool try_sort = trySort(begin, end, pred);
-                if (try_sort)
+                /// `trySort` can reorder equal values even when it returns false.
+                /// Stable radix sorting must preserve the incoming order within equal ranges.
+                if (!sort_is_stable && trySort(begin, end, pred))
                     return;
 
                 PaddedPODArray<ValueWithIndex<T>> pairs(range_size);
@@ -1175,6 +1187,23 @@ void ColumnVector<T>::getExtremes(Field & min, Field & max, size_t start, size_t
         * NOTE: There exist many different NaNs.
         * Different NaN could be returned: not bit-exact value as one of NaNs from column.
         */
+    if constexpr (has_find_extreme_implementation<T> && is_floating_point<T>)
+    {
+        auto cur_min = findExtremeMin(data.data(), start, end);
+        auto cur_max = findExtremeMax(data.data(), start, end);
+
+        if (!cur_min || !cur_max)
+        {
+            min = NaNOrZero<T>();
+            max = NaNOrZero<T>();
+            return;
+        }
+
+        min = NearestFieldType<T>(*cur_min);
+        max = NearestFieldType<T>(*cur_max);
+        return;
+    }
+
     size_t i = start;
     if constexpr (is_floating_point<T>)
     {
@@ -1416,6 +1445,13 @@ std::span<char> ColumnVector<T>::insertRawUninitialized(size_t count)
     size_t start = data.size();
     data.resize(start + count);
     return {reinterpret_cast<char *>(data.data() + start), count * sizeof(T)};
+}
+
+template <typename T>
+bool ColumnVector<T>::hasOnlyTypeDefaults() const
+{
+    /// A conservative bit check intentionally keeps -0.0 columns physical.
+    return memoryIsZero(data.data(), 0, data.size() * sizeof(T));
 }
 
 template <typename T>

@@ -201,7 +201,7 @@ export const kbIndex = {
     {
       "id": "configuration-settings/change-the-prompt-in-clickhouse-client",
       "title": "Change the prompt in clickhouse-client",
-      "description": "This article explains how to change the prompt in your Clickhouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
+      "description": "This article explains how to change the prompt in your ClickHouse client and clickhouse-local terminal window from :) to a prefix followed by :)",
       "href": "/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
       "category": "Configuration & settings",
       "tags": [
@@ -1120,6 +1120,16 @@ export const kbIndex = {
       "category": "Tables & schema",
       "tags": [
         "Deployments and Scaling"
+      ]
+    },
+    {
+      "id": "setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "title": "Set up the ClickHouse documentation MCP server",
+      "description": "Connect AI tools to the ClickHouse documentation through the Model Context Protocol.",
+      "href": "/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server",
+      "category": "Setup & installation",
+      "tags": [
+        "Tools and Utilities"
       ]
     },
     {

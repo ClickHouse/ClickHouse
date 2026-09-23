@@ -93,7 +93,7 @@ Para restringir el acceso a servicios específicos desde otras aplicaciones o po
 Para ello, vaya a **Settings** en la pestaña del servicio concreto al que desea restringir el acceso en la consola de ClickHouse Cloud.
 
 La configuración de filtrado por IP puede aplicarse a cada servicio por separado, lo que significa que puede controlar qué aplicación puede acceder a qué servicio.
-Esto le permite impedir que los usuarios utilicen servicios específicos.
+Esto le permite restringir el acceso a servicios específicos.
 
 En el ejemplo siguiente, Alice tiene restringido el acceso al servicio 2 del warehouse:
 
@@ -103,7 +103,7 @@ En el ejemplo siguiente, Alice tiene restringido el acceso al servicio 2 del war
 
 *Fig. 5 - Alice tiene restringido el acceso al servicio 2 debido a la configuración del control de acceso a la red*
 
-Los roles y privilegios de ClickHouse también pueden aplicarse para controlar el acceso a los datos cuando los usuarios se conectan como usuarios individuales en lugar de hacerlo con el usuario *default*.
+Los roles y grants de ClickHouse también pueden aplicarse para controlar el acceso a los datos cuando se conecta como usuario individual en lugar de hacerlo con el usuario *default*.
 
 <div id="read-vs-read-write">
   ### Servicios de solo lectura frente a servicios de lectura y escritura
@@ -140,14 +140,13 @@ Puede hacerlo con el segundo servicio y con cualquier servicio adicional que cre
   ## Escalado
 </div>
 
-Cada servicio de un warehouse puede ajustarse según la carga de trabajo en cuanto a:
+Cada servicio de un warehouse se escala de forma independiente. Puede ajustar el número y el tamaño de las réplicas, habilitar el escalado automático horizontal y vertical, y configurar la suspensión automática por inactividad.
 
-* Número de nodos (réplicas). El servicio principal (el servicio que se creó primero en el warehouse) debe tener 2 o más nodos. Cada servicio secundario puede tener 1 o más nodos.
-* Tamaño de los nodos (réplicas)
-* Si el servicio debe escalar automáticamente (horizontal y verticalmente)
-* Si el servicio debe quedar inactivo cuando no haya actividad
+Los servicios, incluido el servicio principal, pueden ejecutarse con una sola réplica, pero no se recomienda para producción: use al menos 2 réplicas para alta disponibilidad. En los niveles Scale y Enterprise, los servicios principales y secundarios con una sola réplica están disponibles sin necesidad de contactar con soporte. Los servicios Scale y los servicios Enterprise con perfiles estándar `1:4` admiten el escalado automático vertical de autoservicio, mientras que los servicios Enterprise con perfiles personalizados requieren un redimensionamiento vertical asistido por soporte. Los servicios del nivel Basic mantienen un tamaño fijo. Para obtener más información, consulte [Servicios grandes con una sola réplica](/es/products/cloud/features/large-single-replica-services).
 
-Para obtener más información, consulte la página [&quot;Escalado automático&quot;](/es/products/cloud/features/autoscaling/overview).
+El número total de réplicas de todos los servicios de un warehouse está limitado a 50 de forma predeterminada. Consulte los [límites de uso](/es/products/cloud/guides/best-practices/usagelimits) para obtener más detalles. Póngase en contacto con [soporte](https://clickhouse.com/support/program) para aumentar el límite.
+
+El [escalado programado](/es/products/cloud/features/autoscaling/scheduled-scaling) funciona para servicios individuales de un warehouse. Los límites del warehouse siguen aplicándose: planifique las programaciones de modo que el número total de réplicas de todos los servicios durante las horas pico se mantenga dentro del límite del warehouse. Para obtener más información, consulte [Escalado automático](/es/products/cloud/features/autoscaling/overview).
 
 <div id="changes-in-behavior">
   ## Cambios en el comportamiento de `clusterAllReplicas`
@@ -163,10 +162,6 @@ Para realizar una consulta en todos los servicios del warehouse, usa en su lugar
 SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 ```
 
-<Note>
-  Los servicios secundarios de un solo nodo pueden escalar verticalmente, mientras que los servicios primarios de un solo nodo no pueden.
-</Note>
-
 <div id="limitations">
   ## Limitaciones
 </div>
@@ -178,7 +173,7 @@ SELECT * FROM clusterAllReplicas('all_groups.default', system, processes)
 Algunas cargas de trabajo no pueden aislarse en servicios específicos; hay casos límite en los que una carga de trabajo de un servicio afectará a otro servicio del warehouse. Entre ellos se incluyen:
 
 * **Todos los servicios de lectura y escritura realizan operaciones de fusión en segundo plano de forma predeterminada.** Al insertar datos en ClickHouse, la base de datos primero inserta los datos en algunas particiones de staging y luego realiza fusiones en segundo plano. Estas fusiones pueden consumir recursos de memoria y CPU. Cuando dos servicios de lectura y escritura comparten el mismo almacenamiento, ambos realizan operaciones en segundo plano. Esto significa que puede darse una situación en la que haya una consulta `INSERT` en el Servicio 1, pero que la operación de fusión la complete el Servicio 2.
-  Ten en cuenta que los servicios de solo lectura no ejecutan fusiones en segundo plano, por lo que no consumen sus recursos en esta operación. Nuestro equipo de soporte puede desactivar las fusiones en un servicio.
+  Ten en cuenta que los servicios de solo lectura no ejecutan fusiones en segundo plano. Ponte en contacto con [soporte](https://clickhouse.com/support/program) para desactivar las fusiones en un servicio de lectura y escritura.
 
 * **Todos los servicios de lectura y escritura realizan operaciones de inserción del motor de tabla S3Queue.** Al crear una tabla S3Queue en un servicio de lectura y escritura, todos los demás servicios de lectura y escritura del warehouse pueden leer datos de S3 y escribir datos en la base de datos.
 
@@ -191,7 +186,7 @@ Algunas cargas de trabajo no pueden aislarse en servicios específicos; hay caso
 
 * **Versiones de ClickHouse**: El [calendario de actualizaciones](/es/products/cloud/features/admin-features/upgrades) se rige por la configuración del servicio principal. Los servicios secundarios no pueden tener un calendario de versiones independiente del servicio principal.
 
-* **Las consultas `CREATE`/`RENAME`/`DROP DATABASE` podrían bloquearse de forma predeterminada por servicios inactivos o detenidos.** Si estas consultas se ejecutan cuando el servicio está inactivo o detenido, pueden quedarse colgadas. Para evitarlo, puedes ejecutar consultas de administración de bases de datos con [`settings distributed_ddl_task_timeout=0`](/es/reference/settings/session-settings#distributed_ddl_task_timeout) a nivel de sesión o por consulta.
+* **Las consultas `CREATE`/`RENAME`/`DROP DATABASE` podrían bloquearse de forma predeterminada por servicios inactivos o detenidos.** Si estas consultas se ejecutan cuando el servicio está inactivo o detenido, pueden quedarse colgadas. Para evitarlo, puedes ejecutar consultas de administración de bases de datos con [`settings distributed_ddl_task_timeout=0`](/es/reference/settings/session-settings/distributed-ddl#distributed_ddl_task_timeout) a nivel de sesión o por consulta.
 
 Por ejemplo:
 
@@ -202,8 +197,6 @@ SETTINGS distributed_ddl_task_timeout=0
 
 Si detiene manualmente un servicio, tendrá que iniciarlo de nuevo para que se ejecuten las consultas.
 
-* **Servicio principal con una réplica** Actualmente, el comportamiento predeterminado permite que los servicios secundarios tengan una réplica; el servicio principal debe tener al menos 2.
-  Para habilitar servicios principales con una sola réplica, póngase en contacto con el equipo de soporte. Este comportamiento estará activado de forma predeterminada en el segundo trimestre de 2026.
 * **Inactividad del servicio principal**: la inactividad automática del servicio principal está activada de forma predeterminada.
 
 <div id="pricing">
