@@ -4,6 +4,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -46,6 +47,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsUInt64 max_result_rows;
+}
 
 namespace ErrorCodes
 {
@@ -257,6 +264,17 @@ Block executeInternalQuery(const String & query, ContextPtr context)
     /// The copied context carries the enclosing query's id; the internal query must
     /// register under its own, or the process list rejects it as already running.
     query_context->setCurrentQueryId("");
+
+    /// The caller's settings that shape its own result - `filter`, `additional_result_filter`,
+    /// `limit`, `offset`, and the result size limits - belong to the final traceView output, not
+    /// to the queries that build it: applied here they would cut the spans read, or fail on a
+    /// column that only the output has. The resource limits (rows read, memory, time) stay:
+    /// these queries are where the work of the call is done.
+    Settings settings = query_context->getSettingsCopy();
+    ClusterProxy::stripInitiatorOnlySettings(settings);
+    settings[Setting::max_result_rows] = 0;
+    settings[Setting::max_result_bytes] = 0;
+    query_context->setSettings(settings);
     auto io = executeQuery(query, query_context, QueryFlags{.internal = true}).second;
     return pullMonoBlock(io.pipeline);
 }
