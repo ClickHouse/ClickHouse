@@ -3,6 +3,7 @@ import os
 import re
 import shlex
 import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Dict, List, Optional, Set, Tuple
@@ -45,6 +46,23 @@ OOM_IN_DMESG_TEST_NAME = "OOM in dmesg"
 # first scan may already have queued for upload: both dumps redirect, and `>` truncates on open.
 LATE_DMESG_LOG = "./ci/tmp/dmesg-after-merge.log"
 
+# The kernel record for the whole run, captured as it is emitted. A snapshot cannot stand in for
+# it: the container churn below logs several kernel lines per veth pair, which wraps the ring
+# buffer many times over in a run. Its own path, because `on_error_hook` truncates `dmesg.log`.
+DMESG_FOLLOW_LOG = "./ci/tmp/dmesg-follow.log"
+
+# Rides a dmesg-derived NEGATIVE that is not a proven one, where `oom_memcg` scoping cannot help:
+# a record that starts after the kill simply does not hold it.
+PARTIAL_DMESG_CAVEAT = (
+    " (the record does not cover the whole run, so an earlier kill would not be in it)"
+)
+
+# Rides the POSITIVE, which is unsound in the opposite direction: a buffer still holding a
+# previous job's records can show a kill that is not this run's, while its silence still covers it.
+UNCLEARED_DMESG_CAVEAT = (
+    " (buffer not cleared for this run, so a kill may be a previous job's)"
+)
+
 # `docker_in_docker.sh`'s own output, which holds the containment decision and any refusal.
 DOCKER_IN_DOCKER_LOG = "./ci/tmp/docker-in-docker.log"
 
@@ -72,6 +90,21 @@ HOST_OOM_DMESG_PATTERNS = (
 # `HOST_OOM_DMESG_PATTERNS`, which selects only the global ones: here a cgroup kill is wanted
 # too, and `oom_reaper` is kept because the surviving lines are read rather than classified.
 OOM_DMESG_MARKERS = ("oom-kill:", "Out of memory:", "oom_reaper:")
+
+# Kernel records of a process dying on a fault rather than on a memory kill. A support container
+# that aborts mid-run leaves nothing else behind: Docker drops its port mapping, so the harness
+# sees only `Connection refused` from every later test the same session-scoped cluster serves, and
+# the container's own log is overwritten by the next cluster started in that directory. `traps:`
+# is x86's prefix for every fault report it renders (general protection fault, invalid opcode,
+# divide error), `segfault at` is the page-fault one, and `potentially unexpected fatal signal`
+# is arm64's. `show_signal:` carries printk's rate-limit line, which says how many of these the
+# kernel dropped - an absence below it is not evidence of none.
+PROCESS_CRASH_DMESG_MARKERS = (
+    "traps:",
+    "segfault at",
+    "potentially unexpected fatal signal",
+    "show_signal:",
+)
 
 # The cgroup leaves `docker_in_docker.sh` creates, and what a kill in each one means. The paths
 # are unqualified because the script only runs under `--cgroupns=private`.
@@ -309,7 +342,7 @@ def leaf_oom_results(cgroup_root=DIND_CGROUP_ROOT) -> List[Result]:
 
 
 def dind_unreportable_ooms(
-    env, have_dmesg: bool, cgroup_root=DIND_CGROUP_ROOT
+    env, have_covering_dmesg: bool, cgroup_root=DIND_CGROUP_ROOT
 ) -> List[str]:
     """The reports this run cannot produce, so a green result does not rule them out.
 
@@ -320,6 +353,10 @@ def dind_unreportable_ooms(
     indistinguishable from a clean run - a resource kill that reads as clean is the failure mode
     this whole path exists to remove.
 
+    The argument is that a record SPANS this run, not merely that a dump was produced: a dump of
+    a buffer that already wrapped succeeds while holding none of the window a kill would be in,
+    and silencing this warning on one leaves exactly the clean-looking kill above.
+
     One probe answers both, since a cgroup and its child are always the same version.
 
     Only under required containment: elsewhere `/docker` is the host's own cgroup, and naming a
@@ -327,7 +364,7 @@ def dind_unreportable_ooms(
     """
     if env.get("CI_DIND_REQUIRE_CGROUP_CONTAINMENT") != "1":
         return []
-    if have_dmesg:
+    if have_covering_dmesg:
         return []
     docker = dind_leaf_root(cgroup_root) / "docker"
     on_v2 = _cgroup_field(docker, "memory.events.local", "oom") is not None
@@ -480,7 +517,74 @@ def report_late_leaf_ooms(
     return rows
 
 
-def print_oom_lines(dmesg: str, caveat: str = "") -> None:
+def start_dmesg_follow() -> Optional[subprocess.Popen]:
+    """Capture kernel messages from now on, or `None` when following was refused.
+
+    The clear-to-here window needs no marker: `--follow` prints the buffer it starts with
+    before following, so anything logged in between is still there and is captured.
+
+    The argv is a list, not a shell string: a shell in between would make `poll` report the
+    shell rather than `dmesg`, and `poll` is what coverage rests on. `sudo` forks a child of
+    its own regardless, hence the new session, so both can be signalled as one group.
+
+    A refusal that takes longer to surface than the delay below is not lost: coverage is decided
+    by polling this process again where the record is read, not by what is returned here.
+    """
+    with open(DMESG_FOLLOW_LOG, "w") as log_file:
+        proc = subprocess.Popen(
+            ["sudo", "dmesg", "-T", "--follow"],
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    # `Popen` reports only that the fork happened, so a `sudo` or `dmesg` that exits at once is
+    # still running here. `start_docker_in_docker` waits the same way before trusting its daemon.
+    time.sleep(1)
+    if proc.poll() is not None:
+        print(
+            f"WARNING: could not follow dmesg (rc={proc.returncode}); the kernel record will "
+            "cover only what the ring buffer still holds at the end of the run"
+        )
+        return None
+    print(f"Following dmesg into {DMESG_FOLLOW_LOG} with PID {proc.pid}")
+    return proc
+
+
+def read_dmesg_follow() -> bytes:
+    """Everything the follower has captured so far, whole.
+
+    Unwindowed at every read point: `report_late_leaf_ooms` dedupes by `already_reported`, so a
+    cumulative buffer yields one row per breach however many scans see it.
+
+    The final line can be torn mid-write. Harmless: every consumer matches whole tokens, so a
+    torn line fails to match, and the same line reappears complete in the terminal snapshot.
+    """
+    if not Path(DMESG_FOLLOW_LOG).exists():
+        return b""
+    with open(DMESG_FOLLOW_LOG, "rb") as follow_file:
+        return follow_file.read()
+
+
+def stop_dmesg_follow(proc: Optional[subprocess.Popen]) -> None:
+    """Stop the follower.
+
+    `Utils.terminate_process_group` neither waits nor reports the outcome, so the wait is what
+    makes the stop observable and what keeps the child from being left unreaped. `SIGKILL` needs
+    no second wait to confirm it, and this runs one statement before the job's report is written,
+    where waiting again on a child that already ignored `SIGTERM` would cost the run that report.
+    """
+    if proc is None or proc.poll() is not None:
+        # Signalling a group whose leader is already reaped only logs an ESRCH error.
+        return
+    Utils.terminate_process_group(proc.pid)
+    try:
+        proc.wait(timeout=30)
+    except subprocess.TimeoutExpired:
+        print("WARNING: dmesg follower ignored SIGTERM; killing it")
+        Utils.terminate_process_group(proc.pid, force=True)
+
+
+def print_oom_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
     """Print the kernel's memory-kill lines, whichever scope each one happened in.
 
     Read without attribution: the point is to say whether the kernel killed anything at all,
@@ -488,8 +592,10 @@ def print_oom_lines(dmesg: str, caveat: str = "") -> None:
     same as absent, so no result row is derived from it here - `leaf_oom_report` owns that, on a
     buffer it can scope. An empty buffer is a third outcome and not "no kill", so it says so.
 
-    `caveat` rides on the header, so a reader cannot take the kills for this run's when the
-    buffer holds more than this run. `OOM_DMESG_MARKERS` are `str`: a bytes caller decodes.
+    The two caveats ride opposite branches, because a buffer is unsound in opposite directions.
+    `caveat` rides the kills, so a reader cannot take another job's for this run's. `partial`
+    rides the absence, which a record that does not span the run cannot establish.
+    `OOM_DMESG_MARKERS` are `str`: a bytes caller decodes.
     """
     if not dmesg:
         print("WARNING: no dmesg available, so a kernel kill can neither be shown nor ruled out")
@@ -499,10 +605,38 @@ def print_oom_lines(dmesg: str, caveat: str = "") -> None:
         for line in oom_lines:
             print(f"  {line}")
     else:
-        print("No kernel memory kill in dmesg")
+        print(f"No kernel memory kill in dmesg{partial}")
 
 
-def print_timeout_diagnostics(env, cgroup_root=DIND_CGROUP_ROOT) -> None:
+def print_process_crash_lines(dmesg: str, caveat: str = "", partial: str = "") -> None:
+    """Print the kernel's process-fault lines, whoever faulted.
+
+    A crashed support container is otherwise undiagnosable from a report: see
+    `PROCESS_CRASH_DMESG_MARKERS` for what the harness is left with instead. Printed rather
+    than turned into a result row, and unfiltered by who crashed, because a fault here is not
+    a verdict on anything: some tests kill a server on purpose, and the kernel names the
+    process but not the container, so no row could be attributed to the run's outcome.
+
+    The caveats carry the same two unsoundness directions as in `print_oom_lines`, for the same
+    reason - `caveat` rides the faults so one cannot be taken for this run's, `partial` rides
+    their absence, which a record short of the run cannot establish.
+    """
+    if not dmesg:
+        print("WARNING: no dmesg available, so a process crash can neither be shown nor ruled out")
+        return
+    if crash_lines := [
+        l for l in dmesg.splitlines() if any(m in l for m in PROCESS_CRASH_DMESG_MARKERS)
+    ]:
+        print(f"Process crashes in dmesg{caveat}:")
+        for line in crash_lines:
+            print(f"  {line}")
+    else:
+        print(f"No process crash in dmesg{partial}")
+
+
+def print_timeout_diagnostics(
+    env, follow_proc=None, dmesg_cleared=False, cgroup_root=DIND_CGROUP_ROOT
+) -> None:
     """Print what a run killed by the time budget was doing, to stdout.
 
     Everything else on this path is an uploaded artifact, and an upload needs the job to survive
@@ -511,10 +645,31 @@ def print_timeout_diagnostics(env, cgroup_root=DIND_CGROUP_ROOT) -> None:
     on job 95139621296, where the archive got 13.3 s. The job LOG is the one channel that is kept
     regardless, so the small diagnostics go there and go first.
 
-    dmesg is read here rather than reused: this path runs before the end-of-run dump.
+    dmesg is read here rather than reused: this path runs before the end-of-run dump. The
+    follower's record is read with it, since the snapshot alone reaches back only as far as the
+    ring buffer still holds.
+
+    Both defaults are UNCOVERED and UNCLEARED, because this runs on every non-local hard timeout
+    whatever the clear did. The file's existence cannot stand in for the follower, either - one
+    that died early leaves a file that begins right where a healthy one would.
+
+    An empty snapshot is read as a failed one, since `Shell.get_output` returns `""` for both a
+    failure and a genuinely empty buffer. That conflation over-warns, which is the safe direction.
     """
     print_leaf_peak_usage(env, cgroup_root=cgroup_root)
-    print_oom_lines(Shell.get_output("dmesg -T", verbose=True))
+    follow_dmesg = read_dmesg_follow().decode(errors="replace")
+    snapshot = Shell.get_output("dmesg -T", verbose=True)
+    covers_run = follow_proc is not None and follow_proc.poll() is None and bool(snapshot)
+    print_oom_lines(
+        follow_dmesg + snapshot,
+        caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+        partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
+    )
+    print_process_crash_lines(
+        follow_dmesg + snapshot,
+        caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+        partial="" if covers_run else PARTIAL_DMESG_CAVEAT,
+    )
 
 
 ncpu = Utils.cpu_count()
@@ -527,6 +682,16 @@ TIMEOUT_ERROR_PATTERNS = [
     "timed out after",
     "TimeoutExpired",
 ]
+
+# Emitted by `ClickHouseInstance.describe_lost_network_interface` in
+# `tests/integration/helpers/cluster.py`, and only after the harness has confirmed both
+# halves of the state it names: docker removed a running container's network interface (a
+# `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
+# for the rest of the module through no fault of its own. Unlike the substrings below it
+# already carries its own proof, which is why the FAIL path trusts it without further
+# context. Must stay in step with the constant of the same name in the harness - pinned by
+# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
+LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
 
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
@@ -541,6 +706,7 @@ INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "toomanyrequests",
     "pull access denied",
     "Got exception pulling images:",  # docker pull failure during cluster.start()
+    LOST_NETWORK_INTERFACE_ERROR,
 ]
 
 # compose options that consume the token after them, so the subcommand is not the
@@ -675,6 +841,12 @@ def _is_infrastructure_error(result: Result) -> bool:
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
     if result.status == Result.Status.FAIL:
+        # The harness only emits this after checking the container from both sides, so the
+        # evidence the docker-context requirement below stands in for is already in hand.
+        # It has to be honoured here: the state surfaces mid-module as an ordinary failing
+        # query, which carries no docker argv at all.
+        if LOST_NETWORK_INTERFACE_ERROR in result.info:
+            return True
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
@@ -940,12 +1112,18 @@ def prefetch_images(
     retries: int = 3,
     pull_timeout: int = 300,
     parallel: int = PREFETCH_PARALLEL_PULLS,
+    fetched_out: Optional[Set[str]] = None,
 ) -> bool:
     """Pull the images using `ci/prefetch-integration-test-images`.
 
     Images with no manifest for the current architecture (e.g. amd64-only images
     on arm64 runners) are silently skipped.  Returns True on success, False if any
     image fails to pull for a real reason.
+
+    `fetched_out`, when given, receives the references the script reports as actually
+    pulled. A missing or short report can only leave references out, so a reporting
+    failure costs the skip in `tests/integration/helpers/cluster.py` instead of claiming
+    an image that was never fetched.
     """
     if not images:
         print("No images to pre-fetch.")
@@ -958,11 +1136,19 @@ def prefetch_images(
         "PULL_TIMEOUT": str(pull_timeout),
         "PULL_PARALLEL": str(parallel),
     }
-    return Shell.check(
-        f"{script} {' '.join(images)}",
-        verbose=True,
-        env=env,
-    )
+    report = ""
+    with tempfile.TemporaryDirectory(prefix="prefetch_", dir=temp_path) as report_dir:
+        if fetched_out is not None:
+            report = os.path.join(report_dir, "fetched.txt")
+            env["PREFETCH_FETCHED_FILE"] = report
+        ok = Shell.check(
+            f"{script} {' '.join(images)}",
+            verbose=True,
+            env=env,
+        )
+        if fetched_out is not None and Path(report).is_file():
+            fetched_out.update(Path(report).read_text(errors="replace").split())
+    return ok
 
 
 def parse_args():
@@ -1372,7 +1558,6 @@ def main():
     args = parse_args()
     job_params = args.options.split(",") if args.options else []
     job_params = [to.strip() for to in job_params]
-    use_old_analyzer = False
     use_distributed_plan = False
     use_database_disk = False
     is_flaky_check = False
@@ -1397,6 +1582,7 @@ tar -czf ./ci/tmp/logs.tar.gz \
         [
             "./ci/tmp/logs.tar.gz",
             "./ci/tmp/dmesg.log",
+            DMESG_FOLLOW_LOG,
             DOCKER_IN_DOCKER_LOG,
         ],
         strict=False,
@@ -1426,8 +1612,6 @@ tar -czf ./ci/tmp/logs.tar.gz \
         elif any(build in to for build in ("amd_", "arm_")):
             if "amd_llvm_coverage" in to:
                 is_llvm_coverage = True
-        elif to == "old analyzer":
-            use_old_analyzer = True
         elif to == "distributed plan":
             use_distributed_plan = True
         elif to == "db disk":
@@ -1712,17 +1896,26 @@ tar -czf ./ci/tmp/logs.tar.gz \
         + ", ".join(str(f.name) for f in compose_files)
     )
     images_to_prefetch = get_images_from_compose_files(compose_files)
-    if not prefetch_images(images_to_prefetch):
+    prefetched: Set[str] = set()
+    if not prefetch_images(images_to_prefetch, fetched_out=prefetched):
         prefetch_failure_result().complete_job()
+    # A batch's compose files need not yield the default server image, but a project's own
+    # enumeration can: it is the default instance image and Keeper's. So prefetch it separately, and
+    # ignore the result: a failed fetch only leaves it out of the export, which turns the skip off.
+    server_image = f"clickhouse/integration-test:{os.environ['DOCKER_BASE_TAG']}"
+    if server_image not in prefetched:
+        prefetch_images([server_image], fetched_out=prefetched)
 
     test_env = {
         "CLICKHOUSE_TESTS_BASE_CONFIG_DIR": clickhouse_server_config_dir,
         "CLICKHOUSE_TESTS_SERVER_BIN_PATH": clickhouse_path,
         "CLICKHOUSE_BINARY": clickhouse_path,  # some test cases support alternative binary location
         "CLICKHOUSE_TESTS_CLIENT_BIN_PATH": clickhouse_path,
-        "CLICKHOUSE_USE_OLD_ANALYZER": "1" if use_old_analyzer else "0",
         "CLICKHOUSE_USE_DISTRIBUTED_PLAN": "1" if use_distributed_plan else "0",
         "CLICKHOUSE_USE_DATABASE_DISK": "1" if use_database_disk else "0",
+        # Read by tests/integration/helpers/cluster.py: the references this job pulled. A reference
+        # outside this set was not fetched here and may be a stale floating tag, so it is pulled.
+        "CLICKHOUSE_TESTS_PREFETCHED_IMAGES": " ".join(sorted(prefetched)),
         "PYTEST_CLEANUP_CONTAINERS": "1",
         "JAVA_PATH": java_path,
         # PromQL compliance: deterministic JSON for upload hook (see promql_compliance_upload_hook.py).
@@ -1810,7 +2003,13 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Do this only in CI (non-local runs) and via a non-interactive privileged helper.
     # Every dmesg-derived verdict, leaf or host-wide, is only admissible on a buffer this cleared.
     dmesg_cleared = False
+    # Follows the buffer this clears, because the tests below wrap it long before it is read.
+    dmesg_follow_proc = None
     if not info.is_local_run:
+        # `ci/tmp` is git-ignored, so the clean between jobs on a runner leaves this file behind
+        # and a previous job's kernel record would be read and uploaded as this run's. Before the
+        # clear, because the writer below is only started when the clear succeeds.
+        Path(DMESG_FOLLOW_LOG).unlink(missing_ok=True)
         try:
             dmesg_cleared = Utils.clear_dmesg()
         except Exception as ex:
@@ -1821,6 +2020,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 "previous job's records, so leaf OOMs will be reported from the counters only "
                 "and a host OOM is not reportable at all on this run"
             )
+        else:
+            dmesg_follow_proc = start_dmesg_follow()
 
     clear_rabbitmq_recreation_scan_inputs()
 
@@ -2010,7 +2211,9 @@ tar -czf ./ci/tmp/logs.tar.gz \
 
     # Before the archive below, which on this path is what the cancellation cuts off.
     if hard_killed and not info.is_local_run:
-        print_timeout_diagnostics(os.environ)
+        print_timeout_diagnostics(
+            os.environ, follow_proc=dmesg_follow_proc, dmesg_cleared=dmesg_cleared
+        )
 
     # Collect logs before re-run
     attached_files = []
@@ -2104,18 +2307,29 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Whether this dump succeeded. Neither the buffer nor the path answers that: a successful
     # dump can legitimately be empty, and a failed one still leaves the redirect's empty file.
     dmesg_dumped = False
+    # Whether the record spans the run. Both halves are needed: a follower still running proves
+    # the earlier window, and only the snapshot proves the tail it has not consumed yet.
+    dmesg_covers_run = False
     if not info.is_local_run:
         print("Dumping dmesg")
+        follow_dmesg = read_dmesg_follow()
+        # Polled where the record is read, so a follower alive here consumed the buffer up to it.
+        follow_alive = dmesg_follow_proc is not None and dmesg_follow_proc.poll() is None
         # Not `strict`: raising here would skip the report this dump feeds, so a run whose dmesg
         # is unreadable would lose the counter-based reports too, which do not need dmesg at all.
         if Shell.check("dmesg -T > ./ci/tmp/dmesg.log", verbose=True):
             dmesg_dumped = True
             with open("./ci/tmp/dmesg.log", "rb") as dmesg_file:
-                dmesg = dmesg_file.read()
+                # A superset of the snapshot alone, so no detector below can lose a signal. The
+                # overlap stays: only `print_oom_lines` renders per match, and deduping at `-T`'s
+                # one-second resolution would merge distinct same-second kills.
+                dmesg = follow_dmesg + dmesg_file.read()
         else:
             print(
                 "WARNING: could not dump dmesg; leaf OOMs will be reported from the counters only"
             )
+            dmesg = follow_dmesg
+        dmesg_covers_run = follow_alive and dmesg_dumped
 
     # `ERROR` plus `has_error` matches the existing OOM treatment on every path, not just
     # bugfix validation - a resource kill is never a test verdict, and the `ERROR` keeps the
@@ -2185,12 +2399,20 @@ tar -czf ./ci/tmp/logs.tar.gz \
                 and any(r.has_label(Result.Label.INFRA) for r in test_results)
             )
         ):
-            uncleared = " (buffer not cleared for this run, so a kill may be a previous job's)"
             print_oom_lines(
-                dmesg.decode(errors="replace"), caveat="" if dmesg_cleared else uncleared
+                dmesg.decode(errors="replace"),
+                caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+                partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,
+            )
+            print_process_crash_lines(
+                dmesg.decode(errors="replace"),
+                caveat="" if dmesg_cleared else UNCLEARED_DMESG_CAVEAT,
+                partial="" if dmesg_covers_run else PARTIAL_DMESG_CAVEAT,
             )
             if dmesg_dumped:
                 attached_files.append("./ci/tmp/dmesg.log")
+            if Path(DMESG_FOLLOW_LOG).exists():
+                attached_files.append(DMESG_FOLLOW_LOG)
 
     # For targeted, flaky checks, and bugfix validation, the synthetic "Timeout"
     # result must not be propagated as a top-level `FAIL`: for targeted checks a
@@ -2414,23 +2636,32 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Whether this run has a dmesg it can attribute a leaf with, which an empty buffer does not
     # answer: a successful dump can legitimately be empty, and the file only exists on this path.
     late_dmesg_dumped = False
+    # And whether that record spans the run, which is the stronger property the gap warning below
+    # needs: a dump of a wrapped buffer succeeds while holding none of the window it is asked about.
+    late_dmesg_covers_run = False
     if not info.is_local_run and dmesg_cleared:
+        late_follow_dmesg = read_dmesg_follow()
+        late_follow_alive = (
+            dmesg_follow_proc is not None and dmesg_follow_proc.poll() is None
+        )
         # Read only what this re-dump wrote: a surviving earlier file would report a kill
         # during the merge as absent.
         if Shell.check(f"dmesg -T > {LATE_DMESG_LOG}", verbose=True):
             late_dmesg_dumped = True
             with open(LATE_DMESG_LOG, "rb") as late_dmesg_file:
-                late_dmesg = late_dmesg_file.read()
+                late_dmesg = late_follow_dmesg + late_dmesg_file.read()
         else:
             print(
                 "WARNING: could not re-dump dmesg after the coverage merge; a leaf killed there "
                 "is only reportable from the counters"
             )
-    for meaning in dind_unreportable_ooms(os.environ, late_dmesg_dumped):
+            late_dmesg = late_follow_dmesg
+        late_dmesg_covers_run = late_follow_alive and late_dmesg_dumped
+    for meaning in dind_unreportable_ooms(os.environ, late_dmesg_covers_run):
         print(
             f"WARNING: {meaning} cannot be detected on this run (cgroup v1 charges the kill to "
-            "the victim's own cgroup, and no dmesg is available), so a green result does not "
-            "rule it out"
+            "the victim's own cgroup, and no dmesg covering this run is available), so a green "
+            "result does not rule it out"
         )
     late_breach = report_late_leaf_ooms(
         R,
@@ -2442,6 +2673,15 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Only on the path that produced the file.
     if late_breach and late_dmesg_dumped and LATE_DMESG_LOG not in R.files:
         R.files.append(LATE_DMESG_LOG)
+    # A run whose only failure is a late breach never met the attach block above, so the record
+    # that names the breach is otherwise not uploaded at all.
+    if late_breach and Path(DMESG_FOLLOW_LOG).exists() and DMESG_FOLLOW_LOG not in R.files:
+        R.files.append(DMESG_FOLLOW_LOG)
+
+    # The last reader of the follow log is above, and every run that started a follower reaches
+    # here: the only `complete_job` after the start is the one below, and nothing returns in
+    # between. A run the runner hard-kills instead leaves it to die with the job's container.
+    stop_dmesg_follow(dmesg_follow_proc)
 
     report_rabbitmq_recreations(R)
 

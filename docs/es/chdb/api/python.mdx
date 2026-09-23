@@ -18,7 +18,7 @@ doc_type: 'reference'
 Ejecuta una consulta SQL con el motor de chDB.
 
 Esta es la función principal de consulta, que ejecuta sentencias SQL con el motor
-ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos en memoria
+ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos temporales
 o basadas en archivos.
 
 **Sintaxis**
@@ -29,12 +29,12 @@ chdb.query(sql, output_format='CSV', path='', udf_path='')
 
 **Parámetros**
 
-| Parámetro       | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                               |
-| --------------- | ---- | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `sql`           | str  | *required*     | Cadena de consulta SQL que se va a ejecutar                                                                                                                                                                                                                                                                                                               |
+| Parámetro       | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                                                                                                                             |
+| --------------- | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sql`           | str  | *required*     | Cadena de consulta SQL que se va a ejecutar                                                                                                                                                                                                                                                                                                             |
 | `output_format` | str  | `"CSV"`        | Formato de salida de los resultados. Formatos compatibles:<br />• `"CSV"` - Valores separados por comas<br />• `"JSON"` - Formato JSON<br />• `"Arrow"` - formato Apache Arrow<br />• `"Parquet"` - Formato Parquet<br />• `"DataFrame"` - DataFrame de Pandas<br />• `"ArrowTable"` - Tabla de PyArrow<br />• `"Debug"` - Activa el registro detallado |
-| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, se usa una base de datos en memoria.<br />Puede ser una ruta de archivo o `":memory:"` para una base de datos en memoria                                                                                                                                                                   |
-| `udf_path`      | str  | `""`           | Ruta al directorio de UDF heredadas basadas en subprocesos. No es necesaria para las UDF nativas de Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                           |
+| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, se usa una base de datos temporal y no persistente (equivalente a `":memory:"`).<br />Proporcione una ruta de archivo para persistir los datos en disco                                                                                                                                  |
+| `udf_path`      | str  | `""`           | Ruta al directorio de UDF heredadas basadas en subprocesos. No es necesaria para las UDF nativas de Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                         |
 
 **Devuelve**
 
@@ -47,7 +47,7 @@ Devuelve el resultado de la consulta en el formato especificado:
 | `pa.Table`               | Cuando `output_format` es `"ArrowTable"` o `"arrowtable"` |
 | objeto de resultado chdb | Para otros formatos                                       |
 
-**Genera**
+**Lanza**
 
 | Excepción     | Condición                                                               |
 | ------------- | ----------------------------------------------------------------------- |
@@ -82,10 +82,10 @@ Devuelve el resultado de la consulta en el formato especificado:
   ### `chdb.sql`
 </div>
 
-Ejecuta una consulta SQL con el motor chDB.
+Ejecuta una consulta SQL con el motor de chDB.
 
 Esta es la función principal para consultas, que ejecuta sentencias SQL mediante el
-motor ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos en memoria
+motor ClickHouse integrado. Admite varios formatos de salida y puede trabajar con bases de datos temporales
 o basadas en archivos.
 
 **Sintaxis**
@@ -100,7 +100,7 @@ chdb.sql(sql, output_format='CSV', path='', udf_path='')
 | --------------- | ---- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `sql`           | str  | *obligatorio*  | Cadena de consulta SQL que se ejecutará                                                                                                                                                                                                                                                                                                                 |
 | `output_format` | str  | `"CSV"`        | Formato de salida de los resultados. Formatos compatibles:<br />• `"CSV"` - Valores separados por comas<br />• `"JSON"` - Formato JSON<br />• `"Arrow"` - Formato Apache Arrow<br />• `"Parquet"` - Formato Parquet<br />• `"DataFrame"` - DataFrame de Pandas<br />• `"ArrowTable"` - Tabla de PyArrow<br />• `"Debug"` - Activa el registro detallado |
-| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, usa una base de datos en memoria.<br />Puede ser una ruta de archivo o `":memory:"` para una base de datos en memoria                                                                                                                                                                    |
+| `path`          | str  | `""`           | Ruta del archivo de la base de datos. De forma predeterminada, usa una base de datos temporal no persistente (equivalente a `":memory:"`).<br />Proporcione una ruta de archivo para persistir en el disco                                                                                                                                              |
 | `udf_path`      | str  | `""`           | Ruta al directorio de UDF heredadas basadas en subprocesos. No es necesaria para las UDF nativas de Python ([`@func`](#func-decorator) / [`create_function`](#create-function))                                                                                                                                                                         |
 
 **Devuelve**
@@ -114,7 +114,7 @@ Devuelve el resultado de la consulta en el formato especificado:
 | `pa.Table`               | Cuando `output_format` es `"ArrowTable"` o `"arrowtable"` |
 | objeto de resultado chdb | Para otros formatos                                       |
 
-**Genera**
+**Lanza**
 
 | Excepción                 | Condición                                                               |
 | ------------------------- | ----------------------------------------------------------------------- |
@@ -245,8 +245,7 @@ Las siguientes funciones de sesión están disponibles:
 Crea una conexión con el servidor en segundo plano de chDB.
 
 Esta función establece una [conexión](#chdb-state-sqlitelike-connection) con el motor de base de datos chDB (ClickHouse).
-Solo se permite una conexión abierta por proceso.
-Varias llamadas con la misma cadena de conexión devolverán el mismo objeto de conexión.
+Cada llamada devuelve una conexión independiente, y puede haber abiertas al mismo tiempo cualquier cantidad de conexiones a la misma ruta de base de datos.
 
 ```python
 chdb.connect(connection_string: str = ':memory:') → Connection
@@ -262,7 +261,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 
 | Formato                   | Descripción                                |
 | ------------------------- | ------------------------------------------ |
-| `":memory:"`              | Base de datos en memoria (predeterminada)  |
+| `":memory:"`              | Base de datos temporal (predeterminada)    |
 | `"test.db"`               | Archivo de base de datos con ruta relativa |
 | `"file:test.db"`          | Igual que una ruta relativa                |
 | `"/path/to/test.db"`      | Archivo de base de datos con ruta absoluta |
@@ -273,7 +272,7 @@ chdb.connect(connection_string: str = ':memory:') → Connection
 | Formato                                            | Descripción                  |
 | -------------------------------------------------- | ---------------------------- |
 | `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros |
-| `"file::memory:?verbose&log-level=test"`           | En memoria con parámetros    |
+| `"file::memory:?verbose&log-level=test"`           | Temporal con parámetros      |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros |
 
 **Gestión de parámetros de consulta**
@@ -291,8 +290,8 @@ Para ver la lista completa de parámetros, consulta `clickhouse local --help --v
 
 **Devuelve**
 
-| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                       |
-| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                         |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Connection`    | Objeto de conexión a la base de datos que admite:<br />• Crear cursores con `Connection.cursor()`<br />• Consultas directas con `Connection.query()`<br />• Consultas en streaming con `Connection.send_query()`<br />• Protocolo de gestor de contexto para la limpieza automática |
 
 **Lanza**
@@ -301,31 +300,30 @@ Para ver la lista completa de parámetros, consulta `clickhouse local --help --v
 | -------------- | --------------------------------------- |
 | `RuntimeError` | Si falla la conexión a la base de datos |
 
-<Warning>
-  Solo se admite una conexión por proceso.
-  Al crear una nueva conexión, se cerrará cualquier conexión existente.
-</Warning>
+<Note>
+  Un proceso ejecuta un motor integrado vinculado a una ruta de base de datos. Varias conexiones a la misma ruta pueden coexistir y ejecutar consultas simultáneamente. Abrir una ruta *diferente* mientras haya una conexión abierta genera un `RuntimeError`; primero cierra las conexiones abiertas.
+</Note>
 
 **Ejemplos**
 
 ```pycon
->>> # Base de datos en memoria
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # Base de datos en archivo
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # Con parámetros
->>> conn = connect("data.db?mode=ro")  # Modo de solo lectura
->>> conn = connect(":memory:?verbose&log-level=debug")  # Registro de depuración
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # Uso del gestor de contexto para limpieza automática
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # Conexión cerrada automáticamente
+>>> # Connection automatically closed
 ```
 
 **Véase también**
@@ -358,8 +356,7 @@ proporciona información sobre errores del motor subyacente de ClickHouse.
 Bases: `object`
 
 La sesión mantendrá el estado de la consulta.
-Si path es None, se creará un directorio temporal y se usará como ruta de la base de datos,
-y el directorio temporal se eliminará cuando se cierre la sesión.
+Si path es None, la sesión usa la base de datos temporal (`:memory:`) compartida por todo el proceso, por lo que todas las sesiones sin ruta pueden ver las tablas de las demás; su directorio temporal solo se elimina cuando se cierra la última sesión o conexión de este tipo.
 También puede pasar una ruta para crear una base de datos en esa ubicación, donde se conservarán sus datos.
 
 También puede usar una cadena de conexión para pasar la ruta y otros parámetros.
@@ -370,16 +367,16 @@ class chdb.session.Session(path=None)
 
 **Ejemplos**
 
-| Cadena de conexión                                 | Descripción                                         |
-| -------------------------------------------------- | --------------------------------------------------- |
-| `":memory:"`                                       | Base de datos en memoria                            |
-| `"test.db"`                                        | Ruta relativa                                       |
-| `"file:test.db"`                                   | Igual que arriba                                    |
-| `"/path/to/test.db"`                               | Ruta absoluta                                       |
-| `"file:/path/to/test.db"`                          | Igual que arriba                                    |
-| `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros de consulta            |
-| `"file::memory:?verbose&log-level=test"`           | Base de datos en memoria con parámetros de consulta |
-| `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros de consulta            |
+| Cadena de conexión                                 | Descripción                                       |
+| -------------------------------------------------- | ------------------------------------------------- |
+| `":memory:"`                                       | Base de datos temporal                            |
+| `"test.db"`                                        | Ruta relativa                                     |
+| `"file:test.db"`                                   | Igual que arriba                                  |
+| `"/path/to/test.db"`                               | Ruta absoluta                                     |
+| `"file:/path/to/test.db"`                          | Igual que arriba                                  |
+| `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros de consulta          |
+| `"file::memory:?verbose&log-level=test"`           | Base de datos temporal con parámetros de consulta |
+| `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros de consulta          |
 
 <Info>
   **Gestión de los argumentos de la cadena de conexión**
@@ -394,12 +391,12 @@ class chdb.session.Session(path=None)
   * “mode=ro” se convertiría en “–readonly=1” para ClickHouse (modo de solo lectura)
 </Info>
 
-<Warning>
+<Note>
   **Importante**
 
-  * Solo puede haber una sesión a la vez. Si desea crear una nueva sesión, debe cerrar la existente.
-  * Crear una nueva sesión cerrará la existente.
-</Warning>
+  * Pueden coexistir varias sesiones, siempre que compartan la misma ruta de la base de datos.
+  * Para usar una ruta de base de datos diferente, cierre primero las sesiones abiertas.
+</Note>
 
 ***
 
@@ -744,8 +741,7 @@ id,name
 Crea una [Connection](#chdb-state-sqlitelike-connection) con el servidor en segundo plano de chDB.
 
 Esta función establece una conexión con el motor de base de datos de chDB (ClickHouse).
-Solo se permite una conexión abierta por proceso. Varias llamadas con la misma
-cadena de conexión devolverán el mismo objeto de conexión.
+Cada llamada devuelve una conexión independiente, y puede haber abiertas al mismo tiempo cualquier número de conexiones a la misma ruta de base de datos.
 
 **Sintaxis**
 
@@ -765,7 +761,7 @@ Formatos de cadena de conexión admitidos:
 
 | Formato                   | Descripción                                |
 | ------------------------- | ------------------------------------------ |
-| `":memory:"`              | Base de datos en memoria (predeterminada)  |
+| `":memory:"`              | Base de datos temporal (predeterminada)    |
 | `"test.db"`               | Archivo de base de datos con ruta relativa |
 | `"file:test.db"`          | Igual que la ruta relativa                 |
 | `"/path/to/test.db"`      | Archivo de base de datos con ruta absoluta |
@@ -776,7 +772,7 @@ Formatos de cadena de conexión admitidos:
 | Formato                                            | Descripción                  |
 | -------------------------------------------------- | ---------------------------- |
 | `"file:test.db?param1=value1&param2=value2"`       | Ruta relativa con parámetros |
-| `"file::memory:?verbose&log-level=test"`           | En memoria con parámetros    |
+| `"file::memory:?verbose&log-level=test"`           | Temporal con parámetros      |
 | `"///path/to/test.db?param1=value1&param2=value2"` | Ruta absoluta con parámetros |
 
 **Manejo de parámetros de consulta**
@@ -794,8 +790,8 @@ Para ver la lista completa de parámetros, consulte `clickhouse local --help --v
 
 **Devuelve**
 
-| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                      |
-| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Tipo de retorno | Descripción                                                                                                                                                                                                                                                                         |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `Connection`    | Objeto de conexión a la base de datos que admite:<br />• Crear cursores con `Connection.cursor()`<br />• Consultas directas con `Connection.query()`<br />• Consultas en streaming con `Connection.send_query()`<br />• Protocolo de gestor de contexto para la limpieza automática |
 
 **Lanza**
@@ -804,33 +800,30 @@ Para ver la lista completa de parámetros, consulte `clickhouse local --help --v
 | -------------- | --------------------------------------- |
 | `RuntimeError` | Si falla la conexión a la base de datos |
 
-<Warning>
-  **Advertencia**
-
-  Solo se admite una conexión por proceso.
-  Crear una nueva conexión cerrará cualquier conexión existente.
-</Warning>
+<Note>
+  Un proceso ejecuta un motor integrado vinculado a una ruta de base de datos. Pueden coexistir varias conexiones a la misma ruta y ejecutar consultas simultáneamente. Abrir una ruta *diferente* mientras haya alguna conexión abierta genera un `RuntimeError`; primero cierre las conexiones abiertas.
+</Note>
 
 **Ejemplos**
 
 ```pycon
->>> # Base de datos en memoria
+>>> # Temporary database
 >>> conn = connect()
 >>> conn = connect(":memory:")
 >>>
->>> # Base de datos en archivo
+>>> # File-based database
 >>> conn = connect("my_data.db")
 >>> conn = connect("/path/to/data.db")
 >>>
->>> # Con parámetros
->>> conn = connect("data.db?mode=ro")  # Modo de solo lectura
->>> conn = connect(":memory:?verbose&log-level=debug")  # Registro de depuración
+>>> # With parameters
+>>> conn = connect("data.db?mode=ro")  # Read-only mode
+>>> conn = connect(":memory:?verbose&log-level=debug")  # Debug logging
 >>>
->>> # Usando el gestor de contexto para limpieza automática
+>>> # Using context manager for automatic cleanup
 >>> with connect("data.db") as conn:
 ...     result = conn.query("SELECT 1")
 ...     print(result)
->>> # Conexión cerrada automáticamente
+>>> # Connection automatically closed
 ```
 
 **Véase también**
@@ -1844,7 +1837,7 @@ La interfaz DBAPI 2.0 (API de bases de datos) implementa las siguientes funcione
   #### `chdb.dbapi.connect`
 </div>
 
-Inicializa una nueva conexión de base de datos.
+Inicializa una nueva conexión a la base de datos.
 
 **Sintaxis**
 
@@ -1854,11 +1847,11 @@ chdb.dbapi.connect(*args, **kwargs)
 
 **Parámetros**
 
-| Parámetro | Tipo | Predeterminado | Descripción                                                                  |
-| --------- | ---- | -------------- | ---------------------------------------------------------------------------- |
-| `path`    | str  | `None`         | Ruta del archivo de la base de datos. None para una base de datos en memoria |
+| Parámetro | Tipo | Predeterminado | Descripción                                                                               |
+| --------- | ---- | -------------- | ----------------------------------------------------------------------------------------- |
+| `path`    | str  | `None`         | Ruta del archivo de la base de datos. None para una base de datos temporal no persistente |
 
-**Genera**
+**Lanza**
 
 | Excepción                            | Condición                             |
 | ------------------------------------ | ------------------------------------- |
@@ -1932,9 +1925,10 @@ Bases: `object`
 
 Conexión compatible con DB-API 2.0 a la base de datos chDB.
 
-Esta clase proporciona una interfaz estándar de DB-API para conectarse a bases de datos chDB e interactuar con ellas. Admite tanto bases de datos en memoria como bases de datos basadas en archivos.
+Esta clase proporciona una interfaz estándar de DB-API para conectarse a bases de datos chDB e interactuar con ellas. Admite tanto bases de datos temporales como bases de datos basadas en archivos.
 
-La conexión administra el engine de chDB subyacente y proporciona métodos para ejecutar consultas, gestionar transacciones (sin efecto en ClickHouse) y crear cursores.
+La conexión administra el engine de chDB subyacente y proporciona métodos para
+ejecutar consultas, gestionar transacciones (sin efecto en ClickHouse) y crear cursores.
 
 ```python
 class chdb.dbapi.connections.Connection(path=None)
@@ -1942,9 +1936,9 @@ class chdb.dbapi.connections.Connection(path=None)
 
 **Parámetros**
 
-| Parámetro | Tipo | Predeterminado | Descripción                                                                                                                                                                        |
-| --------- | ---- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`    | str  | `None`         | Ruta del archivo de la base de datos. Si es `None`, se usa una base de datos en memoria. Puede ser una ruta de archivo como &#39;database.db&#39; o `None` para &#39;:memory:&#39; |
+| Parámetro | Tipo | Predeterminado | Descripción                                                                                                                                                                                                                                        |
+| --------- | ---- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`    | str  | `None`         | Ruta del archivo de la base de datos. Si es `None` (el valor predeterminado), se usa una base de datos temporal y no persistente (equivalente a `':memory:'`). Proporcione una ruta de archivo como &#39;database.db&#39; para persistir en disco. |
 
 **Variables**
 
@@ -1956,7 +1950,7 @@ class chdb.dbapi.connections.Connection(path=None)
 **Ejemplos**
 
 ```pycon
->>> # Base de datos en memoria
+>>> # Temporary database
 >>> conn = Connection()
 >>> cursor = conn.cursor()
 >>> cursor.execute("SELECT 1")
@@ -1965,7 +1959,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # Base de datos basada en fichero
+>>> # File-based database
 >>> conn = Connection('mydata.db')
 >>> with conn.cursor() as cur:
 ...     cur.execute("CREATE TABLE users (id INT, name STRING) ENGINE = MergeTree() order by id")
@@ -1974,7 +1968,7 @@ class chdb.dbapi.connections.Connection(path=None)
 ```
 
 ```pycon
->>> # Uso como administrador de contexto
+>>> # Context manager usage
 >>> with Connection() as cur:
 ...     cur.execute("SELECT version()")
 ...     version = cur.fetchone()
@@ -3380,9 +3374,9 @@ comparaciones como “field&#95;type == STRING”, donde field&#95;type es un ú
 
 ```pycon
 >>> string_types = DBAPISet([FIELD_TYPE.STRING, FIELD_TYPE.VAR_STRING])
->>> FIELD_TYPE.STRING == string_types  # Devuelve True
->>> FIELD_TYPE.INT != string_types     # Devuelve True
->>> FIELD_TYPE.BLOB in string_types    # Devuelve False
+>>> FIELD_TYPE.STRING == string_types  # Returns True
+>>> FIELD_TYPE.INT != string_types     # Returns True
+>>> FIELD_TYPE.BLOB in string_types    # Returns False
 ```
 
 **Ejemplos de uso**
@@ -3394,16 +3388,16 @@ import chdb.dbapi as dbapi
 
 print("chdb driver version: {0}".format(dbapi.get_client_info()))
 
-# Crear conexión y cursor
+# Create connection and cursor
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# Ejecutar consulta
+# Execute query
 cur.execute('SELECT version()')
 print("description:", cur.description)
 print("data:", cur.fetchone())
 
-# Limpiar recursos
+# Clean up
 cur.close()
 conn.close()
 ```
@@ -3416,7 +3410,7 @@ import chdb.dbapi as dbapi
 conn = dbapi.connect()
 cur = conn.cursor()
 
-# Crear tabla
+# Create table
 cur.execute("""
     CREATE TABLE employees (
         id UInt32,
@@ -3426,7 +3420,7 @@ cur.execute("""
     ) ENGINE = Memory
 """)
 
-# Insertar datos
+# Insert data
 cur.execute("""
     INSERT INTO employees VALUES
     (1, 'Alice', 'Engineering', 75000.00),
@@ -3434,10 +3428,10 @@ cur.execute("""
     (3, 'Charlie', 'Engineering', 80000.00)
 """)
 
-# Consultar datos
+# Query data
 cur.execute("SELECT * FROM employees WHERE department = 'Engineering'")
 
-# Obtener resultados
+# Fetch results
 print("Column names:", [desc[0] for desc in cur.description])
 for row in cur.fetchall():
     print(row)
@@ -3450,19 +3444,19 @@ Gestión de conexiones:
 ```python
 import chdb.dbapi as dbapi
 
-# Base de datos en memoria (predeterminado)
+# Temporary database (default)
 conn1 = dbapi.connect()
 
-# Archivo de base de datos persistente
+# Persistent database file
 conn2 = dbapi.connect("./my_database.chdb")
 
-# Conexión con parámetros
+# Connection with parameters
 conn3 = dbapi.connect("./my_database.chdb?log-level=debug&verbose")
 
-# Conexión de solo lectura
+# Read-only connection
 conn4 = dbapi.connect("./my_database.chdb?mode=ro")
 
-# Limpieza automática de la conexión
+# Automatic connection cleanup
 with dbapi.connect("test.chdb") as conn:
     cur = conn.cursor()
     cur.execute("SELECT count() FROM numbers(1000)")

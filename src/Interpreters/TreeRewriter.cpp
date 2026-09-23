@@ -20,7 +20,6 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -35,6 +34,7 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
 
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -58,6 +58,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageJoin.h>
+#include <Common/NamePrompter.h>
 #include <Common/checkStackSize.h>
 #include <Common/CurrentThread.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -344,19 +345,6 @@ void translateQualifiedNames(ASTPtr & query, const ASTSelectQuery & select_query
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_QUERIED, "Empty list of columns in SELECT query");
 }
 
-bool hasArrayJoin(const ASTPtr & ast)
-{
-    if (const ASTFunction * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && hasArrayJoin(child))
-            return true;
-
-    return false;
-}
-
 /// Keep number of columns for 'GLOBAL IN (SELECT 1 AS a, a)'
 void renameDuplicatedColumns(const ASTSelectQuery * select_query)
 {
@@ -479,7 +467,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Columns required by interpolate expression are not always in the required_result_columns
             new_elements.push_back(elem);
         }
-        else if (select_query->distinct || hasArrayJoin(elem))
+        else if (select_query->distinct || expressionContainsArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.
@@ -1320,13 +1308,52 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
         }
         else
         {
-            if (!source_column_names.empty())
+            /** The callers that validate a key, an index or a TTL expression pass no storage to ask for
+              * hints, but the source columns are right here, so the same hint can be produced from them.
+              * Without it a typo in `ALTER TABLE ... MODIFY ORDER BY` got only the list of available
+              * columns, which for a MergeTree table starts with a dozen virtual columns (`_block_number`,
+              * `_part_index`, ...) and is cut off by the message length limit before reaching the real
+              * ones - while `SELECT` for the same typo answers `Maybe you meant: ['id']`.
+              *
+              * A caller whose subsequent check accepts only a part of the source columns narrows the
+              * candidates down with `hint_columns`; an empty list there means nothing can be suggested.
+              */
+            VectorWithMemoryTracking<String> prompting_strings;
+            if (hint_columns)
             {
-                ss << ", available columns:";
-                for (const auto & name : source_column_names)
-                    ss << " '" << name << "'";
+                prompting_strings.reserve(hint_columns->size());
+                for (const auto & name : *hint_columns)
+                    prompting_strings.push_back(name);
             }
             else
+            {
+                prompting_strings.reserve(source_column_names.size());
+                for (const auto & name : source_column_names)
+                    prompting_strings.push_back(name);
+            }
+
+            std::vector<String> hints;
+            for (const auto & name : unknown_required_source_columns)
+            {
+                for (const auto & hint : NamePrompter<2>::getHints(name, prompting_strings))
+                {
+                    if (std::find(hints.begin(), hints.end(), hint) == hints.end())
+                        hints.push_back(hint);
+                }
+            }
+
+            if (!hints.empty())
+            {
+                ss << ", maybe you meant: ";
+                ss << toStringWithFinalSeparator(hints, " or ");
+            }
+            else if (!prompting_strings.empty())
+            {
+                ss << ", available columns:";
+                for (const auto & name : prompting_strings)
+                    ss << " '" << name << "'";
+            }
+            else if (source_column_names.empty())
                 ss << ", no source columns";
         }
 
@@ -1505,10 +1532,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
-
-     /// Only apply AST optimization for initial queries.
+    /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;
@@ -1610,6 +1634,7 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     const auto & settings = getContext()->getSettingsRef();
 
     TreeRewriterResult result(source_columns, storage, storage_snapshot, false);
+    result.hint_columns = hint_columns;
 
     normalize(query, result.aliases, result.source_columns_set, false, settings, allow_self_aliases, getContext(), is_create_parameterized_view);
 

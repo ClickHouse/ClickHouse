@@ -1,0 +1,275 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# `ClientInfo::read` stores the reported `interface` and `http_method` bytes without checking that
+# they name an enumerator, so `system.query_log` and `system.processes` must be able to render any
+# byte a client sends. This script speaks the raw native protocol to report values outside both
+# enums.
+#
+# The queries are sent as `SECONDARY_QUERY`. That is the query kind whose reported interface is
+# allowed to differ from the receiving session's: a query forwarded to a shard carries the
+# initiator's interface, so an HTTP initiator forwarding over a native TCP connection reports
+# `HTTP` on a TCP session, and `validateClientInfo` exempts it. An `INITIAL_QUERY` reporting
+# anything but the session's own interface is refused with `CLIENT_INFO_DOES_NOT_MATCH` wherever
+# `validate_tcp_client_information` is on, which includes the stateless-test server.
+#
+# The revision is pinned to 54484, the newest one whose `ClientInfo` layout is fully written below
+# (`client_agent` is added at 54485), so the set of exchanged fields is fixed and does not drift.
+
+import os
+import socket
+import uuid
+
+CLICKHOUSE_HOST = os.environ.get("CLICKHOUSE_HOST", "127.0.0.1")
+CLICKHOUSE_PORT = int(os.environ.get("CLICKHOUSE_PORT_TCP", "9000"))
+CLICKHOUSE_DATABASE = os.environ.get("CLICKHOUSE_DATABASE", "default")
+CLIENT_NAME = "interface enum poc"
+
+REVISION = 54484
+
+INTERFACE_TCP = 1
+INTERFACE_HTTP = 2
+# Each `*_LOW` byte is the smallest value its own enum does not name, so a projection keyed on a
+# threshold instead of on membership either passes it through, and rendering then throws, or has
+# already remapped a named value that `03258_refreshable_mv_misc` and `04306_create_handler_http`
+# pin. 200 narrows to -56, keeping the negative `Int8` class armed. Adding an enumerator to either
+# enum moves that field's `*_LOW` byte: it is the next value that enum would allocate.
+INTERFACE_UNMAPPED_LOW = 11
+HTTP_METHOD_UNMAPPED_LOW = 7
+UNMAPPED_HIGH_BIT = 200
+
+
+def writeVarUInt(x, ba):
+    for _ in range(0, 9):
+        byte = x & 0x7F
+        if x > 0x7F:
+            byte |= 0x80
+        ba.append(byte)
+        x >>= 7
+        if x == 0:
+            return
+
+
+def writeStringBinary(s, ba):
+    b = bytes(s, "utf-8") if isinstance(s, str) else s
+    writeVarUInt(len(b), ba)
+    ba.extend(b)
+
+
+def readStrict(s, size=1):
+    res = bytearray()
+    while size:
+        cur = s.recv(size)
+        if not cur:
+            raise EOFError("Connection closed by server")
+        size -= len(cur)
+        res.extend(cur)
+    return res
+
+
+def readUInt(s, size=1):
+    res = readStrict(s, size)
+    val = 0
+    for i in range(len(res)):
+        val += res[i] << (i * 8)
+    return val
+
+
+def readVarUInt(s):
+    x = 0
+    for i in range(9):
+        byte = readStrict(s)[0]
+        x |= (byte & 0x7F) << (7 * i)
+        if not byte & 0x80:
+            return x
+    return x
+
+
+def readStringBinary(s):
+    size = readVarUInt(s)
+    return readStrict(s, size).decode("utf-8")
+
+
+def sendHello(s):
+    ba = bytearray()
+    writeVarUInt(0, ba)  # Hello
+    writeStringBinary(CLIENT_NAME, ba)
+    writeVarUInt(24, ba)  # major
+    writeVarUInt(9, ba)  # minor
+    writeVarUInt(REVISION, ba)
+    writeStringBinary(CLICKHOUSE_DATABASE, ba)
+    writeStringBinary("default", ba)  # user
+    writeStringBinary("", ba)  # password
+    s.sendall(ba)
+
+
+def receiveHello(s):
+    assert readVarUInt(s) == 0  # Hello
+    readStringBinary(s)  # server name
+    readVarUInt(s)  # major
+    readVarUInt(s)  # minor
+    readVarUInt(s)  # revision
+    readVarUInt(s)  # parallel replicas protocol version (>= 54471)
+    readStringBinary(s)  # timezone (>= 54058)
+    readStringBinary(s)  # display name (>= 54372)
+    readVarUInt(s)  # version patch (>= 54401)
+    readStringBinary(s)  # proto_send chunked (>= 54470)
+    readStringBinary(s)  # proto_recv chunked (>= 54470)
+    for _ in range(readVarUInt(s)):  # password complexity rules (>= 54461)
+        readStringBinary(s)
+        readStringBinary(s)
+    readStrict(s, 8)  # nonce, UInt64 (>= 54462)
+    while True:  # server settings in STRINGS_WITH_FLAGS format (>= 54474)
+        if readStringBinary(s) == "":
+            break
+        readVarUInt(s)  # flags
+        readStringBinary(s)  # value
+    readVarUInt(s)  # query plan serialization version (>= 54477)
+    readVarUInt(s)  # cluster function protocol version (>= 54479)
+
+
+def sendAddendum(s):
+    ba = bytearray()
+    writeStringBinary("", ba)  # quota key (>= 54458)
+    writeStringBinary("notchunked", ba)  # proto_send chunked (>= 54470)
+    writeStringBinary("notchunked", ba)  # proto_recv chunked (>= 54470)
+    writeVarUInt(0, ba)  # parallel replicas protocol version (>= 54471)
+    s.sendall(ba)
+
+
+def serializeClientInfo(ba, query_id, interface, http_method):
+    ba.append(2)  # SECONDARY_QUERY
+    writeStringBinary("default", ba)  # initial_user
+    writeStringBinary(query_id, ba)  # initial_query_id
+    writeStringBinary("127.0.0.1:9000", ba)  # initial_address
+    ba.extend([0] * 8)  # initial_query_start_time_microseconds (>= 54449)
+    ba.append(interface)
+    if interface == INTERFACE_TCP:
+        writeStringBinary("os_user", ba)
+        writeStringBinary("client_hostname", ba)
+        writeStringBinary(CLIENT_NAME, ba)
+        writeVarUInt(24, ba)  # client major
+        writeVarUInt(9, ba)  # client minor
+        writeVarUInt(REVISION, ba)  # client tcp protocol version
+    elif interface == INTERFACE_HTTP:
+        ba.append(http_method)
+        writeStringBinary(CLIENT_NAME, ba)  # http_user_agent
+        writeStringBinary("", ba)  # forwarded_for (>= 54443)
+        writeStringBinary("", ba)  # http_referer (>= 54447)
+    writeStringBinary("", ba)  # quota key (>= 54060)
+    writeVarUInt(0, ba)  # distributed_depth (>= 54448)
+    if interface == INTERFACE_TCP:
+        writeVarUInt(1, ba)  # client version patch (>= 54401)
+    ba.append(0)  # opentelemetry: no trace id (>= 54442)
+    writeVarUInt(0, ba)  # parallel replicas: collaborate_with_initiator (>= 54453)
+    writeVarUInt(0, ba)  # parallel replicas: obsolete count
+    writeVarUInt(0, ba)  # parallel replicas: number_of_current_replica
+    writeVarUInt(0, ba)  # script query number (>= 54475)
+    writeVarUInt(0, ba)  # script line number (>= 54475)
+    ba.append(0)  # jwt: none (>= 54476)
+
+
+def sendQuery(s, query, interface, http_method, query_id, settings):
+    ba = bytearray()
+    writeVarUInt(1, ba)  # Query
+    writeStringBinary(query_id, ba)
+    serializeClientInfo(ba, query_id, interface, http_method)
+    for key, value in settings.items():
+        writeStringBinary(key, ba)
+        writeVarUInt(1, ba)  # is_important
+        writeStringBinary(str(value), ba)
+    writeStringBinary("", ba)  # end of per-query settings
+    writeStringBinary("", ba)  # interserver externally granted roles (>= 54472)
+    writeStringBinary("", ba)  # interserver secret (>= 54441)
+    writeVarUInt(2, ba)  # stage = Complete
+    ba.append(0)  # no compression
+    writeStringBinary(query, ba)
+    writeStringBinary("", ba)  # query parameters terminator (>= 54459)
+    s.sendall(ba)
+
+
+def sendEmptyBlock(s):
+    ba = bytearray()
+    writeVarUInt(2, ba)  # Data
+    writeStringBinary("", ba)
+    writeVarUInt(1, ba)  # block info field 1
+    ba.append(0)  # is_overflows = false
+    writeVarUInt(2, ba)  # block info field 2
+    ba.extend((-1).to_bytes(4, "little", signed=True))  # bucket_num = -1
+    writeVarUInt(0, ba)  # end of block info
+    writeVarUInt(0, ba)  # columns
+    writeVarUInt(0, ba)  # rows
+    s.sendall(ba)
+
+
+def expectQueryAccepted(s):
+    # Any first packet other than an `Exception` proves the server accepted the reported client info:
+    # a `SELECT` answers with its result header once the query has started, and a completed
+    # `INSERT ... SELECT` run with `interactive_delay = 0` answers only after its commit. The rest of
+    # the stream is not read.
+    packet_type = readVarUInt(s)
+    if packet_type == 2:  # Exception
+        readUInt(s, 4)  # code
+        readStringBinary(s)  # name
+        raise RuntimeError("Unexpected exception: {}".format(readStringBinary(s)))
+
+
+def runQuery(label, query, interface, http_method, query_id=None, settings=None):
+    query_id = query_id or uuid.uuid4().hex
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(30)
+        s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
+        sendHello(s)
+        receiveHello(s)
+        sendAddendum(s)
+        sendQuery(s, query, interface, http_method, query_id, settings or {})
+        sendEmptyBlock(s)
+        expectQueryAccepted(s)
+    print("{}: query accepted".format(label))
+
+
+def observeSelfInProcesses(label, interface, http_method):
+    # `system.processes` is filled from the live process list, so a running query sees its own row
+    # and can persist what the server renders for it. That is the only way to assert on
+    # `system.processes`: it holds nothing once the query has ended.
+    query_id = uuid.uuid4().hex
+    # With `interactive_delay = 0` the server runs a completed pipeline without a periodic progress
+    # callback, so the first packet it sends is the one after the INSERT has committed. A client that
+    # disconnects while such a pipeline is still running has its query cancelled, losing the row.
+    runQuery(
+        label,
+        "INSERT INTO processes_snapshot "
+        "SELECT toString(interface), toString(http_method) "
+        "FROM system.processes WHERE query_id = '{}'".format(query_id),
+        interface,
+        http_method,
+        query_id,
+        settings={"interactive_delay": 0},
+    )
+
+
+def main():
+    runQuery(
+        "reported interface out of domain",
+        "SELECT 1 SETTINGS log_comment = 'interface_enum_unknown'",
+        INTERFACE_UNMAPPED_LOW,
+        0,
+    )
+    runQuery(
+        "reported http_method out of domain",
+        "SELECT 2 SETTINGS log_comment = 'http_method_enum_unknown'",
+        INTERFACE_HTTP,
+        UNMAPPED_HIGH_BIT,
+    )
+    # Two queries, because one cannot report an out-of-domain value for both columns at once:
+    # `http_method` is only read off the wire when the reported interface is `HTTP`.
+    # The `system.processes` probes carry the other byte of each pair, so both projections are
+    # reported both classes across their two call sites.
+    observeSelfInProcesses("processes: reported interface out of domain", UNMAPPED_HIGH_BIT, 0)
+    observeSelfInProcesses(
+        "processes: reported http_method out of domain", INTERFACE_HTTP, HTTP_METHOD_UNMAPPED_LOW
+    )
+
+
+if __name__ == "__main__":
+    main()
