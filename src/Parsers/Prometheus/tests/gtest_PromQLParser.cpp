@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <Parsers/Prometheus/parseTimeSeriesTypes.h>
 
 #include <fmt/format.h>
 
@@ -1019,6 +1020,28 @@ PrometheusQueryTree(INSTANT_VECTOR):
                 __name__ EQ 'demo_memory_usage_bytes'
 )");
 
+    EXPECT_EQ(parse("present_over_time(demo_memory_usage_bytes[20m])"), R"(
+present_over_time(demo_memory_usage_bytes[1200])
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(present_over_time):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
+    EXPECT_EQ(parse("absent_over_time(demo_memory_usage_bytes[20m])"), R"(
+absent_over_time(demo_memory_usage_bytes[1200])
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Function(absent_over_time):
+        RangeSelector:
+            range: 1200
+            InstantSelector:
+                __name__ EQ 'demo_memory_usage_bytes'
+)");
+
     EXPECT_EQ(parse("quantile_over_time(0.5, demo_memory_usage_bytes[20m])"), R"(
 quantile_over_time(0.5, demo_memory_usage_bytes[1200])
 
@@ -1321,6 +1344,143 @@ PrometheusQueryTree(INSTANT_VECTOR):
                         __name__ EQ 'demo_cpu_usage_seconds_total'
 )");
 
+}
+
+
+TEST(PromQLParser, OctalLiterals)
+{
+    EXPECT_EQ(parse("0755"), R"(
+493
+
+PrometheusQueryTree(SCALAR):
+    Scalar(493)
+)");
+
+    EXPECT_EQ(parse("-0755"), R"(
+-493
+
+PrometheusQueryTree(SCALAR):
+    UnaryOperator(-)
+        Scalar(493)
+)");
+
+    EXPECT_EQ(parse("0_755"), R"(
+493
+
+PrometheusQueryTree(SCALAR):
+    Scalar(493)
+)");
+
+    EXPECT_EQ(parse("08"), R"(
+8
+
+PrometheusQueryTree(SCALAR):
+    Scalar(8)
+)");
+
+    EXPECT_EQ(parse("0759"), R"(
+759
+
+PrometheusQueryTree(SCALAR):
+    Scalar(759)
+)");
+
+    EXPECT_EQ(parse("0755.0"), R"(
+755
+
+PrometheusQueryTree(SCALAR):
+    Scalar(755)
+)");
+
+    EXPECT_EQ(parse("0755e1"), R"(
+7550
+
+PrometheusQueryTree(SCALAR):
+    Scalar(7550)
+)");
+}
+
+
+TEST(PromQLParser, OctalTimestamp)
+{
+    EXPECT_EQ(parse("up @ 0755"), R"(
+up @ 493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        at: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+}
+
+
+TEST(PromQLParser, OctalTimestampOverflow)
+{
+    PrometheusQueryTree query_tree;
+    String error_message;
+    size_t error_pos = String::npos;
+
+    EXPECT_FALSE(query_tree.tryParse(
+        "up @ 0777777777777777777777",
+        3,
+        &error_message,
+        &error_pos));
+
+    EXPECT_EQ(error_pos, 5);
+    EXPECT_NE(error_message.find("Overflow"), String::npos);
+}
+
+
+TEST(PromQLParser, TimeSeriesNumberFormatsRemainDecimal)
+{
+    EXPECT_EQ(parseTimeSeriesTimestamp(String{"0755"}, 3).value, 755000);
+    EXPECT_EQ(parseTimeSeriesDuration(String{"0755"}, 3).value, 755000);
+}
+
+
+TEST(PromQLParser, OctalRangesAndOffsets)
+{
+    EXPECT_EQ(parse("up[0755]"), R"(
+up[493]
+
+PrometheusQueryTree(RANGE_VECTOR):
+    RangeSelector:
+        range: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up[0755:010]"), R"(
+up[493:8]
+
+PrometheusQueryTree(RANGE_VECTOR):
+    Subquery:
+        range: 493
+        step: 8
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up offset 0755"), R"(
+up offset 493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        offset: 493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
+
+    EXPECT_EQ(parse("up offset -0755"), R"(
+up offset -493
+
+PrometheusQueryTree(INSTANT_VECTOR):
+    Offset:
+        offset: -493
+        InstantSelector:
+            __name__ EQ 'up'
+)");
 }
 
 
@@ -1768,7 +1928,7 @@ TEST(PromQLParser, RejectUnicodeSurrogateEscapes)
         PrometheusQueryTree query_tree;
         String error_message;
         size_t error_pos = String::npos;
-        EXPECT_FALSE(query_tree.tryParse(query, /* timestamp_scale = */ 3, &error_message, &error_pos)) << query;
+        EXPECT_FALSE(query_tree.tryParse(query, /* time_scale = */ 3, &error_message, &error_pos)) << query;
         EXPECT_NE(error_message.find("surrogate range 0xD800-0xDFFF"), String::npos) << query << ": " << error_message;
         EXPECT_EQ(error_pos, expected_error_pos) << query;
     };
