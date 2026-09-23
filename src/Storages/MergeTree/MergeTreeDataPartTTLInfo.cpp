@@ -278,13 +278,12 @@ bool MergeTreeDataPartTTLInfos::hasAnyNonFinishedRowTTLs() const
     return hasAnyNonFinishedTTLInMap(rows_where_ttl) || hasAnyNonFinishedTTLInMap(group_by_ttl);
 }
 
-time_t MergeTreeDataPartTTLInfos::getMaximalNonFinishedRowTTL() const
+time_t MergeTreeDataPartTTLInfos::getTTLForPartDropMerge() const
 {
-    time_t max_ttl = 0;
-
     if (table_ttl.initialized() && !table_ttl.finished())
-        max_ttl = table_ttl.max;
+        return table_ttl.max;
 
+    time_t max_ttl = 0;
     max_ttl = std::max(max_ttl, getMaximalNonFinishedTTLInMap(rows_where_ttl));
     max_ttl = std::max(max_ttl, getMaximalNonFinishedTTLInMap(group_by_ttl));
 

@@ -65,7 +65,8 @@ private:
     const size_t max_parts_to_merge_at_once;
 };
 
-/// Select parts whose rows have all expired and which can be fully deleted.
+/// Select parts for deferred row TTL processing. If an unconditional table TTL is present, its
+/// maximum is sufficient to schedule the merge regardless of other TTL actions.
 class TTLPartDropMergeSelector : public ITTLMergeSelector
 {
 public:
@@ -74,8 +75,8 @@ public:
 private:
     time_t getTTLForPart(const PartProperties & part) const override;
 
-    /// Checks that the part has at least one unfinished row TTL. Column TTLs do not postpone
-    /// dropping a part whose rows have all expired.
+    /// Checks that the part has at least one unfinished row TTL. Column, move, and recompression
+    /// TTLs do not participate in deferred row TTL scheduling.
     bool canConsiderPart(const PartProperties & part) const override;
 };
 

@@ -225,7 +225,7 @@ TTLPartDropMergeSelector::TTLPartDropMergeSelector(time_t current_time_, size_t 
 
 time_t TTLPartDropMergeSelector::getTTLForPart(const PartProperties & part) const
 {
-    return part.general_ttl_info->row_max_ttl;
+    return part.general_ttl_info->part_drop_ttl;
 }
 
 bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) const

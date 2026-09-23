@@ -24,6 +24,36 @@ $CLICKHOUSE_CLIENT --query "
 
     INSERT INTO ttl_col_mixed VALUES ('2020-01-01', 'keep', 'not_expired');"
 
+# Once an unconditional row TTL has expired for the whole part, later conditional deletion and
+# aggregation TTLs cannot require any rows to be retained either.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS ttl_where_mixed;
+    CREATE TABLE ttl_where_mixed
+    (
+        d Date,
+        k UInt64
+    )
+    ENGINE = MergeTree ORDER BY k
+    TTL d + INTERVAL 1 DAY,
+        d + INTERVAL 100 YEAR DELETE WHERE k = 1
+    SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
+
+    INSERT INTO ttl_where_mixed VALUES ('2020-01-01', 1);
+
+    DROP TABLE IF EXISTS ttl_group_by_mixed;
+    CREATE TABLE ttl_group_by_mixed
+    (
+        d Date,
+        k UInt64,
+        value UInt64
+    )
+    ENGINE = MergeTree ORDER BY k
+    TTL d + INTERVAL 1 DAY,
+        d + INTERVAL 100 YEAR GROUP BY k SET d = max(d), value = sum(value)
+    SETTINGS ttl_only_drop_parts = 1, merge_with_ttl_timeout = 0;
+
+    INSERT INTO ttl_group_by_mixed VALUES ('2020-01-01', 1, 1);"
+
 for only_drop in 0 1
 do
     $CLICKHOUSE_CLIENT --query "
@@ -41,11 +71,14 @@ do
         INSERT INTO ttl_col_${only_drop} VALUES ('2020-01-01', 'keep', 'expired', 'not_expired');"
 done
 
-for _ in {1..300}
+for table in ttl_col_mixed ttl_where_mixed ttl_group_by_mixed
 do
-    result=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM ttl_col_mixed")
-    [[ "$result" == "0" ]] && break
-    sleep 0.3
+    for _ in {1..300}
+    do
+        result=$($CLICKHOUSE_CLIENT --query "SELECT count() FROM ${table}")
+        [[ "$result" == "0" ]] && break
+        sleep 0.3
+    done
 done
 
 # The background TTL merge is asynchronous; wait for it instead of forcing it with OPTIMIZE, because
@@ -70,7 +103,15 @@ done
 echo "mixed row and column TTL"
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM ttl_col_mixed;"
 
+echo "mixed unconditional and conditional row TTL"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM ttl_where_mixed;"
+
+echo "mixed unconditional and aggregation TTL"
+$CLICKHOUSE_CLIENT --query "SELECT count() FROM ttl_group_by_mixed;"
+
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE ttl_col_0;
     DROP TABLE ttl_col_1;
-    DROP TABLE ttl_col_mixed;"
+    DROP TABLE ttl_col_mixed;
+    DROP TABLE ttl_where_mixed;
+    DROP TABLE ttl_group_by_mixed;"

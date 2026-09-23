@@ -44,9 +44,9 @@ struct PartProperties
         const bool has_any_non_finished_row_ttls;
         const bool has_any_non_finished_column_ttls;
         const time_t part_min_ttl;
-        /// The latest due time among the unfinished row TTLs. Column TTLs are excluded because
-        /// dropping a fully expired part also removes all of its columns.
-        const time_t row_max_ttl;
+        /// The due time for a `TTLDrop` merge. An unconditional table TTL takes precedence over
+        /// other TTL actions because its maximum proves that no rows need to be retained.
+        const time_t part_drop_ttl;
         /// The earliest due time among the unfinished column TTLs, as opposed to `part_min_ttl`,
         /// which is the minimum across the row TTLs as well.
         const time_t column_min_ttl;

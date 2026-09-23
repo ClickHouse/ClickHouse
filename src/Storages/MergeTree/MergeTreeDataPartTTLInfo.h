@@ -67,8 +67,10 @@ struct MergeTreeDataPartTTLInfos
     /// Has any row TTL (table, `WHERE` or `GROUP BY`) which is not calculated on a completely expired part.
     bool hasAnyNonFinishedRowTTLs() const;
 
-    /// The latest time at which all rows in the part expire. Zero if there is no unfinished row TTL.
-    time_t getMaximalNonFinishedRowTTL() const;
+    /// The due time used to schedule a `TTLDrop` merge. An unfinished unconditional table TTL takes
+    /// precedence because no other TTL action can postpone removing a part after all its rows expire.
+    /// Without one, preserve deferred scheduling for unfinished `DELETE WHERE` and `GROUP BY` TTLs.
+    time_t getTTLForPartDropMerge() const;
 
     /// Has any column TTL which is not calculated on a completely expired part. A column TTL can only
     /// be honoured by rewriting the part, never by dropping it, so it is tracked separately.

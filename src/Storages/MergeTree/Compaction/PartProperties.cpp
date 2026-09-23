@@ -25,7 +25,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
         .has_any_non_finished_column_ttls = part->ttl_infos.hasAnyNonFinishedColumnTTLs(),
         .part_min_ttl = part->ttl_infos.part_min_ttl,
-        .row_max_ttl = part->ttl_infos.getMaximalNonFinishedRowTTL(),
+        .part_drop_ttl = part->ttl_infos.getTTLForPartDropMerge(),
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
     };
 }
