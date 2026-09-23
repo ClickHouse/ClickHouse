@@ -118,10 +118,18 @@ private:
         OutputPort & readiness;
     };
 
-    struct CollectingInput
+    struct SortingUnit
     {
         Chunks chunks;
-        size_t bytes = 0;
+        size_t rows = 0;
+        size_t allocated_bytes = 0;
+    };
+
+    struct CollectingInput
+    {
+        SortingUnit pending;
+        Chunks sorted_chunks;
+        size_t sorted_bytes = 0;
     };
 
     struct ConnectingInputRun
@@ -137,7 +145,7 @@ private:
 
     struct PreparingTail
     {
-        Chunks chunks;
+        CollectingInput collecting;
     };
 
     struct ConnectingTail
@@ -183,6 +191,11 @@ private:
     void startSpilling(Hashing & hashing);
     void extractSuppressionRun(ExtractingSuppression & extracting);
     void collectInput(CollectingInput & collecting);
+    void flushSortingUnit(CollectingInput & collecting);
+    bool canAppendToSortingUnit(const SortingUnit & unit, size_t rows, size_t bytes) const;
+    bool canStartCoalescing(size_t rows, size_t bytes) const;
+    bool fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes = 0) const;
+    size_t maxRowsInSortingUnit() const;
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
     void consumeMerged(Merging & merging);

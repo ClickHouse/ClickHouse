@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <type_traits>
 
+#include <Interpreters/Squashing.h>
 #include <Interpreters/sortBlock.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
@@ -40,6 +41,24 @@ namespace
 /// Suppression extraction targets this many bytes per run, independently of the spill threshold.
 /// Ordinary runs use the smaller of this value and the threshold as their minimum accumulated size.
 constexpr size_t DEFAULT_BYTES_IN_RUN = DEFAULT_BLOCK_SIZE * 256;
+
+/// Sorting units combine small input chunks before removing duplicates. Their row and byte targets
+/// are independent of the smaller blocks written to spill files. An oversized input is sorted alone.
+constexpr size_t MAX_BYTES_IN_SORTING_UNIT = 16 << 20;
+
+size_t estimateSortingWorkspace(size_t rows)
+{
+    /// A sorting permutation stores each row's original index. Include array padding and the
+    /// power-of-two capacity rounding, rather than counting only the indices themselves.
+    using Permutation = IColumn::Permutation;
+    const size_t permutation_bytes = roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
+        rows, sizeof(Permutation::value_type), Permutation::pad_left, Permutation::pad_right));
+
+    /// Numeric radix sorting holds two value-index arrays alongside the permutation. Each pair can
+    /// occupy twice an index's size, and the histograms need up to 8 KiB. This allowance also covers
+    /// the equal-key ranges used by comparison sorting and duplicate removal.
+    return 5 * permutation_bytes + (8 << 10);
+}
 
 }
 
@@ -151,8 +170,8 @@ IProcessor::Status ExternalDistinctTransform::prepareCollectingInput(CollectingI
     auto status = prepareInput();
     if (status == Status::Finished)
     {
-        auto chunks = std::move(collecting.chunks);
-        state.emplace<PreparingTail>(std::move(chunks));
+        auto remaining = std::move(collecting);
+        state.emplace<PreparingTail>(std::move(remaining));
         return Status::Ready;
     }
     return status;
@@ -328,15 +347,10 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     /// input copy and both the original and copied service columns.
     const size_t ordinary_columns_bytes = input_bytes + 2 * service_columns_bytes;
 
-    /// Each extracted suppression chunk has at most `max_block_size_rows` rows; ordinary sorting uses
-    /// the whole input chunk. The larger row count covers the sorting permutation for either path.
-    const size_t sort_rows = std::max<size_t>(max_block_size_rows, input_chunk.getNumRows());
-
-    /// A sorting permutation stores the original index of each row in sorted order. Its array needs
-    /// padding and grows to a power-of-two capacity, so counting only the row indices is insufficient.
-    using Permutation = IColumn::Permutation;
-    const size_t sort_permutation_bytes = roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
-        sort_rows, sizeof(Permutation::value_type), Permutation::pad_left, Permutation::pad_right));
+    /// Suppression extraction prepares a sorting unit at a time; the first ordinary run can contain
+    /// the whole input chunk. Reserve sorting indices and their temporary arrays for the larger input.
+    const size_t sort_rows = std::max(maxRowsInSortingUnit(), input_chunk.getNumRows());
+    const size_t sorting_workspace = estimateSortingWorkspace(sort_rows);
 
     /// Writing a temporary file can hold uncompressed input, compressed output, and a file buffer
     /// at the same time. The estimate allows three configured buffer sizes; oversized values and codec
@@ -346,9 +360,9 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
     /// A filtered output copy can remain pending while suppression keys are extracted. The original
     /// input can still be shared upstream, so this output copy needs an additional `input_bytes`.
     /// Suppression extraction and ordinary sorting run separately; take the larger column estimate,
-    /// then add allowances for the sorting permutation and buffers for writing the file.
+    /// then add allowances for sorting workspace and buffers for writing the file.
     const size_t spill_memory
-        = std::max(input_bytes + suppression_columns_bytes, ordinary_columns_bytes) + sort_permutation_bytes + write_buffers_bytes;
+        = std::max(input_bytes + suppression_columns_bytes, ordinary_columns_bytes) + sorting_workspace + write_buffers_bytes;
 
     /// These values retain the last check's tracked query usage, additional memory for new keys, and
     /// temporary workspace estimate so the spill log describes the check that rejected insertion.
@@ -489,7 +503,7 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
     /// key can exceed the byte target, and sorting needs additional temporary buffers.
     while (!isCancelled() && bytes < DEFAULT_BYTES_IN_RUN)
     {
-        auto key_columns = extracting.keys->next(max_block_size_rows, DEFAULT_BYTES_IN_RUN - bytes);
+        auto key_columns = extracting.keys->next(maxRowsInSortingUnit(), DEFAULT_BYTES_IN_RUN - bytes);
         if (key_columns.empty())
             break;
 
@@ -523,29 +537,113 @@ void ExternalDistinctTransform::extractSuppressionRun(ExtractingSuppression & ex
     readRun(connecting.run.progress);
 }
 
+size_t ExternalDistinctTransform::maxRowsInSortingUnit() const
+{
+    return std::max<size_t>(DEFAULT_BLOCK_SIZE, max_block_size_rows);
+}
+
+bool ExternalDistinctTransform::fitsSortingBudget(size_t rows, size_t column_bytes, size_t additional_input_bytes) const
+{
+    /// Buffered source chunks are already tracked; future input needs a separate allowance. Reserve
+    /// space for copy-on-write mutation, column concatenation, and the sorted output while upstream
+    /// owners may retain the source columns.
+    const size_t workspace = additional_input_bytes + 3 * column_bytes + estimateSortingWorkspace(rows);
+    const UInt64 query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+    return query_memory < max_bytes_before_external_distinct
+        && workspace <= max_bytes_before_external_distinct - query_memory;
+}
+
+bool ExternalDistinctTransform::canAppendToSortingUnit(const SortingUnit & unit, size_t rows, size_t bytes) const
+{
+    return unit.rows + rows <= maxRowsInSortingUnit()
+        && unit.allocated_bytes + bytes <= MAX_BYTES_IN_SORTING_UNIT
+        && fitsSortingBudget(unit.rows + rows, unit.allocated_bytes + bytes);
+}
+
+bool ExternalDistinctTransform::canStartCoalescing(size_t rows, size_t bytes) const
+{
+    /// Start coalescing only with room for the target unit, including input that has not arrived.
+    /// Otherwise, short units repeatedly pay for copying and sorting without removing enough
+    /// cross-chunk duplicates to offset that work. Average row size predicts the remaining input;
+    /// subsequent chunks still check their actual allocation before joining the unit.
+    const size_t average_row_bytes = std::max<size_t>(1, bytes / rows);
+    const size_t target_rows = std::max(rows, std::min(maxRowsInSortingUnit(), MAX_BYTES_IN_SORTING_UNIT / average_row_bytes));
+    const size_t target_bytes = std::max(bytes, target_rows * average_row_bytes);
+    return fitsSortingBudget(target_rows, target_bytes, target_bytes - bytes);
+}
+
+void ExternalDistinctTransform::flushSortingUnit(CollectingInput & collecting)
+{
+    auto & pending = collecting.pending;
+    if (pending.chunks.empty())
+        return;
+
+    const auto & header = spill_layout->getInputRunHeader();
+    Chunk chunk;
+    if (pending.chunks.size() == 1)
+        chunk = std::move(pending.chunks.front());
+    else
+        chunk = Squashing::squashWithoutChunkInfo(std::move(pending.chunks));
+    chassert(chunk.getNumRows() == pending.rows);
+    pending.chunks.clear();
+    pending.rows = 0;
+    pending.allocated_bytes = 0;
+
+    Block block = header->cloneWithColumns(chunk.detachColumns());
+
+    /// `Squashing` retains input order. Stable compaction therefore keeps the first payload across
+    /// chunk boundaries and moves each row's arrival number and other service columns with it.
+    sortBlockAndDeduplicate(block, spill_layout->getKeySortDescription(), IColumn::PermutationSortStability::Stable);
+    const auto rows = block.rows();
+    Chunk sorted(block.detachColumns(), rows);
+    collecting.sorted_bytes += sorted.allocatedBytes();
+    collecting.sorted_chunks.push_back(std::move(sorted));
+}
+
 void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
 {
     auto chunk = std::move(input_chunk);
     if (unlikely(!chunk.hasRows()))
         return;
 
+    /// Spill sorting reorders and removes rows, so source chunk metadata does not describe its
+    /// output. Discard it before buffering and coalescing the row data.
+    chunk.getChunkInfos().clear();
+
     const UInt64 first_arrival_number = consumed_rows;
     consumed_rows += chunk.getNumRows();
     auto prepared = spill_layout->prepareInputChunk(std::move(chunk), first_arrival_number);
-    Block block = spill_layout->getInputRunHeader()->cloneWithColumns(prepared.detachColumns());
-    /// Stable compaction keeps the first payload and permutes the service columns with its row.
-    sortBlockAndDeduplicate(block, spill_layout->getKeySortDescription(), IColumn::PermutationSortStability::Stable);
-    const auto rows = block.rows();
-    Chunk sorted(block.detachColumns(), rows);
-    collecting.bytes += sorted.allocatedBytes();
-    collecting.chunks.push_back(std::move(sorted));
+    const size_t rows = prepared.getNumRows();
+    const size_t bytes = prepared.allocatedBytes();
+
+    auto & pending = collecting.pending;
+
+    /// Flush the previous unit before an input would exceed its targets or leave insufficient room
+    /// for coalescing and sorting. A single large input is processed on its own to make progress.
+    if (!pending.chunks.empty() && !canAppendToSortingUnit(pending, rows, bytes))
+        flushSortingUnit(collecting);
+
+    const bool can_coalesce = !pending.chunks.empty() || canStartCoalescing(rows, bytes);
+    pending.rows += rows;
+    pending.allocated_bytes += bytes;
+    pending.chunks.push_back(std::move(prepared));
+
+    const bool first_run = temporary_files_num == 0;
+    const bool unit_full = pending.rows >= maxRowsInSortingUnit() || pending.allocated_bytes >= MAX_BYTES_IN_SORTING_UNIT;
+
+    /// Base the spill decision on the sorting peak. Flushing resets the pending unit and can free
+    /// memory through deduplication, so checking only afterward would lose that pressure.
+    const bool sorting_budget_exceeded = !fitsSortingBudget(pending.rows, pending.allocated_bytes);
+    if (first_run || sorting_budget_exceeded || !can_coalesce || unit_full)
+        flushSortingUnit(collecting);
 
     /// An empty hash set produces no suppression files, so the first ordinary chunk starts a run.
-    /// Later runs have a size floor when other operators keep query memory above the threshold.
-    if (temporary_files_num == 0 || (collecting.bytes >= minBytesInRun()
-        && getCurrentQueryMemoryUsage() > static_cast<Int64>(max_bytes_before_external_distinct)))
+    /// Later runs keep a size floor when other operators consume the budget. The workspace check
+    /// includes the copies needed to sort the pending unit before writing it.
+    if (first_run || (collecting.sorted_bytes >= minBytesInRun() && sorting_budget_exceeded))
     {
-        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting.chunks), collecting.bytes,
+        chassert(pending.chunks.empty());
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting.sorted_chunks), collecting.sorted_bytes,
             spill_layout->getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
         auto & connecting = state.emplace<ConnectingInputRun>(std::move(run));
         readRun(connecting.run.progress);
@@ -606,14 +704,15 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
 void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
 {
     ProfileEvents::increment(ProfileEvents::ExternalDistinctMerge);
+    flushSortingUnit(tail.collecting);
     LOG_TRACE(log, "Preparing final DISTINCT merge "
         "(temporary runs: {}, in-memory chunks: {}, restore input order: {})",
-        temporary_files_num, tail.chunks.size(), spill_layout->preservesInputOrder());
+        temporary_files_num, tail.collecting.sorted_chunks.size(), spill_layout->preservesInputOrder());
 
     /// Register the final input even when the tail is empty, then close merge-input registration.
     /// The tail is merged into unique chunks under the same contract as ordinary disk runs.
     auto source = std::make_shared<MergeSorterSource>(
-        spill_layout->getInputRunHeader(), std::move(tail.chunks), spill_layout->getKeySortDescription(),
+        spill_layout->getInputRunHeader(), std::move(tail.collecting.sorted_chunks), spill_layout->getKeySortDescription(),
         max_block_size_rows, /*limit=*/ 0, MergeSorter::Mode::MergeUniqueChunks, preferred_block_bytes);
     state.emplace<ConnectingTail>(std::move(source));
 }

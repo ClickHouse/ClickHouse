@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <bit>
 #include <functional>
 #include <initializer_list>
 #include <thread>
@@ -11,7 +12,9 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
@@ -43,6 +46,24 @@ Chunk makeChunk(std::initializer_list<UInt64> values)
         column->insertValue(value);
     return Chunk(Columns{std::move(column)}, values.size());
 }
+
+class MergeCountingChunkInfo : public ChunkInfoCloneable<MergeCountingChunkInfo>
+{
+public:
+    explicit MergeCountingChunkInfo(size_t & merge_calls_)
+        : merge_calls(merge_calls_)
+    {
+    }
+
+    Ptr merge(const Ptr & right) const override
+    {
+        ++merge_calls;
+        return right;
+    }
+
+private:
+    size_t & merge_calls;
+};
 
 struct ConnectedDistinct
 {
@@ -98,6 +119,36 @@ struct ConnectedDistinct
         return run;
     }
 };
+
+void readFirstSpillRun(ExternalDistinctTransform & transform, Blocks & blocks)
+{
+    ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
+    auto update = transform.updatePipeline();
+    auto sink_it = std::ranges::find_if(update.to_add, [](const auto & processor)
+    {
+        return typeid_cast<BufferingToFileSink *>(processor.get());
+    });
+    ASSERT_NE(sink_it, update.to_add.end());
+    auto & sink = assert_cast<BufferingToFileSink &>(**sink_it);
+    while (true)
+    {
+        const auto sink_status = sink.prepare();
+        if (sink_status == IProcessor::Status::Finished)
+            break;
+        if (sink_status == IProcessor::Status::Ready)
+            sink.work();
+        else
+            ASSERT_EQ(sink_status, IProcessor::Status::NeedData);
+        const auto status = transform.prepare();
+        if (status == IProcessor::Status::Ready)
+            transform.work();
+        else
+            ASSERT_TRUE(status == IProcessor::Status::NeedData || status == IProcessor::Status::PortFull);
+    }
+    auto reader = sink.getHolder().getReadStream();
+    for (auto block = reader->read(); !block.empty(); block = reader->read())
+        blocks.push_back(std::move(block));
+}
 
 class ExternalDistinctTransformTest : public testing::Test
 {
@@ -539,7 +590,7 @@ TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
 
             /// The full-chunk growth cannot fit, but checked insertion can emit a prefix before the
             /// next table growth forces its suffix into ordinary runs.
-            const Int64 pressure = threshold - getCurrentQueryMemoryUsage() - (39 << 20);
+            const Int64 pressure = threshold - getCurrentQueryMemoryUsage() - (43 << 20);
             ASSERT_GT(pressure, 0);
             std::ignore = CurrentMemoryTracker::alloc(pressure);
             SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
@@ -626,36 +677,13 @@ TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
             ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
             transform.work();
 
-            ASSERT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
-            auto update = transform.updatePipeline();
-            auto sink_it = std::ranges::find_if(update.to_add, [](const auto & processor)
-            {
-                return typeid_cast<BufferingToFileSink *>(processor.get());
-            });
-            ASSERT_NE(sink_it, update.to_add.end());
-            auto & sink = assert_cast<BufferingToFileSink &>(**sink_it);
-            while (true)
-            {
-                const auto sink_status = sink.prepare();
-                if (sink_status == IProcessor::Status::Finished)
-                    break;
-                if (sink_status == IProcessor::Status::Ready)
-                    sink.work();
-                else
-                    ASSERT_EQ(sink_status, IProcessor::Status::NeedData);
-                const auto status = transform.prepare();
-                if (status == IProcessor::Status::Ready)
-                    transform.work();
-                else
-                    ASSERT_TRUE(status == IProcessor::Status::NeedData || status == IProcessor::Status::PortFull);
-            }
-
             /// Inspect the serialized blocks themselves: reducing only final output sizes would not
             /// reduce the decoded block retained by each temporary-file reader.
-            auto reader = sink.getHolder().getReadStream();
+            Blocks spilled_blocks;
+            ASSERT_NO_FATAL_FAILURE(readFirstSpillRun(transform, spilled_blocks));
             Strings actual_keys;
             size_t blocks = 0;
-            for (auto block = reader->read(); !block.empty(); block = reader->read())
+            for (const auto & block : spilled_blocks)
             {
                 EXPECT_LE(block.rows(), preferred_bytes ? 128 : rows);
                 for (size_t row = 0; row < block.rows(); ++row)
@@ -665,5 +693,130 @@ TEST_F(ExternalDistinctTransformTest, SpillFilesUseByteSizedBlocks)
             EXPECT_EQ(blocks, preferred_bytes ? 4 : 1);
             EXPECT_EQ(actual_keys, expected_keys);
         }
+    });
+}
+
+TEST_F(ExternalDistinctTransformTest, CoalescedInputKeepsFirstPayload)
+{
+    withQueryThread([&]
+    {
+        const auto u64 = std::make_shared<DataTypeUInt64>();
+        const DataTypes key_types{
+            u64, std::make_shared<DataTypeNullable>(u64),
+            std::make_shared<DataTypeArray>(u64), std::make_shared<DataTypeString>()};
+        for (const auto & type : key_types)
+        for (const bool ordered : {false, true})
+        {
+            SCOPED_TRACE(::testing::Message() << "type=" << type->getName() << ", ordered=" << ordered);
+            const auto header = std::make_shared<const Block>(Block{
+                ColumnWithTypeAndName(type, "k"), ColumnWithTypeAndName(u64, "payload")});
+            const auto make_key = [&](UInt64 key) -> Field
+            {
+                if (type->getTypeId() == TypeIndex::Array)
+                    return Array{key};
+                if (type->isNullable() && key == 0)
+                    return Null{};
+                if (type->getTypeId() == TypeIndex::String)
+                    return std::to_string(key) + String(key % 32 == 0 ? 8192 : 8, 'x');
+                return key;
+            };
+            /// The wide source forces spilling while it retains most chunks, then releases enough
+            /// memory for later chunks to coalesce under the larger threshold.
+            const bool wide = type->getTypeId() == TypeIndex::String;
+            const size_t rows = wide ? 262143 : 131071;
+            const size_t threshold = wide ? 96 << 20 : 32 << 20;
+            constexpr size_t unique_keys = 4093;
+            constexpr size_t input_rows = 127;
+            size_t metadata_merge_calls = 0;
+            Chunks chunks;
+            for (size_t begin = 0; begin < rows; begin += input_rows)
+            {
+                auto columns = header->cloneEmptyColumns();
+                const size_t count = std::min(input_rows, rows - begin);
+                for (size_t row = begin; row < begin + count; ++row)
+                {
+                    columns[0]->insert(make_key(unique_keys - 1 - row % unique_keys));
+                    columns[1]->insert(UInt64(row));
+                }
+                chunks.emplace_back(std::move(columns), count);
+                chunks.back().getChunkInfos().add(std::make_shared<MergeCountingChunkInfo>(metadata_merge_calls));
+            }
+            auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
+            auto transform = std::make_shared<ExternalDistinctTransform>(
+                header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, threshold,
+                tmp_data, /*min_free_disk_space_=*/ 0, input_rows, /*preferred_block_bytes_=*/ 65536, ordered);
+            connect(source->getPort(), transform->getInputs().front());
+            auto * output_port = &transform->getOutputs().front();
+            auto processors = std::make_shared<Processors>();
+            processors->emplace_back(std::move(source));
+            processors->emplace_back(std::move(transform));
+            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+            PullingPipelineExecutor executor(pipeline);
+            Block block;
+            size_t output_rows = 0;
+            std::vector<bool> seen(unique_keys);
+            while (executor.pull(block))
+            {
+                for (size_t row = 0; row < block.rows(); ++row)
+                {
+                    const auto payload = block.getByName("payload").column->getUInt(row);
+                    ASSERT_LT(payload, unique_keys);
+                    EXPECT_FALSE(seen[payload]);
+                    seen[payload] = true;
+                    EXPECT_EQ((*block.getByName("k").column)[row], make_key(unique_keys - 1 - payload));
+                    if (ordered)
+                        EXPECT_EQ(payload, output_rows);
+                    ++output_rows;
+                }
+            }
+            EXPECT_EQ(output_rows, unique_keys);
+            EXPECT_EQ(metadata_merge_calls, 0);
+        }
+    });
+}
+
+TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
+{
+    withQueryThread([&]
+    {
+        const auto header = std::make_shared<const Block>(Block{
+            ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")});
+        /// Hashing retains distinct floating-point bit patterns. Sorting suppression keys must keep
+        /// every representation even when zeros or different NaNs compare equal in the sort order.
+        std::vector<UInt64> expected{0, 0x8000000000000000ULL, 0x7ff8000000000000ULL, 0x7ff8000000000001ULL};
+        auto keys = ColumnFloat64::create();
+        for (const auto bits : expected)
+            keys->insertValue(std::bit_cast<Float64>(bits));
+        Chunk input(Columns{std::move(keys)}, expected.size());
+        constexpr size_t threshold = 64 << 20;
+        ExternalDistinctTransform transform(header, SizeLimits{}, /*limit_hint_=*/ 0, Names{}, threshold,
+            tmp_data, /*min_free_disk_space_=*/ 0, /*max_block_size_rows_=*/ 1,
+            /*preferred_block_bytes_=*/ 65536, /*preserve_input_order_=*/ false);
+        OutputPort upstream{header};
+        InputPort downstream{header};
+        connect(upstream, transform.getInputs().front());
+        connect(transform.getOutputs().front(), downstream);
+        downstream.setNeeded();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        upstream.push(input.clone());
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::NeedData);
+        ASSERT_TRUE(downstream.hasData());
+        ASSERT_EQ(downstream.pull().getNumRows(), expected.size());
+        upstream.push(std::move(input));
+        std::ignore = CurrentMemoryTracker::alloc(threshold);
+        SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(threshold));
+        ASSERT_EQ(transform.prepare(), IProcessor::Status::Ready);
+        transform.work();
+        Blocks blocks;
+        ASSERT_NO_FATAL_FAILURE(readFirstSpillRun(transform, blocks));
+        std::vector<UInt64> actual;
+        for (const auto & block : blocks)
+            for (size_t row = 0; row < block.rows(); ++row)
+                actual.push_back(std::bit_cast<UInt64>(block.getByName("k").column->getFloat64(row)));
+        std::ranges::sort(actual);
+        std::ranges::sort(expected);
+        EXPECT_EQ(actual, expected);
     });
 }
