@@ -29,6 +29,9 @@ using Partitioned = PartitionedFixedHashMap<Key, UInt64, size_bits, BITS_FOR_BUC
 template <typename Key, size_t size_bits>
 using Plain = FixedHashMapWithSizeBits<Key, UInt64, size_bits>;
 
+/// The buckets add no state to the flat table.
+static_assert(sizeof(Partitioned<UInt16, 16, 8>) == sizeof(Plain<UInt16, 16>));
+
 template <typename Map>
 void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)
 {
@@ -136,6 +139,8 @@ TEST(PartitionedFixedHashMap, CellsAndOffsetsMatchThePlainMap)
                 const auto * cell = map.find(key);
                 ASSERT_NE(cell, nullptr) << "key " << key << ", bits " << bits;
                 ASSERT_EQ(map.offsetInternal(cell), plain.offsetInternal(plain.find(key))) << "key " << key << ", bits " << bits;
+                ASSERT_EQ(map.offsetInternalAtBucket(cell, routedBucket<Map>(key)), map.offsetInternal(cell)) << "key " << key;
+                ASSERT_EQ(map.find(key, Map::hash(key)), cell) << "key " << key << ", bits " << bits;
                 ASSERT_TRUE(map.has(key)) << "key " << key << ", bits " << bits;
             }
             ASSERT_EQ(map.find(num_keys + 1), nullptr) << "bits " << bits;
@@ -157,8 +162,6 @@ TEST(PartitionedFixedHashMap, BufferSizeIsIndependentOfBucketCount)
             ASSERT_TRUE(map.empty());
             ASSERT_EQ(map.getBufferSizeInCells(), expected_cells) << "bits " << bits;
             ASSERT_EQ(map.getBufferSizeInBytes(), expected_cells * sizeof(typename Map::cell_type)) << "bits " << bits;
-            for (UInt32 i = 1; i < Map::NUM_BUCKETS; ++i)
-                ASSERT_EQ(map.impls[i].getBufferSizeInBytes(), map.impls[0].getBufferSizeInBytes()) << "bits " << bits;
         });
 }
 
@@ -356,7 +359,7 @@ TEST(PartitionedFixedHashMap, ConcurrentInsertsUnderOneLockPerBucket)
 
 TEST(PartitionedFixedHashMap, IteratorReportsTheRoutedBucket)
 {
-    /// The storage is flat, so `getBucket` is 0 for every cell; a scan split by bucket uses `getRoutedBucket`.
+    /// There are no sub-tables, so a scan split by bucket filters on the bucket the iterator reports.
     using Map = Partitioned<UInt16, 16, 8>;
     Map map;
     constexpr UInt16 num_keys = 4000;
@@ -368,15 +371,18 @@ TEST(PartitionedFixedHashMap, IteratorReportsTheRoutedBucket)
     std::vector<char> seen(num_keys, 0);
     for (auto it = map.begin(); it != map.end(); ++it)
     {
-        ASSERT_EQ(it.getBucket(), 0u);
         const auto key = static_cast<UInt16>(it.getHash());
         ASSERT_LT(key, num_keys);
-        ASSERT_EQ(it.getRoutedBucket(), routedBucket<Map>(key)) << "key " << key;
+        ASSERT_EQ(it.getBucket(), routedBucket<Map>(key)) << "key " << key;
         ASSERT_FALSE(seen[key]) << "key " << key << " visited twice";
         seen[key] = 1;
-        ++per_stream[it.getRoutedBucket() % num_streams];
+        ++per_stream[it.getBucket() % num_streams];
     }
     ASSERT_TRUE(std::all_of(seen.begin(), seen.end(), [](char c) { return c == 1; }));
+
+    const Map & const_map = map;
+    for (auto it = const_map.begin(); it != const_map.end(); ++it)
+        ASSERT_EQ(it.getBucket(), routedBucket<Map>(static_cast<UInt16>(it.getHash())));
     for (size_t stream = 0; stream < num_streams; ++stream)
         ASSERT_GT(per_stream[stream], 0u) << "stream " << stream << " would get no cells";
 }
@@ -423,8 +429,16 @@ TEST(PartitionedFixedHashSet, RecordsPresenceAndRoutesByCacheLine)
 
             size_t iterated = 0;
             for (auto it = set.begin(); it != set.end(); ++it)
+            {
+                ASSERT_EQ(it.getBucket(), routedBucket<Set>(static_cast<UInt16>(it.getHash())));
                 ++iterated;
+            }
             ASSERT_EQ(iterated, num_lines) << "bits " << bits;
+
+            /// A set has no mapped values.
+            size_t visited = 0;
+            set.forEachMapped([&](auto &) { ++visited; });
+            ASSERT_EQ(visited, 0u);
 
             /// Presence is all a set cell carries, so the bytes are the table's populated positions.
             Set copy;

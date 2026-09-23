@@ -147,6 +147,13 @@ using TwoLevelJoinHashMapWithSavedHash = std::conditional_t<
         HashMapTable,
         BITS_FOR_BUCKET_TWO_LEVEL>>;
 
+/// A `PartitionedFixedHashTable` keeps one flat table under all its buckets, with no sub-table per bucket.
+template <typename Table>
+constexpr bool is_partitioned_fixed_table = false;
+
+template <typename Impl, size_t bits>
+constexpr bool is_partitioned_fixed_table<PartitionedFixedHashTable<Impl, bits>> = true;
+
 template <typename Key, typename Mapped, size_t size_bits = sizeof(Key) * 8>
 using JoinFixedHashMap = std::conditional_t<
     is_join_set_mapped<Mapped>,
@@ -562,7 +569,7 @@ public:
 #define M(NAME) \
     case Type::NAME: { \
         using Table = typename decltype(NAME)::element_type; \
-        if constexpr (Table::isFixedRangeStorage()) \
+        if constexpr (is_partitioned_fixed_table<Table>) \
         { \
             return 0; \
         } \
@@ -631,7 +638,7 @@ public:
 #define M(NAME) \
     case Type::NAME: { \
         using Table = typename decltype(NAME)::element_type; \
-        if constexpr (Table::isFixedRangeStorage()) \
+        if constexpr (is_partitioned_fixed_table<Table>) \
             return (NAME && bucket == 0) ? NAME->getBufferSizeInBytes() : 0; \
         else \
             return NAME ? NAME->impls[bucket].getBufferSizeInBytes() : 0; \
@@ -662,10 +669,13 @@ public:
             switch (which)
             {
 #define M(NAME) \
-    case Type::NAME: \
-        if (NAME) \
-            NAME->restoreMinMaxOptimization(); \
-        break;
+    case Type::NAME: { \
+        using Table = typename decltype(NAME)::element_type; \
+        if constexpr (is_partitioned_fixed_table<Table>) \
+            if (NAME) \
+                NAME->restoreMinMaxOptimization(); \
+        break; \
+    }
                 APPLY_FOR_JOIN_VARIANTS(M)
 #undef M
             }
