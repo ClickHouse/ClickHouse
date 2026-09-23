@@ -37,10 +37,10 @@ SETTINGS_COMMON="use_query_condition_cache = 0, use_query_cache = 0, use_text_in
     use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, load_marks_asynchronously = 0,
     enable_parallel_replicas = 0, max_threads = 1"
 
-# A per-query postings cache can never hit, so the two queries below always read their postings and
-# the third one, which must not, needs the global cache instead.  Reading the index instead of the
-# column keeps the third query's budget down to one open per part, which is what makes its narrower
-# threshold measurable.
+# A per-query postings cache can never hit, so the in-range query below always reads its postings
+# and the third one, which must not, needs the global cache instead.  Reading the index instead
+# of the column keeps the third query's budget down to one open per part, which is what makes its
+# narrower threshold measurable.
 SETTINGS="$SETTINGS_COMMON, use_text_index_postings_cache = 0"
 SETTINGS_POSTINGS_CACHE="$SETTINGS_COMMON, use_text_index_postings_cache = 1,
     query_plan_direct_read_from_text_index = 1"
