@@ -20,8 +20,6 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/convertFieldToType.h>
 
-#include <absl/container/inlined_vector.h>
-
 #include <algorithm>
 
 
@@ -473,47 +471,6 @@ static bool comparisonDecomposesContainer(const DataTypePtr & expr_type, const D
         return true;
     if (isArray(left) && isArray(right))
         return !tryGetLeastSupertype(DataTypes{left, right});
-    return false;
-}
-
-/// `Field` orders a `Null` by its type tag, before every value, while `IColumn::compareAt` with a
-/// direction hint of 1 orders it after every value, at any depth. Iterative because `Field`s nest
-/// inside `Field`s and a recursive walk overflows the native stack for a deeply nested value.
-static bool fieldContainsNull(const Field & field)
-{
-    absl::InlinedVector<const Field *, 16> pending{&field};
-
-    while (!pending.empty())
-    {
-        const Field * current = pending.back();
-        pending.pop_back();
-
-        if (current->isNull())
-            return true;
-
-        switch (current->getType())
-        {
-            case Field::Types::Array:
-                for (const Field & element : current->safeGet<Array>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Tuple:
-                for (const Field & element : current->safeGet<Tuple>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Map:
-                for (const Field & element : current->safeGet<Map>())
-                    pending.push_back(&element);
-                break;
-            case Field::Types::Object:
-                for (const auto & [_, element] : current->safeGet<Object>())
-                    pending.push_back(&element);
-                break;
-            default:
-                break;
-        }
-    }
-
     return false;
 }
 
@@ -1024,9 +981,10 @@ static AddComparisonFilterResult addComparisonFilter(
         return result;
     }
 
-    /// A constant carrying a `NULL` nested in a container is ordered differently by this analysis than
-    /// by execution, so its position relative to the other conditions is not usable.
-    if (fieldContainsNull(*new_filter.converted_value))
+    /// `Field` orders a `Null` by its type tag, before every value, while `IColumn::compareAt` with a
+    /// direction hint of 1 orders it after every value, at any depth. So the position of a constant
+    /// carrying a nested `NULL` relative to the other conditions is not usable.
+    if (anyFieldSatisfies(*new_filter.converted_value, [](const Field & f) { return f.isNull(); }))
     {
         new_filter.order_inconsistent = true;
         filters.opaque_filters.push_back(std::move(new_filter));
