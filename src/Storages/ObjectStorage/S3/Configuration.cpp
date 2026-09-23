@@ -1180,8 +1180,11 @@ void StorageS3Configuration::fromNamedCollection(const NamedCollection & collect
     parsed_arguments.fromNamedCollection(collection, context);
     initializeFromParsedArguments(std::move(parsed_arguments));
     keys = {url.key};
+    /// A service account key is an explicit credential like a key pair: keep it pinned, so that the server's `<s3>` and
+    /// endpoint auth settings are not merged over it when the client is rebuilt.
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed
+        || !s3_settings->auth_settings[S3AuthSetting::google_service_account_key].value.empty();
 }
 
 void StorageS3Configuration::fromDisk(const String & disk_name, ASTs & args, ContextPtr context, bool with_structure)
@@ -1219,8 +1222,11 @@ void StorageS3Configuration::fromAST(ASTs & args, ContextPtr context, bool with_
         s3_settings->auth_settings[S3AuthSetting::http_client] = "gcp_oauth";
         s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = biglake_service_account_key;
     }
+    /// A service account key is an explicit credential like a key pair: keep it pinned, so that the server's `<s3>` and
+    /// endpoint auth settings are not merged over it when the client is rebuilt.
     static_configuration = !s3_settings->auth_settings[S3AuthSetting::access_key_id].value.empty()
-        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed;
+        || s3_settings->auth_settings[S3AuthSetting::no_sign_request].changed
+        || !s3_settings->auth_settings[S3AuthSetting::google_service_account_key].value.empty();
 }
 
 void StorageS3Configuration::addStructureAndFormatToArgsIfNeeded(
