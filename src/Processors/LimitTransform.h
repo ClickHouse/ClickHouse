@@ -7,6 +7,7 @@
 #include <Processors/Chunk.h>
 #include <Processors/IProcessor.h>
 #include <Processors/RowsBeforeStepCounter.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -82,6 +83,7 @@ public:
 
     Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) override;
     Status prepare() override; /// Compatibility for TreeExecutor.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     Status preparePair(PortsData & data);
     void splitChunk(PortsData & data);
 

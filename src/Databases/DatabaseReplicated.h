@@ -80,7 +80,9 @@ public:
     String getEngineName() const override { return "Replicated"; }
 
     /// If current query is initial, then the following methods add metadata updating ZooKeeper operations to current ZooKeeperMetadataTransaction.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void dropTable(ContextPtr, const String & table_name, bool sync) override;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void renameTable(ContextPtr context, const String & table_name, IDatabase & to_database,
                      const String & to_table_name, bool exchange, bool dictionary) override;
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
@@ -166,6 +168,7 @@ public:
     friend class DatabaseReplicatedDDLWorker;
 
 protected:
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void commitCreateTable(const ASTCreateQuery & query, const StoragePtr & table,
                            const String & table_metadata_tmp_path, const String & table_metadata_path,
                            ContextPtr query_context) override;
@@ -240,6 +243,7 @@ private:
     }
 
     UInt64 getMetadataHash(const String & table_name) const;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     bool checkDigestValid(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
     void assertDigestWithProbability(const ContextPtr & local_context) const TSA_REQUIRES(metadata_mutex);
 

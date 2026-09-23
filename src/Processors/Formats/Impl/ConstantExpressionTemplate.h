@@ -5,6 +5,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/LiteralTokenInfo.h>
 #include <Parsers/TokenIterator.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -96,6 +97,7 @@ private:
         const FormatSettings & format_settings,
         size_t & cur_column,
         const Settings & settings);
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     bool parseLiteralAndAssertType(
         ReadBuffer & istr, const TokenIterator & token_iterator, const IDataType * type, size_t column_idx, const Settings & settings);
 

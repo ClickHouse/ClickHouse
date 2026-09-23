@@ -7,6 +7,7 @@
 #include <Processors/Port.h>
 
 #include <deque>
+#include <base/sanitizer_defs.h>
 
 /// See https://stackoverflow.com/questions/72533435/error-zero-as-null-pointer-constant-while-comparing-template-class-using-spaces
 #pragma clang diagnostic push
@@ -90,10 +91,12 @@ public:
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();
     void advanceFrameStart();
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void advanceFrameEndRowsOffset();
     void advanceFrameEndCurrentRow();
     void advanceFrameEndUnbounded();
@@ -200,6 +203,7 @@ public:
     }
 
     auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
 
     void assertValid(const RowNumber & x) const

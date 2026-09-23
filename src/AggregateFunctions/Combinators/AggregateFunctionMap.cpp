@@ -447,9 +447,10 @@ public:
         /// The values were appended in sorted key order while `merged_maps` is unordered, and a row's
         /// undo depends on which place produced it, so recover that order from the keys themselves.
         const size_t appended_end = key_column.size();
-        for (size_t pos = appended_end; pos-- > appended_end - appended;)
+        const size_t appended_begin = appended_end - appended;
+        for (size_t pos = appended_end; pos > appended_begin; --pos)
         {
-            auto it = merged_maps.find(keyAt(key_column, pos));
+            auto it = merged_maps.find(keyAt(key_column, pos - 1));
             if (it == merged_maps.end())
                 abortOnFailedAssertion("AggregateFunctionMap::rollbackInsertResult: appended key is missing from merged_maps");
             nested_func->rollbackInsertResult(it->second, val_column);

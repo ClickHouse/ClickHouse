@@ -21,7 +21,7 @@
     M(Int128) \
     M(Int256)
 
-#define INSTANTIATION(T) char * itoa(T i, char * p);
+#define INSTANTIATION(T) char * NO_SANITIZE_UNSIGNED_OVERFLOW itoa(T i, char * p);
 FOR_INTEGER_TYPES(INSTANTIATION)
 
 /// `long` is not covered by the list above where it is a distinct type.

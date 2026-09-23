@@ -378,6 +378,7 @@ public:
         Transaction(MergeTreeData & data_, MergeTreeTransaction * txn_);
 
         DataPartsVector commit();
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         DataPartsVector commit(DataPartsLock & lock);
 
         /// Rename should be done explicitly, before calling commit(), to
@@ -2290,6 +2291,7 @@ private:
     bool allow_nullable_key = false;
 
     void addPartContributionToDataVolume(const DataPartPtr & part);
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void removePartContributionToDataVolume(const DataPartPtr & part);
 
     void increaseDataVolume(ssize_t bytes, ssize_t rows, ssize_t parts);
