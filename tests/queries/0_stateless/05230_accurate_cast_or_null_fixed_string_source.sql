@@ -1,4 +1,4 @@
--- A: unparsable text returns NULL for every target family, as it already did for a String source.
+-- A: unparsable text returns NULL for the targets below, as it already did for a String source.
 SELECT accurateCastOrNull(materialize(toFixedString('abc', 12)), 'Int32');
 SELECT accurateCastOrNull(materialize(toFixedString('abc', 12)), 'UInt16');
 SELECT accurateCastOrNull(materialize(toFixedString('abc', 12)), 'Float64');
