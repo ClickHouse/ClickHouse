@@ -280,7 +280,6 @@ namespace Setting
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
 }
@@ -1622,7 +1621,12 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
+        {
             columns = partition_key.expression->getRequiredColumnsWithTypes();
+            /// Min-max index slots are addressed by position and a loaded part keeps the order it was
+            /// built with, so this order must not follow the mutable table column order.
+            columns.sort();
+        }
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
@@ -5493,7 +5497,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, share_nested_offsets);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
@@ -6441,8 +6446,17 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
-void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
+    /// Every command that passes `hasNonEmptyMutationCommands` rewrites parts on disk.
+    /// Callers that synthesize an ALTER on behalf of a lightweight write relax the setting
+    /// on their own context copy, so provenance is decided there, not by command shape.
+    if (!settings[Setting::allow_non_metadata_alters] && commands.hasNonEmptyMutationCommands())
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The following mutation commands: '{}' will modify data on disk, "
+                        "but setting `allow_non_metadata_alters` is disabled",
+                        commands.ast()->formatForErrorMessage());
+
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
@@ -7776,11 +7790,24 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column_name);
+    if (!column_in_metadata)
+        return std::nullopt;
+
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
     {
         if (part->isEmpty())
             continue;
+
+        /// A metadata-only `MODIFY COLUMN` (e.g. `UInt64` -> `Nullable(UInt64)`) does not rewrite the part,
+        /// so its `num_defaults` counts defaults of the old type while reads return the new type.
+        if (part->getColumnsDescription().tryGetPhysical(column_name) != column_in_metadata)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: type in part {} differs from the type in metadata", column_name, part->name);
+            return std::nullopt;
+        }
 
         const auto & infos = part->getSerializationInfos();
         auto it = infos.find(column_name);
@@ -10363,12 +10390,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
     std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
-    /// When validation is disabled, mutation predicates may deliberately reference objects that
-    /// do not exist yet. Do not run the pruning analysis then: it would eagerly validate the
-    /// predicate and change `validate_mutation_query = 0` from deferred validation into a
-    /// submission-time exception.
-    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning]
-        && query_context->getSettingsRef()[Setting::validate_mutation_query];
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
 
     /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
     /// different time. A partition counts as analyzed only if every pruned command has seen it,
