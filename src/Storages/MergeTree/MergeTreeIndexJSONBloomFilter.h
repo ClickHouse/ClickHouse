@@ -37,6 +37,8 @@ struct MergeTreeIndexJSONBloomFilterPartMetadata final : IMergeTreeIndexPartMeta
     size_t bits_per_row;
     size_t hash_functions;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
+    /// False when the part was written with a metadata version this server does not know.
+    bool supported = true;
 };
 
 class MergeTreeIndexGranuleJSONBloomFilter final : public IMergeTreeIndexGranule
@@ -66,6 +68,9 @@ public:
     /// Converts a granule built by the aggregator into the form used for evaluation. Granules read from disk are already in it.
     void materialize();
     bool isBuilt() const { return built != nullptr; }
+    /// Granules of a part whose index cannot be read: nothing is deserialized and no predicate can skip them.
+    void markUnsupported() { unsupported = true; }
+    bool isUnsupported() const { return unsupported; }
 
 private:
     /// Paths collected by the aggregator. They stay flat until serialization to avoid per-path allocations.
@@ -89,6 +94,7 @@ private:
     size_t hash_functions;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
     bool has_rows = false;
+    bool unsupported = false;
 };
 
 class MergeTreeIndexAggregatorJSONBloomFilter final : public IMergeTreeIndexAggregator

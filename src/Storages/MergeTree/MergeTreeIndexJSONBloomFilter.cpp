@@ -2257,6 +2257,13 @@ void MergeTreeIndexGranuleJSONBloomFilter::serializeBinaryWithMultipleStreams(Me
 void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinaryWithMultipleStreams(
     MergeTreeIndexInputStreams & streams, MergeTreeIndexDeserializationState & state)
 {
+    /// The part metadata has an unknown version, so its granules cannot be parsed. No granule of the part reads the
+    /// streams, so their positions stay consistent, and evaluation treats every path as unknown.
+    if (unsupported)
+    {
+        has_rows = true;
+        return;
+    }
     if (state.version != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown `jsonbf_v1` index version {}", state.version);
     auto & directory = *streams.at(MergeTreeIndexSubstream::Type::Regular)->getDataBuffer();
@@ -2526,6 +2533,8 @@ bool MergeTreeIndexConditionJSONBloomFilter::evaluateGranule(
     bool pending_matches) const
 {
     const auto & part_path_matcher = granule.getPathMatcher();
+    /// A part whose index this server cannot read, or that does not index the path, can hold any value for it.
+    const auto is_unknown = [&](const String & path) { return granule.isUnsupported() || !part_path_matcher.shouldIndex(path); };
     PODArrayWithStackMemory<BoolMask, 64> stack;
     size_t element_index = 0;
     for (const auto & element : rpn)
@@ -2536,8 +2545,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::evaluateGranule(
             case RPNElement::FUNCTION_UNKNOWN: stack.emplace_back(true, true); break;
             case RPNElement::FUNCTION_EXISTS: {
                 /// A path the part does not index can be present in any granule.
-                const auto may_exist = [&](const String & path) { return !part_path_matcher.shouldIndex(path) || granule.hasPath(path); };
-                const auto is_unknown = [&](const String & path) { return !part_path_matcher.shouldIndex(path); };
+                const auto may_exist = [&](const String & path) { return is_unknown(path) || granule.hasPath(path); };
                 element_is_unknown = element.exists_all ? std::ranges::all_of(element.exists_paths, is_unknown)
                                                         : std::ranges::any_of(element.exists_paths, is_unknown);
                 stack.emplace_back(
@@ -2547,7 +2555,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::evaluateGranule(
                 break;
             }
             case RPNElement::FUNCTION_ANY: {
-                if (!part_path_matcher.shouldIndex(element.path))
+                if (is_unknown(element.path))
                 {
                     element_is_unknown = true;
                     stack.emplace_back(true, true);
@@ -2559,7 +2567,7 @@ bool MergeTreeIndexConditionJSONBloomFilter::evaluateGranule(
                 break;
             }
             case RPNElement::FUNCTION_ALL:
-                if (!part_path_matcher.shouldIndex(element.path))
+                if (is_unknown(element.path))
                 {
                     element_is_unknown = true;
                     stack.emplace_back(true, true);
@@ -2932,7 +2940,10 @@ MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule(const
     const auto metadata = std::dynamic_pointer_cast<const MergeTreeIndexJSONBloomFilterPartMetadata>(part_metadata);
     if (!metadata)
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Missing `jsonbf_v1` part metadata");
-    return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(metadata->bits_per_row, metadata->hash_functions, metadata->path_matcher);
+    auto granule = std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(metadata->bits_per_row, metadata->hash_functions, metadata->path_matcher);
+    if (!metadata->supported)
+        granule->markUnsupported();
+    return granule;
 }
 
 MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator() const
@@ -3012,9 +3023,16 @@ MergeTreeIndexPartMetadataPtr MergeTreeIndexJSONBloomFilter::deserializePartMeta
     UInt64 part_bits_per_row = 0;
     UInt64 part_hash_functions = 0;
     readVarUInt(metadata_version, in);
+    if (metadata_version != JSON_BLOOM_PART_METADATA_VERSION)
+    {
+        /// Written by a newer server. The index is ignored for this part instead of failing its queries.
+        auto metadata = std::make_shared<MergeTreeIndexJSONBloomFilterPartMetadata>(bits_per_row, hash_functions, path_matcher);
+        metadata->supported = false;
+        return metadata;
+    }
     readVarUInt(part_bits_per_row, in);
     readVarUInt(part_hash_functions, in);
-    if (metadata_version != JSON_BLOOM_PART_METADATA_VERSION || part_bits_per_row == 0 || part_hash_functions == 0
+    if (part_bits_per_row == 0 || part_hash_functions == 0
         || part_hash_functions > std::size(BloomFilterHash::bf_hash_seed))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid `jsonbf_v1` part metadata");
 
