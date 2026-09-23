@@ -106,3 +106,24 @@ def test_cluster_argument_skips_a_replica_without_a_span_log(started_cluster):
     error = node1.query_and_get_error(f"SELECT count() FROM traceView('{trace_id}', 40, 'fresh_node_only')")
     assert "No replica of cluster 'fresh_node_only' has the table system.opentelemetry_span_log yet" in error
     assert "UNKNOWN_TABLE" not in error
+
+
+def test_missing_span_log_is_not_revealed_without_select(started_cluster):
+    # Whether the span log exists is a fact about a guarded table: a caller without SELECT on it
+    # is denied before the table is looked up, locally and on the replicas of a cluster, so the
+    # "does not exist yet" hint never reaches them.
+    assert node3.query("EXISTS TABLE system.opentelemetry_span_log").strip() == "0"
+    node3.query("DROP USER IF EXISTS no_span_log_access")
+    node3.query("CREATE USER no_span_log_access")
+    node3.query("GRANT REMOTE ON *.* TO no_span_log_access")
+    try:
+        for query in (
+            "SELECT count() FROM traceView('00000000-0000-0000-0000-000000000001')",
+            "SELECT count() FROM traceView(query_id = 'no_such_query')",
+            "SELECT count() FROM traceView('00000000-0000-0000-0000-000000000001', 40, 'fresh_node_only')",
+        ):
+            error = node3.query_and_get_error(query, user="no_span_log_access")
+            assert "ACCESS_DENIED" in error, error
+            assert "does not exist yet" not in error, error
+    finally:
+        node3.query("DROP USER no_span_log_access")

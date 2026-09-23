@@ -600,6 +600,10 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
 {
     const StorageID span_log_id{"system", "opentelemetry_span_log"};
 
+    /// The caller's SELECT on the span log comes first: whether the table exists here or on a replica
+    /// is itself a fact about the guarded table, so a caller without access is denied before it is looked up.
+    context->checkAccess(AccessType::SELECT, span_log_id);
+
     if (cluster.empty())
     {
         /// The span log is created on its first flush: a server that never wrote a span has no table.
@@ -614,11 +618,6 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
     /// given cluster reads the log of every replica. A replica that never flushed a span has no log table yet.
     context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::REMOTE), /* filter */ "");
     const ClusterPtr all_replicas = context->getCluster(cluster)->getClusterWithReplicasAsShards(context->getSettingsRef());
-
-    /// The replicas that are this server read their log in this process: the caller's SELECT on it is
-    /// checked here, as `clusterAllReplicas` does, and before the log is looked up.
-    if (std::ranges::any_of(all_replicas->getShardsInfo(), [](const auto & shard) { return shard.isLocal(); }))
-        context->checkAccess(AccessType::SELECT, span_log_id);
 
     const VectorWithMemoryTracking<size_t> indices = replicasWithTable(*all_replicas, span_log_id, context);
     if (indices.empty())
@@ -735,8 +734,9 @@ Example:
 )",
         .examples = {{"trace_view", "SELECT span, status, duration, timeline FROM traceView('5c9e4a3b-2f61-4d6e-8b7a-90c1d2e3f405')", ""}},
         .category = FunctionDocumentation::Category::TableFunction},
-        /// A read-only wrapper over the span log: the caller's SELECT access is checked by the
-        /// query it runs, no CREATE TEMPORARY TABLE is needed, and it works under readonly = 1.
+        /// A read-only wrapper over the span log: the caller's SELECT on it is checked before the log
+        /// is looked up and by the queries it runs, no CREATE TEMPORARY TABLE is needed, and it works
+        /// under readonly = 1.
         {.allow_readonly = true});
 }
 
