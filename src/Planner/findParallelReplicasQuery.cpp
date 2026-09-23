@@ -229,10 +229,20 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
-/// Does the tree contain a `UNION` anywhere?
-static bool hasUnionNode(const IQueryTreeNode * query_tree_node)
+/// Does the tree hold anything the walk below cannot answer for, evaluating the whole tree against
+/// one context and one branch of every `UNION`?
+///
+/// - A `UNION`: the walk descends into its first branch and stops, so it says nothing about the
+///   others, and the planner does read a later branch with replicas when the first one is not
+///   readable - `SELECT a FROM log_table UNION ALL SELECT a FROM mt_table` plans a
+///   `ReadFromRemoteParallelReplicas` under its second arm.
+/// - A `SETTINGS` clause on a subquery: that subquery is planned with its own context, so it can
+///   re-enable what the outer query turned off, and the read below it is then made with replicas
+///   although the outer context forbids it. The root's own clause is not a problem - it is in the
+///   context the walk is handed.
+static bool walkCannotAnswerFor(const IQueryTreeNode * root)
 {
-    std::vector<const IQueryTreeNode *> stack{query_tree_node};
+    std::vector<const IQueryTreeNode *> stack{root};
     while (!stack.empty())
     {
         const auto * node = stack.back();
@@ -240,6 +250,10 @@ static bool hasUnionNode(const IQueryTreeNode * query_tree_node)
 
         if (node->getNodeType() == QueryTreeNodeType::UNION)
             return true;
+
+        if (node != root)
+            if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->hasSettingsChanges())
+                return true;
 
         for (const auto & child : node->getChildren())
             if (child)
@@ -261,6 +275,12 @@ bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_nod
     /// rather than the query tree, so the walk below does not describe what it will do. Report every
     /// query as possibly eligible there instead of risking a rejection of one it could parallelize.
     if (context->getSettingsRef()[Setting::parallel_replicas_plan_based])
+        return true;
+
+    /// Everything below reads one context, so it can only answer for a tree that is planned against
+    /// one. Report the rest as possibly eligible - including against the settings check right after,
+    /// which a subquery's own `SETTINGS` clause defeats just as well.
+    if (walkCannotAnswerFor(query_tree_node.get()))
         return true;
 
     if (!context->canUseParallelReplicasOnInitiator())
@@ -285,15 +305,7 @@ bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_nod
     /// `parallel_replicas_allow_in_with_subquery = 0`, `additional_table_filters` without
     /// `serialize_query_plan`, a `STREAM` modifier - and each of those only costs a missed skip, never a
     /// wrong one.
-    if (!getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty())
-        return true;
-
-    /// The walk descends into the first branch of a `UNION` and stops there, so an empty result says
-    /// nothing about the other branches. The planner does read a later branch with replicas when the
-    /// first one is not readable: `SELECT a FROM log_table UNION ALL SELECT a FROM mt_table` plans a
-    /// `ReadFromRemoteParallelReplicas` under its second arm. Report such a query as possibly eligible
-    /// rather than skip a candidate plan that would have been used.
-    return hasUnionNode(query_tree_node.get());
+    return !getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty();
 }
 
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES

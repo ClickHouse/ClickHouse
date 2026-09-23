@@ -59,6 +59,14 @@ SETTINGS enable_parallel_replicas = 0, log_comment = 'autopr_gate_ineligible_que
 SELECT b, count() FROM t_autopr_gate FINAL GROUP BY b FORMAT Null
 SETTINGS log_comment = 'autopr_gate_ineligible_final';
 
+-- Eligible only through a subquery's own SETTINGS clause, which allows parallel replicas on
+-- non-replicated MergeTree again after the outer query forbade them. The subquery is planned with its
+-- own context and the read below it is made with replicas, so a check that only consulted the outer
+-- context would skip the candidate plan. `sum` rather than `count` so that the query reads a column.
+SELECT sum(a) FROM (SELECT a FROM t_autopr_gate SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1)
+FORMAT Null
+SETTINGS parallel_replicas_for_non_replicated_merge_tree = 0, log_comment = 'autopr_gate_eligible_by_nested_settings';
+
 -- Eligible only because of the query's own SETTINGS clause, which raises the replica count back above
 -- one. Reading the session setting instead would reject this query.
 SET max_parallel_replicas = 1;
