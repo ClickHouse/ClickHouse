@@ -39,8 +39,8 @@ SELECT formatQueryFromJSON('{"type":"Literal"}'); -- { serverError BAD_ARGUMENTS
 SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"Null","value":"not-null"}}'); -- { serverError BAD_ARGUMENTS }
 -- A `field_type` whose value restores to a different type is rejected by the type-match check:
 SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"Bogus","value":"\'x\'"}}'); -- { serverError BAD_ARGUMENTS }
--- A `field_type` whose value is not a restorable dump at all is rejected too:
-SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"Bogus","value":"1"}}'); -- { serverError CANNOT_RESTORE_FROM_FIELD_DUMP }
+-- A `field_type` whose value does not carry the `<field_type>_` dump prefix is rejected before restoring the dump:
+SELECT formatQueryFromJSON('{"type":"Literal","value":{"field_type":"Bogus","value":"1"}}'); -- { serverError BAD_ARGUMENTS }
 
 -- A typed list with a wrong child type is rejected at the boundary:
 SELECT formatQueryFromJSON('{"type":"UserNamesWithHost","children":[{"type":"Identifier","name":"u"}]}'); -- { serverError BAD_ARGUMENTS }
