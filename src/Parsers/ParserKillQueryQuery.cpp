@@ -73,7 +73,7 @@ void registerStatementKillQuery(StatementFactory & factory)
         .description = R"DOCS_MD(
 This page describes the `KILL QUERY` and `KILL MUTATION` statements.
 
-By default, `KILL QUERY` throws when its `WHERE` expression matches zero rows in `system.processes`, and `KILL MUTATION` throws when its `WHERE` expression matches zero rows in `system.mutations`.
+By default, `KILL QUERY` throws when its `WHERE` expression leaves no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when its `WHERE` expression matches zero rows in `system.mutations`.
 To disable this behavior, set [`kill_throw_if_noop`](/operations/settings/settings#kill_throw_if_noop) to `false`.
 `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 

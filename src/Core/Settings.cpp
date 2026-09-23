@@ -8888,7 +8888,7 @@ Possible values:
     DECLARE(Bool, kill_throw_if_noop, true, R"(
 Controls whether [`KILL QUERY`](/sql-reference/statements/kill#kill-query) and [`KILL MUTATION`](/sql-reference/statements/kill#kill-mutation) throw an exception when their `WHERE` clauses match no rows.
 
-By default, `KILL QUERY` throws when no rows match in `system.processes`, and `KILL MUTATION` throws when no rows match in `system.mutations`. If set to false, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
+By default, `KILL QUERY` throws when there are no eligible rows in `system.processes` after excluding the current `KILL` statement, and `KILL MUTATION` throws when no rows match in `system.mutations`. If set to false, an empty match returns without an exception. `ON CLUSTER` execution does not throw for empty matches because match results are not aggregated across hosts.
 
 Possible values:
 
