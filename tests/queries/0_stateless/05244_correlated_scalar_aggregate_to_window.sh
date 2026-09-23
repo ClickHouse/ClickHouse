@@ -17,6 +17,8 @@ CREATE TABLE nn (k Nullable(Int32), v Nullable(Float64)) ENGINE = MergeTree ORDE
 CREATE TABLE nk (k Nullable(Int32), w Int32) ENGINE = MergeTree ORDER BY k SETTINGS allow_nullable_key = 1;
 CREATE TABLE r (k Int32, v Float64) ENGINE = ReplacingMergeTree ORDER BY (k, v);
 CREATE TABLE fk (k Float64, v Int32) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE tn (k Tuple(Nullable(Int32)), v Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tc (k Int32, __correlated_aggregate_0 Int32) ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO t VALUES (1, 10), (1, 30), (2, 5), (2, 1e308), (3, -7);
 INSERT INTO u VALUES (1, 100), (1, 101), (2, 200), (4, 400);
@@ -26,6 +28,8 @@ INSERT INTO dq VALUES (1, 10.25), (1, 30.75), (2, 5.00);
 INSERT INTO nn VALUES (1, 10), (1, NULL), (2, NULL), (NULL, 5), (NULL, 7);
 INSERT INTO nk VALUES (1, 1), (2, 2), (NULL, 3);
 INSERT INTO r VALUES (1, 10), (1, 30), (2, 5);
+INSERT INTO tn VALUES (tuple(NULL), 1), (tuple(NULL), 2), (tuple(1), 3);
+INSERT INTO tc VALUES (1, 5), (1, 7), (2, 3);
 INSERT INTO fk VALUES (0, 1), (-0, 2), (nan, 3), (nan, 4), (1.5, 5);
 "
 
@@ -108,3 +112,5 @@ check "result type that cannot be Nullable" "SELECT u.k AS k, t.v AS v, (SELECT 
 check "argument that may throw on rows the condition skips" "SELECT u.w AS w, x.z AS z, (SELECT sum(intDiv(10, s.z - 1)) FROM x AS s WHERE s.w = u.w AND s.z != 1) AS c FROM u INNER JOIN x ON u.w = x.w WHERE u.k > 0 ORDER BY w, z"
 check "count of a Nullable column" "SELECT nk.k AS k, nn.v AS v, (SELECT count(v) FROM nn AS s WHERE s.k = nk.k) AS c FROM nk INNER JOIN nn ON nk.k = nn.k WHERE nk.w > 0 ORDER BY k, v"
 check "outer key inside an expression argument" "SELECT u.k AS k, t.v AS v, (SELECT sum(intDiv(10, u.k)) FROM t AS s WHERE s.k = u.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
+check "NULL inside a Tuple key" "SELECT toString(o.k) AS k, o.v AS v, (SELECT count() FROM tn AS s WHERE s.k = o.k) AS c FROM tn AS o WHERE toString(o.k) != '' ORDER BY v"
+check "column named like a window column" "SELECT o.k AS k, o.__correlated_aggregate_0 AS a, (SELECT max(__correlated_aggregate_0) FROM tc AS s WHERE s.k = o.k) AS c FROM tc AS o WHERE o.k > 0 ORDER BY k, a"

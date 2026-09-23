@@ -14,6 +14,8 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/WindowNode.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Storages/IStorage.h>
@@ -410,6 +412,12 @@ private:
             auto column = target_table.getStorageSnapshot()->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), key);
             if (!column || QueryPlanOptimizations::keyTypeBreaksHashSharding(*column->type))
                 return {};
+            /// A NULL inside a key (e.g. `Tuple(Nullable(Int32))`) makes `=` not true, but not the grouping.
+            bool has_nested_nullable = false;
+            removeNullable(removeLowCardinality(column->type))->forEachChild(
+                [&](const IDataType & child) { has_nested_nullable |= child.isNullable(); });
+            if (has_nested_nullable)
+                return {};
             candidate.may_match_nothing |= isNullableOrLowCardinalityNullable(column->type);
         }
         candidate.may_match_nothing |= !candidate.conditions.empty();
@@ -525,6 +533,7 @@ private:
         auto derived = std::static_pointer_cast<QueryNode>(buildSubqueryToReadColumnsFromTableExpression(columns, target, context));
         derived->setAlias(fmt::format("{}_window_{}", target->getAlias(), window_counter++));
         NamesAndTypes projection_columns = columns;
+        size_t next_window_column = 0;
 
         auto add_window_function = [&](const Candidate & candidate, const String & name, NullsAction nulls_action, QueryTreeNodes parameters, QueryTreeNodes arguments)
         {
@@ -548,7 +557,11 @@ private:
             function->resolveAsWindowFunction(AggregateFunctionFactory::instance().get(
                 name, nulls_action, argument_types, parameter_values, properties, AggregateFunctionStateVariant::Window));
 
-            NameAndTypePair column{fmt::format("__correlated_aggregate_{}", projection_columns.size()), function->getResultType()};
+            String name;
+            do
+                name = fmt::format("__correlated_aggregate_{}", next_window_column++);
+            while (column_by_name.contains(name));
+            NameAndTypePair column{name, function->getResultType()};
             derived->getProjection().getNodes().push_back(function);
             projection_columns.push_back(column);
             return column;
