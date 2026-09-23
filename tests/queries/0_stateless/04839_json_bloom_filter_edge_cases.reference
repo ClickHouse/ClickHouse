@@ -6,6 +6,7 @@ decimal float collision	[1,2]
 date	[1]
 datetime64 typed	[1]
 datetime64 date	[3]
+datetime64 float	1
 ipv4	[1]
 ipv4 uint64	[1]
 ipv6	[2]

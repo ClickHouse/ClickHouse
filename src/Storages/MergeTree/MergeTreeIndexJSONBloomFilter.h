@@ -204,6 +204,8 @@ public:
     MergeTreeIndexPartMetadataPtr deserializePartMetadata(MergeTreeIndexInputStreams & streams) const override;
 
 private:
+    NameSet getColumnsShadowingJSONSubcolumns() const;
+
     size_t bits_per_row;
     size_t hash_functions;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;

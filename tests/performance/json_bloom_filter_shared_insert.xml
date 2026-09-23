@@ -2,7 +2,8 @@
     <substitutions>
         <substitution><name>budget</name><values><value>0</value><value>64</value></values></substitution>
     </substitutions>
-    <settings><max_insert_threads>1</max_insert_threads></settings>
+    <settings>
+        <allow_experimental_json_bloom_filter_index>1</allow_experimental_json_bloom_filter_index><max_insert_threads>1</max_insert_threads></settings>
     <create_query>CREATE TABLE json_bf_shared_source_{budget} (j JSON(max_dynamic_paths = {budget})) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query>CREATE TABLE json_bf_shared_indexed_{budget} (j JSON(max_dynamic_paths = {budget})) ENGINE = MergeTree ORDER BY tuple()</create_query>
     <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_shared_indexed_{budget} ADD INDEX bf j TYPE jsonbf_v1() GRANULARITY 1</create_query>

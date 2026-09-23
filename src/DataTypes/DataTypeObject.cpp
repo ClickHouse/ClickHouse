@@ -967,11 +967,7 @@ static DataTypePtr createJSON(const ASTPtr & arguments)
 
 void registerDataTypeJSON(DataTypeFactory & factory)
 {
-    factory.registerDataType(
-        "JSON",
-        createJSON,
-        DataTypeFactory::Case::Insensitive,
-        Documentation{
+    factory.registerDataType("JSON", createJSON, DataTypeFactory::Case::Insensitive, Documentation{
             .description = String(R"DOCS_MD(
 import WhenToUseJson from '/snippets/_when-to-use-json.mdx';
 
@@ -2328,9 +2324,10 @@ When a JSON path is absent from a granule, the subcolumn evaluates to:
 
 ### Type-aware Bloom filter with `jsonbf_v1` {#json-indexes-jsonbf-v1}
 
-The `jsonbf_v1` index covers the scalar leaves of one direct `JSON` column while keeping values at different paths separate. It indexes array elements, typed `Map` values by key, and named `Tuple` fields. Whole containers are not stringified.
+The `jsonbf_v1` index covers the scalar leaves of one direct `JSON` column while keeping values at different paths separate. It indexes array elements, typed `Map` values by key, and named `Tuple` fields. Whole containers are not stringified. It also answers path presence predicates, including those over `JSONAllPaths`, so a separate `bloom_filter` index over `JSONAllPaths` is not needed. The index is experimental and requires the setting `allow_experimental_json_bloom_filter_index`.
 
 ```sql title="Query"
+SET allow_experimental_json_bloom_filter_index = 1;
 CREATE TABLE events
 (
     data JSON,

@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 DROP TABLE IF EXISTS json_bf_shared_types;
 CREATE TABLE json_bf_shared_types (id UInt64, j JSON(max_dynamic_paths = 0), INDEX bf j TYPE jsonbf_v1() GRANULARITY 1)
 -- Remove the `basic` map serialization pins after https://github.com/ClickHouse/ClickHouse/pull/118577 is merged.

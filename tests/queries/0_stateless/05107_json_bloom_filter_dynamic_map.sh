@@ -5,6 +5,7 @@ set -e
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_json_bloom_filter_index=1"
 
 # Preserve runtime `Map` types in both dynamic paths and shared data.
 # Remove the `basic` map serialization pins after https://github.com/ClickHouse/ClickHouse/pull/118577 is merged.

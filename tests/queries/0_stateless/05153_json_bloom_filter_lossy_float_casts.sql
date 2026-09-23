@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 CREATE TABLE json_bf_lossy_float_casts (id UInt64, j JSON, INDEX bf j TYPE jsonbf_v1(false_positive_rate = 0.0001) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_rows_for_wide_part = 0, min_bytes_for_wide_part = 0;
 

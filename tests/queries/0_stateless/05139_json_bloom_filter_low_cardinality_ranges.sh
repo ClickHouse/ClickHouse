@@ -5,6 +5,7 @@ set -euo pipefail
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_json_bloom_filter_index=1"
 
 json_type='JSON(max_dynamic_paths = 0,
     s LowCardinality(String),

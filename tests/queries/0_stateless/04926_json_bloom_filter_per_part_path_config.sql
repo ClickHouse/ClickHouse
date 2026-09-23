@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS json_bf_per_part_config;

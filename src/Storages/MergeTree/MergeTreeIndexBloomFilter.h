@@ -21,7 +21,7 @@ namespace ErrorCodes
 /// Whether `parent`, a comparison over `indexOf(array, value)`, implies that the array contains the value.
 bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent);
 
-class MergeTreeIndexGranuleBloomFilter : public IMergeTreeIndexGranule
+class MergeTreeIndexGranuleBloomFilter final : public IMergeTreeIndexGranule
 {
 public:
     MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_);

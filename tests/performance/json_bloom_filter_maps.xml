@@ -1,5 +1,6 @@
 <test>
     <settings>
+        <allow_experimental_json_bloom_filter_index>1</allow_experimental_json_bloom_filter_index>
         <max_threads>1</max_threads>
         <max_insert_threads>1</max_insert_threads>
     </settings>

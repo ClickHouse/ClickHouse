@@ -4,6 +4,7 @@
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --allow_experimental_json_bloom_filter_index=1"
 
 $CLICKHOUSE_CLIENT -q "
 CREATE TABLE json_bf_all_paths

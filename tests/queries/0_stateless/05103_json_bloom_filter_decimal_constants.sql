@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 DROP TABLE IF EXISTS json_bf_decimal_constants;
 CREATE TABLE json_bf_decimal_constants (id UInt64, j JSON, INDEX bf j TYPE jsonbf_v1(false_positive_rate = 0.0001) GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0;

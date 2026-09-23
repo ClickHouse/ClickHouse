@@ -1743,7 +1743,9 @@ INDEX json_values json_column TYPE jsonbf_v1(
 
 All parameters are optional and named. `false_positive_rate` must be a `Float64` between 0 and 1; its default is `0.025`. The path parameters are arrays of strings. Exact paths include their descendants; regular expressions use partial matches. Include rules are combined with OR, and skip rules take precedence. Without include rules, all paths are included. Array elements do not add a path segment: a field below `items Array(JSON)` has a logical path such as `items.item_id`.
 
-Supported predicates include equality, typed `IN`, `has`, `hasAny`, and `hasAll`. Direct `Dynamic` scalar paths also support `isNotNull`. Unsupported runtime types and conversions are handled conservatively. Runtime `Map` values accessed through a `Dynamic` type hint do not support keyed pruning. The index does not support range, substring, or full-text predicates, and cannot be declared on a subcolumn or an expression.
+The index is experimental: creating it requires the setting `allow_experimental_json_bloom_filter_index`.
+
+Supported predicates include equality, typed `IN`, `has`, `hasAny`, and `hasAll`. Path presence is supported through `isNotNull` on subcolumns and through `has`, `hasAny`, `hasAll`, `indexOf`, `IN`, and `arrayJoin` over `JSONAllPaths`, so it replaces a `bloom_filter` index over `JSONAllPaths` on the same column. Unsupported runtime types and conversions are handled conservatively. Runtime `Map` values accessed through a `Dynamic` type hint do not support keyed pruning. The index does not support range, substring, or full-text predicates, and cannot be declared on a subcolumn or an expression.
 
 See [type-aware JSON indexing](/reference/data-types/newjson#json-indexes-jsonbf-v1) for an example.
 

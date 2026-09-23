@@ -252,6 +252,7 @@ namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
     extern const SettingsBool enable_full_text_index;
+    extern const SettingsBool allow_experimental_json_bloom_filter_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
     extern const SettingsBool allow_minmax_index_for_json;
@@ -5750,6 +5751,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     if (AlterCommands::hasTextIndex(new_metadata) && !settings[Setting::enable_full_text_index])
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Text index feature is not enabled (turn on setting 'enable_full_text_index')");
+
+    /// Only indexes added by this `ALTER`, so other changes to existing tables keep working.
+    if (!settings[Setting::allow_experimental_json_bloom_filter_index])
+        for (const auto & index : new_metadata.secondary_indices)
+            if (index.type == "jsonbf_v1" && !old_metadata.secondary_indices.has(index.name))
+                throw Exception(
+                    ErrorCodes::SUPPORT_IS_DISABLED,
+                    "The `jsonbf_v1` index is experimental. Enable the setting `allow_experimental_json_bloom_filter_index` to use it");
 
     /// If adaptive index granularity is disabled, certain vector search queries with PREWHERE run into LOGICAL_ERRORs.
     ///     CREATE TABLE tab (`id` Int32, `vec` Array(Float32), INDEX idx vec TYPE  vector_similarity('hnsw', 'L2Distance') GRANULARITY 100000000) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity_bytes = 0;

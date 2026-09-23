@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 DROP TABLE IF EXISTS json_bf_presence_native;
 CREATE TABLE json_bf_presence_native (id UInt64, j JSON(max_dynamic_paths = 64, t String), INDEX bf j TYPE jsonbf_v1() GRANULARITY 1)
 ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;

@@ -40,6 +40,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeIndexJSONSubcolumnHelper.h>
 #include <Storages/MergeTree/RPNBuilder.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Common/FieldAccurateComparison.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/MapWithMemoryTracking.h>
@@ -1441,7 +1442,10 @@ bool isStructuralJSONSubcolumn(
             }
             if (typeid_cast<const DataTypeMap *>(parent_type.get()))
                 return is_array_size || last_component == "keys" || last_component == "values" || last_component.starts_with("key_");
-            break;
+            /// Below a typed leaf, only a named `Tuple` element continues the JSON path. Any other subcolumn,
+            /// such as `size` of a `String`, is structural.
+            const auto * tuple_type = typeid_cast<const DataTypeTuple *>(parent_type.get());
+            return !tuple_type || !tuple_type->hasExplicitNames() || !tuple_type->tryGetPositionByName(last_component);
         }
     }
 
@@ -1659,6 +1663,12 @@ std::optional<String> tryMatchJSONPresencePath(
         if ((function.getFunctionName() != "CAST" && function.getFunctionName() != "_CAST") || function.getArgumentsSize() != 2
             || function.getArgumentAt(0).isFunction())
             return std::nullopt;
+        /// A missing `Dynamic` path casts to NULL or the type's default, but a NULL of another type makes a cast to a
+        /// non-`Nullable` type throw, and skipping the granule would hide that exception.
+        const auto * argument = function.getArgumentAt(0).getDAGNode();
+        if (!node.getDAGNode() || !argument
+            || (!isDynamic(removeJSONBloomWrappers(argument->result_type)) && !canContainNull(*node.getDAGNode()->result_type)))
+            return std::nullopt;
         column_name = function.getArgumentAt(0).getColumnName();
     }
 
@@ -1847,6 +1857,10 @@ std::vector<JSONBloomFilterProbe> makeValueProbes(
         return hashes;
 
     const auto unwrapped_source_type = removeJSONBloomWrappers(source_type);
+    /// Execution compares a string with a non-string constant by conversion that can throw, even though the constant
+    /// formats as a string. Skipping the granules would hide that exception.
+    if (isStringOrFixedString(target_type) && !isStringOrFixedString(unwrapped_source_type))
+        return hashes;
     if ((WhichDataType(*target_type).isDecimal()
             && !comparisonUsesExactConversion(*target_type, *unwrapped_source_type)
             && !WhichDataType(*unwrapped_source_type).isStringOrFixedString())
@@ -2895,6 +2909,19 @@ MergeTreeIndexJSONBloomFilter::MergeTreeIndexJSONBloomFilter(
 {
 }
 
+NameSet MergeTreeIndexJSONBloomFilter::getColumnsShadowingJSONSubcolumns() const
+{
+    /// Another column, or a subcolumn of one, can have the name of a subcolumn of the indexed column, such as a
+    /// column named `json.x`. A predicate on that name reads the other column, so it must not use this index.
+    auto result = getColumnsShadowingMapSubcolumns();
+    const auto & json_column = index.column_names.front();
+    const auto prefix = json_column + ".";
+    for (const auto & column : metadata_snapshot->getColumns().get(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns()))
+        if (column.name.starts_with(prefix) && column.getNameInStorage() != json_column)
+            result.insert(column.name);
+    return result;
+}
+
 MergeTreeIndexGranulePtr MergeTreeIndexJSONBloomFilter::createIndexGranule() const
 {
     return std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, path_matcher);
@@ -2917,7 +2944,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexJSONBloomFilter::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexJSONBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
     return std::make_shared<MergeTreeIndexConditionJSONBloomFilter>(
-        predicate, context, index.sample_block, path_matcher, getColumnsShadowingMapSubcolumns());
+        predicate, context, index.sample_block, path_matcher, getColumnsShadowingJSONSubcolumns());
 }
 
 namespace
@@ -2947,7 +2974,7 @@ std::vector<String> readStrings(ReadBuffer & in)
 MergeTreeIndexSubstreams MergeTreeIndexJSONBloomFilter::getSubstreams() const
 {
     return {{MergeTreeIndexSubstream::Type::Regular, "", ".idx2"},
-            {MergeTreeIndexSubstream::Type::JSONBloomFilterValues, "_values", ".idx2"}};
+            {MergeTreeIndexSubstream::Type::JSONBloomFilterValues, ".values", ".idx2"}};
 }
 
 MergeTreeIndexFormat MergeTreeIndexJSONBloomFilter::getPhysicalFormat(

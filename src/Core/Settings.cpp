@@ -9191,6 +9191,9 @@ Allows defining columns with [statistics](/reference/engines/table-engines/merge
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
 )", 0, allow_experimental_full_text_index) \
+    DECLARE(Bool, allow_experimental_json_bloom_filter_index, false, R"(
+Allows creating the `jsonbf_v1` data skipping index on `JSON` columns with `CREATE TABLE` and `ALTER TABLE ... ADD INDEX`.
+)", EXPERIMENTAL) \
     DECLARE(Bool, query_plan_direct_read_from_text_index, true, R"(
 Allow to perform full text search filtering using only the inverted text index in query plan.
 )", 0) \

@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 DROP TABLE IF EXISTS json_bf_include_paths;
 DROP TABLE IF EXISTS json_bf_include_paths_invalid;
 

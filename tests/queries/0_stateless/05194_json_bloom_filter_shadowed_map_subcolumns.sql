@@ -1,3 +1,4 @@
+SET allow_experimental_json_bloom_filter_index = 1;
 SET use_skip_indexes = 1;
 
 DROP TABLE IF EXISTS jsonbf_shadowed_column;

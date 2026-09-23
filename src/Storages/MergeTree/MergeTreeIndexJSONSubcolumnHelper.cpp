@@ -9,6 +9,7 @@
 #include <Formats/FormatFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/FieldAccurateComparison.h>
 
 namespace DB
 {
@@ -186,11 +187,28 @@ bool isJSONPathFilterSafe(
         if (nested_source_type_lost)
             return false;
     }
-    auto converted = convertFieldToType(value_field, *key_expression_type, enum_source, format_settings);
-    if (!indexes_missing_values && converted == key_expression_type->getDefault())
+    if (indexes_missing_values)
+        return true;
+
+    /// Numbers compare by value across types, so a constant outside the key type, such as `42.5` against `Int64`,
+    /// still proves that the default does not match.
+    const auto is_number_field = [](const Field & field)
+    {
+        const auto type = field.getType();
+        return type == Field::Types::UInt64 || type == Field::Types::Int64 || type == Field::Types::Float64
+            || type == Field::Types::UInt128 || type == Field::Types::Int128 || type == Field::Types::UInt256
+            || type == Field::Types::Int256 || type == Field::Types::Bool || Field::isDecimal(type);
+    };
+    if ((isNativeNumber(*key_expression_type) || isBool(key_expression_type)) && is_number_field(value_field))
+        return !accurateEquals(value_field, key_expression_type->getDefault());
+
+    /// A constant that does not convert leaves the comparison to execution, which may convert it differently or throw.
+    auto converted = tryConvertFieldToType(value_field, *key_expression_type, enum_source, format_settings);
+    if (converted.isNull())
         return false;
 
-    return true;
+    /// `Field` equality does not match across types, e.g. a `Bool` constant against the `UInt64` default of `Bool`.
+    return !accurateEquals(converted, key_expression_type->getDefault());
 }
 
 }

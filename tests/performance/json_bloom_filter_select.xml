@@ -11,6 +11,7 @@
     </substitutions>
 
     <settings>
+        <allow_experimental_json_bloom_filter_index>1</allow_experimental_json_bloom_filter_index>
         <max_threads>1</max_threads>
         <use_query_condition_cache>0</use_query_condition_cache>
         <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
