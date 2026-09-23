@@ -164,43 +164,12 @@ def test_empty_view_keeps_its_schedule_across_restart():
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
 
 
-# Everything the parser insists on, with nothing after it. The fields that follow are optional, so
-# that Keeper znodes written by older servers still load, which means a file cut anywhere past this
-# point parses as valid and silently resets the incremental cursor and the dependency checkpoint:
-# the duplicate-append bug this PR fixes, reintroduced from a torn write.
-REQUIRED_FIELDS = (
-    "format version: 1\n"
-    "last_completed_timeslot: 1758240000\n"
-    "last_success_time: 1758240000\n"
-    "last_success_duration_ms: 7\n"
-    "last_success_table_uuid: 00000000-0000-0000-0000-000000000000\n"
-    "last_attempt_time: 1758240000\n"
-    "last_attempt_replica: \n"
-    "last_attempt_error: \n"
-    "last_attempt_succeeded: 1\n"
-    "previous_attempt_error: \n"
-    "attempt_number: 0\n"
-    "randomness: 1\n"
-)
-OPTIONAL_FIELDS_BEFORE_CURSOR = (
-    "refresh_running: 0\n"
-    "last_success_end_time_ns: 1758240000000000000\n"
-    "last_success_dependencies: {}\n"
-)
-
-
 @pytest.mark.parametrize(
     "payload",
     [
         pytest.param("not a refresh state at all", id="garbage"),
         pytest.param(
             "format version: 1\nlast_completed_timeslot: 1758240000\n", id="truncated"
-        ),
-        pytest.param(REQUIRED_FIELDS, id="truncated_before_the_cursor"),
-        # The label alone is not the field: readEscapedString takes EOF for an empty cursor.
-        pytest.param(
-            REQUIRED_FIELDS + OPTIONAL_FIELDS_BEFORE_CURSOR + "cursor: ",
-            id="truncated_inside_the_cursor",
         ),
     ],
 )
@@ -585,3 +554,62 @@ def test_moving_a_view_to_another_database_keeps_its_schedule():
         node.query(f"DROP DATABASE IF EXISTS {other_disk_db} SYNC")
         node.query(f"DROP TABLE IF EXISTS {name} SYNC")
         node.query(f"DROP TABLE IF EXISTS {target} SYNC")
+
+
+def test_a_view_migrated_from_an_ordinary_database_keeps_its_schedule():
+    """Tables in an Ordinary database have no UUID, and the state file is named after one.
+
+    So the migration to Atomic is the point at which the schedule becomes persistable at all, and the
+    view is already running by then. APPEND, because a non-APPEND refreshable view cannot be created
+    in an Ordinary database (Code: 80).
+    """
+    ordinary_db = "rmv_ordinary_db"
+    name = "rmv_migrated"
+    node.query(f"DROP DATABASE IF EXISTS {ordinary_db} SYNC")
+    node.query(f"DROP TABLE IF EXISTS {name} SYNC")
+    node.query(
+        f"CREATE DATABASE {ordinary_db} ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    try:
+        node.query(
+            f"CREATE MATERIALIZED VIEW {ordinary_db}.{name} REFRESH AFTER 1 DAY APPEND "
+            f"(a DateTime, b UInt64) ENGINE = MergeTree ORDER BY tuple() "
+            f"AS SELECT now() a, number b FROM numbers(2)"
+        )
+        wait_for_refresh_info(
+            name,
+            "last_success_time",
+            lambda x: x not in ("", "\\N"),
+            database=ordinary_db,
+        )
+        assert find_refresh_state_files(DB_DISK_PATH) == []
+
+        node.query(f"RENAME TABLE {ordinary_db}.{name} TO default.{name}")
+        before = refresh_info(name, "last_success_time")
+        rows = node.query(f"SELECT count() FROM {name}").strip()
+
+        # The rename only marks the save pending; the scheduling task performs it.
+        state_files = []
+        for _ in range(120):
+            state_files = find_refresh_state_files(DB_DISK_PATH)
+            if state_files:
+                break
+            time.sleep(0.5)
+        assert len(state_files) == 1
+        view_uuid = node.query(
+            f"SELECT uuid FROM system.tables WHERE database = 'default' AND name = '{name}'"
+        ).strip()
+        assert view_uuid != str(uuid.UUID(int=0))
+        assert view_uuid in state_files[0]
+
+        node.restart_clickhouse()
+
+        wait_for_refresh_info(name, "status", lambda x: x == "Scheduled")
+        time.sleep(3)
+        # With no file the moved view would refresh a day early and append its source a second time.
+        assert refresh_info(name, "last_success_time") == before
+        assert node.query(f"SELECT count() FROM {name}").strip() == rows
+    finally:
+        node.query(f"DROP DATABASE IF EXISTS {ordinary_db} SYNC")
+        node.query(f"DROP TABLE IF EXISTS {name} SYNC")

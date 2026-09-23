@@ -338,9 +338,9 @@ void RefreshTask::startup()
     auto context = view->getContext();
 
     if (!coordination.coordinated)
-        resolveLocalStateLocation(context);
+        local_state = resolveLocalStateLocation(view->getStorageID(), context);
 
-    auto loaded = local_state_path.empty() ? LoadedLocalState{} : loadLocalCoordinationState();
+    auto loaded = local_state.path.empty() ? LoadedLocalState{} : loadLocalCoordinationState(local_state);
 
     if (start_paused || context->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
@@ -355,11 +355,11 @@ void RefreshTask::startup()
         scheduling.stop_requested = true;
         scheduling.unexpected_error = fmt::format(
             "Could not read the persisted refresh state '{}'. Refreshing now could stampede, so the "
-            "view is stopped; SYSTEM START VIEW resumes it.", local_state_path);
+            "view is stopped; SYSTEM START VIEW resumes it.", local_state.path);
     }
-    else if (!local_state_path.empty())
+    else if (!local_state.path.empty())
     {
-        scheduling.local_state_save_pending = !saveLocalCoordinationState(context, coordination.root_znode.toString());
+        scheduling.local_state_save_pending = !saveLocalCoordinationState(context, local_state, coordination.root_znode.toString());
     }
 
     auto inner_table_id = isAppend() ? std::nullopt : std::make_optional(view->getTargetTableId());
@@ -486,6 +486,7 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
 {
     ContextPtr context;
     StorageID old_id = StorageID::createEmpty();
+    bool uncoordinated = false;
     {
         std::lock_guard guard(mutex);
         createLogger(new_id);
@@ -495,10 +496,25 @@ void RefreshTask::rename(StorageID new_id, StorageID new_inner_table_id)
             set_handle.rename(new_id, isAppend() ? std::nullopt : std::make_optional(new_inner_table_id));
         }
         if (view)
+        {
             context = view->getContext();
+            uncoordinated = !coordination.coordinated;
+        }
     }
     if (context)
     {
+        if (uncoordinated)
+        {
+            /// An Ordinary database gives its tables no UUID, so a view migrated out of one becomes
+            /// persistable only here. Resolved outside `mutex`: it reads the database catalog.
+            auto location = resolveLocalStateLocation(new_id, context);
+            std::lock_guard guard(mutex);
+            local_state = std::move(location);
+            scheduling.local_state_save_pending = !local_state.path.empty();
+            if (scheduling.local_state_save_pending)
+                scheduling_task->schedule();
+        }
+
         /// If another view DEPENDS ON the new name of this view, let it know that a view with such
         /// name now exists.
         context->getRefreshSet().notifyDependents(new_id);
@@ -910,10 +926,11 @@ void RefreshTask::doScheduling(bool is_shutdown)
         if (scheduling.local_state_save_pending)
         {
             const String data = coordination.root_znode.toString();
+            const LocalStateLocation location = local_state;
             /// shutdown() nulls `view` under `mutex`, so take the context first and re-check after.
             auto context = view->getContext();
             lock.unlock();
-            const bool saved = saveLocalCoordinationState(context, data);
+            const bool saved = saveLocalCoordinationState(context, location, data);
             lock.lock();
             if (!view)
                 return;
@@ -2010,13 +2027,14 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         else
             version = dynamic_cast<Coordination::SetResponse &>(*responses[0]).stat.version;
     }
-    else if (!local_state_path.empty() && !running)
+    else if (!local_state.path.empty() && !running)
     {
         const String data = root.toString();
+        const LocalStateLocation location = local_state;
         /// Taken before unlocking: shutdown() nulls `view` under `mutex`.
         auto context = view->getContext();
         lock.unlock();
-        const bool saved = saveLocalCoordinationState(context, data);
+        const bool saved = saveLocalCoordinationState(context, location, data);
         lock.lock();
         if (!saved)
         {
@@ -2035,74 +2053,65 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
     return true;
 }
 
-void RefreshTask::resolveLocalStateLocation(const ContextPtr & context)
+RefreshTask::LocalStateLocation RefreshTask::resolveLocalStateLocation(const StorageID & id, const ContextPtr & context) const
 {
-    const UUID view_uuid = view->getStorageID().uuid;
     /// tryGet, not get: get() throws LOGICAL_ERROR until the server UUID is loaded.
     const UUID server_uuid = ServerUUID::tryGet();
-    if (view_uuid == UUIDHelpers::Nil || server_uuid == UUIDHelpers::Nil)
-        return;
+    if (id.uuid == UUIDHelpers::Nil || server_uuid == UUIDHelpers::Nil)
+        return {};
 
     /// `SETTINGS disk` can point a database's metadata disk away from the server-global one.
-    auto database = DatabaseCatalog::instance().tryGetDatabase(view->getStorageID().database_name);
+    auto database = DatabaseCatalog::instance().tryGetDatabase(id.database_name);
     auto disk = database ? database->getDisk() : context->getDatabaseDisk();
     /// DiskLocal marks itself read-only without failing startup, so this is a live configuration.
     if (!disk || disk->isReadOnly() || disk->isWriteOnce())
-        return;
+        return {};
 
-    local_state_disk = std::move(disk);
     /// Replicas sharing an object-storage database disk hold the same view UUID, yet schedule separately.
-    local_state_path = DatabaseCatalog::getStoreDirPath(view_uuid)
-        / fmt::format("refresh_state.{}.txt", server_uuid);
+    const String path = DatabaseCatalog::getStoreDirPath(id.uuid) / fmt::format("refresh_state.{}.txt", server_uuid);
+    return {std::move(disk), path};
 }
 
-RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState()
+RefreshTask::LoadedLocalState RefreshTask::loadLocalCoordinationState(const LocalStateLocation & location)
 {
     LoadedLocalState result;
     try
     {
         /// existsFile is false for a directory, which would read as absent.
-        if (!local_state_disk->existsFileOrDirectory(local_state_path))
+        if (!location.disk->existsFileOrDirectory(location.path))
             return result;
 
-        if (local_state_disk->existsFile(local_state_path))
+        if (location.disk->existsFile(location.path))
         {
-            const String data = readMetadataFile(local_state_disk, local_state_path);
-
-            /// parse() makes the fields after `randomness` optional, for old znodes, and reads a cut-off
-            /// cursor as an empty one; every field toString() writes ends in a newline.
-            if (!data.contains("\ncursor: ") || !data.ends_with("\n"))
-                throw Exception(ErrorCodes::INCORRECT_DATA, "Persisted refresh state does not end with a complete cursor field");
-
             CoordinationZnode znode;
-            znode.parse(data, /*running_znode_exists=*/ false, getLogger());
+            znode.parse(readMetadataFile(location.disk, location.path), /*running_znode_exists=*/ false, getLogger());
             result.znode = std::move(znode);
             return result;
         }
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger(), fmt::format("Failed to read persisted refresh state '{}'", local_state_path));
+        tryLogCurrentException(getLogger(), fmt::format("Failed to read persisted refresh state '{}'", location.path));
         result.znode.reset();
     }
     result.unusable = true;
     return result;
 }
 
-bool RefreshTask::saveLocalCoordinationState(const ContextPtr & context, const String & data)
+bool RefreshTask::saveLocalCoordinationState(const ContextPtr & context, const LocalStateLocation & location, const String & data)
 {
-    const String tmp_path = local_state_path + ".tmp";
+    const String tmp_path = location.path + ".tmp";
     try
     {
-        local_state_disk->createDirectories(fs::path(local_state_path).parent_path());
-        writeMetadataFile(local_state_disk, tmp_path, data, context->getSettingsRef()[Setting::fsync_metadata]);
+        location.disk->createDirectories(fs::path(location.path).parent_path());
+        writeMetadataFile(location.disk, tmp_path, data, context->getSettingsRef()[Setting::fsync_metadata]);
         try
         {
-            local_state_disk->replaceFile(tmp_path, local_state_path);
+            location.disk->replaceFile(tmp_path, location.path);
         }
         catch (...)
         {
-            local_state_disk->removeFileIfExists(tmp_path);
+            location.disk->removeFileIfExists(tmp_path);
             throw;
         }
         return true;
@@ -2110,7 +2119,7 @@ bool RefreshTask::saveLocalCoordinationState(const ContextPtr & context, const S
     catch (...)
     {
         /// Throwing here would reach doScheduling's catch-all, which aborts debug builds.
-        tryLogCurrentException(getLogger(), fmt::format("Failed to persist refresh state '{}'", local_state_path));
+        tryLogCurrentException(getLogger(), fmt::format("Failed to persist refresh state '{}'", location.path));
         ProfileEvents::increment(ProfileEvents::RefreshableViewStatePersistFailed);
         return false;
     }

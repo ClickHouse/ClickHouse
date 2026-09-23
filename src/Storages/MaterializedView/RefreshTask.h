@@ -364,15 +364,18 @@ private:
         bool unusable = false;
     };
 
+    /// File in which an uncoordinated view persists `coordination.root_znode`; an empty path
+    /// disables persistence. Named after the view UUID, which a rename can grant or change.
+    struct LocalStateLocation
+    {
+        DiskPtr disk;
+        String path;
+    };
+
     std::mutex logger_mutex;
     LoggerPtr current_logger = nullptr;
 
     StorageMaterializedView * view;
-
-    /// Where an uncoordinated view persists `coordination.root_znode`. Empty disables persistence.
-    /// Assigned only in startup(), before the scheduling task can run, so reads need no `mutex`.
-    DiskPtr local_state_disk;
-    String local_state_path;
 
     /// Protects all fields below.
     /// Never locked for blocking operations (e.g. creating the internal table or reading from zookeeper).
@@ -401,6 +404,7 @@ private:
     CoordinationState coordination;
     ExecutionState execution;
     SchedulingState scheduling;
+    LocalStateLocation local_state;
 
     RefreshState state = RefreshState::Scheduling;
     /// Notified when wait() needs to wake up: when `state` or `root_znode` changes, and on shutdown.
@@ -463,10 +467,10 @@ private:
     determineNextRefreshTime(std::chrono::system_clock::time_point now, const AllDependenciesInfo & dependencies, const std::unique_lock<std::mutex> & lock);
 
     void readZnodesIfNeeded(std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock);
-    void resolveLocalStateLocation(const ContextPtr & context);
+    LocalStateLocation resolveLocalStateLocation(const StorageID & id, const ContextPtr & context) const;
     /// Callers must not hold `mutex`. Neither throws.
-    LoadedLocalState loadLocalCoordinationState();
-    bool saveLocalCoordinationState(const ContextPtr & context, const String & data);
+    LoadedLocalState loadLocalCoordinationState(const LocalStateLocation & location);
+    bool saveLocalCoordinationState(const ContextPtr & context, const LocalStateLocation & location, const String & data);
     /// Update the root znode and create/remove-if-exists the 'running' znode,
     /// atomically, conditionally on the root znode version number.
     /// If `only_running_znode`, the root znode is not updated, but its version is still checked.
