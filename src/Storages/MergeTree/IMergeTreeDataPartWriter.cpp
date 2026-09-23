@@ -154,7 +154,7 @@ SerializationPtr IMergeTreeDataPartWriter::getSerialization(const String & colum
     return it->second;
 }
 
-ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
+ASTPtr IMergeTreeDataPartWriter::getCodecDescriptionOrDefault(const String & column_name, CompressionCodecPtr default_codec) const
 {
     /// The `default_codec` is already resolved by `MergeTreeData::getCompressionCodecForPart`, which
     /// honors the table-level `default_compression_codec` setting as well as `RECOMPRESS` TTL codecs.
@@ -162,7 +162,7 @@ ASTPtr IMergeTreeDataPartWriter::getCodecDescOrDefault(const String & column_nam
     /// would make a `RECOMPRESS` TTL merge write column streams with the setting's codec while the
     /// part metadata (`default_compression_codec.txt`) records the TTL codec, so the metadata and the
     /// actual on-disk data would diverge and recompression would not be applied.
-    ASTPtr default_codec_desc = default_codec->getFullCodecDesc();
+    ASTPtr default_codec_desc = default_codec->getFullCodecDescription();
 
     if (const auto * column_desc = metadata_snapshot->columns.tryGet(column_name))
         return column_desc->codec ? column_desc->codec : default_codec_desc;
