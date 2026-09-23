@@ -20,6 +20,8 @@
 #    implementation that probes and then discards the answer.
 #
 # The range conditions carry the max-UUID literal, which is how the emission is detected below.
+# They are emitted inside `indexHint`, so they reach index analysis but never a row-level filter:
+# the literal appears in the `Condition:` line of `EXPLAIN indexes = 1`, not in the plan's actions.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -40,7 +42,7 @@ ONE_PLAN_BUILD='SETTINGS automatic_parallel_replicas_mode = 0'
 has_id_range_query() {
     echo "SELECT plan LIKE '%ffffffff-ffff-ffff-ffff-ffffffffffff%'
           FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan
-                FROM (EXPLAIN actions = 1 SELECT sum(value) FROM timeSeriesSelector($1, '$2', $3, $4) $ONE_PLAN_BUILD));"
+                FROM (EXPLAIN indexes = 1 SELECT sum(value) FROM timeSeriesSelector($1, '$2', $3, $4) $ONE_PLAN_BUILD));"
 }
 
 has_id_range() {
@@ -56,7 +58,7 @@ echo "-- A. the whole-metric verdict is not reused after an out-of-range series 
 $CH -q "
 DROP TABLE IF EXISTS ts_a SYNC;
 CREATE TABLE ts_a ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
-INSERT INTO ts_a (metric_name, tags, time_series) VALUES ('foo', map('env', 'a'), [(toDateTime64(100, 3), 1.)]);
+INSERT INTO ts_a (metric_name, tags, samples) VALUES ('foo', map('env', 'a'), [(toDateTime64(100, 3), 1.)]);
 "
 
 # The selector matches the whole metric, so the range is emitted. This verdict must not be reused.
@@ -67,7 +69,7 @@ echo "range emitted while the selector matches the whole metric: $(has_id_range 
 # probe requires before it runs at all.
 $CH -q "
 ALTER TABLE ts_a MODIFY SETTING id_generator = 'tuple(sipHash64(tags), reinterpretAsUUID(sipHash128(metric_name, tags)))';
-INSERT INTO ts_a (metric_name, tags, time_series) VALUES ('foo', map('env', 'b'), [(toDateTime64(200, 3), 2.)]);
+INSERT INTO ts_a (metric_name, tags, samples) VALUES ('foo', map('env', 'b'), [(toDateTime64(200, 3), 2.)]);
 ALTER TABLE ts_a RESET SETTING id_generator;
 "
 
@@ -83,7 +85,7 @@ echo "-- B. a reused verdict is retired after a bounded number of uses"
 $CH -q "
 DROP TABLE IF EXISTS ts_b SYNC;
 CREATE TABLE ts_b ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
-INSERT INTO ts_b (metric_name, tags, time_series) VALUES
+INSERT INTO ts_b (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]),
     ('foo', map('env', 'stag'), [(toDateTime64(900, 3), 99.)]);
@@ -126,7 +128,7 @@ echo "-- C. reuse skips the probe's work, not just its emitted range"
 $CH -q "
 DROP TABLE IF EXISTS ts_c SYNC;
 CREATE TABLE ts_c ENGINE = TimeSeries TAGS INNER COLUMNS (id Tuple(UInt64, UUID));
-INSERT INTO ts_c (metric_name, tags, time_series) VALUES
+INSERT INTO ts_c (metric_name, tags, samples) VALUES
     ('foo', map('env', 'prod'), [(toDateTime64(100, 3), 1.)]),
     ('foo', map('env', 'dev'), [(toDateTime64(150, 3), 10.)]);
 "
