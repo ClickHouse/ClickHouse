@@ -37,6 +37,7 @@ public:
     static Block transformHeader(Block header, const SortDescription & sort_description);
 
 protected:
+    void onCancel() noexcept override;
     void transform(Chunk & chunk) override;
 
 private:

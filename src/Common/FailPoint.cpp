@@ -418,6 +418,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(totals_having_transform_totals_pause) \
     PAUSEABLE_ONCE(totals_having_transform_totals_start_pause) \
     PAUSEABLE_ONCE(totals_having_transform_totals_before_expression_pause) \
+    PAUSEABLE_ONCE(filling_transform_before_interpolate_pause) \
     ONCE(aggregating_in_order_transform_cancel_mid_loop) \
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
