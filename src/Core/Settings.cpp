@@ -8021,6 +8021,9 @@ Approximate probability of failure for a keeper request during insert. Valid val
     DECLARE(UInt64, insert_keeper_fault_injection_seed, 0, R"(
 0 - random seed, otherwise the setting value
 )", 0) \
+    DECLARE(UInt64, bernoulli_sample_seed, 1, R"(
+Seed for the experimental Bernoulli sampling path (`allow_experimental_bernoulli_sample`). `0` re-seeds randomly per query (the seed is derived from the initial query id and the query start time, so every read of the query - including reads on remote shards and replicas - shares it, while repeated executions under the same `query_id` still draw fresh samples). Any nonzero value is deterministic per part. Has no effect on tables with a `SAMPLE BY` key.
+)", 0) \
     DECLARE(Bool, force_aggregation_in_order, false, R"(
 The setting is used by the server itself to support distributed queries. Do not change it manually, because it will break normal operations. (Forces use of aggregation in order on remote nodes during distributed aggregation).
 )", IMPORTANT) \
@@ -9166,6 +9169,9 @@ If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` a
 This setting is experimental and currently does not work together with all other join optimizations.
 In particular, when the right table is reranged, the per-key split controlled by `joined_block_split_single_row` is disabled, so neither `max_joined_block_size_rows` nor `max_joined_block_size_bytes` bounds the number of rows produced for a single left row.
 )", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
+    DECLARE(Bool, allow_experimental_bernoulli_sample, false, R"(
+Allow the `SAMPLE` clause on `MergeTree`-family tables created without a `SAMPLE BY` key. Each row is independently kept with the requested probability. `SAMPLE k OFFSET m` is still rejected. See [SAMPLE Clause](/sql-reference/statements/select/sample#bernoulli-sampling).
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
 Set to false to force the old full-mutation behavior.
