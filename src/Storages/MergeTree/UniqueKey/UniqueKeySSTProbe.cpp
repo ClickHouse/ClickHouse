@@ -259,6 +259,12 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
 std::vector<rocksdb::Status> SSTFileReader::multiGet(
     const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const
 {
+    if (keys.empty())
+    {
+        values_out.clear();
+        return {};
+    }
+
     /// `SstFileReader::MultiGet` only `assert`s its 32-key cap; over-limit
     /// input is UB in release builds, so the bound is enforced here instead.
     if (keys.size() > PROBE_BATCH_SIZE)

@@ -133,13 +133,9 @@ protected:
         std::filesystem::remove_all(base);
     }
 
-    /// Build an SST-backed probe target from `(key -> row)` entries (written via
-    /// the real `SSTIndexWriter`), with `dead_rows` marked dead in the part's
-    /// delete bitmap.
-    ProbeTargetPartPtr makeTarget(
-        std::vector<std::pair<UInt64, UInt32>> kv, std::vector<UInt64> dead_rows = {})
+    /// Write `kv` to an SST via the real `SSTIndexWriter` and open a reader on it.
+    SSTFileReaderPtr makeReader(const String & part_dir, std::vector<std::pair<UInt64, UInt32>> kv)
     {
-        const String part_dir = "part_" + std::to_string(counter++);
         std::filesystem::create_directories(base / part_dir);
         auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
 
@@ -157,7 +153,16 @@ protected:
         MergeTreeDataPartChecksums sst_checksums;
         writer.finish(sst_checksums, /*fsync=*/false);
 
-        auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+        return openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+    }
+
+    /// Build an SST-backed probe target from `(key -> row)` entries (written via
+    /// the real `SSTIndexWriter`), with `dead_rows` marked dead in the part's
+    /// delete bitmap.
+    ProbeTargetPartPtr makeTarget(
+        std::vector<std::pair<UInt64, UInt32>> kv, std::vector<UInt64> dead_rows = {})
+    {
+        auto reader = makeReader("part_" + std::to_string(counter++), std::move(kv));
         auto bitmap = std::make_shared<DeleteBitmap>();
         for (UInt64 r : dead_rows)
             bitmap->add(r);
@@ -389,23 +394,28 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
 /// batch is UB in release builds. `multiGet` must reject it before calling in.
 TEST_F(UniqueKeyProbeTest, MultiGetOverBatchLimitThrows)
 {
-    const String part_dir = "multiget_limit_part";
-    std::filesystem::create_directories(base / part_dir);
-    auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
-    SSTIndexWriter writer(*storage, getContext().context);
+    auto reader = makeReader("multiget_limit_part", {{1, 0}});
+
     const String e = encodeKey(1);
-    writer.addEncoded(std::string_view(e), 0);
-    MergeTreeDataPartChecksums sst_checksums;
-    writer.finish(sst_checksums, /*fsync=*/false);
-
-    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
-
     std::vector<String> values;
     std::vector<rocksdb::Slice> keys(PROBE_BATCH_SIZE + 1, rocksdb::Slice(e.data(), e.size()));
     EXPECT_ANY_THROW(reader->multiGet(keys, values));
 
     keys.resize(PROBE_BATCH_SIZE);
     EXPECT_NO_THROW(reader->multiGet(keys, values));
+}
+
+/// `BlockBasedTable::MultiGet` asserts on an empty range - an empty batch
+/// must short-circuit as a no-op instead.
+TEST_F(UniqueKeyProbeTest, MultiGetEmptyBatchIsNoOp)
+{
+    auto reader = makeReader("multiget_empty_part", {{1, 0}});
+
+    std::vector<String> values{"stale"};
+    std::vector<rocksdb::Slice> keys;
+    const auto statuses = reader->multiGet(keys, values);
+    EXPECT_TRUE(statuses.empty());
+    EXPECT_TRUE(values.empty());
 }
 
 TEST_F(UniqueKeyProbeTest, InvalidReaderHandleFailsClosed)

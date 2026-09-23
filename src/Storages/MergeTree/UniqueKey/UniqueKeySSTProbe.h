@@ -39,10 +39,10 @@ class SSTFileReader
 public:
     SSTFileReader(const DataPartStoragePtr & storage, const String & sst_file_name, const ReadSettings & read_settings);
 
-    /// Single-chunk lookup of at most `PROBE_BATCH_SIZE` keys (more throws).
-    /// Keys may be in any order - RocksDB sorts them internally and both
-    /// outputs stay aligned with `keys`. One status per key: a miss is
-    /// `NotFound`, other errors throw (fail closed).
+    /// Single-chunk lookup of at most `PROBE_BATCH_SIZE` keys (more throws;
+    /// empty is a no-op). Keys may be in any order - RocksDB sorts them
+    /// internally and both outputs stay aligned with `keys`. One status per
+    /// key: a miss is `NotFound`, other errors throw (fail closed).
     std::vector<rocksdb::Status> multiGet(const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const;
 
     std::shared_ptr<const rocksdb::TableProperties> getProperties() const;
