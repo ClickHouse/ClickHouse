@@ -114,3 +114,37 @@ def test_external_local_file_requires_file_grant(started_cluster_iceberg_with_sp
     assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
 
     instance.query(f"DROP USER {user}")
+
+
+def test_external_local_file_grant_rejects_parent_traversal(started_cluster_iceberg_with_spark):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+
+    TABLE_NAME = f"test_local_file_grant_escape_{get_uuid_str()}"
+    base_bucket = started_cluster_iceberg_with_spark.minio_bucket
+    path_root = f"/var/lib/clickhouse/user_files/external data/{TABLE_NAME}"
+    granted_dir = f"{path_root}/granted"
+    target_dir = f"{granted_dir}/../outside"
+    user = f"user_{TABLE_NAME}"
+
+    create_and_upload_table(started_cluster_iceberg_with_spark, TABLE_NAME)
+
+    base_path = _rewrite_paths_to_local_uri(
+        started_cluster_iceberg_with_spark, TABLE_NAME, "", target_dir=target_dir)
+
+    minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
+    table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
+                      f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+
+    instance.query(f"DROP USER IF EXISTS {user}")
+    instance.query(f"CREATE USER {user}")
+    instance.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    instance.query(f"GRANT READ ON S3 TO {user}")
+    instance.query(f"GRANT READ ON FILE('{granted_dir}/.*') TO {user}")
+
+    error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
+    assert "ACCESS_DENIED" in error, error
+
+    instance.query(f"GRANT READ ON FILE('{path_root}/outside/.*') TO {user}")
+    assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
+
+    instance.query(f"DROP USER {user}")

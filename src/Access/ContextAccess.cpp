@@ -24,6 +24,7 @@
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
+#include <filesystem>
 #include <unordered_set>
 
 
@@ -1172,7 +1173,7 @@ bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const Access
         return true;
 
     const String normalized_filter_target = parameter == AccessTypeObjects::toStringSource(AccessTypeObjects::Source::FILE)
-        ? String{to_check_by_filter}
+        ? std::filesystem::path{String{to_check_by_filter}}.lexically_normal().string()
         : normalizeAccessURI(to_check_by_filter);
     if (!normalized_filter_target.empty())
     {
