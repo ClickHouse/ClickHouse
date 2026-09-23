@@ -214,7 +214,8 @@ private:
     /// Counts rows admitted to the result, before the pending output is pushed to its port.
     size_t result_rows = 0;
 
-    /// Input rejected before hash-table growth remains here until suppression extraction finishes.
+    /// Unprocessed input, including a partially hashed chunk's suffix, remains here until suppression
+    /// extraction finishes.
     Chunk input_chunk;
     /// Both hashing and merging produce results here, independently of spill-writing progress.
     Chunk output_chunk;

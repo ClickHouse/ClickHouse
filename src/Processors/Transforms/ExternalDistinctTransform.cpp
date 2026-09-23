@@ -298,62 +298,150 @@ void ExternalDistinctTransform::consumeHashing(Hashing & hashing)
 
     hashing.set.prepareForInsert(input_chunk);
 
-    /// Hashing releases its row masks and packed keys before spilling starts.
+    /// The input columns and existing set are already charged to query memory. The estimates below
+    /// cover additional allocations for inserting keys, filtering rows, and preparing the first spill run.
+    ///
+    /// Filtering can allocate masks marking rows to keep, packed keys combining multiple key columns
+    /// into one value per row, and output copies. The masks and packed keys are released before spilling.
     const size_t filtering_memory = hashing.set.estimateFilteringMemory(input_chunk);
+
+    /// The prepared input is already charged to query memory. Its allocated size estimates the cost
+    /// of another copy when filtering, sorting, or cutting the unprocessed part of a chunk.
     const size_t input_bytes = input_chunk.allocatedBytes();
+
+    /// Service columns store internal spill metadata: fingerprints for keys compared by hash and
+    /// arrival numbers recording each row's original position. These columns are added when the key
+    /// representation needs fingerprints or the result must preserve input order.
     const size_t service_columns_bytes = DistinctSpillLayout::estimateServiceColumnsMemory(
         input_chunk.getNumRows(), hashing.set.getKeyRepresentation(), preserve_input_order);
-    /// Reserve space for a suppression run's extracted columns and their sorted copies.
+
+    /// A suppression run contains keys already accepted for output, allowing the final merge to
+    /// discard later duplicates. Extraction targets `DEFAULT_BYTES_IN_RUN` bytes per run; twice that
+    /// target covers extracted columns alongside their sorted copies. This is a soft target because
+    /// one large key or a column allocation can exceed it.
     const size_t suppression_columns_bytes = 2 * DEFAULT_BYTES_IN_RUN;
-    /// Ordinary sorting keeps the added columns alongside their permuted copies. The input columns
-    /// already count towards query memory, but their copies do not.
+
+    /// Ordinary runs contain input rows still to be deduplicated. Sorting can retain the input and
+    /// service columns alongside their permuted copies. The input is already charged, so budget one
+    /// input copy and both the original and copied service columns.
     const size_t ordinary_columns_bytes = input_bytes + 2 * service_columns_bytes;
+
+    /// Each extracted suppression chunk has at most `max_block_size_rows` rows; ordinary sorting uses
+    /// the whole input chunk. The larger row count covers the sorting permutation for either path.
     const size_t sort_rows = std::max<size_t>(max_block_size_rows, input_chunk.getNumRows());
+
+    /// A sorting permutation stores the original index of each row in sorted order. Its array needs
+    /// padding and grows to a power-of-two capacity, so counting only the row indices is insufficient.
     using Permutation = IColumn::Permutation;
     const size_t sort_permutation_bytes = roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
         sort_rows, sizeof(Permutation::value_type), Permutation::pad_left, Permutation::pad_right));
-    /// Writing needs uncompressed, compressed, and file buffers. Oversized values and codec overhead
-    /// can exceed this estimate.
+
+    /// Writing a temporary file can hold uncompressed input, compressed output, and a file buffer
+    /// at the same time. The estimate allows three configured buffer sizes; oversized values and codec
+    /// overhead can exceed it.
     const size_t write_buffers_bytes = 3 * tmp_data->getSettings().buffer_size;
-    /// A filtered output copy can remain pending during suppression extraction, and the original
-    /// input can remain shared upstream. Ordinary-input sorting runs separately from suppression.
+
+    /// A filtered output copy can remain pending while suppression keys are extracted. The original
+    /// input can still be shared upstream, so this output copy needs an additional `input_bytes`.
+    /// Suppression extraction and ordinary sorting run separately; take the larger column estimate,
+    /// then add allowances for the sorting permutation and buffers for writing the file.
     const size_t spill_memory
         = std::max(input_bytes + suppression_columns_bytes, ordinary_columns_bytes) + sort_permutation_bytes + write_buffers_bytes;
-    const size_t workspace_memory = std::max(filtering_memory, spill_memory);
 
-    /// The threshold applies to total query memory, so current usage reduces the budget for growth.
-    /// Query accounting can briefly become negative while a concurrent free saturates its counter.
-    const UInt64 query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
-    const UInt64 available_memory
-        = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
-
-    const size_t growth_memory = hashing.set.estimateGrowthMemory(input_chunk);
-    if (workspace_memory > available_memory || growth_memory > available_memory - workspace_memory)
+    /// These values retain the last check's tracked query usage, additional memory for new keys, and
+    /// temporary workspace estimate so the spill log describes the check that rejected insertion.
+    UInt64 query_memory_usage = 0;
+    size_t growth_memory = 0;
+    size_t workspace_memory = 0;
+    auto check_memory_budget = [&](size_t growth, size_t workspace)
     {
-        LOG_TRACE(log, "Switching DISTINCT to external mode: {} "
-            "(query memory: {}, spill threshold: {}, "
-            "estimated peak extra memory for growth: {}, filtering and spill workspace: {})",
-            query_memory_usage > max_bytes_before_external_distinct
-                ? "query memory exceeded the spill threshold"
-                : "projected allocations exceed the remaining spill-threshold budget",
-            formatReadableSizeWithBinarySuffix(query_memory_usage),
-            formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct),
-            formatReadableSizeWithBinarySuffix(growth_memory),
-            formatReadableSizeWithBinarySuffix(workspace_memory));
+        growth_memory = growth;
+        workspace_memory = workspace;
+        /// `max_bytes_before_external_distinct` applies to total query memory, so current usage reduces
+        /// the budget for additional allocations.
+        /// Query accounting can briefly become negative while a concurrent free saturates its counter.
+        query_memory_usage = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+        /// Remaining headroom becomes zero once current query usage reaches the spill threshold.
+        const UInt64 available_memory
+            = max_bytes_before_external_distinct - std::min<UInt64>(max_bytes_before_external_distinct, query_memory_usage);
+        /// Checking workspace before subtracting it avoids unsigned underflow or an overflowing sum.
+        return workspace <= available_memory && growth <= available_memory - workspace;
+    };
 
-        startSpilling(hashing);
-        return;
+    chassert(!output_chunk);
+    const size_t input_rows = input_chunk.getNumRows();
+    size_t processed_rows = 0;
+
+    /// The bulk estimate assumes every row adds a key. It includes table resize peaks, growth of the
+    /// arena storing string keys, and retained bitmaps marking seen `LowCardinality` dictionary entries.
+    /// Filtering releases its masks and packed keys before spilling; `spill_memory` already includes
+    /// any pending filtered output. The budget covers the larger workspace alongside possible set growth.
+    if (check_memory_budget(hashing.set.estimateGrowthMemory(input_chunk), std::max(filtering_memory, spill_memory)))
+    {
+        output_chunk = hashing.set.filter(std::move(input_chunk));
+        processed_rows = input_rows;
+    }
+    else
+    {
+        /// A failed bulk estimate does not imply that the actual new keys exceed the budget. A chunk can
+        /// contain only existing keys, or enough duplicates to avoid the projected table resize or string
+        /// storage growth. Checking membership before budgeting each new key can therefore avoid a permanent
+        /// switch to external processing, particularly for chunks with many duplicates near the threshold.
+        ///
+        /// Checked insertion keeps the original input until the stopping row is known. Reserve an
+        /// additional copy for cutting its unprocessed suffix while the filtered output stays alive.
+        /// Before examining keys, require room for preparing the whole chunk and for starting a spill;
+        /// individual new keys are checked for storage growth below.
+        if (check_memory_budget(0, std::max(filtering_memory, input_bytes + spill_memory)))
+        {
+            auto can_insert = [&](size_t required_growth)
+            {
+                /// The current row masks and packed keys are already charged by this point. Each new
+                /// key must leave room for cutting the suffix and preparing a spill after insertion.
+                return check_memory_budget(required_growth, input_bytes + spill_memory);
+            };
+            auto result = hashing.set.filterWithInsertionCheck(input_chunk.clone(), can_insert);
+            processed_rows = result.processed_rows;
+            output_chunk = std::move(result.chunk);
+            if (processed_rows == input_rows)
+                input_chunk.clear();
+        }
     }
 
-    consumed_rows += input_chunk.getNumRows();
-    chassert(!output_chunk);
-    output_chunk = hashing.set.filter(std::move(input_chunk));
+    consumed_rows += processed_rows;
     result_rows += output_chunk.getNumRows();
 
     /// A hint or a size limit in the 'break' overflow mode retains this final result chunk.
     if ((limit_hint && result_rows >= limit_hint) || hashing.set.isLimitReached())
     {
         state.emplace<Finishing>();
+        return;
+    }
+
+    if (processed_rows < input_rows)
+    {
+        if (processed_rows)
+        {
+            auto columns = input_chunk.detachColumns();
+            for (auto & column : columns)
+                column = column->cut(processed_rows, input_rows - processed_rows);
+            input_chunk.setColumns(std::move(columns), input_rows - processed_rows);
+        }
+
+        LOG_TRACE(log, "Switching DISTINCT to external mode: {} "
+            "(query memory: {}, spill threshold: {}, "
+            "estimated peak extra memory for growth: {}, filtering and spill workspace: {}, "
+            "processed rows in current chunk: {}, remaining rows: {})",
+            query_memory_usage > max_bytes_before_external_distinct
+                ? "query memory exceeded the spill threshold"
+                : "projected allocations exceed the remaining spill-threshold budget",
+            formatReadableSizeWithBinarySuffix(query_memory_usage),
+            formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct),
+            formatReadableSizeWithBinarySuffix(growth_memory),
+            formatReadableSizeWithBinarySuffix(workspace_memory),
+            processed_rows, input_rows - processed_rows);
+
+        startSpilling(hashing);
         return;
     }
 

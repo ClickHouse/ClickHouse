@@ -16,12 +16,16 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
+#include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
+#include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
 #include <Processors/Transforms/ExternalDistinctTransform.h>
+#include <QueryPipeline/QueryPipeline.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerUtils.h>
 #include <Common/ThreadStatus.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
@@ -491,4 +495,74 @@ TEST_F(ExternalDistinctTransformTest, ReservesSuppressionMemoryAlongsideFiltered
         EXPECT_EQ(transform.prepare(), IProcessor::Status::UpdatePipeline);
         EXPECT_FALSE(downstream.hasData());
     }).join();
+}
+
+TEST_F(ExternalDistinctTransformTest, CheckedInsertionSpillsUnprocessedSuffix)
+{
+    withQueryThread([&]
+    {
+        for (const bool ordered : {false, true})
+        {
+            SCOPED_TRACE(ordered);
+            const auto u64 = std::make_shared<DataTypeUInt64>();
+            const auto header = std::make_shared<const Block>(Block{
+                ColumnWithTypeAndName(u64, "k"), ColumnWithTypeAndName(u64, "payload")});
+            constexpr size_t rows = 65536;
+            constexpr size_t unique_keys = 32769;
+            auto keys = ColumnUInt64::create(rows);
+            auto payload = ColumnUInt64::create(rows);
+            for (size_t row = 0; row < rows; ++row)
+            {
+                keys->getData()[row] = unique_keys - 1 - row % unique_keys;
+                payload->getData()[row] = row;
+            }
+            Chunk input(Columns{std::move(keys), std::move(payload)}, rows);
+            /// Keep the source columns shared while the transform filters and cuts its input.
+            auto shared_input = input.clone();
+            Chunks chunks;
+            chunks.push_back(std::move(input));
+            auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
+            constexpr UInt64 threshold = 256 << 20;
+            auto transform = std::make_shared<ExternalDistinctTransform>(header, SizeLimits{}, /*limit_hint_=*/ 0,
+                Names{"k"}, threshold, tmp_data, /*min_free_disk_space_=*/ 0, rows, ordered);
+            connect(source->getPort(), transform->getInputs().front());
+            auto * output_port = &transform->getOutputs().front();
+            auto processors = std::make_shared<Processors>();
+            processors->emplace_back(std::move(source));
+            processors->emplace_back(std::move(transform));
+            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+            PullingPipelineExecutor executor(pipeline);
+
+            /// The full-chunk growth cannot fit, but checked insertion can emit a prefix before the
+            /// next table growth forces its suffix into ordinary runs.
+            const Int64 pressure = threshold - getCurrentQueryMemoryUsage() - (39 << 20);
+            ASSERT_GT(pressure, 0);
+            std::ignore = CurrentMemoryTracker::alloc(pressure);
+            SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+            Block block;
+            size_t output_rows = 0;
+            std::vector<bool> seen(unique_keys);
+            while (executor.pull(block))
+            {
+                if (output_rows == 0)
+                {
+                    EXPECT_GT(block.rows(), 0);
+                    EXPECT_LT(block.rows(), unique_keys);
+                }
+                for (size_t row = 0; row < block.rows(); ++row)
+                {
+                    const auto key = block.getByPosition(0).column->getUInt(row);
+                    const auto value = block.getByPosition(1).column->getUInt(row);
+                    ASSERT_LT(key, unique_keys);
+                    EXPECT_FALSE(seen[key]);
+                    seen[key] = true;
+                    EXPECT_EQ(value, unique_keys - 1 - key);
+                    if (ordered)
+                        EXPECT_EQ(key, unique_keys - 1 - output_rows);
+                    ++output_rows;
+                }
+            }
+            EXPECT_EQ(output_rows, unique_keys);
+        }
+    });
 }
