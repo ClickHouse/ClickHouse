@@ -6,7 +6,8 @@
 /** What a caller that fills a table bucket by bucket relies on.
   *
   * The bucket of a key is `getBucketFromHash(hash(key))`.
-  * `offsetInternal` numbers cells across all buckets.
+  * An iterator's `getBucket` is the bucket of the key it points to.
+  * `offsetInternal` numbers cells across all buckets once `computeBucketPrefix` has run.
   */
 template <typename Map>
 concept BucketPartitionedTable = requires(

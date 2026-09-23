@@ -213,6 +213,18 @@ TEST(TwoLevelHashTableBuckets, BucketIsTakenFromTheHighEndOfTheLow32Bits)
 }
 
 
+TEST(TwoLevelHashTableBuckets, IsEmptyCellFindsTheBucketFromTheCellHash)
+{
+    /// `isEmptyCell` answering true means "no match" without a lookup: an empty table answers true, a present key false.
+    auto plain = std::make_unique<DefaultMap>();
+    ASSERT_TRUE(plain->isEmptyCell(DefaultMap::hash(1)));
+    for (UInt64 key = 1; key <= 1000; ++key)
+        insertKeyValue(*plain, key, key);
+    for (UInt64 key = 1; key <= 1000; ++key)
+        ASSERT_FALSE(plain->isEmptyCell(DefaultMap::hash(key)));
+}
+
+
 TEST(TwoLevelHashTableBuckets, OffsetsAreUniqueAcrossBuckets)
 {
     constexpr UInt64 num_keys = 2000;
