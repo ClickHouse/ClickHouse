@@ -56,9 +56,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// Arguments are positional (trace_id, timeline_width, cluster), and any of them can instead
-/// be given as `name = value`. `query_id` exists only in the named form: a query id cannot be
-/// told apart from a trace id positionally, because server-generated query ids are UUIDs too.
+/// Arguments are positional (trace_id, timeline_width, cluster), and any of them can instead be given as `name = value`. 
+/// `query_id` exists only in the named form: a query id cannot be told apart from a trace id positionally, because server-generated query ids are UUIDs too.
 /// `since` and `until` are named only as well: a date has no natural position.
 constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
 
@@ -549,9 +548,7 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
     return block;
 }
 
-/// The positions in `replicas` of the replicas that have the table `table_id`. Every remote replica
-/// is asked with `EXISTS TABLE`, which needs SHOW TABLES on the table only - a privilege SELECT on
-/// it implies - and the replicas that are this server are looked up in the catalog. The queries are
+/// The positions in `replicas` of the replicas that have the table `table_id`. The queries are
 /// sent to every replica before the first answer is read, so the replicas answer in parallel.
 ///
 /// Under `skip_unavailable_shards` an unreachable replica answers nothing and is left out, as the
@@ -614,12 +611,7 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
     }
 
     /// In a cluster the spans of each node are written to that node's own span log, so an explicitly
-    /// given cluster reads the log of every replica. A replica that never flushed a span has no log
-    /// table yet, and `clusterAllReplicas(cluster, system.opentelemetry_span_log)` fails on the first
-    /// such replica even when the trace is on the others. So the read goes to the replicas that have
-    /// the table only, and it needs no privilege beyond those of that read: `clusterAllReplicas` is
-    /// not used because it takes the structure of the table from one replica, which may have none.
-    /// The read reaches other servers all the same, so it needs the grant `clusterAllReplicas` needs.
+    /// given cluster reads the log of every replica. A replica that never flushed a span has no log table yet.
     context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::REMOTE), /* filter */ "");
     const ClusterPtr all_replicas = context->getCluster(cluster)->getClusterWithReplicasAsShards(context->getSettingsRef());
 
@@ -679,9 +671,8 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, const String 
     if (query_id.empty())
         return trace_id;
 
-    /// The query's root span ('query') carries its id in the `clickhouse.query_id`
-    /// attribute. A custom query id can be reused across runs, so several traces may
-    /// match: take the most recent one - that is what a debugging session wants.
+    /// The query's root span ('query') carries its id in the `clickhouse.query_id` attribute.
+    /// A custom query id can be reused across runs, so several traces may match: take the most recent one.
     Block lookup = executeInternalQuery(
         fmt::format(
             "SELECT trace_id FROM {} WHERE operation_name = 'query'"
