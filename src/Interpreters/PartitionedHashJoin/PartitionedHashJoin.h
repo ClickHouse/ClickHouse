@@ -75,12 +75,16 @@ class MatchedRowsStats;
   * single-partition table, created empty with the join and filled one block at a time under the
   * storage's write lock through `HashJoinTable::emplace`, so it grows as the rows arrive and is
   * probe-ready between inserts; the rows of a key are chained with the appendable `RowRefList`
-  * `Batch`. There is no build phase. A query gets an instance of its own whose `hash_join` reuses
+  * `Batch`. There is no build phase. A query gets an instance of its own whose `HashJoin` base reuses
   * the storage's stored blocks and which shares the table and its arena by pointer
   * (`shareJoinTable`), with used flags of its own sized to the table. `joinGet` is a one-block probe
   * of the storage's instance.
+  *
+  * The private `HashJoin` base owns everything the emit machinery needs: block preparation, the saved
+  * block sample, the shared row store, the used flags, the output samples. Its own maps stay empty and
+  * the clauses' tables replace them.
   */
-class PartitionedHashJoin : public IJoin
+class PartitionedHashJoin : public IJoin, private HashJoin
 {
 public:
     /// `build_rows_hint_` is the planner's right-side row estimate, when it has one. Below
@@ -108,7 +112,7 @@ public:
 
     ~PartitionedHashJoin() override;
 
-    /// Makes this Join table instance a query's view of `source`, the storage's. `hash_join` reuses the
+    /// Makes this Join table instance a query's view of `source`, the storage's. The `HashJoin` base reuses the
     /// storage's stored blocks (the saved sample, the row store and the null maps come with them); the
     /// table and its arena are shared by pointer; the used flags of this instance are sized to the
     /// table. The caller holds the storage's read lock and hands it to `setLock`, so the table cannot
@@ -337,10 +341,10 @@ private:
         bool join_table_mode_);
 
     /// `HashJoin::data` is private and the non-joined filler is a friend of this class, not of it.
-    const HashJoin::RightTableData & storedData() const { return *hash_join->data; }
+    const HashJoin::RightTableData & storedData() const { return *data; }
     /// This join stores the blocks itself, one thread at a time.
-    HashJoin::StoredBlocksList & storedBlocks() const { return hash_join->data->columns; }
-    HashJoin::NullmapList & storedNullmaps() const { return hash_join->data->nullmaps; }
+    HashJoin::StoredBlocksList & storedBlocks() const { return data->columns; }
+    HashJoin::NullmapList & storedNullmaps() const { return data->nullmaps; }
 
     using FillBlock = HashJoinClause::FillBlock;
 
@@ -381,7 +385,7 @@ private:
     /// preallocation. False when the cache has no entry for this join or the entry exceeds
     /// `max_size_to_preallocate_for_joins`.
     bool readDistinctKeysFromStatisticsCache();
-    void finishBuildPhase(bool all_values_unique);
+    void finishBuildPhase(bool all_values_unique_);
     /// Sizes the flag space to `cells + 1` for the shapes that keep right-side flags.
     void reinitUsedFlags();
     /// The pool of one clause's post-build waves. It is created on first use after the barrier and sized
@@ -423,17 +427,12 @@ private:
     std::unique_ptr<ProbeScratch> acquireProbeScratch(size_t lane);
     void releaseProbeScratch(std::unique_ptr<ProbeScratch> scratch, size_t lane);
 
-    std::shared_ptr<TableJoin> table_join;
-    SharedHeader right_sample_block;
+    /// The right input's header as given. The base's `right_sample_block` is a copy with its columns created.
+    SharedHeader right_input_header;
     const bool any_take_last_row;
     const size_t num_threads;
     /// Zero disables the post-build memory gate and the grow budget of the clause.
     const size_t max_bytes_before_external_join;
-
-    /// Owns everything the emit machinery needs: block preparation, the saved block sample, the
-    /// shared row store, the used flags, the output samples. Its own maps stay empty and the clauses'
-    /// tables replace them.
-    std::unique_ptr<HashJoin> hash_join;
 
     /// The Join table engine's mode; see the class comment.
     const bool join_table_mode;
@@ -512,8 +511,6 @@ private:
     /// One parked scratch per probe lane, owned when non-null. Acquire exchanges it out, release
     /// CASes it back; a miss goes through the pool.
     std::vector<std::atomic<ProbeScratch *>> probe_scratch_slots;
-
-    LoggerPtr log;
 
     /// See `postBuildPool`; indexed like `clauses`.
     std::vector<std::unique_ptr<ThreadPool>> post_build_pools;

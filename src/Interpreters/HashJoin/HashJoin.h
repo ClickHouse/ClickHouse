@@ -171,8 +171,8 @@ public:
 
 private:
     friend class JoinSource;
-    /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
-    /// own partitioned maps.
+    /// Inherits `HashJoin` privately as its schema delegate and row-store owner while building and
+    /// probing its own partitioned maps, and reads the private members below.
     friend class PartitionedHashJoin;
     friend class HashJoinClause;
 

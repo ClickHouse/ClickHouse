@@ -840,7 +840,7 @@ public:
 
         column_indices.resize(sample_block->columns());
 
-        const HashJoin & inner = *join->hash_join;
+        const HashJoin & inner = *join;
         const auto & saved_block = inner.getJoinedData()->sample_block;
         std::unordered_map<String, size_t> key_output_positions;
 
@@ -893,7 +893,7 @@ protected:
             return {};
 
         /// The inner join's own maps stay empty; their variant only names the shape the table mirrors.
-        const HashJoin & inner = *join->hash_join;
+        const HashJoin & inner = *join;
         Chunk chunk;
         if (!joinDispatch(
                 inner.kind,

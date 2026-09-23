@@ -45,7 +45,7 @@ public:
         , block_row_stores(parent.storedData().stored_columns_index->rowStoresData())
     {
         /// The output columns are `getEmptyBlock`'s, so they are positional with the saved sample.
-        const Block & saved = parent.hash_join->savedBlockSample();
+        const Block & saved = parent.savedBlockSample();
         type_name.reserve(saved.columns());
         for (const auto & column : saved)
             type_name.emplace_back(column.name, column.type);
@@ -59,7 +59,7 @@ public:
         has_columns = plan.has_columns;
     }
 
-    Block getEmptyBlock() override { return parent.hash_join->savedBlockSample().cloneEmpty(); }
+    Block getEmptyBlock() override { return parent.savedBlockSample().cloneEmpty(); }
 
     size_t fillColumns(MutableColumns & columns_right) override
     {
@@ -226,7 +226,7 @@ private:
             if (stream_idx == 0 && !zero_done)
             {
                 zero_done = true;
-                if (table.hasZero() && !parent.hash_join->isUsed(0))
+                if (table.hasZero() && !parent.isUsed(0))
                     collectMapped<with_row_store, with_columns>(table.zeroValue()->getMapped(), collected);
             }
             for (; position < end && collected.rows < max_block_size; ++position)
@@ -234,7 +234,7 @@ private:
                 const auto * cell = table.cellAt(position);
                 if (table.isEmptyCell(cell))
                     continue;
-                if (parent.hash_join->isUsed(position + 1))
+                if (parent.isUsed(position + 1))
                     continue;
                 collectMapped<with_row_store, with_columns>(cell->getMapped(), collected);
             }
@@ -249,7 +249,7 @@ private:
             const auto end = table.end();
             for (; it != end && collected.rows < max_block_size; ++it)
             {
-                if (parent.hash_join->isUsed(table.offsetInternal(it.getPtr())))
+                if (parent.isUsed(table.offsetInternal(it.getPtr())))
                     continue;
                 collectMapped<with_row_store, with_columns>(it->getMapped(), collected);
             }
@@ -278,7 +278,7 @@ private:
                 continue;
             const size_t rows = it->blockRows();
             for (size_t row = 0; row < rows; ++row)
-                if (!parent.hash_join->isUsed(it->block_no, row))
+                if (!parent.isUsed(it->block_no, row))
                     collectRow<with_row_store, with_columns>(it->block_no, static_cast<UInt32>(row), collected);
         }
 
@@ -349,11 +349,11 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
     /// Skipped with several clauses: every right key is then among the columns to add, so the invariant
     /// does not hold.
     size_t left_columns_count = left_sample_block.columns();
-    if (hash_join->canRemoveColumnsFromLeftBlock())
+    if (canRemoveColumnsFromLeftBlock())
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
 
     const size_t expected_columns_count
-        = left_columns_count + hash_join->required_right_keys.columns() + hash_join->sample_block_with_columns_to_add.columns();
+        = left_columns_count + required_right_keys.columns() + sample_block_with_columns_to_add.columns();
     if (!used_flags_per_row && expected_columns_count != result_sample_block.columns())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -362,8 +362,8 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
             expected_columns_count,
             result_sample_block.dumpNames(),
             left_sample_block.dumpNames(),
-            hash_join->required_right_keys.dumpNames(),
-            hash_join->sample_block_with_columns_to_add.dumpNames());
+            required_right_keys.dumpNames(),
+            sample_block_with_columns_to_add.dumpNames());
 
     auto non_joined = std::make_unique<NotJoinedPartitioned>(*this, max_block_size, stream_idx, num_streams);
     return std::make_unique<NotJoinedBlocks>(std::move(non_joined), result_sample_block, left_columns_count, *table_join);
