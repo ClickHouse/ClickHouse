@@ -60,53 +60,56 @@ public:
 
     T operator() (const Float64 & x) const
     {
-        if constexpr (!is_floating_point<T>)
+        /// Converting to `bool` is a truthiness test, not a numeric cast, so no range check is done:
+        /// every non-zero value is `true`, including `NaN`, the infinities and values outside `{0, 1}`.
+        /// This is the same rule the logical functions apply to non-constant columns (`x != 0`), so
+        /// range-checking here would make `SELECT 1 OR 2.0` throw while `SELECT 1 OR materialize(2.0)`
+        /// returns `1`, see issue #71904.
+        if constexpr (std::is_same_v<T, bool>)
         {
-            if (!isFinite(x))
-            {
-                /// When converting to bool it's ok (non-zero converts to true, NaN including).
-                if (std::is_same_v<T, bool>)
-                    return true;
-
-                /// Conversion of infinite values to integer is undefined.
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
-            }
-            /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
-            /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types
-            /// (`Int64`, `UInt64`, `Int128`, `UInt128`, `Int256`, `UInt256`): when `numeric_limits<T>::max()`
-            /// has more than 53 significant bits, converting it to `Float64` rounds it UP, so the comparison
-            /// fails to reject `Float64` values equal to that rounded-up boundary, leading to undefined
-            /// behavior in the subsequent `static_cast<T>(x)` (UBSan: "value 1.84467e+19 is outside the range
-            /// of representable values of type 'unsigned long'", see issue #103817).
-            ///
-            /// Bool is special-cased: `numeric_limits<bool>` is exactly representable in `Float64`, and
-            /// `accurate::lessOp` would fail to instantiate for `bool` (`make_unsigned_t<bool>` is ill-formed).
-            if constexpr (std::is_same_v<T, bool>)
-            {
-                if (x > Float64(std::numeric_limits<T>::max()) || x < Float64(std::numeric_limits<T>::lowest()))
-                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-            }
-            else if (accurate::greaterOp(x, std::numeric_limits<T>::max())
-                     || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
-            {
-                throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
-            }
-        }
-
-        if constexpr (std::is_same_v<Decimal256, T>)
-        {
-            return Int256(x);
+            return x != 0;
         }
         else
         {
-            return T(x);
+            if constexpr (!is_floating_point<T>)
+            {
+                /// Conversion of infinite values to integer is undefined.
+                if (!isFinite(x))
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert infinite value to integer type");
+
+                /// Use precision-correct float-vs-integer comparison via `accurate::greaterOp` / `accurate::lessOp`.
+                /// A naive `x > Float64(numeric_limits<T>::max())` is wrong for wide integer types
+                /// (`Int64`, `UInt64`, `Int128`, `UInt128`, `Int256`, `UInt256`): when `numeric_limits<T>::max()`
+                /// has more than 53 significant bits, converting it to `Float64` rounds it UP, so the comparison
+                /// fails to reject `Float64` values equal to that rounded-up boundary, leading to undefined
+                /// behavior in the subsequent `static_cast<T>(x)` (UBSan: "value 1.84467e+19 is outside the range
+                /// of representable values of type 'unsigned long'", see issue #103817).
+                if (accurate::greaterOp(x, std::numeric_limits<T>::max())
+                    || accurate::lessOp(x, std::numeric_limits<T>::lowest()))
+                {
+                    throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert out of range floating point value to integer type");
+                }
+            }
+
+            if constexpr (std::is_same_v<Decimal256, T>)
+            {
+                return Int256(x);
+            }
+            else
+            {
+                return T(x);
+            }
         }
     }
 
     template <typename U>
     T operator() (const DecimalField<U> & x) const
     {
-        if constexpr (is_floating_point<T>)
+        /// See the `Float64` overload: converting to `bool` asks whether the value is non-zero.
+        /// Dividing by the scale multiplier first would report `0.5` as `false`.
+        if constexpr (std::is_same_v<T, bool>)
+            return x.getValue().value != 0;
+        else if constexpr (is_floating_point<T>)
             return x.getValue().template convertTo<T>() / x.getScaleMultiplier().template convertTo<T>();
         else
             return (x.getValue() / x.getScaleMultiplier()).template convertTo<T>();
