@@ -454,11 +454,14 @@ then
 
     for _ in {1..60}
     do
+        # `system.mutations` resolves every table it enumerates before the `WHERE` narrows the set down, so a
+        # table that cannot be loaded makes this query throw instead of answering `0` or `1`.
         mutation_across_upgrade_finished=$(timeout 1m clickhouse-client --query "
             SELECT
                 (SELECT count() = 1 AND countIf(NOT is_done OR latest_fail_reason != '') = 0
                     FROM system.mutations WHERE database = 'default' AND table = 'mutation_across_upgrade')
-                AND (SELECT sum(v) FROM default.mutation_across_upgrade) = 500500") ||:
+                AND (SELECT sum(v) FROM default.mutation_across_upgrade) = 500500" \
+            2> /test_output/mutation_across_upgrade_error.txt) || mutation_across_upgrade_finished=cannot_check
 
         if [ "$mutation_across_upgrade_finished" = 1 ]
         then
@@ -471,13 +474,18 @@ then
     if [ "$mutation_across_upgrade_finished" = 1 ]
     then
         echo -e "The mutation submitted before the upgrade was finished by the new server$OK" >> /test_output/test_results.tsv
+    elif [ "$mutation_across_upgrade_finished" = cannot_check ]
+    then
+        echo -e "Cannot check whether the mutation submitted before the upgrade was finished (see mutation_across_upgrade_error.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade_error.txt)" >> /test_output/test_results.tsv
     else
         timeout 1m clickhouse-client --query "
             SELECT * FROM system.mutations
             WHERE database = 'default' AND table = 'mutation_across_upgrade'
-            FORMAT Vertical" > /test_output/mutation_across_upgrade.txt ||:
+            FORMAT Vertical" > /test_output/mutation_across_upgrade.txt 2>&1 ||:
         echo -e "The mutation submitted before the upgrade was not finished by the new server (see mutation_across_upgrade.txt)$FAIL$(head_escaped /test_output/mutation_across_upgrade.txt)" >> /test_output/test_results.tsv
     fi
+
+    [ -s /test_output/mutation_across_upgrade_error.txt ] || rm -f /test_output/mutation_across_upgrade_error.txt
 fi
 
 stop_server || (echo "Failed to stop server" && exit 1)
