@@ -93,7 +93,7 @@ BlockIO InterpreterSetQuery::execute()
     getContext()->checkSettingsConstraintsForSettingsReset(ast.default_settings, SettingSource::QUERY);
     auto session_context = getContext()->getSessionContext();
 
-    if (!session_context->getCurrentDatabaseInfo().table_prefix.empty())
+    if (session_context->getCurrentDatabase().hasTablePrefix())
         for (const auto & change : changes)
             if (change.name == "allow_experimental_table_namespaces" && !change.value.safeGet<bool>())
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

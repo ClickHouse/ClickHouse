@@ -429,8 +429,10 @@ void TCPHandler::runImpl()
         receiveHello();
 
         if (!default_database.empty())
-            DatabaseCatalog::instance().assertDatabaseExists(
-                DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(default_database).database);
+        {
+            const auto database_info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(default_database);
+            DatabaseCatalog::instance().assertDatabaseExists(String{database_info.getDatabasePart()});
+        }
 
         /// In interserver mode queries are executed without a session context.
         if (!is_interserver_mode)

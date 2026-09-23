@@ -428,30 +428,30 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
 
     /// `SETTINGS allow_experimental_table_namespaces = 0` must not
     /// retarget names to the parent database while the scope is active
-    if (const auto database_info = context->getCurrentDatabaseInfo(); !database_info.table_prefix.empty())
+    if (const auto database_info = context->getCurrentDatabase(); database_info.hasTablePrefix())
     {
         if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
             && interpreter_name != "InterpreterUseQuery" && interpreter_name != "InterpreterSetQuery")
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "allow_experimental_table_namespaces cannot be disabled while a table namespace is selected "
                 "(USE {}.{}); select the database itself with USE {} first",
-                backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
-                backQuoteIfNeed(database_info.database));
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()),
+                backQuoteIfNeed(database_info.getDatabasePart()));
 
         if (!context->getSettingsRef()[Setting::allow_experimental_analyzer]
             && interpreter_name != "InterpreterUseQuery" && interpreter_name != "InterpreterSetQuery")
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "enable_analyzer cannot be disabled while a table namespace is selected "
                 "(USE {}.{}); select the database itself with USE {} first",
-                backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
-                backQuoteIfNeed(database_info.database));
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()),
+                backQuoteIfNeed(database_info.getDatabasePart()));
 
         if (!registered.supports_table_namespace_scope)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                 "This statement is not supported while a table namespace is selected (USE {}.{}); "
                 "select the database itself with USE {} and qualify table names with the full path",
-                backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix),
-                backQuoteIfNeed(database_info.database));
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()),
+                backQuoteIfNeed(database_info.getDatabasePart()));
     }
 
     return registered.creator_fn(arguments);

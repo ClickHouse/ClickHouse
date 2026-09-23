@@ -41,23 +41,17 @@ CurrentDatabaseInfo InterpreterShowTablesQuery::getFromInfo() const
 {
     const auto & query = query_ptr->as<ASTShowTablesQuery &>();
 
-    /// `FROM db.ns`- first part is the database, the rest is namespace path
+    /// `FROM db.ns`, the parser guarantees dot-free parts, so the first dot is the split
     if (const auto * identifier = query.from ? query.from->as<ASTIdentifier>() : nullptr;
         identifier && identifier->name_parts.size() > 1)
-    {
-        CurrentDatabaseInfo info;
-        info.database = identifier->name_parts[0];
-        info.table_prefix = identifier->name_parts[1];
-        for (size_t i = 2; i < identifier->name_parts.size(); ++i)
-            info.table_prefix += "." + identifier->name_parts[i];
-        return info;
-    }
+        return CurrentDatabaseInfo(identifier->name());
 
+    /// a single (possibly quoted) part is always an exact database name
     if (const auto from = query.getFrom(); !from.empty())
-        return {from, ""};
+        return CurrentDatabaseInfo(doubleQuoteString(from));
 
-    auto info = getContext()->getCurrentDatabaseInfo();
-    if (info.database.empty())
+    auto info = getContext()->getCurrentDatabase();
+    if (info.empty())
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Default database is not selected");
     return info;
 }
@@ -195,8 +189,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// FROM may carry a namespace path, SHOW TABLES FROM db.namespace
     /// With no FROM, the session scope applies, including `USE db.namespace` prefix
     const auto database_info = getFromInfo();
-    const String & database = database_info.database;
-    const String & table_namespace = database_info.table_prefix;
+    const String database{database_info.getDatabasePart()};
+    const String table_namespace{database_info.getTablePrefixPart()};
     DatabaseCatalog::instance().assertDatabaseExists(database);
 
     /// dictionaries have no namespaces
@@ -290,7 +284,8 @@ BlockIO InterpreterShowTablesQuery::execute()
         return res;
     }
     auto rewritten_query = getRewrittenQuery();
-    String database = getFromInfo().database;
+    const auto from_info = getFromInfo();
+    String database{from_info.getDatabasePart()};
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

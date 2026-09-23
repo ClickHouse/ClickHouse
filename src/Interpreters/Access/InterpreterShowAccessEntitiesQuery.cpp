@@ -36,15 +36,15 @@ String InterpreterShowAccessEntitiesQuery::getRewrittenQuery() const
     auto & query = query_ptr->as<ASTShowAccessEntitiesQuery &>();
 
     /// the scope prefix does not apply to access-entity targets
-    if (const auto database_info = getContext()->getCurrentDatabaseInfo();
-        !database_info.table_prefix.empty() && query.database_and_table_name
+    if (const auto database_info = getContext()->getCurrentDatabase();
+        database_info.hasTablePrefix() && query.database_and_table_name
         && query.database_and_table_name->first.empty())
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
             "An unqualified policy target is not supported while a table namespace is selected "
             "(USE {}.{}); qualify the table with its database explicitly",
-            backQuoteIfNeed(database_info.database), backQuoteIfNeed(database_info.table_prefix));
+            backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()));
 
-    query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    query.replaceEmptyDatabase(getContext()->getCurrentDatabase().getFullName());
 
     String origin;
     String expr = "*";
