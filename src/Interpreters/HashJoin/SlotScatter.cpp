@@ -135,7 +135,7 @@ SlotScatter scatterBlockBySlot(
         case HashJoin::Type::NAME: \
         { \
             using MapOne = typename decltype(std::declval<HashJoin::MapsOne>().NAME)::element_type; \
-            if constexpr (MapOne::isFixedRangeStorage()) \
+            if constexpr (is_partitioned_fixed_table<MapOne>) \
             { \
                 switch (maps_kind) \
                 { \
