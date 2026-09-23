@@ -19,6 +19,8 @@
 namespace ProfileEvents
 {
     extern const Event ExternalDistinctMerge;
+    extern const Event ExternalDistinctTailSpilledRows;
+    extern const Event ExternalDistinctTailKeptRows;
 }
 
 namespace DB
@@ -45,6 +47,15 @@ constexpr size_t DEFAULT_BYTES_IN_RUN = DEFAULT_BLOCK_SIZE * 256;
 /// Sorting units combine small input chunks before removing duplicates. Their row and byte targets
 /// are independent of the smaller blocks written to spill files. An oversized input is sorted alone.
 constexpr size_t MAX_BYTES_IN_SORTING_UNIT = 16 << 20;
+
+size_t estimateRunReadMemory(size_t max_block_bytes, size_t buffer_size)
+{
+    /// The merger can retain a block while the source reads its successor. Allow twice the observed
+    /// allocation for each block because deserialization and column growth can use more capacity.
+    /// Compression blocks follow the writer's buffer size. The file reader separately uses at most
+    /// `DBMS_DEFAULT_BUFFER_SIZE`, including when the configured writer buffer is smaller.
+    return 4 * max_block_bytes + 2 * buffer_size + DBMS_DEFAULT_BUFFER_SIZE;
+}
 
 size_t estimateSortingWorkspace(size_t rows)
 {
@@ -119,12 +130,15 @@ IProcessor::Status ExternalDistinctTransform::prepare()
         else if constexpr (std::is_same_v<Phase, ExtractingSuppression> || std::is_same_v<Phase, PreparingTail>)
             return Status::Ready;
         else if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>
-            || std::is_same_v<Phase, ConnectingInputRun> || std::is_same_v<Phase, ConnectingTail>)
+            || std::is_same_v<Phase, ConnectingInputRun> || std::is_same_v<Phase, ConnectingTailRun>
+            || std::is_same_v<Phase, ConnectingTail>)
             return Status::UpdatePipeline;
         else if constexpr (std::is_same_v<Phase, WritingSuppressionRun>)
             return prepareSuppressionWrite(phase);
         else if constexpr (std::is_same_v<Phase, WritingInputRun>)
             return prepareInputWrite(phase);
+        else if constexpr (std::is_same_v<Phase, WritingTailRun>)
+            return prepareTailWrite(phase);
         else if constexpr (std::is_same_v<Phase, Merging>)
             return prepareMergedOutput(phase);
         else if constexpr (std::is_same_v<Phase, Finishing>)
@@ -230,6 +244,28 @@ IProcessor::Status ExternalDistinctTransform::prepareInputWrite(WritingInputRun 
     return prepareCollectingInput(collecting);
 }
 
+IProcessor::Status ExternalDistinctTransform::prepareTailWrite(WritingTailRun & writing)
+{
+    auto status = prepareRunWrite(writing.progress, writing.output);
+    if (status != Status::Finished)
+        return status;
+
+    chassert(!writing.completion.hasData());
+    if (!writing.completion.isFinished())
+    {
+        writing.completion.setNeeded();
+        return Status::NeedData;
+    }
+
+    /// The file must finish before budgeting the remaining tail, so its writer has released the
+    /// compression buffers and the prefix's final output block. Readers stay idle until final input
+    /// registration closes.
+    writing.readiness.finish();
+    auto remaining = std::move(writing.remaining);
+    state.emplace<PreparingTail>(std::move(remaining));
+    return Status::Ready;
+}
+
 IProcessor::Status ExternalDistinctTransform::prepareMergedOutput(Merging & merging)
 {
     auto & output = outputs.front();
@@ -298,7 +334,8 @@ void ExternalDistinctTransform::work()
             extractSuppressionRun(phase);
         else if constexpr (std::is_same_v<Phase, CollectingInput>)
             collectInput(phase);
-        else if constexpr (std::is_same_v<Phase, WritingSuppressionRun> || std::is_same_v<Phase, WritingInputRun>)
+        else if constexpr (std::is_same_v<Phase, WritingSuppressionRun>
+            || std::is_same_v<Phase, WritingInputRun> || std::is_same_v<Phase, WritingTailRun>)
             readRun(phase.progress);
         else if constexpr (std::is_same_v<Phase, PreparingTail>)
             prepareTail(phase);
@@ -597,6 +634,12 @@ void ExternalDistinctTransform::flushSortingUnit(CollectingInput & collecting)
     const auto rows = block.rows();
     Chunk sorted(block.detachColumns(), rows);
     collecting.sorted_bytes += sorted.allocatedBytes();
+    collecting.sorted_rows += rows;
+
+    /// Deduplication can increase the average width by removing repeated narrow rows. Allow one byte
+    /// for division rounding and another for the emitted flag, which is still constant here.
+    const size_t average_row_bytes = sorted.bytes() / rows + 1 + sizeof(UInt8);
+    max_average_row_bytes = std::max(max_average_row_bytes, average_row_bytes);
     collecting.sorted_chunks.push_back(std::move(sorted));
 }
 
@@ -616,6 +659,11 @@ void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
     const size_t rows = prepared.getNumRows();
     const size_t bytes = prepared.allocatedBytes();
 
+    /// Reserve the average materialized width before buffering. Allow one byte for division rounding
+    /// and another for the emitted flag, which remains constant until the run is merged.
+    const size_t average_row_bytes = prepared.bytes() / rows + 1 + sizeof(UInt8);
+    max_average_row_bytes = std::max(max_average_row_bytes, average_row_bytes);
+
     auto & pending = collecting.pending;
 
     /// Flush the previous unit before an input would exceed its targets or leave insufficient room
@@ -634,13 +682,22 @@ void ExternalDistinctTransform::collectInput(CollectingInput & collecting)
     /// Base the spill decision on the sorting peak. Flushing resets the pending unit and can free
     /// memory through deduplication, so checking only afterward would lose that pressure.
     const bool sorting_budget_exceeded = !fitsSortingBudget(pending.rows, pending.allocated_bytes);
-    if (first_run || sorting_budget_exceeded || !can_coalesce || unit_full)
+
+    /// A run can need spilling at EOF to make room for file readers. Reserve its write workspace
+    /// while collecting, before the retained columns consume the budget needed to release them.
+    const size_t run_rows = collecting.sorted_rows + pending.rows;
+    const size_t run_bytes = collecting.sorted_bytes + pending.allocated_bytes;
+    const size_t write_memory = estimateRunWriteMemory(run_rows, run_bytes);
+    const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+    const bool write_budget_exceeded = query_memory + write_memory > max_bytes_before_external_distinct;
+    const bool spill_budget_exceeded = sorting_budget_exceeded || write_budget_exceeded;
+    if (first_run || spill_budget_exceeded || !can_coalesce || unit_full)
         flushSortingUnit(collecting);
 
     /// An empty hash set produces no suppression files, so the first ordinary chunk starts a run.
     /// Later runs keep a size floor when other operators consume the budget. The workspace check
-    /// includes the copies needed to sort the pending unit before writing it.
-    if (first_run || (collecting.sorted_bytes >= minBytesInRun() && sorting_budget_exceeded))
+    /// includes sorting copies and the workspace needed to write the accumulated run.
+    if (first_run || (collecting.sorted_bytes >= minBytesInRun() && spill_budget_exceeded))
     {
         chassert(pending.chunks.empty());
         auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting.sorted_chunks), collecting.sorted_bytes,
@@ -695,16 +752,127 @@ void ExternalDistinctTransform::readRun(RunWriteProgress & progress)
             break;
 
         if (progress.chunk.hasRows())
+        {
+            progress.max_block_bytes = std::max(progress.max_block_bytes, progress.chunk.allocatedBytes());
+
+            /// Written blocks have materialized flags. Allow one byte for division rounding; merging
+            /// can change the average width again when it removes duplicates across sorted chunks.
+            max_average_row_bytes = std::max(max_average_row_bytes, progress.chunk.bytes() / progress.chunk.getNumRows() + 1);
             return;
+        }
     }
 
+    estimated_file_read_memory += estimateRunReadMemory(
+        progress.max_block_bytes, tmp_data->getSettings().buffer_size);
     progress.merger.reset();
+}
+
+size_t ExternalDistinctTransform::estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const
+{
+    /// The block-size calculation sees materialized flags, adding one byte to each buffered row.
+    const size_t block_rows = MergeSorter::calculateMaxMergedBlockSize(
+        max_block_size_rows, preferred_block_bytes, rows, allocated_bytes + rows);
+
+    /// `MergeSorter` expands the emitted-row flags while the buffered inputs remain alive.
+    /// Allow twice their logical size for allocation rounding.
+    const size_t flag_columns_memory = 2 * rows;
+
+    /// Output blocks can coexist in the producer and sink. Allow twice each block's logical size for
+    /// column capacity growth.
+    const size_t output_memory = 4 * max_average_row_bytes * block_rows;
+
+    /// The temporary writer also needs file, compression-input, and compression-output buffers.
+    const size_t write_buffers_memory = 3 * tmp_data->getSettings().buffer_size;
+    return flag_columns_memory + output_memory + write_buffers_memory;
+}
+
+size_t ExternalDistinctTransform::selectTailSpillPrefix(const CollectingInput & collecting) const
+{
+    const auto & chunks = collecting.sorted_chunks;
+    if (chunks.empty())
+        return 0;
+
+    const size_t query_memory = std::max<Int64>(0, getCurrentQueryMemoryUsage());
+
+    /// Input blocks and the tail are already charged. Reserve output columns and copies across
+    /// processor ports separately from file readers. Average row sizes are rounded upward, and the
+    /// multiplier allows allocation growth; this remains an estimate for uneven and oversized values.
+    const size_t output_memory = 4 * max_average_row_bytes * max_block_size_rows;
+
+    /// `MergeSorter` expands the emitted-row flags before merging. Allow capacity rounding for
+    /// these byte columns while the original tail chunks remain alive.
+    const size_t merge_memory = estimated_file_read_memory + output_memory + 2 * collecting.sorted_rows;
+    if (query_memory + merge_memory <= max_bytes_before_external_distinct)
+        return 0;
+
+    /// Equal keys keep their first input row. Spilling a prefix preserves that precedence when
+    /// the new file is registered before the retained suffix; arbitrary subsets would not.
+    size_t prefix_bytes = 0;
+    size_t prefix_rows = 0;
+    for (size_t prefix = 0; prefix < chunks.size(); ++prefix)
+    {
+        prefix_bytes += chunks[prefix].allocatedBytes();
+        prefix_rows += chunks[prefix].getNumRows();
+
+        /// Spilling a prefix replaces its columns with another file reader. Use the writer's block
+        /// sizing rule and the largest observed average row width, allowing for column capacity
+        /// rounding, to budget that replacement.
+        const size_t block_rows = MergeSorter::calculateMaxMergedBlockSize(
+            max_block_size_rows, preferred_block_bytes, prefix_rows, prefix_bytes + prefix_rows);
+        const size_t new_reader_memory = estimateRunReadMemory(
+            2 * max_average_row_bytes * block_rows, tmp_data->getSettings().buffer_size);
+        const size_t released_bytes = prefix_bytes + 2 * prefix_rows;
+        if (query_memory + merge_memory + new_reader_memory
+            <= max_bytes_before_external_distinct + released_bytes)
+            return prefix + 1;
+    }
+
+    /// Release the entire tail when no suffix fits. File readers can themselves exceed the soft
+    /// threshold, so removing the tail does not impose a hard bound on merge memory.
+    return chunks.size();
 }
 
 void ExternalDistinctTransform::prepareTail(PreparingTail & tail)
 {
-    ProfileEvents::increment(ProfileEvents::ExternalDistinctMerge);
     flushSortingUnit(tail.collecting);
+    auto & chunks = tail.collecting.sorted_chunks;
+    const size_t prefix_size = selectTailSpillPrefix(tail.collecting);
+    if (prefix_size)
+    {
+        Chunks prefix;
+        prefix.reserve(prefix_size);
+        size_t prefix_bytes = 0;
+        size_t prefix_rows = 0;
+        for (size_t i = 0; i < prefix_size; ++i)
+        {
+            prefix_bytes += chunks[i].allocatedBytes();
+            prefix_rows += chunks[i].getNumRows();
+            prefix.push_back(std::move(chunks[i]));
+        }
+        chunks.erase(chunks.begin(), chunks.begin() + prefix_size);
+        tail.collecting.sorted_bytes -= prefix_bytes;
+        tail.collecting.sorted_rows -= prefix_rows;
+        ProfileEvents::increment(ProfileEvents::ExternalDistinctTailSpilledRows, prefix_rows);
+
+        LOG_TRACE(log, "Spilling a DISTINCT tail prefix before merging "
+            "(chunks: {}, bytes: {}, remaining chunks: {}, remaining bytes: {}, "
+            "estimated file-reader memory: {}, query memory: {}, spill threshold: {})",
+            prefix_size, formatReadableSizeWithBinarySuffix(prefix_bytes), chunks.size(),
+            formatReadableSizeWithBinarySuffix(tail.collecting.sorted_bytes),
+            formatReadableSizeWithBinarySuffix(estimated_file_read_memory),
+            formatReadableSizeWithBinarySuffix(getCurrentQueryMemoryUsage()),
+            formatReadableSizeWithBinarySuffix(max_bytes_before_external_distinct));
+
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(prefix), prefix_bytes,
+            spill_layout->getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
+        auto remaining = std::move(tail.collecting);
+        auto & connecting = state.emplace<ConnectingTailRun>(std::move(run), std::move(remaining));
+        readRun(connecting.run.progress);
+        return;
+    }
+
+    ProfileEvents::increment(ProfileEvents::ExternalDistinctMerge);
+    ProfileEvents::increment(ProfileEvents::ExternalDistinctTailKeptRows, tail.collecting.sorted_rows);
     LOG_TRACE(log, "Preparing final DISTINCT merge "
         "(temporary runs: {}, in-memory chunks: {}, restore input order: {})",
         temporary_files_num, tail.collecting.sorted_chunks.size(), spill_layout->preservesInputOrder());
@@ -815,21 +983,30 @@ IProcessor::PipelineUpdate ExternalDistinctTransform::updatePipeline()
     Processors processors;
     std::visit([this, &processors]<typename Phase>(Phase & phase)
     {
-        if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>)
+        if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun> || std::is_same_v<Phase, ConnectingTailRun>)
         {
             auto run = std::move(phase.run);
-            auto keys = std::move(phase.keys);
             auto & output = connectRun(run, processors);
 
-            /// Suppression extraction waits for file finalization before preparing another run.
-            /// The reader's completion dependency is relayed only after that wait finishes.
+            /// Suppression extraction waits for file finalization before preparing another run;
+            /// a tail prefix waits before budgeting the suffix. Both relay the reader's completion
+            /// dependency only after that wait finishes.
             inputs.emplace_back(Block(), this);
             auto & completion = inputs.back();
             connect(run.sink->getCompletionPort(), completion);
             outputs.emplace_back(Block(), this);
             auto & readiness = outputs.back();
             connect(readiness, run.source->getCompletionPort());
-            state.emplace<WritingSuppressionRun>(std::move(run.progress), output, std::move(keys), completion, readiness);
+            if constexpr (std::is_same_v<Phase, ConnectingSuppressionRun>)
+            {
+                auto keys = std::move(phase.keys);
+                state.emplace<WritingSuppressionRun>(std::move(run.progress), output, std::move(keys), completion, readiness);
+            }
+            else
+            {
+                auto remaining = std::move(phase.remaining);
+                state.emplace<WritingTailRun>(std::move(run.progress), output, std::move(remaining), completion, readiness);
+            }
         }
         else if constexpr (std::is_same_v<Phase, ConnectingInputRun>)
         {

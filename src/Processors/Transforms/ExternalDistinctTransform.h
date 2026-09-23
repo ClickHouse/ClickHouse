@@ -27,6 +27,9 @@ class DistinctSortedTransform;
 /// The set is released after its last keys are extracted. Further input becomes sorted, locally deduplicated
 /// runs, and output waits until all input is consumed. `DistinctSpillLayout` owns the column conversions.
 ///
+/// Before merging, a conservative reader and output-workspace estimate determines how much of the
+/// tail can stay in memory. Whole chunks are spilled in arrival order until the remaining suffix fits
+/// the estimate or no tail remains.
 /// `DistinctSortedTransform` merges the runs and the unique in-memory tail, removing duplicate keys
 /// and keys emitted before spilling. Runs are ordered by key and then by the already-emitted flag
 /// descending, placing suppression rows first in each equal-key range. Ordinary runs follow in arrival
@@ -93,6 +96,7 @@ private:
     {
         std::unique_ptr<MergeSorter> merger;
         Chunk chunk;
+        size_t max_block_bytes = 0;
     };
 
     struct PreparedRun
@@ -130,6 +134,7 @@ private:
         SortingUnit pending;
         Chunks sorted_chunks;
         size_t sorted_bytes = 0;
+        size_t sorted_rows = 0;
     };
 
     struct ConnectingInputRun
@@ -146,6 +151,21 @@ private:
     struct PreparingTail
     {
         CollectingInput collecting;
+    };
+
+    struct ConnectingTailRun
+    {
+        PreparedRun run;
+        CollectingInput remaining;
+    };
+
+    struct WritingTailRun
+    {
+        RunWriteProgress progress;
+        OutputPort & output;
+        CollectingInput remaining;
+        InputPort & completion;
+        OutputPort & readiness;
     };
 
     struct ConnectingTail
@@ -174,6 +194,8 @@ private:
         ConnectingInputRun,
         WritingInputRun,
         PreparingTail,
+        ConnectingTailRun,
+        WritingTailRun,
         ConnectingTail,
         Merging,
         Finishing>;
@@ -183,6 +205,7 @@ private:
     Status prepareRunWrite(RunWriteProgress & progress, OutputPort & output);
     Status prepareSuppressionWrite(WritingSuppressionRun & writing);
     Status prepareInputWrite(WritingInputRun & writing);
+    Status prepareTailWrite(WritingTailRun & writing);
     Status prepareMergedOutput(Merging & merging);
     Status prepareFinish();
     Status finish();
@@ -198,6 +221,8 @@ private:
     size_t maxRowsInSortingUnit() const;
     void readRun(RunWriteProgress & progress);
     void prepareTail(PreparingTail & tail);
+    size_t estimateRunWriteMemory(size_t rows, size_t allocated_bytes) const;
+    size_t selectTailSpillPrefix(const CollectingInput & collecting) const;
     void consumeMerged(Merging & merging);
 
     PreparedRun prepareRun(
@@ -223,6 +248,10 @@ private:
     /// Tracks connected merge inputs until tail attachment or early termination closes registration.
     std::optional<MergeRegistration> merge_registration;
     size_t temporary_files_num = 0;
+    /// Run output sizes estimate the memory needed to read all files concurrently during merging.
+    size_t estimated_file_read_memory = 0;
+    /// Largest average row width observed before or after deduplication, including the emitted flag.
+    size_t max_average_row_bytes = 0;
 
     /// Counts accepted input rows and provides the next arrival number.
     UInt64 consumed_rows = 0;

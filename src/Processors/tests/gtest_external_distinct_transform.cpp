@@ -13,6 +13,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -26,6 +27,7 @@
 #include <Processors/Transforms/ExternalDistinctTransform.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -33,6 +35,13 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <base/scope_guard.h>
+
+namespace ProfileEvents
+{
+    extern const Event ExternalDistinctMerge;
+    extern const Event ExternalDistinctTailSpilledRows;
+    extern const Event ExternalDistinctTailKeptRows;
+}
 
 using namespace DB;
 
@@ -879,5 +888,97 @@ TEST_F(ExternalDistinctTransformTest, SuppressionSortingKeepsSortEquivalentKeys)
         std::ranges::sort(actual);
         std::ranges::sort(expected);
         EXPECT_EQ(actual, expected);
+    });
+}
+
+
+TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
+{
+    withQueryThread([&]
+    {
+        struct TailCase
+        {
+            size_t threshold;
+            bool spills_tail;
+            bool keeps_tail;
+        };
+
+        const auto u64 = std::make_shared<DataTypeUInt64>();
+        for (const auto & key_type : DataTypes{u64, std::make_shared<DataTypeArray>(u64)})
+        for (const bool ordered : {false, true})
+        for (const auto & test_case : {
+            TailCase{1024 << 20, false, false},
+            TailCase{64 << 20, false, true},
+            TailCase{key_type->getTypeId() == TypeIndex::Array ? size_t{20} << 20 : size_t{18} << 20, ordered, true},
+            TailCase{4 << 20, true, false}})
+        {
+            SCOPED_TRACE(::testing::Message() << "key=" << key_type->getName()
+                << ", ordered=" << ordered << ", threshold=" << test_case.threshold);
+            const auto header = std::make_shared<const Block>(Block{
+                ColumnWithTypeAndName(key_type, "k"), ColumnWithTypeAndName(u64, "payload"),
+                ColumnWithTypeAndName(std::make_shared<DataTypeFixedString>(128), "padding")});
+            constexpr size_t rows = 131071;
+            constexpr size_t unique_keys = 65521;
+            constexpr size_t block_rows = 1024;
+            Chunks chunks;
+            for (size_t begin = 0; begin < rows; begin += block_rows)
+            {
+                auto columns = header->cloneEmptyColumns();
+                const size_t count = std::min(block_rows, rows - begin);
+                for (size_t row = begin; row < begin + count; ++row)
+                {
+                    const UInt64 key = row % unique_keys;
+                    columns[0]->insert(key_type->getTypeId() == TypeIndex::Array ? Field(Array{key}) : Field(key));
+                    columns[1]->insert(UInt64(row));
+                    columns[2]->insert(String(128, 'x'));
+                }
+                chunks.emplace_back(std::move(columns), count);
+            }
+
+            /// The source retains enough input to start external processing at the smaller thresholds.
+            /// The remaining run exercises keeping the tail, spilling a prefix, or spilling the entire
+            /// tail. Repeated keys carry different payloads across files and retained blocks, so
+            /// precedence matters.
+            auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
+            auto transform = std::make_shared<ExternalDistinctTransform>(
+                header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, test_case.threshold,
+                tmp_data, /*min_free_disk_space_=*/ 0, block_rows, /*preferred_block_bytes_=*/ 65536, ordered);
+            connect(source->getPort(), transform->getInputs().front());
+            auto * output_port = &transform->getOutputs().front();
+            auto processors = std::make_shared<Processors>();
+            processors->emplace_back(std::move(source));
+            processors->emplace_back(std::move(transform));
+            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
+            PullingPipelineExecutor executor(pipeline);
+
+            const auto & events = CurrentThread::getProfileEvents();
+            const auto spills_before = events[ProfileEvents::ExternalDistinctTailSpilledRows];
+            const auto kept_before = events[ProfileEvents::ExternalDistinctTailKeptRows];
+            const auto merges_before = events[ProfileEvents::ExternalDistinctMerge];
+            Block block;
+            size_t output_rows = 0;
+            std::vector<bool> seen(unique_keys);
+            while (executor.pull(block))
+            {
+                for (size_t row = 0; row < block.rows(); ++row)
+                {
+                    const UInt64 payload = block.getByName("payload").column->getUInt(row);
+                    ASSERT_LT(payload, unique_keys);
+                    EXPECT_EQ((*block.getByName("k").column)[row],
+                        key_type->getTypeId() == TypeIndex::Array ? Field(Array{payload}) : Field(payload));
+                    EXPECT_FALSE(seen[payload]);
+                    seen[payload] = true;
+                    EXPECT_EQ(block.getByName("padding").column->getDataAt(row), String(128, 'x'));
+                    if (ordered)
+                        EXPECT_EQ(payload, output_rows);
+                    ++output_rows;
+                }
+            }
+            EXPECT_EQ(output_rows, unique_keys);
+            EXPECT_EQ(events[ProfileEvents::ExternalDistinctMerge] - merges_before,
+                test_case.spills_tail || test_case.keeps_tail);
+            EXPECT_EQ(events[ProfileEvents::ExternalDistinctTailSpilledRows] > spills_before, test_case.spills_tail);
+            EXPECT_EQ(events[ProfileEvents::ExternalDistinctTailKeptRows] > kept_before, test_case.keeps_tail);
+        }
     });
 }
