@@ -86,9 +86,9 @@ public:
     {
         if (isFree(external_destination, in_use))
             return external_destination;
-        if (isFree(allocated(first_scratch), in_use))
+        if (isFree(allocated(first_scratch, internal_reserve), in_use))
             return first_scratch.data();
-        return allocated(second_scratch);
+        return allocated(second_scratch, internal_reserve);
     }
 
     void setBestDestination(char * to) { best_destination = to; }
@@ -97,10 +97,10 @@ public:
 private:
     bool isFree(const char * buffer, const char * in_use) const { return buffer != best_destination && buffer != in_use; }
 
-    char * allocated(PODArray<char> & scratch)
+    static char * allocated(PODArray<char> & scratch, UInt32 size)
     {
         if (scratch.empty())
-            scratch.resize_exact(internal_reserve);
+            scratch.resize_exact(size);
         return scratch.data();
     }
 
