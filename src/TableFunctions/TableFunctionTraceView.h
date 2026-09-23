@@ -6,7 +6,7 @@
 namespace DB
 {
 
-/// traceView(trace_id [, timeline_width [, cluster]] [, since = date] [, until = date]) 
+/// traceView(trace_id [, timeline_width [, cluster]] [, since = date] [, until = date])
 /// renders the spans of one trace from `system.opentelemetry_span_log` as a call tree with a timeline
 /// Made for debugging traced queries: an over-long or ERROR phase is visible at a glance.
 class TableFunctionTraceView : public ITableFunction
@@ -34,8 +34,10 @@ private:
 
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
-    /// The table the spans are read from: the local span log, or the span log of every replica of `cluster`.
-    String spanLogSource() const;
+    /// The table the spans are read from, as the internal queries in `context` name it: the local span
+    /// log, or a Distributed table over the span logs of the replicas of `cluster` that have one.
+    /// Throws when there is no span log to read.
+    String spanLogSource(ContextMutablePtr context) const;
 
     /// The `finish_date` window of `since` and `until` as an ` AND ...` condition on the span log, or empty.
     String spanLogTimeFilter() const;

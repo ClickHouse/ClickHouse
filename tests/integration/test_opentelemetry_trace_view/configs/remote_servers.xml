@@ -14,5 +14,34 @@
                 </replica>
             </shard>
         </two_nodes>
+        <!-- `two_nodes` plus a node that never runs a traced query: it has no span log table. -->
+        <three_nodes>
+            <shard>
+                <replica>
+                    <host>node1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node2</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+            <shard>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </three_nodes>
+        <fresh_node_only>
+            <shard>
+                <replica>
+                    <host>node3</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </fresh_node_only>
     </remote_servers>
 </clickhouse>

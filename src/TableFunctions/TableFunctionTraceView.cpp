@@ -1,5 +1,6 @@
 #include <TableFunctions/TableFunctionTraceView.h>
 
+#include <Columns/ColumnBLOB.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
@@ -8,6 +9,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -17,11 +20,18 @@
 #include <Parsers/ASTLiteral.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <QueryPipeline/BlockIO.h>
+#include <QueryPipeline/RemoteQueryExecutor.h>
+#include <Storages/ConstraintsDescription.h>
+#include <Storages/Distributed/DistributedSettings.h>
+#include <Storages/StorageDistributed.h>
 #include <Storages/StorageValues.h>
 #include <Storages/checkAndGetLiteralArgument.h>
+#include <Storages/getStructureOfRemoteTable.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <TableFunctions/registerTableFunctions.h>
+#include <Access/Common/AccessFlags.h>
+#include <Access/ContextAccess.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -29,8 +39,10 @@
 
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <array>
 #include <functional>
+#include <memory>
 
 namespace DB
 {
@@ -537,15 +549,117 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
     return block;
 }
 
+/// The positions in `replicas` of the replicas that have the table `table_id`. Every remote replica
+/// is asked with `EXISTS TABLE`, which needs SHOW TABLES on the table only - a privilege SELECT on
+/// it implies - and the replicas that are this server are looked up in the catalog. The queries are
+/// sent to every replica before the first answer is read, so the replicas answer in parallel.
+///
+/// Under `skip_unavailable_shards` an unreachable replica answers nothing and is left out, as the
+/// read of its log would leave it out too; without the setting, it fails the call, as it would the read.
+std::vector<size_t> replicasWithTable(const Cluster & replicas, const StorageID & table_id, ContextPtr context)
+{
+    const auto & shards = replicas.getShardsInfo();
+
+    auto probe_context = ClusterProxy::updateSettingsForCluster(replicas, context, context->getSettingsRef(), table_id);
+    const String query = "EXISTS TABLE " + table_id.getFullTableName();
+    /// The result of `EXISTS TABLE`.
+    auto header = std::make_shared<const Block>(Block{{ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "result"}});
+
+    std::vector<std::unique_ptr<RemoteQueryExecutor>> probes(shards.size());
+    for (size_t i = 0; i < shards.size(); ++i)
+    {
+        if (shards[i].isLocal())
+            continue;
+        /// No main table for the probe: with one, the connection asks the replica for the status of
+        /// the table before the query, and a replica without the table is rejected instead of asked.
+        probes[i] = std::make_unique<RemoteQueryExecutor>(shards[i].pool, query, header, probe_context);
+        probes[i]->setPoolMode(PoolMode::GET_ONE);
+        probes[i]->sendQuery();
+    }
+
+    std::vector<size_t> with_table;
+    for (size_t i = 0; i < shards.size(); ++i)
+    {
+        bool has_table = false;
+        if (shards[i].isLocal())
+        {
+            has_table = DatabaseCatalog::instance().isTableExist(table_id, context);
+        }
+        else
+        {
+            for (Block answer = probes[i]->readBlock(); !answer.empty(); answer = probes[i]->readBlock())
+                has_table = convertBLOBColumns(answer).getByPosition(0).column->getBool(0);
+            probes[i]->finish();
+        }
+        if (has_table)
+            with_table.push_back(i);
+    }
+    return with_table;
 }
 
-String TableFunctionTraceView::spanLogSource() const
+}
+
+String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
 {
-    /// In a cluster the spans of each node are written to that node's own span log,
-    /// so an explicitly given cluster reads the log of every replica.
+    const StorageID span_log_id{"system", "opentelemetry_span_log"};
+
     if (cluster.empty())
-        return "system.opentelemetry_span_log";
-    return fmt::format("clusterAllReplicas({}, system.opentelemetry_span_log)", quoteString(cluster));
+    {
+        /// The span log is created on its first flush: a server that never wrote a span has no table.
+        if (!DatabaseCatalog::instance().tryGetTable(span_log_id, context))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "The table system.opentelemetry_span_log does not exist yet: it is created by the first flush of spans."
+                " Run a query with tracing enabled, then SYSTEM FLUSH LOGS opentelemetry_span_log and retry");
+        return span_log_id.getFullTableName();
+    }
+
+    /// In a cluster the spans of each node are written to that node's own span log, so an explicitly
+    /// given cluster reads the log of every replica. A replica that never flushed a span has no log
+    /// table yet, and `clusterAllReplicas(cluster, system.opentelemetry_span_log)` fails on the first
+    /// such replica even when the trace is on the others. So the read goes to the replicas that have
+    /// the table only, and it needs no privilege beyond those of that read: `clusterAllReplicas` is
+    /// not used because it takes the structure of the table from one replica, which may have none.
+    /// The read reaches other servers all the same, so it needs the grant `clusterAllReplicas` needs.
+    context->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::REMOTE), /* filter */ "");
+    const ClusterPtr all_replicas = context->getCluster(cluster)->getClusterWithReplicasAsShards(context->getSettingsRef());
+
+    /// The replicas that are this server read their log in this process: the caller's SELECT on it is
+    /// checked here, as `clusterAllReplicas` does, and before the log is looked up.
+    if (std::ranges::any_of(all_replicas->getShardsInfo(), [](const auto & shard) { return shard.isLocal(); }))
+        context->checkAccess(AccessType::SELECT, span_log_id);
+
+    const std::vector<size_t> indices = replicasWithTable(*all_replicas, span_log_id, context);
+    if (indices.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "No replica of cluster '{}' has the table system.opentelemetry_span_log yet: it is created by the first flush of spans."
+            " Run a query with tracing enabled, then SYSTEM FLUSH LOGS opentelemetry_span_log on the nodes that ran it and retry",
+            cluster);
+    const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(indices);
+
+    /// A Distributed table over those replicas only, visible to the internal queries of `context`
+    /// under this name. It lives as long as `context`, which is private to this call.
+    const String source = "_trace_view_span_log";
+    context->addExternalTable(source, TemporaryTableHolder(context, [&](const StorageID & table_id) -> StoragePtr
+    {
+        auto storage = std::make_shared<StorageDistributed>(
+            table_id,
+            getStructureOfRemoteTable(*span_log_replicas, span_log_id, context),
+            ConstraintsDescription{},
+            /* comment */ String{},
+            span_log_id.database_name,
+            span_log_id.table_name,
+            /* cluster_name */ String{},
+            context,
+            /* sharding_key */ nullptr,
+            /* storage_policy_name */ String{},
+            /* relative_data_path */ String{},
+            DistributedSettings{},
+            LoadingStrictnessLevel::CREATE,
+            span_log_replicas);
+        storage->startup();
+        return storage;
+    }));
+    return source;
 }
 
 String TableFunctionTraceView::spanLogTimeFilter() const
@@ -588,17 +702,14 @@ UUID TableFunctionTraceView::resolveTraceId(const String & source, const String 
 StoragePtr TableFunctionTraceView::executeImpl(
     const ASTPtr & /*ast_function*/, ContextPtr context, const std::string & table_name, ColumnsDescription /*cached_columns*/, bool is_insert_query) const
 {
-    /// The span log is created on its first flush: a server that never wrote a span has no table,
-    /// Only the local log can be checked here; with `cluster`, a replica without the table fails on its own.
-    if (cluster.empty() && !DatabaseCatalog::instance().tryGetTable(StorageID{"system", "opentelemetry_span_log"}, context))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The table system.opentelemetry_span_log does not exist yet: it is created by the first flush of spans."
-            " Run a query with tracing enabled, then SYSTEM FLUSH LOGS opentelemetry_span_log and retry");
+    /// The internal queries run in a context of their own: with `cluster`, the table they read
+    /// from is registered in it, and the caller's context must not see it.
+    ContextMutablePtr internal_context = Context::createCopy(context);
 
-    const String source = spanLogSource();
+    const String source = spanLogSource(internal_context);
     const String time_filter = spanLogTimeFilter();
-    const UUID effective_trace_id = resolveTraceId(source, time_filter, context);
-    const Block spans = loadSpans(source, time_filter, effective_trace_id, context);
+    const UUID effective_trace_id = resolveTraceId(source, time_filter, internal_context);
+    const Block spans = loadSpans(source, time_filter, effective_trace_id, internal_context);
 
     const ColumnsDescription structure = getActualTableStructure(context, is_insert_query);
     Block rendered = renderTrace(SpanColumns(spans), timeline_width, structure.getAllPhysical());
@@ -622,7 +733,7 @@ Returns one row per span of the trace, in depth-first tree order:
 - `timeline` - a fixed-width bar: the position is the span's start offset within the trace, the length is proportional to its duration;
 - `attribute` - the span attributes.
 
-Arguments: `trace_id` (String or UUID), optional `timeline_width` (default 40, at most 1024), optional `cluster` - read `clusterAllReplicas(cluster, system.opentelemetry_span_log)` instead of the local span log, because in a cluster every node writes its spans to its own log. Arguments can also be passed by name (`name = value`). Instead of `trace_id`, the named argument `query_id` selects the most recent trace of that query - named only, because a server-generated query id is itself a UUID and cannot be told apart from a trace id positionally: `traceView(query_id = '<query id>')`.
+Arguments: `trace_id` (String or UUID), optional `timeline_width` (default 40, at most 1024), optional `cluster` - read the span log of every replica of the cluster instead of the local one, because in a cluster every node writes its spans to its own log; a replica that has no `system.opentelemetry_span_log` yet, because it never flushed a span, is skipped. Arguments can also be passed by name (`name = value`). Instead of `trace_id`, the named argument `query_id` selects the most recent trace of that query - named only, because a server-generated query id is itself a UUID and cannot be told apart from a trace id positionally: `traceView(query_id = '<query id>')`.
 
 The named arguments `since` and `until` (`'YYYY-MM-DD'` strings, e.g. `since = toString(today() - 7)`) restrict the search to spans whose `finish_date` is within the window, inclusive. The span log is partitioned and ordered by `finish_date` and has no TTL by default, so without a window every call scans the whole log, and the cost grows with the age of the server. The `event_date` of the query in `system.query_log` is a good value for both.
 
