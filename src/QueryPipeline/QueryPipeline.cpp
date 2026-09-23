@@ -475,8 +475,10 @@ QueryPipeline::QueryPipeline(Chain chain)
         processors->emplace_back(std::move(processor));
 
     auto sink = std::make_shared<EmptySink>(chain.getOutputPort().getSharedHeader());
-    connect(chain.getOutputPort(), sink->getPort());
+    auto * sink_ptr = sink.get();
     processors->emplace_back(std::move(sink));
+
+    connect(chain.getOutputPort(), sink_ptr->getPort());
 
     input = &chain.getInputPort();
 }
@@ -728,9 +730,12 @@ void QueryPipeline::setLimitsAndQuota(const StreamLocalLimits & limits, std::sha
     auto transform = std::make_shared<LimitsCheckingTransform>(output->getSharedHeader(), limits);
     transform->setQuota(quota_);
     transform->setNormalizedQueryHash(normalized_query_hash);
-    connect(*output, transform->getInputPort());
-    output = &transform->getOutputPort();
+
+    auto * transform_ptr = transform.get();
     processors->emplace_back(std::move(transform));
+
+    connect(*output, transform_ptr->getInputPort());
+    output = &transform_ptr->getOutputPort();
 }
 
 bool QueryPipeline::tryGetResultRowsAndBytes(UInt64 & result_rows, UInt64 & result_bytes) const
@@ -763,9 +768,11 @@ void QueryPipeline::writeResultIntoQueryResultCache(std::shared_ptr<QueryResultC
             return;
 
         auto transform = std::make_shared<StreamInQueryResultCacheTransform>(out_port->getHeader(), query_result_cache_writer, chunk_type);
-        connect(*out_port, transform->getInputPort());
-        out_port = &transform->getOutputPort();
+        auto * transform_ptr = transform.get();
         processors->emplace_back(std::move(transform));
+
+        connect(*out_port, transform_ptr->getInputPort());
+        out_port = &transform_ptr->getOutputPort();
     };
 
     using enum QueryResultCacheWriter::ChunkType;
@@ -797,8 +804,9 @@ void QueryPipeline::readFromQueryResultCache(
     {
         if (!source_)
             return;
-        out_port = &source_->getPort();
+        auto * source_ptr = source_.get();
         processors->emplace_back(std::shared_ptr<SourceFromChunks>(std::move(source_)));
+        out_port = &source_ptr->getPort();
     };
 
     add_stream_from_query_result_cache_source(output, std::move(source));
@@ -850,9 +858,11 @@ static void addExpression(OutputPort *& port, ExpressionActionsPtr actions, Proc
     if (port)
     {
         auto transform = std::make_shared<ExpressionTransform>(port->getSharedHeader(), actions);
-        connect(*port, transform->getInputPort());
-        port = &transform->getOutputPort();
+        auto * transform_ptr = transform.get();
         processors.emplace_back(std::move(transform));
+
+        connect(*port, transform_ptr->getInputPort());
+        port = &transform_ptr->getOutputPort();
     }
 }
 
