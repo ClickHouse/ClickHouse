@@ -99,8 +99,7 @@ void ASTPair::formatImpl(WriteBuffer & ostr, const FormatSettings & settings, Fo
         /// to the raw value and the result is re-emitted through a literal so that it is quoted and
         /// escaped exactly as the original value would have been.
         String masked = second->as<ASTLiteral>()->value.safeGet<String>();
-        maskURIUserinfo(masked);
-        maskPresignedURLParameters(masked);
+        maskURICredentials(masked);
 
         ASTLiteral(masked).format(ostr, settings, state, frame);
     }

@@ -18,34 +18,19 @@ namespace DB::CoreSettings
 /// Rewrites the value in place and returns whether anything was masked.
 using ValueMaskingFunc = std::function<bool(String &)>;
 
-/// A URL carries its credential either as `user:password@` userinfo or, when it is presigned, in the
-/// query parameters, and either form can appear in the same setting.
-///
-/// Scanning for a presigned parameter is only sound on a value that is one whole URL: such a value
-/// ends at `&`, at `#` or at the end of the text, so on a URL embedded in a longer string it would
-/// run past the end of the URL. Every setting masked with this holds one whole URL, so the
-/// precondition holds by construction and needs no check.
-inline bool maskURLCredentials(String & value)
-{
-    /// Mask the whole userinfo, not just the password: an '@' in the password or a bare token would
-    /// otherwise leak. Matches the `url`/`s3` sanitizer.
-    bool masked = maskURIUserinfo(value);
-    masked |= maskPresignedURLParameters(value);
-    return masked;
-}
-
 /// The settings of the query-level `Settings` collection whose value can carry a credential, and how
 /// each one is masked. `system.query_log.query` shows
 /// `format_avro_schema_registry_url = 'http://[HIDDEN]@registry:8080'`, so every other place that
 /// prints the same value hides the same secret through this map.
 ///
-/// Mirrors the per-engine `SETTINGS_TO_HIDE` maps (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this
-/// for table engine settings.
+/// Every value here holds one whole URL, which `maskURICredentials` requires for its presigned-URL
+/// scan to be sound (see `Common/maskURIPassword.h`). Mirrors the per-engine `SETTINGS_TO_HIDE` maps
+/// (`Kafka_fwd.h`, `NATS_fwd.h`, ...), which do this for table engine settings.
 static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
 {
-    {"format_avro_schema_registry_url", maskURLCredentials},
-    {"url_base", maskURLCredentials},
-    {"s3_base", maskURLCredentials},
+    {"format_avro_schema_registry_url", maskURICredentials},
+    {"url_base", maskURICredentials},
+    {"s3_base", maskURICredentials},
 };
 
 /// Returns whether anything was masked.

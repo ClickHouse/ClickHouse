@@ -143,8 +143,7 @@ BlockIO HTTPDictionarySource::loadUpdatedAll()
     getUpdateFieldAndDate(uri);
     std::string uri_for_logging = uri.toString();
     /// Mask userinfo and presigned parameters, like ReadWriteBufferFromHTTP.
-    maskURIUserinfo(uri_for_logging);
-    maskPresignedURLParameters(uri_for_logging);
+    maskURICredentials(uri_for_logging);
     LOG_TRACE(log, "loadUpdatedAll {}", uri_for_logging);
 
     auto buf = BuilderRWBufferFromHTTP(uri)
@@ -247,8 +246,7 @@ std::string HTTPDictionarySource::toString() const
     Poco::URI uri(configuration.url);
     /// Feeds system.dictionaries.source and the server log; mask userinfo and presigned parameters.
     std::string name = uri.toString();
-    maskURIUserinfo(name);
-    maskPresignedURLParameters(name);
+    maskURICredentials(name);
     return name;
 }
 

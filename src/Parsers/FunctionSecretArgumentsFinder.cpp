@@ -13,22 +13,6 @@
 namespace DB
 {
 
-namespace
-{
-    /// Masks credential material embedded in a URL itself: the userinfo part and the values of
-    /// presigned-URL query parameters. The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL`
-    /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
-    /// Used for every url-bearing function (`s3`, `url`, ...) so that all of them mask the same way.
-    bool maskURICredentials(String & url)
-    {
-        /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
-        /// expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-        bool changed = maskURIUserinfo(url);
-        changed |= maskPresignedURLParameters(url);
-        return changed;
-    }
-}
-
 void FunctionSecretArgumentsFinder::markSecretArgument(size_t index, bool argument_is_named)
 {
     if (index >= function->arguments->size())
