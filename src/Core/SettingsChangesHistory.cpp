@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"use_declared_schema_for_parameterized_views", false, false, "New experimental setting. When enabled, the column schema declared explicitly in a parameterized view is exposed (e.g. in `SHOW COLUMNS`/`system.columns`) and validated after parameter substitution, throwing `TYPE_MISMATCH` if the actual schema differs from the declared one."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
