@@ -112,12 +112,10 @@ void MergeTreeInOrderSliceRouter::consumeInput(size_t source)
     auto & lane = lanes[assignment->lane];
     auto & slice = lane.slices.at(assignment->first_mark);
 
-
     if (!slice_ended)
     {
         assignment->rows_read += chunk.getNumRows();
         lane.buffered_rows += chunk.getNumRows();
-        slice.rows += chunk.getNumRows();
         slice.chunks.push_back(std::move(chunk));
         return;
     }
@@ -133,7 +131,7 @@ void MergeTreeInOrderSliceRouter::consumeInput(size_t source)
         ++misses;
         speculation_open = misses >= 2;
         if (lane.activated)
-            lane.max_segments = std::min(lane.max_segments * 2, assignments.size());
+            lane.max_sources = std::min(lane.max_sources * 2, assignments.size());
     }
 
     assignment.reset();
@@ -145,16 +143,10 @@ MergeTreeInOrderSliceRouter::SliceBuffer * MergeTreeInOrderSliceRouter::headSlic
     while (!slices.empty() && slices.begin()->second.finished && slices.begin()->second.chunks.empty())
         slices.erase(slices.begin());
 
-    if (slices.empty())
+    if (slices.empty() || slices.begin()->second.chunks.empty())
         return nullptr;
 
-    auto & [first_mark, slice] = *slices.begin();
-
-    /// Marks before this slice are unread again (their segment was taken from an idle source): wait for them.
-    if (first_mark >= pool->laneFirstUnreadMark(lane))
-        return nullptr;
-
-    return slice.chunks.empty() ? nullptr : &slice;
+    return &slices.begin()->second;
 }
 
 void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
@@ -185,7 +177,6 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
     {
         Chunk chunk = std::move(slice->chunks.front());
         slice->chunks.pop_front();
-        slice->rows -= chunk.getNumRows();
         lane.buffered_rows -= chunk.getNumRows();
         lane.delivered_rows += chunk.getNumRows();
         output.push(std::move(chunk));
@@ -204,38 +195,20 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
     lane.activated = true;
 }
 
-size_t MergeTreeInOrderSliceRouter::deliverableRows(size_t lane) const
-{
-    const size_t first_unread_mark = pool->laneFirstUnreadMark(lane);
-    size_t rows = 0;
-    for (const auto & [first_mark, slice] : lanes[lane].slices)
-    {
-        if (first_mark >= first_unread_mark)
-            break;
-        rows += slice.rows;
-    }
-    return rows;
-}
-
-bool MergeTreeInOrderSliceRouter::headWantsMore(size_t lane) const
+bool MergeTreeInOrderSliceRouter::laneWantsMore(size_t lane) const
 {
     /// Read ahead only while the consumer accepts rows, like a plain source that cannot read its next
     /// block before the previous one was pulled. With buffering downstream this still reads ahead one
     /// buffer per lane; without it, a lane the merge is not asking for is left alone.
     return lanes[lane].activated && !lanes[lane].finished && lane_outputs[lane]->canPush()
-        && deliverableRows(lane) < buffer_budget_rows;
+        && lanes[lane].buffered_rows < buffer_budget_rows;
 }
 
-bool MergeTreeInOrderSliceRouter::laneWantsMore(size_t lane) const
-{
-    return lanes[lane].activated && !lanes[lane].finished && lanes[lane].buffered_rows < buffer_budget_rows;
-}
-
-size_t MergeTreeInOrderSliceRouter::openSegmentsOf(size_t lane) const
+size_t MergeTreeInOrderSliceRouter::sourcesOf(size_t lane) const
 {
     size_t count = 0;
     for (size_t source = 0; source < assignments.size(); ++source)
-        if (pool->segmentLane(source) == lane && (assignments[source] || pool->segmentHasUnreadMarks(source)))
+        if (pool->sourceLane(source) == lane)
             ++count;
     return count;
 }
@@ -270,7 +243,7 @@ std::optional<size_t> MergeTreeInOrderSliceRouter::pickIdleSource(bool allow_reb
     std::optional<size_t> victim;
     auto victim_rank = [this](size_t source)
     {
-        size_t lane = *pool->segmentLane(source);
+        size_t lane = *pool->sourceLane(source);
         return std::make_pair(!lanes[lane].activated, boundary_position[lane]);
     };
 
@@ -279,10 +252,11 @@ std::optional<size_t> MergeTreeInOrderSliceRouter::pickIdleSource(bool allow_reb
         if (assignments[source])
             continue;
 
-        if (!pool->segmentHasUnreadMarks(source))
+        auto lane = pool->sourceLane(source);
+        if (!lane || !pool->laneHasUnreadMarks(*lane))
             return source;
 
-        /// Idle but bound to a segment its lane does not want read now. Prefer taking it from a lane
+        /// Idle but bound to a lane that does not want to be read right now. Prefer taking it from a lane
         /// the merge never asked for, then from the lane needed last.
         if (allow_rebinding && (!victim || victim_rank(source) > victim_rank(*victim)))
             victim = source;
@@ -306,46 +280,27 @@ void MergeTreeInOrderSliceRouter::assignSlice(size_t source, size_t lane_idx)
 
 void MergeTreeInOrderSliceRouter::scheduleSlices()
 {
-    /// Sources continue the segment they are bound to. The segment at the head of its lane produces the
-    /// rows the merge consumes next, so it goes on while the rows ready for delivery are below the budget.
-    /// The other segments read ahead and stop once the lane as a whole holds enough rows.
+    /// Sources continue the lane they are bound to.
     for (size_t source = 0; source < assignments.size(); ++source)
     {
-        if (assignments[source] || !pool->segmentHasUnreadMarks(source))
+        if (assignments[source])
             continue;
 
-        size_t lane = *pool->segmentLane(source);
-        bool is_head = pool->segmentFirstUnreadMark(source) == pool->laneFirstUnreadMark(lane);
-        if (is_head ? headWantsMore(lane) : laneWantsMore(lane))
-            assignSlice(source, lane);
+        auto lane = pool->sourceLane(source);
+        if (lane && pool->laneHasUnreadMarks(*lane) && laneWantsMore(*lane))
+            assignSlice(source, *lane);
     }
 
-    /// Lanes the merge asked for get more segments, in the order the merge needs them.
+    /// Lanes the merge asked for get more sources, up to their cap, in the order the merge needs them.
     for (size_t lane : pool->lanesByBoundary())
     {
-        if (!lanes[lane].activated || lanes[lane].finished || !pool->laneHasMarksOutsideSegments(lane))
-            continue;
-
-        /// The head of the lane belongs to no segment (its segment was taken away): it must get one
-        /// regardless of the cap, otherwise the rows buffered behind it could never be delivered.
-        bool head_outside_segments = pool->laneFirstMarkOutsideSegments(lane) == pool->laneFirstUnreadMark(lane);
-        if (head_outside_segments && headWantsMore(lane))
+        while (laneWantsMore(lane) && pool->laneHasUnreadMarks(lane) && sourcesOf(lane) < lanes[lane].max_sources)
         {
             auto source = pickIdleSource(/*allow_rebinding=*/ true);
             if (!source)
                 return;
 
-            pool->openSegment(*source, lane);
-            assignSlice(*source, lane);
-        }
-
-        while (laneWantsMore(lane) && openSegmentsOf(lane) < lanes[lane].max_segments && pool->laneHasMarksOutsideSegments(lane))
-        {
-            auto source = pickIdleSource(/*allow_rebinding=*/ true);
-            if (!source)
-                return;
-
-            pool->openSegment(*source, lane);
+            pool->bindSource(*source, lane);
             assignSlice(*source, lane);
         }
     }
@@ -366,7 +321,7 @@ void MergeTreeInOrderSliceRouter::scheduleSlices()
         if (!source)
             return;
 
-        pool->openSegment(*source, lane);
+        pool->bindSource(*source, lane);
         assignSlice(*source, lane);
     }
 }

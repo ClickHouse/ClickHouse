@@ -22,10 +22,11 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /// A source runs only while its input port is needed, and the port is set needed only after a slice
 /// was assigned to it, so idle sources cost nothing and no part is read before the merge wants it.
 ///
-/// Reading of a lane grows on evidence: the first demand grants one slice of one segment. When a slice
-/// ends with most of its rows filtered out, reading is the bottleneck rather than merging, so the number
-/// of segments the lane may read at once doubles, and untouched lanes get one speculative slice each in
-/// the order of their boundaries. A lane holding enough buffered rows is not read further.
+/// Reading of a lane grows on evidence: the first demand binds one source to it. When a slice ends with
+/// most of its rows filtered out, reading is the bottleneck rather than merging, so the number of sources
+/// the lane may use doubles; with the second such slice untouched lanes get one speculative slice each in
+/// the order of their boundaries. A lane reads ahead only while its output accepts rows and it holds fewer
+/// buffered rows than the budget.
 class MergeTreeInOrderSliceRouter final : public IProcessor
 {
 public:
@@ -43,7 +44,6 @@ private:
     struct SliceBuffer
     {
         std::deque<Chunk> chunks;
-        size_t rows = 0;
         bool finished = false;
     };
 
@@ -55,8 +55,8 @@ private:
         std::optional<Chunk> initial_virtual_row;
         size_t buffered_rows = 0;
         size_t delivered_rows = 0;
-        /// How many segments of the lane may be read at once.
-        size_t max_segments = 1;
+        /// How many sources may read the lane at once.
+        size_t max_sources = 1;
         /// The merge asked for this lane at least once.
         bool activated = false;
         /// A slice of the lane was assigned at least once.
@@ -76,11 +76,8 @@ private:
     void consumeInput(size_t source);
     void pushToLane(size_t lane);
     SliceBuffer * headSliceWithData(size_t lane);
-    /// Rows buffered in slices that can be delivered without reading any earlier mark first.
-    size_t deliverableRows(size_t lane) const;
-    bool headWantsMore(size_t lane) const;
     bool laneWantsMore(size_t lane) const;
-    size_t openSegmentsOf(size_t lane) const;
+    size_t sourcesOf(size_t lane) const;
     size_t speculativeSlicesInFlight() const;
     bool coverageAllows(size_t lane) const;
     std::optional<size_t> pickIdleSource(bool allow_rebinding) const;
