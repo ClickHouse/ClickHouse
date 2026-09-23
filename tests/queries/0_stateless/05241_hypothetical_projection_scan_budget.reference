@@ -15,6 +15,9 @@ empirical_status: ok
 --- max_rows_to_read below the smallest sample ---
 empirical_status: unsupported
 over max_rows_to_read
+--- the largest step that keeps 30 granules ---
+empirical_status: ok
+sampled_marks: 30 / 59
 --- an offset filter on a sampled estimate ---
 status: applicable
 empirical_status: unsupported

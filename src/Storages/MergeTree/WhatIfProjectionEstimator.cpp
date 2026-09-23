@@ -287,8 +287,9 @@ bool buildProjectionPart(
 
         total_rows_read += block.rows();
         total_bytes_read += block.bytes();
-        /// softCheck: hitting a limit makes the estimate unsupported instead of failing the query
-        if (!read_limits.softCheck(total_rows_read, total_bytes_read))
+        /// past a limit the estimate is unsupported instead of failing the query, reaching it is fine as for the query
+        if ((read_limits.max_rows && total_rows_read > read_limits.max_rows)
+            || (read_limits.max_bytes && total_bytes_read > read_limits.max_bytes))
             return false;
 
         /// key expression and sort need full columns
@@ -631,9 +632,9 @@ bool tryEstimateProjection(
     if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0)
         budget = budget == 0 ? read_limit : std::min(budget, read_limit);
     size_t sample_step = budget != 0 && rows_to_scan > budget ? (rows_to_scan + budget - 1) / budget : 1;
-    /// but read at least ~30 granules, fewer can't give an error estimate
+    /// but keep at least 30 sampled granules, fewer can't give an error estimate: the largest step with ceil(marks / step) >= 30
     if (sample_step > 1)
-        sample_step = std::min<size_t>(sample_step, std::max<size_t>(1, marks_to_scan / 30));
+        sample_step = std::min<size_t>(sample_step, std::max<size_t>(1, (marks_to_scan - 1) / 29));
     std::vector<double> granule_shares;
     UInt64 layout_marks = 0;
 

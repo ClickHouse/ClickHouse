@@ -73,6 +73,16 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT count() FROM t_scan WHERE a < 500 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 1000;
 " | grep -oE 'empirical_status: +[a-z]+|over max_rows_to_read' | awk '{$1=$1; print}'
 
+# 59 granules still sample every second one, 30 in all, rather than falling back to the whole part
+echo "--- the largest step that keeps 30 granules ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_scan_59;
+    CREATE TABLE t_scan_59 AS t_scan;
+    INSERT INTO t_scan_59 SELECT number, cityHash64(number) % 1000, intDiv(number, 100), number % 1000 FROM numbers(5900);
+    CREATE HYPOTHETICAL PROJECTION p_b ON t_scan_59 (SELECT a, b, c, d ORDER BY b);
+    EXPLAIN WHATIF max_rows_to_scan = 1000 SELECT count() FROM t_scan_59 WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 3000;
+" | grep -E '^\s+(empirical_status|sampled_marks):' | awk '{$1=$1; print}'
+
 # a sample's row offsets are not the part's, so an offset filter leaves the estimate unsupported
 echo "--- an offset filter on a sampled estimate ---"
 $CLICKHOUSE_CLIENT -q "
