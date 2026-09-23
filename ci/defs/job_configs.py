@@ -172,10 +172,29 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            # clickhouse_proc.py's "No such key" check runs this script, and so does
+            # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
+            "./ci/jobs/scripts/s3_key_lifecycle.py",
             "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
+            # `find_tests.py` selects which tests this job runs, and
+            # `Result.complete_job` in `result.py` builds the summary the job
+            # publishes. Both are runner inputs, so the digest must cover them:
+            # `_filter_unaffected_jobs` skips this job before `find_tests.py`
+            # ever reads `_STATELESS_HARNESS_PATHS`, so an entry there only
+            # takes effect when the digest keeps the job alive.
+            "./ci/jobs/scripts/find_tests.py",
+            "./ci/praktika/result.py",
+            # `find_tests.py` selects the targeted and selected arms from CIDB
+            # (`get_all_relevant_tests_with_info` queries `CIDB` and reads
+            # `Info`), so both modules decide which tests this job runs and
+            # belong here for the same reason. The other CI-level entries of
+            # `_STATELESS_HARNESS_PATHS` stay out: they drive job orchestration
+            # and the job itself never reads them.
+            "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
@@ -212,6 +231,7 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/stress_job.py",
             # stress_runner.sh drives the log export through clickhouse_proc.py
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/s3_key_lifecycle.py",
             "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
@@ -1298,12 +1318,12 @@ class JobConfigs:
                 "./ci/jobs/stress_job.py",
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
+                "./ci/jobs/scripts/s3_key_lifecycle.py",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
-                # not cover ./tests/ci.
-                "./tests/ci/get_previous_release_tag.py",
-                "./tests/ci/download_release_packages.py",
+                # upgrade_runner.sh symlinks and runs both of these
+                "./ci/tools/get_previous_release_tag.py",
+                "./ci/tools/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -2138,6 +2158,7 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
