@@ -27,12 +27,4 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralSetElement(
 /// Whether the field is a number literal, or a container holding one.
 bool fieldHasNumberLiteral(const Field & field);
 
-/// The type the number literals on the right of `IN` are resolved against: the left-hand side
-/// without `Nullable`/`LowCardinality`, or null when its type cannot hold a number literal.
-DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_type);
-
-/// Assemble the `Field` of an `array`/`tuple`/`map` function call from its literal arguments.
-/// False for any other function name, or an odd number of `map` arguments.
-bool buildCompositeLiteralField(const String & function_name, Array elements, Field & out);
-
 }

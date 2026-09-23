@@ -1214,6 +1214,45 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
+/// The type the number literals on the right of IN are resolved against: the left-hand side without
+/// `Nullable`/`LowCardinality`, or null when its type cannot hold a number literal.
+static DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_type)
+{
+    if (!left_type)
+        return nullptr;
+
+    auto type = removeNullable(removeLowCardinality(left_type));
+    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
+        return type;
+
+    return nullptr;
+}
+
+/// Assemble the `Field` of an `array`/`tuple`/`map` call from its literal arguments. False for any
+/// other function name, or an odd number of `map` arguments.
+static bool buildCompositeLiteralField(const String & function_name, Array elements, Field & out)
+{
+    if (function_name == "array")
+    {
+        out = std::move(elements);
+        return true;
+    }
+    if (function_name == "tuple")
+    {
+        out = Tuple(elements.begin(), elements.end());
+        return true;
+    }
+    if (function_name != "map" || elements.size() % 2 != 0)
+        return false;
+
+    Map pairs;
+    pairs.reserve(elements.size() / 2);
+    for (size_t i = 0; i < elements.size(); i += 2)
+        pairs.push_back(Tuple{elements[i], elements[i + 1]});
+    out = std::move(pairs);
+    return true;
+}
+
 /// The `Field` a constant was built from, with its number literals still unresolved. A bracket or
 /// paren literal keeps them in the original AST; the `array`/`tuple`/`map` spellings are folded, so
 /// they keep them in the arguments of the folded function. False when there is nothing to recover.

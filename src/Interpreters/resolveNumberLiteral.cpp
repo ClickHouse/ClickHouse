@@ -328,39 +328,4 @@ std::pair<Field, DataTypePtr> resolveNestedNumberLiteralsForComparison(const Fie
     return resolveNumberLiteralSetElement(field, reference_type);
 }
 
-DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_type)
-{
-    if (!left_type)
-        return nullptr;
-
-    auto type = removeNullable(removeLowCardinality(left_type));
-    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
-        return type;
-
-    return nullptr;
-}
-
-bool buildCompositeLiteralField(const String & function_name, Array elements, Field & out)
-{
-    if (function_name == "array")
-    {
-        out = std::move(elements);
-        return true;
-    }
-    if (function_name == "tuple")
-    {
-        out = Tuple(elements.begin(), elements.end());
-        return true;
-    }
-    if (function_name != "map" || elements.size() % 2 != 0)
-        return false;
-
-    Map pairs;
-    pairs.reserve(elements.size() / 2);
-    for (size_t i = 0; i < elements.size(); i += 2)
-        pairs.push_back(Tuple{elements[i], elements[i + 1]});
-    out = std::move(pairs);
-    return true;
-}
-
 }
