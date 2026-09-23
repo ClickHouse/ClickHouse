@@ -1788,9 +1788,9 @@ When the policy is deferred this way, PREWHERE is deferred with it so that the p
 When disabled, row policies are applied before FINAL, which can cause different results when the policy
 filters out rows that should be used for deduplication in ReplacingMergeTree or similar engines.
 
-If the row policy expression depends only on non-floating-point columns in ORDER BY, it will still be applied before FINAL
-as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns are excluded because
-`-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
+If the row policy expression is deterministic and depends only on non-floating-point columns in ORDER BY, it will still be
+applied before FINAL as an optimization, since such filtering cannot affect the deduplication result. Floating-point columns
+are excluded because `-0.0` and `0.0` deduplicate as one key while a policy condition can tell them apart.
 
 Possible values:
 
