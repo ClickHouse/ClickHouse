@@ -3,6 +3,7 @@
 #include <Formats/ColumnMapping.h>
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/InputFormatErrorsLogger.h>
+#include <Core/Names.h>
 #include <Common/PODArray.h>
 #include <IO/WriteBuffer.h>
 #include <base/types.h>
@@ -181,7 +182,10 @@ public:
 
     virtual size_t getApproxBytesReadForChunk() const { return 0; }
 
-    void needOnlyCount() { need_only_count = true; }
+    /// Query parameters make sense only for the Values format, where the data may contain expressions.
+    virtual void setQueryParameters(const NameToNameMap & /*parameters*/) {}
+
+    virtual void needOnlyCount() { need_only_count = true; }
 
     virtual std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const { return std::nullopt; }
 
