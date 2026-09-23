@@ -1,0 +1,12 @@
+-- a semicolon in a comment without a space after #
+[('__name__','up'),('instance','host1')]	30
+-- a semicolon in a comment with a space after #
+[('__name__','up'),('instance','host1')]	30
+-- an apostrophe in a comment
+[]	40
+-- a semicolon in a string literal
+[('__name__','up'),('instance','host2')]	10
+-- a comment followed by the rest of the query
+[]	40
+-- a comment the SQL lexer reads past the end of the statement is an error, not a wrong split
+Cannot find the end of the PromQL statement

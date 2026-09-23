@@ -10,6 +10,7 @@
 #include <Parsers/ParserSetQuery.h>
 #include <Parsers/Access/ParserSetRoleQuery.h>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
+#include <base/find_symbols.h>
 
 
 namespace DB
@@ -18,6 +19,49 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INVALID_SETTING_VALUE;
+    extern const int SYNTAX_ERROR;
+}
+
+namespace
+{
+
+/// Returns the position of the `;` ending the PromQL statement in [begin, end), or `end`.
+/// The raw text is scanned with the PromQL lexical rules (see `PromQLLexer.g4`), because the SQL lexer
+/// does not know that `#` starts a comment unless a space follows it, so a `;` in `up #keep ; x`
+/// would read as the statement end. A `;` inside a string literal doesn't end the statement either.
+const char * findEndOfPromQLStatement(const char * begin, const char * end)
+{
+    const char * p = begin;
+    while (p < end)
+    {
+        const char c = *p;
+        if (c == ';')
+            return p;
+
+        if (c == '#')
+        {
+            p = find_first_symbols<'\n'>(p, end);
+        }
+        else if (c == '"' || c == '\'' || c == '`')
+        {
+            /// Backquoted strings are raw, the others have backslash escapes.
+            ++p;
+            while (p < end && *p != c)
+            {
+                if (*p == '\\' && c != '`' && p + 1 < end)
+                    ++p;
+                ++p;
+            }
+            p = std::min(p + 1, end);
+        }
+        else
+        {
+            ++p;
+        }
+    }
+    return end;
+}
+
 }
 
 
@@ -51,10 +95,27 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     const auto * begin = pos->begin;
 
     // The same parsers are used in the client and the server, so the parser have to detect the end of a single query in case of multiquery queries
-    while (!pos->isEnd() && pos->type != TokenType::Semicolon)
+    const char * text_end = begin;
+    for (Pos lookahead = pos; ; ++lookahead)
+    {
+        if (lookahead->isEnd())
+        {
+            text_end = lookahead->begin;
+            break;
+        }
+    }
+
+    const auto * end = findEndOfPromQLStatement(begin, text_end);
+
+    /// Move to the SQL token at the statement end. The SQL tokens of a PromQL comment or string can
+    /// differ from the PromQL ones, e.g. an apostrophe in a comment opens a SQL string literal which
+    /// may run past the end. The position is then ambiguous, so fail instead of guessing.
+    while (!pos->isEnd() && pos->end <= end)
         ++pos;
 
-    const auto * end = pos->begin;
+    if (pos->begin != end || !(pos->isEnd() || pos->type == TokenType::Semicolon))
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "Cannot find the end of the PromQL statement: a comment or a string literal in it confuses the SQL lexer");
 
     /// We call PrometheusQueryTree here to check for syntax errors earlier.
     PrometheusQueryTree promql_query{std::string_view{begin, end}};
