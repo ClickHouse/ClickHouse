@@ -298,10 +298,13 @@ static Plan getPlan(
         if (partition_index >= plan.partitions.size())
             continue;
 
+        if (delete_file->parsed_entry->isDeletionVector())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Compaction of Iceberg tables with deletion vectors is not supported");
+
         for (auto & data_file : plan.partitions[partition_index])
         {
             if (data_file->data_object_info->info.sequence_number <= delete_file->sequence_number)
-                data_file->data_object_info->addPositionDeleteObject(
+                data_file->data_object_info->addPositionDeleteFile(
                     delete_file, persistent_table_components.path_resolver.resolve(delete_file->parsed_entry->file_path_key));
         }
     }
@@ -339,11 +342,11 @@ static void writeDataFiles(
     {
         /// The transform requires `ChunkInfoRowNumbers` in every chunk even when it has nothing
         /// to delete, and only the Parquet input formats attach it. Data files with attached
-        /// position deletes are guaranteed to be Parquet by `addPositionDeleteObject`, but a data
+        /// position deletes are guaranteed to be Parquet by `addPositionDeleteFile`, but a data
         /// file without them (e.g. an ORC file newer than all position deletes) may be in any
         /// format, so the transform must be skipped for it.
         std::shared_ptr<IcebergBitmapPositionDeleteTransform> delete_file_transform;
-        if (!data_file->data_object_info->info.position_deletes_objects.empty())
+        if (data_file->data_object_info->info.hasPositionDeletes())
             delete_file_transform = std::make_shared<IcebergBitmapPositionDeleteTransform>(
                 sample_block,
                 data_file->data_object_info,
@@ -407,6 +410,7 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
+        data_file->manifest_list->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
