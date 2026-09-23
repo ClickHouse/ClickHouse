@@ -36,8 +36,19 @@ struct Query
     {
         context->makeQueryContext();
         status = std::make_shared<QueryStatus>(
-            context, "SELECT 1", 0, ClientInfo{}, QueryPriorities::Handle{}, nullptr, nullptr, nullptr,
-            IAST::QueryKind::Select, Settings{}, 0, false);
+            context,
+            "SELECT 1",
+            /*normalized_query_hash_*/ 0,
+            ClientInfo{},
+            /*user_id_*/ std::nullopt,
+            QueryPriorities::Handle{},
+            nullptr,
+            nullptr,
+            nullptr,
+            IAST::QueryKind::Select,
+            Settings{},
+            0,
+            false);
         context->setProcessListElement(status);
     }
 };
