@@ -3,6 +3,7 @@
 
 #include <Storages/StorageSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #if CLICKHOUSE_CLOUD
 #include <Storages/StorageSharedSetJoin.h>
 #endif
@@ -93,7 +94,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
         /// A `SELECT_FILTER` row policy on the right table would normally be applied
         /// during regular subquery execution; the lookup fast path bypasses it, so
         /// fall back to the regular subquery/set path to preserve visibility.
-        if (getEffectiveRowPolicyFilter(storage, query_context))
+        if (getEffectiveRowPolicyFilter(*storage, query_context))
             return std::nullopt;
 
         /// `additional_table_filters` are applied by the regular plan; the lookup fast path
@@ -156,7 +157,7 @@ std::optional<LookupSetFromStorage> tryGetLookupSetFromTableExpression(const Que
     if (!storage)
         return std::nullopt;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return std::nullopt;
 
     if (hasAdditionalTableFilterForStorage(storage, inner_table_expression->getOriginalAlias(), query_context))

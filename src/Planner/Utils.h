@@ -23,8 +23,6 @@
 
 #include <Interpreters/WindowDescription.h>
 
-#include <Access/EnabledRowPolicies.h>
-
 namespace DB
 {
 
@@ -146,10 +144,6 @@ bool optimizePlanForExists(QueryPlan & query_plan);
 QueryPlanStepPtr projectOnlyUsedColumns(
     const SharedHeader & stream_header,
     const ColumnIdentifiers & used_column_identifiers);
-
-/// Returns the effective `SELECT_FILTER` row policy for the table, or `nullptr` if
-/// there is no row policy for the current user or the combined filter is always-true.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context);
 
 /// Returns true if an `additional_table_filters` entry applies to the given table expression.
 /// The lookup-index fast paths read the storage with an empty `SelectQueryInfo` and therefore

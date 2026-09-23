@@ -31,8 +31,6 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 
-#include <Access/EnabledRowPolicies.h>
-#include <Access/ContextAccess.h>
 #include <Storages/IStorage.h>
 
 #include <AggregateFunctions/WindowFunction.h>
@@ -947,27 +945,6 @@ QueryPlanStepPtr projectOnlyUsedColumns(
     auto step = std::make_unique<ExpressionStep>(stream_header, std::move(project_only_used_columns_actions));
     step->setStepDescription("Project only used columns");
     return step;
-}
-
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (const auto * alias = storage->as<StorageAlias>())
-    {
-        const auto target_storage_id = alias->getTargetTable()->getStorageID();
-        auto target_row_policy_filter = query_context->getRowPolicyFilter(
-            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-    }
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
 }
 
 bool hasAdditionalTableFilterForStorage(const StoragePtr & storage, const String & table_expression_alias, const ContextPtr & query_context)

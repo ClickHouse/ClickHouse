@@ -18,6 +18,7 @@
 #include <Storages/StorageDictionary.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/StorageSnapshot.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Functions/IFunction.h>
 #include <Functions/FunctionFactory.h>
@@ -1080,7 +1081,7 @@ PreparedJoinStorage tryGetLookupJoinStorage(
     /// A `SELECT_FILTER` row policy on the right table would be applied during regular
     /// join planning; the filled direct join built from the lookup index bypasses the
     /// right query plan, so reject this optimization to preserve visibility.
-    if (getEffectiveRowPolicyFilter(storage, planner_context->getQueryContext()))
+    if (getEffectiveRowPolicyFilter(*storage, planner_context->getQueryContext()))
         return {};
 
     /// `additional_table_filters` are applied by the regular right-side plan; the lookup
