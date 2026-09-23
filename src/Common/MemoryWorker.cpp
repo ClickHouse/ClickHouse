@@ -1015,8 +1015,10 @@ void MemoryWorker::updateResidentMemoryThread()
                     }
                 }
             }
+#endif
 
-            /// update MemoryTracker with resident memory information (cgroup or jemalloc) when:
+            /// update MemoryTracker with `allocated` (sanitizer allocator bytes, otherwise resident,
+            /// which may be much larger than what was actually allocated) when:
             ///  - it's a first run of MemoryWorker (MemoryTracker could've missed some allocation before its initialization)
             ///  - MemoryTracker stores a negative value
             ///  - `correct_tracker` is set to true
@@ -1024,16 +1026,6 @@ void MemoryWorker::updateResidentMemoryThread()
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/true);
             else if (correct_tracker)
                 MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
-#else
-            /// we don't update in the first run if we don't have jemalloc
-            /// because without a sanitizer we can only use resident memory information
-            /// resident memory can be much larger than the actual allocated memory
-            /// so we rather ignore the potential difference caused by allocated memory
-            /// before MemoryTracker initialization
-            /// sanitizer builds provide allocated memory, but keep the same behavior
-            if (total_memory_tracker.get() < 0 || correct_tracker) [[unlikely]]
-                MemoryTracker::updateAllocated(memory_usage.allocated, /*log_change=*/false);
-#endif
 
             /// Capture the settings generation before reading ratio/ceiling. We re-read
             /// it just before `setHardLimit` and skip the write if a reload happened

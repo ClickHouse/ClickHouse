@@ -2942,11 +2942,14 @@ void ReadFromMergeTree::buildPartitionPruningIndexes(
         {
             auto minmax_expression_actions = MergeTreeData::getMinMaxExpr(metadata_snapshot->getPartitionKey(), data_settings, ExpressionActionsSettings(query_context));
             ActionsDAGWithInversionPushDown wrapped(predicate, query_context, /* boolean_context */ false);
-            return KeyCondition{
+            KeyCondition condition{
                 wrapped, query_context, minmax_columns.getNames(), minmax_expression_actions,
                 /* single_point_ = */ false,
                 /* skip_analysis_ = */ skip_partition_pruning_ || !query_context->getSettingsRef()[Setting::use_partition_pruning] || !query_context->getSettingsRef()[Setting::use_skip_indexes],
                 require_ready_sets};
+            /// The part minmax bound comes from `getExtremes`, which skips NaN.
+            condition.relaxAtomsOverNaNHidingColumns(minmax_columns.getTypes());
+            return condition;
         };
         indexes.minmax_idx_condition = std::make_shared<ConditionTemplate<KeyCondition>>(filter_dag_ptr, std::move(key_condition_factory), metadata_snapshot, query_context, skip_constant_folding);
     }
@@ -3603,7 +3606,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .result = result,
     };
 
-    if (context_->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+    /// Only a read the coordinator actually drives may skip its own analysis, because the coordinator is
+    /// what assigns its ranges, off the analysis done on the initiator. `canUseParallelReplicasOnFollower`
+    /// alone does not say that: with plan-based parallel replicas the whole fragment is rebuilt on the
+    /// follower from one shared context, so an uncoordinated read shipped in it - the broadcast side of a
+    /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
+    /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
+    /// the initiator's parts, which are not the parts this replica reads.
+    if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
+        && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)
