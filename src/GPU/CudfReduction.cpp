@@ -30,7 +30,7 @@ std::unique_ptr<cudf::reduce_aggregation> reduceAggregationFor(GPUAggregationKin
 template <typename Result>
 Result scalarValueAs(const cudf::scalar & value)
 {
-    const rmm::cuda_stream_view stream = cudfStream();
+    const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
     switch (value.type().id())
     {
@@ -124,7 +124,7 @@ void CudfReduction::addBatch(DeviceColumnView values)
     if (values.rows == 0)
         throw CudfError("nothing to reduce");
 
-    const rmm::cuda_stream_view stream = cudfStream();
+    const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
     const std::unique_ptr<cudf::scalar> batch
         = cudf::reduce(columnViewOf(values, element_type, "a batch of values"), *aggregation, output_type, stream);
@@ -154,7 +154,7 @@ uint64_t CudfReduction::finalize()
     if (num_partials == 0)
         return 0;
 
-    const rmm::cuda_stream_view stream = cudfStream();
+    const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
     const cudf::column_view partial_column(output_type, static_cast<cudf::size_type>(num_partials), partials.data(), nullptr, 0);
     num_partials = 0;

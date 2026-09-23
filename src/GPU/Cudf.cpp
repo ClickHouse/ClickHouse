@@ -12,33 +12,38 @@
 namespace DB::GPU
 {
 
-rmm::cuda_stream_view cudfStream()
-{
-    return cudf::get_default_stream();
-}
-
 void checkCuda(cudaError_t status, const std::string & what)
 {
     if (status != cudaSuccess)
         throw CudfError(what + ": " + cudaGetErrorString(status));
 }
 
+/// Not `std::call_once`: an exception out of its callable aborts the process in the island's
+/// standard library instead of reaching the query, and a device that is missing or refuses its
+/// memory pool is a query's error, not the server's.
 void initializeCudf()
 {
-    static std::once_flag once;
-    std::call_once(once, []
-    {
-        if (!cudfStream().is_default())
-            throw CudfError("cuDF runs on a stream other than the device's default one, where the host side queues its uploads");
+    static std::mutex mutex;
+    static bool initialized = false;
 
-        int device = 0;
-        checkCuda(cudaGetDevice(&device), "cannot tell the current CUDA device");
+    std::lock_guard lock(mutex);
+    if (initialized)
+        return;
 
-        cudaMemPool_t pool = nullptr;
-        checkCuda(cudaDeviceGetDefaultMemPool(&pool, device), "cannot get the device's default memory pool");
+    /// The island's allocations and cuDF's own calls without a stream go to cuDF's default stream,
+    /// and the host side queues what the kernels read on the compute stream, so the two have to
+    /// be the one default stream of the device, whichever handle spells it.
+    if (!cudf::get_default_stream().is_default() || !rmm::cuda_stream_view{StreamRegistry::get().compute}.is_default())
+        throw CudfError("cuDF's default stream and the compute stream are not both the device's default stream");
 
-        rmm::mr::set_current_device_resource(rmm::mr::cuda_async_view_memory_resource{pool});
-    });
+    int device = 0;
+    checkCuda(cudaGetDevice(&device), "cannot tell the current CUDA device");
+
+    cudaMemPool_t pool = nullptr;
+    checkCuda(cudaDeviceGetDefaultMemPool(&pool, device), "cannot get the device's default memory pool");
+
+    rmm::mr::set_current_device_resource(rmm::mr::cuda_async_view_memory_resource{pool});
+    initialized = true;
 }
 
 cudf::data_type cudfTypeOf(GPUElementType element_type)
@@ -99,7 +104,7 @@ void copyColumnToHost(const cudf::column_view & column, HostColumnView destinati
             + std::to_string(sizeOf(destination.element_type)) + "-byte ones");
 
     checkCuda(
-        cudaMemcpyAsync(destination.data, column.head<void>(), destination.rows * element_size, cudaMemcpyDeviceToHost, cudfStream().value()),
+        cudaMemcpyAsync(destination.data, column.head<void>(), destination.rows * element_size, cudaMemcpyDeviceToHost, StreamRegistry::get().compute),
         "cannot copy " + what + " back");
 }
 

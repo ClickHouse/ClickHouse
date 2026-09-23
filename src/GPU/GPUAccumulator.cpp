@@ -456,10 +456,10 @@ void GroupByGPUAccumulator::handOff(size_t reader_index, size_t column_index)
     work.staged = std::move(column.staged);
     work.blocks = std::move(column.blocks);
 
-    work.on_device = DeviceBuffer(copyStream());
+    work.on_device = DeviceBuffer(StreamRegistry::get().upload);
     work.on_device.append(work.staged.bytes());
     work.uploaded.emplace();
-    work.uploaded->record(copyStream());
+    work.uploaded->record(StreamRegistry::get().upload);
 
     column.staged = PinnedBuffer{};
     column.blocks = {};
@@ -641,13 +641,13 @@ void GroupByGPUAccumulator::flushPendingRaw(bool wait)
         const size_t bytes = work.on_device.size();
         DeviceColumn & column = readers[work.reader].device_columns[work.column_index];
         checkCuda(
-            cudaMemcpyAsync(column.grow(bytes), work.on_device.data(), bytes, cudaMemcpyDeviceToDevice, deviceStream()),
+            cudaMemcpyAsync(column.grow(bytes), work.on_device.data(), bytes, cudaMemcpyDeviceToDevice, StreamRegistry::get().compute),
             "Cannot append {} plain bytes to a device column",
             bytes);
 
         work.staged = PinnedBuffer{};
         CopiedRaw copied{.work = std::move(work), .copied = DeviceEvent{}};
-        copied.copied.record(deviceStream());
+        copied.copied.record(StreamRegistry::get().compute);
         raw_in_flight.push_back(std::move(copied));
     }
 
@@ -709,7 +709,7 @@ void GroupByGPUAccumulator::finishExpansion()
         const size_t bytes = decompressedBytesOf(work.blocks);
         DeviceColumn & column = readers[work.reader].device_columns[work.column_index];
         checkCuda(
-            cudaMemcpyAsync(column.grow(bytes), expanded + at, bytes, cudaMemcpyDeviceToDevice, deviceStream()),
+            cudaMemcpyAsync(column.grow(bytes), expanded + at, bytes, cudaMemcpyDeviceToDevice, StreamRegistry::get().compute),
             "Cannot append {} expanded bytes to a device column",
             bytes);
         at += bytes;

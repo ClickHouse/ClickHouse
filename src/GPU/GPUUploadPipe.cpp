@@ -38,7 +38,7 @@ void DeviceColumn::dropFront(size_t num_rows)
 
     spare.clear();
     checkCuda(
-        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, deviceStream()),
+        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, StreamRegistry::get().compute),
         "Cannot move {} bytes to the front of a device column",
         tail);
     std::swap(values, spare);

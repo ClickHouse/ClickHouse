@@ -1,5 +1,6 @@
 #pragma once
 
+#include <GPU/GPUStreams.h>
 #include <GPU/GPUTypes.h>
 
 #include <cudf/column/column_view.hpp>
@@ -31,8 +32,6 @@ public:
 private:
     std::string message;
 };
-
-rmm::cuda_stream_view cudfStream();
 
 /// Points cuDF's allocations at the device's default memory pool, which the host side allocates
 /// from as well. Runs once.

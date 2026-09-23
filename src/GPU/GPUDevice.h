@@ -4,6 +4,8 @@
 
 #if USE_GPU
 
+#include <GPU/GPUStreams.h>
+
 #include <Common/Exception.h>
 
 #include <cuda_runtime_api.h>
@@ -21,14 +23,6 @@ namespace DB::ErrorCodes
 namespace DB::GPU
 {
 
-inline cudaStream_t deviceStream()
-{
-    return cudaStreamLegacy;
-}
-
-cudaStream_t copyStream();
-
-cudaStream_t decompressStream();
 
 inline void clearDeviceError()
 {

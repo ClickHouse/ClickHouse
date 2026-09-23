@@ -246,7 +246,7 @@ DeviceEvent & DeviceEvent::operator=(DeviceEvent && other) noexcept
 
 void DeviceEvent::record()
 {
-    record(deviceStream());
+    record(StreamRegistry::get().compute);
 }
 
 void DeviceEvent::record(cudaStream_t stream)

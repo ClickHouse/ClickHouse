@@ -837,17 +837,17 @@ struct RecordGroupBy::State
     State(GPUSpan<GPUElementType> key_element_types_, GPUSpan<GPUGroupByValue> values_)
         : key_element_types(key_element_types_.begin(), key_element_types_.end())
         , values(values_.begin(), values_.end())
-        , num_groups(0, cudfStream())
-        , sentinel_seen(0, cudfStream())
-        , buckets_in(0, cudfStream())
-        , buckets_out(0, cudfStream())
-        , indices_in(0, cudfStream())
-        , indices_out(0, cudfStream())
-        , sort_storage(0, cudfStream())
-        , overflow(0, cudfStream())
-        , num_overflow(0, cudfStream())
-        , partial_keys(0, cudfStream())
-        , partial_records(0, cudfStream())
+        , num_groups(0, StreamRegistry::get().compute)
+        , sentinel_seen(0, StreamRegistry::get().compute)
+        , buckets_in(0, StreamRegistry::get().compute)
+        , buckets_out(0, StreamRegistry::get().compute)
+        , indices_in(0, StreamRegistry::get().compute)
+        , indices_out(0, StreamRegistry::get().compute)
+        , sort_storage(0, StreamRegistry::get().compute)
+        , overflow(0, StreamRegistry::get().compute)
+        , num_overflow(0, StreamRegistry::get().compute)
+        , partial_keys(0, StreamRegistry::get().compute)
+        , partial_records(0, StreamRegistry::get().compute)
     {
         checkCuda(cudaEventCreate(&kernel_started), "cannot create an event");
         checkCuda(cudaEventCreate(&kernel_finished), "cannot create an event");
@@ -883,8 +883,8 @@ struct RecordGroupBy::State
         shared_capacity = static_cast<uint32_t>(std::bit_floor((shared_table_bytes - 64) / slot_bytes));
 
         const size_t num_partials = size_t{num_buckets} * shared_capacity;
-        partial_keys.resize(num_partials, cudfStream());
-        partial_records.resize(num_partials * values.size(), cudfStream());
+        partial_keys.resize(num_partials, StreamRegistry::get().compute);
+        partial_records.resize(num_partials * values.size(), StreamRegistry::get().compute);
     }
 
     /// Whether a chunk's rows can go in two passes: when the groups so far, spread over the
@@ -957,7 +957,7 @@ struct RecordGroupBy::State
 
     Table makeTable(size_t requested) const
     {
-        const rmm::cuda_stream_view stream = cudfStream();
+        const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
         Table made;
         made.set = std::make_unique<Set>(
@@ -1008,7 +1008,7 @@ struct RecordGroupBy::State
 
         if (table.set)
         {
-            const rmm::cuda_stream_view stream = cudfStream();
+            const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
             checkCuda(
                 cudaMemcpyAsync(
@@ -1082,7 +1082,7 @@ struct RecordGroupBy::State
     /// adding its time to `kernel_microseconds`.
     void aggregateDirectly(const Layouts & layouts, const uint32_t * order, size_t rows, double & kernel_microseconds)
     {
-        const rmm::cuda_stream_view stream = cudfStream();
+        const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
         checkCuda(cudaEventRecord(kernel_started, stream.value()), "cannot record an event");
 
@@ -1115,7 +1115,7 @@ struct RecordGroupBy::State
     {
         const size_t num_partials = size_t{num_buckets} * shared_capacity;
 
-        const rmm::cuda_stream_view stream = cudfStream();
+        const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
         growSortBuffers(rows, stream);
         checkCuda(cudaMemsetAsync(num_overflow.data(), 0, sizeof(uint32_t), stream.value()), "cannot clear the overflow count");
 
@@ -1300,7 +1300,7 @@ size_t RecordGroupBy::finalize()
     if (!table.set)
         return 0;
 
-    const rmm::cuda_stream_view stream = cudfStream();
+    const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
     const bool with_sentinel = state->sentinel_seen.value(stream) != 0;
     const size_t num_regular = state->num_groups_on_host;
@@ -1357,7 +1357,7 @@ void RecordGroupBy::copyGroupsOut(GPUSpan<HostColumnView> keys, GPUSpan<HostColu
     if (state->output_groups == 0)
         return;
 
-    const rmm::cuda_stream_view stream = cudfStream();
+    const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
     for (size_t i = 0; i < keys.size(); ++i)
     {

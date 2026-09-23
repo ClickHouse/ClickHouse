@@ -109,13 +109,13 @@ size_t decompressedBytesOf(std::span<const CompressedBlock> blocks)
 }
 
 Decompressor::Decompressor()
-    : device_compressed(decompressStream())
-    , device_arguments(decompressStream())
-    , device_results(decompressStream())
-    , device_temp(decompressStream())
+    : device_compressed(StreamRegistry::get().decompression)
+    , device_arguments(StreamRegistry::get().decompression)
+    , device_results(StreamRegistry::get().decompression)
+    , device_temp(StreamRegistry::get().decompression)
 {
     for (Slot & slot : slots)
-        slot.values = DeviceBuffer(decompressStream());
+        slot.values = DeviceBuffer(StreamRegistry::get().decompression);
 }
 
 Decompressor::Decompressor(Decompressor && other) noexcept
@@ -178,8 +178,8 @@ void Decompressor::decompress(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression was asked for while an expansion was in flight");
 
     DeviceEvent destination_ready;
-    destination_ready.record(deviceStream());
-    destination_ready.waitOn(decompressStream());
+    destination_ready.record(StreamRegistry::get().compute);
+    destination_ready.waitOn(StreamRegistry::get().decompression);
 
     device_compressed.clear();
     device_compressed.append(host_compressed.substr(0, compressed_total));
@@ -206,7 +206,7 @@ void Decompressor::start(GPUCodec codec, std::span<const Piece> pieces)
     if (slot.in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was taken again before being released");
 
-    slot.copied_out.waitOn(decompressStream());
+    slot.copied_out.waitOn(StreamRegistry::get().decompression);
     slot.values.clear();
     started_destination = slot.values.grow(total);
 
@@ -231,14 +231,14 @@ void Decompressor::release()
     if (!slot.in_use)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A decompression buffer was released without being taken");
 
-    slot.copied_out.record(deviceStream());
+    slot.copied_out.record(StreamRegistry::get().compute);
     slot.in_use = false;
     current_slot = (current_slot + 1) % num_slots;
 }
 
 void Decompressor::queue(GPUCodec codec, std::span<const Piece> pieces, char * destination)
 {
-    const cudaStream_t stream = decompressStream();
+    const cudaStream_t stream = StreamRegistry::get().decompression;
 
     size_t num_blocks = 0;
     size_t decompressed_total = 0;

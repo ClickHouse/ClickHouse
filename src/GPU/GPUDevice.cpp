@@ -38,33 +38,24 @@ void initializeDevice()
     });
 }
 
-cudaStream_t copyStream()
+const StreamRegistry & StreamRegistry::get()
 {
-    static const cudaStream_t stream = []
+    static const StreamRegistry registry = []
     {
         initializeDevice();
-        cudaStream_t created = nullptr;
-        checkCuda(cudaStreamCreateWithFlags(&created, cudaStreamNonBlocking), "Cannot create a stream for uploads");
-        return created;
-    }();
-    return stream;
-}
 
-cudaStream_t decompressStream()
-{
-    static const cudaStream_t stream = []
-    {
-        initializeDevice();
-        cudaStream_t created = nullptr;
-        checkCuda(cudaStreamCreateWithFlags(&created, cudaStreamNonBlocking), "Cannot create a stream for decompression");
-        return created;
+        StreamRegistry made;
+        made.compute = cudaStreamLegacy;
+        checkCuda(cudaStreamCreateWithFlags(&made.upload, cudaStreamNonBlocking), "Cannot create a stream for uploads");
+        checkCuda(cudaStreamCreateWithFlags(&made.decompression, cudaStreamNonBlocking), "Cannot create a stream for decompression");
+        return made;
     }();
-    return stream;
+    return registry;
 }
 
 void synchronizeDevice()
 {
-    checkCuda(cudaStreamSynchronize(deviceStream()), "Cannot wait for the device to finish");
+    checkCuda(cudaStreamSynchronize(StreamRegistry::get().compute), "Cannot wait for the device to finish");
 }
 
 const String & deviceProbeError()
