@@ -60,6 +60,7 @@ void ASTTableJoin::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases)
     hash_state.update(strictness);
     hash_state.update(kind);
     hash_state.update(is_natural);
+    hash_state.update(lateral);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -259,6 +260,9 @@ void ASTTableJoin::formatImplBeforeTable(WriteBuffer & ostr, const FormatSetting
             ostr << "PASTE JOIN";
             break;
     }
+
+    if (lateral)
+        ostr << " LATERAL";
 }
 
 
@@ -376,6 +380,8 @@ void ASTTableJoin::writeJSON(WriteBuffer & out) const
     w.writeString("kind", toString(kind));
     if (is_natural)
         w.writeBool("is_natural", true);
+    if (lateral)
+        w.writeBool("lateral", true);
     w.writeChild("using_expression_list", using_expression_list);
     w.writeChild("on_expression", on_expression);
 }
@@ -572,6 +578,7 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
 
     kind = parseJoinKind(r.getString("kind"));
     is_natural = r.getBool("is_natural");
+    lateral = r.getBool("lateral");
 
     /// `using_expression_list` is parser-produced as an `ASTExpressionList`; `TranslateQualifiedNamesVisitor`
     /// and `QueryTreeBuilder::buildExpressionList` downcast it, so reject any other node type here.
@@ -624,6 +631,10 @@ void ASTTableJoin::readJSON(const Poco::JSON::Object & json)
     if (is_natural && (kind == JoinKind::Cross || kind == JoinKind::Paste))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "NATURAL JOIN cannot be used with CROSS or PASTE join during AST JSON deserialization");
+    /// `LATERAL` is rejected by the parser for `CROSS` and comma joins.
+    if (lateral && (kind == JoinKind::Cross || kind == JoinKind::Comma))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "LATERAL is not supported with CROSS and comma joins during AST JSON deserialization");
 }
 
 void ASTArrayJoin::readJSON(const Poco::JSON::Object & json)

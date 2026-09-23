@@ -1,5 +1,7 @@
 #include <Planner/PlannerCorrelatedSubqueries.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
 
@@ -44,7 +46,9 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 
 #include <Storages/ColumnsDescription.h>
@@ -384,6 +388,171 @@ std::optional<ColumnWithType> traceUnionColumnIntoArm(
 /// Correlated subquery is represented by implicit dependent join operator.
 /// This function builds a query plan to evaluate correlated subquery by
 /// pushing dependent join down and replacing it with CROSS JOIN.
+/// Either context can be the one that builds the QueryPlanOptimizationSettings and creates the
+/// buffer, so neither alone is authoritative: keep the protection when either would buffer.
+bool referencedInputUsesInMemoryBuffer(const DecorrelationContext & context)
+{
+    auto would_buffer = [](const Settings & settings_to_check)
+    {
+        return settings_to_check[Setting::correlated_subqueries_use_in_memory_buffer]
+            && settings_to_check[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
+    };
+    const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
+    const auto top_level_context = context.planner_context->getQueryContext();
+    return would_buffer(settings)
+        || (top_level_context->hasQueryContext() && would_buffer(top_level_context->getQueryContext()->getSettingsRef()));
+}
+
+/// The distinct values of the correlated columns in the outer plan (the domain of the correlated subquery),
+/// read through a reference to the outer plan. Simulates the Duplicate Eliminating Join. Runs with the
+/// default-constructed step settings: internal unbounded limits, so that a user's `max_rows_in_distinct` /
+/// `distinct_overflow_mode` can never truncate the domain, and no external `DISTINCT`.
+QueryPlan buildCorrelatedDomainPlan(DecorrelationContext & context)
+{
+    context.uses_in_memory_buffer = referencedInputUsesInMemoryBuffer(context);
+    context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
+
+    auto buffer_header = std::make_shared<Block>();
+    const auto & input_header = context.query_plan.getCurrentHeader();
+    for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
+    {
+        /// Decorrelation runs inside-out, and the correlated inputs of an intermediate scope are
+        /// injected later, so for some shapes of nested correlated subqueries the correlated column
+        /// is not in the outer query plan yet at this point. Reject those with a clear error instead
+        /// of failing deep inside with `NOT_FOUND_COLUMN_IN_BLOCK`.
+        if (!input_header->has(column))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subquery is not supported yet, because the correlated column '{}' is not "
+                "available in the outer query plan at this point. Available columns: {}",
+                column,
+                input_header->dumpNames());
+        buffer_header->insert(input_header->getByName(column));
+    }
+
+    QueryPlan domain_plan;
+    domain_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
+        buffer_header,
+        context.query_plan.getRootNode(),
+        context.correlated_subquery.correlated_column_identifiers));
+    domain_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
+
+    domain_plan.addStep(std::make_unique<DistinctStep>(
+        domain_plan.getCurrentHeader(),
+        DistinctStep::Settings{},
+        /*limit_hint_=*/0,
+        context.correlated_subquery.correlated_column_identifiers,
+        /*pre_distinct_=*/false));
+
+    return domain_plan;
+}
+
+/** A correlated aggregate without a user `GROUP BY` yields exactly one row per outer row, also when the
+  * filtered inner relation is empty for that outer row: `SELECT count() FROM t WHERE t.k = outer.k` is `0`
+  * then, not "no row". Decorrelation turns such an aggregate into `GROUP BY correlated_columns`, which has
+  * no group for an outer value without inner rows, so a `LEFT JOIN LATERAL` would null-extend the outer
+  * row and an `INNER JOIN LATERAL` would drop it.
+  *
+  * To restore the missing groups, the aggregate input is outer-joined with the distinct correlated values
+  * of the outer plan: an outer value without inner rows becomes one filler row whose `marker` is zero (the
+  * join fills unmatched columns with defaults, never with NULLs). The caller wraps every aggregate into
+  * the `-If(marker)` combinator, so the filler row opens its group without contributing to any aggregate
+  * state and the group yields the empty-set result, exactly like an uncorrelated aggregate over no rows.
+  * After the join the correlated columns come from the domain side, which is present for every group;
+  * the copies on the inner side are renamed out of the way and consumed by the aggregation.
+  */
+QueryPlan addMissingCorrelatedGroupsToAggregateInput(
+    DecorrelationContext & context,
+    QueryPlan aggregate_input_plan,
+    const String & marker_name)
+{
+    const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
+    const auto & correlated_columns = context.correlated_subquery.correlated_column_identifiers;
+
+    auto get_inner_column_name = [&](const String & column_name) -> String
+    {
+        return fmt::format("{}.{}", context.correlated_subquery.action_node_name, column_name);
+    };
+
+    {
+        ActionsDAG dag(aggregate_input_plan.getCurrentHeader()->getNamesAndTypesList());
+        ActionsDAG::NodeRawConstPtrs new_outputs;
+        for (const auto * input : dag.getInputs())
+        {
+            if (std::ranges::contains(correlated_columns, input->result_name))
+                new_outputs.push_back(&dag.addAlias(*input, get_inner_column_name(input->result_name)));
+            else
+                new_outputs.push_back(input);
+        }
+        auto marker_type = std::make_shared<DataTypeUInt8>();
+        new_outputs.push_back(&dag.materializeNode(dag.addColumn(marker_type->createColumnConst(0, 1u), marker_type, marker_name)));
+        dag.getOutputs() = std::move(new_outputs);
+
+        auto marker_step = std::make_unique<ExpressionStep>(aggregate_input_plan.getCurrentHeader(), std::move(dag));
+        marker_step->setStepDescription("Mark the present rows of the correlated aggregate input");
+        aggregate_input_plan.addStep(std::move(marker_step));
+    }
+
+    QueryPlan lhs_plan = std::move(aggregate_input_plan);
+    QueryPlan rhs_plan = buildCorrelatedDomainPlan(context);
+
+    using ColumnNameGetter = std::function<String(const String &)>;
+    ColumnNameGetter get_lhs_column_name = get_inner_column_name;
+    ColumnNameGetter get_rhs_column_name = [](const String & column_name) -> String { return column_name; };
+
+    /// Every domain row is kept, so the domain side is the preserved side of the outer join. A buffered
+    /// referenced input has to stay on the right side of a join (see buildLogicalJoin).
+    JoinKind join_kind = JoinKind::Right;
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT && !context.uses_in_memory_buffer)
+    {
+        std::swap(lhs_plan, rhs_plan);
+        std::swap(get_lhs_column_name, get_rhs_column_name);
+        join_kind = JoinKind::Left;
+    }
+
+    auto lhs_plan_header = lhs_plan.getCurrentHeader();
+    auto rhs_plan_header = rhs_plan.getCurrentHeader();
+
+    JoinExpressionActions join_expression_actions(
+        lhs_plan_header->getColumnsWithTypeAndName(),
+        rhs_plan_header->getColumnsWithTypeAndName());
+
+    std::vector<JoinActionRef> predicates;
+    for (const auto & column_name : correlated_columns)
+    {
+        std::vector<JoinActionRef> eq_arguments;
+        eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
+        eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
+        predicates.push_back(JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals)));
+    }
+
+    NameSet output_columns;
+    output_columns.insert_range(lhs_plan_header->getNames());
+    output_columns.insert_range(rhs_plan_header->getNames());
+
+    /// `use_nulls` is false regardless of `join_use_nulls`: the filler rows must get the default `0` in the
+    /// marker column, and their other inner columns are never read by the `-If` aggregates.
+    auto domain_join = std::make_unique<JoinStepLogical>(
+        lhs_plan_header,
+        rhs_plan_header,
+        JoinOperator(join_kind, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
+        std::move(join_expression_actions),
+        output_columns,
+        std::unordered_map<String, const ActionsDAG::Node *>{},
+        /*use_nulls_=*/false,
+        JoinSettings(settings, context.planner_context->getQueryContext()->getJoinAnalyzeMode()),
+        SortingStep::Settings(settings));
+    domain_join->setStepDescription("JOIN to restore the empty groups of the correlated aggregate");
+    makeInternalDecorrelationJoinUnbounded(*domain_join);
+
+    QueryPlan result_plan;
+    std::vector<QueryPlanPtr> plans;
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
+    result_plan.unitePlans(std::move(domain_join), {std::move(plans)});
+    return result_plan;
+}
+
 QueryPlan decorrelateQueryPlan(
     DecorrelationContext & context,
     QueryPlan::Node * node
@@ -559,19 +728,7 @@ QueryPlan decorrelateQueryPlan(
                 return result_plan;
             }
         }
-        /// Either context can be the one that builds the QueryPlanOptimizationSettings and creates the
-        /// buffer, so neither alone is authoritative: keep the protection when either would buffer.
-        auto would_buffer = [](const Settings & settings_to_check)
-        {
-            return settings_to_check[Setting::correlated_subqueries_use_in_memory_buffer]
-                && settings_to_check[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT;
-        };
-        const auto top_level_context = context.planner_context->getQueryContext();
-        context.uses_in_memory_buffer = would_buffer(settings)
-            || (top_level_context->hasQueryContext() && would_buffer(top_level_context->getQueryContext()->getSettingsRef()));
-
         QueryPlan lhs_plan = context.correlated_query_plan.extractSubplan(node);
-        QueryPlan rhs_plan;
 
         /// The inner subplan can have zero output columns when it only contributes cardinality (e.g. an
         /// EXISTS body reduced to a bare filter). Such a relation loses its row count on the streamed side
@@ -593,41 +750,7 @@ QueryPlan decorrelateQueryPlan(
         }
 
         auto default_join_kind = settings[Setting::correlated_subqueries_default_join_kind];
-        context.query_plan.addStep(std::make_unique<CommonSubplanStep>(context.query_plan.getCurrentHeader()));
-
-        auto buffer_header = std::make_shared<Block>();
-        const auto & input_header = context.query_plan.getCurrentHeader();
-        for (const auto & column : context.correlated_subquery.correlated_column_identifiers)
-        {
-            /// Decorrelation runs inside-out, and the correlated inputs of an intermediate scope are
-            /// injected later, so for some shapes of nested correlated subqueries the correlated column
-            /// is not in the outer query plan yet at this point. Reject those with a clear error instead
-            /// of failing deep inside with `NOT_FOUND_COLUMN_IN_BLOCK`.
-            if (!input_header->has(column))
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Correlated subquery is not supported yet, because the correlated column '{}' is not "
-                    "available in the outer query plan at this point. Available columns: {}",
-                    column,
-                    input_header->dumpNames());
-            buffer_header->insert(input_header->getByName(column));
-        }
-
-        rhs_plan.addStep(std::make_unique<CommonSubplanReferenceStep>(
-            buffer_header,
-            context.query_plan.getRootNode(),
-            context.correlated_subquery.correlated_column_identifiers));
-        rhs_plan.getRootNode()->step->setStepDescription("Input for " + context.correlated_subquery.action_node_name, 100);
-
-        /// Needed to simulate the Duplicate Eliminating Join. Runs with the default-constructed step
-        /// settings: internal unbounded limits, so that a user's `max_rows_in_distinct` /
-        /// `distinct_overflow_mode` can never truncate the domain, and no external `DISTINCT`.
-        rhs_plan.addStep(std::make_unique<DistinctStep>(
-            rhs_plan.getCurrentHeader(),
-            DistinctStep::Settings{},
-            /*limit_hint_=*/0,
-            context.correlated_subquery.correlated_column_identifiers,
-            /*pre_distinct_=*/false));
+        QueryPlan rhs_plan = buildCorrelatedDomainPlan(context);
 
         if (default_join_kind == DecorrelationJoinKind::LEFT)
             std::swap(lhs_plan, rhs_plan);
@@ -923,7 +1046,68 @@ QueryPlan decorrelateQueryPlan(
             new_keys.push_back(correlated_column_identifier);
         }
 
-        auto new_aggregator_params = original_aggregator_params.cloneWithKeys(new_keys, original_aggregator_params.only_merge);
+        AggregateDescriptions new_aggregates = original_aggregator_params.aggregates;
+
+        /// An aggregate without user keys yields one row per outer row even over an empty input (see
+        /// addMissingCorrelatedGroupsToAggregateInput). With `empty_result_for_aggregation_by_empty_set` the
+        /// user asked for no row over an empty input, which is what the plain `GROUP BY correlated_columns`
+        /// already produces. Only `LATERAL` joins restore the groups: for a scalar subquery the missing
+        /// group is rendered as NULL and for `EXISTS` as false, and that behaviour predates this code.
+        bool restore_empty_groups = context.correlated_subquery.kind == CorrelatedSubqueryKind::LATERAL_JOIN
+            && original_aggregator_params.keys.empty()
+            && !original_aggregator_params.empty_result_for_aggregation_by_empty_set;
+        if (restore_empty_groups)
+        {
+            String marker_name = "__correlated_aggregate_input_marker_" + context.correlated_subquery.action_node_name;
+            decorrelated_query_plan = addMissingCorrelatedGroupsToAggregateInput(context, std::move(decorrelated_query_plan), marker_name);
+            input_header = decorrelated_query_plan.getCurrentHeader();
+
+            /// An identical nested combinator (`sumIfIf`) is rejected by the aggregate function factory, so
+            /// the marker is folded into the filter of an aggregate that already ends with `-If` instead.
+            const auto & query_context = context.planner_context->getQueryContext();
+            ActionsDAG filter_dag(input_header->getNamesAndTypesList());
+            const auto * marker_node = &filter_dag.findInOutputs(marker_name);
+            bool has_folded_filters = false;
+
+            auto marker_type = std::make_shared<DataTypeUInt8>();
+            for (size_t aggregate_index = 0; aggregate_index < new_aggregates.size(); ++aggregate_index)
+            {
+                auto & aggregate = new_aggregates[aggregate_index];
+                if (aggregate.function->getName().ends_with("If") && !aggregate.argument_names.empty())
+                {
+                    const auto & filter_type = aggregate.function->getArgumentTypes().back();
+                    const auto & filter_node = filter_dag.findInOutputs(aggregate.argument_names.back());
+                    const auto * combined = &filter_dag.addFunction(
+                        FunctionFactory::instance().get("and", query_context), {&filter_node, marker_node}, {});
+                    String combined_name = fmt::format("{}_{}", marker_name, aggregate_index);
+                    combined = &filter_dag.addCast(*combined, filter_type, combined_name, query_context);
+                    filter_dag.getOutputs().push_back(combined);
+                    aggregate.argument_names.back() = combined_name;
+                    has_folded_filters = true;
+                    continue;
+                }
+
+                /// The factory builds the -If form with the same handling of Nullable arguments as for a user
+                /// query; wrapping an already Null-adapted function by hand breaks on Nullable arguments.
+                DataTypes argument_types = aggregate.function->getArgumentTypes();
+                argument_types.push_back(marker_type);
+                AggregateFunctionProperties properties;
+                aggregate.function = AggregateFunctionFactory::instance().get(
+                    aggregate.function->getName() + "If", NullsAction::EMPTY, argument_types, aggregate.parameters, properties);
+                aggregate.argument_names.push_back(marker_name);
+            }
+
+            if (has_folded_filters)
+            {
+                auto filter_step = std::make_unique<ExpressionStep>(input_header, std::move(filter_dag));
+                filter_step->setStepDescription("Fold the correlated aggregate input marker into -If filters");
+                decorrelated_query_plan.addStep(std::move(filter_step));
+                input_header = decorrelated_query_plan.getCurrentHeader();
+            }
+        }
+
+        auto new_aggregator_params = original_aggregator_params.cloneWithKeysAndAggregates(
+            new_keys, new_aggregates, original_aggregator_params.only_merge);
 
         auto result_step = std::make_unique<AggregatingStep>(
             std::move(input_header),
@@ -946,6 +1130,60 @@ QueryPlan decorrelateQueryPlan(
 
         decorrelated_query_plan.addStep(std::move(result_step));
 
+        return decorrelated_query_plan;
+    }
+    if (auto * sorting_step = typeid_cast<SortingStep *>(node->step.get()))
+    {
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
+        /// Prepend correlated columns to the sort description so that sorting
+        /// happens within each group of correlated values.
+        SortDescription new_description;
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            new_description.push_back(SortColumnDescription{correlated_column_identifier});
+
+        for (const auto & col : sorting_step->getSortDescription())
+            new_description.push_back(col);
+
+        const auto & settings = context.planner_context->getQueryContext()->getSettingsRef();
+        /// Do not pass the original limit — in the decorrelated plan, the limit
+        /// semantics change from "global top N" to "top N per group" which is
+        /// handled by the subsequent LimitByStep.
+        auto result_step = std::make_unique<SortingStep>(
+            input_header,
+            std::move(new_description),
+            /*limit_=*/0,
+            SortingStep::Settings(settings));
+        result_step->setStepDescription(*sorting_step);
+
+        decorrelated_query_plan.addStep(std::move(result_step));
+        return decorrelated_query_plan;
+    }
+    if (auto * limit_step = typeid_cast<LimitStep *>(node->step.get()))
+    {
+        if (limit_step->withTies())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subquery decorrelation does not support LIMIT ... WITH TIES");
+
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+        auto input_header = decorrelated_query_plan.getCurrentHeader();
+
+        /// Convert `LIMIT N OFFSET M` into `LIMIT N OFFSET M BY correlated_columns`.
+        /// This gives us "top N per group (skipping M)" semantics after decorrelation.
+        Names limit_by_columns;
+        limit_by_columns.reserve(context.correlated_subquery.correlated_column_identifiers.size());
+        for (const auto & correlated_column_identifier : context.correlated_subquery.correlated_column_identifiers)
+            limit_by_columns.push_back(correlated_column_identifier);
+
+        auto result_step = std::make_unique<LimitByStep>(
+            input_header,
+            limit_step->getLimit(),
+            limit_step->getOffset(),
+            std::move(limit_by_columns));
+        result_step->setStepDescription("LIMIT BY for decorrelated correlated subquery");
+
+        decorrelated_query_plan.addStep(std::move(result_step));
         return decorrelated_query_plan;
     }
     if (auto * delayed_creating_sets_step = typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
@@ -1069,6 +1307,187 @@ void buildExistsResultExpression(
     auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
     expression_step->setStepDescription("Create result for always true EXISTS expression");
     query_plan.addStep(std::move(expression_step));
+}
+
+/// For LATERAL JOIN: project the decorrelated plan to only the subquery's projection columns
+/// (renamed to outer planner identifiers) and the correlated columns (renamed with prefix).
+/// This bridges the gap between the subquery planner's internal identifiers and the outer
+/// planner's expected column identifiers.
+void buildProjectionForLateralSubquery(
+    QueryPlan & query_plan,
+    const CorrelatedSubquery & correlated_subquery,
+    const PlannerContextPtr & planner_context
+)
+{
+    auto * query_node = correlated_subquery.query_tree->as<QueryNode>();
+    auto * union_node_ptr = correlated_subquery.query_tree->as<UnionNode>();
+
+    if (!query_node && !union_node_ptr)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "LATERAL JOIN right side must be a QueryNode or UnionNode");
+
+    NamesAndTypes projection_columns;
+    if (query_node)
+        projection_columns = query_node->getProjectionColumns();
+    else
+        projection_columns = union_node_ptr->computeProjectionColumns();
+
+    const auto & table_expression_data = planner_context->getTableExpressionDataOrThrow(correlated_subquery.query_tree);
+
+    ActionsDAG dag(query_plan.getCurrentHeader()->getNamesAndTypesList());
+    auto & outputs = dag.getOutputs();
+
+    /// Build lookup for correlated column names
+    std::unordered_set<std::string_view> correlated_names(
+        correlated_subquery.correlated_column_identifiers.begin(),
+        correlated_subquery.correlated_column_identifiers.end());
+
+    /// Build lookup from output node name to the DAG node
+    std::unordered_map<std::string, const ActionsDAG::Node *> name_to_output_node;
+    for (const auto * output : outputs)
+        name_to_output_node[output->result_name] = output;
+
+    ActionsDAG::NodeRawConstPtrs new_outputs;
+
+    /// Add projection columns, renamed to outer planner identifiers.
+    /// The subquery planner produces output columns with bare projection names (e.g., `id`, `amount`).
+    /// The outer planner expects them with qualified identifiers (e.g., `__table2.id`, `__table2.amount`).
+    for (const auto & col : projection_columns)
+    {
+        const auto * identifier = table_expression_data.getColumnIdentifierOrNull(col.name);
+        if (!identifier)
+            continue; /// Column not referenced by outer query, skip
+
+        auto it = name_to_output_node.find(col.name);
+        if (it != name_to_output_node.end())
+        {
+            new_outputs.push_back(&dag.addAlias(*it->second, *identifier));
+        }
+    }
+
+    /// Add correlated columns with prefix for the join condition
+    for (const auto * output : outputs)
+    {
+        if (correlated_names.contains(output->result_name))
+        {
+            new_outputs.push_back(&dag.addAlias(*output,
+                fmt::format("{}.{}", correlated_subquery.action_node_name, output->result_name)));
+        }
+    }
+
+    dag.getOutputs() = std::move(new_outputs);
+
+    auto expression_step = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(dag));
+    expression_step->setStepDescription("Project and rename LATERAL JOIN subquery columns");
+    query_plan.addStep(std::move(expression_step));
+}
+
+/// Build the final logical join for LATERAL JOIN.
+/// Similar to buildLogicalJoin but uses ALL strictness and includes all subquery columns.
+QueryPlan buildLogicalJoinForLateral(
+    const PlannerContextPtr & planner_context,
+    QueryPlan input_stream_plan,
+    QueryPlan decorrelated_plan,
+    const CorrelatedSubquery & correlated_subquery,
+    bool uses_in_memory_buffer,
+    JoinKind lateral_join_kind
+)
+{
+    auto lhs_plan_header = decorrelated_plan.getCurrentHeader();
+    auto rhs_plan_header = input_stream_plan.getCurrentHeader();
+
+    using ColumnNameGetter = std::function<String(const String &)>;
+    ColumnNameGetter get_lhs_column_name = [&](const String & column_name) -> String {
+        return fmt::format("{}.{}", correlated_subquery.action_node_name, column_name);
+    };
+    ColumnNameGetter get_rhs_column_name = [&](const String & column_name) -> String {
+        return column_name;
+    };
+
+    auto lhs_plan = std::move(decorrelated_plan);
+    auto rhs_plan = std::move(input_stream_plan);
+
+    /// Include all columns from both sides
+    NameSet output_columns;
+    output_columns.insert_range(rhs_plan_header->getNames());
+    output_columns.insert_range(lhs_plan_header->getNames());
+
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+
+    /// A buffered referenced input (SaveSubqueryResultToBuffer / ReadFromCommonBuffer) requires the
+    /// reader to run after the writer finished, which is only guaranteed when the input stream stays
+    /// on the right side of the join, so keep that layout when a buffer is created.
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT && !uses_in_memory_buffer)
+    {
+        std::swap(lhs_plan, rhs_plan);
+        std::swap(lhs_plan_header, rhs_plan_header);
+        std::swap(get_lhs_column_name, get_rhs_column_name);
+    }
+
+    JoinExpressionActions join_expression_actions(
+        lhs_plan_header->getColumnsWithTypeAndName(),
+        rhs_plan_header->getColumnsWithTypeAndName());
+
+    std::vector<JoinActionRef> predicates;
+    for (const auto & column_name : correlated_subquery.correlated_column_identifiers)
+    {
+        std::vector<JoinActionRef> eq_arguments;
+        eq_arguments.push_back(join_expression_actions.findNode(get_lhs_column_name(column_name), /* is_input= */ true));
+        eq_arguments.push_back(join_expression_actions.findNode(get_rhs_column_name(column_name), /* is_input= */ true));
+        auto eq_node = JoinActionRef::transform(eq_arguments, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+        predicates.push_back(std::move(eq_node));
+    }
+
+    /// Determine the physical join kind based on the LATERAL JOIN semantics:
+    /// - INNER/CROSS LATERAL: use INNER join (drop outer rows without matches)
+    /// - LEFT LATERAL: use LEFT or RIGHT based on decorrelation direction (preserve all outer rows)
+    JoinKind join_kind_to_use = JoinKind::Inner;
+    if (lateral_join_kind != JoinKind::Inner && lateral_join_kind != JoinKind::Cross)
+        join_kind_to_use = (uses_in_memory_buffer || settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT)
+            ? JoinKind::Right : JoinKind::Left;
+
+    /// Respect the join_use_nulls setting: when enabled (default), unmatched columns
+    /// in LEFT/RIGHT joins are filled with NULLs; when disabled, with type defaults.
+    bool use_nulls = settings[Setting::join_use_nulls];
+    auto result_join = std::make_unique<JoinStepLogical>(
+        lhs_plan_header,
+        rhs_plan_header,
+        JoinOperator(join_kind_to_use, JoinStrictness::All, JoinLocality::Unspecified, std::move(predicates)),
+        std::move(join_expression_actions),
+        output_columns,
+        std::unordered_map<String, const ActionsDAG::Node *>{},
+        use_nulls,
+        JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
+        SortingStep::Settings(settings));
+    result_join->setStepDescription("LATERAL JOIN");
+
+    /// Reordering protection for the buffered case whose layout was pinned above.
+    if (uses_in_memory_buffer)
+    {
+        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
+        /// Remove algorithms that are not compatible with in-memory buffering
+        /// of correlated subquery input: the input stream must be fully evaluated
+        /// before the lateral subquery side is executed.
+        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        if (join_algorithms.empty())
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+        /// This is a user join, so its size limits still apply, but under join_overflow_mode = 'break'
+        /// the build side (the buffered input stream) could stop early, which both drops outer rows
+        /// and lets the lateral side read the buffer before its writer finished. Enforce the limits
+        /// with THROW instead.
+        result_join->getJoinSettings().join_overflow_mode = OverflowMode::THROW;
+        /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
+        result_join->setOptimized();
+    }
+
+    QueryPlan result_plan;
+
+    std::vector<QueryPlanPtr> plans;
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(lhs_plan)));
+    plans.emplace_back(std::make_unique<QueryPlan>(std::move(rhs_plan)));
+
+    result_plan.unitePlans(std::move(result_join), {std::move(plans)});
+    return result_plan;
 }
 
 QueryPlan buildLogicalJoin(
@@ -1371,6 +1790,43 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(decorrelated_plan),
                 correlated_subquery,
                 context.uses_in_memory_buffer);
+            break;
+        }
+        case CorrelatedSubqueryKind::LATERAL_JOIN:
+        {
+            Planner subquery_planner = buildPlannerForCorrelatedSubquery(planner_context, correlated_subquery, select_query_options);
+            auto & correlated_query_plan = subquery_planner.getQueryPlan();
+
+            auto correlated_step_map = buildCorrelatedPlanStepMap(correlated_query_plan);
+
+            auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
+            /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
+            /// so they stay alive after decorrelation destroys the correlated plan, and the decision
+            /// contexts, so they follow the parent's distributed-plan decision.
+            query_plan.takeContextsFrom(correlated_plan);
+
+            DecorrelationContext context{
+                .correlated_subquery = correlated_subquery,
+                .planner_context = planner_context,
+                .query_plan = std::move(query_plan),
+                .correlated_query_plan = std::move(correlated_plan),
+                .correlated_plan_steps = std::move(correlated_step_map),
+                .scope_stack = { DecorrelationScope{} }
+            };
+
+            auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
+
+            /// Project to only needed columns and rename to outer planner identifiers
+            buildProjectionForLateralSubquery(decorrelated_plan, correlated_subquery, planner_context);
+
+            /// Use ALL OUTER JOIN to produce the result plan (LATERAL can return multiple rows per left row)
+            query_plan = buildLogicalJoinForLateral(
+                planner_context,
+                std::move(context.query_plan),
+                std::move(decorrelated_plan),
+                correlated_subquery,
+                context.uses_in_memory_buffer,
+                correlated_subquery.lateral_join_kind);
             break;
         }
     }

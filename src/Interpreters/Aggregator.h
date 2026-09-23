@@ -114,8 +114,8 @@ public:
         /// What to count.
         Names keys;
         size_t keys_size = 0;
-        const AggregateDescriptions aggregates;
-        const size_t aggregates_size = 0;
+        AggregateDescriptions aggregates;
+        size_t aggregates_size = 0;
 
         ///
         /// The settings of approximate calculation of GROUP BY.
@@ -253,6 +253,14 @@ public:
             new_params.keys = keys_;
             new_params.keys_size = keys_.size();
             new_params.only_merge = only_merge_;
+            return new_params;
+        }
+
+        Params cloneWithKeysAndAggregates(const Names & keys_, const AggregateDescriptions & aggregates_, bool only_merge_ = false) const
+        {
+            Params new_params = cloneWithKeys(keys_, only_merge_);
+            new_params.aggregates = aggregates_;
+            new_params.aggregates_size = aggregates_.size();
             return new_params;
         }
 

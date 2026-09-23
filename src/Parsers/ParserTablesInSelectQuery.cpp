@@ -299,6 +299,21 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
+        /// `LATERAL` is only a keyword when it is followed by a parenthesized subquery, the only supported lateral shape.
+        /// Otherwise it is left to `ParserTableExpression`, so a table or view named `lateral` still parses.
+        Pos before_lateral = pos;
+        bool is_lateral = ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::OpeningRoundBracket;
+        if (!is_lateral)
+            pos = before_lateral;
+
+        if (is_lateral)
+        {
+            table_join->lateral = true;
+
+            if (table_join->kind == JoinKind::Cross || table_join->kind == JoinKind::Comma)
+                throw Exception(ErrorCodes::SYNTAX_ERROR, "LATERAL is not supported with {} JOIN", toString(table_join->kind));
+        }
+
         if (!ParserTableExpression(allow_alias_without_as_keyword).parse(pos, res->table_expression, expected))
             return false;
 
@@ -566,6 +581,55 @@ Additional join types available in ClickHouse are:
 <Note>
 When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) is set to `partial_merge`, `RIGHT JOIN` and `FULL JOIN` are supported only with `ALL` strictness (`SEMI`, `ANTI`, `ANY`, and `ASOF` are not supported).
 </Note>
+
+## LATERAL JOIN {#lateral-join}
+
+`JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
+expressions on its left side; the subquery is evaluated for each distinct combination of the left-side
+column values it references, and its result is joined to every left row with that combination:
+
+```sql
+SELECT ...
+FROM <left_table>
+[INNER|LEFT] JOIN LATERAL (SELECT ... WHERE <expr referencing left_table>) AS <alias> ON true
+```
+
+The `ON true` predicate is mandatory, as for any other `INNER` or `LEFT JOIN`; omitting it is a syntax error.
+
+It is experimental and disabled by default; enable it with the
+[`allow_experimental_lateral_join`](/reference/settings/session-settings/allow#allow_experimental_lateral_join) setting.
+
+Only the following subset is supported so far; anything else is rejected with an error:
+
+- `INNER JOIN LATERAL` and `LEFT JOIN LATERAL` only; `RIGHT`, `FULL`, `PASTE` and `NATURAL` joins are not supported, and `LATERAL` cannot be combined with a `CROSS` or comma join at all.
+- The default `ALL` strictness only; `ANY`, `SEMI`, `ANTI` and `ASOF` are not supported.
+- No join predicate other than `ON true` (`ON 1` is also accepted); `USING` is not supported, and the predicate
+  cannot be omitted. Put the filters that relate the two sides into the `WHERE` clause of the lateral subquery.
+- `GLOBAL` is not supported.
+- The lateral subquery must reference at least one column of the left side. Use a regular join for a
+  non-correlated subquery.
+- The lateral subquery is evaluated once per distinct value of the left-side columns it references, not
+  once per left row, so it must not contain functions that are non-deterministic within a query, such as
+  `rand` or `generateUUIDv4`. Functions that are constant within a query, such as `now`, are allowed.
+- Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
+  `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
+  [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.
+
+**Example**
+
+```sql
+SELECT u.id, o.total
+FROM users AS u
+LEFT JOIN LATERAL
+(
+    SELECT total
+    FROM orders
+    WHERE orders.user_id = u.id
+    ORDER BY total DESC
+    LIMIT 1
+) AS o ON true
+SETTINGS allow_experimental_lateral_join = 1;
+```
 
 ## Settings {#settings}
 
@@ -1085,7 +1149,7 @@ It is a common operation for tables that contain an array column to produce a ne
 Its name comes from the fact that it can be looked at as executing `JOIN` with an array or nested data structure. The intent is similar to the [arrayJoin](/reference/functions/regular-functions/array-join) function, but the clause functionality is broader.
 
 <Note>
-PostgreSQL `FROM unnest(...)`, `CROSS JOIN UNNEST(...)`, and `LATERAL` are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function.
+PostgreSQL's `FROM unnest(...)`, `CROSS JOIN UNNEST(...)` and `LATERAL unnest(...)` table-source forms are not supported. Use `ARRAY JOIN` instead. The `unnest` name (since version 26.5) is a function-call alias of `arrayJoin` (`SELECT unnest(arr)`), not a table function. `JOIN LATERAL <subquery>` over a correlated subquery is supported separately as an experimental feature, see [`JOIN`](/reference/statements/select/join#lateral-join).
 </Note>
 
 Syntax:

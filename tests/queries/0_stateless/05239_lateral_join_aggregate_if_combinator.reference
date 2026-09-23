@@ -1,0 +1,16 @@
+-- -If aggregates
+1	2	300	300	1	[1,2]	1	300	2
+2	2	150	150	2	[4,5]	1	150	3
+3	0	0	\N	0	[]	0	\N	0
+-- the same aggregates over an empty input without LATERAL
+0	0	\N	0	[]	0	\N	0
+-- INNER JOIN LATERAL
+1	2	300
+2	2	150
+3	0	0
+-- aggregates with Nullable arguments and -OrNull
+1	1	1	300	a	a	a	1	150
+2	3	3	200	c	b	a	4	70
+3	\N	0	\N	\N	\N	\N	nan	nan
+-- the same aggregates over an empty input without LATERAL
+\N	0	\N	\N	\N	\N	nan	nan
