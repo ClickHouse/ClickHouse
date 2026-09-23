@@ -106,6 +106,7 @@ class MarkCache;
 class UniqueKeyIndexCache;
 class DeleteBitmapCache;
 class PrimaryIndexCache;
+class StatisticsCache;
 class PageCache;
 class MMappedFileCache;
 class UncompressedCache;
@@ -1630,6 +1631,11 @@ public:
     void updatePrimaryIndexCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
     std::shared_ptr<PrimaryIndexCache> getPrimaryIndexCache() const;
     void clearPrimaryIndexCache() const;
+
+    void setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio);
+    void updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size);
+    std::shared_ptr<StatisticsCache> getStatisticsCache() const;
+    void clearStatisticsCache() const;
 
     /// Untracked memory holder for SYSTEM ALLOCATE UNTRACKED MEMORY / SYSTEM FREE UNTRACKED MEMORY
     SystemAllocatedMemoryHolderPtr getSystemAllocatedMemoryHolder() const;

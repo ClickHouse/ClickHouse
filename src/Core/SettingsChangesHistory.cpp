@@ -1534,6 +1534,10 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"prewarm_statistics_cache", false, false, "New setting to prewarm the statistics cache with the column statistics of new data parts and on startup. The statistics cache is now per data part and column instead of a snapshot of the whole table; the settings `refresh_statistics_interval` and `use_statistics_cache` are obsolete."},
+        });
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

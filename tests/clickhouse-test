@@ -1958,7 +1958,6 @@ class SettingsRandomizer:
         "enable_add_distinct_to_in_subqueries": lambda: random.random() < 0.3,
         # Statistics-based optimization
         "use_statistics": lambda: random.random() > 0.05,
-        "use_statistics_cache": lambda: random.random() > 0.05,
         # More query plan optimizations
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
@@ -2008,8 +2007,6 @@ class SettingsRandomizer:
         "use_top_k_dynamic_filtering": "use_skip_indexes_for_top_k",
         # variable-length opt-in only matters when the parent dynamic filter is on
         "use_top_k_dynamic_filtering_for_variable_length_types": "use_top_k_dynamic_filtering",
-        # statistics cache is pointless when statistics are disabled
-        "use_statistics_cache": "use_statistics",
         # forcing independent DISTINCT is a no-op when the optimization is not allowed
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
     }

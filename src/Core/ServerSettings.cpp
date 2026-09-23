@@ -19,6 +19,7 @@
 #include <Storages/MarkCache.h>
 #include <Storages/MergeTree/MergeTreeBackgroundExecutor.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/VectorSimilarityIndexCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
@@ -664,6 +665,10 @@ This setting can be modified at runtime and will take effect immediately.
     DECLARE(UInt64, primary_index_cache_size, DEFAULT_PRIMARY_INDEX_CACHE_MAX_SIZE, R"(Maximum size of cache for primary index (index of MergeTree family of tables).)", 0) \
     DECLARE(Double, primary_index_cache_size_ratio, DEFAULT_PRIMARY_INDEX_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the primary index cache relative to the cache's total size.)", 0) \
     DECLARE(Double, primary_index_cache_prewarm_ratio, 0.95, R"(The ratio of total size of mark cache to fill during prewarm.)", 0) \
+    DECLARE(String, statistics_cache_policy, DEFAULT_STATISTICS_CACHE_POLICY, R"(Statistics cache policy name.)", 0) \
+    DECLARE(UInt64, statistics_cache_size, DEFAULT_STATISTICS_CACHE_MAX_SIZE, R"(Maximum size of the cache of column statistics of data parts of MergeTree family of tables. The statistics are cached per data part and column, loaded on demand, and merged on the fly for every query.)", 0) \
+    DECLARE(Double, statistics_cache_size_ratio, DEFAULT_STATISTICS_CACHE_SIZE_RATIO, R"(The size of the protected queue (in case of SLRU policy) in the statistics cache relative to the cache's total size.)", 0) \
+    DECLARE(Double, statistics_cache_prewarm_ratio, 0.95, R"(The ratio of total size of the statistics cache to fill during prewarm.)", 0) \
     DECLARE(String, iceberg_metadata_files_cache_policy, DEFAULT_ICEBERG_METADATA_CACHE_POLICY, "Iceberg metadata cache policy name.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_size, DEFAULT_ICEBERG_METADATA_CACHE_MAX_SIZE, "Maximum size of iceberg metadata cache in bytes. Zero means disabled.", 0) \
     DECLARE(UInt64, iceberg_metadata_files_cache_max_entries, DEFAULT_ICEBERG_METADATA_CACHE_MAX_ENTRIES, "Maximum size of iceberg metadata files cache in entries. Zero means disabled.", 0) \
@@ -3650,6 +3655,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"query_condition_cache_size", {std::to_string(context->getQueryConditionCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"encryption_header_cache_size", {std::to_string(context->getEncryptionHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"primary_index_cache_size", {std::to_string(context->getPrimaryIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
+            {"statistics_cache_size", {std::to_string(context->getStatisticsCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"vector_similarity_index_cache_size", {std::to_string(context->getVectorSimilarityIndexCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_tokens_cache_size", {std::to_string(context->getTextIndexTokensCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},
             {"text_index_header_cache_size", {std::to_string(context->getTextIndexHeaderCache()->maxSizeInBytes()), ChangeableWithoutRestart::Yes}},

@@ -1,4 +1,4 @@
-SET use_statistics_cache = 0, use_statistics_for_part_pruning = 0;
+SET use_statistics_for_part_pruning = 0;
 SET use_query_cache = 0, use_query_condition_cache = 0;
 SET materialize_statistics_on_insert = 1, max_threads = 1;
 -- `query_plan_optimize_prewhere` is pinned because the test harness randomizes it off, and the
@@ -7,7 +7,7 @@ SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, enable_para
 
 CREATE TABLE prewhere_planning_statistics (p UInt64, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval = 0,
+SETTINGS auto_statistics_types = 'basic, uniq_v2',
     min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = '5G';
 INSERT INTO prewhere_planning_statistics SELECT intDiv(number, 1000), number % 1000 FROM numbers(8000);
 

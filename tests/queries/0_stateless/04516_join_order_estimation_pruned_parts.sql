@@ -6,15 +6,11 @@ SET enable_analyzer = 1;
 DROP TABLE IF EXISTS fact_04516;
 DROP TABLE IF EXISTS dim_04516;
 
--- refresh_statistics_interval = 0: no background statistics refresh, so the
--- table-wide estimator cache stays cold and the test is deterministic.
 CREATE TABLE fact_04516 (p UInt8, id UInt64)
-ENGINE = MergeTree PARTITION BY p ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ENGINE = MergeTree PARTITION BY p ORDER BY id;
 
 CREATE TABLE dim_04516 (id UInt64)
-ENGINE = MergeTree ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ENGINE = MergeTree ORDER BY id;
 
 SET materialize_statistics_on_insert = 1;
 
@@ -32,7 +28,7 @@ FROM (
     FROM fact_04516 AS f
     INNER JOIN dim_04516 AS d ON f.id = d.id
     WHERE f.p = 2
-    SETTINGS use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
+    SETTINGS use_statistics = 1, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain LIKE '%⋈%';
 
@@ -45,7 +41,7 @@ FROM (
     FROM fact_04516 AS f
     INNER JOIN dim_04516 AS d ON f.id = d.id
     WHERE 0
-    SETTINGS use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
+    SETTINGS use_statistics = 1, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain LIKE '%⋈%';
 
@@ -58,7 +54,7 @@ FROM (
     FROM fact_04516 AS f
     INNER JOIN dim_04516 AS d ON f.id = d.id
     WHERE f.p = 2
-    SETTINGS use_statistics = 1, use_statistics_cache = 1, collect_hash_table_stats_during_joins = 0
+    SETTINGS use_statistics = 1, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain LIKE '%⋈%';
 
@@ -69,7 +65,7 @@ FROM (
     SELECT count()
     FROM fact_04516 AS f
     INNER JOIN dim_04516 AS d ON f.id = d.id
-    SETTINGS use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
+    SETTINGS use_statistics = 1, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain LIKE '%⋈%';
 
@@ -83,7 +79,7 @@ FROM (
     FROM fact_04516 AS f
     INNER JOIN dim_04516 AS d ON f.id = d.id
     WHERE f.p = 2 AND f.id = 5
-    SETTINGS use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
+    SETTINGS use_statistics = 1, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain LIKE '%⋈%';
 
@@ -93,8 +89,7 @@ WHERE explain LIKE '%⋈%';
 -- (all-parts estimate would be 2000 x (999 / 100999) ~ f[19]).
 DROP TABLE IF EXISTS pk_04516;
 CREATE TABLE pk_04516 (id UInt64, v UInt64)
-ENGINE = MergeTree ORDER BY id
-SETTINGS refresh_statistics_interval = 0;
+ENGINE = MergeTree ORDER BY id;
 
 SYSTEM STOP MERGES pk_04516;
 INSERT INTO pk_04516 SELECT number, number FROM numbers(1000);
@@ -107,7 +102,7 @@ FROM (
     FROM pk_04516 AS f
     INNER JOIN dim_04516 AS d ON f.id = d.id
     WHERE f.id < 1000
-    SETTINGS use_statistics = 1, use_statistics_cache = 0, collect_hash_table_stats_during_joins = 0
+    SETTINGS use_statistics = 1, collect_hash_table_stats_during_joins = 0
 )
 WHERE explain LIKE '%⋈%';
 
@@ -118,10 +113,9 @@ DROP TABLE IF EXISTS read_in_order_04516;
 DROP TABLE IF EXISTS read_in_order_dim_04516;
 CREATE TABLE read_in_order_04516 (id UInt64)
 ENGINE = MergeTree ORDER BY id
-SETTINGS index_granularity = 10, refresh_statistics_interval = 0;
+SETTINGS index_granularity = 10;
 CREATE TABLE read_in_order_dim_04516 (id UInt64)
-ENGINE = MergeTree ORDER BY tuple()
-SETTINGS refresh_statistics_interval = 0;
+ENGINE = MergeTree ORDER BY tuple();
 
 INSERT INTO read_in_order_04516 SELECT number FROM numbers(1000);
 INSERT INTO read_in_order_dim_04516 SELECT number FROM numbers(10);
@@ -131,7 +125,7 @@ FROM read_in_order_04516 AS f
 LEFT JOIN read_in_order_dim_04516 AS d ON f.id = d.id
 ORDER BY f.id
 LIMIT 1
-SETTINGS use_statistics = 1, use_statistics_cache = 0,
+SETTINGS use_statistics = 1,
     optimize_read_in_order = 1, query_plan_read_in_order = 1,
     query_plan_read_in_order_through_join = 1, read_in_order_use_virtual_row = 1,
     query_plan_join_swap_table = 0, query_plan_optimize_join_order_limit = 10,

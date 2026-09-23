@@ -129,6 +129,7 @@
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
 #include <Storages/MergeTree/checkDataPart.h>
@@ -226,7 +227,6 @@ namespace ProfileEvents
     extern const Event LoadedDataPartsMicroseconds;
     extern const Event RestorePartsSkippedFiles;
     extern const Event RestorePartsSkippedBytes;
-    extern const Event LoadedStatisticsMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -277,7 +277,6 @@ namespace Setting
     extern const SettingsBool apply_patch_parts;
     extern const SettingsUInt64 max_table_size_to_drop;
     extern const SettingsBool use_statistics;
-    extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
     extern const SettingsBool validate_mutation_query;
@@ -357,6 +356,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool table_readonly;
     extern const MergeTreeSettingsBool use_primary_key_cache;
     extern const MergeTreeSettingsBool prewarm_primary_key_cache;
+    extern const MergeTreeSettingsBool prewarm_statistics_cache;
     extern const MergeTreeSettingsBool prewarm_mark_cache;
     extern const MergeTreeSettingsBool primary_key_lazy_load;
     extern const MergeTreeSettingsBool apply_patches_on_merge;
@@ -369,7 +369,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool allow_commit_order_projection;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
-    extern const MergeTreeSettingsSeconds refresh_statistics_interval;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -392,6 +391,7 @@ namespace ServerSetting
 {
     extern const ServerSettingsDouble mark_cache_prewarm_ratio;
     extern const ServerSettingsDouble primary_index_cache_prewarm_ratio;
+    extern const ServerSettingsDouble statistics_cache_prewarm_ratio;
     extern const ServerSettingsDouble index_mark_cache_prewarm_ratio;
 }
 
@@ -967,29 +967,19 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     if (parts.empty())
         return {};
 
-    ConditionSelectivityEstimatorPtr cached;
-    if (local_context->getSettingsRef()[Setting::use_statistics_cache])
-    {
-        std::lock_guard<std::mutex> lock(stats_mutex);
-        cached = cached_estimator;
-    }
+    /// The statistics are cached per part and column, and a query merges the statistics of its parts
+    /// on the fly, which is cheap. So a query over the parts left after partition and primary-key
+    /// pruning costs the same as a query over the whole table, and the statistics of a part are read
+    /// from disk once, by the first query that needs them.
+    auto statistics_cache = getContext()->getStatisticsCache();
+    NameSet required_columns_set(required_columns.begin(), required_columns.end());
 
-    /// The cache contains statistics for the active-part snapshot seen by the last refresh.
-    /// Reuse it only when the query reads the same ordered parts. Otherwise load and merge
-    /// statistics for the parts left after partition and primary-key pruning. A changed active-part
-    /// sequence invalidates the full-set cache until a refresh publishes the new active snapshot.
-    /// The copied shared pointer keeps the cached snapshot alive after the mutex is released.
-    if (cached && !cached->isStale(parts))
-        return cached;
-
-    LOG_DEBUG(log, "Loading statistics");
     ConditionSelectivityEstimatorBuilder estimator_builder(local_context);
-    ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::LoadedStatisticsMicroseconds);
     for (const auto & part : parts)
     {
         auto parts_lock = readLockParts();
-        auto stats = part.data_part->loadStatistics(required_columns);
-        estimator_builder.markDataPart(part.data_part);
+        auto stats = part.data_part->loadStatistics(required_columns_set, statistics_cache.get());
+        estimator_builder.incrementRowCount(part.data_part->rows_count);
         for (const auto & [column_name, stat] : stats)
             estimator_builder.addStatistics(column_name, stat);
     }
@@ -3348,23 +3338,6 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
     }
 }
 
-void MergeTreeData::startStatisticsCache()
-{
-    const auto settings = getSettings();
-    UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-    if (refresh_stats_task)
-        refresh_stats_task->deactivate();
-    if (refresh_statistics_seconds)
-    {
-        LOG_INFO(log, "Start to refresh statistics");
-        refresh_stats_task = getContext()->getSchedulePool()->createTask(
-            getStorageID(), "MergeTreeData::refreshStatistics",
-            [this, refresh_statistics_seconds] { refreshStatistics(refresh_statistics_seconds); });
-
-        refresh_stats_task->activateAndSchedule();
-    }
-}
-
 void MergeTreeData::refreshDataParts(UInt64 interval_milliseconds)
 try
 {
@@ -3375,8 +3348,7 @@ catch (...)
 {
     tryLogCurrentException(log, "Failed to refresh parts");
     /// A transient error (e.g. temporary disk unavailability) must not permanently disable the background
-    /// refresh task; otherwise the read-only table stays stale until the server restarts. Mirror the
-    /// reschedule that refreshStatistics performs in its own catch block.
+    /// refresh task; otherwise the read-only table stays stale until the server restarts.
     refresh_parts_task->scheduleAfter(interval_milliseconds);
 }
 
@@ -3499,62 +3471,19 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
     ProfileEvents::increment(ProfileEvents::LoadedDataPartsMicroseconds, watch.elapsedMicroseconds());
 }
 
-void MergeTreeData::refreshStatistics(UInt64 interval_seconds)
-try
-{
-    auto component_guard = Coordination::setCurrentComponent("MergeTreeData::refreshStatistics");
-    DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
-    if (cached_estimator)
-    {
-        if (!cached_estimator->isStale(data_parts))
-        {
-            LOG_DEBUG(log, "The parts in this storage does not change, will not refresh statistics");
-            if (interval_seconds)
-                refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-            return;
-        }
-    }
-    LOG_DEBUG(log, "Refreshing statistics");
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext());
-    for (const DataPartPtr & data_part : data_parts)
-    {
-        auto parts_lock = readLockParts();
-        auto stats = data_part->loadStatistics();
-        estimator_builder.markDataPart(data_part);
-        for (const auto & [column_name, stat] : stats)
-            estimator_builder.addStatistics(column_name, stat);
-    }
-    std::lock_guard<std::mutex> lock(stats_mutex);
-    cached_estimator = estimator_builder.getEstimator();
-    if (interval_seconds)
-        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-}
-catch (...)
-{
-    tryLogCurrentException(log, "Failed to refresh statistics");
-    if (interval_seconds)
-        refresh_stats_task->scheduleAfter(interval_seconds * 1000);
-    else
-        throw;
-}
-
 MergeTreeData::~MergeTreeData()
 {
     /// The background tasks capture `this` and use members (`outdated_unloaded_data_parts`,
-    /// `unexpected_data_parts`, `refresh_parts_mutex`, `stats_mutex`, `cached_estimator`) that
-    /// are declared after their task holders, so they are destroyed before the holders' own
-    /// destructors deactivate the tasks. `shutdown` deactivates the tasks too, but a task
-    /// activated after the shutdown (a table startup or an ALTER of
-    /// `refresh_statistics_interval` racing with a drop) can still be running here, so join it
-    /// before any member is destroyed.
+    /// `unexpected_data_parts`, `refresh_parts_mutex`) that are declared after their task holders,
+    /// so they are destroyed before the holders' own destructors deactivate the tasks. `shutdown`
+    /// deactivates the tasks too, but a task activated after the shutdown (a table startup racing
+    /// with a drop) can still be running here, so join it before any member is destroyed.
     try
     {
         /// Sets the cancellation flags before deactivating, so a running load exits early.
         stopOutdatedAndUnexpectedDataPartsLoadingTask();
         if (refresh_parts_task)
             refresh_parts_task->deactivate();
-        if (refresh_stats_task)
-            refresh_stats_task->deactivate();
     }
     catch (...)
     {
@@ -3942,6 +3871,9 @@ MergeTreeData::CachesToPrewarm MergeTreeData::getCachesToPrewarm(size_t part_unc
     if ((*settings)[MergeTreeSetting::prewarm_primary_key_cache])
         result.primary_index_cache = getPrimaryIndexCache();
 
+    if ((*settings)[MergeTreeSetting::prewarm_statistics_cache])
+        result.statistics_cache = getContext()->getStatisticsCache();
+
     if ((*settings)[MergeTreeSetting::prewarm_mark_cache])
     {
         result.mark_cache = getContext()->getMarkCache();
@@ -3957,7 +3889,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
         return;
 
     Stopwatch watch;
-    LOG_TRACE(log, "Prewarming mark and/or primary index caches");
+    LOG_TRACE(log, "Prewarming caches");
 
     auto data_parts = getDataPartsVectorForInternalUsage();
 
@@ -3977,6 +3909,7 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
     double index_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::primary_index_cache_prewarm_ratio];
     double marks_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::mark_cache_prewarm_ratio];
     double index_mark_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::index_mark_cache_prewarm_ratio];
+    double statistics_ratio_to_prewarm = getContext()->getServerSettings()[ServerSetting::statistics_cache_prewarm_ratio];
 
     Names columns_to_prewarm_marks;
 
@@ -4042,12 +3975,24 @@ void MergeTreeData::prewarmCaches(ThreadPool & pool, const CachesToPrewarm & cac
             added_task = true;
         }
 
+        if (caches.statistics_cache && enough_space(caches.statistics_cache, statistics_ratio_to_prewarm))
+        {
+            runner.enqueueAndKeepTrack([&enough_space, &caches, statistics_ratio_to_prewarm, &part, current_component = Coordination::getCurrentComponent()]
+            {
+                auto component_guard = Coordination::setCurrentComponent(current_component);
+                if (enough_space(caches.statistics_cache, statistics_ratio_to_prewarm))
+                    part->loadStatisticsToCache(*caches.statistics_cache);
+            });
+
+            added_task = true;
+        }
+
         if (!added_task)
             break;
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
-    LOG_TRACE(log, "Prewarmed mark and/or primary index caches in {:.3f} seconds", watch.elapsedSeconds());
+    LOG_TRACE(log, "Prewarmed caches in {:.3f} seconds", watch.elapsedSeconds());
 }
 
 /// Is the part directory old.
@@ -6809,9 +6754,6 @@ void MergeTreeData::changeSettings(
         bool has_escape_index_filenames_changed
             = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
 
-        UInt64 has_refresh_statistics_interval_changed
-            = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
-
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -6835,11 +6777,6 @@ void MergeTreeData::changeSettings(
 
         if (has_storage_policy_changed)
             startBackgroundMovesIfNeeded();
-
-        if (has_refresh_statistics_interval_changed)
-        {
-            startStatisticsCache();
-        }
     }
 }
 

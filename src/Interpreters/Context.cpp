@@ -55,6 +55,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/PrimaryIndexCache.h>
+#include <Storages/MergeTree/StatisticsCache.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Paimon/PaimonMetadataFilesCache.h>
@@ -629,6 +630,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable UniqueKeyIndexCachePtr unique_key_index_cache TSA_GUARDED_BY(mutex);               /// RocksDB-compatible block cache over CacheBase for the UNIQUE KEY index (nullptr when RocksDB unavailable or disabled).
     mutable DeleteBitmapCachePtr delete_bitmap_cache TSA_GUARDED_BY(mutex);           /// UNIQUE KEY per-part delete-bitmap cache.
     mutable PrimaryIndexCachePtr primary_index_cache TSA_GUARDED_BY(mutex);
+    mutable StatisticsCachePtr statistics_cache TSA_GUARDED_BY(mutex);              /// Cache of column statistics of data parts.
     mutable SystemAllocatedMemoryHolderPtr untracked_memory_holder TSA_GUARDED_BY(mutex);
     mutable OnceFlag load_marks_threadpool_initialized;
     mutable std::unique_ptr<ThreadPool> load_marks_threadpool;  /// Threadpool for loading marks cache.
@@ -4926,6 +4928,38 @@ PrimaryIndexCachePtr Context::getPrimaryIndexCache() const
     return shared->primary_index_cache;
 }
 
+void Context::setStatisticsCache(const String & cache_policy, size_t max_cache_size_in_bytes, double size_ratio)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (shared->statistics_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics cache has been already created.");
+
+    shared->statistics_cache = std::make_shared<StatisticsCache>(cache_policy, max_cache_size_in_bytes, size_ratio);
+}
+
+void Context::updateStatisticsCacheConfiguration(const Poco::Util::AbstractConfiguration & config, size_t max_cache_size)
+{
+    std::lock_guard lock(shared->mutex);
+
+    if (!shared->statistics_cache)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Statistics cache was not created yet.");
+
+    size_t size = config.getUInt64("statistics_cache_size", DEFAULT_STATISTICS_CACHE_MAX_SIZE);
+    if (size > max_cache_size)
+    {
+        size = max_cache_size;
+        LOG_DEBUG(shared->log, "Lowered statistics cache size to {} because the system has limited RAM", formatReadableSizeWithBinarySuffix(size));
+    }
+    shared->statistics_cache->setMaxSizeInBytes(size);
+}
+
+StatisticsCachePtr Context::getStatisticsCache() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->statistics_cache;
+}
+
 SystemAllocatedMemoryHolderPtr Context::getSystemAllocatedMemoryHolder() const
 {
     SharedLockGuard lock(shared->mutex);
@@ -4968,6 +5002,15 @@ std::shared_ptr<std::unordered_set<std::string>> Context::getUsersToIgnoreEarlyM
 void Context::clearPrimaryIndexCache() const
 {
     PrimaryIndexCachePtr cache = getPrimaryIndexCache();
+
+    /// Clear the cache without holding context mutex to avoid blocking context for a long time
+    if (cache)
+        cache->clear();
+}
+
+void Context::clearStatisticsCache() const
+{
+    StatisticsCachePtr cache = getStatisticsCache();
 
     /// Clear the cache without holding context mutex to avoid blocking context for a long time
     if (cache)
@@ -5559,6 +5602,9 @@ void Context::clearCaches() const
 
     if (shared->primary_index_cache)
         shared->primary_index_cache->clear();
+
+    if (shared->statistics_cache)
+        shared->statistics_cache->clear();
 
     if (shared->index_uncompressed_cache)
         shared->index_uncompressed_cache->clear();

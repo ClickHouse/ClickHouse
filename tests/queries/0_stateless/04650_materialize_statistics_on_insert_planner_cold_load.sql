@@ -7,11 +7,8 @@
 -- attributed to the `LoadedStatisticsMicroseconds` profile event when `use_statistics` is on,
 -- and does not happen when it is off.
 --
--- `MergeTreeData::getConditionSelectivityEstimator` does not populate `cached_estimator` on the
--- query-time path - only the background task behind `refresh_statistics_interval` does - so with
--- the default `use_statistics_cache = 1` the load is paid by every query until that task fires.
--- The measured queries below pin `use_statistics_cache = 0` so the result does not depend on the
--- timing of that background task.
+-- The statistics are cached per part and column and loaded by the first query that needs them, so
+-- the measured queries below are the first ones to read the statistics of these tables.
 
 SET allow_statistics = 1;
 SET enable_analyzer = 1;
@@ -44,11 +41,11 @@ WHERE database = currentDatabase()
     AND active AND column = 'id';
 
 SELECT count() FROM t_stats_cold_load_fact AS f JOIN t_stats_cold_load_dim AS d ON f.id = d.id
-SETTINGS log_comment = '04650_cold_load_on', use_statistics = 1, use_statistics_cache = 0,
+SETTINGS log_comment = '04650_cold_load_on', use_statistics = 1,
     query_plan_optimize_join_order_limit = 10;
 
 SELECT count() FROM t_stats_cold_load_fact AS f JOIN t_stats_cold_load_dim AS d ON f.id = d.id
-SETTINGS log_comment = '04650_cold_load_off', use_statistics = 0, use_statistics_cache = 0,
+SETTINGS log_comment = '04650_cold_load_off', use_statistics = 0,
     query_plan_optimize_join_order_limit = 10;
 
 SYSTEM FLUSH LOGS query_log;

@@ -170,7 +170,6 @@
             --count_distinct_optimization False \
             --enable_add_distinct_to_in_subqueries False \
             --use_statistics True \
-            --use_statistics_cache True \
             --enable_optimize_predicate_expression True \
             --enable_optimize_predicate_expression_to_final_subquery True \
             --enable_software_prefetch_in_aggregation True \

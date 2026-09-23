@@ -2405,6 +2405,11 @@ memory usage by not loading useless columns of the primary key.
     prewarmed by saving marks to mark cache on inserts, merges, fetches and on
     startup of server
 )", 0) \
+    DECLARE(Bool, prewarm_statistics_cache, false, R"(If true the statistics cache
+    will be prewarmed by loading the column statistics of data parts on inserts,
+    merges, fetches and on startup of server. Without it the statistics of a part
+    are loaded into the cache by the first query that needs them.
+)", 0) \
     DECLARE(String, columns_to_prewarm_mark_cache, "", R"(
 List of columns to prewarm mark cache for (if enabled). Empty means all columns
 )", 0) \
@@ -2485,9 +2490,6 @@ Possible values:
 - local - scope is limited by local disks .
 - none - empty scope, do not search
 )", 0) \
-    DECLARE(Seconds, refresh_statistics_interval, 300, R"(
-The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
-)", 0) \
     DECLARE(UInt64, distributed_index_analysis_min_parts_to_activate, 10, R"(
 Minimal number of parts to activated distributed index analysis
 )", EXPERIMENTAL) \
@@ -2530,6 +2532,7 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
 #define OBSOLETE_MERGE_TREE_SETTINGS(M, ALIAS) \
     /** Obsolete settings that do nothing but left for compatibility reasons. */ \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, min_relative_delay_to_yield_leadership, 120) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Seconds, refresh_statistics_interval, 300) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, check_delay_period, 60) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends, 0) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, UInt64, replicated_max_parallel_sends_for_table, 0) \
