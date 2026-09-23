@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
 
@@ -176,7 +178,27 @@ size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes 
         return 0;
 
     auto & dag = filter->getExpression();
-    if (!dag.foldFilterPredicateThroughMaterialize(filter->getFilterColumnName()))
+    const auto & filter_column_name = filter->getFilterColumnName();
+    const bool folded = dag.foldFilterPredicateThroughMaterialize(filter_column_name);
+
+    /// A dropped always-true filter that computes nothing else is a no-op. As a `FilterStep` it is never
+    /// pushed down over a join and splits the join graph, which changes the join order (TPC-DS `query_11`).
+    const auto * filter_node = dag.tryFindInOutputs(filter_column_name);
+    if (filter_node && filter_node->type == ActionsDAG::ActionType::COLUMN && ConstantFilterDescription(*filter_node->column).always_true)
+    {
+        auto actions = dag.clone();
+        actions.removeUnusedResult(filter_column_name);
+        actions.removeUnusedActions(false, false);
+        if (isPassthroughActions(actions))
+        {
+            auto expression = std::make_unique<ExpressionStep>(filter->getInputHeaders().front(), std::move(actions));
+            expression->setStepDescription(*filter);
+            node->step = std::move(expression);
+            return 1;
+        }
+    }
+
+    if (!folded)
         return 0;
 
     dag.removeUnusedActions(false, false);
