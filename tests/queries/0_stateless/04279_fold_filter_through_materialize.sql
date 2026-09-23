@@ -126,7 +126,7 @@ SELECT count() FROM numbers(100) WHERE and(materialize(0), CAST(NULL AS Nullable
 SELECT count() FROM numbers(100) WHERE or(CAST(NULL AS Nullable(UInt8)), materialize(1));
 
 -- a filter that only meets the `materialize` after `tryPushDownFilter` cloned it into the branches
--- still folds - the fold runs on `FilterStep` construction, not only from `tryMergeExpressions`
+-- still folds - the fold is its own optimization pass, not only part of `tryMergeExpressions`
 SELECT 'pushdown through sorting', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1
     SELECT * FROM (SELECT number, materialize(1) AS m FROM numbers(10) ORDER BY number) WHERE m = 5);

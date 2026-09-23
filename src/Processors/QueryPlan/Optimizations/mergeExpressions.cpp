@@ -94,7 +94,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
 
         auto merged = ActionsDAG::merge(std::move(child_actions), std::move(parent_actions));
         /// merge can drag materialize wrappers from a UNION child into the filter (#78166); folding through
-        /// them is left to the `FilterStep` constructor below, which does it after `deduplicateSubtrees` -
+        /// them is left to `tryFoldFilterThroughMaterialize`, which runs after `deduplicateSubtrees` -
         /// a fold before dedup could have its masked-secret constant replaced by an equal plain one
         merged.deduplicateSubtrees();
 
@@ -166,6 +166,21 @@ size_t tryMergeFilters(QueryPlan::Node * parent_node, QueryPlan::Nodes &, const 
     }
 
     return 0;
+}
+
+/// Only a dropped filter column makes its `materialize` wrapper unobservable (#78166)
+size_t tryFoldFilterThroughMaterialize(QueryPlan::Node * node, QueryPlan::Nodes &, const Optimization::ExtraSettings &)
+{
+    auto * filter = typeid_cast<FilterStep *>(node->step.get());
+    if (!filter || !filter->removesFilterColumn())
+        return 0;
+
+    auto & dag = filter->getExpression();
+    if (!dag.foldFilterPredicateThroughMaterialize(filter->getFilterColumnName()))
+        return 0;
+
+    dag.removeUnusedActions(false, false);
+    return 1;
 }
 
 }
