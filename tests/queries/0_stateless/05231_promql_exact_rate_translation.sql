@@ -32,7 +32,7 @@ SET promql_exact_rate = 0;
 SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[40s])', 1699999960, 1700000000, 20);
 
 SELECT '--- promql dialect ---';
-SET promql_table = 'ts', promql_evaluation_time = 1700000000;
+SET promql_table = 'ts', promql_evaluation_time = 1700000000, session_timezone = 'UTC';
 SET dialect = 'promql';
 increase(up[80s]);
 SET promql_exact_rate = 1;

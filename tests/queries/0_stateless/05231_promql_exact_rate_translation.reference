@@ -1,0 +1,15 @@
+--- instant query, default extrapolation ---
+0.3333333333333333
+26.666666666666664
+26.666666666666664
+--- instant query, promql_exact_rate = 1 ---
+0.25
+20
+20
+--- range query, promql_exact_rate = 1: the previous sample is used inside the range ---
+[(1699999960,10),(1699999980,10),(1700000000,10)]
+--- range query, promql_exact_rate = 0 ---
+[(1699999960,20)]
+--- promql dialect ---
+[('instance','host1')]	2023-11-14 22:13:20.000	26.666666666666664
+[('instance','host1')]	2023-11-14 22:13:20.000	20
