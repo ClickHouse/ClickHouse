@@ -20,7 +20,8 @@ services:
     stop_grace_period: 5s
     cpus: 3
   minio:
-    image: minio/minio:RELEASE.2024-07-31T05-46-26Z
+    # See the note in compose/docker_compose_minio.yml on the image source.
+    image: clickhouse/minio-minio:RELEASE.2026-08-04T00-00-00Z
     environment:
       - MINIO_ROOT_USER=minio
       - MINIO_ROOT_PASSWORD=ClickHouse_Minio_P@ssw0rd
@@ -38,17 +39,20 @@ services:
   mc:
     depends_on:
       - minio
-    image: minio/mc:RELEASE.2025-04-16T18-13-26Z
+    # Mirror of pgsty/mc:RELEASE.2026-09-16T00-00-00Z (see compose/mirror-images.sh).
+    # pgsty/mc is the matching fork of the MinIO client; it dropped the `config host` and
+    # `policy` commands that upstream had already deprecated, hence `alias set`/`anonymous set`.
+    image: clickhouse/minio-mc:RELEASE.2026-09-16T00-00-00Z
     environment:
       - AWS_ACCESS_KEY_ID=minio
       - AWS_SECRET_ACCESS_KEY=ClickHouse_Minio_P@ssw0rd
       - AWS_REGION=us-east-1
     entrypoint: >
       /bin/sh -c "
-      until (/usr/bin/mc config host add minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
+      until (/usr/bin/mc alias set minio http://minio:9000 minio ClickHouse_Minio_P@ssw0rd) do echo '...waiting...' && sleep 1; done;
       /usr/bin/mc rm -r --force minio/warehouse-rest;
       /usr/bin/mc mb minio/warehouse-rest --ignore-existing;
-      /usr/bin/mc policy set public minio/warehouse-rest;
+      /usr/bin/mc anonymous set public minio/warehouse-rest;
       tail -f /dev/null
       "
     stop_grace_period: 5s

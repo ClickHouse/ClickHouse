@@ -77,6 +77,11 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
+bool StackTrace::showAddresses()
+{
+    return show_addresses.load(std::memory_order_relaxed);
+}
+
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -325,6 +330,69 @@ static void * getCallerAddress([[maybe_unused]] const ucontext_t & context)
 #endif
 }
 
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+namespace
+{
+/// Returns the address relative to the object that contains it plus that object, or the address
+/// unchanged and `nullptr` when no loaded object contains it.
+std::pair<uintptr_t, const DB::SymbolIndex::Object *>
+resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
+    const auto * object = symbol_index.findObject(virtual_addr);
+    const uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
+    return {uintptr_t(virtual_addr) - virtual_offset, object};
+}
+}
+#endif
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+namespace
+{
+StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
+{
+    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
+
+    if (!object)
+        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
+    if (object == symbol_index.thisObject())
+        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
+}
+}
+#endif
+
+StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
+#else
+    return {virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
+{
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
+    if (!symbol_index)
+        return std::nullopt;
+    return ::resolveAddress(*symbol_index, virtual_addr);
+#else
+    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
+#endif
+}
+
+UInt64 StackTrace::resolveAddressForStorage(const void * virtual_addr)
+{
+    const ResolvedAddress resolved = resolveAddress(virtual_addr);
+    /// Only the main executable's offsets are unambiguous on their own: a column of bare numbers has
+    /// nowhere to record which object an offset belongs to. A runtime address keeps that information,
+    /// because the object that contains it is the one it is mapped into.
+    if (resolved.kind != AddressKind::MainObject)
+        return reinterpret_cast<UInt64>(virtual_addr);
+    return reinterpret_cast<UInt64>(resolved.address);
+}
+
 void StackTrace::forEachFrame(
     const FramePointers & frame_pointers,
     size_t offset,
@@ -344,9 +412,8 @@ void StackTrace::forEachFrame(
         StackTrace::Frame current_frame;
         DB::VectorWithMemoryTracking<DB::Dwarf::SymbolizedFrame> inline_frames;
         current_frame.virtual_addr = frame_pointers[i];
-        const auto * object = symbol_index.findObject(current_frame.virtual_addr);
-        uintptr_t virtual_offset = object ? uintptr_t(object->address_begin) : 0;
-        current_frame.physical_addr = reinterpret_cast<void *>(uintptr_t(current_frame.virtual_addr) - virtual_offset);
+        const auto [physical_addr, object] = resolveAddressImpl(symbol_index, current_frame.virtual_addr);
+        current_frame.physical_addr = reinterpret_cast<void *>(physical_addr);
 
         if (object)
         {

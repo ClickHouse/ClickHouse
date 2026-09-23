@@ -1646,9 +1646,9 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
         strategy.set(strategy.spread, std::move(spread));
     }
 
-    /// Toggle APPEND
+    /// Fuzz the refresh mode
     if (fuzz_rand() % 10 == 0)
-        strategy.append = !strategy.append;
+        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % 3);
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
@@ -2640,7 +2640,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
-    static const Strings posting_list_codecs = {"none", "bitpacking"};
+    static const Strings posting_list_codecs = {"none", "bitpacking", "pfor"};
     /// vector_similarity index parameters (positional):
     ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
     static const Strings vector_similarity_distances = {"L2Distance", "cosineDistance"};
@@ -3292,7 +3292,7 @@ void QueryFuzzer::fuzzTableFunctionName(ASTPtr & table_function)
         /// Fuzzer generators
         {"fuzzQuery", "fuzzJSON"},
         /// TimeSeries table functions (db, table → time-series views)
-        {"timeSeriesMetrics", "timeSeriesSamples", "timeSeriesTags"},
+        {"timeSeriesMetricFamilies", "timeSeriesSamples", "timeSeriesTags"},
         /// View variants
         {"view", "viewIfPermitted"},
     };
@@ -6080,7 +6080,7 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             if (!expr)
                 return nullptr;
             auto watermark = std::make_shared<WatermarkSettings>();
-            watermark->column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
+            watermark->time_attribute_column = column_like.empty() ? ("c" + std::to_string(fuzz_rand() % 4)) : column_like[fuzz_rand() % column_like.size()].first;
             watermark->expression = expr;
             if (fuzz_rand() % 2 == 0)
                 watermark->idle_timeout = std::chrono::milliseconds((fuzz_rand() % 1000 + 1) * 1000);

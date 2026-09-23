@@ -6,6 +6,9 @@
 
 #include <Common/logger_useful.h>
 #include <Core/UUID.h>
+#include <Core/Block.h>
+#include <Processors/Chunk.h>
+#include <Interpreters/castColumn.h>
 #include <IO/WriteHelpers.h>
 
 #include <Poco/String.h>
@@ -26,6 +29,42 @@ namespace DeltaLake
 std::string generateWritePath(const std::string & prefix, const std::string & format_str)
 {
     return std::filesystem::path(prefix) / (DB::toString(DB::UUIDHelpers::generateV4()) + "." + Poco::toLower(format_str));
+}
+
+DB::SharedHeader makeDeltaWriteHeader(const DB::Block & sample, const DB::NamesAndTypesList & write_schema)
+{
+    DB::Block header = sample;
+    for (size_t i = 0; i < header.columns(); ++i)
+    {
+        auto & col = header.getByPosition(i);
+        auto schema_col = write_schema.tryGetByName(col.name);
+        if (schema_col && !schema_col->type->equals(*col.type))
+        {
+            col.type = schema_col->type;
+            col.column = col.type->createColumn();
+        }
+    }
+    return std::make_shared<const DB::Block>(std::move(header));
+}
+
+DB::Chunk castChunkToDeltaWriteSchema(const DB::Chunk & chunk, const DB::Block & in_header, const DB::Block & out_header, bool accurate)
+{
+    const auto & in_columns = chunk.getColumns();
+    DB::Columns out_columns;
+    out_columns.reserve(in_columns.size());
+    for (size_t i = 0; i < in_columns.size(); ++i)
+    {
+        const auto & from = in_header.getByPosition(i);
+        const auto & to_type = out_header.getByPosition(i).type;
+        if (from.type->equals(*to_type))
+            out_columns.push_back(in_columns[i]);
+        else
+            out_columns.push_back(
+                accurate
+                    ? DB::castColumnAccurate({in_columns[i], from.type, from.name}, to_type)
+                    : DB::castColumn({in_columns[i], from.type, from.name}, to_type));
+    }
+    return DB::Chunk(std::move(out_columns), chunk.getNumRows());
 }
 
 ffi::KernelStringSlice KernelUtils::toDeltaString(const std::string & string)
