@@ -12,8 +12,9 @@
 # local `MergeTree` read of a `CREATE ... AS SELECT`. The initiator therefore has to resolve the opt-out in
 # both the queued settings and the queued query text.
 #
-# The worker runs the queued query under the `initial_query_id` of the `ON CLUSTER` query, which is set
-# explicitly here to tell the rows of this test apart.
+# The worker runs the queued query under the `default` database, so the source table is qualified, and under
+# the `initial_query_id` of the `ON CLUSTER` query, which is set explicitly here to tell the rows of this test
+# apart.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -41,12 +42,12 @@ OPT_OUT_RUN="05241_opt_out_run_$(random_str 10)"
 # Control: the automatic mode is enabled from the query text only, and the second run finds the cache warm.
 $CLICKHOUSE_CLIENT --query_id "$AUTO_RUN_1" --query "
 CREATE TABLE t_uncompressed_cache_ddl_dst_1 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
-AS SELECT * FROM t_uncompressed_cache_ddl_src
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src
 SETTINGS enable_automatic_use_uncompressed_cache = 1, max_threads = 1" > /dev/null
 
 $CLICKHOUSE_CLIENT --query_id "$AUTO_RUN_2" --query "
 CREATE TABLE t_uncompressed_cache_ddl_dst_2 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
-AS SELECT * FROM t_uncompressed_cache_ddl_src
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src
 SETTINGS enable_automatic_use_uncompressed_cache = 1, max_threads = 1" > /dev/null
 
 # The session-level opt-out must win on the worker over the automatic mode replayed from the query text. It is
@@ -54,7 +55,7 @@ SETTINGS enable_automatic_use_uncompressed_cache = 1, max_threads = 1" > /dev/nu
 $CLICKHOUSE_CLIENT --query_id "$OPT_OUT_RUN" --query "
 SET use_uncompressed_cache = 0;
 CREATE TABLE t_uncompressed_cache_ddl_dst_3 ON CLUSTER test_shard_localhost ENGINE = MergeTree ORDER BY id
-AS SELECT * FROM t_uncompressed_cache_ddl_src
+AS SELECT * FROM ${CLICKHOUSE_DATABASE}.t_uncompressed_cache_ddl_src
 SETTINGS enable_automatic_use_uncompressed_cache = 1, max_threads = 1" > /dev/null
 
 $CLICKHOUSE_CLIENT --query "
