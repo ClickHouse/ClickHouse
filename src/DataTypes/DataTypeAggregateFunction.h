@@ -63,8 +63,8 @@ public:
     static bool strictEquals(const DataTypePtr & lhs_state_type, const DataTypePtr & rhs_state_type, bool ignore_variant = false);
 
     /// Spells a parameter list as a state type name does: `(p1, p2)`, empty when there are none.
-    /// `FieldVisitorToCastedLiteral` gives a value a `::Type` suffix where the type has one and a
-    /// bare literal would reparse as a different Field; in an array or tuple the elements get it.
+    /// A value gets a `::Type` suffix where a bare literal would reparse as a different Field; inside
+    /// an array or tuple the suffix lands on the elements.
     static String formatParameters(const Array & parameters);
 
     /// True if `state_type_name` denotes a state with the same binary representation as (function, version).

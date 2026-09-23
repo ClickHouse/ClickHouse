@@ -129,8 +129,6 @@ Field parseFieldFromCastedLiteral(const ASTPtr & ast)
                 return parseLiteralCastedTo(value_lit->value, type_lit->value.safeGet<String>());
         }
 
-        /// A cast is printed on the ELEMENTS of an array or tuple, so such a value arrives as a call
-        /// of `array`/`tuple` over its elements. An all-literal one still parses as a single literal.
         if (func->name == "array" || func->name == "tuple")
         {
             checkStackSize();

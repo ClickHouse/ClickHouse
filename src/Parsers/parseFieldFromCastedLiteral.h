@@ -13,10 +13,8 @@ namespace DB
 ///   - ASTLiteral — returns `literal->value` directly.
 ///   - ASTFunction `CAST(<literal-value>, <string-literal-type-name>)` — parses the casted
 ///     literal back into a Field of the right type.
-///   - ASTFunction `array(...)` / `tuple(...)`: parses every argument recursively. This is the
-///     shape a composite value takes when an element of it carries a cast; an all-literal one
-///     parses as a single ASTLiteral instead. A Map prints in the array form and reads back as
-///     an Array, as it does in `FieldVisitorToString` too.
+///   - ASTFunction `array(...)` / `tuple(...)`: parses every argument recursively. A Map prints in
+///     that form, so it reads back as an Array.
 ///
 /// Recognised target type names inside the CAST shape:
 ///   - Bool, Float64, String
