@@ -1447,6 +1447,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             return format_filter_info;
         }();
 
+        if (filter_info && filter_info != format_filter_info)
+            filter_info->need_row_numbers = format_filter_info->need_row_numbers;
+
         if (object_info->rows_to_read)
         {
             /// Lazy materialization: read only the specified rows of this file. The set of rows
@@ -1458,7 +1461,32 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                 filter_info ? filter_info->row_level_filter : nullptr,
                 filter_info ? filter_info->prewhere_info : nullptr);
             filter_info_with_rows->rows_to_read = object_info->rows_to_read;
+            filter_info_with_rows->need_row_numbers = true;
             filter_info = filter_info_with_rows;
+        }
+
+        /// A delete transform added to this source's pipeline below reads the physical row numbers
+        /// of every chunk out of its `ChunkInfoRowNumbers`, and a format attaches those only when
+        /// the filter info asks for them. Ask here, from the same `object_info` the transforms are
+        /// built from, rather than relying on the caller having asked: a caller that reads a data
+        /// lake object without going through `ReadFromObjectStorageStep` would otherwise assemble
+        /// a pipeline whose delete transform has no row numbers to filter by.
+        if (hasAttachedDeletes(*object_info) && (!filter_info || !filter_info->need_row_numbers))
+        {
+            auto filter_info_with_row_numbers = std::make_shared<FormatFilterInfo>(
+                filter_info ? filter_info->filter_actions_dag : nullptr,
+                context_,
+                filter_info ? filter_info->column_mapper : nullptr,
+                filter_info ? filter_info->row_level_filter : nullptr,
+                filter_info ? filter_info->prewhere_info : nullptr);
+            if (filter_info)
+            {
+                filter_info_with_row_numbers->current_schema_column_mapper = filter_info->current_schema_column_mapper;
+                filter_info_with_row_numbers->condition_hash = filter_info->condition_hash;
+                filter_info_with_row_numbers->rows_to_read = filter_info->rows_to_read;
+            }
+            filter_info_with_row_numbers->need_row_numbers = true;
+            filter_info = filter_info_with_row_numbers;
         }
 
         /// When PREWHERE / row-level filter is stripped from `format_filter_info` (i.e. the

@@ -55,6 +55,12 @@ namespace DB
         const PrewhereInfoPtr & prewhere_info,
         const FilterDAGInfoPtr & row_level_filter);
 
+    /// Whether reading `format_name` pushes the filter down to a `KeyCondition` that needs the
+    /// IN-subquery sets to be materialised before the read starts. Every read step over a file-like
+    /// storage must agree on this, otherwise the pushdown silently becomes a no-op on one
+    /// entrypoint while working on another.
+    bool formatNeedsEagerKeyConditionSets(const String & format_name);
+
     /// Eagerly materialise IN-subquery sets that a format-level KeyCondition can consume.
     void prepareEagerKeyConditionSets(
         const std::shared_ptr<const ActionsDAG> & filter_actions_dag,

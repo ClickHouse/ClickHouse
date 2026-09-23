@@ -1,0 +1,12 @@
+An IN over a subquery set, pushed down (the other splits are dropped whole):
+3
+1	0	1
+A NOT IN over the same subquery set, pushed down (it drops no whole split):
+299997
+1	0	0
+An IN over a literal tuple, for comparison (its set needs no eager pass):
+3
+1	0	1
+A subquery set above the 64-element pushdown limit (left to ClickHouse):
+100
+0	1	0

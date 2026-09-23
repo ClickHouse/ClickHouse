@@ -1,0 +1,11 @@
+Schema inference:
+ip	UInt32					
+ip_nullable	Nullable(UInt32)					
+Round trip:
+16909060	\N
+16909060	4294967295
+Round trip with an explicit IPv4 schema:
+1.2.3.4	\N
+1.2.3.4	255.255.255.255
+IPv6 cannot be written:
+failed as expected

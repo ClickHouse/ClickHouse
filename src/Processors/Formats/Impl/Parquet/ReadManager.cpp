@@ -1155,17 +1155,20 @@ ReadManager::ReadResult ReadManager::read()
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
-    auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
-        row_subgroup.start_row_idx + row_group.start_global_row_idx);
-    if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+    if (reader.format_filter_info && reader.format_filter_info->need_row_numbers)
     {
-        chassert(row_subgroup.filter.rows_pass > 0);
-        chassert(!row_subgroup.filter.filter.empty());
-        chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
+        auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(
+            row_subgroup.start_row_idx + row_group.start_global_row_idx);
+        if (row_subgroup.filter.rows_pass != row_subgroup.filter.rows_total)
+        {
+            chassert(row_subgroup.filter.rows_pass > 0);
+            chassert(!row_subgroup.filter.filter.empty());
+            chassert(countBytesInFilter(row_subgroup.filter.filter) == chunk.getNumRows());
 
-        row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
+            row_numbers_info->applied_filter = std::move(row_subgroup.filter.filter);
+        }
+        chunk.getChunkInfos().add(std::move(row_numbers_info));
     }
-    chunk.getChunkInfos().add(std::move(row_numbers_info));
 
     /// This is a terrible hack to make progress indication kind of work.
     ///

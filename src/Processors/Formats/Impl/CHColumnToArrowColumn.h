@@ -34,6 +34,12 @@ public:
         bool use_64_bit_indexes_for_dictionary = false;
         /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
         bool output_date_as_uint16 = false;
+        /// Output DateTime as Arrow TIMESTAMP with second precision instead of UInt32,
+        /// so the temporal type survives a round-trip through the format.
+        bool output_datetime_as_timestamp = false;
+        /// Output the Nothing type (e.g. `SELECT NULL`) as the Arrow Null type.
+        /// By default such columns raise an UNKNOWN_TYPE exception.
+        bool output_nothing_as_null = false;
         /// What to do with a type having no conversion: reject it, or write one serialized value per row
         /// into an Arrow `utf8`/`binary` column.
         FormatSettings::ArrowUnsupportedTypes output_unsupported_types = FormatSettings::ArrowUnsupportedTypes::THROW;
