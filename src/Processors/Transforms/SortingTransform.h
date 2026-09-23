@@ -31,6 +31,10 @@ public:
     /// rows; an empty chunk marks completion. A nonzero `limit` counts emitted rows.
     Chunk read();
 
+    /// Derives the output row limit from the row and byte targets and the input's average allocation.
+    static size_t calculateMaxMergedBlockSize(
+        size_t max_block_rows, size_t preferred_block_bytes, size_t input_rows, size_t input_bytes);
+
     /// Returns the row limit, reduced by the optional byte target using the input's average row size.
     size_t getMaxMergedBlockSize() const { return max_merged_block_size; }
 
