@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer, like the other make_distributed_plan tests.
 
 -- A join of two small dimension tables that feeds a broadcast join is recomputed on every
 -- node (a `Replicated` join over two `ReplicatedRead`s, no exchange) instead of being joined
@@ -18,7 +17,6 @@ SET enable_cascades_optimizer = 1;
 SET make_distributed_plan = 1;
 SET distributed_plan_execute_locally = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET enable_join_runtime_filters = 0;
 -- The Fast test profile sets a non-zero max_rows_to_group_by, which keeps aggregations local.
 SET max_rows_to_group_by = 0;

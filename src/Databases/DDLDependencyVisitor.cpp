@@ -125,7 +125,7 @@ namespace
                             mv_to_dependency->uuid = target.inner_uuid;
                         }
                     }
-                    else if (target.kind == ViewTarget::Kind::Inner && !create.is_window_view)
+                    else if (target.kind == ViewTarget::Kind::Inner)
                     {
                         mv_to_dependency = StorageID{table_name.database, target.table_id.getQualifiedName().table, target.inner_uuid};
                         mv_to_dependency->table_name = StorageMaterializedView::generateInnerTableName(mv_to_dependency.value());
@@ -133,7 +133,7 @@ namespace
                     else if (target.kind == ViewTarget::Kind::Samples
                         || target.kind == ViewTarget::Kind::RecentSamples
                         || target.kind == ViewTarget::Kind::Tags
-                        || target.kind == ViewTarget::Kind::Metrics)
+                        || target.kind == ViewTarget::Kind::MetricFamilies)
                     {
                         /// External target tables of a TimeSeries table are referential dependencies.
                         /// Inner target tables (created and owned by the TimeSeries table) are not, the same way

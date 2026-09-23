@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
 #include <Interpreters/ProfileEventsExt.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Common/typeid_cast.h>
 #include <Common/IPv6ToBinary.h>
 #include <Columns/ColumnsNumber.h>
@@ -38,7 +39,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"initial_address", DataTypeFactory::instance().get("IPv6"), "IP address from which the initial query in the same query chain was launched."},
         {"initial_port", std::make_shared<DataTypeUInt16>(), "Client port from which the initial query in the same query chain was launched."},
 
-        {"interface", std::make_shared<DataTypeUInt8>(), "The interface which was used to send the query. TCP = 1, HTTP = 2, GRPC = 3, MYSQL = 4, POSTGRESQL = 5, LOCAL = 6, TCP_INTERSERVER = 7."},
+        {"interface", getReportedClientInterfaceEnum(), "The interface which was used to send the query, as reported by the client. `Unknown` if the reported interface is not one this server recognizes."},
 
         {"os_user", std::make_shared<DataTypeString>(), "Operating system username who runs clickhouse-client."},
         {"client_hostname", std::make_shared<DataTypeString>(), "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
@@ -49,7 +50,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
         {"client_version_minor", std::make_shared<DataTypeUInt64>(), "Minor version of the clickhouse-client or another TCP client."},
         {"client_version_patch", std::make_shared<DataTypeUInt64>(), "Patch component of the clickhouse-client or another TCP client version."},
 
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
+        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
         {"http_user_agent", std::make_shared<DataTypeString>(), "HTTP header UserAgent passed in the HTTP query."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header Referer passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header X-Forwarded-For passed in the HTTP query."},
@@ -94,6 +95,7 @@ ColumnsDescription StorageSystemProcesses::getColumnsDescription()
 void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
     ProcessList::Info info = context->getProcessList().getInfo(true, true, true);
+    const bool show_secrets = canDisplaySecrets(context);
 
     for (const auto & process : info)
     {
@@ -111,7 +113,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insertData(IPv6ToBinary(process.client_info.initial_address->host()).data(), 16);
         res_columns[i++]->insert(process.client_info.initial_address->port());
 
-        res_columns[i++]->insert(UInt64(process.client_info.interface));
+        res_columns[i++]->insert(reportedClientInterfaceEnumValue(process.client_info.interface));
 
         res_columns[i++]->insert(process.client_info.os_user);
         res_columns[i++]->insert(process.client_info.getClientHostName());
@@ -122,7 +124,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
         res_columns[i++]->insert(process.client_info.client_version_minor);
         res_columns[i++]->insert(process.client_info.client_version_patch);
 
-        res_columns[i++]->insert(UInt64(process.client_info.http_method));
+        res_columns[i++]->insert(reportedClientHTTPMethodEnumValue(process.client_info.http_method));
         res_columns[i++]->insert(process.client_info.http_user_agent);
         res_columns[i++]->insert(process.client_info.http_referer);
         res_columns[i++]->insert(process.client_info.forwarded_for);
@@ -169,7 +171,7 @@ void StorageSystemProcesses::fillData(MutableColumns & res_columns, ContextPtr c
             IColumn * column = res_columns[i++].get();
 
             if (process.query_settings)
-                process.query_settings->dumpToMapColumn(column, true);
+                process.query_settings->dumpToMapColumn(column, true, show_secrets);
             else
             {
                 column->insertDefault();

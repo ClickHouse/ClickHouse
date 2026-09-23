@@ -170,6 +170,12 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 </compression>
 ```
 
+<div id="config-file">
+  ## ملف الإعدادات
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />يشير إلى ملف إعدادات الخادم.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="نعم" />
 
 مدى تكرار إعادة تحميل ClickHouse للإعدادات والتحقق من وجود تغييرات جديدة
-
-<div id="config-file">
-  ## ملف الإعدادات
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />يشير إلى ملف إعدادات الخادم.
 
 <div id="core_dump">
   ## core_dump
@@ -973,7 +973,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />تعطيل الإدراج من محركات قوائم انتظار الرسائل (Kafka وRabbitMQ وNATS) في العروض المادية المرفقة
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />تعطيل الإدراج من محركات قوائم انتظار الرسائل (Kafka وRabbitMQ وNATS) في العروض المادية المرفقة
 
 <div id="metric_log">
   ## metric_log

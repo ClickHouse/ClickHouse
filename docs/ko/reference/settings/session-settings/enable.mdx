@@ -22,9 +22,9 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`adaptive_aggregator_freeze_threshold`개의 키에 도달하면 각 스레드의 로컬 해시 테이블을 고정하는 적응형 `GROUP BY` 집계를 활성화하는 새로운 설정입니다. 이에 따라 빈번한 키는 작은 로컬 테이블에서 계속 집계되고, 드문 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 따라서 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다."}]}]} />
 
-적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
+적응형 `GROUP BY` 알고리즘을 활성화합니다. 각 스레드는 `adaptive_aggregator_freeze_threshold`개의 키(또는 `adaptive_aggregator_freeze_threshold_bytes`만큼의 메모리)에 도달할 때까지 로컬 해시 테이블에서 집계한 후 테이블을 고정합니다. 그러면 이미 확인된(빈번한) 키의 행은 해당 테이블에서 계속 갱신되고, 새로운(드문) 키는 해시에 따라 버킷별 백로그로 전달되어 버킷 병렬 머지 내에서 정확히 한 번 집계됩니다. 빈번한 키는 캐시에 상주하는 작은 테이블에 유지되며, 드문 키는 스레드마다 한 번씩이 아니라 한 번만 저장하고 처리합니다.
 
-외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 스필합니다.
+외부 집계 설정(`max_bytes_before_external_group_by`, `max_bytes_ratio_before_external_group_by`)도 적용됩니다. 임계값을 초과하면 백로그를 공유 테이블로 조기에 비우며, 그래도 임계값 아래로 내려가지 않으면 일반 외부 집계를 통해 공유 테이블을 디스크에 spill합니다.
 
 <div id="enable_adaptive_memory_spill_scheduler">
   ## enable_adaptive_memory_spill_scheduler
@@ -48,6 +48,18 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 `IN` 서브쿼리에서 `DISTINCT`를 활성화합니다. 이 설정은 절충이 필요한 설정입니다. 활성화하면 고유한 값만 전송되므로, 분산 `IN` 서브쿼리에 대해 전송되는 임시 테이블의 크기를 크게 줄이고 세그먼트 간 데이터 전송 속도도 크게 높일 수 있습니다.
 다만 이 설정을 활성화하면 중복 제거(`DISTINCT`)를 수행해야 하므로 각 노드에서 추가 병합 작업이 발생합니다. 네트워크 전송이 병목이고 추가 병합 비용을 감수할 수 있다면 이 설정을 사용하십시오.
+
+<div id="enable_alp_codec">
+  ## enable_alp_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs`를 사용하지 않고 실험적 `ALP` 압축 코덱을 개별적으로 활성화하는 새로운 설정입니다."}]}]} />
+
+실험적 `ALP` 압축 코덱을 사용할 수 있도록 합니다.
 
 <div id="enable_automatic_decision_for_merging_across_partitions_for_final">
   ## enable_automatic_decision_for_merging_across_partitions_for_final
@@ -126,6 +138,17 @@ Possible values:
 
 true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 
+<div id="enable_function_early_short_circuit">
+  ## enable_function_early_short_circuit
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "새로운 설정"}]}]} />
+
+쿼리 분석 중 `and` 및 `or`에 대한 조기 단락 상수 폴딩을 활성화합니다.
+활성화하면 조건을 충족하는 실행 불가 스칼라 하위 쿼리 분기는 타입을 보존하고 쿼리 의미를 검증하기 위해 분석되지만 실행되지는 않습니다. 스칼라 카디널리티 또는 런타임 값이 필요한 경우에는 일반 분석으로 되돌아갑니다.
+
 <div id="enable_global_with_statement">
   ## enable_global_with_statement
 </div>
@@ -135,6 +158,37 @@ true로 설정하면 텍스트 인덱스 사용이 허용됩니다.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "21.2"},{"label": "1"},{"label": "기본적으로 WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다"}]}]} />
 
 WITH 문을 UNION 쿼리와 모든 서브쿼리에 전파합니다
+
+<div id="enable_group_by_top_k_optimization">
+  ## enable_group_by_top_k_optimization
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "`GROUP BY key ORDER BY key LIMIT N` 쿼리에서 집계 중 TopK 필터링 최적화를 제어하는 새로운 설정입니다."}]}]} />
+
+`GROUP BY keys ORDER BY <prefix of keys> LIMIT K` 쿼리와 `ORDER BY` 없는 `GROUP BY keys LIMIT K` 쿼리에서 집계 중 TopK 필터링 최적화를 활성화합니다. 후자의 경우 임의의 `K`개 그룹이 유효한 결과이므로 모든 키에 대한 정렬이 내부적으로 생성됩니다.
+
+활성화하면 집계기는 지금까지 확인한 상위 `K`개 키를 담는 크기 제한 힙을 유지하며, 그룹화 키가 최종 결과에 포함될 수 없는 새 행은 해시 테이블에 삽입하지 않습니다. 이렇게 하면 뒤이은 `ORDER BY ... LIMIT`에서 제외될 행을 집계하지 않아도 됩니다. 또한 힙이 전체 `GROUP BY` 키의 순위를 매길 수 있으면 중간 해시 테이블에서 축출된 그룹을 프루닝하여, 해시 테이블 크기를 고유 키 수가 아닌 `LIMIT`로 제한합니다. `ORDER BY`가 `GROUP BY` 키의 일부 선행 접두사만 포함하는 경우에는 순위로 전체 그룹을 식별할 수 없으므로 행 스키핑만 적용됩니다. 해시 테이블은 허용된 모든 그룹을 유지하므로 나머지 키 컬럼의 카디널리티에 따라 계속 커질 수 있습니다.
+
+요청한 `LIMIT`가 [query&#95;plan&#95;max&#95;limit&#95;for&#95;top&#95;k&#95;optimization](/ko/reference/settings/session-settings/query-plan#query_plan_max_limit_for_top_k_optimization) 또는 하드 제한인 `100000`보다 크면, 힙의 메모리 및 CPU 비용이 요청한 `LIMIT`에 따라 증가하므로 이 최적화는 비활성화됩니다.
+
+그룹을 프루닝하면 결과가 달라질 수 있는 쿼리 형태에서는 이 최적화를 건너뜁니다. 여기에는 `WITH TOTALS`, `HAVING`, `QUALIFY`, 윈도우 함수, `ROLLUP`/`CUBE`/`GROUPING SETS`, `LIMIT WITH TIES`, 일치하는 `GROUP BY` 키의 `COLLATE`(`GROUP BY` 키 전체 접두사 이후의 `ORDER BY` 컬럼에 적용된 `COLLATE`는 어떤 그룹이 조건을 충족하는지에 영향을 주지 않으므로 최적화를 비활성화하지 않음), 집계 항목 또는 `GROUP BY` 키의 선행 접두사가 아닌 항목에 대한 `ORDER BY`, 그리고 `max_rows_to_group_by` 또는 `exact_rows_before_limit`가 설정된 경우가 포함됩니다.
+
+가능한 값:
+
+* 0 — 비활성화됨.
+* 1 — 활성화됨.
+
+<div id="enable_hash_join_row_store">
+  ## enable_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "해시 조인의 페이로드를 행 중심 레이아웃으로 변환할 수 있는 새로운 설정입니다."}]}]} />
+
+해시 조인의 페이로드를 행 중심 레이아웃으로 변환할 수 있도록 합니다.
 
 <div id="enable_hdfs_pread">
   ## enable_hdfs_pread
@@ -330,6 +384,18 @@ true인 경우, 테이블에서 가져온 직렬화 힌트에 따라 데이터�
 이 설정은 집계 버킷 크기가 치우쳐 있을 때, 레플리카가 id가 낮은 무거운 버킷 일부를 아직 처리하는 동안 id가 더 높은 버킷을 initiator로 전송할 수 있게 하여 성능을 향상시킬 수 있습니다.
 단점은 메모리 사용량이 더 늘어날 수 있다는 점입니다.
 
+<div id="enable_quantized_codec">
+  ## enable_quantized_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` 없이 실험적 `Quantized` 압축 코덱을 개별적으로 활성화하는 새로운 설정입니다."}]}]} />
+
+실험적 `Quantized` 압축 코덱을 사용할 수 있습니다.
+
 <div id="enable_reads_from_query_cache">
   ## enable_reads_from_query_cache
 </div>
@@ -445,6 +511,18 @@ IN 서브쿼리용으로 생성된 Set 객체를 동일한 뮤테이션의 여�
 기능을 위한 상위 제어 설정이며, 추가 기능은 각자의 설정으로
 별도로 제어될 수 있습니다.
 
+<div id="enable_sz3_codec">
+  ## enable_sz3_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs`를 설정하지 않고도 실험적 `SZ3` 압축 코덱을 개별적으로 활성화할 수 있는 새로운 설정입니다."}]}]} />
+
+실험적 `SZ3` 압축 코덱을 사용할 수 있습니다.
+
 <div id="enable_time_time64_type">
   ## enable_time_time64_type
 </div>
@@ -499,5 +577,17 @@ Possible values:
 
 * 0 - 비활성화됨
 * 1 - 활성화됨
+
+<div id="enable_zxc_codec">
+  ## enable_zxc_codec
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "`allow_experimental_codecs` 없이 실험적 `ZXC` 압축 코덱을 개별적으로 활성화할 수 있는 새로운 설정입니다."}]}]} />
+
+실험적 `ZXC` 압축 코덱을 사용할 수 있도록 합니다.
 
 {/*AUTOGENERATED_END*/}

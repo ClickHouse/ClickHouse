@@ -222,10 +222,22 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     if (pos->type != TokenType::OpeningRoundBracket)
         return false;
+    const auto opening_bracket_pos = pos;
     ++pos;
 
     /// Lookahead for inner subquery
     const bool possible_inner_subquery = pos->type == TokenType::OpeningRoundBracket;
+
+    /// A subquery in the FROM-first form, where the SELECT clause is omitted (`(FROM t)` means
+    /// `(SELECT * FROM t)`), starts with a word that is also a valid unquoted column name: `from`.
+    /// Unlike a leading `SELECT`, `EXPLAIN` or `VALUES`, that word is therefore not evidence that the
+    /// parentheses hold a subquery at all. Where the contents read as an expression over a column
+    /// named `from`, that older reading wins and these are not a subquery.
+    const bool starts_with_from_clause
+        = pos->type == TokenType::BareWord && equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "from");
+
+    if (starts_with_from_clause && parenthesesHoldExpressionOverColumnNamedFrom(opening_bracket_pos))
+        return false;
 
     ASTPtr result_node = nullptr;
 
@@ -316,7 +328,7 @@ bool ParserSubquery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     }
 
     /// Inner subquery should be handled separately
-    starts_with_valid_select_or_explain = !possible_inner_subquery && result_node != nullptr;
+    starts_with_valid_select_or_explain = !possible_inner_subquery && !starts_with_from_clause && result_node != nullptr;
 
     if (pos->type != TokenType::ClosingRoundBracket)
         return false;
@@ -2854,10 +2866,12 @@ SELECT <expr> APPLY(<func>) FROM [db.]table_name
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
+Parentheses are optional when excluding a single column.
+
 ## Examples {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i FROM columns_transformers;
 ```
 
 ```response title="Response"

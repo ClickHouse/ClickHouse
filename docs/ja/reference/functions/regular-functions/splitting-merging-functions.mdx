@@ -284,7 +284,7 @@ SELECT reverseBySeparator('www.google.com')
 ```
 
 ```response title=Response
-'com.google.www'
+com.google.www
 ```
 
 **パスの逆順**
@@ -294,7 +294,7 @@ SELECT reverseBySeparator('a/b/c', '/')
 ```
 
 ```response title=Response
-'c/b/a'
+c/b/a
 ```
 
 **任意の区切り文字**
@@ -304,7 +304,7 @@ SELECT reverseBySeparator('x::y::z', '::')
 ```
 
 ```response title=Response
-'z::y::x'
+z::y::x
 ```
 
 **ドットを含む場合の注意点**
@@ -314,7 +314,7 @@ SELECT reverseBySeparator('.a.b.', '.')
 ```
 
 ```response title=Response
-'.b.a.'
+.b.a.
 ```
 
 **単一の要素**
@@ -324,7 +324,7 @@ SELECT reverseBySeparator('single')
 ```
 
 ```response title=Response
-'single'
+single
 ```
 
 **空の区切り文字**
@@ -334,7 +334,7 @@ SELECT reverseBySeparator('abcde', '')
 ```
 
 ```response title=Response
-'edcba'
+edcba
 ```
 
 <div id="splitByChar">
@@ -381,9 +381,9 @@ SELECT splitByChar(',', '1,2,3,abcde');
 ```
 
 ```response title=Response
-┌─splitByChar(⋯2,3,abcde')─┐
-│ ['1','2','3','abcde']    │
-└──────────────────────────┘
+┌─splitByChar(',', '1,2,3,abcde')─┐
+│ ['1','2','3','abcde']           │
+└─────────────────────────────────┘
 ```
 
 <div id="splitByNonAlpha">
@@ -470,9 +470,9 @@ SELECT splitByRegexp('\\d+', 'a12bc23de345f');
 ```
 
 ```response title=Response
-┌─splitByRegex⋯c23de345f')─┐
-│ ['a12bc23de345f']        │
-└──────────────────────────┘
+┌─splitByRegexp('\\d+', 'a12bc23de345f')─┐
+│ ['a','bc','de','f']                    │
+└────────────────────────────────────────┘
 ```
 
 **空の正規表現**
@@ -531,9 +531,9 @@ SELECT splitByString(', ', '1, 2 3, 4,5, abcde');
 ```
 
 ```response title=Response
-┌─splitByStrin⋯4,5, abcde')─┐
-│ ['1','2 3','4,5','abcde'] │
-└───────────────────────────┘
+┌─splitByString(', ', '1, 2 3, 4,5, abcde')─┐
+│ ['1','2 3','4,5','abcde']                 │
+└───────────────────────────────────────────┘
 ```
 
 **区切り文字が空の場合**
@@ -598,18 +598,19 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 利用可能なトークナイザーは次のとおりです。
 
 * `splitByNonAlpha` は、ASCII の英数字以外の文字で文字列を分割します (関数 [splitByNonAlpha](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByNonAlpha) も参照) 。
-* `splitByString(S)` は、ユーザー定義の区切り文字列 `S` で文字列を分割します (関数 [splitByString](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByString) も参照) 。区切り文字は省略可能なパラメーターで指定できます。たとえば `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])` のように指定します。なお、各区切り文字列は複数文字で構成できます (例では `', '`) 。明示的に指定しない場合、デフォルトの区切り文字リストは単一の空白文字 `[' ']` です。
+* `splitByString(S)` は、ユーザー定義の区切り文字列 `S` で文字列を分割します (関数 [splitByString](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByString) も参照) 。区切り文字は省略可能なパラメータで指定できます。たとえば `tokens(value, 'splitByString', [', ', '; ', '\n', '\\'])` のように指定します。なお、各区切り文字列は複数文字で構成できます (例では `', '`) 。明示的に指定しない場合、デフォルトの区切り文字リストは単一の空白文字 `[' ']` です。
+* `splitByRegexp(re)` は、ユーザー定義の正規表現区切り文字 `re` で文字列を分割します (関数 [splitByRegexp](/ja/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp) も参照) 。正規表現は必須です。たとえば `tokens(value, 'splitByRegexp', '[^\p{L}\p{N}#+]+')` のように指定します。`splitByString` とは異なり、正規表現区切り文字では、`C++` や `C#` などの特殊文字を含むトークンを保持できます。
 * `asciiCJK` は、Unicode の単語境界規則 (UAX #29 に類似) を使用して文字列をトークンに分割します。ASCII の英数字およびアンダースコアは、コネクタ (文字には `:`、同種の文字には `.` と `'`) とともにトークンを形成します。非 ASCII の Unicode 文字は 1 文字単位のトークンになります。
 * `chinese` は、辞書と隠れマルコフモデルを使用して中国語テキストを単語に分割します (アルゴリズムは [jieba](https://github.com/fxsjy/jieba) に従い、埋め込み辞書とモデルデータは [cppjieba](https://github.com/yanyiwu/cppjieba) から派生しています) 。非 ASCII 文字をすべて 1 文字単位のトークンとして扱う `asciiCJK` とは異なり、`chinese` は連続する中国語文字を単語にまとめるため、中国語テキストではより意味のあるトークンと高い検索品質が得られます。省略可能な `granularity` 引数には、`coarse_grained` (デフォルト) または `fine_grained` を指定します。後者は重複する部分単語も列挙するため、索引が大きくなる代わりに再現率が向上します。
 * `icu(locale)` は、ICU ライブラリの Unicode 単語分割 (UAX #29) を使用して文字列を単語トークンに分割します。単語間に空白のない文字体系 (中国語、日本語、タイ語など) では、ICU は辞書ベースの分割を適用するため、そのようなテキストは意味のある単語に分割されます。`locale` はセグメンターに渡される ICU ロケールです (分割は主に文字体系と辞書に基づいて行われ、ロケールは ICU のロケール固有の調整を選択します) 。これは必須であり、たとえば `tokens(value, 'icu', 'ja')` のように個別の引数として渡します。
 * `japanese` は、MeCab 形態素解析器を使用して日本語テキストを単語に分割します。サーバー設定で構成された辞書が必要です ([テキスト索引](/ja/reference/engines/table-engines/mergetree-family/textindexes) のドキュメントを参照) 。
-* `ngrams(N)` は、文字列を同じ長さの `N`-gram に分割します (関数 [ngrams](/ja/reference/functions/regular-functions/splitting-merging-functions#ngrams) も参照) 。N-gram の長さは、1 から 8 までの省略可能な整数パラメーターで指定できます。たとえば `tokens(value, 'ngrams', 3)` のように指定します。明示的に指定しない場合、デフォルトの ngram サイズは 3 です。
-* `sparseGrams(min_length, max_length, min_cutoff_length)` は、文字数が `min_length` 以上 `max_length` 以下 (両端含む) の可変長 n-gram に文字列を分割します (関数 [sparseGrams](/ja/reference/functions/regular-functions/string-functions#sparseGrams) も参照) 。明示的に指定しない場合、`min_length` と `max_length` のデフォルト値はそれぞれ 3 と 100 です。パラメーター `min_cutoff_length` を指定すると、長さが `min_cutoff_length` 以上の n-gram のみが返されます。`ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。たとえば `tokens(value, 'sparseGrams', 3, 5, 4)` は、入力文字列から内部的に 3-, 4-, 5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
-* `array` はトークン化を行いません。つまり、各行の値全体が 1 つのトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) も参照) 。
+* `ngrams(N)` は、文字列を同じ長さの `N`-gram に分割します (関数 [ngrams](/ja/reference/functions/regular-functions/splitting-merging-functions#ngrams) も参照) 。N-gram の長さは、1 から 8 までの省略可能な整数パラメータで指定できます。たとえば `tokens(value, 'ngrams', 3)` のように指定します。明示的に指定しない場合、デフォルトの ngram サイズは 3 です。
+* `sparseGrams(min_length, max_length, min_cutoff_length)` は、文字数が `min_length` 以上 `max_length` 以下 (両端含む) の可変長 n-gram に文字列を分割します (関数 [sparseGrams](/ja/reference/functions/regular-functions/string-functions#sparseGrams) も参照) 。明示的に指定しない場合、`min_length` と `max_length` のデフォルト値はそれぞれ 3 と 100 です。パラメータ `min_cutoff_length` を指定すると、長さが `min_cutoff_length` 以上の n-gram のみが返されます。`ngrams(N)` と比べると、`sparseGrams` トークナイザーは可変長の N-gram を生成するため、元のテキストをより柔軟に表現できます。たとえば `tokens(value, 'sparseGrams', 3, 5, 4)` は、入力文字列から内部的に 3-, 4-, 5-gram を生成しますが、返されるのは 4-gram と 5-gram のみです。
+* `array` はトークン化を行いません。つまり、各行の値全体が 1 つのトークンになります (関数 [array](/ja/reference/functions/regular-functions/array-functions#array) も参照) 。他のシステムとの互換性のため、`keyword` は `array` の別名として利用できます。
 
-`splitByString` トークナイザーでは、トークンが [プレフィックスコード](https://en.wikipedia.org/wiki/Prefix_code) を構成していない場合、通常は長い区切り文字が優先的にマッチするようにしたいはずです。
-そのためには、区切り文字を長さの降順で渡してください。
-たとえば、separators = `['%21', '%']` の場合、文字列 `%21abc` は `['abc']` としてトークン化されます。一方、separators = `['%', '%21']` の場合は `['21ac']` にトークン化されます (これはおそらく意図した結果ではありません) 。
+`splitByString` トークナイザーで、トークンが[プレフィックスコード](https://en.wikipedia.org/wiki/Prefix_code)を構成しない場合は、長い区切り文字を優先して一致させる必要があるでしょう。
+そのためには、区切り文字を長さの降順で渡します。
+たとえば、separators = `['%21', '%']` の場合、文字列 `%21abc` は `['abc']` としてトークン化されます。一方、separators = `['%', '%21']` の場合は `['21ac']` としてトークン化されます (これはおそらく意図した結果ではありません) 。
 
 **構文**
 
@@ -617,6 +618,7 @@ SELECT splitByWhitespace('  1!  a,  b.  ');
 tokens(value) -- 'splitByNonAlpha' tokenizer
 tokens(value, 'splitByNonAlpha')
 tokens(value, 'splitByString'[, separators])
+tokens(value, 'splitByRegexp', regexp)
 tokens(value, 'asciiCJK')
 tokens(value, 'chinese'[, granularity])
 tokens(value, 'icu', locale)
@@ -626,13 +628,14 @@ tokens(value, 'sparseGrams'[, min_length, max_length[, min_cutoff_length]])
 tokens(value, 'array')
 ```
 
-**Arguments**
+**引数**
 
 * `value` — 入力文字列です。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
-* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`chinese`、`icu`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
+* `tokenizer` — 使用するトークナイザーです。有効な引数は `splitByNonAlpha`、`splitByString`、`splitByRegexp`、`asciiCJK`、`chinese`、`icu`、`japanese`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 * `locale` — 引数 `tokenizer` が `icu` の場合にのみ使用します。たとえば `'ja'` のような必須のロケールです。[`const String`](/ja/reference/data-types/string)
 * `n` — 引数 `tokenizer` が `ngrams` の場合にのみ使用します。N-gram の長さを指定する省略可能なパラメータです。明示的に設定しない場合のデフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `separators` — 引数 `tokenizer` が `split` の場合にのみ使用します。区切り文字列を指定する省略可能なパラメータです。明示的に設定しない場合のデフォルトは `[' ']` です。[`const Array(String)`](/ja/reference/data-types/array)
+* `regexp` — 引数 `tokenizer` が `splitByRegexp` の場合にのみ使用します。正規表現の区切り文字を指定する必須パラメータです。[`const String`](/ja/reference/data-types/string)
 * `min_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用します。最小グラム長を指定する省略可能なパラメータで、デフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `max_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用します。最大グラム長を指定する省略可能なパラメータで、デフォルトは `100` です。[`const UInt8`](/ja/reference/data-types/int-uint)
 * `min_cutoff_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用します。最小カットオフ長を指定する省略可能なパラメータです。[`const UInt8`](/ja/reference/data-types/int-uint)
@@ -702,16 +705,17 @@ tokensForLikePattern(value[, tokenizer[, tokenizer_specific_arguments...]])
 * `value` — 入力文字列です。[`String`](/ja/reference/data-types/string) または [`FixedString`](/ja/reference/data-types/fixedstring)
 * `tokenizer` — 使用するトークナイザーです。有効な値は `splitByNonAlpha`、`splitByString`、`asciiCJK`、`ngrams`、`sparseGrams`、`array` です。省略可能で、明示的に設定しない場合のデフォルトは `splitByNonAlpha` です。[`const String`](/ja/reference/data-types/string)
 * `locale` — 引数 `tokenizer` が `icu` の場合にのみ使用されます。たとえば `'ja'` のような、必須のロケールです。[`const String`](/ja/reference/data-types/string)
-* `n` — 引数 `tokenizer` が `ngrams` の場合にのみ使用されます。N-gram の長さを指定する省略可能なパラメーターです。明示的に設定しない場合のデフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
-* `separators` — 引数 `tokenizer` が `split` の場合にのみ使用されます。区切り文字列を指定する省略可能なパラメーターです。明示的に設定しない場合のデフォルトは `[' ']` です。[`const Array(String)`](/ja/reference/data-types/array)
-* `min_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最小グラム長を指定する省略可能なパラメーターで、デフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
-* `max_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最大グラム長を指定する省略可能なパラメーターで、デフォルトは `100` です。[`const UInt8`](/ja/reference/data-types/int-uint)
-* `min_cutoff_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最小カットオフ長を指定する省略可能なパラメーターです。[`const UInt8`](/ja/reference/data-types/int-uint)
-* `granularity` — 引数 `tokenizer` が `chinese` の場合にのみ使用されます。セグメンテーションの粒度を制御する、省略可能なパラメーターです。`coarse_grained` (デフォルト) または `fine_grained` を指定できます。[`const String`](/ja/reference/data-types/string)
+* `n` — 引数 `tokenizer` が `ngrams` の場合にのみ使用されます。N-gram の長さを指定する省略可能なパラメータです。明示的に設定しない場合のデフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
+* `separators` — 引数 `tokenizer` が `split` の場合にのみ使用されます。区切り文字列を指定する省略可能なパラメータです。明示的に設定しない場合のデフォルトは `[' ']` です。[`const Array(String)`](/ja/reference/data-types/array)
+* `regexp` — 引数 `tokenizer` が `splitByRegexp` の場合にのみ使用されます。正規表現の区切り文字を指定する必須パラメータです。[`const String`](/ja/reference/data-types/string)
+* `min_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最小グラム長を指定する省略可能なパラメータで、デフォルトは `3` です。[`const UInt8`](/ja/reference/data-types/int-uint)
+* `max_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最大グラム長を指定する省略可能なパラメータで、デフォルトは `100` です。[`const UInt8`](/ja/reference/data-types/int-uint)
+* `min_cutoff_length` — 引数 `tokenizer` が `sparseGrams` の場合にのみ使用されます。最小カットオフ長を指定する省略可能なパラメータです。[`const UInt8`](/ja/reference/data-types/int-uint)
+* `granularity` — 引数 `tokenizer` が `chinese` の場合にのみ使用されます。セグメンテーションの粒度を制御する、省略可能なパラメータです。`coarse_grained` (デフォルト) または `fine_grained` を指定できます。[`const String`](/ja/reference/data-types/string)
 
 **戻り値**
 
-入力文字列から生成されたトークンの配列を返します。[`Array`](/ja/reference/data-types/array)
+入力文字列から生成されたトークンの Array を返します。[`Array`](/ja/reference/data-types/array)
 
 **例**
 

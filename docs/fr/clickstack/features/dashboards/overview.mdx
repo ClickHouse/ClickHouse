@@ -200,6 +200,47 @@ Pour supprimer, modifier ou dupliquer une visualisation, survolez-la, puis utili
 
 Chaque tuile dispose d’un volet **Paramètres d’affichage** proposant des options qui contrôlent la façon dont sa valeur est rendue. Ouvrez-le depuis l’éditeur de tuiles en cliquant sur **Paramètres d’affichage**. Les options disponibles dépendent du type de visualisation.
 
+<div id="number-tile-color">
+  #### Couleur des tuiles Number
+</div>
+
+Les tuiles Number prennent en charge un choix de **Couleur** statique issu de la palette de graphiques prédéfinie. Lorsqu&#39;une tuile Number est sélectionnée, ouvrez les **Paramètres d&#39;affichage** et utilisez le contrôle **Couleur** (intitulé **Couleur des tuiles Number** à des fins d&#39;accessibilité) pour choisir un échantillon, ou effacez la sélection afin d&#39;utiliser la couleur de texte par défaut.
+
+Les couleurs sont stockées sous forme de tokens de palette, et non de valeurs hexadécimales brutes, afin que la même tuile s&#39;affiche correctement dans les thèmes clair, sombre et IDE.
+
+**Tokens catégoriels** (teintes pour plusieurs séries) :
+
+| Token              | Libellé    |
+| ------------------ | ---------- |
+| `chart-blue`       | Bleu       |
+| `chart-orange`     | Orange     |
+| `chart-red`        | Rouge      |
+| `chart-cyan`       | Cyan       |
+| `chart-green`      | Vert       |
+| `chart-pink`       | Rose       |
+| `chart-purple`     | Violet     |
+| `chart-light-blue` | Bleu clair |
+| `chart-brown`      | Marron     |
+| `chart-gray`       | Gris       |
+
+**Tokens sémantiques** (orientés statut) :
+
+| Token           | Libellé       |
+| --------------- | ------------- |
+| `chart-success` | Succès        |
+| `chart-warning` | Avertissement |
+| `chart-error`   | Erreur        |
+
+Utilisez des tokens sémantiques lorsque le nombre représente un statut (par exemple, un nombre d&#39;erreurs avec `chart-error` ou un taux de bon fonctionnement avec `chart-success`). Utilisez des tokens catégoriels pour distinguer visuellement des tuiles KPI associées sans indiquer de statut.
+
+Les anciennes configurations peuvent encore stocker des tokens numériques legacy (`chart-1` à `chart-10`). Lors du chargement d&#39;un tableau de bord, ClickStack les associe aux tokens nommés d&#39;après les teintes ci-dessus.
+
+La même palette permet de définir des **règles de couleur** facultatives dans le même volet : des conditions ordonnées évaluées par rapport à la valeur affichée (la dernière correspondance l&#39;emporte). Lorsqu&#39;aucune règle ne correspond, la couleur statique s&#39;applique, puis la couleur de texte par défaut.
+
+<div id="number-tile-background-chart">
+  #### Graphique d’arrière-plan de la tuile Number
+</div>
+
 Les tuiles Number peuvent afficher un **graphique d’arrière-plan** : une mini-courbe de tendance tracée derrière la valeur, pour visualiser d’un coup d’œil son évolution sur l’intervalle de temps sélectionné. C’est utile pour les tuiles de SLO et de budget d’erreur, où la tendance d’une valeur compte autant que sa valeur actuelle.
 
 Avec une tuile Number sélectionnée, ouvrez **Paramètres d’affichage** et définissez **Graphique d’arrière-plan** sur **Ligne** ou **Zone** (ou **Aucun** pour le désactiver). La mini-courbe est dérivée d’une version de la requête de la tuile regroupée par intervalles de temps ; aucune configuration supplémentaire n’est donc nécessaire. Elle hérite par défaut de la couleur de la tuile ; définissez une **Couleur d’arrière-plan** pour la remplacer par une couleur précise de la palette.
@@ -215,6 +256,46 @@ Avec une tuile de tableau sélectionnée, ouvrez **Paramètres d’affichage** e
 <Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Volet Paramètres d’affichage pour une tuile de tableau, avec Arrière-plan alterné des lignes activé" size="lg" />
 
 Les tuiles de tableau conservent également un séparateur entre la ligne d’en-tête et les données pendant le défilement, afin que les en-têtes de colonnes restent bien distincts.
+
+<div id="api-number-tile-color">
+  #### API des tableaux de bord : couleur des tuiles Number
+</div>
+
+Lors de la création ou de la mise à jour de tableaux de bord via l’API externe (`POST` / `PUT` `/api/v2/dashboards`), définissez `color` sur un token de palette dans la config du générateur de requêtes d’une tuile Number. Les valeurs hex brutes sont rejetées.
+
+```json
+{
+  "name": "Error rate KPIs",
+  "tiles": [
+    {
+      "id": "65f5e4a3b9e77c001a222222",
+      "name": "Errors",
+      "x": 0,
+      "y": 0,
+      "w": 6,
+      "h": 4,
+      "config": {
+        "displayType": "number",
+        "sourceId": "<SOURCE_ID>",
+        "select": [
+          {
+            "aggFn": "count",
+            "where": "SeverityText:error",
+            "whereLanguage": "lucene",
+            "alias": "Errors"
+          }
+        ],
+        "color": "chart-error",
+        "backgroundChart": {
+          "type": "area"
+        }
+      }
+    }
+  ]
+}
+```
+
+`color` accepte n’importe quel token des listes catégorielles et sémantiques ci-dessus (par exemple `chart-blue` ou `chart-success`). Le paramètre facultatif `backgroundChart.color` remplace la couleur du sparkline par le même enum de token. Consultez la [référence de l’API ClickStack](/fr/clickstack/api-reference) pour l’authentification et les URL de base.
 
 <div id="dashboard-listing-search">
   ## Tableaux de bord - liste et recherche
@@ -233,28 +314,37 @@ Les tableaux de bord peuvent être ajoutés aux favoris pour y accéder facileme
 <Tagging />
 
 <div id="custom-filters">
-  ## Filtres personnalisés
+  ## Filtres personnalisés et variables
 </div>
 
 En plus des [filtres en texte libre](#filter-dashboards) disponibles sur tous les tableaux de bord, les tableaux de bord enregistrés prennent en charge des filtres déroulants personnalisés alimentés par des données interrogées dans ClickHouse. Ils offrent des contrôles de filtrage réutilisables, utilisables en quelques clics, afin que les utilisateurs des tableaux de bord puissent filtrer sans avoir à écrire manuellement des expressions.
 
 <Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="Filtre déroulant des services affichant les noms de service disponibles" size="lg" />
 
-Les étapes suivantes montrent comment ajouter un filtre personnalisé au tableau de bord créé dans la section [« Création de tableaux de bord »](#creating-dashboards).
+Chaque filtre permet à l’utilisateur de choisir une ou plusieurs valeurs, puis effectue l’une ou les deux actions suivantes :
+
+* **Diffusion** — applique la sélection comme condition de filtre aux tuiles correspondantes. Les tuiles n’ont pas besoin d’être mises à jour pour référencer le filtre.
+* **Variable** — expose la sélection aux requêtes des tuiles sous la forme `$variableName`, afin que chaque tuile décide où et comment la valeur est utilisée.
+
+Un filtre doit effectuer au moins l’une des deux actions. La diffusion est activée par défaut lors de la création d’un filtre.
+
+Les étapes suivantes montrent comment ajouter un filtre au tableau de bord créé dans la section [« Création de tableaux de bord »](#creating-dashboards).
 
 <Steps>
   <Step title="Ouvrir la boîte de dialogue Modifier les filtres" id="open-edit-filters">
-    Ouvrez un tableau de bord enregistré et sélectionnez **Edit Filters** dans la barre d’outils.
+    Ouvrez un tableau de bord enregistré et sélectionnez **Modifier les filtres et les variables** dans la barre d’outils.
 
-    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Bouton Edit Filters dans la barre d’outils du tableau de bord" size="lg" />
+    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="Bouton Modifier les filtres et les variables dans la barre d’outils du tableau de bord" size="lg" />
   </Step>
 
   <Step title="Ajouter un nouveau filtre" id="add-new-filter">
-    Cliquez sur **Add new filter**. Configurez le filtre en renseignant un **Name**, en sélectionnant une **Data source**, puis en saisissant une **Filter expression** — une colonne SQL ou une expression dont les valeurs distinctes alimenteront la liste déroulante. Cliquez sur **Save filter**.
+    Cliquez sur **Add new filter**. Configurez le filtre en renseignant un **Display Name**, en sélectionnant une **Data source**, puis en saisissant une **Filter expression** — une colonne SQL ou une expression dont les valeurs distinctes alimenteront la liste déroulante. Cliquez sur **Save filter**.
 
     Par exemple, pour ajouter un filtre de service pour les données de traces, utilisez `ServiceName` comme expression de filtre avec la source de données `Traces`. Le champ « Dropdown values filter » est facultatif et permet de restreindre les valeurs affichées dans la liste déroulante.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Boîte de dialogue Add filter avec les champs Name, Data source et Filter expression" size="md" />
+    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Boîte de dialogue Add filter avec les champs Display Name, Data source et Filter expression" size="md" />
+
+    La même boîte de dialogue contrôle également si le filtre [diffuse](#broadcast-filters) sa valeur et s’il est [disponible en tant que variable](#dashboard-variables), deux fonctionnalités décrites ci-dessous.
 
     La fenêtre modale Filters affiche tous les filtres configurés pour le tableau de bord. Depuis cette fenêtre, vous pouvez modifier ou supprimer des filtres existants, ou en ajouter d’autres.
 
@@ -276,6 +366,85 @@ Les étapes suivantes montrent comment ajouter un filtre personnalisé au tablea
 
 <Note>
   Les filtres déroulants personnalisés sont disponibles sur les tableaux de bord enregistrés. Pour voir un exemple concret de ce fonctionnement, consultez le [tableau de bord Kubernetes](#kubernetes-dashboard), qui fournit des filtres déroulants intégrés pour le pod, le déploiement, le nom du nœud, l’espace de noms et le cluster.
+</Note>
+
+<div id="broadcast-filters">
+  ### Diffusion
+</div>
+
+Lorsque l’option **Diffuser la condition de filtre** est activée, les valeurs sélectionnées sont appliquées comme condition de filtre aux tuiles du tableau de bord, sans qu’aucune tuile ne fasse explicitement référence au filtre. Par défaut, la condition s’applique à toutes les tuiles. Utilisez **S’applique aux sources** pour la restreindre aux tuiles utilisant un ensemble donné de sources — ce qui est utile lorsque l’expression du filtre n’a de sens que pour certaines données du tableau de bord.
+
+Les tuiles du générateur de graphiques prennent automatiquement en compte les filtres diffusés. Les tuiles Raw SQL doivent inclure la [macro `$__filters`](/fr/clickstack/features/dashboards/sql-visualizations#dashboard-filter-macro) et avoir une source sélectionnée, car ClickStack ne peut pas déterminer où insérer la condition dans une requête écrite manuellement.
+
+<div id="dashboard-variables">
+  ### Variables
+</div>
+
+Lorsque l’option **Available as variable** est activée, la sélection du filtre est également accessible dans les requêtes des tuiles sous la forme de `$variableName`. Le champ **Variable name** reprend par défaut le nom d’affichage du filtre, après suppression des caractères non autorisés, et peut être surchargé. Les noms doivent commencer par une lettre et ne peuvent contenir que des lettres, des chiffres et des traits de soulignement.
+
+Utilisez une variable lorsque la diffusion d’une condition `WHERE` ne convient pas — par exemple, pour utiliser la valeur dans une expression `SELECT`, une clause `HAVING` ou une clé de jointure, ou pour filtrer une tuile sur une colonne autre que l’expression du filtre elle-même.
+
+<div id="referencing-variables">
+  #### Référencer une variable
+</div>
+
+Une variable est remplacée par les valeurs actuellement sélectionnées dans sa liste déroulante. La forme de référence détermine le rendu :
+
+| Référence           | Se développe en                                                                                                                                                                                     | Sélection vide |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------- |
+| `$name`, `${name}`  | Les valeurs sélectionnées, au format `sqlstring` ou `lucene`, selon le contexte. Les accolades délimitent le nom lorsqu&#39;il est suivi de caractères alphanumériques, comme dans `${name}_total`. | `NULL`         |
+| `${name:sqlstring}` | Les valeurs sélectionnées, entre guillemets simples, séparées par des virgules et échappées comme des valeurs SQL, par ex. `'a', 'b'`                                                               | `NULL`         |
+| `${name:csv}`       | Sans guillemets et séparées par des virgules : `a,b`. Non échappées pour SQL.                                                                                                                       | chaîne vide    |
+| `${name:regex}`     | Une alternance d&#39;expressions régulières, avec échappement regex : `(a\|b)`.                                                                                                                     | `.*`           |
+| `${name:lucene}`    | Un `OR` de termes entre guillemets, pour les entrées Lucene : `("a" OR "b")`.                                                                                                                       | `("")`         |
+
+Comme `$name` est remplacé par `NULL` tant qu&#39;aucune valeur n&#39;est sélectionnée, privilégiez les macros suivantes partout où un prédicat SQL est attendu. Toutes se développent en `1=1` tant que leur variable n&#39;a aucune sélection, afin que la requête reste valide :
+
+| Macro                                         | Description                                                                                                                                                  |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `$__filter($<variable>)`                      | Se développe en `toString(<expression de filtre>) IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, et en `1=1` dans le cas contraire. |
+| `$__filter(<expression>, $<variable>)`        | Se développe en `<expression> IN ($variable)` lorsque des valeurs sont sélectionnées pour `variable`, et en `1=1` dans le cas contraire.                     |
+| `$__conditionalAll(<condition>, $<variable>)` | Se développe en `<condition>` lorsque la variable a une sélection, et en `1=1` dans le cas contraire.                                                        |
+
+<div id="variables-in-builder-tiles">
+  #### Utiliser des variables dans les tuiles du générateur de graphiques
+</div>
+
+Chaque champ d’expression SQL du générateur de graphiques accepte des références à des variables : colonnes `SELECT`, expressions par série, `WHERE`, `GROUP BY` et `HAVING`. L’éditeur complète automatiquement les variables du tableau de bord et indique en quoi chaque référence se développe pour la sélection actuelle.
+
+Privilégiez les macros `$__filter` et `$__conditionalAll` en mode SQL afin que les requêtes restent valides lorsque les sélections de variables sont vides. Les macros ne sont pas disponibles dans les champs Lucene : référencez directement les variables brutes (par ex. `ServiceName:$service`).
+
+Dans un champ Lucene, le fait de mettre ou non la référence à la variable entre guillemets détermine comment une sélection de plusieurs valeurs est mise en correspondance. Si `$service` est sélectionné avec les valeurs `a,b` :
+
+| Référence                | Se développe en                        | Comportement de correspondance                                                                           |
+| ------------------------ | -------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `ServiceName:$service`   | `ServiceName:("a" OR "b")`             | Correspondance par sous-chaîne — traduit en SQL par `ServiceName ILIKE '%a%' OR ServiceName ILIKE '%b%'` |
+| `ServiceName:"$service"` | `(ServiceName:"a" OR ServiceName:"b")` | Correspondance exacte avec chaque valeur sélectionnée                                                    |
+
+Mettez la référence à la variable entre guillemets — `Field:"$var"` — lorsque les valeurs sélectionnées doivent correspondre exactement à `Field`, plutôt qu’à des sous-chaînes.
+
+<div id="variables-in-sql-tiles">
+  #### Utiliser des variables dans les tuiles SQL
+</div>
+
+Les tuiles Raw SQL référencent les variables de la même manière, où qu’elles se trouvent dans la requête :
+
+```sql
+SELECT
+  $__timeInterval(TimestampTime) AS ts,
+  count() AS count
+FROM otel_logs
+WHERE $__timeFilter(TimestampTime)
+  AND $__filter(ServiceName, $service)
+  AND $__conditionalAll(SeverityText NOT IN ($severity), $severity)
+GROUP BY ts
+ORDER BY ts ASC
+```
+
+Consultez les [visualisations SQL](/fr/clickstack/features/dashboards/sql-visualizations#dashboard-variables) pour obtenir la liste complète des macros disponibles dans les tuiles SQL.
+
+<Note>
+  Les alertes configurées sur une tuile qui fait référence à une variable de tableau de bord sont évaluées avec chaque variable dans son état vide, et non avec les valeurs sélectionnées dans le tableau de bord.
 </Note>
 
 <div id="drilldown-to-search">
