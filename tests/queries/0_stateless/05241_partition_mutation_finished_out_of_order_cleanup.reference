@@ -1,0 +1,4 @@
+UPDATE n = throwIf(n > 0, \'keep the mutation pending\') IN PARTITION ID \'1\' WHERE 1	0
+UPDATE n = n + 100 IN PARTITION ID \'2\' WHERE 1	1
+1	1
+2	112

@@ -2663,6 +2663,10 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
     /// used to bound the range of finished mutations: a part of a partition the mutation does
     /// not affect keeps that minimum low forever. Each mutation is checked against the parts of
     /// the partitions it affects instead.
+    ///
+    /// For the same reason the finished mutations are not a prefix of `current_mutations_by_version`:
+    /// a mutation of one partition can finish while an earlier mutation of another partition is still
+    /// pending, so an unfinished mutation does not stop the scan.
     const auto part_versions = getSortedPartVersions(getDataPartsVectorForInternalUsage());
 
     const time_t now = time(nullptr);
@@ -2674,7 +2678,7 @@ size_t StorageMergeTree::markFinishedMutations(UInt64 first_just_completed_versi
             break;
 
         if (hasPartsToMutate(entry, static_cast<Int64>(version), part_versions))
-            break;
+            continue;
 
         if (!entry.is_done)
         {
@@ -2716,9 +2720,17 @@ size_t StorageMergeTree::clearOldMutations(bool truncate)
 
         size_t to_delete_count = done_count - finished_mutations_to_keep;
 
+        /// The finished mutations are not necessarily a prefix of `current_mutations_by_version`
+        /// (see `markFinishedMutations`): delete the oldest finished ones and skip the pending ones.
         auto it = current_mutations_by_version.begin();
-        for (size_t i = 0; i < to_delete_count; ++i)
+        while (it != current_mutations_by_version.end() && mutations_to_delete.size() < to_delete_count)
         {
+            if (!it->second.is_done)
+            {
+                ++it;
+                continue;
+            }
+
             const auto & tid = it->second.tid;
             if (!tid.isNonTransactional() && !TransactionManager::getCSN(tid))
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot remove mutation {}, because transaction {} is not committed. It's a bug",
