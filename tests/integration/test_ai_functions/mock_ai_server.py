@@ -17,10 +17,13 @@ Endpoints:
       - If response_format with json_schema is present, returns JSON matching the schema
         with values derived from the user message (boolean properties are set from the
         same true/false heuristic used for the `aiFilter` fallback below).
-      - If the system prompt looks like an `aiFilter` boolean filter but no response_format
-        was sent, returns plain `true` or `false` based on the user message.
       - Otherwise echoes the user message as plain text.
       Fixed tokens: 10 input, 5 output.
+  POST /v1/chat/completions_no_structured_output — like `/v1/chat/completions`, but ignores
+      `response_format` even when present, simulating a model/gateway that doesn't support
+      structured output: for an `aiFilter` boolean-filter system prompt, returns plain `true` or
+      `false`, or an unrecognized reply (`"gibberish"`) when the user message asks for it;
+      otherwise echoes the user message as plain text.
   POST /v1/embeddings                — returns one deterministic embedding per input.
       Honors `dimensions` if provided, otherwise returns DEFAULT_EMBED_DIM floats.
       `prompt_tokens` = sum of input character lengths.
@@ -100,8 +103,13 @@ def is_filter_request(body):
 
 
 def filter_match_response(user_message):
-    """Return plain true/false for `aiFilter`. False when the user message signals an obvious negative."""
+    """Return plain true/false for `aiFilter`. False when the user message signals an obvious
+    negative. A message asking for "gibberish" gets a reply that is neither, exercising
+    `aiFilter`'s fail-closed handling of unrecognized text from a model that ignores the requested
+    boolean output entirely."""
     lowered = user_message.lower()
+    if "gibberish" in lowered:
+        return "gibberish"
     if any(token in lowered for token in ("false", "no match", "does not match")):
         return "false"
     return "true"
@@ -288,11 +296,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
             if json_schema:
                 content = build_structured_response(json_schema, user_msg)
-            elif is_filter_request(body):
-                content = filter_match_response(user_msg)
             else:
                 content = user_msg
 
+            self._send_json(200, make_success_response(content))
+            return
+
+        if parsed.path == "/v1/chat/completions_no_structured_output":
+            # Ignores `response_format` on purpose, as a model/gateway that doesn't support
+            # structured output would: replies with bare text for an `aiFilter` boolean-filter
+            # system prompt, otherwise echoes the user message like `/v1/chat/completions` does.
+            user_msg = extract_user_message(body)
+            if is_filter_request(body):
+                content = filter_match_response(user_msg)
+            else:
+                content = user_msg
             self._send_json(200, make_success_response(content))
             return
 
