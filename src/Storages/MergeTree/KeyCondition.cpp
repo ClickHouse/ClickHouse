@@ -2988,7 +2988,7 @@ std::vector<KeyCondition::SetTransformSource> KeyCondition::collectSetTransformS
 }
 
 std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePredicateExpressionForSetIndex(
-    const RPNBuilderTreeNode & arg, const BuildInfo & info, bool allow_relaxed_pruning)
+    const RPNBuilderTreeNode & arg, const BuildInfo & info)
 {
     SetIndexAnalysisResult result;
 
@@ -3056,9 +3056,9 @@ std::optional<KeyCondition::SetIndexAnalysisResult> KeyCondition::tryAnalyzePred
         add_key_mapping(arg, 0, result.componentwise_candidate);
     }
 
-    /// Additional wrapped-set atoms require both relaxed pruning and multiple-key-column analysis.
-    /// Record their source expressions here; their transformation DAGs are collected by `appendSetAtoms`.
-    if (allow_relaxed_pruning && multiple_key_columns_per_condition)
+    /// Record source expressions for additional wrapped-set atoms when multiple-key-column analysis
+    /// is enabled. `appendSetAtoms` collects their transformation DAGs and checks each atom's exactness.
+    if (multiple_key_columns_per_condition)
         result.transform_sources = collectSetTransformSources(arg, info.key_subexpr_names, result.componentwise_candidate.args_count);
 
     /// Decline unusable predicates before the caller obtains or materializes their set columns.
@@ -3630,6 +3630,10 @@ void KeyCondition::appendSetAtoms(
 
             const bool is_injective = isDeterministicTransformInjective(
                 candidate.dag.actions->getActionsDAG(), candidate.dag.input_name, candidate.dag.output_name);
+            /// A non-injective transform supplies only a necessary membership condition, whose
+            /// complement cannot prune.
+            if (!allow_relaxed_pruning && !is_injective)
+                continue;
 
             SetAtomCandidate set_candidate;
             set_candidate.indexes_mapping.emplace_back(std::move(mapping));
@@ -3640,11 +3644,12 @@ void KeyCondition::appendSetAtoms(
             set_candidate.args_count = source.is_whole_tuple ? 1 : args_count;
             set_candidate.is_relaxed = !is_injective;
 
-            /// A non-injective transform supplies only a necessary membership condition.
-            /// `tryPrepareSetAtom` also relaxes mappings that cover only some tuple components.
             auto candidate_atom = tryPrepareSetAtom(
                 set_columns, set_types, std::move(set_candidate), allow_relaxed_pruning, has_element_type);
-            if (!candidate_atom)
+
+            /// Additional atoms for complement predicates must be exact. `tryPrepareSetAtom` can relax
+            /// even an injective transform when its mapping covers only some tuple components.
+            if (!candidate_atom || (!allow_relaxed_pruning && candidate_atom->relaxed))
                 continue;
 
             for (size_t column_idx : candidate_atom->key_columns)
@@ -3669,7 +3674,7 @@ void KeyCondition::prepareSetAtomsForIn(
 
     const RPNBuilderTreeNode & left_arg = func.getArgumentAt(0);
 
-    auto analysis = tryAnalyzePredicateExpressionForSetIndex(left_arg, info, allow_relaxed_pruning);
+    auto analysis = tryAnalyzePredicateExpressionForSetIndex(left_arg, info);
     if (!analysis)
         return;
 
@@ -3734,9 +3739,9 @@ static DataTypePtr narrowVariantToOccupiedAlternatives(
 /// Under the default `optimize_rewrite_has_to_in = 1`, `has(const_array, x)` is rewritten into
 /// `x IN ...` by the analyzer, so this path only serves queries with that rewrite disabled.
 /// A negated `has` over a constant haystack is folded into the complement leaf `notHas` (see
-/// `canFoldToInverseRelation`), which arrives here with the relaxed-atom sources gated off, the
-/// same way `notIn` does. A negated `has` over a non-constant haystack stays a `NOT` operator
-/// over the positive atoms built here.
+/// `canFoldToInverseRelation`), for which additional wrapped-set atoms must be exact, just as for
+/// `notIn`. A negated `has` over a non-constant haystack stays a `NOT` operator over the positive
+/// atoms built here.
 void KeyCondition::prepareSetAtomsForHas(
     const RPNBuilderFunctionTreeNode & func,
     const BuildInfo & info,
@@ -3750,7 +3755,7 @@ void KeyCondition::prepareSetAtomsForHas(
     /// Check if key usable
     const RPNBuilderTreeNode & key_arg = func.getArgumentAt(1);
 
-    auto analysis = tryAnalyzePredicateExpressionForSetIndex(key_arg, info, allow_relaxed_pruning);
+    auto analysis = tryAnalyzePredicateExpressionForSetIndex(key_arg, info);
     if (!analysis)
         return;
 

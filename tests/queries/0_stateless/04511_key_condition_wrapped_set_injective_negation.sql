@@ -14,9 +14,9 @@ SET explain_query_plan_default = 'legacy';
 -- multi-atom group under `NOT`, so such atoms are dropped from the negated groups that have an
 -- exact atom, and negation prunes through the exact atom alone.
 
--- Note: `NOT has(const_array, key)` is folded into the `notHas` complement leaf, so the cases
--- above no longer reach the RPN as a `NOT` over a multi-atom group. `IS NOT DISTINCT FROM` has
--- no complement function, so the negated-group cleanup is exercised through it below.
+-- `NOT has(const_array, key)` folds into the `notHas` complement leaf, where additional wrapped
+-- atoms must be exact. `IS NOT DISTINCT FROM` has no complement function, so its negation exercises
+-- cleanup of a `NOT` over a multi-atom group below.
 
 -- `toString` declares itself injective.
 DROP TABLE IF EXISTS test_injective;
@@ -30,8 +30,8 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_inje
 SELECT count() FROM test_injective WHERE NOT has([1], x);
 SELECT count() FROM test_injective WHERE NOT has([1], x) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;
 
--- `NOT IN` is a complement-producing leaf (`notIn` is in `no_relaxed_atom_functions`), so the
--- wrapped pass does not run for it at all: only the direct atom is built.
+-- `NOT IN` is a complement-producing leaf (`notIn` is in `no_relaxed_atom_functions`), so
+-- additional wrapped-set atoms must be exact. Both the direct and injective wrapped atoms can prune.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM test_injective WHERE x NOT IN (1)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules:%/%';
 SELECT count() FROM test_injective WHERE x NOT IN (1);
 SELECT count() FROM test_injective WHERE x NOT IN (1) SETTINGS use_primary_key = 0, use_partition_pruning = 0, use_skip_indexes = 0;

@@ -865,10 +865,10 @@ private:
     /// of `IN`, or the element argument of `has`) onto key columns. Each matched tuple component has
     /// one `KeyTuplePositionMapping`, reaching a key column through a monotonic chain or a deterministic
     /// set-transforming DAG. The result also identifies source expressions for additional wrapped-set
-    /// atoms, when allowed.
+    /// atoms when multiple-key-column analysis is enabled.
     /// Returns no result when there are no candidate mappings or source expressions. The set is not materialized.
     std::optional<SetIndexAnalysisResult> tryAnalyzePredicateExpressionForSetIndex(
-        const RPNBuilderTreeNode & arg, const BuildInfo & info, bool allow_relaxed_pruning);
+        const RPNBuilderTreeNode & arg, const BuildInfo & info);
 
     /// Appends to `group` the set atoms for its `IN` or `has` predicate using the materialized set
     /// and its analysis. Initial component and packed-tuple atoms take priority over additional
