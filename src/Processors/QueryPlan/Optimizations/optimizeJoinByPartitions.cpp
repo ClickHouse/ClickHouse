@@ -10,6 +10,8 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Columns/ColumnConst.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <Common/logger_useful.h>
 
 #include <map>
@@ -35,21 +37,21 @@ std::optional<JoinSide> findJoinSide(const QueryPlan::Node & node)
     auto * step = node.step.get();
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
-        /// A read in order outputs sorted streams, which the groups of partitions would interleave.
+        /// A read in order outputs sorted streams, which the groups of partitions would interleave,
+        /// and a streaming read assigns partitions to streams on its own.
         if (reading->isQueryWithFinal() || reading->isParallelReadingEnabled() || reading->hasRequestedOutputPortLayout()
-            || reading->readsInOrder() || reading->getStorageMetadata()->getPartitionKey().column_names.empty())
+            || reading->readsInOrder() || reading->getQueryInfo().isStream()
+            || reading->getStorageMetadata()->getPartitionKey().column_names.empty())
             return {};
 
         /// The primary-key layers of `optimizeJoinByShards` are another port layout.
         if (const auto & analysis_result = reading->getAnalyzedResult(); analysis_result && !analysis_result->split_parts.layers.empty())
             return {};
 
-        JoinSide side{.reading = reading, .dag = {}};
-        if (const auto & prewhere_info = reading->getPrewhereInfo())
-            side.dag = prewhere_info->prewhere_actions.clone();
-        else
-            side.dag = ActionsDAG(reading->getOutputHeader()->getColumnsWithTypeAndName());
-        return side;
+        const auto & prewhere_info = reading->getPrewhereInfo();
+        return JoinSide{
+            .reading = reading,
+            .dag = prewhere_info ? prewhere_info->prewhere_actions.clone() : ActionsDAG(reading->getOutputHeader()->getColumnsWithTypeAndName())};
     }
 
     if (node.children.size() != 1)
@@ -96,6 +98,12 @@ std::unordered_map<std::string, std::set<size_t>> getColumnsUsedAsKeys(const Act
     return result;
 }
 
+bool hasImplicitTimeZone(const IDataType & type)
+{
+    const auto * time_zone = dynamic_cast<const TimezoneMixin *>(removeLowCardinalityAndNullable(type.getPtr()).get());
+    return time_zone && !time_zone->hasExplicitTimeZone();
+}
+
 /// Whether two partition key expressions compute the same value from rows with equal join keys.
 /// Every input column must be used as a join key as is, and the matching inputs of the two sides must be
 /// the two sides of the same join key.
@@ -110,8 +118,10 @@ struct PartitionKeyComparator
         rhs = skipAliases(rhs);
 
         /// Types are compared by name: `equals` ignores parameters which change the result of functions,
-        /// such as the time zone of `DateTime`.
-        if (lhs->type != rhs->type || lhs->result_type->getName() != rhs->result_type->getName() || lhs->children.size() != rhs->children.size())
+        /// such as the time zone of `DateTime`. The implicit time zone is the one of the session that created
+        /// the table, so it may differ between the tables.
+        if (lhs->type != rhs->type || lhs->result_type->getName() != rhs->result_type->getName() || lhs->children.size() != rhs->children.size()
+            || hasImplicitTimeZone(*lhs->result_type))
             return false;
 
         switch (lhs->type)
@@ -218,7 +228,7 @@ void tryShardJoinByPartitions(QueryPlan::Node & node, JoinStep & join_step, size
     const auto & join = join_step.getJoin();
     if (!typeid_cast<const HashJoin *>(join.get()) && !typeid_cast<const ConcurrentHashJoin *>(join.get()))
         return;
-    if (!join->isCloneSupported() || join->hasDelayedBlocks() || join_step.isJoinByLayersEnabled())
+    if (!join->isCloneSupported() || !join_step.sharding.empty())
         return;
 
     const auto & table_join = join->getTableJoin();
@@ -229,7 +239,8 @@ void tryShardJoinByPartitions(QueryPlan::Node & node, JoinStep & join_step, size
     if (strictness == JoinStrictness::Asof || table_join.getClauses().size() != 1)
         return;
 
-    size_t lhs_child = join_step.areStreamsSwapped() ? 1 : 0;
+    /// With swapped streams the left side of the `TableJoin` is the second child.
+    size_t lhs_child = join_step.swap_streams ? 1 : 0;
     auto lhs = findJoinSide(*node.children[lhs_child]);
     if (!lhs)
         return;
@@ -270,7 +281,7 @@ void tryShardJoinByPartitions(QueryPlan::Node & node, JoinStep & join_step, size
 
     auto groups = splitPartitionsIntoGroups(partitions, std::min(max_threads, partitions.size()));
     lhs->reading->requestOutputPartitionGroupsThroughSeparatePorts(groups);
-    rhs->reading->requestOutputPartitionGroupsThroughSeparatePorts(std::move(groups));
+    rhs->reading->requestOutputPartitionGroupsThroughSeparatePorts(groups);
 
     JoinStep::JoinSharding sharding;
     sharding.kind = JoinStep::JoinSharding::Kind::Partitions;

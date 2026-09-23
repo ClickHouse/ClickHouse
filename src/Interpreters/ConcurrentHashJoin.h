@@ -112,9 +112,9 @@ public:
     }
 
     std::shared_ptr<IJoin> cloneForShard(
-        const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_, size_t shard, JoinShardsSizePtr shards_size_) const override
+        const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_, size_t shard, JoinShardsPtr shards_) const override
     {
-        return HashJoin::createForShard(table_join_, right_sample_block_, any_take_last_row, stats_collecting_params, shard, std::move(shards_size_));
+        return HashJoin::createForShard(table_join_, right_sample_block_, any_take_last_row, stats_collecting_params, shard, std::move(shards_));
     }
 
     void onBuildPhaseFinish() override;

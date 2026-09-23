@@ -88,10 +88,6 @@ public:
     /// Execute the join shard by shard, pairing the input ports positionally.
     /// The names of the key columns are required for EXPLAIN only.
     void enableJoinByLayers(JoinSharding sharding_) { sharding = std::move(sharding_); }
-    bool isJoinByLayersEnabled() const { return !sharding.empty(); }
-
-    /// If true, the left side of the `TableJoin` is the second child of the step.
-    bool areStreamsSwapped() const { return swap_streams; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }

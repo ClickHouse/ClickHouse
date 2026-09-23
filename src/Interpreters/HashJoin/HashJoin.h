@@ -165,9 +165,9 @@ public:
         SharedHeader,
         SharedHeader right_sample_block_,
         size_t shard,
-        JoinShardsSizePtr shards_size_) const override
+        JoinShardsPtr shards_) const override
     {
-        return createForShard(table_join_, right_sample_block_, any_take_last_row, stats_collecting_params, shard, std::move(shards_size_));
+        return createForShard(table_join_, right_sample_block_, any_take_last_row, stats_collecting_params, shard, std::move(shards_));
     }
 
     /// A `HashJoin` holding one shard of the right side. It keeps the size statistics of its own shard,
@@ -178,7 +178,7 @@ public:
         bool any_take_last_row_,
         const HashJoinStatsCollectingParams & stats_collecting_params_,
         size_t shard,
-        JoinShardsSizePtr shards_size_);
+        JoinShardsPtr shards_);
 
     /** Add block of data from right hand of JOIN to the map.
       * Returns false, if some limit was exceeded and you should not insert more data.
@@ -721,10 +721,10 @@ private:
     const HashJoinStatsCollectingParams stats_collecting_params;
 
     /// Set for a shard (see `createForShard`): the size limits are checked against the size of all the shards.
-    JoinShardsSizePtr shards_size;
-    /// The size of this shard already added to `shards_size`.
-    size_t shard_rows_in_shards_size = 0;
-    size_t shard_bytes_in_shards_size = 0;
+    JoinShardsPtr shards;
+    /// The size of this shard already added to `shards`.
+    size_t rows_in_shards = 0;
+    size_t bytes_in_shards = 0;
     bool build_phase_finished = false;
     bool probe_phase_finished = false;
 

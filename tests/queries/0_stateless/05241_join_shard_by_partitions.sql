@@ -85,6 +85,18 @@ SELECT count() FROM t_tz_left AS l JOIN t_tz_right AS r ON l.d = r.d SETTINGS ma
 DROP TABLE t_tz_left;
 DROP TABLE t_tz_right;
 
+SELECT 'implicit time zones of the sessions that created the tables';
+SET session_timezone = 'UTC';
+CREATE TABLE t_tz_left (d DateTime, v UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY v;
+INSERT INTO t_tz_left SELECT toDateTime(arrayJoin([1769902200, 1773576000, 1776254400])), 1;
+SET session_timezone = 'Asia/Tokyo';
+CREATE TABLE t_tz_right (d DateTime, w UInt64) ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY w;
+INSERT INTO t_tz_right SELECT toDateTime(arrayJoin([1769902200, 1773576000, 1776254400])), 1;
+SELECT count() FROM t_tz_left AS l JOIN t_tz_right AS r ON l.d = r.d SETTINGS max_threads = 2;
+SET session_timezone = DEFAULT;
+DROP TABLE t_tz_left;
+DROP TABLE t_tz_right;
+
 SELECT 'max_rows_in_join limits the whole right side';
 SELECT count() FROM t_left AS l JOIN t_right AS r ON l.d = r.d SETTINGS max_rows_in_join = 150, join_overflow_mode = 'throw'; -- { serverError SET_SIZE_LIMIT_EXCEEDED }
 
