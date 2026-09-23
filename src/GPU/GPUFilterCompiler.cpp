@@ -6,12 +6,12 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
+#include <Core/AccurateComparison.h>
 #include <Core/Field.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/ExpressionActions.h>
 
 #include <bit>
-#include <cmath>
-#include <unordered_map>
 
 namespace DB::GPU
 {
@@ -19,17 +19,7 @@ namespace DB::GPU
 namespace
 {
 
-/// What an expression leaves on the stack: a boolean of a comparison or a logical function, or a
-/// value of a column or a constant.
-enum class StackKind
-{
-    Boolean,
-    Signed,
-    Unsigned,
-    Float,
-};
-
-StackKind stackKindOf(GPUElementType element_type)
+GPUFilterValueKind kindOf(GPUElementType element_type)
 {
     switch (element_type)
     {
@@ -37,12 +27,12 @@ StackKind stackKindOf(GPUElementType element_type)
         case GPUElementType::Int16:
         case GPUElementType::Int32:
         case GPUElementType::Int64:
-            return StackKind::Signed;
+            return GPUFilterValueKind::Signed;
         case GPUElementType::Float32:
         case GPUElementType::Float64:
-            return StackKind::Float;
+            return GPUFilterValueKind::Float;
         default:
-            return StackKind::Unsigned;
+            return GPUFilterValueKind::Unsigned;
     }
 }
 
@@ -63,282 +53,255 @@ std::optional<GPUFilterOp> comparisonOf(const String & name)
     return {};
 }
 
+/// What a register holds after the action that filled it: the kind of its value, and the
+/// constant it was loaded with, when it was one.
+struct Register
+{
+    GPUFilterValueKind kind = GPUFilterValueKind::Unsigned;
+    std::optional<uint32_t> constant;
+};
+
 class Compiler
 {
 public:
     explicit Compiler(String & refusal_) : refusal(refusal_) { }
 
-    std::optional<CompiledGPUFilter> compile(const ActionsDAG::Node & root)
+    std::optional<CompiledGPUFilter> compile(const ExpressionActions & actions)
     {
-        const auto kind = compileNode(root);
-        if (!kind)
-            return {};
+        for (const auto & action : actions.getActions())
+        {
+            if (action.result_position >= max_filter_registers)
+                return refuse("a predicate over more registers than the device has");
+            if (!translate(action, actions))
+                return {};
+            registers_used = std::max<uint32_t>(registers_used, static_cast<uint32_t>(action.result_position) + 1);
+        }
 
-        if (*kind != StackKind::Boolean && !emit(GPUFilterOp::IsTrue, 0))
-            return {};
+        const ColumnNumbers & results = actions.getResultPositions();
+        if (results.size() != 1)
+            return refuse("a predicate of other than one result");
 
+        result.program.result = static_cast<uint32_t>(results.front());
+        result.program.num_registers = registers_used;
         result.program.num_columns = static_cast<uint32_t>(result.columns.size());
         return std::move(result);
     }
 
 private:
-    bool refuse(const String & reason)
+    std::optional<CompiledGPUFilter> refuse(const String & reason)
+    {
+        refusal = reason;
+        return {};
+    }
+
+    bool refused(const String & reason)
     {
         refusal = reason;
         return false;
     }
 
-    bool emit(GPUFilterOp op, uint32_t operand)
+    bool emit(GPUFilterOp op, size_t to, size_t first, size_t second = 0)
     {
         if (result.program.length >= max_filter_instructions)
-            return refuse("a predicate of more instructions than the device takes");
+            return refused("a predicate of more instructions than the device takes");
 
-        result.program.code[result.program.length++] = {op, operand};
+        result.program.code[result.program.length++]
+            = {op, static_cast<uint32_t>(to), static_cast<uint32_t>(first), static_cast<uint32_t>(second)};
         return true;
     }
 
-    /// The instruction just emitted, when it is a `PushConstant`.
-    GPUFilterConstant * lastPushedConstant()
+    bool translate(const ExpressionActions::Action & action, const ExpressionActions & actions)
     {
-        if (result.program.length == 0)
-            return nullptr;
-
-        const GPUFilterInstruction & last = result.program.code[result.program.length - 1];
-        if (last.op != GPUFilterOp::PushConstant)
-            return nullptr;
-
-        return &result.program.constants[last.operand];
-    }
-
-    bool push()
-    {
-        ++depth;
-        if (depth > max_filter_stack)
-            return refuse("a predicate nested deeper than the device's stack");
-        return true;
-    }
-
-    /// Compiles the expression and answers what it leaves on the stack.
-    std::optional<StackKind> compileNode(const ActionsDAG::Node & node)
-    {
-        switch (node.type)
+        switch (action.node->type)
         {
             case ActionsDAG::ActionType::INPUT:
-                return compileInput(node);
+                return translateInput(action, actions);
             case ActionsDAG::ActionType::COLUMN:
-                return compileConstant(node);
+                return translateConstant(action);
             case ActionsDAG::ActionType::ALIAS:
-                if (node.children.size() != 1)
-                {
-                    refuse("an alias of other than one expression");
-                    return {};
-                }
-                return compileNode(*node.children.front());
+                if (action.arguments.size() != 1)
+                    return refused("an alias of other than one expression");
+                registers[action.result_position] = registers[action.arguments.front().pos];
+                return emit(GPUFilterOp::Move, action.result_position, action.arguments.front().pos);
             case ActionsDAG::ActionType::FUNCTION:
-                return compileFunction(node);
+                return translateFunction(action);
             case ActionsDAG::ActionType::ARRAY_JOIN:
             case ActionsDAG::ActionType::PLACEHOLDER:
-                refuse("an expression that is not a comparison, a logical function, a column or a constant");
-                return {};
+                return refused("an expression that is not a comparison, a logical function, a column or a constant");
         }
     }
 
-    std::optional<StackKind> compileInput(const ActionsDAG::Node & node)
+    bool translateInput(const ExpressionActions::Action & action, const ExpressionActions & actions)
     {
-        const auto element_type = elementTypeOf(*node.result_type);
+        const auto element_type = elementTypeOf(*action.node->result_type);
         if (!element_type)
-        {
-            refuse("a column of the predicate of a type the device has no element type for");
-            return {};
-        }
+            return refused("a column of the predicate of a type the device has no element type for");
 
-        auto [position, inserted] = column_positions.try_emplace(node.result_name, result.columns.size());
-        if (inserted)
+        /// The action's one argument numbers the column among the actions' required columns.
+        const size_t required_index = action.arguments.front().pos;
+        const NamesAndTypesList & required = actions.getRequiredColumnsWithTypes();
+        if (required_index >= required.size())
+            return refused("a column the predicate's actions do not require");
+
+        while (result.columns.size() <= required_index)
         {
             if (result.columns.size() >= max_filter_columns)
-            {
-                refuse("a predicate over more columns than the device takes");
-                return {};
-            }
-            result.columns.emplace_back(node.result_name, node.result_type);
+                return refused("a predicate over more columns than the device takes");
+            result.columns.push_back(*std::next(required.begin(), result.columns.size()));
         }
 
-        if (!emit(GPUFilterOp::PushColumn, static_cast<uint32_t>(position->second)) || !push())
-            return {};
-        return stackKindOf(*element_type);
+        registers[action.result_position] = {.kind = kindOf(*element_type), .constant = {}};
+        return emit(GPUFilterOp::LoadColumn, action.result_position, required_index);
     }
 
-    std::optional<StackKind> compileConstant(const ActionsDAG::Node & node)
+    bool translateConstant(const ExpressionActions::Action & action)
     {
+        const ActionsDAG::Node & node = *action.node;
         if (!node.column || !isColumnConst(*node.column))
-        {
-            refuse("a column node that is not a constant");
-            return {};
-        }
+            return refused("a column node that is not a constant");
 
         const auto element_type = elementTypeOf(*node.result_type);
         if (!element_type)
-        {
-            refuse("a constant of the predicate of a type the device has no element type for");
-            return {};
-        }
-
-        if (result.program.num_constants >= max_filter_constants)
-        {
-            refuse("a predicate of more constants than the device takes");
-            return {};
-        }
+            return refused("a constant of the predicate of a type the device has no element type for");
 
         const Field value = (*node.column)[0];
         GPUFilterConstant constant;
-        switch (stackKindOf(*element_type))
+        switch (kindOf(*element_type))
         {
-            case StackKind::Signed:
+            case GPUFilterValueKind::Signed:
                 constant = {GPUFilterValueKind::Signed, static_cast<uint64_t>(value.safeGet<Int64>())};
                 break;
-            case StackKind::Float:
+            case GPUFilterValueKind::Float:
                 constant = {GPUFilterValueKind::Float, std::bit_cast<uint64_t>(value.safeGet<Float64>())};
                 break;
-            default:
+            case GPUFilterValueKind::Unsigned:
                 constant = {GPUFilterValueKind::Unsigned, value.safeGet<UInt64>()};
                 break;
         }
 
-        const uint32_t index = result.program.num_constants++;
-        result.program.constants[index] = constant;
+        const auto index = addConstant(constant);
+        if (!index)
+            return false;
 
-        if (!emit(GPUFilterOp::PushConstant, index) || !push())
-            return {};
-        return stackKindOf(*element_type);
+        registers[action.result_position] = {.kind = constant.kind, .constant = *index};
+        return emit(GPUFilterOp::LoadConstant, action.result_position, *index);
     }
 
-    std::optional<StackKind> compileFunction(const ActionsDAG::Node & node)
+    std::optional<uint32_t> addConstant(const GPUFilterConstant & constant)
     {
-        if (!node.function_base)
+        if (result.program.num_constants >= max_filter_constants)
         {
-            refuse("a function node without a function");
+            refused("a predicate of more constants than the device takes");
             return {};
         }
 
+        const uint32_t index = result.program.num_constants++;
+        result.program.constants[index] = constant;
+        return index;
+    }
+
+    bool translateFunction(const ExpressionActions::Action & action)
+    {
+        const ActionsDAG::Node & node = *action.node;
+        if (!node.function_base)
+            return refused("a function node without a function");
+
         const String name = node.function_base->getName();
+        const auto & arguments = action.arguments;
 
         if (const auto comparison = comparisonOf(name))
-            return compileComparison(node, *comparison);
+        {
+            if (arguments.size() != 2)
+                return refused("a comparison of other than two arguments");
+
+            const auto left = reconciled(arguments[0].pos, arguments[1].pos);
+            if (!left)
+                return false;
+            const auto right = reconciled(arguments[1].pos, arguments[0].pos);
+            if (!right)
+                return false;
+
+            registers[action.result_position] = {};
+            return emit(*comparison, action.result_position, *left, *right);
+        }
 
         if (name == "and" || name == "or")
-            return compileLogical(node, name == "and" ? GPUFilterOp::And : GPUFilterOp::Or);
+        {
+            if (arguments.size() < 2)
+                return refused("a logical function of fewer than two arguments");
+
+            const GPUFilterOp op = name == "and" ? GPUFilterOp::And : GPUFilterOp::Or;
+            registers[action.result_position] = {};
+            if (!emit(op, action.result_position, arguments[0].pos, arguments[1].pos))
+                return false;
+            for (size_t i = 2; i < arguments.size(); ++i)
+            {
+                if (!emit(op, action.result_position, action.result_position, arguments[i].pos))
+                    return false;
+            }
+            return true;
+        }
 
         if (name == "not")
         {
-            if (node.children.size() != 1)
-            {
-                refuse("`not` of other than one argument");
-                return {};
-            }
-
-            const auto kind = compileNode(*node.children.front());
-            if (!kind)
-                return {};
-            if (*kind != StackKind::Boolean && !emit(GPUFilterOp::IsTrue, 0))
-                return {};
-            if (!emit(GPUFilterOp::Not, 0))
-                return {};
-            return StackKind::Boolean;
+            if (arguments.size() != 1)
+                return refused("`not` of other than one argument");
+            registers[action.result_position] = {};
+            return emit(GPUFilterOp::Not, action.result_position, arguments.front().pos);
         }
 
-        refuse("a function the device does not evaluate: `" + name + "`");
-        return {};
+        return refused("a function the device does not evaluate: `" + name + "`");
     }
 
-    /// An integer and a float compare as doubles only when the integer is a constant a double
-    /// holds exactly, in which case the constant is rewritten as that double.
-    bool constantToFloat(GPUFilterConstant * constant)
+    /// The register to compare in place of `own` against `other`: `own` itself when both hold
+    /// integers or both floats, or when `own` holds the float; else, when `own` holds an integer
+    /// constant a double holds exactly, a spare register loaded with that double. An integer
+    /// column against a float is refused.
+    std::optional<size_t> reconciled(size_t own, size_t other)
     {
-        static constexpr uint64_t exact_limit = 1ULL << 53;
+        const Register & mine = registers[own];
+        const bool own_float = mine.kind == GPUFilterValueKind::Float;
+        const bool other_float = registers[other].kind == GPUFilterValueKind::Float;
+        if (own_float == other_float || own_float)
+            return own;
 
-        if (!constant)
-            return refuse("a comparison of an integer column with a float, which the device does not compare exactly");
-
-        double as_double = 0;
-        if (constant->kind == GPUFilterValueKind::Signed)
+        if (!mine.constant)
         {
-            const int64_t value = static_cast<int64_t>(constant->bits);
-            if (value > static_cast<int64_t>(exact_limit) || value < -static_cast<int64_t>(exact_limit))
-                return refuse("an integer constant a double does not hold exactly, compared with a float");
-            as_double = static_cast<double>(value);
-        }
-        else
-        {
-            if (constant->bits > exact_limit)
-                return refuse("an integer constant a double does not hold exactly, compared with a float");
-            as_double = static_cast<double>(constant->bits);
-        }
-
-        *constant = {GPUFilterValueKind::Float, std::bit_cast<uint64_t>(as_double)};
-        return true;
-    }
-
-    std::optional<StackKind> compileComparison(const ActionsDAG::Node & node, GPUFilterOp op)
-    {
-        if (node.children.size() != 2)
-        {
-            refuse("a comparison of other than two arguments");
+            refused("a comparison of an integer column with a float, which the device does not compare exactly");
             return {};
         }
 
-        const auto left = compileNode(*node.children[0]);
-        if (!left)
-            return {};
-        GPUFilterConstant * left_constant = lastPushedConstant();
-
-        const auto right = compileNode(*node.children[1]);
-        if (!right)
-            return {};
-        GPUFilterConstant * right_constant = lastPushedConstant();
-
-        const bool left_float = *left == StackKind::Float;
-        const bool right_float = *right == StackKind::Float;
-        if (left_float != right_float && !constantToFloat(left_float ? right_constant : left_constant))
-            return {};
-
-        if (!emit(op, 0))
-            return {};
-
-        depth -= 1;
-        return StackKind::Boolean;
-    }
-
-    std::optional<StackKind> compileLogical(const ActionsDAG::Node & node, GPUFilterOp op)
-    {
-        if (node.children.size() < 2)
+        const GPUFilterConstant & constant = result.program.constants[*mine.constant];
+        Float64 as_double = 0;
+        const bool exact = constant.kind == GPUFilterValueKind::Signed
+            ? accurate::convertNumeric<Int64, Float64>(static_cast<Int64>(constant.bits), as_double)
+            : accurate::convertNumeric<UInt64, Float64>(constant.bits, as_double);
+        if (!exact)
         {
-            refuse("a logical function of fewer than two arguments");
+            refused("an integer constant a double does not hold exactly, compared with a float");
             return {};
         }
 
-        for (size_t i = 0; i < node.children.size(); ++i)
+        const auto index = addConstant({GPUFilterValueKind::Float, std::bit_cast<uint64_t>(as_double)});
+        if (!index)
+            return {};
+
+        if (registers_used >= max_filter_registers)
         {
-            const auto kind = compileNode(*node.children[i]);
-            if (!kind)
-                return {};
-            if (*kind != StackKind::Boolean && !emit(GPUFilterOp::IsTrue, 0))
-                return {};
-
-            if (i != 0)
-            {
-                if (!emit(op, 0))
-                    return {};
-                depth -= 1;
-            }
+            refused("a predicate over more registers than the device has");
+            return {};
         }
-
-        return StackKind::Boolean;
+        const size_t spare = registers_used++;
+        registers[spare] = {.kind = GPUFilterValueKind::Float, .constant = *index};
+        if (!emit(GPUFilterOp::LoadConstant, spare, *index))
+            return {};
+        return spare;
     }
 
     String & refusal;
     CompiledGPUFilter result;
-    std::unordered_map<String, size_t> column_positions;
-    size_t depth = 0;
+    Register registers[max_filter_registers];
+    uint32_t registers_used = 0;
 };
 
 }
@@ -352,7 +315,10 @@ std::optional<CompiledGPUFilter> compileGPUFilter(const ActionsDAG & dag, const 
         return {};
     }
 
-    return Compiler(refusal).compile(*root);
+    /// Only the predicate's own actions, laid out as the CPU would run them: without aliases, and
+    /// without short-circuiting, which the device does not do.
+    const ExpressionActions actions(ActionsDAG::cloneSubDAG({root}, /*remove_aliases=*/ true));
+    return Compiler(refusal).compile(actions);
 }
 
 }

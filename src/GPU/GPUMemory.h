@@ -12,9 +12,6 @@
 namespace DB::GPU
 {
 
-/// Host memory the device can read straight out of, taken from a pool: pinning a page is a call
-/// into the driver, so a query that fills and drains the same staging buffer per block should pay
-/// for it once.
 class PinnedBuffer
 {
 public:
@@ -31,7 +28,6 @@ public:
 
     void append(std::string_view bytes);
 
-    /// Makes room for `bytes` more and answers where they go, for the device to write them.
     char * grow(size_t bytes);
 
     void clear() { used = 0; }
@@ -49,9 +45,6 @@ private:
 };
 
 
-/// A run of bytes in device memory, filled from the host. Grows by doubling and keeps its capacity
-/// across `clear`, so a pipe that fills and drains it repeatedly allocates once. Every operation
-/// on it is queued on its stream, the default one unless told otherwise.
 class DeviceBuffer
 {
 public:
@@ -67,11 +60,8 @@ public:
 
     void reserve(size_t bytes);
 
-    /// Queues a copy from host memory onto the end. From pinned memory it is asynchronous, and the
-    /// memory has to stay put until a `DeviceEvent` recorded after it says it has landed.
     void append(std::string_view host_bytes);
 
-    /// Makes room for `bytes` more and answers where they go, for a kernel to write them.
     char * grow(size_t bytes);
 
     void clear() { used = 0; }
@@ -89,7 +79,6 @@ private:
 };
 
 
-/// A point in a stream, to wait for everything queued before it.
 class DeviceEvent
 {
 public:
@@ -105,13 +94,10 @@ public:
     void record();
     void record(cudaStream_t stream);
 
-    /// Blocks the host until the point is reached.
     void wait() const;
 
-    /// Makes everything queued on `stream` after this wait for the point, without blocking the host.
     void waitOn(cudaStream_t stream) const;
 
-    /// Whether the point has been reached. True for an event never recorded.
     bool isComplete() const;
 
 private:

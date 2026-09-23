@@ -53,21 +53,33 @@ if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE
     PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 \
         --query "SELECT sum(v_u64) FROM gpu_device_filter" 2>&1 > /dev/null)
     if [ -z "$PROBE_ERROR" ]; then
-        # The device is offered a `PREWHERE` only, and the test runner may have turned off the
-        # setting that makes one of a `WHERE`.
-        GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1 --optimize_move_to_prewhere 1)
+        GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1)
         HAS_GPU=1
     elif [[ "$PROBE_ERROR" != *"Cannot aggregate on a GPU"* ]]; then
         echo "$PROBE_ERROR"
     fi
 fi
 
-function compare_with_cpu()
+# The device is offered a `PREWHERE` only, and the test runner may have turned off the setting that
+# makes one of a `WHERE` - as a client option, which a later client option does not override, so
+# the query itself has to say it.
+function with_prewhere()
 {
     local query="$1"
+    if [[ "$query" == *SETTINGS* ]]; then
+        echo "$query, optimize_move_to_prewhere = 1"
+    else
+        echo "$query SETTINGS optimize_move_to_prewhere = 1"
+    fi
+}
+
+function compare_with_cpu()
+{
+    local query
     local on_cpu
     local on_gpu
 
+    query=$(with_prewhere "$1")
     on_cpu=$($CLICKHOUSE_CLIENT --query "$query")
     on_gpu=$($CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "$query")
 
@@ -83,7 +95,8 @@ function compare_with_cpu()
 function check_plan()
 {
     local expected="$1"
-    local query="$2"
+    local query
+    query=$(with_prewhere "$2")
 
     if [ "$HAS_GPU" == "1" ]; then
         if $CLICKHOUSE_CLIENT "${GPU_SETTINGS[@]}" --query "EXPLAIN actions = 1 $query" | grep -q "Filter on the device"; then

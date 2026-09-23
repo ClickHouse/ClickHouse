@@ -95,7 +95,6 @@ struct DeviceColumnView
     size_t rows = 0;
 };
 
-/// A column of fixed-width values in host memory, sized for what the cuDF side copies into it.
 struct HostColumnView
 {
     GPUElementType element_type;
@@ -103,41 +102,45 @@ struct HostColumnView
     size_t rows = 0;
 };
 
-/// What a keyed aggregation on the device takes at most. Its key columns are packed into one
-/// eight-byte key, and its layouts travel to the kernels as parameters of fixed size.
 constexpr size_t max_group_by_keys = 8;
 constexpr size_t max_group_by_key_bytes = 8;
 constexpr size_t max_group_by_values = 8;
 
-/** A `WHERE` the device evaluates per row before it groups the row: a program for a stack machine
-  * of a few instructions, over the columns of the predicate. A comparison pops two values and
-  * pushes a boolean; `And`, `Or` and `Not` work on booleans; `IsTrue` turns a value into a boolean
-  * the way ClickHouse reads a `WHERE` on a plain column, true when it is not zero. Integers compare
-  * by their value whatever their signs; a comparison between an integer and a float is not
-  * compiled, so that the device never rounds an integer to compare it.
+/** A `WHERE` the device evaluates per row before it groups the row: the actions of the predicate's
+  * expression as `ExpressionActions` lays them out, one instruction per action over a few registers.
+  * A load puts a row's value of a filter column, or a constant, into its register; a comparison
+  * puts a boolean into its register from two others; `And`, `Or` and `Not` read their operands
+  * as ClickHouse reads a value in a `WHERE`, true when it is not zero, and so does the row's
+  * verdict, which is what `result` holds at the end. Integers compare by their value whatever
+  * their signs; a comparison between an integer and a float is compiled only when the integer is
+  * a constant a double holds exactly, and then as that double, so that the device never rounds
+  * an integer to compare it.
   */
 enum class GPUFilterOp : int
 {
-    /// Pushes the row's value of filter column `operand`.
-    PushColumn = 0,
-    /// Pushes constant `operand`.
-    PushConstant = 1,
-    Equals = 2,
-    NotEquals = 3,
-    Less = 4,
-    LessOrEquals = 5,
-    Greater = 6,
-    GreaterOrEquals = 7,
-    And = 8,
-    Or = 9,
-    Not = 10,
-    IsTrue = 11,
+    /// Loads the row's value of filter column `first`.
+    LoadColumn = 0,
+    /// Loads constant `first`.
+    LoadConstant = 1,
+    /// Copies register `first`.
+    Move = 2,
+    Equals = 3,
+    NotEquals = 4,
+    Less = 5,
+    LessOrEquals = 6,
+    Greater = 7,
+    GreaterOrEquals = 8,
+    And = 9,
+    Or = 10,
+    Not = 11,
 };
 
 struct GPUFilterInstruction
 {
     GPUFilterOp op;
-    uint32_t operand;
+    uint32_t result;
+    uint32_t first;
+    uint32_t second;
 };
 
 enum class GPUFilterValueKind : int
@@ -157,7 +160,7 @@ struct GPUFilterConstant
 constexpr size_t max_filter_columns = 8;
 constexpr size_t max_filter_instructions = 32;
 constexpr size_t max_filter_constants = 16;
-constexpr size_t max_filter_stack = 8;
+constexpr size_t max_filter_registers = 16;
 
 struct GPUFilterProgram
 {
@@ -166,6 +169,9 @@ struct GPUFilterProgram
     GPUFilterConstant constants[max_filter_constants];
     uint32_t num_constants = 0;
     uint32_t num_columns = 0;
+    uint32_t num_registers = 0;
+    /// The register that holds the row's verdict.
+    uint32_t result = 0;
 };
 
 constexpr bool isInteger(GPUElementType type)

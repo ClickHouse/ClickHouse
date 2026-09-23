@@ -29,11 +29,6 @@
 namespace DB::GPU
 {
 
-/** One `sum`, `min` or `max` over a column with no `GROUP BY`, batch by batch on the device.
-  *
-  * A batch is uploaded and folded into a running result that stays on the device, so the device
-  * holds one batch at a time however long the column is, and the host hears from it once.
-  */
 class GPUAccumulator
 {
 public:
@@ -46,15 +41,11 @@ public:
 
     void add(const IColumn & column);
 
-    /// Room for up to `max_bytes` of values of a column expanded on the host, to be written and
-    /// then committed; as much as the staging buffer has, at least one byte.
     std::span<char> reserveRaw(size_t max_bytes);
     void commitRaw(size_t bytes);
 
     void addBlock(std::string_view payload, size_t decompressed_bytes);
 
-    /// Reduces what is left and answers the result over everything added so far, after which the
-    /// accumulator starts over, keeping its buffers.
     Field finalize();
 
     /// A batch is staged through host memory in slots of at most this, however large it is on the

@@ -18,12 +18,6 @@ namespace DB::GPU
 namespace
 {
 
-/** Keeps pinned host buffers around instead of giving them back to the driver.
-  *
-  * `cudaHostAlloc` pins pages, which is a call into the driver and slow enough that a query staging
-  * one buffer per block would spend its time there. A buffer comes back to the pool on release and
-  * is handed to the next request that fits in it.
-  */
 class PinnedBufferPool
 {
 public:

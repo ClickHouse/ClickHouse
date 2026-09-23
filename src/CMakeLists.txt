@@ -119,7 +119,6 @@ if (ENABLE_GPU)
     list (REMOVE_ITEM dbms_sources
         GPU/Cudf.cpp
         GPU/CudfReduction.cpp
-        GPU/RecordGroupBy.cpp
     )
 endif ()
 

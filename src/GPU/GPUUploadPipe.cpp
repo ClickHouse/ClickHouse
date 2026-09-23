@@ -72,9 +72,6 @@ UploadPipe::~UploadPipe()
 
 void UploadPipe::stage(const IColumn & column)
 {
-    if (compressed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A pipe that decodes compressed blocks cannot also take plain values");
-
     const size_t num_rows = column.size();
     if (num_rows == 0)
         return;
@@ -84,7 +81,6 @@ void UploadPipe::stage(const IColumn & column)
     if (currentSlot().staged.size() + raw.size() > stage_bytes)
         sendStagedToDevice();
 
-    /// A block larger than the whole staging buffer is sent straight from the column's own memory.
     if (raw.size() > stage_bytes)
     {
         device.appendPlain(raw);
@@ -98,9 +94,6 @@ void UploadPipe::stage(const IColumn & column)
 
 std::span<char> UploadPipe::reserveRaw(size_t max_bytes)
 {
-    if (compressed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A pipe that decodes compressed blocks cannot also take plain values");
-
     if (currentSlot().staged.size() >= stage_bytes)
         sendStagedToDevice();
 
@@ -117,9 +110,6 @@ void UploadPipe::commitRaw(size_t bytes)
 
 void UploadPipe::stageCompressedBlock(GPUCodec block_codec, std::string_view payload, size_t decompressed_bytes)
 {
-    if (!compressed)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "A pipe of plain values cannot take compressed blocks");
-
     if (!blocks.empty() && (currentSlot().staged.size() + payload.size() > stage_bytes || codec != block_codec))
         sendStagedToDevice();
 

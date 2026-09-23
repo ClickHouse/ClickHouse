@@ -1,4 +1,4 @@
-#include <GPU/RecordGroupBy.h>
+#include <GPU/RecordGroupBy.cuh>
 
 #include <GPU/Cudf.h>
 
@@ -137,7 +137,7 @@ struct FilterLayouts
     bool present = false;
 };
 
-/// A value on the predicate's stack: an integer with or without a sign, a double, or a boolean.
+/// A value in a register of the predicate: an integer with or without a sign, a double, or a boolean.
 struct FilterValue
 {
     GPUFilterValueKind kind;
@@ -345,19 +345,22 @@ __device__ __forceinline__ bool isTrue(const FilterValue & value)
 /// Whether the row passes the `WHERE`.
 __device__ __forceinline__ bool passesFilter(const GPUFilterProgram & program, const FilterLayouts & filters, size_t row)
 {
-    FilterValue stack[max_filter_stack];
-    uint32_t top = 0;
+    FilterValue registers[max_filter_registers];
 
     for (uint32_t pc = 0; pc < program.length; ++pc)
     {
         const GPUFilterInstruction & instruction = program.code[pc];
+        FilterValue & result = registers[instruction.result];
         switch (instruction.op)
         {
-            case GPUFilterOp::PushColumn:
-                stack[top++] = loadFilterValue(filters.columns[instruction.operand], row);
+            case GPUFilterOp::LoadColumn:
+                result = loadFilterValue(filters.columns[instruction.first], row);
                 break;
-            case GPUFilterOp::PushConstant:
-                stack[top++] = {program.constants[instruction.operand].kind, program.constants[instruction.operand].bits};
+            case GPUFilterOp::LoadConstant:
+                result = {program.constants[instruction.first].kind, program.constants[instruction.first].bits};
+                break;
+            case GPUFilterOp::Move:
+                result = registers[instruction.first];
                 break;
             case GPUFilterOp::Equals:
             case GPUFilterOp::NotEquals:
@@ -366,41 +369,33 @@ __device__ __forceinline__ bool passesFilter(const GPUFilterProgram & program, c
             case GPUFilterOp::Greater:
             case GPUFilterOp::GreaterOrEquals:
             {
-                const int order = compareFilterValues(stack[top - 2], stack[top - 1]);
-                bool result = false;
+                const int order = compareFilterValues(registers[instruction.first], registers[instruction.second]);
+                bool holds = false;
                 switch (instruction.op)
                 {
-                    case GPUFilterOp::Equals: result = order == 0; break;
-                    case GPUFilterOp::NotEquals: result = order != 0; break;
-                    case GPUFilterOp::Less: result = order == -1; break;
-                    case GPUFilterOp::LessOrEquals: result = order == -1 || order == 0; break;
-                    case GPUFilterOp::Greater: result = order == 1; break;
-                    default: result = order == 1 || order == 0; break;
+                    case GPUFilterOp::Equals: holds = order == 0; break;
+                    case GPUFilterOp::NotEquals: holds = order != 0; break;
+                    case GPUFilterOp::Less: holds = order == -1; break;
+                    case GPUFilterOp::LessOrEquals: holds = order == -1 || order == 0; break;
+                    case GPUFilterOp::Greater: holds = order == 1; break;
+                    default: holds = order == 1 || order == 0; break;
                 }
-                top -= 2;
-                stack[top++] = {GPUFilterValueKind::Unsigned, result ? 1ULL : 0ULL};
+                result = {GPUFilterValueKind::Unsigned, holds ? 1ULL : 0ULL};
                 break;
             }
             case GPUFilterOp::And:
-                top -= 2;
-                stack[top] = {GPUFilterValueKind::Unsigned, (stack[top].bits != 0 && stack[top + 1].bits != 0) ? 1ULL : 0ULL};
-                ++top;
+                result = {GPUFilterValueKind::Unsigned, (isTrue(registers[instruction.first]) && isTrue(registers[instruction.second])) ? 1ULL : 0ULL};
                 break;
             case GPUFilterOp::Or:
-                top -= 2;
-                stack[top] = {GPUFilterValueKind::Unsigned, (stack[top].bits != 0 || stack[top + 1].bits != 0) ? 1ULL : 0ULL};
-                ++top;
+                result = {GPUFilterValueKind::Unsigned, (isTrue(registers[instruction.first]) || isTrue(registers[instruction.second])) ? 1ULL : 0ULL};
                 break;
             case GPUFilterOp::Not:
-                stack[top - 1] = {GPUFilterValueKind::Unsigned, stack[top - 1].bits != 0 ? 0ULL : 1ULL};
-                break;
-            case GPUFilterOp::IsTrue:
-                stack[top - 1] = {GPUFilterValueKind::Unsigned, isTrue(stack[top - 1]) ? 1ULL : 0ULL};
+                result = {GPUFilterValueKind::Unsigned, isTrue(registers[instruction.first]) ? 0ULL : 1ULL};
                 break;
         }
     }
 
-    return top != 0 && stack[top - 1].bits != 0;
+    return isTrue(registers[program.result]);
 }
 
 __device__ __forceinline__ Key packKey(const KeyLayouts & keys, size_t row)
@@ -466,8 +461,6 @@ __global__ void aggregateRows(
     }
 }
 
-/// Sorts the rows of a chunk into buckets: writes each row's bucket and its number, for the sort
-/// to pair up.
 __global__ void bucketRows(
     KeyLayouts keys, FilterLayouts filters, GPUFilterProgram filter, size_t num_rows, uint8_t * buckets, uint32_t * indices)
 {
@@ -490,7 +483,6 @@ __global__ void bucketRows(
     }
 }
 
-/// The first position at or after which the sorted buckets are `bucket` or more.
 __device__ size_t lowerBound(const uint8_t * sorted_buckets, size_t num_rows, uint32_t bucket)
 {
     size_t low = 0;
@@ -773,7 +765,6 @@ uint64_t identityOf(Fold fold)
     return 0;
 }
 
-/// What a group of this value leaves in its output column, and how wide.
 std::pair<Store, uint32_t> storeOf(const GPUGroupByValue & value)
 {
     if (value.aggregation == GPUAggregationKind::Sum)

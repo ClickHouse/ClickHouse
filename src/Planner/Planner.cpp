@@ -1009,9 +1009,6 @@ void addAggregationStep(QueryPlan & query_plan,
         && canAggregateOnDevice(
             query_plan, query_node, aggregation_analysis_result, query_analysis_result, planner_context, aggregator_params))
     {
-        /// Everything about the query fits, so the only thing left that can stand in the way is
-        /// the machine. Say so rather than quietly aggregating on the CPU: this setting is off by
-        /// default and was asked for.
         if (const String & probe_error = GPU::deviceProbeError(); !probe_error.empty())
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
