@@ -672,6 +672,12 @@ private:
         String hash_path;
         bool should_visit = false;
         bool should_index = false;
+        /// The runtime type of the previous value of this path. A path almost always keeps one type, and the binary
+        /// type encoding is prefix-free, so a matching prefix skips decoding the type and the lookups keyed by it.
+        String last_encoded_type;
+        const TypeInfo * last_type_info = nullptr;
+        SerializationPtr last_serialization;
+        ScalarPlan * last_scalar_plan = nullptr;
     };
 
     const TypeInfo & getTypeInfo(
@@ -901,7 +907,7 @@ private:
                     shared_plan.should_index = path_matcher.shouldIndex(shared_plan.logical_path);
                     plan_it = shared_path_plans.try_emplace(String(path), std::move(shared_plan)).first;
                 }
-                const auto & shared_plan = plan_it->second;
+                auto & shared_plan = plan_it->second;
                 if (!shared_plan.should_visit)
                     continue;
                 emitSharedValue(
@@ -909,7 +915,8 @@ private:
                     shared_plan.logical_path,
                     role,
                     shared_plan.should_index,
-                    shared_data_values->getDataAt(shared_index));
+                    shared_data_values->getDataAt(shared_index),
+                    &shared_plan);
             }
         }
     }
@@ -919,18 +926,51 @@ private:
         std::string_view logical_path,
         JSONBloomRole role,
         bool should_index,
-        std::string_view value_data)
+        std::string_view value_data,
+        SharedPathPlan * shared_plan = nullptr)
     {
         ReadBufferFromMemory buffer(value_data);
-        auto [type, serialization, type_name] = decodeJSONDataType(buffer, serializations_cache);
-        const auto & type_info = getTypeInfo(type, serialization, type_name);
+        const TypeInfo * type_info_ptr = nullptr;
+        SerializationPtr serialization;
+        if (shared_plan && shared_plan->last_type_info && value_data.starts_with(shared_plan->last_encoded_type))
+        {
+            buffer.position() += shared_plan->last_encoded_type.size();
+            type_info_ptr = shared_plan->last_type_info;
+            serialization = shared_plan->last_serialization;
+        }
+        else
+        {
+            auto decoded = decodeJSONDataType(buffer, serializations_cache);
+            type_info_ptr = &getTypeInfo(decoded.type, decoded.serialization, decoded.name);
+            serialization = std::move(decoded.serialization);
+            if (shared_plan)
+            {
+                shared_plan->last_encoded_type.assign(value_data.data(), buffer.position() - value_data.data());
+                shared_plan->last_type_info = type_info_ptr;
+                shared_plan->last_serialization = serialization;
+                shared_plan->last_scalar_plan = nullptr;
+            }
+        }
+        const auto & type_info = *type_info_ptr;
+        const auto & type = type_info.type;
         if (type_info.which.isNothing())
             return;
 
         if (type_info.which.isNativeNumber() || type_info.which.isStringOrFixedString())
         {
             ScalarPlan keyed_plan;
-            auto * plan = should_index ? &prepareScalar(hash_path, logical_path, role, true, type_info, keyed_plan) : nullptr;
+            ScalarPlan * plan = nullptr;
+            if (should_index)
+            {
+                plan = shared_plan ? shared_plan->last_scalar_plan : nullptr;
+                if (!plan)
+                {
+                    plan = &prepareScalar(hash_path, logical_path, role, true, type_info, keyed_plan);
+                    /// A keyed plan lives on the stack; only plans stored in `scalar_plans` can be reused.
+                    if (shared_plan && hash_path == logical_path)
+                        shared_plan->last_scalar_plan = plan;
+                }
+            }
             const auto hash = hashSharedScalar(plan ? plan->seed : 0, *type, buffer, format_settings);
             if (plan)
                 tokens.addValue(*plan->path_id, hash);
@@ -2503,7 +2543,10 @@ MergeTreeIndexAggregatorJSONBloomFilter::~MergeTreeIndexAggregatorJSONBloomFilte
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorJSONBloomFilter::getGranuleAndReset()
 {
     auto granule = std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, *tokens, path_matcher);
+    /// Adjacent granules usually have a similar number of values, so presize the table to avoid rehashing as it grows.
+    const size_t values_hint = tokens->values.size();
     tokens = std::make_unique<JSONBloomFilterTokens>();
+    tokens->values.reserve(values_hint);
     total_rows = 0;
     return granule;
 }
