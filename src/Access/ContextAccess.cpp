@@ -1171,14 +1171,16 @@ bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const Access
     if (isGranted(context, flags, parameter))
         return true;
 
-    const String normalized_uri = normalizeAccessURI(to_check_by_filter);
-    if (!normalized_uri.empty())
+    const String normalized_filter_target = parameter == AccessTypeObjects::toStringSource(AccessTypeObjects::Source::FILE)
+        ? String{to_check_by_filter}
+        : normalizeAccessURI(to_check_by_filter);
+    if (!normalized_filter_target.empty())
     {
         auto access_rights = getAccessRights();
         auto filters = access_rights->getFilters(parameter);
         for (const auto & filter : filters)
         {
-            if (re2::RE2::FullMatch(normalized_uri, filter.path) && filter.access_flags.contains(flags))
+            if (re2::RE2::FullMatch(normalized_filter_target, filter.path) && filter.access_flags.contains(flags))
                 return true;
         }
     }
