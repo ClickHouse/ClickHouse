@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <IO/ReadBufferFromFileBase.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinDeletionVectorReader.h>
 #include <Storages/ObjectStorage/DataLakes/PuffinFilesCache.h>
@@ -99,11 +100,15 @@ void logUndersizedPuffinFilesCacheOnce(LoggerPtr log, size_t max_size_in_bytes, 
 FooterBlobsPtr readFooterBlobs(
     ObjectStoragePtr object_storage,
     const String & puffin_path,
+    const std::optional<ObjectMetadata> & puffin_metadata,
     ContextPtr context,
     LoggerPtr log,
     bool disable_filesystem_cache)
 {
-    RelativePathWithMetadata puffin_object{puffin_path};
+    /// Seeding the metadata matters: `createReadBuffer` issues its own `getObjectMetadata`
+    /// (an S3 `HEAD`) only when it is empty, so a caller that already has it pays one request
+    /// for the whole deletion-vector load instead of one per buffer it opens.
+    RelativePathWithMetadata puffin_object{puffin_path, puffin_metadata};
     auto read_settings = context->getReadSettings();
     if (disable_filesystem_cache)
         read_settings.enable_filesystem_cache = false;
@@ -124,6 +129,7 @@ FooterBlobsPtr readFooterBlobs(
 DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     ObjectStoragePtr object_storage,
     const String & puffin_path,
+    const std::optional<ObjectMetadata> & puffin_metadata,
     Int64 content_offset,
     Int64 content_size_in_bytes,
     const IcebergPathFromMetadata & expected_data_file,
@@ -136,7 +142,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
     PuffinFilesCache * footer_cache = nullptr,
     const std::optional<PuffinFooterCacheKey> & footer_key = {})
 {
-    RelativePathWithMetadata puffin_object{puffin_path};
+    RelativePathWithMetadata puffin_object{puffin_path, puffin_metadata};
     auto read_settings = context->getReadSettings();
     if (disable_filesystem_cache)
         read_settings.enable_filesystem_cache = false;
@@ -163,7 +169,8 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVectorUncached(
             {
                 footer_owner = footer_cache->getOrSetFooter(*footer_key, [&]()
                 {
-                    return readFooterBlobs(object_storage, puffin_path, context, log, /*disable_filesystem_cache=*/ true);
+                    return readFooterBlobs(
+                        object_storage, puffin_path, puffin_metadata, context, log, /*disable_filesystem_cache=*/ true);
                 });
             }
             else
@@ -277,6 +284,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         return loadDeletionVectorUncached(
             object_storage,
             puffin_path,
+            std::nullopt,
             content_offset,
             content_size_in_bytes,
             expected_data_file,
@@ -311,6 +319,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             return loadDeletionVectorUncached(
                 object_storage,
                 puffin_path,
+                std::nullopt,
                 content_offset,
                 content_size_in_bytes,
                 expected_data_file,
@@ -336,6 +345,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         return loadDeletionVectorUncached(
             object_storage,
             puffin_path,
+            puffin_object.metadata,
             content_offset,
             content_size_in_bytes,
             expected_data_file,
@@ -377,6 +387,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
             return loadDeletionVectorUncached(
                 object_storage,
                 puffin_path,
+                puffin_object.metadata,
                 content_offset,
                 content_size_in_bytes,
                 expected_data_file,
@@ -397,6 +408,7 @@ DataLakeObjectMetadata::ExcludedRowsPtr loadDeletionVector(
         return loadDeletionVectorUncached(
             object_storage,
             puffin_path,
+            puffin_object.metadata,
             content_offset,
             content_size_in_bytes,
             expected_data_file,
