@@ -103,7 +103,8 @@ protected:
     /// `role_session_name`) are non-secret identifiers passed inside `extra_credentials` and stay
     /// visible (see isNonSecretExtraCredentialsKey).
     static constexpr std::string_view s3_secret_keys[]
-        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "external_id"};
+        = {"secret_access_key", "session_token", "google_adc_client_secret", "google_adc_refresh_token", "google_service_account_key",
+           "external_id"};
 
     /// Named arguments carrying TLS credentials as the literal contents of a certificate or a key file,
     /// rather than as a path to it. They are secret and have to be hidden the same way a password is.

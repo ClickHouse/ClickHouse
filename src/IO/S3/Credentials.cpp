@@ -1404,7 +1404,7 @@ std::shared_ptr<Aws::Auth::AWSCredentialsProvider> getCredentialsProvider(
                         DB::ErrorCodes::ACCESS_DENIED,
                         "S3 access from user queries is not allowed to use `http_client = gcp_oauth` without an "
                         "explicit Google Application Default Credentials triple (google_adc_client_id, "
-                        "google_adc_client_secret, google_adc_refresh_token), because it would otherwise mint a "
+                        "google_adc_client_secret, google_adc_refresh_token) or google_service_account_key, because it would otherwise mint a "
                         "token from the server's GCP metadata service. " S3_SERVER_CREDENTIALS_HINT);
             }
         }

@@ -123,6 +123,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "google_adc_client_id", /// For GCP (explicit Application Default Credentials triple)
     "google_adc_client_secret", /// For GCP
     "google_adc_refresh_token", /// For GCP
+    "google_service_account_key", /// For GCP (a service account JSON key, an alternative to the ADC triple)
 };
 
 String StorageS3Configuration::getDataSourceDescription() const
@@ -321,10 +322,11 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     s3_settings->auth_settings[S3AuthSetting::service_account] = collection.getOrDefault<String>("service_account", "");
     s3_settings->auth_settings[S3AuthSetting::metadata_service] = collection.getOrDefault<String>("metadata_service", "");
     s3_settings->auth_settings[S3AuthSetting::request_token_path] = collection.getOrDefault<String>("request_token_path", "");
-    /// An explicit Google ADC triple is a user-supplied credential, so `gcp_oauth` with it is allowed.
+    /// An explicit Google ADC triple or service account key is a user-supplied credential, so `gcp_oauth` with it is allowed.
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_id] = collection.getOrDefault<String>("google_adc_client_id", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_client_secret] = collection.getOrDefault<String>("google_adc_client_secret", "");
     s3_settings->auth_settings[S3AuthSetting::google_adc_refresh_token] = collection.getOrDefault<String>("google_adc_refresh_token", "");
+    s3_settings->auth_settings[S3AuthSetting::google_service_account_key] = collection.getOrDefault<String>("google_service_account_key", "");
 
     format = collection.getOrDefault<String>("format", format);
     compression_method = collection.getOrDefault<String>("compression_method", collection.getOrDefault<String>("compression", "auto"));
