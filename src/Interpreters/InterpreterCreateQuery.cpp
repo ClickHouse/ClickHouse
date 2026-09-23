@@ -3048,8 +3048,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// has to be decided here, under the `DDLGuard` of the target name, from the query alone: the flush took
         /// its decision outside any guard, and a database that replicates its DDL replays this query from its
         /// text on the DDL worker, where nothing but the text is available. So `CREATE OR REPLACE` of such a
-        /// definition refuses to replace anything that is not a generated union table of the same log, whoever
-        /// issues it; a user who really wants that has to drop the existing table first.
+        /// definition on the union table name of its log refuses to replace anything that is not a generated
+        /// union table of the same log, whoever issues it; a user who really wants that has to drop the existing
+        /// table first. The same definition under any other name is an ordinary user table and is not restricted.
         ///
         /// This is decided after `doCreateTable` above has resolved the table function of the definition, whose
         /// `parseArguments` rewrote the arguments in `create` into literals: `merge(currentDatabase(), ...)`,
@@ -3057,7 +3058,8 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// as their literal spellings by now, so the rule does not depend on how the query spelled them. The
         /// arguments of a table function nested into `clusterAllReplicas` are the exception, as they are
         /// evaluated on the remote side only, so the predicate takes the context to evaluate them itself.
-        const std::optional<StorageID> generated_union_table_log = getSystemLogOfGeneratedUnionTable(create, getContext());
+        const std::optional<StorageID> generated_union_table_log
+            = getSystemLogOfGeneratedUnionTable(create, StorageID(create.getDatabase(), table_to_replace_name), getContext());
 
         InterpreterRenameQuery interpreter_rename{ast_rename, rename_context};
         interpreter_rename.setSkipAccessCheck(true);
@@ -3069,7 +3071,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
                     ASTPtr to_drop_create_query = DatabaseCatalog::instance()
                         .getDatabase(to_drop_id.database_name)
                         ->getCreateTableQuery(to_drop_id.table_name, current_context);
-                    if (!isGeneratedUnionTable(to_drop_create_query, *generated_union_table_log))
+                    if (!isGeneratedUnionTable(to_drop_create_query, to_drop_id))
                         throw Exception(
                             ErrorCodes::TABLE_ALREADY_EXISTS,
                             "Not replacing table {}: the new definition is a union table generated for the system log {},"

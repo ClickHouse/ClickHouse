@@ -36,20 +36,27 @@ inline constexpr std::string_view SYSTEM_LOG_UNION_TABLE_COMMENT_MARKER
 /// versions (`query_log`, `query_log_0`, `query_log_1`, ...), but not the union table itself.
 String getRotatedLogTablesRegexp(const StorageID & log_table_id);
 
-/// The system log table whose union table `create_query` defines, if it is a definition that
-/// `SystemLog::prepareUnionTable` generates: a proxy over one of the generated table functions carrying the
-/// comment marker. The name of the cluster and the choice between the generated shapes come from the server
-/// configuration, which may well have changed since the table was generated, so they are not pinned.
+/// The name of the union table of `log_table_id`: `all_query_log` for `query_log`, in the same database.
+/// This is the only name that `SystemLog::prepareUnionTable` manages.
+StorageID getUnionTableIdOfSystemLog(const StorageID & log_table_id);
+
+/// The system log table whose union table `create_query` defines under the name `table_id`, if it is a
+/// definition that `SystemLog::prepareUnionTable` generates: `table_id` is the union table name of that log
+/// (see `getUnionTableIdOfSystemLog`), and the definition is a proxy over one of the generated table functions
+/// for that log carrying the comment marker. A proxy of the same shape under any other name is a user table,
+/// whatever its comment says. The name of the cluster and the choice between the generated shapes come from
+/// the server configuration, which may well have changed since the table was generated, so they are not pinned.
 ///
 /// The names in the definition may be spelled as literals, identifiers, or (with `context`) any constant
 /// expression, the same way the table functions themselves accept them: `merge(currentDatabase(), ...)` is
 /// the same definition as `merge('system', ...)` when `system` is the current database. A definition being
 /// created has to be read that way, because a table function nested into `clusterAllReplicas` keeps its
 /// arguments as written; a stored definition is read without a context, as the server wrote it.
-std::optional<StorageID> getSystemLogOfGeneratedUnionTable(const ASTCreateQuery & create_query, ContextPtr context = nullptr);
+std::optional<StorageID> getSystemLogOfGeneratedUnionTable(
+    const ASTCreateQuery & create_query, const StorageID & table_id, ContextPtr context = nullptr);
 
-/// Whether `create_query_ast` is a definition that `SystemLog::prepareUnionTable` generated for `log_table_id`,
-/// and therefore a table that it may replace.
-bool isGeneratedUnionTable(const ASTPtr & create_query_ast, const StorageID & log_table_id);
+/// Whether `create_query_ast`, the definition of the table `table_id`, is one that `SystemLog::prepareUnionTable`
+/// generated for it, and therefore a table that it may replace.
+bool isGeneratedUnionTable(const ASTPtr & create_query_ast, const StorageID & table_id);
 
 }

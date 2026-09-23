@@ -184,7 +184,13 @@ String getRotatedLogTablesRegexp(const StorageID & log_table_id)
     return fmt::format("^{}(_[0-9]+)?$", escapeStringForRegexp(log_table_id.table_name));
 }
 
-std::optional<StorageID> getSystemLogOfGeneratedUnionTable(const ASTCreateQuery & create_query, ContextPtr context)
+StorageID getUnionTableIdOfSystemLog(const StorageID & log_table_id)
+{
+    return StorageID(log_table_id.database_name, "all_" + log_table_id.table_name);
+}
+
+std::optional<StorageID> getSystemLogOfGeneratedUnionTable(
+    const ASTCreateQuery & create_query, const StorageID & table_id, ContextPtr context)
 {
     const auto * table_function = create_query.as_table_function ? create_query.as_table_function->as<ASTFunction>() : nullptr;
     if (!table_function)
@@ -197,18 +203,26 @@ std::optional<StorageID> getSystemLogOfGeneratedUnionTable(const ASTCreateQuery 
     if (!comment || !comment->ends_with(SYSTEM_LOG_UNION_TABLE_COMMENT_MARKER))
         return std::nullopt;
 
-    return getSystemLogOfGeneratedUnionTableFunction(*table_function, context);
+    auto log_table_id = getSystemLogOfGeneratedUnionTableFunction(*table_function, context);
+    if (!log_table_id)
+        return std::nullopt;
+
+    /// `SystemLog::prepareUnionTable` manages only the one name of the union table of each log, so a copy of
+    /// the generated definition under any other name, such as a report table of a user, is not generated.
+    const StorageID union_table_id = getUnionTableIdOfSystemLog(*log_table_id);
+    if (table_id.database_name != union_table_id.database_name || table_id.table_name != union_table_id.table_name)
+        return std::nullopt;
+
+    return log_table_id;
 }
 
-bool isGeneratedUnionTable(const ASTPtr & create_query_ast, const StorageID & log_table_id)
+bool isGeneratedUnionTable(const ASTPtr & create_query_ast, const StorageID & table_id)
 {
     const auto * create_query = create_query_ast->as<ASTCreateQuery>();
     if (!create_query)
         return false;
 
-    auto generated_for = getSystemLogOfGeneratedUnionTable(*create_query);
-    return generated_for && generated_for->database_name == log_table_id.database_name
-        && generated_for->table_name == log_table_id.table_name;
+    return getSystemLogOfGeneratedUnionTable(*create_query, table_id).has_value();
 }
 
 }

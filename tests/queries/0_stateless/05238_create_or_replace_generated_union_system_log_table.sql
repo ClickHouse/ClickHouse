@@ -49,6 +49,21 @@ CREATE OR REPLACE TABLE all_query_log (dummy UInt8) AS merge({CLICKHOUSE_DATABAS
     COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
 SELECT create_table_query LIKE '%recreated automatically.%' FROM system.tables WHERE database = currentDatabase() AND name = 'all_query_log';
 
+-- Only the union table name of the log is managed by the server: the same definition under any other name,
+-- including the union table name of another log, is an ordinary user table and replaces whatever is there.
+DROP TABLE IF EXISTS report;
+DROP TABLE IF EXISTS all_text_log;
+CREATE TABLE report (x UInt8) ENGINE = Memory;
+CREATE OR REPLACE TABLE report (x UInt8) AS merge(currentDatabase(), '^query_log(_[0-9]+)?$')
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.';
+SELECT create_table_query LIKE '%AS merge(%' FROM system.tables WHERE database = currentDatabase() AND name = 'report';
+CREATE TABLE all_text_log (x UInt8) ENGINE = Memory;
+CREATE OR REPLACE TABLE all_text_log (x UInt8) AS merge({CLICKHOUSE_DATABASE:String}, '^query_log(_[0-9]+)?$')
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.';
+SELECT create_table_query LIKE '%AS merge(%' FROM system.tables WHERE database = currentDatabase() AND name = 'all_text_log';
+DROP TABLE report;
+DROP TABLE all_text_log;
+
 -- A generated union table with a stale definition is replaced by an up-to-date one, in any of the generated shapes.
 DROP TABLE all_query_log;
 CREATE TABLE all_query_log (dummy UInt8) AS merge({CLICKHOUSE_DATABASE:String}, '^query_log(_[0-9]+)?$')

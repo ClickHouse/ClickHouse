@@ -699,7 +699,7 @@ SystemLog<LogElement>::SystemLog(
     , WithContext(context_)
     , log(getLogger("SystemLog (" + settings_.queue_settings.database + "." + settings_.queue_settings.table + ")"))
     , table_id(settings_.queue_settings.database, settings_.queue_settings.table)
-    , union_table_id(settings_.queue_settings.database, "all_" + settings_.queue_settings.table)
+    , union_table_id(getUnionTableIdOfSystemLog(table_id))
     , storage_def(settings_.engine)
     , union_table_merge_rotated_tables(settings_.union_table_merge_rotated_tables)
     , union_table_cluster(settings_.union_table_cluster)
@@ -1147,7 +1147,7 @@ void SystemLog<LogElement>::prepareUnionTable()
               * materialized view's target, or the user's own `AS merge(...)` proxy. Such a table must not
               * be lost to a name collision, so leave it alone.
               */
-            if (!isGeneratedUnionTable(existing_create_query_ast, table_id))
+            if (!isGeneratedUnionTable(existing_create_query_ast, union_table_id))
             {
                 LOG_ERROR(
                     log,
