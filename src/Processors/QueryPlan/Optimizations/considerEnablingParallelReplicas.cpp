@@ -570,6 +570,21 @@ void considerEnablingParallelReplicas(
     if (optimization_settings.force_use_projection)
         return;
 
+    /// A plan that builds a set is rooted in the `CreatingSetStep` that fills it, and that root is what
+    /// gives the plan the empty header `addPlansForSets` attaches to a `CreatingSetsStep`. Switching to
+    /// the parallel-replicas candidate replaces the root (see `replaceNodeWithPlan` below) and the
+    /// candidate is built without one, so the set plan would come back carrying the subquery's own
+    /// columns and `CreatingSetsStep` would reject it with "Creating set input must have empty header".
+    /// Leave these plans alone until the candidate can carry the set-building root over.
+    ///
+    /// Only the root matters. A `CreatingSetStep` further down belongs to a set this plan consumes
+    /// rather than builds, and the steps above it are replaced without disturbing it.
+    if (typeid_cast<const CreatingSetStep *>(root.step.get()))
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "The plan builds a set, its root must be preserved. Skipping optimization");
+        return;
+    }
+
     Stack stack;
     // Technically, it isn't required for all steps to support dataflow statistics collection,
     // but only for those that we will actually instrument (see `setRuntimeDataflowStatisticsCacheUpdater` calls below).
