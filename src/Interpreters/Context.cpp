@@ -121,6 +121,7 @@
 #include <Interpreters/DDLWorker.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SessionQueryIdsHistory.h>
 #include <Interpreters/Session.h>
 #include <Interpreters/TraceCollector.h>
@@ -1470,6 +1471,7 @@ ContextData::ContextData(const ContextData &o) :
     query_factories_info(o.query_factories_info),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
+    query_execution_counters(o.query_execution_counters),
     view_source(o.view_source),
     /// `table_function_results` is copied in the body under `o.table_function_results_mutex`
     /// to avoid a data race with `Context::executeTableFunction` and other writers
@@ -4022,6 +4024,7 @@ void Context::makeQueryContext()
     /// from unrelated earlier queries into `system.query_log.used_privileges`. See issue #105983.
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
+    query_execution_counters = std::make_shared<QueryExecutionCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
     /// A new query must classify under its own workload and scheduling settings. The ContextData
     /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
@@ -9001,6 +9004,11 @@ WriteSettings Context::getWriteSettings() const
 std::shared_ptr<AsyncReadCounters> Context::getAsyncReadCounters() const
 {
     return async_read_counters;
+}
+
+QueryExecutionCountersPtr Context::getQueryExecutionCounters() const
+{
+    return query_execution_counters;
 }
 
 bool Context::canUseTaskBasedParallelReplicas() const
