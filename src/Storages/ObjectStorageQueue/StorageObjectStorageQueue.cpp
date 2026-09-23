@@ -2071,6 +2071,15 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     return zkutil::extractZooKeeperPath(result_zk_path, true);
 }
 
+void StorageObjectStorageQueue::dropFailedFiles()
+{
+    auto metadata = tryGetFilesMetadata();
+    if (!metadata)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table does not have metadata initialized");
+
+    metadata->dropFailedFiles();
+}
+
 void StorageObjectStorageQueue::waitForPathToBeProcessed(
     const std::string & path,
     ContextPtr local_context,
