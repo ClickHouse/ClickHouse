@@ -25,7 +25,6 @@ protected:
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
     bool useDefaultImplementationForSparseColumns() const final { return function->useDefaultImplementationForSparseColumns(); }
-    bool useDefaultImplementationForReplicatedColumns() const final { return function->useDefaultImplementationForReplicatedColumns(); }
 
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final { return function->getArgumentsThatAreAlwaysConstant(); }
     bool canBeExecutedOnDefaultArguments() const override { return function->canBeExecutedOnDefaultArguments(); }
@@ -33,7 +32,6 @@ protected:
     /// (see `IFunction::canThrow`). Once enough of them describe it on their own, the default
     /// should become the conservative `true` instead of that approximation.
     bool canThrow(const DataTypesWithConstInfo & arguments) const override { return function->canThrow(arguments); }
-    bool isDeterministicInScopeOfQuery() const override { return function->isDeterministicInScopeOfQuery(); }
 
 private:
     std::shared_ptr<IFunction> function;
@@ -83,7 +81,6 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
-    bool hasObservableSideEffects() const override { return function->hasObservableSideEffects(); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
 

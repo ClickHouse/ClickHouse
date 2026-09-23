@@ -41,33 +41,6 @@ wait_for_truncate()
     echo 'TRUNCATE never appeared in system.processes'
 }
 
-# The maximum entry number in the shared replication log.
-log_maximum()
-{
-    $CLICKHOUSE_CLIENT -q "
-        SELECT log_max_index FROM system.replicas
-        WHERE database = currentDatabase() AND table = 'r2'"
-}
-
-# Waits until the log maximum advances past $1 and prints the new value, which names the entry the
-# statement under test created. $1 has to be sampled before that statement starts: its process list
-# row appears before the interpreter creates the log node, so a value read after wait_for_truncate
-# can still be the previous maximum. Comparing log_pointer against a freshly read log_max_index
-# instead would prove nothing: log_pointer is the maximum copied entry plus one and may point at an
-# entry that does not exist yet.
-wait_for_log_entry()
-{
-    local current
-    for _ in {1..600}; do
-        current=$(log_maximum)
-        if [ -n "$current" ] && [ "$current" -gt "$1" ]; then
-            echo "$current"
-            return 0
-        fi
-        sleep 0.5
-    done
-}
-
 # 1. max_execution_time must terminate the wait.
 $CLICKHOUSE_CLIENT -q "
     TRUNCATE TABLE r1 SETTINGS alter_sync = 2, max_execution_time = 5,
@@ -89,11 +62,30 @@ grep -om1 'Code: 394.*Query was cancelled' "$KILL_OUT" | sed 's/DB::Exception: /
 # only ever reach the first stage. Letting r2 pull the entry into its queue and blocking execution
 # instead sends the wait into waitForDisappear on the queue node.
 $CLICKHOUSE_CLIENT -q "SYSTEM START PULLING REPLICATION LOG r2; SYSTEM STOP REPLICATION QUEUES r2"
-before=$(log_maximum)
+# The log maximum has to be sampled before the statement starts: its process list row appears
+# before the interpreter creates the log node, so a value read after wait_for_truncate can still
+# be the previous maximum.
+before=$($CLICKHOUSE_CLIENT -q "
+    SELECT log_max_index FROM system.replicas
+    WHERE database = currentDatabase() AND table = 'r2'")
 $CLICKHOUSE_CLIENT -q "$TRUNCATE_UNLIMITED" > "$QUEUE_OUT" 2>&1 &
 wait_for_truncate
-# Reaching the third stage requires this TRUNCATE's own entry to be in r2's queue.
-entry_index=$(wait_for_log_entry "$before")
+# Reaching the third stage requires this TRUNCATE's own entry to be in r2's queue. The advance of
+# the log maximum past the pre-statement value is what proves that entry exists, and the observed
+# value names it. Comparing log_pointer against a freshly read log_max_index instead would prove
+# nothing: log_pointer is the maximum copied entry plus one and may point at an entry that does not
+# exist yet, so the arm could degenerate into a copy of arm 2.
+entry_index=
+for _ in {1..600}; do
+    current=$($CLICKHOUSE_CLIENT -q "
+        SELECT log_max_index FROM system.replicas
+        WHERE database = currentDatabase() AND table = 'r2'")
+    if [ -n "$current" ] && [ "$current" -gt "$before" ]; then
+        entry_index=$current
+        break
+    fi
+    sleep 0.5
+done
 if [ -z "$entry_index" ]; then
     echo 'log entry for the TRUNCATE never appeared'
 else
@@ -122,26 +114,13 @@ grep -om1 'Code: 394.*Query was cancelled' "$QUEUE_OUT" | sed 's/DB::Exception: 
 # ever processing the entry. The waiting TRUNCATE must give up so the DROP is not deadlocked behind
 # it. No cancellation is involved here, so this covers the shutdown escape on its own.
 $CLICKHOUSE_CLIENT -q "SYSTEM START REPLICATION QUEUES r2; SYSTEM STOP PULLING REPLICATION LOG r2"
-before=$(log_maximum)
 $CLICKHOUSE_CLIENT -q "$TRUNCATE_UNLIMITED" > "$DROP_OUT" 2>&1 &
 wait_for_truncate
-# The shutdown must not reach the table before the statement has its log entry: a TRUNCATE that has
-# not passed its readonly checks yet is refused with TABLE_IS_READ_ONLY and never enters the wait.
-if [ -z "$(wait_for_log_entry "$before")" ]; then
-    echo 'log entry for the TRUNCATE never appeared'
-fi
 $CLICKHOUSE_CLIENT -q "DROP DATABASE ${CLICKHOUSE_DATABASE} SYNC"
 echo 'database dropped'
 wait
-# The local replica has its own latch, so only a remote unfinished replica shows that the shutdown
-# stopped the wait: require r2 in the reported set, in any order and possibly alongside r1.
-timeout_line=$(grep -om1 'Code: 341.*Timeout exceeded while waiting for replicas [^.]* to process entry log-[0-9]*' "$DROP_OUT" \
+# r1 can also lose the race to the shutdown latch, so require r2 as a member in any order.
+grep -om1 'Code: 341.*Timeout exceeded while waiting for replicas [^.]* to process entry log-[0-9]*' "$DROP_OUT" \
     | sed 's/DB::Exception: //g; s/Received from [^ ]* //; s/log-[0-9]*/log-N/' \
     | grep -E 'replicas ([a-z0-9_]+, )*r2(, [a-z0-9_]+)* to process' \
-    | sed -E 's/replicas [^ ]*(, [^ ]*)* to process/replicas r2 to process/')
-if [ -n "$timeout_line" ]; then
-    echo "$timeout_line"
-else
-    reported=$(grep -om1 'Code: [0-9]*' "$DROP_OUT")
-    echo "the parked TRUNCATE reported ${reported:-no error}, not the expected r2 timeout"
-fi
+    | sed -E 's/replicas [^ ]*(, [^ ]*)* to process/replicas r2 to process/'

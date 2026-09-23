@@ -96,7 +96,7 @@ public:
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const override;
 
-    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &, DDLGuardPtr &) override;
+    void alter(const AlterCommands & params, ContextPtr alter_context, AlterLockHolder &) override;
 
     LoadablesConfigurationPtr getConfiguration() const;
 

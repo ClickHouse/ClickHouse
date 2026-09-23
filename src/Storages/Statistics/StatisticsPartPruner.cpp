@@ -91,13 +91,7 @@ bool isFloatingPointColumn(const DataTypePtr & type)
 /// `NaN`. So the stored range excludes `NaN`, yet `NaN` sorts after `+inf` and satisfies negated
 /// predicates such as `NOT (f < c)` or `f <> c`. Pruning a part by that range would then drop rows
 /// that actually match. Statistics-based pruning is therefore disabled for such columns; the range
-/// analysis stays sound for a plain comparison, where `NaN` cannot match anyway.
-///
-/// A positive `IN` also matches `NaN` (`SELECT nan IN (nan)` is `1`), but it needs no exclusion
-/// here: the estimates are checked through a `KeyCondition` built with `require_ready_sets`, and
-/// `KeyCondition::tryPrepareSetIndexForIn` declines a set atom whose elements contain a `NaN`, so
-/// such a predicate becomes unknown for every range-based check at once. Excluding the column
-/// instead would also forgo pruning for the common `NaN`-free set.
+/// analysis stays sound for every other (non-negated) predicate, where `NaN` cannot match anyway.
 ///
 /// The traversal is intentionally conservative: once under a negation it stays under it for the whole
 /// subtree, so a column may be excluded even where an even number of negations would cancel out.
@@ -188,9 +182,8 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
         return nullptr;
     }
 
-    auto & cached_key_condition = key_condition_cache[column_names];
-    cached_key_condition = std::move(new_key_condition);
-    auto * key_condition_ptr = cached_key_condition.get();
+    auto * key_condition_ptr = new_key_condition.get();
+    key_condition_cache[column_names] = std::move(new_key_condition);
 
     for (size_t col_idx : key_condition_ptr->getUsedColumns())
     {

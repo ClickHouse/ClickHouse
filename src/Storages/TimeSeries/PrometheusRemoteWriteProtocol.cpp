@@ -8,7 +8,6 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnTuple.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 #include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
@@ -26,7 +25,6 @@
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 
 #include <chrono>
@@ -43,10 +41,10 @@ namespace Setting
 
 namespace ErrorCodes
 {
-    extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int ILLEGAL_COLUMN;
     extern const int ILLEGAL_TIME_SERIES_TAGS;
     extern const int LOGICAL_ERROR;
+    extern const int TIMEOUT_EXCEEDED;
 }
 
 namespace
@@ -81,8 +79,7 @@ void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 Block makeTimeSeriesBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     size_t num_metadata_rows,
-    const StorageInMemoryMetadata & metadata,
-    const String & samples_column_name)
+    const StorageInMemoryMetadata & metadata)
 {
     const size_t num_rows = time_series.size() + num_metadata_rows;
 
@@ -99,9 +96,9 @@ Block makeTimeSeriesBlock(
     tags_offsets->reserve(num_rows);
 
     const auto time_series_type
-        = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(samples_column_name).type);
+        = typeid_cast<std::shared_ptr<const DataTypeArray>>(metadata.columns.get(TimeSeriesColumnNames::TimeSeries).type);
     if (!time_series_type)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", samples_column_name);
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Column `{}` must have an Array type", TimeSeriesColumnNames::TimeSeries);
     auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_type);
     auto timestamps = timestamp_type->createColumn();
     auto values = value_type->createColumn();
@@ -164,7 +161,7 @@ Block makeTimeSeriesBlock(
     Block block;
     block.insert(ColumnWithTypeAndName{std::move(metric_name_column), metric_name_type, TimeSeriesColumnNames::MetricName});
     block.insert(ColumnWithTypeAndName{std::move(tags_column), tags_type, TimeSeriesColumnNames::Tags});
-    block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, samples_column_name});
+    block.insert(ColumnWithTypeAndName{std::move(time_series_column), time_series_type, TimeSeriesColumnNames::TimeSeries});
     return block;
 }
 
@@ -219,15 +216,14 @@ void appendBlock(Block & block, Block block_to_append)
 Block makeBlock(
     const google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & time_series,
     const google::protobuf::RepeatedPtrField<prometheus::MetricMetadata> & metrics_metadata,
-    const StorageInMemoryMetadata & metadata,
-    const String & samples_column_name)
+    const StorageInMemoryMetadata & metadata)
 {
     Block block;
     if (!time_series.empty())
     {
         appendBlock(
             block,
-            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata, samples_column_name));
+            makeTimeSeriesBlock(time_series, metrics_metadata.size(), metadata));
     }
     if (!metrics_metadata.empty())
     {
@@ -266,12 +262,9 @@ void insertBlock(Block block, StorageTimeSeries & storage, const ContextMutableP
 
             io.resetPipeline(/*cancel=*/ true);
 
-            /// `ASYNC_INSERT_FLUSH_TIMEOUT` is returned to the client as HTTP 503: the remote-write protocol
-            /// treats 4xx statuses (other than 429) as permanent failures and drops the data without a retry,
-            /// while the data here is still in the queue and its fate is unknown, so the status must be retryable.
-            const auto timeout = saturatedMilliseconds(context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds());
-            if (result.future.wait_for(timeout) == std::future_status::timeout)
-                throw Exception(ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout.count());
+            const auto timeout_ms = context->getSettingsRef()[Setting::wait_for_async_insert_timeout].totalMilliseconds();
+            if (result.future.wait_for(std::chrono::milliseconds(timeout_ms)) == std::future_status::timeout)
+                throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for asynchronous insert timeout ({} ms) exceeded", timeout_ms);
 
             const auto progress = result.future.get();
             if (auto process_list_element = context->getProcessListElement())
@@ -306,7 +299,6 @@ PrometheusRemoteWriteProtocol::PrometheusRemoteWriteProtocol(
     , time_series_storage(storagePtrToTimeSeries(time_series_storage_))
     , log(getLogger("PrometheusRemoteWriteProtocol"))
 {
-    checkTimeSeriesVersionIsWritable(*time_series_storage);
 }
 
 PrometheusRemoteWriteProtocol::~PrometheusRemoteWriteProtocol() = default;
@@ -325,8 +317,7 @@ void PrometheusRemoteWriteProtocol::write(
         metrics_metadata.size());
 
     auto metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
-    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    insertBlock(makeBlock(time_series, metrics_metadata, *metadata, samples_column_name), *time_series_storage, getContext());
+    insertBlock(makeBlock(time_series, metrics_metadata, *metadata), *time_series_storage, getContext());
 
     LOG_TRACE(
         log,
