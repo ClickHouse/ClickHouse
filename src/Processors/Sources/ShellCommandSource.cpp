@@ -932,6 +932,22 @@ public:
         returned_command = std::move(command);
     }
 
+    /// The process that served the previous borrow, still held here, or null if the next
+    /// `buildCommand` would start a fresh one. For the probes a borrow runs on a reused worker
+    /// before it builds anything on it: they read its pipes, and what they decide - keep it, drop
+    /// it, or drop it together with its regions - has to be decided before the regions are taken
+    /// over, because taking them over is what a dropped worker's regions must not survive.
+    ShellCommand * returnedCommand() const { return returned_command.get(); }
+
+    /// Drops the returned process alone, keeping its regions for the process that replaces it.
+    /// Only for a process that is provably gone: a live one keeps writable descriptors to those
+    /// regions, and the replacement would be serving this query through memory the old process
+    /// can still write into - `discardWorkerAndRegions` is what that case needs.
+    void discardExitedWorker()
+    {
+        returned_command.reset();
+    }
+
     /// Who borrowed this worker last: the user, and the roles the query ran with.
     ///
     /// A pooled region is not cleared between borrows, and a pool serves the queries of every
@@ -2115,6 +2131,10 @@ namespace
                 if (command_holder)
                     command_holder->releaseChargeToBorrower();
 
+                /// Before anything is built on a reused worker, and before its regions are taken
+                /// over: what these probes find decides whether the regions survive with it.
+                inspectPooledWorkerBeforeTheBorrow();
+
                 /// A worker whose regions have outgrown `shared_memory_max_size` is not built on.
                 /// The cap is what an administrator sized the pool by - `pool_size` regions of at
                 /// most that - and the server's own growth never exceeds it, but the seals do not
@@ -2197,65 +2217,12 @@ namespace
                 /// given at its declaration.
                 if (command_holder)
                 {
+                    /// Whether this is a worker that has already served a borrow is decided by
+                    /// what the holder still has after the probes above: one they discarded is
+                    /// gone, and `buildCommand` starts a fresh process on the regions the holder
+                    /// owns now.
                     worker_is_reused = command_holder->hasReturnedCommand();
                     command = command_holder->buildCommand();
-
-                    /// A worker that exited while it sat in the pool is replaced before anything
-                    /// is built on it - see the same step on the pipe path in `createPipe`. Its
-                    /// regions are unaffected and the replacement inherits the very same ones.
-                    if (worker_is_reused && pooledProcessHasExitedCleanly(*command))
-                    {
-                        /// Whatever it said on its way out is read and reported now, before the
-                        /// process is dropped with its pipes: nobody else will ever read it.
-                        const String leftover_stderr = readLeftoverStderrOfExitedProcess(*command);
-                        if (leftover_stderr.empty())
-                            LOG_DEBUG(
-                                getLogger("ShellCommandSharedMemorySource"),
-                                "The process of an executable UDF (pid {}) exited while it was idle in the pool; "
-                                "starting a replacement for this borrow.",
-                                command->getPid());
-                        else
-                            LOG_WARNING(
-                                getLogger("ShellCommandSharedMemorySource"),
-                                "The process of an executable UDF (pid {}) exited while it was idle in the pool, "
-                                "after writing to its stderr; starting a replacement for this borrow. Stderr: {}",
-                                command->getPid(),
-                                leftover_stderr);
-
-                        command.reset();
-                        command = command_holder->buildCommand();
-                        worker_is_reused = false;
-                    }
-
-                    /// A worker that wrote to its stdout after it was handed back is replaced as
-                    /// well, and for the same reason the hand-back probe would have discarded it,
-                    /// had the bytes been there in time: they are an earlier borrow's, and this
-                    /// borrow has not sent anything yet, so they can only be read as the beginning
-                    /// of *its* answer. The request id would catch that - the frame would carry
-                    /// the wrong id - but catching it means failing this query for what the
-                    /// previous one's command did. Seen here, before the first request, the bytes
-                    /// are provably not this query's, and the worker is dropped for a fresh one
-                    /// instead. Its stdin is closed first, so that a worker written to exit on EOF
-                    /// does so at once rather than sitting out the termination timeout.
-                    if (worker_is_reused && TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(command->out.getFD()))
-                    {
-                        const String leftover_stderr = readLeftoverStderrOfExitedProcess(*command);
-                        LOG_WARNING(
-                            getLogger("ShellCommandSharedMemorySource"),
-                            "The process of an executable UDF (pid {}) had unread output on its stdout when it was "
-                            "borrowed, so it wrote after the response of an earlier invocation; it is discarded and a "
-                            "replacement is started for this borrow. The command must write nothing but the response "
-                            "frame.{}{}",
-                            command->getPid(),
-                            leftover_stderr.empty() ? "" : " Stderr: ",
-                            leftover_stderr);
-                        ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
-
-                        command->in.close();
-                        command.reset();
-                        command = command_holder->buildCommand();
-                        worker_is_reused = false;
-                    }
 
                     /// Borrow acquired: capture the pid for procfs sampling. Best-effort, and it
                     /// allocates, so a failure must not fail a query that is otherwise ready.
@@ -2842,6 +2809,78 @@ namespace
             return true;
         }
 
+        /// Looks over the worker this borrow would be built on, before anything is built on it -
+        /// and, above all, before its regions are taken over.
+        ///
+        /// Two states disqualify it, and they are told apart by what they cost. A process that
+        /// exited while it sat in the pool is simply gone: it holds nothing, so its regions are
+        /// untouched and the replacement inherits the very same ones (the pipe path does the same
+        /// in `createPipe`). A process that is alive and has written to its stdout since its last
+        /// answer is a different matter. Those bytes are an earlier borrow's - this one has sent
+        /// nothing yet - and read as the beginning of *this* answer they are a plausible response
+        /// frame, so the worker has to go; but it is alive, and it holds writable descriptors to
+        /// the regions. Handing those regions to its replacement would leave this query reading a
+        /// mapping the discarded process can still write into: the destructor gives it the
+        /// termination timeout and then a signal it may ignore. So it goes together with its
+        /// regions, as everywhere else that drops a live worker - a process and its regions live
+        /// and die together - and this borrow starts on fresh ones.
+        ///
+        /// Both run here rather than after `buildCommand` for the same reason: once the regions
+        /// have been taken over and charged to this query, dropping them is no longer a matter of
+        /// letting them go.
+        void inspectPooledWorkerBeforeTheBorrow()
+        {
+            if (!command_holder)
+                return;
+
+            ShellCommand * worker = command_holder->returnedCommand();
+            if (!worker)
+                return;
+
+            if (pooledProcessHasExitedCleanly(*worker))
+            {
+                /// Whatever it said on its way out is read and reported now, before the process is
+                /// dropped with its pipes: nobody else will ever read it.
+                const String leftover_stderr = readLeftoverStderrOfExitedProcess(*worker);
+                if (leftover_stderr.empty())
+                    LOG_DEBUG(
+                        getLogger("ShellCommandSharedMemorySource"),
+                        "The process of an executable UDF (pid {}) exited while it was idle in the pool; "
+                        "starting a replacement for this borrow.",
+                        worker->getPid());
+                else
+                    LOG_WARNING(
+                        getLogger("ShellCommandSharedMemorySource"),
+                        "The process of an executable UDF (pid {}) exited while it was idle in the pool, "
+                        "after writing to its stderr; starting a replacement for this borrow. Stderr: {}",
+                        worker->getPid(),
+                        leftover_stderr);
+
+                command_holder->discardExitedWorker();
+                return;
+            }
+
+            if (!TimeoutReadBufferFromFileDescriptor::pipeHasPendingOutput(worker->out.getFD()))
+                return;
+
+            const String leftover_stderr = readLeftoverStderrOfExitedProcess(*worker);
+            LOG_WARNING(
+                getLogger("ShellCommandSharedMemorySource"),
+                "The process of an executable UDF (pid {}) had unread output on its stdout when it was "
+                "borrowed, so it wrote after the response of an earlier invocation; it is discarded, with its "
+                "regions, and a replacement is started for this borrow. The command must write nothing but the "
+                "response frame.{}{}",
+                worker->getPid(),
+                leftover_stderr.empty() ? "" : " Stderr: ",
+                leftover_stderr);
+            ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryDirtyChannelDiscards);
+
+            /// Closed before the process is dropped, so that a worker written to exit on EOF does
+            /// so at once rather than sitting out the termination timeout in the destructor.
+            worker->closeInputs();
+            command_holder->discardWorkerAndRegions();
+        }
+
         /// Charge/uncharge the query memory tracker for the mmap'd shared-memory region(s).
         ///
         /// These are synthetic charges: the region is a mapped `memfd`, not a heap allocation at a known
@@ -3030,13 +3069,20 @@ namespace
             }
 
             added = refreshFootprintKeepingTheChargeOnFailure(region, footprint_before + expected) - footprint_before;
+
+            /// Counted before the charge is settled, not after: the growth has happened and its
+            /// pages are committed, and the settlement below can throw - the few pages the bound
+            /// does not cover (a hole the command punched, refilled by this `posix_fallocate`) are
+            /// charged here, and a query at its limit is failed for them. That is the charge doing
+            /// its job, but it must not also make a growth that really happened invisible in the
+            /// counters. The failure path above counts them for the same reason.
+            ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryRegionGrowths);
+            ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, added);
+
             if (added < expected)
                 unchargeQueryMemory(expected - added);
             else if (added > expected)
                 chargeQueryMemory(added - expected);
-
-            ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryRegionGrowths);
-            ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, added);
         }
 
         /// Takes anything a previous borrow's command left on its stderr off the pipe, without
@@ -3780,9 +3826,14 @@ namespace
 
         /// Background prefetcher for pipelined mode. Its thread reads the input pipeline and
         /// serializes into the regions, so it is declared after both and is therefore destroyed
-        /// before them; its destructor stops and joins the thread. The two members below are
-        /// destroyed before this one, but they are not what the thread touches, and `cleanup` has
-        /// joined it long before any destructor runs anyway.
+        /// before them; its destructor stops and joins the thread.
+        ///
+        /// The two members below - the process and its holder - are destroyed before this one, and
+        /// the thread does reach the holder: growing a region on demand goes through it
+        /// (`ensureRegionFits` -> `growSharedMemory`). What makes that safe is not the declaration
+        /// order but `cleanup`, whose first statement is `stopProducer` - it joins the thread
+        /// before anything else is touched, and it is `noexcept`, so no path leaves the thread
+        /// running into the destructors. Keep it first.
         DoubleBufferedProducer producer;
 
         /// The worker process and its pool holder are taken over after EVERY other member, because

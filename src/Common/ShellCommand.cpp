@@ -475,11 +475,38 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
             if (probed == 0)
                 LOG_WARNING(getLogger(), "Cannot read the child error pipe of pid {} ({}); the child is running, so it has started", pid, errnoToString(read_error));
-            else
+            else if (probed == pid)
                 throw Exception(
                     ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
                     "Cannot prepare child process: it exited before exec, and its report could not be read: {}",
                     errnoToString(read_error));
+            else
+            {
+                /// The probe itself failed, so nothing here says what the child did - it is not a
+                /// child that exited, it is a child nothing is known about. This call fails either
+                /// way, and that is what makes the difference matter: no `ShellCommand` is
+                /// constructed, so a child that did `exec` would be left with nobody to wait for
+                /// it, nobody to signal it and no entry in the registry of UDF processes - a
+                /// command running as the server's user for as long as it pleases. So it is
+                /// signalled and reaped before the failure is reported. `ESRCH` on a child that
+                /// was gone after all costs nothing, and this is the one place where killing is
+                /// the conservative choice: the alternative is leaking the process.
+                const int probe_error = errno;
+
+                if (0 != ::kill(pid, SIGKILL) && errno != ESRCH)
+                    LOG_WARNING(getLogger(), "Cannot kill child process pid {}: {}", pid, errnoToString());
+
+                while (-1 == ::waitpid(pid, &status, 0) && errno == EINTR)
+                {
+                }
+
+                throw Exception(
+                    ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
+                    "Cannot prepare child process: its report could not be read ({}) and whether it started could "
+                    "not be established ({}); it is signalled",
+                    errnoToString(read_error),
+                    errnoToString(probe_error));
+            }
         }
 
         if (child_reported_failure)

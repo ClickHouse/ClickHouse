@@ -1775,7 +1775,11 @@ def test_shared_memory_udf_stray_byte_after_the_probe_cannot_poison_the_next_bor
     # the borrow-time probe and the request.
     node.exec_in_container(["bash", "-c", f"rm -f {STRAY_BYTE_MARKER}"])
     assert node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(1)") == "Key 1\n"
-    regions_before = shm_region_count()
+    # This function's region size is its own, so its regions can be told from every other pooled
+    # worker's in the server.
+    region_size = 12288
+    regions_before = [region for region in shm_regions() if region[1] == region_size]
+    assert len(regions_before) == 1, shm_regions()
 
     # The byte has to be on the pipe before the next borrow, and when it lands is the command's
     # business, not this test's: the command reports it by creating a marker file right after the
@@ -1786,8 +1790,15 @@ def test_shared_memory_udf_stray_byte_after_the_probe_cannot_poison_the_next_bor
     assert node.query("SELECT test_function_shm_stray_byte_after_probe_pool_python(2)") == "Key 2\n"
     assert profile_event_value("ExecutableUDFSharedMemoryDirtyChannelDiscards") == discards_before + 1
     assert node.contains_in_log("had unread output on its stdout when it was borrowed")
-    # The replacement inherited the same region: nothing was created or leaked.
-    assert shm_region_count() == regions_before
+
+    # The discarded worker is alive - it wrote that byte and went back to reading - and it holds a
+    # writable descriptor to the region it was started with. So the region goes with it: the
+    # replacement is started on a fresh one, which the inode shows, and the old one is released
+    # rather than leaked, which the count shows. Handing the old region to the replacement would
+    # leave this query reading a mapping a discarded process can still write into.
+    regions_after = [region for region in shm_regions() if region[1] == region_size]
+    assert len(regions_after) == 1, shm_regions()
+    assert regions_after[0][0] != regions_before[0][0], (regions_before, regions_after)
 
 
 def test_shared_memory_udf_stderr_written_on_the_way_out_still_throws(started_cluster):
