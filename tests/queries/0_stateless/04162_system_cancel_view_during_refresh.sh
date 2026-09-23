@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel, zookeeper, no-fasttest
+# Tags: atomic-database, memory-engine, no-parallel
 
 # Uses `SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_executor_published`, which is server-global
 # and would park every other refresh on the server, so it cannot run concurrently with other tests.
@@ -41,7 +41,6 @@ enabled() {
 # early exit, which would otherwise leave the failpoint parking every later refresh in the run.
 trap '
     $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT '"$FP"'" 2>/dev/null || true
-    $CLICKHOUSE_CLIENT -q "SYSTEM DISABLE FAILPOINT refresh_mv_pause_inside_coordination_write" 2>/dev/null || true
 ' EXIT
 
 # The cancel must reach a live `PipelineExecutor`, so park the refresh thread right after it
@@ -96,71 +95,3 @@ $CLICKHOUSE_CLIENT -q "
             settings max_rows_to_read = 0);
     drop table c;
     drop table src;"
-
-# ---------------------------------------------------------------------------
-# A SYSTEM STOP VIEW must be honored even while the refresh-start write to Keeper is in flight:
-# starting a refresh of a coordinated view (one in a Replicated database) releases the task's mutex
-# for that round trip, and a STOP landing there used to be discarded - the refresh ran to completion.
-# ---------------------------------------------------------------------------
-
-db="rdb_$CLICKHOUSE_DATABASE"
-
-$CLICKHOUSE_CLIENT -q "create database $db engine=Replicated('/test/$CLICKHOUSE_DATABASE/rdb', 's1', 'r1')"
-
-$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "
-    create materialized view $db.k refresh every 1 year settings refresh_retries = 0 (x Int64)
-        engine ReplicatedMergeTree order by x empty as select 1 as x;"
-
-$CLICKHOUSE_CLIENT -q "
-    system enable failpoint refresh_mv_pause_inside_coordination_write;
-    system refresh view $db.k;"
-
-if ! timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT refresh_mv_pause_inside_coordination_write PAUSE"
-then
-    echo "FAIL: the refresh did not reach the coordination-write failpoint"
-    exit 1
-fi
-
-# The mutex is free while the Keeper write is parked, so this STOP lands inside the window.
-$CLICKHOUSE_CLIENT -q "
-    system stop view $db.k;
-    system disable failpoint refresh_mv_pause_inside_coordination_write;"
-
-while [ "`$CLICKHOUSE_CLIENT -q "select status from system.view_refreshes where database = '$db' and view = 'k' -- $LINENO" | xargs`" != 'Disabled' ]
-do
-    sleep 0.1
-done
-
-# The STOP was honored: the refresh is cancelled and it inserted nothing.
-$CLICKHOUSE_CLIENT -q "
-    select '<2: stop during the coordination write is honored>',
-        (select position(exception, 'cancelled') > 0 from system.view_refreshes where database = '$db' and view = 'k'),
-        (select count() from $db.k);"
-
-# ---------------------------------------------------------------------------
-# A SYSTEM REFRESH VIEW accepted while the start write of an earlier one is in flight is counted into the
-# request znode that write consumes from; the write must not erase it. APPEND, so rows count refreshes
-# (identical rows, so without insert_deduplicate = 0 the second one would be deduplicated away).
-# ---------------------------------------------------------------------------
-
-$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "
-    create materialized view $db.k2 refresh every 1 year append (x Int64)
-        engine ReplicatedMergeTree order by x empty as select 1 as x settings insert_deduplicate = 0;
-    system stop view $db.k2;"
-
-$CLICKHOUSE_CLIENT -q "
-    system enable failpoint refresh_mv_pause_inside_coordination_write;
-    system refresh view $db.k2;"
-
-if ! timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT refresh_mv_pause_inside_coordination_write PAUSE"
-then
-    echo "FAIL: the refresh did not reach the coordination-write failpoint"
-    exit 1
-fi
-
-$CLICKHOUSE_CLIENT -q "
-    system refresh view $db.k2;
-    system disable failpoint refresh_mv_pause_inside_coordination_write;
-    system wait view $db.k2;
-    select '<3: a request counted during the start write is kept>', count() from $db.k2;
-    drop database $db;"

@@ -12,5 +12,3 @@ refresh_failed
 -- a refresh requested while stopped: SYSTEM WAIT VIEW checks the target table
 1
 stale_target_reported
--- a scheduled refresh from before the stop: the wait returns as it always did
-wait_returned

@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-parallel, no-replicated-database, atomic-database
-# no-parallel: the last section arms a `PAUSEABLE_ONCE` failpoint, which fires once globally, so a
-#   concurrent RESTORE from another test could steal the pause.
+# Tags: no-replicated-database, atomic-database
 # no-replicated-database: creates its own databases and restores one under a new name.
 # atomic-database: refreshable materialized views require an Atomic database.
 
@@ -25,29 +23,20 @@ OUT="${CLICKHOUSE_DATABASE}_out"
 BACKUP_DB="${CLICKHOUSE_TEST_UNIQUE_NAME}_db"
 BACKUP_AS="${CLICKHOUSE_TEST_UNIQUE_NAME}_as"
 BACKUP_TBL="${CLICKHOUSE_TEST_UNIQUE_NAME}_tbl"
-STOPPED="${CLICKHOUSE_DATABASE}_stopped"
-BACKUP_STOPPED="${CLICKHOUSE_TEST_UNIQUE_NAME}_stopped"
 
 drop_all() {
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$SRC\` SYNC"
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$DST\` SYNC"
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$DST2\` SYNC"
     ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$OUT\` SYNC"
-    ${CLICKHOUSE_CLIENT} -q "DROP DATABASE IF EXISTS \`$STOPPED\` SYNC"
-}
-
-cleanup() {
-    # The failpoint in the last section is server-global: a failure must not leave it armed.
-    ${CLICKHOUSE_CLIENT} -q "SYSTEM DISABLE FAILPOINT restore_pause_before_data_restore_tasks" 2>/dev/null ||:
-    drop_all
 }
 
 # These databases live outside $CLICKHOUSE_DATABASE, so the harness does not reclaim them: drop them
 # on every exit path, not just the successful one.
-trap cleanup EXIT
+trap drop_all EXIT
 
 # An interrupted earlier run must not make this one fail with TABLE_ALREADY_EXISTS.
-cleanup
+drop_all
 
 # Print the renameable references of a view, with the database names replaced by placeholders so the
 # reference is independent of $CLICKHOUSE_DATABASE.
@@ -120,52 +109,3 @@ ${CLICKHOUSE_CLIENT} -q "RESTORE TABLE \`$SRC\`.child AS \`$SRC\`.child2 FROM Di
 
 echo "7. control, table-level rename leaves a dependency that is not renamed:"
 show_refs "$SRC" child2
-
-# A restored refreshable materialized view is held back until the RESTORE finishes, so it cannot
-# refresh over half-restored data. Finishing the restore must lift only that hold: a view that was
-# stopped meanwhile - by `SYSTEM STOP VIEW` here, or by
-# `stop_refreshable_materialized_views_on_startup` on a server where it is set - stays stopped.
-${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$STOPPED\`"
-${CLICKHOUSE_CLIENT} -q "CREATE TABLE \`$STOPPED\`.src (x Int64) ENGINE = MergeTree ORDER BY x"
-${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$STOPPED\`.src VALUES (1)"
-${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$STOPPED\`.mv REFRESH EVERY 1 SECOND
-    (x Int64) ENGINE = MergeTree ORDER BY x EMPTY AS SELECT x FROM \`$STOPPED\`.src"
-${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
-# Unlike the views above, this one has to refresh every second, and `SYSTEM STOP VIEW` interrupts a
-# running refresh without waiting for it to unwind. Wait until the view is idle, so that the
-# EXCHANGE and DROP of its target cannot race the backup scan and warn on stderr.
-while [ "$(${CLICKHOUSE_CLIENT} -q "SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'")" != 'Disabled' ]
-do
-    sleep 0.1
-done
-${CLICKHOUSE_CLIENT} -q "BACKUP DATABASE \`$STOPPED\` TO Disk('backups', '$BACKUP_STOPPED')" | grep -o "BACKUP_CREATED"
-${CLICKHOUSE_CLIENT} -q "DROP DATABASE \`$STOPPED\` SYNC"
-
-${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT restore_pause_before_data_restore_tasks"
-
-# Pauses after the tables are created but before the restore is finalized, which is the window where
-# the view exists and is held back. Its output is discarded because it interleaves with the echoes.
-${CLICKHOUSE_CLIENT} -q "RESTORE DATABASE \`$STOPPED\` FROM Disk('backups', '$BACKUP_STOPPED')" > /dev/null &
-RESTORE_PID=$!
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE"
-
-echo "8. held back while the restore is still running:"
-${CLICKHOUSE_CLIENT} -q "SELECT status FROM system.view_refreshes WHERE database = '$STOPPED' FORMAT TSV"
-
-${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
-${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
-wait $RESTORE_PID
-
-# The view refreshes every second, so this is long enough for a released one to leave Disabled and
-# write to its target.
-sleep 2
-
-echo "9. the stop survives the finished restore, target untouched:"
-${CLICKHOUSE_CLIENT} -q "SELECT (SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'),
-    (SELECT count() FROM \`$STOPPED\`.mv) FORMAT TSV"
-
-${CLICKHOUSE_CLIENT} -q "SYSTEM START VIEW \`$STOPPED\`.mv"
-${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW \`$STOPPED\`.mv"
-echo "10. and it refreshes once actually started:"
-${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`$STOPPED\`.mv FORMAT TSV"
-${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"

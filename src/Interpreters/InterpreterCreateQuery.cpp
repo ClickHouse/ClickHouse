@@ -25,7 +25,6 @@
 #include <Common/logger_useful.h>
 #include <Common/thread_local_rng.h>
 #include <Common/typeid_cast.h>
-#include <base/scope_guard.h>
 
 #include <Core/Defines.h>
 #include <Core/SettingsEnums.h>
@@ -3078,13 +3077,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         }
         renamed = true;
 
-        /// The replacement view's refresher was held back so it could not touch the target before the rename.
-        /// Release it once the replaced table is gone, even if that drop fails: the rename is committed by now.
-        SCOPE_EXIT({
-            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
-                task->finalizeCreateOrReplace();
-        });
-
         if (!is_plain_create && !interpreter_rename.renamedInsteadOfExchange())
         {
             /// After the exchange the temporary name holds the replaced table, which may be of a different
@@ -3096,6 +3088,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             auto drop_context = make_drop_context(/*bypass_size_guard=*/true);
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
+
+        /// The replacement view's refresher was created paused so it could not touch the target
+        /// before the rename, which resumed it, see `RefreshTask::rename`.
 
         scrub_temp_table_from_query_log();
 

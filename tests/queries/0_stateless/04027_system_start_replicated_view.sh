@@ -73,12 +73,12 @@ $CLICKHOUSE_CLIENT -q "select '<4: new rows>', count() > $cnt_before from ${db}.
 
 # ---------------------------------------------------------------------------
 # A refresh requested while the view is stopped cluster-wide stays deferred until
-# SYSTEM START REPLICATED VIEW, and then runs. This is the one stop that SYSTEM
-# REFRESH VIEW does not override - a local SYSTEM STOP VIEW it does.
+# `SYSTEM START REPLICATED VIEW`, and then runs. This is the one stop that
+# `SYSTEM REFRESH VIEW` does not override - a local `SYSTEM STOP VIEW` it does.
 # ---------------------------------------------------------------------------
 
-# APPEND, so the row count is the number of refreshes that ran, and EVERY 1 YEAR with
-# EMPTY so that nothing refreshes on its own while the test runs.
+# `APPEND`, so the row count is the number of refreshes that ran, and `EVERY 1 YEAR` with
+# `EMPTY` so that nothing refreshes on its own while the test runs.
 $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -nq "
     create materialized view ${db}.rmv2
         refresh every 1 year append

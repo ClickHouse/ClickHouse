@@ -627,7 +627,7 @@ def test_wait_view_reports_failed_refresh_on_stopped_replica(fn3_setup_tables):
     assert "boom" in str(exc.value)
 
     # node2 never ran the refresh and is stopped, but Keeper tells it the last attempt was a
-    # failed out-of-schedule refresh, so its WAIT VIEW must report the same failure.
+    # failed out-of-schedule refresh, so its `SYSTEM WAIT VIEW` must report the same failure.
     get_rmv_info(node2, "test_rmv", wait_status="Disabled")
     with pytest.raises(helpers.client.QueryRuntimeException) as exc:
         node2.query("SYSTEM WAIT VIEW test_rmv")
@@ -654,14 +654,14 @@ def test_wait_view_reports_manual_refresh_lost_with_its_replica(fn3_setup_tables
     )
     node.query(create_sql)
 
-    # node2 stays stopped: it is the replica that reconciles the lost attempt and answers WAIT VIEW.
+    # node2 stays stopped: it is the replica that reconciles the lost attempt and answers `SYSTEM WAIT VIEW`.
     node2.query("SYSTEM STOP VIEW test_rmv")
 
     killed = False
     try:
         node.query("SYSTEM REFRESH VIEW test_rmv")
         get_rmv_info(node, "test_rmv", wait_status="Running")
-        # Wait until node2 sees the refresh in flight, otherwise its WAIT VIEW could return before
+        # Wait until node2 sees the refresh in flight, otherwise its `SYSTEM WAIT VIEW` could return before
         # noticing the attempt at all.
         get_rmv_info(node2, "test_rmv", wait_status="RunningOnAnotherReplica")
 

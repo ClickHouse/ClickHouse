@@ -92,9 +92,8 @@ public:
         std::string last_attempt_replica;
         std::string last_attempt_error;
         bool last_attempt_succeeded = false;
-        /// Whether the last started attempt was an out-of-schedule refresh (`SYSTEM REFRESH VIEW`)
-        /// rather than a scheduled one. Kept in the znode so that `SYSTEM WAIT VIEW` on a stopped
-        /// view reports a failed hand-requested refresh on every replica, not just the one that ran it.
+        /// Whether the last attempt was a `SYSTEM REFRESH VIEW`: a stopped view reports only such a failure, and on every
+        /// replica, see `wait`.
         bool last_attempt_out_of_schedule = false;
         /// If an attempt is in progress, this contains error from the previous attempt.
         /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
@@ -165,8 +164,6 @@ public:
     /// Called at most once.
     void startup();
     void finalizeRestoreFromBackup();
-    /// Call after CREATE OR REPLACE committed the view under its final name. Lifts the refresh hold.
-    void finalizeCreateOrReplace();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
     /// Ok to call even if startup() wasn't called or failed.
@@ -186,11 +183,11 @@ public:
 
     /// Methods to pause/unpause refreshing on this replica or all replicas.
     /// The per-replica pause and global pause are two separate flags; if either of them is set,
-    /// no refreshes will run.
+    /// no scheduled refreshes will run, and the global one also holds back `SYSTEM REFRESH VIEW`.
     void start();
     void stop();
     /// Like `stop`, but does not interrupt the currently running refresh; only prevents future
-    /// refreshes from starting. Resumed by `start`.
+    /// scheduled refreshes from starting. Resumed by `start`.
     void pause();
     void startReplicated();
     void stopReplicated(const String & reason);
@@ -247,7 +244,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; pending `SYSTEM REFRESH VIEW`s made on that replica, counted in its data, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; counts the `SYSTEM REFRESH VIEW`s made on that replica not started yet, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -258,12 +255,11 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; a new czxid (re-created) or a lower count (partly consumed)
-        /// restarts the takeover clock, see `doScheduling`.
+        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; czxid tells a re-created znode apart, see `doScheduling`.
         struct PendingRequest
         {
             Int64 czxid = 0;
-            /// How many statements the znode stands for (its data), and the version to consume one against, see `run`.
+            /// How many statements the znode counts, and its version to consume one against, see `updateCoordinationState`.
             UInt64 count = 0;
             int32_t version = -1;
             std::optional<std::chrono::system_clock::time_point> pending_since {};
@@ -338,7 +334,6 @@ private:
         /// State of dependencies that was used for triggering this refresh.
         /// Should be writtent to zookeeper only if the refresh succeeds.
         AllDependenciesInfo dependencies;
-        bool out_of_schedule = false;
     };
 
     struct SchedulingState
@@ -346,10 +341,10 @@ private:
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
         /// We shouldn't start new scheduled refreshes, but pre-existing refresh attempt may keep going.
         bool stop_requested = false;
-        /// The view is not ready to refresh yet (restore from backup, CREATE OR REPLACE).
+        /// Held back even from `SYSTEM REFRESH VIEW`: an uncoordinated view restored from a backup, until
+        /// `finalizeRestoreFromBackup` or `start`.
         bool not_ready = false;
-        /// The table is shutting down (DROP/DETACH/server stop). Unlike `stop_requested`, blocks even
-        /// SYSTEM REFRESH VIEW, so a request racing with shutdown can't start a refresh.
+        /// Held back even from `SYSTEM REFRESH VIEW`, and nothing lifts it: `shutdown` began.
         bool shutdown_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
@@ -384,7 +379,7 @@ private:
     bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
-    const bool start_paused;
+    bool start_paused;
 
     RefreshSet::Handle set_handle;
 
@@ -466,7 +461,7 @@ private:
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
-    /// If `request_znode` is given, one request of that "requested-*" znode is consumed in the same multi by the started refresh.
+    /// If `request_znode` is given, the started refresh consumes one statement of that "requested-*" znode in the same multi.
     bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, const String & request_znode = {});
 
     /// Enter the permanent, non-resumable "coordination unavailable" state (sets
@@ -474,13 +469,12 @@ private:
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
 
-    /// Children of the coordination znode, one per replica with pending `SYSTEM REFRESH VIEW`s, see `run`.
+    /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
     static constexpr std::string_view request_znode_prefix = "requested-";
     String requestZnodeName() const { return String(request_znode_prefix) + coordination.replica_name; }
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);
-    void markReady();
     void interruptExecution();
     std::chrono::system_clock::time_point currentTime() const;
 

@@ -360,21 +360,16 @@ def test_takeover_waits_for_recreated_request(started_cluster, cleanup):
             assert time.monotonic() < deadline, status(node)
             time.sleep(0.1)
 
-    # The read-only replica cannot run its request, so a writable one takes it over after a Keeper session timeout. node2's
-    # first read of it fails and is retried 5 s later, so its takeover clock starts 5 s after node1's: node1 takes it over.
+    # The read-only replica cannot run its requests, so a writable one takes them over after a Keeper session timeout. node2's
+    # first read of them fails and is retried 5 s later, so its takeover clock starts 5 s after node1's: node1 takes the first
+    # one over. That re-creates the znode for the second one: a new request, so node2's clock must start over once nothing is
+    # running, instead of taking it over at once.
     fp = "refresh_mv_fail_znodes_read"
     node2.query(f"system enable failpoint {fp}")
-    reading_node.query("system refresh view re.a")
-    time.sleep(2)
-    node2.query(f"system disable failpoint {fp}")
-    wait_status(node2, lambda s: s == "Scheduled")
-    # From here node2 misses the window in which that request is consumed and a new one is made under the same znode
-    # name: a new request, so node2's clock must start over once nothing is running, instead of taking it over at once.
-    node2.query(f"system enable failpoint {fp}")
     try:
-        wait_status(node1, lambda s: s == "Running")
         reading_node.query("system refresh view re.a")
-        time.sleep(1)
+        reading_node.query("system refresh view re.a")
+        time.sleep(2)
     finally:
         node2.query(f"system disable failpoint {fp}")
     wait_status(node2, lambda s: s == "RunningOnAnotherReplica")
