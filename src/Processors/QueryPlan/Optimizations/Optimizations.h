@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <array>
+#include <expected>
 #include <unordered_map>
 
 class SipHash;
@@ -87,6 +88,9 @@ struct Optimization
         /// optimization when the plan is going to be distributed or serialized.
         bool make_distributed_plan = false;
         bool serialize_query_plan = false;
+        /// Plan-based parallel replicas also ships plan fragments to the replicas, so the same
+        /// optimizations have to be suppressed as for the two settings above.
+        bool enable_parallel_replicas = false;
         /// When short-circuit is off, a FilterStep still masks a throwing atom by splitting the AND into
         /// sequential filters. fuseFilterIntoArrayJoin can't reproduce that, so it won't fuse a multi-atom
         /// AND in this mode.
@@ -178,10 +182,6 @@ size_t tryMergeFilterIntoJoinCondition(QueryPlan::Node * parent_node, QueryPlan:
 /// May split ExpressionStep and lift up only a part of it.
 size_t tryExecuteFunctionsAfterSorting(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
 
-/// Utilize storage sorting when sorting for window functions.
-/// Update information about prefix sort description in SortingStep.
-size_t tryReuseStorageOrderingForWindowFunctions(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &);
-
 /// Remove redundant sorting
 void tryRemoveRedundantSorting(QueryPlan::Node * root);
 
@@ -239,7 +239,10 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
 
 inline const auto & getOptimizations()
 {
-    static const std::array<Optimization, 23> optimizations = {{
+    /// Deduce the size from the initializer: a hard-coded one silently value-initializes the
+    /// entries an edit leaves over, and `is_enabled` is then a null pointer-to-member that
+    /// `optimizeTreeFirstPass` dereferences for every query.
+    static const auto optimizations = std::to_array<Optimization>({
         /// Run first, before splitFilter/pushDownFilter/mergeFilterIntoJoinCondition, so the
         /// constant-false ON condition is still intact on the JoinStepLogical (those passes would
         /// otherwise lower it into a CROSS + Filter on one input and hide it from this optimization).
@@ -258,9 +261,6 @@ inline const auto & getOptimizations()
         {tryConvertOuterJoinToInnerJoin, "convertOuterJoinToInnerJoin", &QueryPlanOptimizationSettings::convert_outer_join_to_inner_join},
         {tryPushDownVolumeReducingFunction, "pushDownVolumeReducingFunction", &QueryPlanOptimizationSettings::push_down_volume_reducing_functions},
         {tryExecuteFunctionsAfterSorting, "liftUpFunctions", &QueryPlanOptimizationSettings::execute_functions_after_sorting},
-        {tryReuseStorageOrderingForWindowFunctions,
-         "reuseStorageOrderingForWindowFunctions",
-         &QueryPlanOptimizationSettings::reuse_storage_ordering_for_window_functions},
         {tryLiftUpUnion, "liftUpUnion", &QueryPlanOptimizationSettings::lift_up_union},
         {tryRemoveRedundantDistinct, "removeRedundantDistinct", &QueryPlanOptimizationSettings::remove_redundant_distinct},
         {tryUseVectorSearchWithVectorIndexFirstPass, "useVectorSearch", &QueryPlanOptimizationSettings::try_use_vector_search},
@@ -272,7 +272,7 @@ inline const auto & getOptimizations()
         {tryRemoveUnusedColumns, "removeUnusedColumns", &QueryPlanOptimizationSettings::remove_unused_columns},
         {tryOptimizeTopK, "tryOptimizeTopK", &QueryPlanOptimizationSettings::try_use_top_k_optimization},
         {tryTopKThroughJoin, "topKThroughJoin", &QueryPlanOptimizationSettings::top_k_through_join},
-    }};
+    });
 
     return optimizations;
 }
@@ -360,13 +360,18 @@ void applyOrder(const QueryPlanOptimizationSettings & optimization_settings, Que
 /// carry the same key value).
 void applyStreamDisjointness(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root);
 
-/// Returns the name of used projection or nullopt if no projection is used.
-std::optional<String> optimizeUseAggregateProjections(
+struct UseProjectionsResult
+{
+    std::optional<String> applied_projection;
+    std::unordered_map<String, String> projection_reject_reasons;
+};
+
+UseProjectionsResult optimizeUseAggregateProjections(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);
 
-std::optional<String> optimizeUseNormalProjections(
+UseProjectionsResult optimizeUseNormalProjections(
     Stack & stack,
     QueryPlan::Nodes & nodes,
     const QueryPlanOptimizationSettings & optimization_settings);

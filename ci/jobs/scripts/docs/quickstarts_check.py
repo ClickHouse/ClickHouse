@@ -840,7 +840,13 @@ def check_install_cloud_banners(docs_root: Path) -> list:
 
 
 def check_explorer_docs_links(docs_root: Path) -> list:
-    """Ensure explorer card anchors include `/docs` before hydration."""
+    """Ensure card anchors are left for Mintlify to resolve against `/docs`.
+
+    Mintlify applies the `/docs` base to anchors rendered by JSX components at
+    hydration, so a manually prefixed href renders as `/docs/docs/...`. The
+    assetBase helper must stay for static assets (images) and full-page
+    `window.location.assign` navigations, which Mintlify does not rewrite.
+    """
     errors = []
     for locale in [None, *LOCALES]:
         snippets_root = docs_root / "snippets"
@@ -862,8 +868,8 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                 / "components"
                 / "QuickStartsGrid"
                 / "QuickStartsGrid.jsx",
-                "href={withBase(quickStart.href)}",
                 "href={quickStart.href}",
+                "href={withBase(quickStart.href)}",
                 2,
             ),
             (
@@ -871,12 +877,12 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                 / "components"
                 / "SampleDatasetExplorer"
                 / "SampleDatasetExplorer.jsx",
-                "href={withBase(ds.href)}",
                 "href={ds.href}",
+                "href={withBase(ds.href)}",
                 1,
             ),
         ]
-        for path, resolved_anchor, raw_anchor, expected_count in components:
+        for path, expected_anchor, prefixed_anchor, expected_count in components:
             source = path.read_text(encoding="utf-8")
             name = path.relative_to(docs_root)
             if source.count(docs_base) != 1:
@@ -884,15 +890,17 @@ def check_explorer_docs_links(docs_root: Path) -> list:
                     f"{name}: assetBase must default to `/docs` during "
                     "server-side rendering"
                 )
-            if source.count(resolved_anchor) != expected_count:
+            if source.count(expected_anchor) != expected_count:
                 errors.append(
-                    f"{name}: expected {expected_count} server-rendered "
-                    "card anchor(s) resolved through withBase"
+                    f"{name}: expected {expected_count} card anchor(s) left "
+                    "unprefixed for Mintlify's base handling"
                 )
-            if raw_anchor in source:
+            if prefixed_anchor in source:
                 errors.append(
-                    f"{name}: raw card anchor {raw_anchor!r} bypasses the "
-                    "canonical `/docs` mount"
+                    f"{name}: card anchor {prefixed_anchor!r} is prefixed "
+                    "with withBase; Mintlify already applies the `/docs` "
+                    "base to card anchors at hydration, so a manual prefix "
+                    "produces `/docs/docs/...` links"
                 )
     return errors
 

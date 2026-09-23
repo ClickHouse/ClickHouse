@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +13,9 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -176,6 +181,39 @@ def send_test_data():
     send_data(
         [
             (
+                {"__name__": "stale_marker_metric"},
+                {
+                    100: 1,
+                    120: 2,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "ordinary_nan_metric"},
+                {
+                    140: float("nan"),
+                },
+            ),
+            (
+                {"__name__": "stale_collision_a", "job": "x"},
+                {
+                    120: 1,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_collision_b", "job": "x"},
+                {
+                    120: 2,
+                    140: 3,
+                },
+            ),
+        ]
+    )
+
+    send_data(
+        [
+            (
                 {"__name__": "timestamps", "job": "test"},
                 {
                     110: 1764498605,
@@ -277,6 +315,14 @@ def send_test_data():
             (
                 {"__name__": "bar", "shape": "rectangle", "size": "l"},
                 {110: 9, 130: 90},
+            ),
+            (
+                {"__name__": "large_values", "id": "a"},
+                {120: 1e155},
+            ),
+            (
+                {"__name__": "large_values", "id": "b"},
+                {120: 1e155},
             ),
         ]
     )
@@ -855,6 +901,67 @@ def test_instant_selectors():
     )
 
 
+def test_stale_markers():
+    # Before the marker, the instant selector returns the newest real sample.
+    do_query_test(
+        "stale_marker_metric",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [125, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:05.000", "2"]],
+    )
+
+    # A stale marker is the end of the series for instant-selector semantics.
+    do_query_test(
+        "stale_marker_metric",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # An ordinary NaN is still a real sample. Only Prometheus's exact stale payload is absent.
+    do_query_test(
+        "ordinary_nan_metric",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "ordinary_nan_metric"}, "value": [145, "NaN"]}]}',
+        [["[('__name__','ordinary_nan_metric')]", "1970-01-01 00:02:25.000", "nan"]],
+    )
+
+    # Downstream presence-based operators must see the stale selector as absent too.
+    do_query_test(
+        "count(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale row must not participate in duplicate detection after a function drops
+    # the metric name. Only the live series remains after both names collapse to {job="x"}.
+    do_query_test(
+        'abs({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "3"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", "3"]],
+    )
+
+    # Range selectors omit stale markers, so range functions can still see older real samples.
+    do_query_test(
+        "last_over_time(stale_marker_metric[1m])",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [145, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:25.000", "2"]],
+    )
+
+    # In a range query, evaluation steps at and after the stale marker are absent.
+    do_range_query_test(
+        "stale_marker_metric",
+        100,
+        160,
+        20,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_marker_metric"}, "values": [[100, "1"], [120, "2"]]}]}',
+        [["[('__name__','stale_marker_metric')]", "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:00.000',2)]"]],
+    )
+
+
 def test_function_over_time():
     # last_over_time
     do_query_test(
@@ -1039,6 +1146,13 @@ def test_function_over_time():
         ],
     )
 
+    do_query_test(
+        "changes(vector(NaN)[80:10])",
+        180,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [180, "0"]}]}',
+        [["[]", "1970-01-01 00:03:00.000", 0]],
+    )
+
     # changes: `resets` also counts decreases as changes, unlike `resets()` below.
     do_query_test(
         "changes(resets[45s])[120s:15s]",
@@ -1187,6 +1301,185 @@ def test_function_over_time():
         210,
         '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "200"]}]}',
         [["[('job','test')]", "1970-01-01 00:03:30.000", 200]],
+    )
+
+    # first_over_time: the earliest sample of each window, e.g. at 165 the window (120, 165] holds 3@130 and 4@140.
+    # Like last_over_time, it keeps the metric name.
+    do_query_test(
+        "first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "3"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',3),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # first_over_time on `resets`, which decreases within windows, so the first sample differs from
+    # the minimum and the maximum; all the tags are kept.
+    do_query_test(
+        "first_over_time(resets[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "resets", "job": "test"}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "8"], [180, "2"], [195, "10"], [210, "10"]]}]}',
+        [
+            [
+                "[('__name__','resets'),('job','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',8),('1970-01-01 00:03:00.000',2),('1970-01-01 00:03:15.000',10),('1970-01-01 00:03:30.000',10)]",
+            ]
+        ],
+    )
+
+    # step (15s) > window (10s): the sample at 140 is outside grid point 150's window (140, 150], so 150 must be empty.
+    do_query_test(
+        "first_over_time(test[10s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "test"}, "values": [[120, "1"], [135, "3"], [195, "5"], [210, "8"]]}]}',
+        [
+            [
+                "[('__name__','test')]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',3),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',8)]",
+            ]
+        ],
+    )
+
+    # ts_of_first_over_time: the timestamp of the earliest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_first_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "110"], [135, "110"], [150, "110"], [165, "130"], [180, "140"], [195, "190"], [210, "190"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',110),('1970-01-01 00:02:15.000',110),('1970-01-01 00:02:30.000',110),('1970-01-01 00:02:45.000',130),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',190)]",
+            ]
+        ],
+    )
+
+    # ts_of_last_over_time: the timestamp of the latest sample of each window; the metric name is dropped.
+    do_query_test(
+        "ts_of_last_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "120"], [135, "130"], [150, "140"], [165, "140"], [180, "140"], [195, "190"], [210, "210"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',120),('1970-01-01 00:02:15.000',130),('1970-01-01 00:02:30.000',140),('1970-01-01 00:02:45.000',140),('1970-01-01 00:03:00.000',140),('1970-01-01 00:03:15.000',190),('1970-01-01 00:03:30.000',210)]",
+            ]
+        ],
+    )
+
+    # Instant queries: the window (165, 210] of `test` holds 5@190, 5@200, 8@210, the same window of `resets`
+    # holds 10@190, 3@200, 9@210.
+    do_query_test(
+        "first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "resets", "job": "test"}, "value": [210, "10"]}]}',
+        [["[('__name__','resets'),('job','test')]", "1970-01-01 00:03:30.000", 10]],
+    )
+
+    do_query_test(
+        "ts_of_first_over_time(resets[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {"job": "test"}, "value": [210, "190"]}]}',
+        [["[('job','test')]", "1970-01-01 00:03:30.000", 190]],
+    )
+
+    do_query_test(
+        "ts_of_last_over_time(test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "210"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 210]],
+    )
+
+    # present_over_time: 1 wherever the window has a sample; the metric name is dropped.
+    do_query_test(
+        "present_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "1"], [165, "1"], [180, "1"], [195, "1"], [210, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',1),('1970-01-01 00:02:45.000',1),('1970-01-01 00:03:00.000',1),('1970-01-01 00:03:15.000',1),('1970-01-01 00:03:30.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time: the first sample is at 110, so only the first grid point (105) has an
+    # empty window (60, 105] and yields the synthetic 1.
+    do_query_test(
+        "absent_over_time(test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[105, "1"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:01:45.000',1)]",
+            ]
+        ],
+    )
+
+    # absent_over_time never infers labels from a subquery, even a selector-backed one:
+    # Prometheus derives them from a vector/matrix selector only, so job="api" is not copied.
+    do_query_test(
+        'absent_over_time(nonexistent_metric_name{job="api"}[45s:15s])',
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "1"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", 1]],
+    )
+
+    # quantile_over_time with interpolation: at 150 the window holds {1,1,3,4} -> 2,
+    # at 165 it holds {3,4} -> 3.5.
+    do_query_test(
+        "quantile_over_time(0.5, test[45s])[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "1"], [150, "2"], [165, "3.5"], [180, "4"], [195, "5"], [210, "5"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',1),('1970-01-01 00:02:30.000',2),('1970-01-01 00:02:45.000',3.5),('1970-01-01 00:03:00.000',4),('1970-01-01 00:03:15.000',5),('1970-01-01 00:03:30.000',5)]",
+            ]
+        ],
+    )
+
+    # A level above 1 gives +Inf, a level below 0 gives -Inf and a NaN level gives NaN at every point whose
+    # window has samples, as in Prometheus.
+    do_query_test(
+        "quantile_over_time(2, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "+Inf"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(-1, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "-Inf"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "-inf"]],
+    )
+
+    do_query_test(
+        "quantile_over_time(NaN, test[45s])",
+        210,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [210, "NaN"]}]}',
+        [["[]", "1970-01-01 00:03:30.000", "nan"]],
+    )
+
+    # predict_linear over 2-3 sample windows with exact slopes; windows with fewer than
+    # two samples (165, 180 after the left-open cut, and 195) yield nothing. The regression
+    # arithmetic carries float noise (12.000000000000002), hence the epsilon.
+    do_query_test(
+        "predict_linear(test[25s], 30)[120s:15s]",
+        210,
+        '{"resultType": "matrix", "result": [{"metric": {}, "values": [[120, "1"], [135, "10"], [150, "8"], [210, "12"]]}]}',
+        [
+            [
+                "[]",
+                "[('1970-01-01 00:02:00.000',1),('1970-01-01 00:02:15.000',10),('1970-01-01 00:02:30.000',8),('1970-01-01 00:03:30.000',12)]",
+            ]
+        ],
+        eps=1e-9,
     )
 
 
@@ -1840,7 +2133,7 @@ def test_date_time_functions():
 # `vector(scalar(vector(time())))` below.)
 def test_date_time_functions_zero_arg_with_float32_scalar():
     node.query(
-        "CREATE TABLE prometheus_f32 (time_series Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+        "CREATE TABLE prometheus_f32 (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
     )
 
     try:
@@ -1921,6 +2214,54 @@ def test_date_time_functions_zero_arg_with_float32_scalar():
         )
     finally:
         node.query("DROP TABLE prometheus_f32 SYNC")
+
+
+# `predict_linear` and `quantile_over_time` accept a scalar argument that varies with the evaluation time (such as
+# `time()` in a range query). Such a scalar is carried as an array of one value per evaluation step, typed after the
+# TimeSeries table's value type, so on a Float32 table it is an Array(Float32).
+def test_range_functions_with_varying_scalar_on_float32_table():
+    node.query(
+        "CREATE TABLE prometheus_f32_range (samples Array(Tuple(DateTime64(3), Float32))) ENGINE=TimeSeries"
+    )
+
+    try:
+        # Series `m` rises by 1 per second: 10 at t=100, 20 at t=110, 30 at t=120.
+        # Series `q` carries the quantile level to use at each evaluation step: 0 at t=110 and 1 at t=120.
+        node.query(
+            "INSERT INTO prometheus_f32_range (metric_name, tags, samples) VALUES "
+            "('m', map('host', 'h1'), [(toDateTime64(100, 3), 10), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 30)]), "
+            "('q', map('host', 'h1'), [(toDateTime64(110, 3), 0), (toDateTime64(120, 3), 1)])"
+        )
+
+        # The prediction horizon is the evaluation time itself, so the predicted values are the fitted value at
+        # t=110 plus 110 seconds of growth (20 + 110) and the fitted value at t=120 plus 120 seconds (30 + 120).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'predict_linear(m[30], time())', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',130),('1970-01-01 00:02:00.000',150)]",
+                ]
+            ],
+        )
+
+        # The quantile level is 0 at the first evaluation step and 1 at the second one, so the results are the
+        # smallest value in the first window (10) and the greatest value in the second one (30).
+        assert tsv_close_to(
+            node.query(
+                "SELECT * FROM prometheusQueryRange(prometheus_f32_range, 'quantile_over_time(scalar(q), m[30])', 110, 120, 10)"
+            ),
+            [
+                [
+                    "[('host','h1')]",
+                    "[('1970-01-01 00:01:50.000',10),('1970-01-01 00:02:00.000',30)]",
+                ]
+            ],
+        )
+    finally:
+        node.query("DROP TABLE prometheus_f32_range SYNC")
 
 
 def test_math_functions():
@@ -4082,7 +4423,7 @@ def test_aggregation_operator_count_values():
     # The sample value is part of the grouping key and therefore changes from one
     # grid point to another. This exercises unroll, regroup, and sparse repacking.
     do_query_test(
-        'count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100)[50:10]',
+        'count_values("value", round(last_over_time(bar[10]), 100))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"value": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"value": "100"}, "values": [[130, "2"]]}, {"metric": {"value": "1000"}, "values": [[150, "1"]]}, {"metric": {"value": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -4099,7 +4440,7 @@ def test_aggregation_operator_count_values():
     # The destination label is set before `by`, so it overwrites an input label
     # with the same name and is then used as the value bucket.
     do_query_test(
-        '(count_values("shape", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (shape))[50:10]',
+        '(count_values("shape", round(last_over_time(bar[10]), 100)) by (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"shape": "0"}, "values": [[110, "4"], [120, "2"], [150, "1"]]}, {"metric": {"shape": "100"}, "values": [[130, "2"]]}, {"metric": {"shape": "1000"}, "values": [[150, "1"]]}, {"metric": {"shape": "700"}, "values": [[140, "1"]]}]}',
         [
@@ -4115,7 +4456,7 @@ def test_aggregation_operator_count_values():
 
     # Independent `by` labels are retained alongside the changing value label.
     do_query_test(
-        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        '(count_values("value", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4171,7 +4512,7 @@ def test_aggregation_operator_count_values():
     # `without` removes only the listed labels and `__name__`, so a destination label
     # which is neither is kept and the result matches the `by (size)` form above.
     do_query_test(
-        '(count_values("value", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        '(count_values("value", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l", "value": "0"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"size": "l", "value": "100"}, "values": [[130, "2"]]}, {"metric": {"size": "l", "value": "1000"}, "values": [[150, "1"]]}, {"metric": {"size": "s", "value": "0"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"size": "s", "value": "700"}, "values": [[140, "1"]]}, {"metric": {"size": "xl", "value": "0"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4262,7 +4603,7 @@ def test_aggregation_operator_count_values():
     # `by` implicitly keeps the destination label, so `__name__` stays in the result
     # and every distinct value remains its own bucket.
     do_query_test(
-        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) by (size))[50:10]',
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) by (size))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"__name__": "0", "size": "l"}, "values": [[110, "2"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "s"}, "values": [[110, "1"], [120, "1"]]}, {"metric": {"__name__": "0", "size": "xl"}, "values": [[110, "1"], [150, "1"]]}, {"metric": {"__name__": "100", "size": "l"}, "values": [[130, "2"]]}, {"metric": {"__name__": "1000", "size": "l"}, "values": [[150, "1"]]}, {"metric": {"__name__": "700", "size": "s"}, "values": [[140, "1"]]}]}',
         [
@@ -4296,7 +4637,7 @@ def test_aggregation_operator_count_values():
     # `without` always removes `__name__`, including when it is the destination label,
     # so the value buckets collapse into one count per remaining label set.
     do_query_test(
-        '(count_values("__name__", floor((last_over_time(bar[10]) + 50) / 100) * 100) without (shape))[50:10]',
+        '(count_values("__name__", round(last_over_time(bar[10]), 100)) without (shape))[50:10]',
         150,
         '{"resultType": "matrix", "result": [{"metric": {"size": "l"}, "values": [[110, "2"], [120, "1"], [130, "2"], [150, "1"]]}, {"metric": {"size": "s"}, "values": [[110, "1"], [120, "1"], [140, "1"]]}, {"metric": {"size": "xl"}, "values": [[110, "1"], [150, "1"]]}]}',
         [
@@ -4434,6 +4775,21 @@ def test_aggregation_operators():
         '{"resultType": "matrix", "result": [{"metric": {}, "values": [[110, "7.25"], [120, "144"], [130, "400"], [140, "0"], [150, "235225"]]}]}',
         [["[]", "[('1970-01-01 00:01:50.000',7.25),('1970-01-01 00:02:00.000',144),('1970-01-01 00:02:10.000',400),('1970-01-01 00:02:20.000',0),('1970-01-01 00:02:30.000',235225)]"]],
         eps=1e-9,
+    )
+
+    # Squaring these equal finite values overflows Float64, but their variance is zero.
+    do_query_test(
+        "stddev(large_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 0]],
+    )
+
+    do_query_test(
+        "stdvar(large_values)",
+        120,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [120, "0"]}]}',
+        [["[]", "1970-01-01 00:02:00.000", 0]],
     )
 
     # FIXME: Not deterministic without sort_by_label(), and function sort_by_label() is not implemented yet.
