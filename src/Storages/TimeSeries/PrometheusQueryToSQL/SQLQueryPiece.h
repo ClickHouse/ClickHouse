@@ -24,19 +24,32 @@ enum class StoreMethod
     /// Can be used only with type ResultType::STRING.
     CONST_STRING,
 
-    /// A single scalar is stored in one row and one column named `value` (floating-point).
+    /// A single scalar is stored in one row and one column named `value` (Float64).
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     SINGLE_SCALAR,
 
-    /// One row with a `values` array (floating-point) aligned to the time grid; produced by scalar-returning functions like scalar.
+    /// Data are stored in one row and one column named `values` (Array(Float64)).
+    /// The values are aligned to the time grid.
+    /// SCALAR_GRID is produced by functions returning a scalar, for example scalar().
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     SCALAR_GRID,
 
-    /// Columns `group` (UInt64), `values` (array of nullable floating-point values) aligned to the time grid; each `group` appears once.
-    /// Produced by functions like last_over_time or rate. Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
+    /// Data are stored in two columns:
+    /// - `group` (UInt64),
+    /// - `values` (Array(Nullable(Float64))).
+    /// Values of each row are aligned to the time grid. Each value of `group` can appear only once in the output.
+    /// VECTOR_GRID is produced by functions like last_over_time() or rate() in a prometheus query.
+    /// Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     VECTOR_GRID,
 
-    /// Columns `group` (UInt64), `timestamp` (timestamp_data_type), `value` (scalar_data_type); produced by selectors.
+    /// Data are stored in three columns:
+    /// - `group` (UInt64),
+    /// - `timestamp` (the type of the timestamps in the TimeSeries table,
+    ///   or `ConverterContext::result_timestamp_type` after applying an offset),
+    /// - `value` (Float64 or Float32, the type of the values in the table).
+    /// The columns keep the types they have in the table because raw data can be big: the aggregate functions accept
+    /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
+    /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,
 
@@ -64,8 +77,11 @@ struct SQLQueryPiece
     /// Operators and functions drop the metric name, i.e. the tag named '__name__.
     bool metric_name_dropped = false;
 
-    /// `start_time`, `end_time`, `step` are used only for [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID, HISTOGRAM_GRID]
-    /// (for CONST_STRING `start_time` equals `end_time`); unused for RAW_DATA and HISTOGRAM_RAW_DATA.
+    /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
+    /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID, HISTOGRAM_GRID].
+    /// They use the scale `ConverterContext::result_timestamp_scale`.
+    /// If `store_method` is CONST_STRING then `start_time` is always equal to `end_time`.
+    /// If `store_method` is RAW_DATA or HISTOGRAM_RAW_DATA then these fields are not used.
     TimestampType start_time = {};
     TimestampType end_time = {};
     DurationType step = {};
@@ -76,8 +92,16 @@ struct SQLQueryPiece
     /// `string_value` is used only if `store_method` is CONST_STRING.
     String string_value;
 
-    /// `select_query` is used only for [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA, HISTOGRAM_RAW_DATA, HISTOGRAM_GRID].
-    /// It outputs the columns documented per store method in StoreMethod; unused for CONST_SCALAR and CONST_STRING.
+    /// `select_query` is used only if `store_method` is one of
+    /// [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA, HISTOGRAM_RAW_DATA, HISTOGRAM_GRID].
+    /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (Float64) with a single row.
+    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Float64)) with a single row.
+    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(Float64))).
+    /// If `store_method` is RAW_DATA then the SELECT query outputs three columns `group` (UInt64), `timestamp`, `value`
+    /// (see the comment for StoreMethod::RAW_DATA for their types).
+    /// If `store_method` is HISTOGRAM_RAW_DATA or HISTOGRAM_GRID then the SELECT query outputs the columns documented
+    /// for them in StoreMethod.
+    /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;
 };
 

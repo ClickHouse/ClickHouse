@@ -81,7 +81,7 @@ namespace
         {
             case StoreMethod::CONST_SCALAR:
             {
-                scalar_value = timeSeriesScalarToAST(scalar_argument.scalar_value, context.scalar_data_type);
+                scalar_value = timeSeriesScalarToAST(scalar_argument.scalar_value);
                 break;
             }
             case StoreMethod::SINGLE_SCALAR:
