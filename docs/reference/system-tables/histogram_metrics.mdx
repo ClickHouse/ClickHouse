@@ -28,7 +28,7 @@ This table contains histogram metrics that can be calculated instantly and expor
 | `keeper_write_commit_time_milliseconds_bucket` | Time to process a write request after Raft commit, in milliseconds. |
 | `keeper_dispatcher_responses_queue_time_milliseconds_bucket` | Time a response spends in the Keeper dispatcher responses queue, in milliseconds. |
 | `keeper_send_response_time_milliseconds_bucket` | Time to send a response to the client in the Keeper TCP handler (includes queueing and writing to socket), in milliseconds. |
-| `keeper_read_wait_for_write_time_milliseconds_bucket` | Time a read request spends queued behind an in-flight request batch before it is executed, in milliseconds. |
+| `keeper_read_wait_for_write_time_milliseconds_bucket` | Time a read request waits for the write request it depends on to complete, in milliseconds. |
 | `keeper_read_process_time_milliseconds_bucket` | Time to process a read request in Keeper, in milliseconds. |
 | `keeper_batch_size_elements_bucket` | Batch size sent to Raft, in elements. |
 | `keeper_batch_size_bytes_bucket` | Batch size sent to Raft, in bytes. |
