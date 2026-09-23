@@ -93,7 +93,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool fsync_metadata;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool show_data_lake_catalogs_in_system_tables;
     extern const SettingsBool show_remote_databases_in_system_tables;
 }
@@ -484,7 +483,6 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
         return {};
     }
 
-    bool analyzer = context_->getSettingsRef()[Setting::allow_experimental_analyzer];
     if (table_id.hasUUID())
     {
         /// Shortcut for tables which have persistent UUID
@@ -514,8 +512,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
             }
             return {};
         }
-        /// In old analyzer resolving done in multiple places, so we ignore TABLE_UUID_MISMATCH error.
-        else if (analyzer)
+        else
         {
             const auto & table_storage_id = db_and_table.second->getStorageID();
             if (db_and_table.first->getDatabaseName() != table_id.database_name ||
