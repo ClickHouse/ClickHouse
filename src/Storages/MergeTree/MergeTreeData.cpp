@@ -6334,6 +6334,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         auto new_changes = new_metadata.settings_changes->as<const ASTSetQuery &>().changes;
 
         /// The registrations keep a newly defined disk alive for as long as the checks below need it.
+        /// A disk that no table uses yet is therefore created here, released at the end of the checks,
+        /// and created again by `changeSettings`, which is like detaching and attaching it. Changing the
+        /// disk of a table is rare enough to accept that instead of carrying the registration over from
+        /// the check to the actual `ALTER`, which may not even follow.
         auto current_disk_registration
             = MergeTreeSettings::resolveDiskSetting(current_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         auto new_disk_registration
