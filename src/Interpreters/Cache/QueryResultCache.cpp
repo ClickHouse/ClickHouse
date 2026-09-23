@@ -445,11 +445,12 @@ IASTHash calculateASTHash(ASTPtr ast, const CurrentDatabaseInfo & current_databa
 
     /// Also hash the database specified via SQL `USE db`, otherwise identifiers in same query (AST) may mean different columns in different
     /// tables (issue #64136)
-    hash.update(current_database.database);
+    hash.update(current_database.getDatabasePart());
 
     //// Same for the `USE db.namespace` prefix, the size first keeps (database, prefix) unambiguous
-    hash.update(current_database.table_prefix.size());
-    hash.update(current_database.table_prefix);
+    const auto table_prefix = current_database.getTablePrefixPart();
+    hash.update(table_prefix.size());
+    hash.update(table_prefix);
 
     /// Finally, hash the (changed) settings as they might affect the query result (e.g. think of settings `additional_table_filters` and `limit`).
     /// Note: allChanged() returns the settings in random order. Also, update()-s of the composite hash must be done in deterministic order.

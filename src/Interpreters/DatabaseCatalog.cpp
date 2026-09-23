@@ -491,7 +491,7 @@ DatabaseAndTable DatabaseCatalog::getTableImpl(
     const StorageID table_id
         = (table_id_.database_name.find('.') != String::npos
            && context_->getSettingsRef()[Setting::allow_experimental_table_namespaces])
-        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabaseInfo(), exception)
+        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabase(), exception)
         : table_id_;
     if (!table_id)
         return {};
@@ -680,29 +680,29 @@ bool DatabaseCatalog::isPredefinedTable(const StorageID & table_id) const
 CurrentDatabaseInfo DatabaseCatalog::splitTablePrefixFromDatabaseName(const String & name) const
 {
     /// dot-less names (the overwhelmingly common case) cost nothing
-    const auto dot = name.find('.');
-    if (dot == 0 || dot == String::npos)
-        return {name, ""};
+    CurrentDatabaseInfo info(name);
+    if (!info.hasTablePrefix())
+        return info;
 
+    /// an existing dotted database always wins, quoting makes the name one literal component
     if (isDatabaseExist(name))
-        return {name, ""};
+        return CurrentDatabaseInfo(doubleQuoteString(name));
 
-    const String database_name = name.substr(0, dot);
-    auto database = tryGetDatabase(database_name);
+    auto database = tryGetDatabase(info.getDatabasePart());
     if (!database || database->getTableNamespaceSupport() == TableNamespaceSupport::None)
-        return {name, ""};
+        return CurrentDatabaseInfo(doubleQuoteString(name));
 
-    return {database_name, name.substr(dot + 1)};
+    return info;
 }
 
 StorageID DatabaseCatalog::foldNamespaceIntoTableName(
     StorageID storage_id, const CurrentDatabaseInfo & current_database_info, std::optional<Exception> * exception)
 {
     const auto & info = current_database_info;
-    if (storage_id.hasUUID() || info.table_prefix.empty())
+    if (storage_id.hasUUID() || !info.hasTablePrefix())
         return storage_id;
 
-    if (storage_id.database_name != info.database + "." + info.table_prefix)
+    if (storage_id.database_name != info.getFullName())
         return storage_id;
 
     /// a dot inside the name would be indistinguishable from a deeper path
@@ -711,16 +711,16 @@ StorageID DatabaseCatalog::foldNamespaceIntoTableName(
         auto error = Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table name {} contains a dot and cannot be resolved inside namespace {}; "
             "select the database with USE {} and use a fully qualified name",
-            backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(info.table_prefix),
-            backQuoteIfNeed(info.database));
+            backQuoteIfNeed(storage_id.table_name), backQuoteIfNeed(info.getTablePrefixPart()),
+            backQuoteIfNeed(info.getDatabasePart()));
         if (!exception)
             throw std::move(error);
         exception->emplace(std::move(error));
         return StorageID::createEmpty();
     }
 
-    storage_id.database_name = info.database;
-    storage_id.table_name = info.table_prefix + "." + storage_id.table_name;
+    storage_id.database_name = info.getDatabasePart();
+    storage_id.table_name = String(info.getTablePrefixPart()) + "." + storage_id.table_name;
     return storage_id;
 }
 
@@ -1081,7 +1081,7 @@ bool DatabaseCatalog::isTableExist(const DB::StorageID & table_id_, ContextPtr c
     const StorageID table_id
         = (table_id_.database_name.find('.') != String::npos
            && context_->getSettingsRef()[Setting::allow_experimental_table_namespaces])
-        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabaseInfo(), &fold_exception)
+        ? foldNamespaceIntoTableName(table_id_, context_->getCurrentDatabase(), &fold_exception)
         : table_id_;
     if (!table_id)
         return false;

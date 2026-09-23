@@ -902,8 +902,8 @@ bool ContextAccess::checkAccessImpl(const ContextPtr & context, const AccessFlag
         {
             if (context && params.current_database.find('.') != String::npos)
             {
-                const auto info = context->getCurrentDatabaseInfo();
-                if (!info.table_prefix.empty() && params.current_database == info.database + "." + info.table_prefix)
+                const auto info = context->getCurrentDatabase();
+                if (info.hasTablePrefix() && params.current_database == info.getFullName())
                     return checkAccessImplWithTablePrefix<throw_if_denied, grant_option, wildcard>(context, flags, info, args...);
             }
         }
@@ -917,9 +917,9 @@ bool ContextAccess::checkAccessImplWithTablePrefix(
     const ContextPtr & context, const AccessFlags & flags, const CurrentDatabaseInfo & database_info,
     std::string_view table, const Args &... args) const
 {
-    const String prefixed_table = database_info.table_prefix + "." + String(table);
+    const String prefixed_table = String(database_info.getTablePrefixPart()) + "." + String(table);
     return checkAccessImplHelper<throw_if_denied, grant_option, wildcard>(
-        context, flags, std::string_view{database_info.database}, std::string_view{prefixed_table}, args...);
+        context, flags, database_info.getDatabasePart(), std::string_view{prefixed_table}, args...);
 }
 
 template <bool throw_if_denied, bool grant_option, bool wildcard>
