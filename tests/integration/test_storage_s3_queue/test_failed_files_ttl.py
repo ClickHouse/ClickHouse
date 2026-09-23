@@ -1,10 +1,22 @@
 import logging
 import time
+import re
+import json
+import threading
 import uuid
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
+
+def _plant_retriable_markers(zk, failed_path, count):
+    planted = []
+    for i in range(count):
+        node_path = f"{failed_path}/dummy_retriable_{i}"
+        zk.create(node_path, b"", makepath=True)
+        planted.append(node_path)
+    return planted
+
 from helpers.s3_queue_common import (
     generate_random_files,
     put_s3_file_content,
