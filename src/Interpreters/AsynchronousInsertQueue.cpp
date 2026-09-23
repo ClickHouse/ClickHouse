@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
+    extern const Event AsyncInsertFlush;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -89,6 +90,8 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_columns_to_read;
@@ -109,6 +112,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
     extern const int USER_EXPIRED;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 static const NameSet settings_to_skip
@@ -132,7 +136,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
-    , query_str(query->formatWithSecretsOneLine())
+    , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
     , external_roles(external_roles_)
@@ -209,7 +213,7 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
 {
     query = other.query->clone();
-    query_str = other.query_str;
+    query_str_with_secrets = other.query_str_with_secrets;
     user_id = other.user_id;
     current_roles = other.current_roles;
     external_roles = other.external_roles;
@@ -230,7 +234,7 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
     if (this != &other)
     {
         query = other.query->clone();
-        query_str = other.query_str;
+        query_str_with_secrets = other.query_str_with_secrets;
         user_id = other.user_id;
         current_roles = other.current_roles;
         external_roles = other.external_roles;
@@ -602,6 +606,20 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
+
+    /// A non-parallel quorum insert permits a single in-flight quorum part per table, which an
+    /// asynchronous insert - a flush writing the data of several queries at once - cannot honour.
+    /// The check belongs here rather than at one of the call sites: an `INSERT` with inlined data
+    /// arrives through `executeQuery`, while one whose data is sent as blocks over the native
+    /// protocol arrives straight from `TCPHandler`, and only the former used to be checked - the
+    /// latter reached `ReplicatedMergeTreeSink` and failed there with a `LOGICAL_ERROR`.
+    auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
+    if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_PARAMETER,
+            "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum "
+            "or set insert_quorum_parallel=1 or do not use async inserts");
+
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
@@ -1173,6 +1191,10 @@ try
     else
         query_scope = QueryScope::create(insert_context);
 
+    /// Count the flush inside its own query scope, so that it lands on the same
+    /// `system.query_log` row as the rest of the flush accounting, whatever triggered it.
+    ProfileEvents::increment(ProfileEvents::AsyncInsertFlush);
+
     LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
     LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
 
@@ -1264,10 +1286,7 @@ try
             return it->second;
         };
 
-        if (entry->chunk.getDataKind() == AsynchronousInsertQueueDataKind::Parsed)
-            elem.query_for_logging = key.query_str;
-        else
-            elem.query_for_logging = get_query_by_format(entry->format);
+        elem.query_for_logging = get_query_by_format(entry->format);
 
         if (is_flush_error)
         {
