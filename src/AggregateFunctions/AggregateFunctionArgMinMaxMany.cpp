@@ -37,7 +37,7 @@ constexpr UInt64 aggregate_function_arg_min_max_many_max_element_size = 0xFFFFFF
 /// while a typed column round-trips all of them exactly, like `argMin`/`argMax` do.
 struct Entry
 {
-    size_t arg_index;
+    size_t arg_index = 0;
     Field val;
 };
 
