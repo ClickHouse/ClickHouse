@@ -574,13 +574,6 @@ private:
         size_t max_block_size,
         size_t num_streams);
 
-    void readParallelReplicasImpl(
-        QueryPlan & query_plan,
-        const Names & column_names,
-        SelectQueryInfo & query_info,
-        ContextPtr local_context,
-        QueryProcessingStage::Enum processed_stage);
-
     template <class Func>
     void foreachActiveParts(Func && func, bool select_sequential_consistency) const;
 

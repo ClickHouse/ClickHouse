@@ -294,11 +294,24 @@ void StorageAlias::truncate(
     const ASTPtr & query,
     const StorageMetadataPtr & /*metadata_snapshot*/,
     ContextPtr local_context,
-    TableExclusiveLockHolder & table_lock_holder)
+    TableExclusiveLockHolder & /*table_lock_holder*/)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::TRUNCATE});
+
+    /// The target is what executes the truncate, so it carries the lock its own engine needs, and the
+    /// caller's holder is the alias's, not the target's. A MergeTree removes its data under its own
+    /// locks; every other engine needs its readers excluded while its data goes away.
+    TableExclusiveLockHolder target_excl_lock;
+    TableLockHolder target_shared_lock;
+    if (target_storage->isMergeTree())
+        target_shared_lock = target_storage->lockForShare(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    else
+        target_excl_lock = target_storage->lockExclusively(
+            local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
     auto target_metadata = target_storage->getInMemoryMetadataPtr(local_context, false);
-    target_storage->truncate(query, target_metadata, local_context, table_lock_holder);
+    target_storage->truncate(query, target_metadata, local_context, target_excl_lock);
 }
 
 bool StorageAlias::optimize(
@@ -429,12 +442,19 @@ std::optional<QueryPipeline> StorageAlias::distributedWrite(const ASTInsertQuery
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshot(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshot(metadata_snapshot, query_context);
+    /// Bind the target to a named local so that one owning pointer spans both calls, and hand it to the
+    /// snapshot: getTargetTable resolves through DatabaseCatalog and returns a temporary, while our
+    /// caller owns and share-locks this alias rather than the target the snapshot refers to.
+    StoragePtr target = getTargetTable();
+    auto snapshot = target->getStorageSnapshot(metadata_snapshot, query_context);
+    return snapshot->withStorageHolder(std::move(target));
 }
 
 StorageSnapshotPtr StorageAlias::getStorageSnapshotWithoutData(const StorageMetadataPtr & metadata_snapshot, ContextPtr query_context) const
 {
-    return getTargetTable()->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    StoragePtr target = getTargetTable();
+    auto snapshot = target->getStorageSnapshotWithoutData(metadata_snapshot, query_context);
+    return snapshot->withStorageHolder(std::move(target));
 }
 
 bool StorageAlias::supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const

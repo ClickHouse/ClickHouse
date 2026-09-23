@@ -150,8 +150,14 @@ public:
     DataPartsAnyLock(const DataPartsAnyLock &) = delete;
     DataPartsAnyLock(DataPartsAnyLock &&) = delete;
 
-    DataPartsAnyLock(const DataPartsLock &) noexcept {} // NOLINT(google-explicit-constructor)
-    DataPartsAnyLock(const DataPartsSharedLock &) noexcept {} // NOLINT(google-explicit-constructor)
+    DataPartsAnyLock(const DataPartsLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
+        : held_lock(&lock) {}
+    DataPartsAnyLock(const DataPartsSharedLock & lock [[clang::lifetimebound]]) noexcept // NOLINT(google-explicit-constructor)
+        : held_lock(&lock) {}
+
+private:
+    /// The lock this token was built from, never dereferenced: it is what makes the annotations above verifiable.
+    [[maybe_unused]] const void * held_lock;
 };
 
 /// Data structure for *MergeTree engines.
@@ -551,12 +557,6 @@ public:
         const RangesInDataParts & parts,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         ContextPtr query_context) const;
-
-    QueryProcessingStage::Enum getQueryProcessingStage(
-        ContextPtr query_context,
-        QueryProcessingStage::Enum to_stage,
-        const StorageSnapshotPtr &,
-        SelectQueryInfo & info) const override;
 
     ReservationPtr reserveSpace(UInt64 expected_size, VolumePtr & volume) const;
     static ReservationPtr tryReserveSpace(UInt64 expected_size, const IDataPartStorage & data_part_storage);
