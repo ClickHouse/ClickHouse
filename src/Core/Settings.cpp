@@ -4531,7 +4531,7 @@ Note that it disables `read_in_order_use_buffering` optimization and preliminary
     DECLARE(Bool, read_in_order_use_sliced_pool, false, R"(
 Read `MergeTree` tables in the order of the primary key with a shared pool of reading threads instead of one reading thread per data part.
 Parts are cut into slices which are handed out to the threads as the merge demands data, so a single part can be read by several threads when a filter discards most of its rows, while parts whose data is not needed yet are not touched.
-Requires `read_in_order_use_virtual_row`. Applies to ascending order and local reading only.
+Requires `read_in_order_use_virtual_row`. Applies to ascending order and local reading only. Disables `read_in_order_use_buffering`, because the pool buffers rows per part itself.
 )", EXPERIMENTAL) \
     DECLARE(Bool, optimize_aggregation_in_order, false, R"(
 Enables [GROUP BY](/reference/statements/select/group-by) optimization in [SELECT](/reference/statements/select/index) queries for aggregating data in corresponding order in [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables.

@@ -153,6 +153,7 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
 {
     auto & lane = lanes[lane_idx];
     auto & output = *lane_outputs[lane_idx];
+    lane.starving = false;
     if (lane.finished)
         return;
 
@@ -160,6 +161,7 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
     {
         lane.finished = true;
         ++num_finished_lanes;
+        pool->releaseLaneReaders(lane_idx);
         return;
     }
 
@@ -188,11 +190,13 @@ void MergeTreeInOrderSliceRouter::pushToLane(size_t lane_idx)
         output.finish();
         lane.finished = true;
         ++num_finished_lanes;
+        pool->releaseLaneReaders(lane_idx);
         return;
     }
 
     /// The merge waits for this lane and nothing is ready for it.
     lane.activated = true;
+    lane.starving = true;
 }
 
 bool MergeTreeInOrderSliceRouter::laneWantsMore(size_t lane) const
@@ -289,6 +293,21 @@ void MergeTreeInOrderSliceRouter::scheduleSlices()
         auto lane = pool->sourceLane(source);
         if (lane && pool->laneHasUnreadMarks(*lane) && laneWantsMore(*lane))
             assignSlice(source, *lane);
+    }
+
+    /// A lane the merge is blocked on gets a source before any lane reads ahead, even if that means
+    /// taking the source from a lane that is merely reading ahead.
+    for (size_t lane : pool->lanesByBoundary())
+    {
+        if (!lanes[lane].starving || lanes[lane].finished || !pool->laneHasUnreadMarks(lane) || sourcesOf(lane) > 0)
+            continue;
+
+        auto source = pickIdleSource(/*allow_rebinding=*/ true);
+        if (!source)
+            return;
+
+        pool->bindSource(*source, lane);
+        assignSlice(*source, lane);
     }
 
     /// Lanes the merge asked for get more sources, up to their cap, in the order the merge needs them.

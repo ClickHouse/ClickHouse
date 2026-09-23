@@ -59,6 +59,8 @@ private:
         size_t max_sources = 1;
         /// The merge asked for this lane at least once.
         bool activated = false;
+        /// The merge waits for this lane right now and nothing is ready for it.
+        bool starving = false;
         /// A slice of the lane was assigned at least once.
         bool touched = false;
         bool finished = false;

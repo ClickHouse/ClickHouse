@@ -66,8 +66,8 @@ public:
     /// The lane the source takes its slices from.
     std::optional<size_t> sourceLane(size_t source) const;
 
-    /// Makes the source take its next slices from the lane. A source that read another lane before gets
-    /// new readers with its next slice.
+    /// Makes the source take its next slices from the lane. The readers a source used for another lane
+    /// are parked in that lane and picked up by whichever source reads it next.
     void bindSource(size_t source, size_t lane);
 
     /// Cuts the next slice of the source's lane; getTask of that source returns it.
@@ -76,18 +76,17 @@ public:
     /// True between assignSlice and the getTask call that takes the slice.
     bool hasPendingSlice(size_t source) const;
 
+    /// Drops the readers parked in a lane that is not going to be read anymore.
+    void releaseLaneReaders(size_t lane);
+
 private:
     struct Lane
     {
         MarkRanges unread;
         /// Slices of a lane start small and grow, so the first rows of a part arrive quickly.
         size_t slices_cut = 0;
-    };
-
-    struct Binding
-    {
-        size_t lane;
-        bool has_readers = false;
+        /// Readers of sources that moved on to other lanes; their extent reaches the end of the lane.
+        std::vector<MergeTreeReadTask::Readers> parked_readers = {};
     };
 
     struct PendingSlice
@@ -110,7 +109,10 @@ private:
 
     mutable std::mutex mutex;
     std::vector<Lane> lanes TSA_GUARDED_BY(mutex);
-    std::vector<std::optional<Binding>> bindings TSA_GUARDED_BY(mutex);
+    /// The lane each source takes its slices from.
+    std::vector<std::optional<size_t>> bound_lane TSA_GUARDED_BY(mutex);
+    /// The lane of the last task each source got, i.e. the lane its current readers belong to.
+    std::vector<std::optional<size_t>> last_task_lane TSA_GUARDED_BY(mutex);
     std::vector<std::optional<PendingSlice>> pending TSA_GUARDED_BY(mutex);
 };
 
