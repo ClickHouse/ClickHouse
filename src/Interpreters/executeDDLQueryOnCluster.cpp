@@ -211,6 +211,10 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     /// applying that packet, so an initiator-only setting written in the statement itself would otherwise
     /// reach an older worker as `UNKNOWN_SETTING` or be re-applied on a newer worker.
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_ptr);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the worker (it clamps the default-valued change away from
+    /// the settings of the entry), so bake the opt-out into the query text too; the settings of the entry get the
+    /// resolved automatic mode in `setSettingsIfRequired`.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery(*query_ptr, context->getSettingsRef());
     entry.query = query_ptr->formatWithSecretsOneLine();
     entry.initiator = ddl_worker.getCommonHostID();
     entry.setSettingsIfRequired(context);

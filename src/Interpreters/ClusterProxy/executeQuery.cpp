@@ -25,6 +25,7 @@
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -311,7 +312,9 @@ namespace
 ///  - a `SELECT ... UNION ...` gets the trailing clause of `ASTQueryWithOutput`, which the remote server applies
 ///    first, so it also covers the arms of an `INTERSECT` / `EXCEPT` chain, which `applySettingsFromSelectWithUnion`
 ///    does not look into;
-///  - an `INSERT ... SELECT` carries the clause of the `INSERT` itself.
+///  - an `INSERT ... SELECT` carries the clause of the `INSERT` itself;
+///  - a `CREATE ... AS SELECT` (queued by `ON CLUSTER`) carries the clause of the last plain `SELECT` of its source
+///    query, which is the one `applySettingsFromQuery` applies for a `CREATE`.
 /// Returns nullptr for a query shape without such a clause.
 ASTSetQuery * getOrCreateForwardedQuerySettings(IAST & query)
 {
@@ -341,6 +344,18 @@ ASTSetQuery * getOrCreateForwardedQuerySettings(IAST & query)
         if (!insert_query->settings_ast)
             insert_query->set(insert_query->settings_ast, make_settings_clause());
         return insert_query->settings_ast->as<ASTSetQuery>();
+    }
+
+    if (auto * create_query = query.as<ASTCreateQuery>())
+    {
+        if (!create_query->select)
+            return nullptr;
+
+        const auto & selects = create_query->select->as<ASTSelectWithUnionQuery &>().list_of_selects->children;
+        if (selects.empty() || !selects.back()->as<ASTSelectQuery>())
+            return nullptr;
+
+        return getOrCreateForwardedQuerySettings(*selects.back());
     }
 
     return nullptr;
