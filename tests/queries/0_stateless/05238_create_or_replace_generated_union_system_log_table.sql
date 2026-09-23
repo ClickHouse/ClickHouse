@@ -41,6 +41,14 @@ CREATE OR REPLACE TABLE all_query_log (event_date Date, query String) AS cluster
     COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
 CREATE OR REPLACE TABLE all_query_log (event_date Date, query String) AS clusterAllReplicas(test_shard_localhost, merge({CLICKHOUSE_DATABASE:Identifier}, concat('^query_log', '(_[0-9]+)?$')), SETTINGS skip_unavailable_shards = 1)
     COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
+-- The names of these table functions are case-sensitive, so no other spelling of them is a table function at all,
+-- neither at the top level nor nested into `clusterAllReplicas`, and the query fails before anything is replaced.
+CREATE OR REPLACE TABLE all_query_log (dummy UInt8) AS MERGE({CLICKHOUSE_DATABASE:String}, '^query_log(_[0-9]+)?$')
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError UNKNOWN_FUNCTION }
+CREATE OR REPLACE TABLE all_query_log (event_date Date, query String) AS ClusterAllReplicas(test_shard_localhost, {CLICKHOUSE_DATABASE:Identifier}, query_log)
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError UNKNOWN_FUNCTION }
+CREATE OR REPLACE TABLE all_query_log (event_date Date, query String) AS clusterAllReplicas(test_shard_localhost, Merge({CLICKHOUSE_DATABASE:String}, '^query_log(_[0-9]+)?$'))
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError UNKNOWN_FUNCTION }
 SELECT count(), any(note) FROM all_query_log;
 
 -- The user's own proxy over the same table function, and a copy of the comment over another table, are kept too.
