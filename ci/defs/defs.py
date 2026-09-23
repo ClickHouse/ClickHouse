@@ -470,6 +470,7 @@ class JobNames:
     LIBFUZZER_TEST = "libFuzzer tests"
     LIBFUZZER_CORPUS_MINIMIZATION = "libFuzzer corpus minimization"
     PARSER_MEMORY_CHECK = "Parser memory check"
+    STORAGE_MEMORY_CHECK = "Storage memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
     COLLECT_CLICKHOUSE_PROFILES = "Collect ClickHouse Profiles (PGO, BOLT)"
@@ -638,6 +639,21 @@ BINARIES_WITH_LONG_RETENTION = [
     ArtifactNames.CH_ARM_TSAN,
     ArtifactNames.CH_ARM_MSAN,
 ]
+
+
+def with_long_retention_tags(artifacts):
+    """Tag the long-retention binaries among `artifacts`, leaving the rest as is.
+
+    The tags feed the job digest, so workflows sharing a build cache entry have to
+    apply the same ones. They cannot overwrite each other's uploads: the S3 prefix
+    carries the workflow and the job name as well as the branch and the commit.
+    """
+    return [
+        artifact.add_tags({"retention": "long"})
+        if artifact.name in BINARIES_WITH_LONG_RETENTION
+        else artifact
+        for artifact in artifacts
+    ]
 
 
 class ArtifactConfigs:
