@@ -46,7 +46,6 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
-    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
     extern const SettingsBool serialize_query_plan;
 }
@@ -1448,9 +1447,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
         /// Only the initiator's share of the read gets the condition here; the replicas get it as well
-        /// only under `parallel_replicas_filter_pushdown`, which splices it into their query. A join
-        /// runtime filter can never travel there at all - `__applyFilter` is non-deterministic, so the
-        /// rewrite drops it - so waiting for that setting means never pushing one.
+        /// spliced into their query by the rewrite, which refuses some fragments and drops a predicate
+        /// it cannot express. A join runtime filter is one of those - `__applyFilter` is
+        /// non-deterministic, so the rewrite drops it and only this replica ever has it.
         ///
         /// What the condition may not do without the replicas having it is decide how this fragment
         /// reads: an equality fixes a sort key column, the read goes in order, and the initiator
@@ -1458,20 +1457,20 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// not in question - it changes which rows this replica reads, not the order it reads them in -
         /// so push the condition either way and take only that one consequence away from it.
         ///
+        /// The condition is spliced into the query the replicas run, so they filter by it as well and
+        /// both sides fix the same columns. What has to be asked is whether that splice reaches this
+        /// fragment, because where it does not only this replica has the condition, and only this
+        /// replica would order its read by it.
+        ///
         /// Ask the settings the fragment carries, not the query being optimized: the fragment is what
-        /// travels, `SETTINGS` and all, and the rewrite that splices the condition into the replicas'
-        /// query answers to those. And `parallel_replicas_filter_pushdown` alone does not mean the
-        /// condition arrives - `ReadFromRemote::addFilters` splices it into an AST, so it never runs
-        /// without `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes is not
-        /// what the replicas execute when the plan is shipped instead under `serialize_query_plan`.
-        /// Each of the three leaves the replicas on the fragment as it was, so each has to leave this
-        /// read unordered too.
+        /// travels, `SETTINGS` and all, and the rewrite answers to those. It writes into an AST, so it
+        /// never runs without `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes
+        /// is not what the replicas execute when the plan is shipped instead, under
+        /// `serialize_query_plan`. It also refuses outright a fragment that is not a single-table query
+        /// - one that unions, one that joins - and then the replicas keep the query they were given.
         const auto & fragment_settings = parallel_replicas_local_plan->getContext()->getSettingsRef();
-        /// The settings only say the rewrite was asked for. It also refuses outright any fragment that
-        /// is not a single-table query - one that unions, one that joins - and then the replicas keep
-        /// the query they were given, so such a fragment orders off nothing it was handed.
-        const bool replicas_get_the_condition = fragment_settings[Setting::parallel_replicas_filter_pushdown]
-            && fragment_settings[Setting::allow_push_predicate_ast_for_distributed_subqueries]
+        const bool replicas_get_the_condition
+            = fragment_settings[Setting::allow_push_predicate_ast_for_distributed_subqueries]
             && !fragment_settings[Setting::serialize_query_plan]
             && !parallel_replicas_local_plan->remoteRewriteRefusesThisShape();
 

@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"parallel_replicas_filter_pushdown", false, false, "Obsolete setting. A condition standing above the part of the query parallel replicas execute is now spliced into the query they run whenever the rewrite that does it accepts the fragment, the way the distributed path has always done it. The setting was added to switch off a filter push-down that could leave the initiator reading in a different order than the replicas; that is prevented directly now, by withholding the ordering rather than the condition."},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},

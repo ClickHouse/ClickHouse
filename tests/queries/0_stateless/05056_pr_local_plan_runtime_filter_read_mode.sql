@@ -60,9 +60,10 @@ JOIN b_rf_read_mode AS bb ON x.a = bb.a;
 
 SELECT 'runtime filter conjoined with an ordinary condition';
 -- A view's own `ORDER BY` puts the sort inside the fragment, where an equality on the sort key prefix
--- would make the read go in order. The two conditions arrive merged into one `Filter` and both go in
--- - the equality prunes the local read like any other condition - but the fragment derives no ordering
--- from either, so the initiator still reads `Default` alongside the replicas.
+-- makes the read go in order. The two conditions arrive merged into one `Filter` and both go into the
+-- fragment; of the two only `tenant = 5` is spliced into the replicas' query, because the runtime
+-- filter cannot be expressed there - and that is the half the ordering comes from, so both sides
+-- derive it and agree.
 DROP TABLE IF EXISTS t2_rf_read_mode;
 DROP VIEW IF EXISTS v_rf_read_mode;
 CREATE TABLE t2_rf_read_mode (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)

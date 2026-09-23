@@ -1,14 +1,12 @@
 -- A condition sitting above the fragment parallel replicas execute goes into the initiator's local
--- copy of that fragment whether or not the replicas also get it: it changes which rows this replica
--- reads, which is nobody else's business. What it may not do is decide *how* the fragment reads.
--- Fixing a sort key column is what would: with `tenant` pinned to one value a sort on the rest of the
--- key can be answered by reading in order, and then the initiator announces `WithOrder` to the shared
--- coordinator while the replicas, which never saw the condition, announce `Default`.
+-- copy of that fragment and is spliced into the query the replicas run, so both sides prune by it and
+-- both may order by it: a `tenant` pinned to one value lets a sort on the rest of the key be answered
+-- by reading in order, and the initiator and the replicas agree because they hold the same condition.
 --
--- So the fragment derives ordering only from the columns its own filters fix - the ones the replicas
--- fix too, from their copy of the same fragment - and a condition arriving from outside prunes without
--- ordering. `parallel_replicas_filter_pushdown` puts it in the replicas' query as well, and then the
--- ordering is theirs to derive too and nothing is held back.
+-- Where the splice does not reach - a fragment that unions or joins, one the rewrite refuses, a
+-- runtime filter it cannot express - only this replica has the condition, and then it may prune by it
+-- but not order by it, or the initiator would announce `WithOrder` to the shared coordinator while the
+-- replicas announce `Default`. Those shapes are covered by 05161, 05182 and 05183.
 
 DROP TABLE IF EXISTS t_pr_local_pd;
 DROP VIEW IF EXISTS v_pr_local_pd;
@@ -39,35 +37,26 @@ SET parallel_replicas_plan_based = 0;
 -- optimizations that fold it in.
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
--- `parallel_replicas_filter_pushdown` puts the condition in the replicas' query by rewriting it. Pin
--- the two settings that decide whether that rewrite reaches them.
+-- The rewrite that puts the condition in the replicas' query answers to these two, so pin them.
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
 -- An ordered read is what the fragment must not reach for on a condition of its own, so ask for one.
 SET optimize_read_in_order = 1;
 
-SELECT 'equality: prunes the local read, does not order it';
+SELECT 'equality: prunes the read and orders it, because the replicas have it too';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE tenant = 5 LIMIT 5)
 WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Read type%';
 SELECT count() FROM v_pr_local_pd WHERE tenant = 5;
 
-SELECT 'equality, setting enabled: orders it as well';
-SET parallel_replicas_filter_pushdown = 1;
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
-FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE tenant = 5 LIMIT 5)
-WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Read type%';
-SELECT count() FROM v_pr_local_pd WHERE tenant = 5;
-SET parallel_replicas_filter_pushdown = 0;
-
-SELECT 'the same equality inside the fragment orders it';
--- Nothing is withheld here: the replicas run this fragment too, so they fix `tenant` as well.
+SELECT 'the same equality written inside the fragment orders it too';
+-- The replicas run this fragment as written, so they fix `tenant` from their own copy of it.
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_own_pr_local_pd LIMIT 5)
 WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Read type%';
 SELECT count() FROM v_own_pr_local_pd;
 
-SELECT 'comparison: nothing is fixed, so nothing is withheld';
+SELECT 'comparison: nothing is fixed, so there is no ordering to derive';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_local_pd WHERE tenant > 90 LIMIT 5)
 WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Read type%';

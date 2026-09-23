@@ -70,7 +70,6 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ErrorCodes
@@ -1093,7 +1092,11 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    if (context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown] && filter_actions_dag)
+    /// Whatever was pushed into the fragment the replicas execute is spliced into the query they run,
+    /// exactly as the distributed path above does it. The setting that used to gate this was a switch
+    /// for a filter push-down that could leave the initiator reading in a different order than the
+    /// replicas; that is prevented directly now, by withholding the ordering rather than the condition.
+    if (filter_actions_dag)
         addFilters(&external_tables, context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);

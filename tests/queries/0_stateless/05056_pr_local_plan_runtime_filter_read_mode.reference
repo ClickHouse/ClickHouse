@@ -8,7 +8,7 @@ ReadFromMergeTree (default.b_rf_read_mode)
 Read type: Default
 200
 runtime filter conjoined with an ordinary condition
-Read type: Default
+Read type: InOrder
 Prewhere filter column:  tenant = 5
 Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
 Filter column:  tenant = 5
