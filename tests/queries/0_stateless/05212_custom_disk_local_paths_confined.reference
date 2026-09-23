@@ -1,0 +1,11 @@
+data path outside, disk registered	0
+data path outside, directory not created
+metadata path outside, disk registered	0
+s3 metadata path outside, disk registered	0
+escaping name, disk registered	0
+nested data path outside, disk registered	0
+encrypted path outside wrapped disk, disk registered	0
+encrypted over local disk outside base directory, disk registered	0
+data path inside	2
+s3 with default metadata path	2
+cache over config disk	2
