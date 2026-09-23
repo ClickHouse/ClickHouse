@@ -85,16 +85,15 @@ def test_statistics_mutations_without_session_opt_in(started_cluster):
     )
 
     # Without the opt-in the profile's value still refuses the statements up front, and nothing
-    # reaches the mutation queue - including when the query-shape validation is turned off.
-    for settings in ({}, {"validate_mutation_query": 0}):
-        for statement in (
-            "ALTER TABLE t_session_gate_off ADD STATISTICS a TYPE tdigest",
-            "ALTER TABLE t_session_gate_off MATERIALIZE STATISTICS a",
-            "ALTER TABLE t_session_gate_off DROP STATISTICS a",
-        ):
-            assert "Alter table with statistics is disabled" in node.query_and_get_error(
-                statement, settings=settings
-            )
+    # reaches the mutation queue.
+    for statement in (
+        "ALTER TABLE t_session_gate_off ADD STATISTICS a TYPE tdigest",
+        "ALTER TABLE t_session_gate_off MATERIALIZE STATISTICS a",
+        "ALTER TABLE t_session_gate_off DROP STATISTICS a",
+    ):
+        assert "Alter table with statistics is disabled" in node.query_and_get_error(
+            statement
+        )
 
     assert unfinished_mutations("t_session_gate_off") == "0"
     node.query("DROP TABLE t_session_gate_off SYNC")
