@@ -82,12 +82,22 @@ private:
         bool matches(const JSONBloomFilterProbe & probe, bool pending_matches) const;
         std::vector<UInt64> presence;
         std::vector<std::pair<UInt64, std::vector<String>>> dynamic_types;
+        /// Scopes of the path being deserialized, compared with `dynamic_types` to detect changes.
+        std::vector<std::pair<UInt64, std::vector<String>>> next_dynamic_types;
         bool dynamic_types_changed = true;
         std::unordered_map<std::shared_ptr<const JSONBloomFilterDynamicProbe>, std::vector<JSONBloomFilterProbe>> dynamic_probes;
         BloomFilterPtr values;
         bool present = false;
         bool pending = false;
     };
+
+    static constexpr UInt8 SCOPE_HAS_COMPLEX = 1;
+    static constexpr UInt8 SCOPE_HAS_UNSUPPORTED = 2;
+
+    /// Recomputes the presence hashes and runtime types of a stored scope. `finishPath` completes the path.
+    void addScope(PathFilter & filter, std::string_view logical_path, std::string_view scope_path, UInt8 role, UInt8 flags, std::vector<String> types);
+    static void finishPath(PathFilter & filter);
+
     std::unordered_map<String, PathFilter> paths;
     std::unordered_map<std::shared_ptr<const JSONBloomFilterDynamicProbe>, std::unordered_map<String, std::vector<JSONBloomFilterProbe>>> compiled_dynamic_probes;
     size_t bits_per_row;
@@ -95,6 +105,8 @@ private:
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
     bool has_rows = false;
     bool unsupported = false;
+    /// Encoded runtime type -> type name, for recomputing presence hashes.
+    std::unordered_map<String, String> runtime_type_names;
 };
 
 class MergeTreeIndexAggregatorJSONBloomFilter final : public IMergeTreeIndexAggregator
