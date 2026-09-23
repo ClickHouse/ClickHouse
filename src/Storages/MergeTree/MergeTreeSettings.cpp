@@ -403,6 +403,7 @@ Possible values:
 
 - basic — Use the standard serialization for `Map`.
 - with_buckets — Split keys into buckets during serialization. Using buckets improves reading individual keys from the Map.
+- with_key_columns — Store each distinct key of a `Map(String, V)` in independent streams (`m.keys` for the sorted key set, `m.values.<key>` for the values and `m.exists.<key>` for the presence bitmap). Requires `String` keys. Improves reading individual keys from the Map. Only `map_serialization_version` enables it (zero-level parts use it too); `map_serialization_version_for_zero_level_parts` must be left at its default. Incompatible with `basic` / `with_buckets` parts.
 
 The number of buckets in `with_buckets` serialization is determined by [max_buckets_in_map](#max_buckets_in_map) and [map_buckets_strategy](#map_buckets_strategy).
 )", 0) \
@@ -411,6 +412,8 @@ This setting allows to specify a different serialization version of
 `Map` columns for zero level parts that are created during inserts.
 It can be useful to keep `basic` serialization for zero level parts to avoid
 performance degradation during inserts, while using `with_buckets` for merged parts.
+Has no effect on `with_key_columns`, which governs zero-level parts as well
+(`map_serialization_version = 'with_key_columns'` requires this setting to stay at its default).
 )", 0) \
     DECLARE(NonZeroUInt64, max_buckets_in_map, 32, R"(
 The maximum number of buckets for `Map` serialization. Works with `with_buckets` `Map` serialization.

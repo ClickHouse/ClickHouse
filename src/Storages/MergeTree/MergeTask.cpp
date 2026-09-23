@@ -9,11 +9,17 @@
 #include <memory>
 #include <fmt/format.h>
 
+#include <Columns/ColumnArray.h>
+#include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationInfo.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/ReadBufferFromEmptyFile.h>
 #include <Interpreters/Context.h>
@@ -31,6 +37,7 @@
 #include <Processors/Merges/SummingSortedTransform.h>
 #include <Processors/Merges/VersionedCollapsingTransform.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Interpreters/ProcessList.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -53,6 +60,8 @@
 #include <Storages/MergeTree/MergeTreeDataWriter.h>
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
+#include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/StorageSnapshot.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
@@ -172,6 +181,8 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -377,6 +388,150 @@ static String getColumnNameInStorage(const String & column_name, const NameSet &
     /// If we don't have this column in storage columns, it must be a subcolumn of one of the storage columns.
     return String(Nested::getColumnFromSubcolumn(column_name, storage_columns));
 }
+
+static bool isMapKeyColumnsColumn(const NameAndTypePair & column, const MergeTreeSettings & settings)
+{
+    return typeid_cast<const DataTypeMap *>(column.type.get())
+        && settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+}
+
+static const SerializationMapKeyColumns & getMapKeyColumnsSerialization(const IMergeTreeDataPart & part, const String & column_name)
+{
+    const auto * per_key = typeid_cast<const SerializationMapKeyColumns *>(part.getSerialization(column_name).get());
+    if (!per_key)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} in part {} is not a with_key_columns Map", column_name, part.name);
+    return *per_key;
+}
+
+/// Read the sorted key set of a with_key_columns Map column from one source part's
+/// `m.keys` stream. A part without the column or without the stream (old/basic part,
+/// which the merge read path reads as ordinary maps) contributes no keys.
+static std::vector<String> readMapKeyColumnsKeysFromPart(
+    const IMergeTreeDataPart & part,
+    const NameAndTypePair & map_column,
+    const MergeTreeSettingsPtr & settings)
+{
+    /// Zero-row parts do not contribute keys and may have empty `Map` manifest files.
+    if (part.rows_count == 0)
+        return {};
+
+    /// The column may be absent from this part (e.g. added by ALTER after the part was
+    /// written). Such a part contributes no keys; during the merge its rows read as
+    /// DEFAULT-evaluated (or empty) maps, matching the read path for missing columns.
+    if (!part.getColumns().contains(map_column.name))
+        return {};
+
+    if (part.getType() == MergeTreeDataPartType::Compact)
+    {
+        /// In a compact part the `m.keys` manifest lives inside `data.bin`, not in a
+        /// separate stream file: read the whole column through the compact reader (its
+        /// own prefix reads the manifest) and report its key set.
+        if (!part.index_granularity_info.mark_type.with_substreams)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Part {} is Compact without per-substream marks; cannot locate the Map keys stream",
+                part.name);
+
+        MergeTreeData::DataPartPtr part_ptr = part.storage.getPartIfExists(part.name, {MergeTreeData::DataPartState::Active, MergeTreeData::DataPartState::Outdated, MergeTreeData::DataPartState::Deleting});
+        if (!part_ptr)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Part {} not found in the active set while reading its Map keys", part.name);
+
+        auto read_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(part_ptr, std::make_shared<AlterConversions>());
+        const auto metadata_ptr = part.storage.getInMemoryMetadataPtr(part.storage.getContext(), false);
+        auto snapshot = std::make_shared<StorageSnapshot>(part.storage, StorageMetadataPtr(metadata_ptr));
+        NamesAndTypesList columns_to_read{map_column};
+        auto reader = createMergeTreeReaderCompact(
+            read_info,
+            columns_to_read,
+            snapshot,
+            settings,
+            MarkRanges{MarkRange(0, part.getMarksCount())},
+            VirtualFields{},
+            /*uncompressed_cache=*/ nullptr,
+            /*mark_cache=*/ nullptr,
+            /*deserialization_prefixes_cache=*/ nullptr,
+            MergeTreeReaderSettings::createForMergeMutation(ReadSettings{}),
+            ValueSizeMap{},
+            /*profile_callback=*/ {});
+
+        Block block;
+        MutableColumns columns(1);
+        columns[0] = map_column.type->createColumn();
+        size_t read_rows = reader->readRows(0, false, part.rows_count, columns);
+        if (read_rows != part.rows_count)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read all rows of Map column {} of part {}", map_column.name, part.name);
+        block.insert(ColumnWithTypeAndName(std::move(columns[0]), map_column.type, map_column.name));
+
+        const auto & map = assert_cast<const ColumnMap &>(*block.getByName(map_column.name).column);
+        const auto & keys_column = assert_cast<const ColumnString &>(map.getNestedData().getColumn(0));
+        const auto & offsets = map.getNestedColumn().getOffsets();
+
+        std::vector<String> keys;
+        std::set<String> seen;
+        for (size_t row = 0; row < map.size(); ++row)
+        {
+            for (size_t i = offsets[ssize_t(row) - 1]; i < offsets[row]; ++i)
+            {
+                String key = String(keys_column.getDataAt(i));
+                if (seen.emplace(key).second)
+                    keys.push_back(std::move(key));
+            }
+        }
+        std::sort(keys.begin(), keys.end());
+        return keys;
+    }
+
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::MapKeys);
+    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+        map_column, path, IMergeTreeDataPart::DATA_FILE_EXTENSION, part.getDataPartStorage(), settings);
+    if (!stream_name)
+    {
+        /// Old/basic part: written before the table switched to `with_key_columns`
+        /// (its serialization info was upgraded in memory, but it has no per-key
+        /// streams on disk). It contributes no keys to the union.
+        return {};
+    }
+
+    const auto & serialization = getMapKeyColumnsSerialization(part, map_column.name);
+    auto file = part.getDataPartStorage().readFile(*stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION, {}, std::nullopt);
+    CompressedReadBufferFromFile in(std::move(file), /*allow_different_codecs=*/ true);
+    return serialization.readMapKeys(in);
+}
+
+/// Whether a source part can contribute keys of the column that exist in no `m.keys`
+/// manifest: the column is missing from the part (so its rows are gathered with the
+/// DEFAULT expression evaluated), or the part is an old/basic part with no keys
+/// stream at all. In both cases the merged rows may carry keys unknown to the union,
+/// so the output writer must discover the key set from a single block covering the
+/// whole part instead of being seeded from manifests.
+static bool partMayHaveMapKeysOutsideManifest(const IMergeTreeDataPart & part, const NameAndTypePair & map_column, const MergeTreeSettingsPtr & settings)
+{
+    if (part.rows_count == 0 || !part.getColumns().contains(map_column.name))
+        return false;
+
+    ISerialization::SubstreamPath path;
+    path.push_back(ISerialization::Substream::MapKeys);
+    return !IMergeTreeDataPart::getStreamNameForColumn(
+        map_column, path, IMergeTreeDataPart::DATA_FILE_EXTENSION, part.getDataPartStorage(), settings).has_value();
+}
+
+/// Union (sorted, deduplicated) of the key sets of a with_key_columns Map column
+/// across all source parts; seeds the output part's key set.
+static std::vector<String> collectMapKeyColumnsKeysUnion(
+    const DataPartsVector & parts,
+    const NameAndTypePair & map_column,
+    const MergeTreeSettingsPtr & settings)
+{
+    std::set<String> keys;
+    for (const auto & part : parts)
+    {
+        auto part_keys = readMapKeyColumnsKeysFromPart(*part, map_column, settings);
+        keys.insert(part_keys.begin(), part_keys.end());
+    }
+    return std::vector<String>(keys.begin(), keys.end());
+}
+
 
 /// PK columns are sorted and merged, ordinary columns are gathered using info from merge step
 void MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns(const std::unordered_set<String> & exclude_index_names) const
@@ -1270,6 +1425,31 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->new_data_part->index_granularity_info,
         ctx->blocks_are_granules_size);
 
+    /// Seed the output part's key set of every with_key_columns Map column with the
+    /// union of the source parts' `m.keys` manifests, so that a key present in a
+    /// source part but absent from the first written block still gets its streams
+    /// (rows lacking the key get presence = 0). A column whose keys may exist in no
+    /// manifest (missing from some source part — its DEFAULT is evaluated during the
+    /// merge — or an old/basic part without a keys stream) is not seeded: the writer
+    /// discovers the key set from the first block, which is why `createMergedStream`
+    /// squashes the horizontal pipeline into a single block in that case.
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+    for (const auto & column : global_ctx->storage_columns)
+    {
+        if (!isMapKeyColumnsColumn(column, *global_ctx->data_settings))
+            continue;
+
+        if (std::ranges::any_of(global_ctx->future_part->parts, [&](const auto & part)
+            {
+                return partMayHaveMapKeysOutsideManifest(*part, column, global_ctx->data_settings);
+            }))
+            continue;
+
+        auto keys = collectMapKeyColumnsKeysUnion(global_ctx->future_part->parts, column, global_ctx->data_settings);
+        if (!keys.empty())
+            map_key_columns_keys.emplace(column.name, std::move(keys));
+    }
+
     global_ctx->to = std::make_shared<MergedBlockOutputStream>(
         global_ctx->new_data_part,
         merge_tree_settings,
@@ -1284,7 +1464,8 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         ctx->blocks_are_granules_size,
         global_ctx->context->getWriteSettings(),
         &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        std::move(map_key_columns_keys));
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -2171,6 +2352,18 @@ MergeTask::VerticalMergeStage::createPipelineForReadingOneColumn(const String & 
     pipeline_settings.temporary_file_lookup = ctx->rows_sources_temporary_file;
     auto builder = merge_column_query_plan.buildQueryPipeline(optimization_settings, pipeline_settings);
 
+    /// A with_key_columns Map fixes its output key set at the first written
+    /// block; gathered columns may carry keys that exist in no source manifest
+    /// (e.g. an ALTER-added column whose DEFAULT is evaluated during the
+    /// merge), so the gather must produce a single block covering the whole
+    /// part.
+    auto serialization = global_ctx->new_data_part->tryGetSerialization(column_name);
+    if (typeid_cast<const SerializationMapKeyColumns *>(serialization.get()))
+        builder->addSimpleTransform([](const SharedHeader & header)
+        {
+            return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+        });
+
     return {QueryPipelineBuilder::getPipeline(std::move(*builder)), std::move(indexes_to_recalc), std::move(column_build_statistics_transforms)};
 }
 
@@ -2212,6 +2405,23 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
 
     NamesAndTypesList columns_list = {*ctx->it_name_and_type};
 
+    /// Seed the output key set of a gathered with_key_columns Map column with the
+    /// union of the source parts' `m.keys` manifests, matching the horizontal
+    /// seeding in `prepare`. A column whose keys may exist in no manifest (missing
+    /// from some source part or an old/basic part without a keys stream) is gathered
+    /// with keys unknown to the union: skip the seed and let the writer discover the
+    /// key set from the first block (the gather pipeline is squashed into a single
+    /// block by `createPipelineForReadingOneColumn`).
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+    if (isMapKeyColumnsColumn(*ctx->it_name_and_type, *global_ctx->data_settings)
+        && std::ranges::none_of(global_ctx->future_part->parts,
+            [&](const auto & part) { return partMayHaveMapKeysOutsideManifest(*part, *ctx->it_name_and_type, global_ctx->data_settings); }))
+    {
+        auto keys = collectMapKeyColumnsKeysUnion(global_ctx->future_part->parts, *ctx->it_name_and_type, global_ctx->data_settings);
+        if (!keys.empty())
+            map_key_columns_keys.emplace(ctx->it_name_and_type->name, std::move(keys));
+    }
+
     /// The horizontal `global_ctx->to` writer owns this part's `skp_idx.packed`. Share its
     /// `PackedFilesWriter` with this per-column writer so the per-column packed substreams land
     /// in the same in-memory archive instead of racing on the on-disk file. The horizontal
@@ -2228,7 +2438,8 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->to->getSkipIndicesPackedWriter());
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        std::move(map_key_columns_keys));
 
     ctx->column_elems_written = 0;
 }
@@ -3636,6 +3847,32 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
         // Merges are not using concurrency control now. Queries and merges running together could lead to CPU overcommit.
         // TODO(serxa): Enable concurrency control for merges. This should be done after CPU scheduler introduction.
         builder->setConcurrencyControl(false);
+
+        /// A with_key_columns Map fixes its output key set at the first written
+        /// block. When a source part can contribute keys that exist in no manifest
+        /// (the column is missing from the part, so its DEFAULT is evaluated during
+        /// the merge, or the part is an old/basic part without a keys stream), the
+        /// horizontal pipeline must write a single block covering the whole part;
+        /// otherwise keys appearing only in later blocks would be rejected by the
+        /// writer's key-set check. Check all storage columns, not just
+        /// `merging_columns`: in a vertical merge the gathered Map is written by the
+        /// horizontal writer as an empty column, and its serialization state prefix
+        /// (`m.keys`) is still written from the seed plus the first block's keys.
+        const bool gathers_map_with_unknown_keys = std::ranges::any_of(global_ctx->storage_columns,
+            [&](const auto & column)
+            {
+                return isMapKeyColumnsColumn(column, *global_ctx->data_settings)
+                    && std::ranges::any_of(global_ctx->future_part->parts,
+                        [&](const auto & part) { return partMayHaveMapKeysOutsideManifest(*part, column, global_ctx->data_settings); });
+            });
+        if (gathers_map_with_unknown_keys)
+        {
+            LOG_DEBUG(ctx->log, "Merging a with_key_columns Map with keys not present in manifests; squashing the horizontal merge into a single block");
+            builder->addSimpleTransform([](const SharedHeader & header)
+            {
+                return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+            });
+        }
 
         global_ctx->merged_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
     }

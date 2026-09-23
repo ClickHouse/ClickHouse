@@ -4,6 +4,8 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/Identifier.h>
 #include <DataTypes/NestedUtils.h>
+#include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/StorageSnapshot.h>
 
 namespace DB
 {
@@ -39,6 +41,7 @@ struct AnalysisTableExpressionData
     std::string table_name;
     bool should_qualify_columns = true;
     bool supports_subcolumns = false;
+    StorageSnapshotPtr storage_snapshot;
     NamesAndTypes column_names_and_types;
     /// Set of regular (non-subcolumn) column names. Lazily populated by
     /// `ensureColumnMembershipSetsArePopulated()`. Used for membership checks that don't need
@@ -142,6 +145,19 @@ struct AnalysisTableExpressionData
             auto it = node_map.find(column_name);
             if (it != node_map.end())
             {
+                if (supports_subcolumns && storage_snapshot && !it->second->hasExpression()
+                    && storage_snapshot->metadata->getColumns().hasPhysical(String(column_name)))
+                {
+                    /// Physical subcolumn types can depend on storage serialization, as with `with_key_columns` `Map` values.
+                    /// Use the same type as the reader instead of the data type's default serialization.
+                    auto column = storage_snapshot->tryGetColumn(
+                        GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns(), String(full_identifier_name));
+                    if (column && column->isSubcolumn() && column->getNameInStorage() == column_name
+                        && column->getSubcolumnName() == subcolumn_name)
+                        return SubcolumnInfo{it->second, subcolumn_name, column->type};
+                    continue;
+                }
+
                 if (auto subcolumn_type = it->second->getResultType()->tryGetSubcolumnType(subcolumn_name))
                     return SubcolumnInfo{it->second, subcolumn_name, subcolumn_type};
             }

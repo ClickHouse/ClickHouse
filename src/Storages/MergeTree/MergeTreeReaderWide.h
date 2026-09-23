@@ -74,6 +74,9 @@ private:
     };
 
     FileStreams streams;
+    /// Read order of `columns_to_read`: presence (`m.exists_<k>`) subcolumns last,
+    /// so their reads see the part's key set already discovered by value streams.
+    std::vector<size_t> read_order;
 
     void prefetchForAllColumns(
         Priority priority,

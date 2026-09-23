@@ -14,6 +14,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -125,6 +126,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsFloat ratio_of_defaults_for_sparse_serialization;
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsMergeTreeSerializationInfoVersion serialization_info_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
 }
 
 namespace Setting
@@ -146,6 +149,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int INCOMPATIBLE_COLUMNS;
 }
 
 namespace FailPoints
@@ -910,6 +914,61 @@ void IMergeTreeDataPart::setColumns(const NamesAndTypesList & new_columns, const
         shared_part_columns = std::move(new_shared_part_columns);
 
     serializations = shared_part_columns->getSerializations(serialization_infos);
+
+    /// A part written in the `with_key_columns` Map layout is self-describing via
+    /// its key stream manifest, but `serialization.json` may carry no Map version
+    /// when the table's `serialization_info_version` was `basic` (the version is
+    /// forced to `basic` there, losing the Map specialization). Resolve such a Map
+    /// column with the table's effective map serialization version so the on-disk
+    /// layout matches the chosen serialization, instead of silently degrading to
+    /// the plain Map serialization. Zero-level parts follow
+    /// `map_serialization_version_for_zero_level_parts`, merged parts follow
+    /// `map_serialization_version`; `with_key_columns` applies to both.
+    applyTableMapSerializationVersionForBasicInfos();
+}
+
+void IMergeTreeDataPart::applyTableMapSerializationVersionForBasicInfos()
+{
+    const auto & table_settings = *storage.getSettings();
+    const auto merged_version = table_settings[MergeTreeSetting::map_serialization_version];
+    /// `with_key_columns` governs zero-level parts too (the per-key layout does not
+    /// support a part-level mix), while `with_buckets` may keep zero-level parts on
+    /// `basic` through `map_serialization_version_for_zero_level_parts`.
+    const auto table_map_version = merged_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS
+        ? merged_version
+        : (isZeroLevel() ? table_settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts] : merged_version);
+    if (table_map_version == MergeTreeMapSerializationVersion::BASIC)
+        return;
+
+    SerializationInfoByName fixed_infos = serialization_infos;
+    bool any_fixed = false;
+    for (const auto & column : getColumns())
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        auto it = fixed_infos.find(column.name);
+        auto info_settings = it == fixed_infos.end() ? fixed_infos.getSettings() : it->second->getSettings();
+        if (info_settings.map_serialization_version != MergeTreeMapSerializationVersion::BASIC)
+            continue;
+
+        /// Keep the recorded kind stack as-is (the default for a fresh entry too):
+        /// `SerializationInfo` must never carry an empty kind stack.
+        info_settings.map_serialization_version = table_map_version;
+        if (it == fixed_infos.end())
+            fixed_infos.emplace(
+                column.name,
+                std::make_shared<SerializationInfo>(ISerialization::KindStack{ISerialization::Kind::DEFAULT}, info_settings));
+        else
+            it->second = std::make_shared<SerializationInfo>(it->second->getKindStack(), info_settings);
+        any_fixed = true;
+    }
+
+    if (any_fixed)
+    {
+        serialization_infos = std::move(fixed_infos);
+        serializations = shared_part_columns->getSerializations(serialization_infos);
+    }
 }
 
 String IMergeTreeDataPart::getProjectionName() const
@@ -1492,6 +1551,8 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
             loadUUID();
 
         loadColumns(require_columns_checksums, load_metadata_version);
+        if (!parent_part)
+            checkMapKeyColumnsCompatibility();
 
         bool has_broken_projections = false;
         {
@@ -3102,6 +3163,45 @@ IndexSize IMergeTreeDataPart::getIndexSizeFromFile() const
     }
 
     return {};
+}
+
+void IMergeTreeDataPart::checkMapKeyColumnsCompatibility() const
+{
+    const auto & table_settings = *storage.getSettings();
+    const bool table_uses_key_columns
+        = table_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    for (const auto & column : getColumns())
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        auto it = serialization_infos.find(column.name);
+        const auto part_version = it == serialization_infos.end()
+            ? serialization_infos.getSettings().map_serialization_version
+            : it->second->getSettings().map_serialization_version;
+
+        /// Mirror the fallback in `setColumns`: a part whose `serialization.json` carries
+        /// no Map version (recorded as `basic`, e.g. because the table's
+        /// `serialization_info_version` is `basic`) has no recorded Map specialization to
+        /// disagree with, so the table's effective Map version applies to it. Only a part
+        /// explicitly recorded with a different version is incompatible.
+        if (part_version == MergeTreeMapSerializationVersion::BASIC)
+            continue;
+
+        const bool part_uses_key_columns = part_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+        if (table_uses_key_columns != part_uses_key_columns)
+        {
+            throw Exception(
+                ErrorCodes::INCOMPATIBLE_COLUMNS,
+                "Cannot load part {} with Map column {}: part map serialization does not match "
+                "table setting map_serialization_version = '{}'",
+                name,
+                backQuoteIfNeed(column.name),
+                table_uses_key_columns ? "with_key_columns" : "basic");
+        }
+    }
 }
 
 void IMergeTreeDataPart::checkConsistencyBase() const

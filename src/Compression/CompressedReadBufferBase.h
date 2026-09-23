@@ -75,6 +75,10 @@ public:
     virtual void seek(size_t /* offset_in_compressed_file */, size_t /* offset_in_decompressed_block */);
     virtual off_t getPosition() const;
 
+    /// The buffer the compressed data is read from; null for a buffer over an
+    /// in-memory source without a file position.
+    const ReadBuffer * getCompressedIn() const { return compressed_in; }
+
     CompressionCodecPtr codec;
 };
 

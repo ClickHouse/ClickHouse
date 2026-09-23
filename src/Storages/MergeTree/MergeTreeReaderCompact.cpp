@@ -3,6 +3,7 @@
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/DeserializationPrefixesCache.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
@@ -99,7 +100,25 @@ void MergeTreeReaderCompact::fillColumnPositions()
             const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
             const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
             if (!type_for_subcolumn->hasSubcolumn(subcolumn_name))
-                position.reset();
+            {
+                /// Dynamic subcolumns (the `key_<key>` / `exists_<key>` subcolumns of a
+                /// `with_key_columns` Map) are never listed by `hasSubcolumn`: whether one
+                /// exists in this part is decided by the substreams recorded in
+                /// `columns_substreams.txt` — the per-key substreams of a key that is absent
+                /// from the part were never written, so the serialization reads the key as
+                /// missing. Only the streams that every key column shares (the `m.keys`
+                /// manifest) prove the column itself exists here.
+                bool is_existing_dynamic_subcolumn = false;
+                if (has_substream_marks && type_for_subcolumn->hasDynamicSubcolumnsData())
+                {
+                    ISerialization::SubstreamPath keys_path;
+                    keys_path.push_back(ISerialization::Substream::MapKeys);
+                    is_existing_dynamic_subcolumn
+                        = columns_substreams.tryGetSubstreamPosition(*position, column_to_read, keys_path, storage_settings).has_value();
+                }
+                if (!is_existing_dynamic_subcolumn)
+                    position.reset();
+            }
         }
 
         column_positions[i] = std::move(position);
@@ -213,10 +232,73 @@ void MergeTreeReaderCompact::readData(
         if (needSkipStream(column_idx, substream_path))
             return nullptr;
 
+        if (substream_path.size() == 1 && substream_path.front().type == ISerialization::Substream::MapKeys)
+        {
+            /// The `m.keys` manifest of a `with_key_columns` Map is read to the end of its
+            /// stream; in a compact part the per-key streams follow it in `data.bin`, so the
+            /// shared buffer must not drain past the manifest's compressed block. Read the
+            /// block through the buffer and hand the serialization a bounded in-memory view.
+            /// (This also applies to subcolumn reads, whose prefix reads the manifest.)
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+
+            auto stream_name = ISerialization::getFileNameForStream(name_and_type, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+            auto it = manifest_substream_data.find(stream_name);
+            if (it == manifest_substream_data.end())
+            {
+                stream.seekToMarkAndColumn(from_mark, *substream_position);
+                const size_t next_start = getNextSubstreamStart(*column_positions[column_idx], *substream_position, from_mark);
+                String data;
+                char byte = 0;
+                /// An empty manifest (empty key set) has no compressed block at all: its
+                /// mark points where the next substream starts, so there is nothing to read.
+                if (next_start != 0 && next_start == marks_getter->getMark(from_mark, *substream_position).offset_in_compressed_file)
+                {
+                    it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
+                }
+                else
+                {
+                    /// `getCompressedBlockEnd` is the end of the block the buffer
+                    /// decompressed last; it is still the previous block while the
+                    /// manifest's block is being consumed, so stop only once it has
+                    /// advanced past the manifest's block.
+                    while (true)
+                    {
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        if (!stream.getDataBuffer()->read(byte))
+                            break;
+                        /// The byte just read may come from the block after the manifest's
+                        /// (`getCompressedBlockEnd` advanced past `next_start`); drop it.
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        data.push_back(byte);
+                    }
+                    it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
+                }
+            }
+            manifest_buffers[stream_name] = std::make_unique<ReadBufferFromMemory>(it->second.data(), it->second.size());
+            return manifest_buffers[stream_name].get();
+        }
+
         if (seek_to_substream_mark)
         {
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
+        }
+        else if (!substream_path.empty()
+            && (substream_path.front().type == ISerialization::Substream::MapKeyValue
+                || substream_path.front().type == ISerialization::Substream::MapKeyPresence))
+        {
+            /// A whole-Map read of a `with_key_columns` column reads the streams of every
+            /// key through the shared buffer: seek each substream to its recorded position.
+            /// A substream absent from `columns_substreams.txt` (a key absent from this
+            /// part) has no data here; the serialization treats a null buffer as missing.
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
         }
 
         return stream.getDataBuffer();
@@ -394,7 +476,11 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
-            if (column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+            /// Dynamic subcolumns (the `key_<key>` / `exists_<key>` subcolumns of a
+            /// `with_key_columns` Map) are not listed by `hasSubcolumn`; they exist in
+            /// the part when their streams are recorded in `columns_substreams.txt`.
+            if (column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName())
+                || column_from_part.type->hasDynamicSubcolumnsData())
             {
                 subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
@@ -447,7 +533,63 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
         if (needSkipStream(column_idx, substream_path))
             return nullptr;
 
-        if (seek_to_substream_mark)
+
+        if (column_positions[column_idx] && substream_path.size() == 1 && substream_path.front().type == ISerialization::Substream::MapKeys)
+        {
+            /// Same manifest handling as in `readData`: the `m.keys` stream is read to its
+            /// end, so it must not drain past its compressed block into the per-key streams.
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+
+            auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+            auto it = manifest_substream_data.find(stream_name);
+            if (it == manifest_substream_data.end())
+            {
+                stream.seekToMarkAndColumn(from_mark, *substream_position);
+                const size_t next_start = getNextSubstreamStart(*column_positions[column_idx], *substream_position, from_mark);
+                String data;
+                char byte = 0;
+                /// An empty manifest (empty key set) has no compressed block at all: its
+                /// mark points where the next substream starts, so there is nothing to read.
+                if (next_start == 0 || next_start != marks_getter->getMark(from_mark, *substream_position).offset_in_compressed_file)
+                {
+                    /// `getCompressedBlockEnd` is the end of the block the buffer
+                    /// decompressed last; it is still the previous block while the
+                    /// manifest's block is being consumed, so stop only once it has
+                    /// advanced past the manifest's block.
+                    while (true)
+                    {
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        if (!stream.getDataBuffer()->read(byte))
+                            break;
+                        /// The byte just read may come from the block after the manifest's
+                        /// (`getCompressedBlockEnd` advanced past `next_start`); drop it.
+                        if (next_start != 0 && stream.getCompressedBlockEnd() > next_start)
+                            break;
+                        data.push_back(byte);
+                    }
+                }
+                it = manifest_substream_data.emplace(stream_name, std::move(data)).first;
+            }
+            manifest_buffers[stream_name] = std::make_unique<ReadBufferFromMemory>(it->second.data(), it->second.size());
+            return manifest_buffers[stream_name].get();
+        }
+        else if (column_positions[column_idx]
+            && !substream_path.empty()
+            && (substream_path.front().type == ISerialization::Substream::MapKeyValue
+                || substream_path.front().type == ISerialization::Substream::MapKeyPresence))
+        {
+            /// Same per-key seeking as in `readData`: a whole-Map prefix read seeks every
+            /// key's stream through the shared buffer; a substream absent from
+            /// `columns_substreams.txt` has no data in this part.
+            auto substream_position = columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
+            if (!substream_position)
+                return nullptr;
+            stream.seekToMarkAndColumn(from_mark, *substream_position);
+        }
+        else if (seek_to_substream_mark)
         {
             size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
@@ -526,6 +668,35 @@ void MergeTreeReaderCompact::createColumnsForReading(MutableColumns & res_column
         if (column_positions[i] && res_columns[i] == nullptr)
             res_columns[i] = columns_to_read[i].type->createColumn(*serializations[i]);
     }
+}
+
+size_t MergeTreeReaderCompact::getNextSubstreamStart(size_t column_position, size_t substream_position, size_t from_mark)
+{
+    if (!marks_getter)
+        marks_getter = marks_loader->loadMarks();
+
+    /// The recorded substreams of the column, then of the columns after it, are laid out
+    /// consecutively in `data.bin`; the first one starting at or after the current
+    /// substream's mark marks the end of its compressed block. (An empty substream's mark
+    /// points at the position the next substream starts at, so `>=` is required: with a
+    /// strict comparison the manifest of an empty key set would read into it.)
+    const size_t current_start = marks_getter->getMark(from_mark, substream_position).offset_in_compressed_file;
+    size_t first_substream_of_next_column = columns_substreams.getLastSubstreamPosition(column_position) + 1;
+    for (size_t pos = substream_position + 1; pos < first_substream_of_next_column; ++pos)
+    {
+        size_t start = marks_getter->getMark(from_mark, pos).offset_in_compressed_file;
+        if (start >= current_start)
+            return start;
+    }
+    /// The marks of the next column's first substream follow immediately.
+    size_t total = marks_getter->getNumColumns();
+    if (first_substream_of_next_column < total)
+    {
+        size_t start = marks_getter->getMark(from_mark, first_substream_of_next_column).offset_in_compressed_file;
+        if (start >= current_start)
+            return start;
+    }
+    return 0;
 }
 
 bool MergeTreeReaderCompact::needSkipStream(size_t column_pos, const ISerialization::SubstreamPath & substream) const

@@ -4,8 +4,10 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeArray.h>
 #include <Common/SipHash.h>
@@ -13,8 +15,11 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <DataTypes/Serializations/SerializationMapKeyValue.h>
+#include <DataTypes/Serializations/SerializationNamed.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationWrapper.h>
 #include <DataTypes/Serializations/SerializationInfoSettings.h>
 #include <Parsers/IAST.h>
 #include <IO/WriteBufferFromString.h>
@@ -137,6 +142,11 @@ SerializationPtr DataTypeMap::doGetSerialization(const SerializationInfoSettings
     auto key_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(key_serialization, "keys", SubstreamType::TupleElement));
     auto value_serialization_named = std::static_pointer_cast<const SerializationNamed>(SerializationNamed::create(value_serialization, "values", SubstreamType::TupleElement));
     auto nested_serialization = SerializationArray::create(SerializationTuple::create(SerializationTuple::ElementSerializations{key_serialization_named, value_serialization_named}, true));
+    auto text_serialization = SerializationMap::create(key_serialization, value_serialization, nested_serialization, MergeTreeMapSerializationVersion::BASIC);
+
+    if (settings.map_serialization_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return SerializationMapKeyColumns::create(key_type, value_type, key_serialization, value_serialization, text_serialization);
+
     return SerializationMap::create(key_serialization, value_serialization, nested_serialization, settings.map_serialization_version);
 }
 
@@ -181,37 +191,142 @@ void DataTypeMap::forEachChild(const DB::IDataType::ChildCallback & callback) co
 }
 
 /// Resolves a dynamic subcolumn like `map['key']` by parsing the key from the subcolumn name,
-/// creating a `SerializationMapKeyValue` that knows how to read only the relevant bucket,
-/// and optionally pre-extracting the values from an existing column.
-/// The subcolumn name must start with "key_" followed by the text-serialized key value.
+/// creating a serialization that knows how to read only that key, and optionally pre-extracting
+/// the values from an existing column.
+/// Subcolumn names:
+///  - `key_<key>` — the value of a single key (type V). For ordinary Maps the key is
+///    text-parsed into the key type; for `with_key_columns` Maps (always `String` keys)
+///    the raw suffix is the key itself.
+///  - `exists_<key>` — the presence bitmap of a single key (`UInt8`, `with_key_columns` only).
+///  - `keys` — all present keys (`Array(K)`, `with_key_columns` only).
 std::unique_ptr<IDataType::SubcolumnInfo> DataTypeMap::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t /*initial_array_level*/, bool throw_if_null) const
 {
-    /// Only subcolumns of the form "key_<serialized_key>" are supported.
-    if (!subcolumn_name.starts_with(KEY_SUBCOLUMN_PREFIX))
+    SerializationPtr serialization = removeNamedSerialization(data.serialization);
+    /// `SerializationMapKeyColumns` is itself a `SerializationWrapper`. Check it before unwrapping,
+    /// then peel Sparse / Replicated / other wrappers that may sit outside the Map serialization.
+    for (size_t i = 0; i < 8; ++i)
+    {
+        if (typeid_cast<const SerializationMapKeyColumns *>(serialization.get())
+            || typeid_cast<const SerializationMap *>(serialization.get()))
+            break;
+
+        if (const auto * wrapper = typeid_cast<const SerializationWrapper *>(serialization.get()))
+        {
+            serialization = wrapper->getNested();
+            continue;
+        }
+        break;
+    }
+
+    const bool per_key = typeid_cast<const SerializationMapKeyColumns *>(serialization.get()) != nullptr;
+
+    if (subcolumn_name == "keys" && per_key)
+    {
+        auto res = std::make_unique<SubcolumnInfo>();
+        res->data = SubstreamData(std::make_shared<SerializationMapKeyPresence>(serialization, std::nullopt))
+            .withType(std::make_shared<DataTypeArray>(key_type));
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyPresence);
+        if (data.column)
+        {
+            const auto & map = assert_cast<const ColumnMap &>(*data.column);
+            res->data.column = ColumnArray::create(map.getNestedData().getColumnPtr(0), map.getNestedColumn().getOffsetsPtr());
+        }
+        return res;
+    }
+
+    const bool existence = subcolumn_name.starts_with(EXISTS_SUBCOLUMN_PREFIX);
+    if (existence && !per_key)
     {
         if (throw_if_null)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
         return nullptr;
     }
 
-    /// Parse the key value from the subcolumn name.
-    std::string_view key_string = subcolumn_name.substr(KEY_SUBCOLUMN_PREFIX.size());
-    auto key_column = key_type->createColumn();
-    auto key_serialization = key_type->getDefaultSerialization();
-    ReadBufferFromString buf(key_string);
-    try
-    {
-        key_serialization->deserializeWholeText(*key_column, buf, FormatSettings{});
-    }
-    catch (...)
+    /// Existence uses a separate prefix so a key ending in `.null` stays unambiguous.
+    if (!existence && !subcolumn_name.starts_with(KEY_SUBCOLUMN_PREFIX))
     {
         if (throw_if_null)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
         return nullptr;
+    }
+
+    /// Parse the key value from the subcolumn name. `with_key_columns` Maps accept
+    /// only `String` keys, so the raw suffix is the key itself; other Map flavors
+    /// still parse the suffix text into the key type below.
+    std::string_view key_string = subcolumn_name.substr(existence ? EXISTS_SUBCOLUMN_PREFIX.size() : KEY_SUBCOLUMN_PREFIX.size());
+    const bool raw_string_key = per_key;
+    auto key_column = key_type->createColumn();
+    if (!raw_string_key)
+    {
+        auto key_serialization = key_type->getDefaultSerialization();
+        ReadBufferFromString buf(key_string);
+        try
+        {
+            key_serialization->deserializeWholeText(*key_column, buf, FormatSettings{});
+        }
+        catch (...)
+        {
+            if (throw_if_null)
+                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type {} doesn't have subcolumn {}", getName(), subcolumn_name);
+            return nullptr;
+        }
+    }
+
+    /// In-memory extraction for `with_key_columns` subcolumns: scan the Map rows for
+    /// the key, producing the value column and its presence bitmap in one pass.
+    auto extract_from_column = [&](const String & key) -> std::pair<ColumnPtr, ColumnPtr>
+    {
+        const auto & column_map = assert_cast<const ColumnMap &>(*data.column);
+        const auto & keys_column = assert_cast<const ColumnString &>(column_map.getNestedData().getColumn(0));
+        const auto & values_column = column_map.getNestedData().getColumn(1);
+        const auto & offsets = column_map.getNestedColumn().getOffsets();
+        auto value_column = value_type->createColumn();
+        auto presence_column = ColumnUInt8::create();
+        value_column->reserve(data.column->size());
+        presence_column->reserve(data.column->size());
+        for (size_t row = 0; row < data.column->size(); ++row)
+        {
+            size_t found = offsets[ssize_t(row) - 1];
+            size_t end = offsets[row];
+            while (found < end && keys_column.getDataAt(found) != key)
+                ++found;
+            presence_column->getData().push_back(found < end);
+            if (found < end)
+                value_column->insertFrom(values_column, found);
+            else
+                value_column->insertDefault();
+        }
+        return {std::move(value_column), std::move(presence_column)};
+    };
+
+    if (existence)
+    {
+        auto res = std::make_unique<SubcolumnInfo>();
+        res->data = SubstreamData(std::make_shared<SerializationMapKeyPresence>(serialization, String(key_string)))
+            .withType(std::make_shared<DataTypeUInt8>());
+        res->substreams_path.emplace_back(ISerialization::Substream::MapKeyPresence);
+        res->substreams_path.back().name_of_substream = String(key_string);
+        if (data.column)
+            res->data.column = extract_from_column(String(key_string)).second;
+        return res;
+    }
+
+    if (const auto * per_key_serialization = typeid_cast<const SerializationMapKeyColumns *>(serialization.get()))
+    {
+        auto key_value_serialization = SerializationMapKeyColumn::create(
+            per_key_serialization->getValueSerialization(),
+            per_key_serialization->getPtr(),
+            String(key_string),
+            String(subcolumn_name));
+        auto res = std::make_unique<SubcolumnInfo>();
+        res->data = SubstreamData(key_value_serialization).withType(value_type);
+        if (data.column)
+            res->data.column = extract_from_column(String(key_string)).first;
+        return res;
     }
 
     /// Create a serialization that reads only the bucket containing the requested key.
-    const auto & map_serialization = assert_cast<const SerializationMap &>(*removeNamedSerialization(data.serialization));
+    const auto & map_serialization = assert_cast<const SerializationMap &>(*serialization);
     auto key_value_serialization = SerializationMapKeyValue::create(
         map_serialization.getValueSerialization(),
         map_serialization.getNestedSerialization(),

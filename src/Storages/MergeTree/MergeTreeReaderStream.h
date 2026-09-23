@@ -59,6 +59,12 @@ public:
     void adjustRightMark(size_t right_mark);
     ReadBuffer * getDataBuffer();
 
+    /// Offset in the compressed file of the first byte the data buffer has not yet
+    /// decompressed: the end of the compressed block currently being decompressed,
+    /// or the current read position between blocks. Zero when not reading a compressed
+    /// buffer. Used to bound a whole-substream read to one compressed block.
+    size_t getCompressedBlockEnd() const;
+
     size_t getFileSize() const { return file_size; }
 
 private:

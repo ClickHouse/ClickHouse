@@ -463,7 +463,8 @@ IMPLEMENT_SETTING_ENUM(
     MergeTreeMapSerializationVersion,
     ErrorCodes::BAD_ARGUMENTS,
     {{"basic", MergeTreeMapSerializationVersion::BASIC},
-     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS}})
+     {"with_buckets", MergeTreeMapSerializationVersion::WITH_BUCKETS},
+     {"with_key_columns", MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeMapBucketsStrategy,

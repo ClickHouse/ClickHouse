@@ -4965,6 +4965,8 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     {
         storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
+        table_expression_data.storage_snapshot = storage_snapshot;
+
         auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         if (storage_snapshot->storage.supportsSubcolumns())
         {

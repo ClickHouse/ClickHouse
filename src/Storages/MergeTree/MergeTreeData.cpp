@@ -37,8 +37,10 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeUUID.h>
@@ -1037,6 +1039,44 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
+/// Rejects Maps nested inside Array/Tuple/LowCardinality of a column on a
+/// `with_key_columns` table. The per-key state prefix writes the key list into the
+/// `m.keys` stream and the reader reads it back with `readMapKeys` until EOF; nested
+/// beneath `Substream::ArrayElements` the same stream also carries the per-element
+/// rows of later granules, so the prefix reader would run into the granule data
+/// ("Empty key in a with_key_columns Map keys stream"). Supporting nested Maps needs a
+/// self-delimiting keys prefix.
+static void checkNoNestedMapInMapKeyColumnsTable(const IDataType & type, const String & path)
+{
+    if (const auto * map = typeid_cast<const DataTypeMap *>(&type))
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Column {} contains a Map({}) nested inside another type, "
+            "but map_serialization_version = 'with_key_columns' supports only top-level Map columns",
+            path,
+            map->getName());
+    }
+
+    const WhichDataType which(type);
+    if (which.isArray())
+    {
+        checkNoNestedMapInMapKeyColumnsTable(*assert_cast<const DataTypeArray &>(type).getNestedType(), path);
+        return;
+    }
+    if (which.isTuple())
+    {
+        const auto & tuple = assert_cast<const DataTypeTuple &>(type);
+        const auto & elements = tuple.getElements();
+        const auto & element_names = tuple.getElementNames();
+        for (size_t i = 0; i < elements.size(); ++i)
+            checkNoNestedMapInMapKeyColumnsTable(*elements[i], path + "." + element_names[i]);
+        return;
+    }
+    if (which.isLowCardinality())
+        checkNoNestedMapInMapKeyColumnsTable(*assert_cast<const DataTypeLowCardinality &>(type).getDictionaryType(), path);
+}
+
 /// A function that opts out of constant folding may do context-dependent work (an access check, a remote
 /// call) before it looks at the row count, and the expression here was analyzed with the context of the user
 /// running the DDL rather than the storage's, so probing such an expression could answer a different question.
@@ -1495,6 +1535,60 @@ void MergeTreeData::checkProperties(
 
     /// On CREATE, `old_metadata` and `new_metadata` are the same object; on ALTER they differ.
     const bool is_alter = &old_metadata != &new_metadata;
+
+    const auto map_version = effective_settings[MergeTreeSetting::map_serialization_version];
+    const bool new_uses_key_columns = map_version == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool live_uses_key_columns
+        = live_settings[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+
+    if (new_uses_key_columns)
+    {
+        /// `with_key_columns` governs zero-level parts too: a part-level mix of layouts
+        /// is not supported, so `map_serialization_version_for_zero_level_parts` is
+        /// ignored (the write path and the part load both resolve it to
+        /// `with_key_columns`). It is not rejected outright so that a randomized or
+        /// inherited `with_buckets` override does not break DDL.
+        /// Other merging modes rewrite whole rows (signs, versions, aggregates);
+        /// the per-key layout is validated for ordinary merges only.
+        if (merging_params.mode != MergingParams::Ordinary)
+        {
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "map_serialization_version = 'with_key_columns' is supported only for MergeTree and ReplicatedMergeTree");
+        }
+
+        for (const auto & column : new_metadata.columns.getAllPhysical())
+        {
+            const auto * map_type = typeid_cast<const DataTypeMap *>(column.type.get());
+            if (!map_type)
+            {
+                /// A Map inside Array/Tuple/LowCardinality would get the per-key
+                /// serialization too, which is not supported there.
+                checkNoNestedMapInMapKeyColumnsTable(*column.type, backQuoteIfNeed(column.name));
+                continue;
+            }
+
+            /// Keys are serialized inside stream names, which is only defined for
+            /// plain `String` keys (not FixedString, Nullable(String) or
+            /// LowCardinality(String)).
+            if (!WhichDataType(map_type->getKeyType()).isString())
+            {
+                throw Exception(
+                    ErrorCodes::ILLEGAL_COLUMN,
+                    "Map column {} has key type {}, but map_serialization_version = 'with_key_columns' requires key type String "
+                    "(FixedString, Nullable(String), LowCardinality(String) and other key types are not allowed)",
+                    backQuoteIfNeed(column.name),
+                    map_type->getKeyType()->getName());
+            }
+        }
+    }
+
+    if (!attach && is_alter && new_uses_key_columns != live_uses_key_columns && getActivePartsCount() > 0)
+    {
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Cannot change map_serialization_version to or from 'with_key_columns' while the table has data parts");
+    }
 
     for (const auto & col : new_metadata.columns)
     {
@@ -12352,6 +12446,19 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
 
     if (!check_definitions(my_snapshot->getProjections(), src_snapshot->getProjections()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different projections");
+
+    const bool my_uses_key_columns
+        = (*getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    const bool src_uses_key_columns
+        = (*src_data->getSettings())[MergeTreeSetting::map_serialization_version] == MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS;
+    if (my_uses_key_columns != src_uses_key_columns)
+    {
+        throw Exception(
+            ErrorCodes::INCOMPATIBLE_COLUMNS,
+            "Cannot ATTACH PARTITION FROM a table with map_serialization_version = '{}' into a table with map_serialization_version = '{}'",
+            src_uses_key_columns ? "with_key_columns" : "basic",
+            my_uses_key_columns ? "with_key_columns" : "basic");
+    }
 
     return *src_data;
 }

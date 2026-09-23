@@ -11,9 +11,12 @@
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
+#include <Compression/CompressedReadBufferFromFile.h>
+#include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationMapKeyColumns.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
@@ -30,6 +33,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
+#include <Processors/Transforms/SquashingTransform.h>
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/Transforms/TTLCalcTransform.h>
 #include <Processors/Transforms/TTLTransform.h>
@@ -136,6 +140,65 @@ namespace MutationHelpers
 /// must never be resolved against the source part's checksums (a part may happen to contain a real
 /// column whose name collides with this sentinel).
 static const String NOT_YET_WRITTEN_COLUMN_SUBSTREAM_PLACEHOLDER = "dummy";
+
+/// Key sets of the with_key_columns Map columns of a part, read from the part's own
+/// `m.keys` streams. Seeds the writer of a mutation that rewrites the whole part or
+/// a Map column, so the output key set matches the source part even when the mutating
+/// pipeline produces several blocks.
+static PlannedMapKeyColumnsKeys collectMapKeyColumnsKeysForMutation(
+    const IMergeTreeDataPart & source_part,
+    const NamesAndTypesList & written_columns,
+    const MergeTreeSettingsPtr & settings)
+{
+    PlannedMapKeyColumnsKeys map_key_columns_keys;
+
+    if ((*settings)[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return map_key_columns_keys;
+
+    for (const auto & column : written_columns)
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        /// A column absent from the source part (added by ALTER) is written from its
+        /// DEFAULT expression; the writer discovers the key set from the first block.
+        if (!source_part.getColumns().contains(column.name))
+            continue;
+
+        /// A zero-row source has no keys; register the empty set so the writer does
+        /// not treat the column as unseeded.
+        if (source_part.rows_count == 0)
+        {
+            map_key_columns_keys.emplace(column.name, std::vector<String>{});
+            continue;
+        }
+
+        ISerialization::SubstreamPath path;
+        path.push_back(ISerialization::Substream::MapKeys);
+        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(
+            column, path, IMergeTreeDataPart::DATA_FILE_EXTENSION, source_part.getDataPartStorage(), settings);
+        if (!stream_name)
+        {
+            /// Old/basic part without per-key streams (its serialization info was
+            /// upgraded in memory): the writer discovers the key set from the first
+            /// block. (To be fully safe for multi-block output the part would have to
+            /// be read as a single block; old/basic parts are a legacy corner.)
+            continue;
+        }
+
+        const auto * serialization = typeid_cast<const SerializationMapKeyColumns *>(source_part.getSerialization(column.name).get());
+        if (!serialization)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} in part {} is not a with_key_columns Map", column.name, source_part.name);
+
+        auto file = source_part.getDataPartStorage().readFile(*stream_name + IMergeTreeDataPart::DATA_FILE_EXTENSION, {}, std::nullopt);
+        CompressedReadBufferFromFile in(std::move(file), /*allow_different_codecs=*/ true);
+        auto keys = serialization->readMapKeys(in);
+        if (!keys.empty())
+            map_key_columns_keys.emplace(column.name, std::move(keys));
+    }
+
+    return map_key_columns_keys;
+}
 
 static bool haveMutationsOfDynamicColumns(const MergeTreeData::DataPartPtr & data_part, const MutationCommands & commands)
 {
@@ -1957,8 +2020,50 @@ struct MutationContext
 
     /// Whether we need to count lightweight delete rows in this mutation
     bool count_lightweight_deleted_rows{};
+
+    /// A with_key_columns Map fixes its output key set at the first written block.
+    /// True when this mutation's writer is seeded with the source part's key manifest
+    /// and the mutation itself cannot produce keys outside it (no UPDATE commands and
+    /// no TTL rewrites); the mutating pipeline must be squashed into a single block
+    /// otherwise, so the writer discovers the complete key set from that block.
+    bool canKeepMultiBlockOutputForMapKeyColumns() const;
+
     UInt64 execute_elapsed_ns = 0;
 };
+
+bool MutationContext::canKeepMultiBlockOutputForMapKeyColumns() const
+{
+    const auto & settings = *data->getSettings();
+    if (settings[MergeTreeSetting::map_serialization_version] != MergeTreeMapSerializationVersion::WITH_KEY_COLUMNS)
+        return true;
+
+    if (execute_ttl_type != ExecuteTTLType::NONE)
+        return false;
+
+    if (std::ranges::any_of(for_interpreter, [](const auto & command) { return command.type == MutationCommand::UPDATE; }))
+        return false;
+
+    /// The mutation writer is seeded from the source part's key manifest; a Map column
+    /// without one (missing from the source part — its DEFAULT is evaluated during the
+    /// rewrite — or an old/basic part without a keys stream) can produce keys unknown to
+    /// the writer. Mirrors `MergeTask`'s `partMayHaveMapKeysOutsideManifest`.
+    for (const auto & column : new_data_part->getColumns())
+    {
+        if (!typeid_cast<const DataTypeMap *>(column.type.get()))
+            continue;
+
+        if (source_part->rows_count == 0 || !source_part->getColumns().contains(column.name))
+            return false;
+
+        ISerialization::SubstreamPath path;
+        path.push_back(ISerialization::Substream::MapKeys);
+        if (!IMergeTreeDataPart::getStreamNameForColumn(
+                column, path, IMergeTreeDataPart::DATA_FILE_EXTENSION, source_part->getDataPartStorage(), data->getSettings()))
+            return false;
+    }
+
+    return true;
+}
 
 using MutationContextPtr = std::shared_ptr<MutationContext>;
 
@@ -2052,6 +2157,13 @@ private:
     size_t projection_block_num = 0;
     std::vector<std::unique_ptr<MergeProjectionsIndexesTask>> merge_subtasks;
 
+    /// A with_key_columns Map fixes its output key set at the first written block;
+    /// when the mutation can produce keys the source part's manifest does not
+    /// contain, the written stream is squashed into a single block (see
+    /// `squashMutatingPipelineIfNeeded`).
+    bool squash_main_stream = false;
+    std::vector<Squashing> projection_main_squashes;
+
     using ProjectionNameToItsBlocks = std::map<String, MergeTreeData::MutableDataPartsVector>;
     ProjectionNameToItsBlocks projection_parts;
 
@@ -2083,6 +2195,12 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
+    /// A with_key_columns Map fixes its output key set at the first written block; when
+    /// the mutation can produce keys the source part's manifest does not contain, the main
+    /// stream was squashed into a single block (in the task's `prepare`) and the
+    /// projections are built from the mirrored complete stream at the final flush.
+    squash_main_stream = !ctx->canKeepMultiBlockOutputForMapKeyColumns();
+
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume
     /// the same source blocks. This drastically reduces the number of temporary
@@ -2113,6 +2231,14 @@ void PartMergerWriter::prepare()
             std::make_shared<const Block>(ctx->updated_header),
             settings[Setting::min_insert_block_size_rows],
             settings[Setting::min_insert_block_size_bytes]);
+
+        /// When the main stream must produce a single block, the per-projection write
+        /// is delayed to the final flush, so the post-calculate squash only mirrors it
+        /// for the main-stream columns that feed the projection.
+        projection_main_squashes.emplace_back(
+            std::make_shared<const Block>(),
+            std::numeric_limits<size_t>::max(),
+            std::numeric_limits<size_t>::max());
     }
 
     {
@@ -2147,6 +2273,19 @@ bool PartMergerWriter::mutateOriginalPartAndPrepareProjections()
         }
 
         ctx->out->write(cur_block);
+
+        if (squash_main_stream)
+        {
+            /// Mirror the written block into the per-projection mirrors so the delayed
+            /// projection parts see the same Map keys as the written part.
+            for (size_t i = 0; i < projection_main_squashes.size(); ++i)
+            {
+                auto & mirror = projection_main_squashes[i];
+                if (mirror.empty())
+                    mirror.setHeader(cur_block.cloneEmpty());
+                mirror.add({cur_block.getColumns(), cur_block.rows()});
+            }
+        }
 
         if (ctx->minmax_idx)
             ctx->minmax_idx->update(cur_block, ctx->minmax_idx_columns);
@@ -2322,6 +2461,17 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
     /// Then, flush any remaining post-calculate squash buffers.
     for (size_t i = 0, size = ctx->projections_to_build.size(); i < size; ++i)
     {
+        if (squash_main_stream)
+        {
+            /// The main stream was written as one block whose key set the projection's
+            /// writer discovers from its first block; build the projection from the
+            /// complete mirrored stream so both agree.
+            auto & mirror = projection_main_squashes[i];
+            Chunk remaining = Squashing::squash(mirror.flush(), mirror.getHeader());
+            if (remaining)
+                calculateProjection(i, mirror.getHeader()->cloneWithColumns(remaining.detachColumns()), 0);
+        }
+
         auto squashed_chunk = Squashing::squash(
             projection_squashes[i].flush(),
             projection_squashes[i].getHeader());
@@ -2797,6 +2947,15 @@ private:
         if (!subqueries.empty())
             builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+        /// A with_key_columns Map fixes its output key set at the first written block;
+        /// squash the stream when the mutation can produce keys the source part's
+        /// manifest does not contain.
+        if (!ctx->canKeepMultiBlockOutputForMapKeyColumns())
+            builder->addSimpleTransform([](const SharedHeader & header)
+            {
+                return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+            });
+
         bool affects_all_columns = false;
 
         for (auto & command_for_interpreter : ctx->for_interpreter)
@@ -2857,7 +3016,9 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
+            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
+            MutationHelpers::collectMapKeyColumnsKeysForMutation(
+                *ctx->source_part, ctx->new_data_part->getColumns(), ctx->data->getSettings()));
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3220,6 +3381,15 @@ private:
             if (!subqueries.empty())
                 builder = addCreatingSetsTransform(std::move(builder), std::move(subqueries), ctx->context);
 
+            /// A with_key_columns Map fixes its output key set at the first written block;
+            /// squash the stream when the mutation can produce keys the source part's
+            /// manifest does not contain.
+            if (!ctx->canKeepMultiBlockOutputForMapKeyColumns())
+                builder->addSimpleTransform([](const SharedHeader & header)
+                {
+                    return std::make_shared<SquashingTransform>(header, std::numeric_limits<size_t>::max(), std::numeric_limits<size_t>::max());
+                });
+
             /// Some columns may be present in the interpreter output only for
             /// projection/index recalculation (e.g. CLEAR COLUMN provides a default
             /// value so that dependent projections are rebuilt correctly). Such columns
@@ -3246,7 +3416,10 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
+                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
+                /*external_packed_skip_indices_writer=*/ nullptr,
+                MutationHelpers::collectMapKeyColumnsKeysForMutation(
+                    *ctx->source_part, columns_for_writer, ctx->data->getSettings()));
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would

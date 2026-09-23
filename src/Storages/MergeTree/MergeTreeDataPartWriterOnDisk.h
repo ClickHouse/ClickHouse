@@ -101,10 +101,12 @@ protected:
 
     void setCurrentMark(size_t mark) { current_mark = mark; }
 
+    /// Register the streams of one column. Re-entrant: implementations must tolerate
+    /// being called when the streams already exist.
+    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
+
     /// Get unique non ordered skip indices column.
     Names getSkipIndicesColumns() const;
-
-    virtual void addStreams(const NameAndTypePair & name_and_type, const ASTPtr & effective_codec_desc) = 0;
 
     /// Per-column min_compress_block_size override if set, otherwise the table default.
     UInt64 getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const;
