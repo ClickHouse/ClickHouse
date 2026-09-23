@@ -16,6 +16,9 @@
                  </ssh_key>
             </ssh_keys>
         </john>
+        <paul>
+            <password>paul_password</password>
+        </paul>
         <lucy>
             <ssh_keys>
                 <ssh_key>

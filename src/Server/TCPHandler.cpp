@@ -2270,22 +2270,13 @@ void TCPHandler::receiveHello()
     /// Perform handshake for SSH authentication
     if (is_ssh_based_auth)
     {
-        const auto authentication_types = session->getAuthenticationTypesOrLogInFailure(user);
-
-        bool user_supports_ssh_authentication = std::find_if(
-            authentication_types.begin(),
-            authentication_types.end(),
-            [](auto authentication_type)
-            {
-               return authentication_type ==  AuthenticationType::SSH_KEY;
-            }) != authentication_types.end();
-
-        if (!user_supports_ssh_authentication)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED, "Expected authentication with SSH key");
-
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
 
+        /// Challenge the client without looking the user up first: whether a user exists and how
+        /// it authenticates must not be observable before a signature is checked. Reporting the
+        /// failure is left to the credential check below, which answers an unknown user and a
+        /// user that authenticates some other way the same way it answers a bad signature.
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
