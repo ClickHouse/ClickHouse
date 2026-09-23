@@ -5220,6 +5220,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts();
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
+        /// Not implemented for `FINAL` reads (which merge row versions across parts in their own
+        /// pipeline), and `optimizeLazyFinal` rebuilds such a read without the descriptors anyway. The
+        /// setting's description documents this no-op, and
+        /// `05243_join_runtime_filters_index_analysis_final_noop` pins it.
         && !query_info.isFinal()
         && !join_runtime_filters_for_index_analysis.empty()
         && !pending_mutations
