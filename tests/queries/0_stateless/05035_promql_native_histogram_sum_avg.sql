@@ -24,7 +24,7 @@ INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
     ('nh_c1', map('job', 'custom'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], [])]),
     ('nh_c2', map('job', 'custom'), [(toDateTime64(100, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], [])]);
 -- Group {job='mixed'}: a float series (5 @100) and a histogram series (e1 @100).
-INSERT INTO ts_nh_agg (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_agg (metric_name, tags, samples) VALUES
     ('mx_f', map('job', 'mixed'), [(toDateTime64(100, 3), 5)]);
 INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
     ('mx_h', map('job', 'mixed'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
@@ -33,7 +33,7 @@ INSERT INTO ts_nh_agg (metric_name, tags, histograms) VALUES
     ('ix_e', map('job', 'incompat'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]),
     ('ix_c', map('job', 'incompat'), [(toDateTime64(100, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], [])]);
 -- Group {job='float'}: two float series (5 and 7 @100).
-INSERT INTO ts_nh_agg (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_agg (metric_name, tags, samples) VALUES
     ('fl_1', map('job', 'float'), [(toDateTime64(100, 3), 5)]),
     ('fl_2', map('job', 'float'), [(toDateTime64(100, 3), 7)]);
 -- Group {job='kahan'}: big (count 1, sum 1e16) and two smalls (count 1, sum 1), all @100.
@@ -83,10 +83,10 @@ SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_agg', 'sum(
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_agg', 'sum({__name__=~"mx_f|mx_h"})', 105);
 
 SELECT '-- range query: sum/avg by (job) over the exp group at every step';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_agg', 'sum by (job) ({job="exp"})', 100, 130, 15);
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_agg', 'avg by (job) ({job="exp"})', 100, 130, 15);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_agg', 'sum by (job) ({job="exp"})', 100, 130, 15);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_agg', 'avg by (job) ({job="exp"})', 100, 130, 15);
 
 SELECT '-- range query over the mixed group: every step drops (both arms empty)';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_agg', 'sum by (job) ({job="mixed"})', 100, 130, 15);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_agg', 'sum by (job) ({job="mixed"})', 100, 130, 15);
 
 DROP TABLE ts_nh_agg;

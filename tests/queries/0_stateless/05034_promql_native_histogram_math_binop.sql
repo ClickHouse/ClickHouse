@@ -30,10 +30,10 @@ INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
     ('nh_c3', map('job', 'x'), [(toDateTime64(100, 3), 0, -53, 0., 4., 14., 0., [(0, 2)], [5., 7.], [], [], [2., 4., 8.], 4, 0, [5, 7], [])]);
 -- f1 @100: float 5.
-INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_math (metric_name, tags, samples) VALUES
     ('nh_f1', map('job', 'x'), [(toDateTime64(100, 3), 5)]);
 -- mx1 {job='mx'}: float 100 @100, histogram e1 @110; mx2 {job='mx'}: histogram e2 @100.
-INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_math (metric_name, tags, samples) VALUES
     ('mx1', map('job', 'mx'), [(toDateTime64(100, 3), 100)]);
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
     ('mx1', map('job', 'mx'), [(toDateTime64(110, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
@@ -112,7 +112,7 @@ SELECT '-- one-to-many matching: g1 {job=grp, inst=a} (histogram e1) * on(job) g
 SELECT '-- -> e1 * 2 with the tags of the "many" side';
 INSERT INTO ts_nh_math (metric_name, tags, histograms) VALUES
     ('nh_g1', map('job', 'grp', 'inst', 'a'), [(toDateTime64(100, 3), 0, 0, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [], 4, 0, [1, 3], [])]);
-INSERT INTO ts_nh_math (metric_name, tags, time_series) VALUES
+INSERT INTO ts_nh_math (metric_name, tags, samples) VALUES
     ('nh_g2', map('job', 'grp'), [(toDateTime64(100, 3), 2)]);
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_g1 * on(job) group_left() nh_g2', 105);
 
@@ -120,13 +120,13 @@ SELECT '-- non-matching series are dropped: e1 {job=x} + g2 {job=grp} -> no matc
 SELECT tags, timestamp, value, histogram FROM prometheusQuery('ts_nh_math', 'nh_e1 + nh_g2', 105);
 
 SELECT '-- range query: e1 + e2 at every step';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_math', 'nh_e1 + nh_e2', 100, 130, 15);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_math', 'nh_e1 + nh_e2', 100, 130, 15);
 
 SELECT '-- range query of the disallowed `histogram * histogram`: both arms stay empty';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_math', 'nh_e1 * nh_e2', 100, 130, 15);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_math', 'nh_e1 * nh_e2', 100, 130, 15);
 
 SELECT '-- range query of the mixed-kind series: at 100/115/130 mx1 resolves to float/histogram/histogram';
 SELECT '-- -> drop / e1+e2 / e1+e2';
-SELECT tags, time_series, histogram_series FROM prometheusQueryRange('ts_nh_math', 'mx1 + mx2', 100, 130, 15);
+SELECT tags, samples, histogram_series FROM prometheusQueryRange('ts_nh_math', 'mx1 + mx2', 100, 130, 15);
 
 DROP TABLE ts_nh_math;
