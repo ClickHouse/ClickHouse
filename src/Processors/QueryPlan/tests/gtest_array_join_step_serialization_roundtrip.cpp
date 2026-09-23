@@ -89,7 +89,7 @@ RoundTrip roundTrip(bool is_left, bool is_unaligned, bool enable_lazy_columns_re
     auto header = makeHeader();
     ArrayJoinStep step(
         header,
-        ArrayJoin{Names{"arr"}, is_left, {}},
+        ArrayJoin{Names{"arr"}, is_left},
         is_unaligned,
         /*max_block_size_=*/65536,
         enable_lazy_columns_replication);
@@ -142,7 +142,7 @@ Block roundTripAndExecute(bool enable_lazy_columns_replication, const ContextPtr
 
     ArrayJoinStep step(
         header,
-        ArrayJoin{Names{"arr"}, /*is_left=*/false, {}},
+        ArrayJoin{Names{"arr"}, /*is_left=*/false},
         /*is_unaligned_=*/false,
         /*max_block_size_=*/65536,
         enable_lazy_columns_replication);

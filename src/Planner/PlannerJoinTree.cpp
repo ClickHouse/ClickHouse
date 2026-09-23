@@ -3215,7 +3215,6 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
 
     Names array_join_column_names;
     array_join_column_names.reserve(array_join_node.getJoinExpressions().getNodes().size());
-    NameToNameMap array_join_source_columns;
     for (auto & array_join_expression : array_join_node.getJoinExpressions().getNodes())
     {
         const auto & array_join_column_identifier = planner_context->getColumnNodeIdentifierOrThrow(array_join_expression);
@@ -3231,8 +3230,6 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
             const auto * array_join_column_node = &array_join_action_dag.addAlias(*expression_dag_index_node, array_join_column_identifier);
             array_join_action_dag.getOutputs().push_back(array_join_column_node);
             array_join_expressions_output_nodes.insert(array_join_column_node->result_name);
-
-            array_join_source_columns.emplace(array_join_column_identifier, expression_dag_index_node->result_name);
         }
     }
 
@@ -3275,7 +3272,7 @@ JoinTreeQueryPlan buildQueryPlanForArrayJoinNode(const QueryTreeNodePtr & array_
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
     auto array_join_step = std::make_unique<ArrayJoinStep>(
         plan.getCurrentHeader(),
-        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft(), std::move(array_join_source_columns)},
+        ArrayJoin{std::move(array_join_column_names), array_join_node.isLeft()},
         settings[Setting::enable_unaligned_array_join],
         settings[Setting::max_block_size],
         settings[Setting::enable_lazy_columns_replication]

@@ -56,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"query_plan_top_k_through_array_join", false, false, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns; disabled by default."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -83,9 +84,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_sharding_aggregator", false, false, "Obsolete setting, the sharded aggregator has been removed in favor of the adaptive aggregator (`enable_adaptive_aggregator`)."},
             {"allow_preliminary_distinct_abandoning", false, true, "New setting that lets the preliminary `DISTINCT` give up deduplicating mostly-unique input, because the final `DISTINCT` deduplicates its output again."},
             {"query_plan_fuse_filter_into_array_join", false, true, "New optimization to fuse a filter on ARRAY JOINed columns into the ARRAY JOIN step, enabled by default."},
-            {"query_plan_top_k_through_array_join", false, true, "New setting to move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns."},
-            {"query_plan_push_down_limit_through_array_join", false, true, "New setting to apply a bounded input limit below `ARRAY JOIN`."},
-            {"query_plan_preserve_order_through_array_join", false, true, "New setting to preserve the sorting prefix that does not reference columns expanded by `ARRAY JOIN`."},
             {"iceberg_file_entries_queue_size", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."},
             {"iceberg_manifest_decode_concurrency", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the pre-26.9 data path, which decoded one manifest at a time with the next one's fetch already in flight; under `compatibility` at or below 26.8 the delete decode therefore also runs at 2 rather than its released default of 4, preserving the older data-path memory envelope at the cost of some delete-decode overlap."},
             {"query_plan_lower_array_join_function", false, false, "New optimization to lower an arrayJoin function into a real ARRAY JOIN step; disabled by default."},
@@ -151,9 +149,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
-            {"query_plan_top_k_through_array_join", false, true, "Move bounded sorting below `ARRAY JOIN` when its keys do not depend on expanded columns."},
-            {"query_plan_push_down_limit_through_array_join", false, true, "Apply a bounded input limit below `ARRAY JOIN`."},
-            {"query_plan_preserve_order_through_array_join", false, true, "Preserve the sorting prefix that does not reference columns expanded by `ARRAY JOIN`."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},

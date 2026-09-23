@@ -12,6 +12,8 @@ namespace DB
 
 class ActionsDAG;
 class ArrayJoinStep;
+class ReadFromMergeTree;
+class SortingStep;
 
 struct IDescriptionHolder
 {
@@ -112,14 +114,28 @@ enum class FilterResult
 /// have been partially advanced and must not be used.
 [[nodiscard]] bool peelPassThroughExpressions(QueryPlan::Node *& node, SortDescription & description, size_t max_peel = 4);
 
+/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used by top-K
+/// pushdowns that must cooperate with parallel replicas and `optimizeReadInOrder`.
+const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node);
+
+/// True when inserting a materializing `Sort + Limit` above `input_node` must be abandoned:
+/// parallel-replica coordination would conflict with a local top-n, or (when
+/// `defer_to_read_in_order`) the second-pass `optimizeReadInOrder` can already stream the
+/// requested order - including the `FINAL` + descending-key case that pass 2 rejects even
+/// when `wouldReadInOrderBeUseful` says yes.
+[[nodiscard]] bool shouldSkipTopKAboveMergeTreeInput(
+    const QueryPlan::Node & input_node,
+    const SortingStep & sort_step,
+    const SortDescription & description,
+    size_t limit,
+    bool defer_to_read_in_order);
+
 /// Add a filter that removes rows for which all columns expanded by an inner `ARRAY JOIN` are empty.
 /// The condition is `length(c1) > 0 OR ... OR length(cn) > 0`, so rows with unequal non-zero array
 /// sizes still reach an aligned `ARRAY JOIN` and raise `SIZES_OF_ARRAYS_DONT_MATCH`.
-/// Column names are taken from `array_join`; source names are resolved via `ArrayJoinStep::getSourceColumnName`.
-/// The lookup also tries the joined column names themselves, so the filter can be built both immediately
-/// below the step (where the header uses analyzer aliases) and further down the input (where original
-/// column names remain). The step input header is used to recover constant ARRAY JOIN expressions that
-/// do not need to be read from `input_node`.
+///
+/// Must be built on the immediate input of `array_join`: joined columns are present there under
+/// the names in `array_join.getColumns()`, and constant arrays are folded by `ActionsDAG` itself.
 ///
 /// `input_node` is updated to point to the inserted filter. If the condition is constant, no node
 /// is added because limiting the input cannot change whether a constant `ARRAY JOIN` emits rows.

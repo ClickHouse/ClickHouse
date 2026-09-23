@@ -50,7 +50,7 @@ size_t tryLowerArrayJoinFunction(QueryPlan::Node * parent_node, QueryPlan::Nodes
     array_join_node.children.push_back(&before_node);
     array_join_node.step = std::make_unique<ArrayJoinStep>(
         before_node.step->getOutputHeader(),
-        ArrayJoin{Names{extracted->array_join_column_name}, /*is_left=*/false, {}},
+        ArrayJoin{Names{extracted->array_join_column_name}, /*is_left=*/false},
         /*is_unaligned=*/false,
         settings.max_block_size,
         settings.enable_lazy_columns_replication);

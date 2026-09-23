@@ -19,15 +19,17 @@ Output: payload
 Limit
 │  Limit 10
 │  Offset 0
-└──Sorting
-   │  Sort description: x ASC
-   │  Limit 10
-   └──ArrayJoin
-      │  ARRAY JOIN arr
-      └──ReadFromMergeTree
-            Read type: Default
-            Parts: 1 | Granules: 1
-            Output: payload, arr, x
+└──ArrayJoin
+   │  ARRAY JOIN arr
+   └──Sorting
+      │  Sort description: x ASC
+      │  Limit 10
+      └──Filter
+         │  Filter column: length(arr) > 0
+         └──ReadFromMergeTree
+               Read type: Default
+               Parts: 1 | Granules: 1
+               Output: payload, arr, x
 -- LEFT ARRAY JOIN: Sorting moves without a guard
 Output: x
 
@@ -45,7 +47,7 @@ Limit
             Output: x, arr
 -- guard spans every joined column
 length(arr) > 0 OR length(arr2) > 0
--- chained ARRAY JOIN: one sort moves below both steps and gets one guard per step
+-- chained ARRAY JOIN: only the outermost step is rewritten
 Output: x
 
 Limit
@@ -53,19 +55,17 @@ Limit
 │  Offset 0
 └──ArrayJoin
    │  ARRAY JOIN arr2
-   └──ArrayJoin
-      │  ARRAY JOIN arr
-      └──Sorting
-         │  Sort description: x ASC
-         │  Limit 10
-         └──Filter
-            │  Filter column: length(arr2) > 0
-            └──Filter
-               │  Filter column: length(arr) > 0
-               └──ReadFromMergeTree
-                     Read type: Default
-                     Parts: 1 | Granules: 1
-                     Output: x, arr, arr2
+   └──Sorting
+      │  Sort description: x ASC
+      │  Limit 10
+      └──Filter
+         │  Filter column: length(arr2) > 0
+         └──ArrayJoin
+            │  ARRAY JOIN arr
+            └──ReadFromMergeTree
+                  Read type: Default
+                  Parts: 1 | Granules: 1
+                  Output: x, arr, arr2
 -- joined sort key: not rewritten
 Output: arr
 

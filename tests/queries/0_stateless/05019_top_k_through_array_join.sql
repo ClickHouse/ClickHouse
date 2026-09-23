@@ -82,7 +82,10 @@ SELECT '-- WITH FILL';
 SELECT x FROM (SELECT x FROM t_aj ARRAY JOIN arr ORDER BY x WITH FILL STEP 1 LIMIT 7) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 0;
 SELECT x FROM (SELECT x FROM t_aj ARRAY JOIN arr ORDER BY x WITH FILL STEP 1 LIMIT 7) ORDER BY x SETTINGS query_plan_top_k_through_array_join = 1;
 
-SELECT '-- a WHERE on the joined column stays between the sort and the ARRAY JOIN';
+-- With `query_plan_fuse_filter_into_array_join` (default), the WHERE on the joined column is fused
+-- into the ARRAY JOIN as an element filter. That can drop every element of a non-empty array, so
+-- `topKThroughArrayJoin` must not move the sort below the join.
+SELECT '-- a WHERE on the joined column is fused into the ARRAY JOIN';
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE arr > 500 ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 0;
 SELECT x, e FROM (SELECT x, arr AS e FROM t_aj ARRAY JOIN arr WHERE arr > 500 ORDER BY x LIMIT 6) ORDER BY x, e SETTINGS query_plan_top_k_through_array_join = 1;
 
@@ -154,17 +157,18 @@ DROP TABLE t_aj_ragged;
 
 -- Arrays of unequal size under an aligned inner ARRAY JOIN must still throw. The emptiness
 -- guard spans every joined column (`length(arr) > 0 OR length(arr2) > 0`) rather than just the
--- first one, precisely so that a row like `([], [1])` reaches the step instead of being filtered.
+-- first one, precisely so that a row like `([1], [7, 8])` reaches the step instead of being filtered.
+-- Select the joined columns so the size check is not elided by lazy column replication.
 DROP TABLE IF EXISTS t_aj_mismatch;
 
 CREATE TABLE t_aj_mismatch (x UInt64, arr Array(UInt32), arr2 Array(UInt32))
 ENGINE = MergeTree ORDER BY tuple();
 
-INSERT INTO t_aj_mismatch VALUES (1, [], [7]), (2, [1, 2], [3, 4]);
+INSERT INTO t_aj_mismatch VALUES (1, [1], [7, 8]), (2, [1, 2], [3, 4]);
 
 SELECT '-- sizes of arrays do not match';
-SELECT count() FROM (SELECT x FROM t_aj_mismatch ARRAY JOIN arr, arr2 ORDER BY x LIMIT 10) SETTINGS query_plan_top_k_through_array_join = 0; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
-SELECT count() FROM (SELECT x FROM t_aj_mismatch ARRAY JOIN arr, arr2 ORDER BY x LIMIT 10) SETTINGS query_plan_top_k_through_array_join = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT x, arr, arr2 FROM t_aj_mismatch ARRAY JOIN arr, arr2 ORDER BY x LIMIT 10 SETTINGS query_plan_top_k_through_array_join = 0; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
+SELECT x, arr, arr2 FROM t_aj_mismatch ARRAY JOIN arr, arr2 ORDER BY x LIMIT 10 SETTINGS query_plan_top_k_through_array_join = 1; -- { serverError SIZES_OF_ARRAYS_DONT_MATCH }
 
 DROP TABLE t_aj_mismatch;
 

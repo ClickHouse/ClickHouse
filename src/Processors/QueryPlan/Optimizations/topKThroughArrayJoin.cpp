@@ -1,40 +1,15 @@
 #include <Core/Names.h>
 #include <Core/SortDescription.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
-#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
-#include <Processors/QueryPlan/Optimizations/optimizeReadInOrder.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Common/typeid_cast.h>
 
-#include <vector>
-
 namespace DB::QueryPlanOptimizations
 {
-
-namespace
-{
-
-/// Walk down a single-child chain looking for a `ReadFromMergeTree` step. Used for the
-/// parallel-replicas guard below.
-const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
-{
-    while (node)
-    {
-        if (const auto * reading = typeid_cast<const ReadFromMergeTree *>(node->step.get()))
-            return reading;
-        if (node->children.size() != 1)
-            return nullptr;
-        node = node->children.front();
-    }
-    return nullptr;
-}
-
-}
 
 /// Move `Sorting(K, limit = n)` below an `ARRAY JOIN` when its keys do not depend on expanded
 /// columns. The outer `Limit(n)` remains above the `ARRAY JOIN` to truncate expanded rows.
@@ -50,8 +25,16 @@ const ReadFromMergeTree * findMergeTreeRead(const QueryPlan::Node * node)
 /// This relies on every input row producing at least one output row. `LEFT ARRAY JOIN` satisfies
 /// it by construction (`emptyArrayToSingle` in `ArrayJoinResultIterator`'s constructor gives every
 /// empty array one default element). An inner `ARRAY JOIN` drops rows whose arrays are all empty,
-/// so for it we first insert an emptiness guard below the new sort: the sort then picks the top-n
-/// among the rows that survive the `ARRAY JOIN`, and each of those expands into at least one row.
+/// so for it we first insert an emptiness guard on the join's input, then place the sort above that
+/// guard (`ArrayJoin -> Sort -> Filter`): the sort picks the top-n among rows that survive the
+/// `ARRAY JOIN`, and each of those expands into at least one row. A fused element filter
+/// (`query_plan_fuse_filter_into_array_join`) can still drop every element of a non-empty array, so
+/// this optimization bails out when `hasElementFilter()` is set.
+///
+/// Only a single `ArrayJoinStep` is handled. Walking a chain would drop the analyzer's
+/// rename-to-identifier expressions under deeper joins (`NOT_FOUND_COLUMN_IN_BLOCK`) and would
+/// mis-build emptiness guards when an upper join reads the array produced by a lower one
+/// (`ARRAY JOIN nested AS inner ARRAY JOIN inner AS elem`).
 ///
 /// Pattern matched: `LimitStep -> SortingStep -> [ExpressionStep] -> ArrayJoinStep`.
 /// The optional `ExpressionStep`s are allowed only when every sort key passes through them
@@ -68,8 +51,8 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
         return 0;
 
     /// Skip when `always_read_till_end` is set (e.g. `WITH TOTALS`, `exact_rows_before_limit`).
-    /// Both require the upstream to keep processing past the limit, which the inserted `Limit`
-    /// would prevent.
+    /// Both require the upstream to keep processing past the limit, which the moved `Sorting`'s
+    /// own `limit` would cut short below the `ARRAY JOIN`.
     if (limit_step->alwaysReadTillEnd())
         return 0;
 
@@ -97,111 +80,52 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     SortDescription description = sort_step->getSortDescription();
     QueryPlan::Node * first_node_below_sort = sort_node->children.front();
     QueryPlan::Node * array_join_node = first_node_below_sort;
-
-    std::vector<std::pair<QueryPlan::Node *, ArrayJoinStep *>> array_joins;
-    QueryPlan::Node * insertion_parent_node = nullptr;
-    while (true)
-    {
-        while (typeid_cast<ExpressionStep *>(array_join_node->step.get()))
-        {
-            if (!peelPassThroughExpressions(array_join_node, description, 1))
-                return 0;
-        }
-
-        auto * array_join_step = typeid_cast<ArrayJoinStep *>(array_join_node->step.get());
-        if (!array_join_step)
-            break;
-
-        if (array_join_node->children.size() != 1)
-            return 0;
-
-        const auto & array_join_columns = array_join_step->getColumns();
-        const NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
-        const auto & array_join_input_header = array_join_step->getInputHeaders().front();
-
-        /// Every sort key must be carried through the `ARRAY JOIN` unchanged. A joined column
-        /// keeps its name across the step and only changes its type, so checking that the name is
-        /// present in the input header is not enough.
-        for (const auto & sort_column : description)
-        {
-            if (array_join_column_names.contains(sort_column.column_name))
-                return 0;
-            if (!array_join_input_header->has(sort_column.column_name))
-                return 0;
-        }
-
-        array_joins.emplace_back(array_join_node, array_join_step);
-        insertion_parent_node = array_join_node;
-        array_join_node = array_join_node->children.front();
-    }
-
-    if (array_joins.empty() || !insertion_parent_node)
+    if (!peelPassThroughExpressions(array_join_node, description))
         return 0;
+
+    auto * array_join_step = typeid_cast<ArrayJoinStep *>(array_join_node->step.get());
+    if (!array_join_step || array_join_step->hasElementFilter() || array_join_node->children.size() != 1)
+        return 0;
+
+    const auto & array_join_columns = array_join_step->getColumns();
+    const NameSet array_join_column_names(array_join_columns.begin(), array_join_columns.end());
+    const auto & array_join_input_header = array_join_step->getInputHeaders().front();
+
+    /// Every sort key must be carried through the `ARRAY JOIN` unchanged. A joined column
+    /// keeps its name across the step and only changes its type, so checking that the name is
+    /// present in the input header is not enough.
+    for (const auto & sort_column : description)
+    {
+        if (array_join_column_names.contains(sort_column.column_name))
+            return 0;
+        if (!array_join_input_header->has(sort_column.column_name))
+            return 0;
+    }
 
     const size_t n = limit_step->getLimitForSorting();
     if (n == 0)
         return 0;
 
-    /// Reuse the cap that already gates `tryOptimizeTopK`. If the user disabled large-N TopK
-    /// optimization there, do not work around it here.
-    if (settings.max_limit_for_top_k_optimization && n > settings.max_limit_for_top_k_optimization)
+    QueryPlan::Node * array_join_input_node = array_join_node->children.front();
+
+    /// Defer to parallel-replica coordination / `optimizeReadInOrder` when either would make
+    /// a bounded `Sorting` below the `ARRAY JOIN` wrong or redundant. This is the steady state
+    /// for `LEFT ARRAY JOIN ... ORDER BY <primary key>`, which already reads `InOrder`.
+    if (shouldSkipTopKAboveMergeTreeInput(
+            *array_join_input_node, *sort_step, description, n, settings.read_in_order))
         return 0;
 
-    QueryPlan::Node * array_join_input_node = array_join_node;
-
-    /// Do not insert a `Sort + Limit` when the input is read with parallel replicas. The inserted
-    /// `Sort` would let `optimizeReadInOrder` turn the scan into `WithOrder` mode, conflicting
-    /// with the coordination mode the other replicas pick ("Replica decided to read in Default
-    /// mode, not in WithOrder").
-    if (const auto * reading = findMergeTreeRead(array_join_input_node))
+    /// An inner ARRAY JOIN drops input rows whose arrays are all empty. Filter them out on the
+    /// join's immediate input (where the joined columns are present under `getColumns()` names),
+    /// then place the sort above that guard: `ArrayJoin -> Sort -> Filter -> Input`.
+    if (!array_join_step->isLeft())
     {
-        if (reading->isParallelReadingFromReplicas())
-            return 0;
-    }
-
-    /// Defer to `optimizeReadInOrder` (second pass) when the input can stream rows in the
-    /// requested order straight from the storage's sorting key. That path scans only the rows the
-    /// limit keeps, without materializing a sort, so it is strictly better than what we would do
-    /// here. This is the steady state for `LEFT ARRAY JOIN ... ORDER BY <primary key>`, which
-    /// already reads `InOrder` today.
-    if (settings.read_in_order)
-    {
-        if (const auto * reading = findMergeTreeRead(array_join_input_node))
-        {
-            SortingStep probe_sort_step(
-                array_join_input_node->step->getOutputHeader(),
-                description,
-                n,
-                sort_step->getSettings());
-
-            const bool read_in_order_useful = wouldReadInOrderBeUseful(
-                probe_sort_step,
-                reading->getStorageMetadata()->getSortingKey(),
-                *array_join_input_node);
-
-            const bool any_desc = std::ranges::any_of(
-                description, [](const SortColumnDescription & c) { return c.direction != 1; });
-            const bool final_blocks_pass2 = reading->isQueryWithFinal() && any_desc;
-
-            if (read_in_order_useful && !final_blocks_pass2)
-                return 0;
-        }
-    }
-
-    /// An inner ARRAY JOIN drops input rows whose arrays are all empty. Filter them out below the
-    /// moved sort so that each of the n rows it keeps expands into at least one output row.
-    QueryPlan::Node * sorting_input_node = array_join_input_node;
-    for (const auto & [_, array_join_step] : array_joins)
-    {
-        if (array_join_step->isLeft())
-            continue;
-
-        if (!addArrayJoinEmptinessFilter(*array_join_step, sorting_input_node, nodes))
+        if (!addArrayJoinEmptinessFilter(*array_join_step, array_join_input_node, nodes))
             return 0;
     }
 
     auto moved_sort_step = std::make_unique<SortingStep>(
-        sorting_input_node->step->getOutputHeader(),
+        array_join_input_node->step->getOutputHeader(),
         description,
         n,
         sort_step->getSettings());
@@ -218,13 +142,15 @@ size_t tryTopKThroughArrayJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes &
     /// Reusing `sort_node` avoids allocating and abandoning a plan node. The expression chain
     /// keeps its original links and remains above the `ARRAY JOIN`.
     sort_node->step = std::move(moved_sort_step);
-    sort_node->children[0] = sorting_input_node;
-    insertion_parent_node->children[0] = sort_node;
-    insertion_parent_node->step->updateInputHeader(sort_node->step->getOutputHeader());
+    sort_node->children[0] = array_join_input_node;
+    array_join_node->children[0] = sort_node;
+    array_join_step->updateInputHeader(sort_node->step->getOutputHeader());
     parent_node->children[0] = first_node_below_sort;
 
-    /// Re-run optimizations on the moved sort and guard.
-    return 4 + array_joins.size();
+    /// How deep to re-run first-pass optimizations under the `Limit`. Enough for the common
+    /// shape `ArrayJoin -> Sorting -> [emptiness Filter]` (and one pass-through `Expression`
+    /// above the join); deeper expression chains are left for a later full pass.
+    return 4;
 }
 
 }

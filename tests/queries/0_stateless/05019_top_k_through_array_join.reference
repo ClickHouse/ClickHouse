@@ -205,7 +205,7 @@
 2
 3
 4
--- a WHERE on the joined column stays between the sort and the ARRAY JOIN
+-- a WHERE on the joined column is fused into the ARRAY JOIN
 0	1000
 2	1002
 4	1004
