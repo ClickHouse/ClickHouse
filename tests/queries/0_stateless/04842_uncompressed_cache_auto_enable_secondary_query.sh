@@ -11,9 +11,11 @@
 # forwarded settings to its own constraints - so the initiator has to switch the automatic mode off in
 # the settings it sends out.
 #
-# The secondary queries run under the `default` database (only the tables they read are qualified), so
-# they are told apart by `databases` plus a log comment that carries the test database name - otherwise
-# concurrent runs of this test would read each other's rows.
+# The secondary queries run under the `default` database (only the tables they read are qualified), and
+# their `databases` is empty when the query plan is sent serialized (`serialize_query_plan`), so they are
+# told apart by a log comment that carries the test database name and by the `initial_query_id` of the
+# initial query, which runs in the test database - otherwise concurrent runs of this test would read each
+# other's rows.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -135,8 +137,8 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND is_initial_query = 0
-  AND has(databases, currentDatabase())
-  AND log_comment = '${PR_AUTO_RUN}';
+  AND log_comment = '${PR_AUTO_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query = 1 AND current_database = currentDatabase() AND log_comment = '${PR_AUTO_RUN}');
 
 -- The row count guards against the aggregate silently summing over no rows at all.
 SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses'])
@@ -145,8 +147,8 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND is_initial_query = 0
-  AND has(databases, currentDatabase())
-  AND log_comment = '${PR_OPT_OUT_RUN}';
+  AND log_comment = '${PR_OPT_OUT_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query = 1 AND current_database = currentDatabase() AND log_comment = '${PR_OPT_OUT_RUN}');
 
 DROP TABLE t_uncompressed_cache_parallel_replicas;
 "

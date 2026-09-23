@@ -82,8 +82,8 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND is_initial_query = 0
-  AND has(databases, currentDatabase())
-  AND log_comment = '${AUTO_RUN}';
+  AND log_comment = '${AUTO_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query = 1 AND current_database = currentDatabase() AND log_comment = '${AUTO_RUN}');
 
 -- The row count guards against the aggregate silently summing over no rows at all.
 SELECT count() > 0, sum(ProfileEvents['UncompressedCacheHits'] + ProfileEvents['UncompressedCacheMisses'])
@@ -92,8 +92,8 @@ WHERE event_date >= yesterday()
   AND event_time >= now() - INTERVAL 10 MINUTE
   AND type = 'QueryFinish'
   AND is_initial_query = 0
-  AND has(databases, currentDatabase())
-  AND log_comment = '${OPT_OUT_RUN}';
+  AND log_comment = '${OPT_OUT_RUN}'
+  AND initial_query_id IN (SELECT query_id FROM system.query_log WHERE event_date >= yesterday() AND is_initial_query = 1 AND current_database = currentDatabase() AND log_comment = '${OPT_OUT_RUN}');
 
 DROP TABLE dist_uncompressed_cache_insert_src;
 DROP TABLE dist_uncompressed_cache_insert_dst;
