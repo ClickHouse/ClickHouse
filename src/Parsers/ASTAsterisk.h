@@ -14,6 +14,8 @@ class ASTAsterisk : public IAST
 public:
     String getID(char) const override { return "Asterisk"; }
     ASTPtr clone() const override;
+    void writeJSON(WriteBuffer & out) const override;
+    void readJSON(const Poco::JSON::Object & json) override;
     void appendColumnName(WriteBuffer & ostr) const override;
 
     ASTPtr expression;

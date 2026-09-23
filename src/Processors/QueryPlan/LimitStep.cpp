@@ -4,7 +4,9 @@
 #include <Processors/QueryPlan/Serialization.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Processors/LimitTransform.h>
+#include <Processors/Merges/MergingSortedTransform.h>
 #include <Processors/Port.h>
+#include <Core/Defines.h>
 #include <IO/Operators.h>
 #include <Common/JSONBuilder.h>
 
@@ -41,6 +43,22 @@ LimitStep::LimitStep(
 
 void LimitStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
+    /// WITH TIES compares adjacent rows under `description`, so it needs a single ordered
+    /// stream. The input may arrive as several already-sorted streams (e.g. an in-order read
+    /// over multiple parts) with no merge above, so merge them here first.
+    if (with_ties && pipeline.getNumStreams() > 1)
+    {
+        auto merge = std::make_shared<MergingSortedTransform>(
+            pipeline.getSharedHeader(),
+            pipeline.getNumStreams(),
+            description,
+            DEFAULT_BLOCK_SIZE,
+            /*max_block_size_bytes=*/ 0,
+            /*max_dynamic_subcolumns=*/ std::nullopt,
+            SortingQueueStrategy::Batch);
+        pipeline.addTransform(std::move(merge));
+    }
+
     auto transform = std::make_shared<LimitTransform>(
         pipeline.getSharedHeader(),
         limit,
@@ -102,7 +120,7 @@ void LimitStep::serialize(Serialization & ctx) const
     writeVarUInt(offset, ctx.out);
 
     if (with_ties)
-        serializeSortDescription(description, ctx.out);
+        serializeSortDescription(description, ctx.out, ctx.version);
 }
 
 QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
@@ -121,7 +139,7 @@ QueryPlanStepPtr LimitStep::deserialize(Deserialization & ctx)
 
     SortDescription description;
     if (with_ties)
-        deserializeSortDescription(description, ctx.in);
+        deserializeSortDescription(description, ctx.in, ctx.version, ctx.max_type_complexity);
 
     return std::make_unique<LimitStep>(ctx.input_headers.front(), limit, offset, always_read_till_end, with_ties, std::move(description));
 }

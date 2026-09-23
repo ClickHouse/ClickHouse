@@ -1,10 +1,9 @@
 #pragma once
 
+#include <Analyzer/IQueryTreeNode.h>
 #include <Storages/IStorage_fwd.h>
 
 #include <Interpreters/Context_fwd.h>
-
-#include <Analyzer/IQueryTreeNode.h>
 
 #include <Core/Field.h>
 #include <Core/Names.h>
@@ -19,6 +18,9 @@ namespace DB
 class FunctionNode;
 class ColumnNode;
 using ColumnNodePtr = std::shared_ptr<ColumnNode>;
+
+class TableNode;
+using TableNodePtr = std::shared_ptr<TableNode>;
 
 struct IdentifierResolveScope;
 
@@ -101,14 +103,20 @@ std::optional<bool> tryExtractConstantFromConditionNode(const QueryTreeNodePtr &
   */
 void addTableExpressionOrJoinIntoTablesInSelectQuery(ASTPtr & tables_in_select_query_ast, const QueryTreeNodePtr & table_expression, const ConvertToASTOptions & convert_to_ast_options);
 
+/** Return the column alias list `alias(col1, col2, ...)` that a conversion back to AST has to
+  * re-emit for a subquery or a CTE, or an empty list when there is nothing to restore.
+  * Only an unresolved node has a list to restore.
+  */
+const Names & getColumnAliasesToRestore(const QueryTreeNodePtr & query_or_union_node);
+
 /// Extract all TableNodes from the query tree.
 QueryTreeNodes extractAllTableReferences(const QueryTreeNodePtr & tree);
 
 /// Extract table, table function, query, union from join tree.
-QueryTreeNodes extractTableExpressions(const QueryTreeNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
+TableExpressionNodes extractTableExpressions(const TableExpressionNodePtr & join_tree_node, bool add_array_join = false, bool recursive = false);
 
 /// Extract left table expression from join tree.
-QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_node);
+TableExpressionNodePtr extractLeftTableExpression(const TableExpressionNodePtr & join_tree_node);
 
 /** Build table expressions stack that consists from table, table function, query, union, join, array join from join tree.
   *
@@ -120,7 +128,7 @@ QueryTreeNodePtr extractLeftTableExpression(const QueryTreeNodePtr & join_tree_n
   * 4. t2
   * 5. t1
   */
-QueryTreeNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
+TableExpressionNodes buildTableExpressionsStack(const QueryTreeNodePtr & join_tree_node);
 
 /** Assert that there are no function nodes with specified function name in node children.
   * Do not visit subqueries.
@@ -166,6 +174,23 @@ QueryTreeNodePtr createCastFunction(QueryTreeNodePtr node, DataTypePtr result_ty
 /// node is returned unchanged.
 QueryTreeNodePtr foldConstantCast(const QueryTreeNodePtr & cast_node);
 
+/// Maps an `in`-family function name to its null-aware counterpart the way `transform_null_in` does
+/// (`in` -> `nullIn` and so on). Any other name is returned unchanged.
+std::string_view getNullInFunctionName(std::string_view function_name);
+
+/// Returns the name a pass must use when it creates an `in`-family function node after normal resolution,
+/// which is the name `resolveFunction` would have produced for it. With `transform_null_in` the resolver
+/// renames the `in` family, so a pass running later emits the un-renamed name, a remote shard or parallel
+/// replica renames it while re-analyzing the shipped AST, and the two sides then disagree about what the
+/// node is called (issue #112032). This is the same divergence `foldConstantCast` above exists for.
+/// Returns `std::nullopt` when the renaming would not preserve the node's meaning, in which case the caller
+/// must keep the expression it was going to replace: only `in` takes the default implementation for NULLs
+/// (`src/Functions/in.cpp`), which is what makes it propagate a NULL argument instead of comparing it and
+/// what makes its result `Nullable`. That adaptor examines the top-level argument type, so the two names
+/// agree in value and in type exactly when the left argument cannot itself be NULL.
+std::optional<String> getInFunctionNameForPassCreatedNode(
+    const String & in_function_name, const DataTypePtr & left_argument_type, const ContextPtr & context);
+
 /// Resolves function node as ordinary function with given name.
 /// Arguments and parameters are taken from the node.
 void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const String & function_name, const ContextPtr & context);
@@ -177,7 +202,7 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 /// Returns single source of expression node.
 /// First element of pair is source node, can be nullptr if there are no sources or multiple sources.
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
-std::pair<QueryTreeNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
+std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
 
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
@@ -185,35 +210,35 @@ void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 /** Build query to read specified columns from table expression.
   * Specified mutable context will be used as query context.
   */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     ContextMutablePtr & context);
 
 /** Build subquery to read specified columns from table expression.
   * Specified mutable context will be used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     ContextMutablePtr & context);
 
 /** Build query to read specified columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildQueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     const ContextPtr & context);
 
 /** Build subquery to read specified columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
-    const QueryTreeNodePtr & table_expression,
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const NamesAndTypes & columns,
+    const TableExpressionNodePtr & table_expression,
     const ContextPtr & context);
 
 /** Build subquery to read all columns from table expression.
   * Specified context will be copied and used as query context.
   */
-QueryTreeNodePtr buildSubqueryToReadColumnsFromTableExpression(const QueryTreeNodePtr & table_node, const ContextPtr & context);
+TableExpressionNodePtr buildSubqueryToReadColumnsFromTableExpression(const TableNodePtr & table_node, const ContextPtr & context);
 
 std::pair<String, String> extractDatabaseAndTableNameForParameterizedView(const String & table_function_name, const ContextPtr & context);
 
@@ -235,7 +260,29 @@ void removeExpressionsThatDoNotDependOnTableIdentifiers(
     const ContextPtr & context);
 
 
-Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type);
+/// With `date_time_as_numbers`, a `DateTime` leaf becomes its raw Unix timestamp instead of local date-time
+/// text; valid only where the literal's declared type is re-applied to it.
+Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool date_time_as_numbers);
+
+/// True if a value of this type needs the exact serialization provided by `columnConstantToExactLiteralAST`:
+/// it may contain a decimal-backed leaf (`Decimal`/`Time64`, or a `Dynamic` that can hold one), or a
+/// `Variant`, whose literal does not keep the active member type.
+bool typeNeedsExactLiteralSerialization(const IDataType & type);
+
+/// Build a literal AST for a constant column value, serializing decimal-backed leaves (Decimal,
+/// DateTime64, Time64, including those nested in Array/Tuple/Map/Variant/Dynamic) exactly so they
+/// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
+/// `DateTime` text-parsing heuristics. Values with none of those types and no `Variant` use the same
+/// representation as `getFieldFromColumnForASTLiteral`. `date_time_as_numbers` is forwarded to it.
+/// The active member of a `Variant` reached through `Nullable`/`Array`/`Tuple`/`Map`/`Variant`/`Dynamic` is
+/// named by its own type; under any other wrapper, and below an `Object` whose JSON text carries no
+/// discriminator, it is not.
+ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers);
+
+/// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
+/// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar
+/// Decimal/DateTime64/Time64 constant), avoiding a redundant identity cast in the serialized AST.
+ASTPtr makeCastToTypeNameAST(ASTPtr value, const String & type_name);
 
 /// Returns true if the subquery's projection matches the storage schema (column count and
 /// types). On mismatch: throws TYPE_MISMATCH when throw_on_mismatch is true, otherwise

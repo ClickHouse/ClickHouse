@@ -26,9 +26,9 @@ def started_cluster():
             main_configs=[
                 "configs/config.d/use_environment_credentials.xml",
             ],
-            user_configs=[
-                "configs/allow_server_credentials.xml",
-            ],
+            # No s3_allow_server_credentials_in_user_queries opt-in: the only access here is
+            # role_arn-based STS assume-role (extra_credentials(role_arn=...)), allowed regardless
+            # of the setting. The environment credentials serve only as the STS base.
         )
 
         sts = cluster.add_instance(

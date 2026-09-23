@@ -1,0 +1,50 @@
+-- 1. JSON rejects a malformed number as a complete String
+a	Nullable(String)					
+a	Nullable(String)					
+a	Nullable(String)					
+-- 2. a later numeric row must not resurrect the rejected type, in either order
+a	Nullable(String)					
+a	Nullable(String)					
+a	Nullable(String)					
+a	Array(Nullable(String))					
+c1	Nullable(String)					
+1.5
+['1.5']
+a	Nullable(Float64)					
+\N
+1.5
+-- 3. a digit-only value overflowing both integer types keeps its exact digits
+c1	Nullable(String)					
+a	Nullable(String)					
+12345678901234567890123
+12345678901234567890123
+c1	Nullable(UInt64)					
+c1	Nullable(UInt64)					
+c1	Nullable(Int64)					
+c1	Nullable(Int64)					
+-- 4. the same validation applies to a number inferred from a quoted string
+a	Nullable(String)					
+c1	Nullable(String)					
+a	Nullable(Float64)					
+c1	Nullable(Float64)					
+-- 5. default-reachable carriers in TSV and CSV, with a read-back
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+c1	Nullable(String)					
+.
++
+.
+-- 6. on a Dynamic column the divergence was an error at INSERT time
+1e+	String
+.	String
+-- 7. a collection with a trailing delimiter keeps the type it always had
+Tuple(Int64, Int64, Int64)
+Array(Int64)
+(1,2,0)	[1]
+(false,false,'was',0)	Tuple(Bool, Bool, String, Int64)
+1	Int64
+a	Nullable(String)					
+a	Nullable(String)					

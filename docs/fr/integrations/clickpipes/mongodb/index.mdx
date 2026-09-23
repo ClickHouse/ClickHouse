@@ -62,13 +62,13 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="Sélectionner MongoDB" size="lg" border />
 
 <div id="add-your-source-mongodb-database-connection">
-  ### Ajoutez la connexion à votre base de données MongoDB source
+  ### Ajoutez la connexion à votre base de données source MongoDB
 </div>
 
-4. Renseignez les détails de connexion de votre base de données MongoDB source, que vous avez configurée à l’étape des prérequis.
+4. Renseignez les détails de connexion de votre base de données source MongoDB, que vous avez configurée à l’étape des prérequis.
 
 <Info>
-  Avant de commencer à ajouter vos détails de connexion, assurez-vous d’avoir autorisé les adresses IP de ClickPipes dans vos règles de pare-feu. Sur la page suivante, vous trouverez une [liste des adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips).
+  Avant de commencer à ajouter vos détails de connexion, assurez-vous d’avoir autorisé les adresses IP de ClickPipes dans vos règles de pare-feu. Sur la page suivante, vous trouverez une [liste des adresses IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips).
   Pour plus d’informations, consultez les guides de configuration de la source MongoDB liés [en haut de cette page](#prerequisites).
 </Info>
 
@@ -97,7 +97,7 @@ Vous pouvez spécifier les informations du tunnel SSH si votre base de données 
 4. Cliquez sur « Vérifier la connexion » pour valider la connexion.
 
 <Note>
-  Assurez-vous d&#39;autoriser les [adresse IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) dans vos règles de pare-feu pour l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
+  Assurez-vous d&#39;autoriser les [adresse IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips) dans vos règles de pare-feu pour l&#39;hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
 </Note>
 
 Une fois les informations de connexion renseignées, cliquez sur `Next`.
@@ -145,4 +145,3 @@ Voici quelques points à noter lors de l&#39;utilisation de ce connecteur :
 * MongoDB version 5.1.0 ou ultérieure est requise.
 * Nous utilisons l&#39;API native Change Streams de MongoDB pour le CDC, qui s&#39;appuie sur l&#39;oplog de MongoDB pour capturer les changements en temps réel.
 * Les documents MongoDB sont répliqués dans ClickHouse au format JSON type par défaut. Cela permet une gestion flexible du schéma et l&#39;utilisation du riche ensemble d&#39;opérateurs JSON de ClickHouse pour les requêtes et l&#39;analytics. Vous pouvez en savoir plus sur l&#39;interrogation des données JSON [ici](/fr/reference/data-types/newjson).
-* La configuration PrivateLink en self-service n&#39;est pas disponible pour le moment. Si vous utilisez AWS et avez besoin de PrivateLink, veuillez contacter db-integrations-support@clickhouse.com ou créer un ticket de support — nous travaillerons avec vous pour l&#39;activer.

@@ -1,6 +1,7 @@
 ---
 slug: /tutorial
 sidebarTitle: 'Advanced tutorial'
+searchable: true
 title: 'Advanced tutorial'
 description: 'Learn how to ingest and query data in ClickHouse using a New York City taxi example dataset.'
 keywords: ['clickhouse', 'install', 'tutorial', 'dictionary', 'dictionaries', 'example', 'advanced', 'taxi', 'new york', 'nyc']
@@ -28,7 +29,7 @@ Learn how to ingest and query data in ClickHouse using the New York City taxi ex
 
 ### Prerequisites {#prerequisites}
 
-You need access to a running ClickHouse service to complete this tutorial. For instructions, see the [Quick Start](/get-started/setup/install) guide.
+You need access to a running ClickHouse service to complete this tutorial. For ClickHouse Cloud, complete the [ClickHouse Cloud quick start](/get-started/setup/cloud). For self-managed ClickHouse, follow the [installation instructions](/get-started/setup/install).
 
 <Steps>
 <Step title="Create a new table" id="create-a-new-table">
@@ -502,7 +503,7 @@ Write some queries that join the `taxi_zone_dictionary` with your `trips` table.
     Notice the output of the above `JOIN` query is the same as the query before it that used `dictGetOrDefault` (except that the `Unknown` values aren't included). Behind the scenes, ClickHouse is actually calling the `dictGet` function for the `taxi_zone_dictionary` dictionary, but the `JOIN` syntax is more familiar for SQL developers.
 </Note>
 
-2. This query returns rows for the the 1000 trips with the highest tip amount, then performs an inner join of each row with the dictionary:
+2. This query returns rows for the 1000 trips with the highest tip amount, then performs an inner join of each row with the dictionary:
     ```sql
     SELECT *
     FROM trips

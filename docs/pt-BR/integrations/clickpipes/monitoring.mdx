@@ -1,5 +1,6 @@
 ---
 sidebarTitle: 'Monitoramento'
+icon: 'chart-line'
 description: 'Monitore o ClickPipes usando métricas do Prometheus.'
 slug: /integrations/clickpipes/monitoring
 title: 'Monitoramento do ClickPipes'
@@ -102,10 +103,12 @@ Nem toda métrica é emitida por todos os tipos de pipe. Em particular, os Click
   ### Latência
 </div>
 
-| Métrica                                   | Tipo          | Disponível para                     | Descrição                                                                                                                         |
-| ----------------------------------------- | ------------- | ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| `ClickPipes_Latency`                      | Gauge (*avg*) | Streaming, armazenamento de objetos | Tempo, em milissegundos, entre o momento em que um registro foi produzido na origem e o momento em que foi gravado no ClickHouse. |
-| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (somente Postgres)              | Defasagem do slot de replicação na origem, em MiB. Emitida somente por ClickPipes do Postgres.                                    |
+| Métrica                                   | Tipo          | Disponível para        | Descrição                                                                                                                         |
+| ----------------------------------------- | ------------- | ---------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `ClickPipes_Latency`                      | Gauge (*avg*) | Todos                  | Tempo, em milissegundos, entre o momento em que um registro foi produzido na origem e o momento em que foi gravado no ClickHouse. |
+| `ClickPipes_SourceReplicationLatency_MiB` | Gauge (*avg*) | CDC (somente Postgres) | Defasagem do slot de replicação na origem, em MiB. Emitida somente por ClickPipes do Postgres.                                    |
+| `ClickPipes_CDC_SourceLatency`            | Gauge (*avg*) | CDC                    | Defasagem, em milissegundos, entre o timestamp de evento na origem e o processamento pelo ClickPipes.                             |
+| `ClickPipes_CDC_DestinationLatency`       | Gauge (*avg*) | CDC                    | Defasagem, em milissegundos, entre o recebimento de um evento em um ClickPipe e sua gravação em uma tabela do ClickHouse.         |
 
 <div id="metrics-resources">
   ### Utilização de recursos

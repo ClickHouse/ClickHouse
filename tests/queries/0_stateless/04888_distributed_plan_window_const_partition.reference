@@ -1,0 +1,10 @@
+constant key	20000
+const gather is const-sorted	1
+constant key, LowCardinality	20000
+constant key, Nullable	20000
+constant key behind identity	20000
+materialized key is not constant	20000
+column key	20000
+column gather is column-sorted	1
+mixed key	20000
+values match local	1

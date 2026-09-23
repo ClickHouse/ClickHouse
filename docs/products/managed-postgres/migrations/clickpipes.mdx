@@ -12,7 +12,7 @@ import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
-ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL database into a ClickHouse Managed Postgres service. This built-in integration provides a streamlined experience to connect to your source database, export the schema, import it into ClickHouse Managed Postgres, and set up continuous replication.
+ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL database into a Managed Postgres service. This built-in integration provides a streamlined experience to connect to your source database, export the schema, import it into Managed Postgres, and set up continuous replication.
 
 ## Prerequisites {#prerequisites}
 
@@ -34,19 +34,18 @@ ClickHouse Cloud now offers ClickPipes to migrate your external PostgreSQL datab
 - **DDL propagation**: continuous replication (CDC) captures DML operations and `ADD COLUMN`. Other DDL changes such as `DROP COLUMN` and `ALTER COLUMN` aren't propagated and must be applied manually on the target.
 
 <Note>
-If you run into issues during migration, check the [ClickHouse Managed Postgres Migrations FAQ](/products/managed-postgres/migrations/faq) for common errors and solutions.
+If you run into issues during migration, check the [Managed Postgres Migrations FAQ](/products/managed-postgres/migrations/faq) for common errors and solutions.
 </Note>
 
-<Steps>
-<Step title="Connect to your source database" id="step-1-connect">
+## Step 1: Connect to your source database {#step-1-connect}
 
-Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your ClickHouse Managed Postgres service.
+Open the [ClickHouse Cloud console](https://clickhouse.cloud) and select your Managed Postgres service.
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="Managed Postgres service card in the ClickHouse Cloud services list" size="lg" border />
 
 In the left sidebar, click **Data sources**.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the ClickHouse Managed Postgres service sidebar" size="lg" border />
+<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Data sources entry in the Managed Postgres service sidebar" size="lg" border />
 
 Click **Start import**.
 
@@ -66,8 +65,30 @@ Choose an ingestion method:
 
 Click **Next**.
 
-</Step>
-<Step title="Export your database schema" id="step-2-export-schema">
+## Automated schema migration {#automated-schema-migration}
+
+<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="Step 2: Automated schema migration with destination database selector" size="lg" border />
+
+When this option is opted for, the ClickPipe will automatically pull the schema of your source database and apply it to your Managed Postgres service, during the [Setup phase](/integrations/clickpipes/postgres/lifecycle#setup) of the ClickPipe after it is created.
+
+This feature assumes an **empty target database**, as it pulls every database object from the source database regardless of what tables you select later in the wizard. If you already have existing data in your target database, or are aiming for a more customized setup, you must opt for the [**Manual**](#manual-schema-migration) mode instead.
+
+Select the destination database from the dropdown, or click **Create a new database** to provision one.
+
+<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="Create a new Postgres database dialog" size="lg" border />
+
+### Monitoring {#monitoring}
+You can track the progress of the schema migration in the ClickPipes detail view. The **Logs** will indicate the status of the schema migration, and any errors encountered will be displayed there as well.
+
+This mode has the following limitations:
+- Pipes using SSH tunneling cannot use automated schema migration. The schema must be [exported and imported manually](#manual-schema-migration).
+
+## Manual schema migration {#manual-schema-migration}
+For cases where you already have existing data in your target database, or are aiming for a more customized setup versus the clean slate which the automated mode expects, you can opt for the **Manual** mode here.
+
+<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="Step 2: Manual schema migration with pg_dump export command" size="lg" border />
+
+### Export your database schema {#step-2-export-schema}
 
 The wizard displays a `pg_dump` command pre-filled with your source connection details. Run it in a terminal:
 
@@ -88,12 +109,11 @@ This creates `pg.sql` in your current directory.
 
 Click **Next**.
 
-</Step>
-<Step title="Import the schema into your ClickHouse Managed Postgres service" id="step-3-import-schema">
+### Import the schema into your Managed Postgres service {#step-3-import-schema}
 
 Select the destination database from the dropdown, or click **Create a new database** to provision one.
 
-The wizard displays a `psql` command to apply the schema dump to your ClickHouse Managed Postgres service. Run it in a terminal:
+The wizard displays a `psql` command to apply the schema dump to your Managed Postgres service. Run it in a terminal:
 
 <Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="Step 3: psql command for schema import" size="lg" border />
 
@@ -110,8 +130,7 @@ psql \
 
 Click **Next**.
 
-</Step>
-<Step title="Configure ingestion settings" id="step-4-ingestion-settings">
+## Step 4: Configure ingestion settings {#step-4-ingestion-settings}
 
 Specify the publication to use for logical replication. If you leave this blank, a publication is created automatically.
 
@@ -129,17 +148,13 @@ Expand **Advanced replication settings** to tune throughput:
 
 Click **Next**.
 
-</Step>
-<Step title="Select tables" id="step-5-select-tables">
+## Step 5: Select tables {#step-5-select-tables}
 
 Select the tables you want to replicate. Tables are grouped by schema. Select individual tables or expand a schema to pick all of them.
 
 <Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="Step 5: table picker grouped by schema with Create migration button" size="lg" border />
 
 Click **Create migration**.
-
-</Step>
-</Steps>
 
 ## Monitor the migration {#monitor}
 
@@ -151,69 +166,73 @@ Click the migration to open the detail view. The **Tables** tab shows the initia
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Migration detail view showing initial load stats per table" size="lg" border />
 
-## Post-migration tasks {#post-migration}
+## Cut over traffic {#cutover}
 
-Once the initial load is complete and, if using CDC, replication lag is near zero:
+Once the initial load is complete and, if using CDC, replication lag is near zero, you can cut over traffic from your source Postgres database to your Managed Postgres service. Open the migration detail view and select the **Post-migration steps** tab. This guided wizard walks you through the six steps required to finish the migration safely. Each step must be completed in order before you can advance to the next.
 
-**Validate row counts.** Spot-check critical tables on both source and target before switching traffic:
+### Step 1: Set source Postgres database in read-only mode {#cutover-read-only}
 
-```sql
-SELECT COUNT(*) FROM public.orders;
-```
-
-**Stop writes on the source.** Pause application writes. To enforce read-only mode during cutover:
+Stop application writes on the source so nothing diverges during cutover. The wizard shows an `ALTER DATABASE` command pre-filled with your source database name — run it on your source database:
 
 ```sql
-ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+ALTER DATABASE "<source_db>" SET default_transaction_read_only = on;
 ```
 
-**Confirm replication is caught up.** Compare the latest row on source and target:
+Then terminate any existing connections so they pick up the read-only setting and no in-flight writes remain:
 
 ```sql
--- Run on both source and target
-SELECT MAX(id), MAX(updated_at) FROM public.orders;
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = '<source_db>'
+  AND pid <> pg_backend_pid();
 ```
 
-**Reset sequences.** Align sequences with the current maximum values in each table:
+<Note>
+Depending on your Postgres provider, this step may look different. Managed services may restrict `ALTER DATABASE` or terminating backends, and instead expose read-only mode through their own console, parameter groups, or by revoking write privileges. Consult your provider's documentation for the equivalent way to make the source read-only.
+</Note>
 
-```sql
-DO $$
-DECLARE r RECORD;
-BEGIN
-    FOR r IN
-        SELECT
-            n.nspname AS schema_name,
-            c.relname AS table_name,
-            a.attname AS column_name,
-            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid
-        WHERE c.relkind = 'r'
-            AND a.attnum > 0
-            AND NOT a.attisdropped
-            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-    LOOP
-        IF r.seq_name IS NOT NULL THEN
-            EXECUTE format(
-                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
-                r.seq_name, r.column_name, r.schema_name, r.table_name
-            );
-        END IF;
-    END LOOP;
-END $$;
-```
+Click **Mark as completed** to continue.
 
-**Cut over application traffic.** Point reads and writes to your ClickHouse Managed Postgres service and monitor for errors, constraint violations, and replication health.
+<Image img="/images/managed-postgres/pgpg/post-migration/readonly.webp" alt="Post-migration step 1: set the source database in read-only mode" size="lg" border />
 
-**Clean up.**  Once you've cut over and confirmed the new service is healthy, delete the migration from **Data sources**. If you used CDC, drop the replication slot from the source to free resources:
+### Step 2: Validate row counts {#cutover-validate}
+
+Select which replicated tables you want to validate. ClickPipes counts the rows on every selected table in both source and target and compares them. Large tables may return approximate counts. Use **Select all tables** to validate every table, or search for and toggle specific tables, then click **Count rows**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp" alt="Post-migration step 2: select tables and validate row counts between source and target" size="lg" border />
+
+### Step 3: Pause the pipe {#cutover-pause}
+
+Pause the ClickPipe so replication stops before you reset sequences and cut over traffic. Click **Pause ClickPipe** and wait for the pipe to pause before continuing.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/pause-pipe.webp" alt="Post-migration step 3: pause the ClickPipe to stop replication" size="lg" border />
+
+### Step 4: Reset sequences {#cutover-reset-sequences}
+
+Reset sequences on the destination so new inserts continue from the correct values. Click **Reset sequences** to align each sequence with the current maximum value in its table.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/reset-sequences.webp" alt="Post-migration step 4: reset sequences on the destination" size="lg" border />
+
+### Step 5: Cut over traffic {#cutover-traffic}
+
+Point reads and writes to your Managed Postgres service by updating your application's database URL to the Managed Postgres connection string. The wizard provides the connection details in several formats — **url**, **psql**, **env**, **yaml**, and **jdbc** — so you can copy the one that matches your stack. After updating your application, click **Mark as completed**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp" alt="Post-migration step 5: cut over traffic using the Managed Postgres connection string" size="lg" border />
+
+### Step 6: Clean up {#cutover-cleanup}
+
+Once you've cut over and confirmed the new service is healthy, delete the migration and free source resources. The wizard shows a `pg_drop_replication_slot` command pre-filled with the slot name — run it on the source to drop the replication slot:
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
 ```
 
+Then click **Delete ClickPipe migration** to remove the migration from **Data sources**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cleanup.webp" alt="Post-migration step 6: clean up by dropping the replication slot and deleting the migration" size="lg" border />
+
 ## Next steps {#next-steps}
 
-- [ClickHouse Managed Postgres quickstart](/products/managed-postgres/quickstart)
-- [ClickHouse Managed Postgres connection details](/products/managed-postgres/connection)
+- [Managed Postgres quickstart](/products/managed-postgres/quickstart)
+- [Managed Postgres connection details](/products/managed-postgres/connection)
 - [ClickPipes Postgres FAQ](/integrations/clickpipes/postgres/faq)

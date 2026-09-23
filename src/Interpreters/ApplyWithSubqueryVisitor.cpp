@@ -1,4 +1,3 @@
-#include <Core/Settings.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IdentifierSemantic.h>
@@ -8,11 +7,14 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTWithElement.h>
 #include <Parsers/ASTLiteral.h>
+#include <Common/SettingSource.h>
 #include <Common/checkStackSize.h>
+#include <Core/Settings.h>
 
 
 namespace DB
@@ -20,17 +22,30 @@ namespace DB
 
 namespace Setting
 {
-extern const SettingsBool allow_experimental_analyzer;
+    extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enable_scopes_for_with_statement;
 }
 
-namespace ErrorCodes
+namespace
 {
-extern const int UNSUPPORTED_METHOD;
+
+/// A name is looked up in an enclosing scope only while `enable_global_with_statement` holds in the
+/// subquery's own context, so a CTE name that a subquery does not see is a table name there.
+/// The clause is clamped rather than rejected, so a subquery cannot widen the reader's constraints,
+/// and it is applied to a copy, so the AST keeps the clause as written.
+ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & context)
+{
+    auto settings_ast = select.settings();
+    if (!settings_ast)
+        return context;
+
+    auto changes = settings_ast->as<const ASTSetQuery &>().changes;
+    auto subquery_context = Context::createCopy(context);
+    subquery_context->clampToSettingsConstraints(changes, SettingSource::QUERY);
+    subquery_context->applySettingsChanges(changes);
+    return subquery_context;
 }
 
-ApplyWithSubqueryVisitor::ApplyWithSubqueryVisitor(ContextPtr context_)
-    : use_analyzer(context_->getSettingsRef()[Setting::allow_experimental_analyzer])
-{
 }
 
 void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
@@ -52,27 +67,50 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
-    /// This is probably not the best place to check this, but it's just to throw a proper error to the user
-    if (!use_analyzer && ast.recursive_with)
-        throw Exception(
-            ErrorCodes::UNSUPPORTED_METHOD, "WITH RECURSIVE is not supported with the old analyzer. Please use `enable_analyzer=1`");
+    /// The elements this select declares itself are registered below either way: only the inherited
+    /// ones are out of scope here.
+    std::optional<Data> scope_data;
+    if (data.context)
+    {
+        scope_data = data;
+        scope_data->context = getSubqueryContext(ast, data.context);
+        const auto & scope_settings = scope_data->context->getSettingsRef();
+        /// A common table expression is reached by looking into an enclosing scope, so a select that does
+        /// not look there cannot name one. An expression alias declared with scopes disabled is instead
+        /// copied down, and a select reads that copy when it disables them too.
+        if (!scope_settings[Setting::enable_global_with_statement])
+        {
+            scope_data->subqueries.clear();
+            scope_data->literals.clear();
+        }
+        if (!scope_settings[Setting::enable_scopes_for_with_statement])
+        {
+            for (const auto & [name, node] : scope_data->exported_literals)
+                scope_data->literals[name] = node;
+        }
+    }
+    const Data & scope = scope_data ? *scope_data : data;
 
     std::optional<Data> new_data;
     if (auto with = ast.with())
     {
         for (auto & child : with->children)
         {
-            visit(child, new_data ? *new_data : data);
+            visit(child, new_data ? *new_data : scope);
             auto * ast_with_elem = child->as<ASTWithElement>();
             auto child_alias = child->tryGetAlias();
             if (ast_with_elem || !child_alias.empty())
             {
                 if (!new_data)
-                    new_data = data;
+                    new_data = scope;
                 if (ast_with_elem)
                     new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
                 else
+                {
                     new_data->literals[child_alias] = child;
+                    if (new_data->context && !new_data->context->getSettingsRef()[Setting::enable_scopes_for_with_statement])
+                        new_data->exported_literals[child_alias] = child;
+                }
             }
         }
     }
@@ -80,7 +118,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
     for (auto & child : ast.children)
     {
         if (child != ast.with())
-            visit(child, new_data ? *new_data : data);
+            visit(child, new_data ? *new_data : scope);
     }
 }
 

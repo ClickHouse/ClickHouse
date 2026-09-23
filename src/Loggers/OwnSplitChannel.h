@@ -1,6 +1,7 @@
 #pragma once
 
 #include <base/strong_typedef.h>
+#include <base/types.h>
 
 #include <atomic>
 #include <memory>
@@ -107,7 +108,12 @@ public:
     ~OwnAsyncSplitChannel() override;
 
     void open() override;
+    /// Best-effort: reports a failed thread join to stderr and returns. For shutdown paths
+    /// (destructor, `Loggers::stopLogging`), where there is nothing better to do with the error.
     void close() override;
+    /// Fail-closed variant of `close`: propagates a failed thread join. For callers whose correctness
+    /// depends on no logging thread surviving, e.g. quiescing the process around `remapExecutable`.
+    void closeAndJoinThreads();
 
     void log(const Poco::Message & msg) override;
     void log(Poco::Message && msg) override;
@@ -154,7 +160,19 @@ private:
     /// Pushes the message into the queue. If the queue is full, drops the message and counts the drop.
     static void enqueueMessage(LogQueue & queue, AsyncLogMessagePtr message);
 
+    /// Publishes the current flush request counter as completed and wakes the waiters.
+    void releaseWaitingFlushers();
+
+    /// Waits until every producer that entered the asynchronous path before close started has
+    /// either published its message or switched to the synchronous path. Consumers call this
+    /// before taking their final drain boundary.
+    void waitForActiveAsyncLoggers();
+
     std::atomic<bool> is_open = false;
+    /// Producers that have observed an open channel and may still enqueue asynchronously. Closing waits
+    /// for this count to reach zero before draining, preventing a producer from adding a message after the
+    /// final drain.
+    std::atomic<size_t> active_async_loggers = 0;
     const size_t async_queue_size;
 
     /// Each channel has a different queue, and each one a single thread handling it
@@ -166,8 +184,24 @@ private:
 
     /// system.text_log does not have a channel, but it's also async
     LogQueue text_log_queue;
-    /// Set by flushTextLogs to request a full flush; the text log thread resets it and notifies waiters when done.
-    std::atomic<bool> text_log_flush_requested = false;
+    /// Flush handshake. A flushTextLogs caller increments text_log_flush_requested and waits until
+    /// text_log_flush_completed reaches its request number. The text log thread loads the request counter,
+    /// only then samples the queue's enqueue position, drains up to it, and publishes the request number it
+    /// served. Sampling after the load makes the boundary exact: the acquire load of the request counter
+    /// synchronizes with every requester's increment (an RMW extends the release sequence), so every record
+    /// enqueued before a served request is covered by the sampled position (read-write coherence).
+    /// This covers records pushed by threads other than the requester too. The only observable sense in
+    /// which such a push precedes the request is a happens-before chain from the completed tryPush to the
+    /// requester's increment (the requester learned of the record through some synchronization — a query
+    /// response, a mutex, a pipe); prepending that chain to the edge above orders the push's enqueue_pos
+    /// update before the sample, so coherence still applies. A push with no such chain is concurrent with
+    /// the request, and no data-race-free program can tell whether it "was accepted first" — a mutex-based
+    /// boundary would make no stronger observable promise.
+    /// Distinct request numbers also keep concurrent flushers exact: a flush that starts during another
+    /// flush gets a higher number and is not released by the earlier drain, whose boundary was sampled
+    /// before its records were pushed.
+    std::atomic<UInt64> text_log_flush_requested = 0;
+    std::atomic<UInt64> text_log_flush_completed = 0;
     std::unique_ptr<Poco::Thread> text_log_thread;
     std::unique_ptr<OwnRunnableForTextLog> text_log_runnable;
     std::weak_ptr<DB::TextLogQueue> text_log;

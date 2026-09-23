@@ -18,6 +18,17 @@ test_recover_staled_replica_run = 1
 
 cluster = ClickHouseCluster(__file__)
 
+# `bad_settings_node` runs with implicit_transaction=1, so every query on it starts a
+# transaction, and TransactionManager refuses to start unless Keeper advertises the three
+# transaction flags. The harness randomizes flags that a test does not pin.
+KEEPER_FEATURE_FLAGS = [
+    "multi_read",
+    "create_if_not_exists",
+    "list_with_stat_and_data",
+    "check_stat",
+    "filtered_list",
+]
+
 main_node = cluster.add_instance(
     "main_node",
     main_configs=["configs/config.xml"],
@@ -27,7 +38,7 @@ main_node = cluster.add_instance(
     macros={"shard": 1, "replica": 1},
     # Disable `with_remote_database_disk` as in `test_startup_without_zk`, Keeper rejects `main_node` connections before restarting
     with_remote_database_disk=False,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 dummy_node = cluster.add_instance(
     "dummy_node",
@@ -36,7 +47,7 @@ dummy_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 2},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 competing_node = cluster.add_instance(
     "competing_node",
@@ -45,7 +56,7 @@ competing_node = cluster.add_instance(
     with_zookeeper=True,
     stay_alive=True,
     macros={"shard": 1, "replica": 3},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 snapshotting_node = cluster.add_instance(
     "snapshotting_node",
@@ -53,14 +64,14 @@ snapshotting_node = cluster.add_instance(
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
     macros={"shard": 2, "replica": 1},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 snapshot_recovering_node = cluster.add_instance(
     "snapshot_recovering_node",
     main_configs=["configs/config.xml"],
     user_configs=["configs/settings.xml"],
     with_zookeeper=True,
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 all_nodes = [
@@ -77,17 +88,19 @@ bad_settings_node = cluster.add_instance(
     user_configs=["configs/inconsistent_settings.xml"],
     with_zookeeper=True,
     macros={"shard": 1, "replica": 4},
-    keeper_required_feature_flags=["multi_read", "create_if_not_exists"],
+    keeper_required_feature_flags=KEEPER_FEATURE_FLAGS,
 )
 
 uuid_regex = re.compile("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 
 
-def assert_create_query(nodes, table_name, expected):
+def assert_create_query(nodes, table_name, expected, retry_count=20):
     replace_uuid = lambda x: re.sub(uuid_regex, "uuid", x)
     query = "show create table {}".format(table_name)
     for node in nodes:
-        assert_eq_with_retry(node, query, expected, get_result=replace_uuid)
+        assert_eq_with_retry(
+            node, query, expected, retry_count=retry_count, get_result=replace_uuid
+        )
 
 
 def zk_rmr_with_retries(zk, path):
@@ -283,14 +296,23 @@ def test_simple_alter_table(started_cluster, engine):
         "SETTINGS index_granularity = 8192".format(name, full_engine)
     )
 
-    # Ensure all replicas are synchronized before asserting schema equality
+    # Ensure all replicas are synchronized before asserting schema equality.
+    # Waiting for the database DDL log is cheap and cannot block on table data.
+    # For the table itself only pull the log entries into the replication queue: a
+    # plain `SYSTEM SYNC REPLICA` waits for the whole queue to drain and, when the
+    # replica is slow to catch up, spends the full `receive_timeout` (300s by
+    # default) before failing the test with `TIMEOUT_EXCEEDED`. `LIGHTWEIGHT` is not
+    # an option here, because it skips exactly the `ALTER_METADATA` entries this test
+    # asserts on. Convergence is instead awaited by retrying the assertion below.
     dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     competing_node.query(f"SYSTEM SYNC DATABASE REPLICA {database}")
     if "Replicated" in engine:
-        dummy_node.query(f"SYSTEM SYNC REPLICA {name}")
-        competing_node.query(f"SYSTEM SYNC REPLICA {name}")
+        dummy_node.query(f"SYSTEM SYNC REPLICA {name} PULL")
+        competing_node.query(f"SYSTEM SYNC REPLICA {name} PULL")
 
-    assert_create_query([main_node, dummy_node, competing_node], name, expected)
+    assert_create_query(
+        [main_node, dummy_node, competing_node], name, expected, retry_count=120
+    )
     main_node.query(f"DROP DATABASE {database} SYNC")
     dummy_node.query(f"DROP DATABASE {database} SYNC")
     competing_node.query(f"DROP DATABASE {database} SYNC")
@@ -425,10 +447,17 @@ def test_alter_drop_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_drop_part VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part PULL")
+        # A part covered by a pending drop is never fetched, so sync before dropping.
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
+        assert (
+            dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part")
+            == "123\n"
+        )
     main_node.query(f"ALTER TABLE {database}.alter_drop_part DROP PART '{part_name}'")
     assert main_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
     if engine == "ReplicatedMergeTree":
         # The DROP operation is still replicated at the table engine level
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_drop_part LIGHTWEIGHT")
         assert (
             dummy_node.query(f"SELECT CounterID FROM {database}.alter_drop_part") == ""
         )
@@ -460,11 +489,14 @@ def test_alter_detach_part(started_cluster, engine):
         dummy_node.query(f"INSERT INTO {database}.alter_detach VALUES (456)")
     else:
         main_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach PULL")
+        # A part covered by a pending detach is never fetched, so sync before detaching.
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
     main_node.query(f"ALTER TABLE {database}.alter_detach DETACH PART '{part_name}'")
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_detach'"
     assert main_node.query(detached_parts_query) == f"{part_name}\n"
     if engine == "ReplicatedMergeTree":
         # The detach operation is still replicated at the table engine level
+        dummy_node.query(f"SYSTEM SYNC REPLICA {database}.alter_detach LIGHTWEIGHT")
         assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
     else:
         assert dummy_node.query(detached_parts_query) == ""
@@ -487,6 +519,11 @@ def test_alter_drop_detached_part(started_cluster, engine):
         f"CREATE TABLE {database}.alter_drop_detached (CounterID UInt32) ENGINE = {engine} ORDER BY (CounterID)"
     )
     main_node.query(f"INSERT INTO {database}.alter_drop_detached VALUES (123)")
+    if engine == "ReplicatedMergeTree":
+        # A part covered by a pending detach is never fetched, so sync before detaching.
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
+        )
     main_node.query(
         f"ALTER TABLE {database}.alter_drop_detached DETACH PART '{part_name}'"
     )
@@ -500,6 +537,10 @@ def test_alter_drop_detached_part(started_cluster, engine):
     )
     detached_parts_query = f"SELECT name FROM system.detached_parts WHERE database='{database}' AND table='alter_drop_detached'"
     assert main_node.query(detached_parts_query) == ""
+    if engine == "ReplicatedMergeTree":
+        dummy_node.query(
+            f"SYSTEM SYNC REPLICA {database}.alter_drop_detached LIGHTWEIGHT"
+        )
     assert dummy_node.query(detached_parts_query) == f"{part_name}\n"
 
     main_node.query(f"DROP DATABASE {database} SYNC")
@@ -1370,7 +1411,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("CREATE TABLE table_structure.mem (n int) ENGINE=Memory")
-    dummy_node.query("DETACH DATABASE table_structure")
+    dummy_node.query("DETACH DATABASE table_structure SYNC")
 
     settings = {"distributed_ddl_task_timeout": 0}
     main_node.query(
@@ -1379,7 +1420,7 @@ def test_replicated_table_structure_alter(started_cluster):
     )
 
     competing_node.query("SYSTEM SYNC DATABASE REPLICA table_structure")
-    competing_node.query("DETACH DATABASE table_structure")
+    competing_node.query("DETACH DATABASE table_structure SYNC")
 
     main_node.query(
         "ALTER TABLE table_structure.rmt ADD COLUMN m int", settings=settings
@@ -1687,66 +1728,60 @@ def test_lag_after_recovery(started_cluster):
         "create table lag_after_recovery.t (n int) engine=ReplicatedMergeTree order by n"
     )
 
+    # Delay recovery so t1..t9 below are enqueued while replica2 is still
+    # recovering -> it ends up unsynced-after-recovery (REPLICA_UNSYNCED_MARKER).
     dummy_node.query("system enable failpoint database_replicated_delay_recovery")
+    # Freeze replica2's worker before the check that clears the marker, so the
+    # marker stays set for the whole window deterministically (the old random
+    # delay failpoint raced it and cleared the marker before t10 ~1 run in N).
+    # Same pauseable idiom as test_sync_database_replica_strict.
     dummy_node.query(
-        "system enable failpoint database_replicated_delay_entry_execution"
+        "system enable failpoint database_replicated_stop_entry_execution"
     )
-    dummy_node.query(
-        "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
-    )
-
-    settings = {"distributed_ddl_task_timeout": 0}
-    main_node.query(
-        "create table lag_after_recovery.t1 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t2 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t3 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t4 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t5 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t6 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t7 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t8 (n int) engine=Memory", settings=settings
-    )
-    main_node.query(
-        "create table lag_after_recovery.t9 (n int) engine=Memory", settings=settings
-    )
-
-    assert_eq_with_retry(
-        dummy_node,
-        "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
-        "1\n",
-    )
-
-    settings = {
-        "distributed_ddl_task_timeout": 1,
-        "distributed_ddl_output_mode": "none_only_active",
-    }
-    main_node.query(
-        "create table lag_after_recovery.t10 (n int) engine=Memory", settings=settings
-    )
-    assert (
+    try:
         dummy_node.query(
-            "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
+            "create database lag_after_recovery engine=Replicated('/clickhouse/databases/lag_after_recovery', 'shard1', 'replica2') settings max_replication_lag_to_enqueue=1"
         )
-        == "0\n"
-    )
 
-    dummy_node.query(
-        "system disable failpoint database_replicated_delay_entry_execution"
-    )
+        settings = {"distributed_ddl_task_timeout": 0}
+        for i in range(1, 10):
+            main_node.query(
+                f"create table lag_after_recovery.t{i} (n int) engine=Memory",
+                settings=settings,
+            )
+
+        assert_eq_with_retry(
+            dummy_node,
+            "select is_active from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'",
+            "1\n",
+        )
+
+        settings = {
+            "distributed_ddl_task_timeout": 1,
+            "distributed_ddl_output_mode": "none_only_active",
+        }
+        # unsynced replica2 is treated as offline, so the coordinator does not
+        # wait for it and the create returns quickly instead of timing out.
+        main_node.query(
+            "create table lag_after_recovery.t10 (n int) engine=Memory",
+            settings=settings,
+        )
+        # replication_lag is still nonzero (replica2 is frozen and behind).
+        assert (
+            dummy_node.query(
+                "select replication_lag=0 from system.clusters where name='lag_after_recovery' and database_replica_name='replica2'"
+            )
+            == "0\n"
+        )
+    finally:
+        dummy_node.query(
+            "system disable failpoint database_replicated_stop_entry_execution"
+        )
+        dummy_node.query(
+            "system disable failpoint database_replicated_delay_recovery"
+        )
+
+    # With the worker unfrozen, replica2 catches up and clears the unsynced marker.
     dummy_node.query("system sync database replica lag_after_recovery strict")
     assert (
         dummy_node.query(
@@ -2034,9 +2069,10 @@ def test_timeseries(started_cluster):
         """
         CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');
         CREATE TABLE ts_db.table ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = false
-        DATA ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
+        RECENT SAMPLES ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)
         TAGS ENGINE = ReplicatedAggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id)
-        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family_name;
+        METRICS ENGINE = ReplicatedReplacingMergeTree ORDER BY metric_family;
         """,
         settings={"allow_experimental_time_series_table": 1}
     )
@@ -2045,13 +2081,14 @@ def test_timeseries(started_cluster):
         "CREATE DATABASE ts_db ENGINE = Replicated('/clickhouse/databases/ts_db', '{shard}', '{replica}');"
     )
 
+    # The outer table + 4 inner tables (samples, recent samples, tags and metrics).
     for node in [competing_node, main_node, dummy_node]:
         assert node.query(
             """
             SYSTEM SYNC DATABASE REPLICA ts_db;
             SELECT count() FROM system.tables WHERE database='ts_db';
             """, timeout=10
-        ) == "4\n", f"Node {node.name} failed"
+        ) == "5\n", f"Node {node.name} failed"
 
 
 def test_mv_false_cyclic_dependency(started_cluster):
@@ -2114,6 +2151,38 @@ def test_ignore_cluster_name_setting(started_cluster):
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
+def test_attach_from(started_cluster):
+    db_name_replicated = "test_attach_from_replicated"
+    db_name_atomic = "test_attach_from_atomic"
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name_replicated} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name_atomic} SYNC")
+
+        node.query(
+            f"CREATE DATABASE {db_name_replicated} ENGINE = Replicated('/clickhouse/databases/{db_name_replicated}', '{{shard}}', '{{replica}}')"
+        )
+        node.query(f"CREATE DATABASE {db_name_atomic} ENGINE = Atomic")
+        node.query(
+            f"CREATE TABLE {db_name_atomic}.src (a UInt32) ENGINE=MergeTree() ORDER BY a"
+        )
+        node.query(f"INSERT INTO {db_name_atomic}.src SELECT 1")
+
+    main_node.query(
+        f"CREATE TABLE {db_name_replicated}.dst (a UInt32) ENGINE=MergeTree() ORDER BY a"
+    )
+    main_node.query(
+        f"ALTER TABLE {db_name_replicated}.dst ATTACH PARTITION tuple() FROM {db_name_atomic}.src"
+    )
+
+    dummy_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name_replicated}")
+
+    assert main_node.query(f"SELECT count(*) FROM {db_name_replicated}.dst") == "1\n"
+    assert dummy_node.query(f"SELECT count(*) FROM {db_name_replicated}.dst") == "0\n"
+
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name_replicated} SYNC")
+        node.query(f"DROP DATABASE IF EXISTS {db_name_atomic} SYNC")
+
 def test_alias_with_dropped_target(started_cluster):
     db_name = "test_alias_dropped"
 
@@ -2139,6 +2208,64 @@ def test_alias_with_dropped_target(started_cluster):
     )
 
     # Cleanup
+    for node in [main_node, dummy_node]:
+        node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_remote_engine_over_table_function_with_dropped_target(started_cluster):
+    db_name = "test_remote_dropped_target"
+
+    main_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+    dummy_node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+    main_node.query(
+        f"""
+        CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}');
+        CREATE TABLE {db_name}.src (x UInt64) ENGINE = MergeTree ORDER BY x;
+        CREATE TABLE {db_name}.remote_over_merge (x UInt64)
+            ENGINE = Remote('127.0.0.1', merge('{db_name}', '^src$'));
+        DROP TABLE {db_name}.src;
+        """
+    )
+
+    errors_before = int(
+        dummy_node.count_in_log(f"Error on initialization of {db_name}")
+    )
+
+    # A second replica holds no local metadata, so it instantiates every table of the ZooKeeper
+    # snapshot, including the `Remote` one whose `merge('...', '^src$')` target now matches
+    # nothing. The stored definition carries its own columns and must be accepted as it is.
+    dummy_node.query(
+        f"CREATE DATABASE {db_name} ENGINE = Replicated('/clickhouse/databases/{db_name}', '{{shard}}', '{{replica}}')"
+    )
+
+    assert_eq_with_retry(
+        dummy_node,
+        f"SELECT name FROM system.tables WHERE database = '{db_name}' ORDER BY name",
+        "remote_over_merge\n",
+        retry_count=60,
+        sleep_time=1,
+    )
+    assert (
+        dummy_node.query(
+            f"SELECT name, type FROM system.columns "
+            f"WHERE database = '{db_name}' AND table = 'remote_over_merge'"
+        )
+        == "x\tUInt64\n"
+    )
+    errors_after = int(dummy_node.count_in_log(f"Error on initialization of {db_name}"))
+    assert errors_after == errors_before, (
+        f"replica recovery logged {errors_after - errors_before} initialization error(s) "
+        f"for {db_name}"
+    )
+
+    # DDL accepted and replicated from the recovered replica: its DDLWorker is running.
+    dummy_node.query(
+        f"CREATE TABLE {db_name}.after_recovery (y UInt64) ENGINE = MergeTree ORDER BY y"
+    )
+    main_node.query(f"SYSTEM SYNC DATABASE REPLICA {db_name}")
+    assert main_node.query(f"EXISTS TABLE {db_name}.after_recovery") == "1\n"
+
     for node in [main_node, dummy_node]:
         node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 

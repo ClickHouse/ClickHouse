@@ -33,9 +33,25 @@ public:
         return target && target->isMergeTree();
     }
 
+    bool readsFromOtherTables() const override { return true; }
+    std::vector<StoragePtr> getUnderlyingStorages() const override
+    {
+        if (auto target = tryGetTargetTable())
+            return {target};
+        return {};
+    }
+
+    /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
+    /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
+    bool supportsTruncate() const override { return false; }
+
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
+
+    /// Returns whether the current user has the specified access to the target table or column.
+    /// An empty `column_name` represents table-level access.
+    bool isTargetTableGranted(ContextPtr query_context, AccessType access_type, const String & column_name) const;
 
     /// Read from target table
     void read(
@@ -64,7 +80,8 @@ public:
     void alter(
         const AlterCommands & params,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder) override;
+        AlterLockHolder & table_lock_holder,
+        DDLGuardPtr & ddl_guard) override;
 
     /// Truncate target table
     void truncate(
@@ -97,6 +114,8 @@ public:
         ContextPtr local_context) const override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override { getTargetTable()->checkMutationIsPossible(commands, settings); }
+
+    void checkInsertIsAllowed(ContextPtr local_context) const override { getTargetTable()->checkInsertIsAllowed(local_context); }
 
     /// Mutate target table
     void mutate(
@@ -134,6 +153,7 @@ public:
     bool supportsColumnsWithDynamicStructure() const override { return getTargetTable()->supportsColumnsWithDynamicStructure(); }
     bool supportsPrewhere() const override { return getTargetTable()->supportsPrewhere(); }
     std::optional<NameSet> supportedPrewhereColumns() const override { return getTargetTable()->supportedPrewhereColumns(); }
+    bool supportedPrewhereColumnsIncludeSubcolumns() const override { return getTargetTable()->supportedPrewhereColumnsIncludeSubcolumns(); }
     bool canMoveConditionsToPrewhere() const override
     {
         auto target = tryGetTargetTable();
@@ -143,6 +163,11 @@ public:
     {
         auto target = tryGetTargetTable();
         return target && target->supportsOptimizationToSubcolumns();
+    }
+    bool supportsOptimizationToTupleElementSubcolumns() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->supportsOptimizationToTupleElementSubcolumns();
     }
     bool supportsParallelInsert() const override
     {
@@ -178,13 +203,10 @@ public:
         auto target = tryGetTargetTable();
         return target && target->supportsSparseSerialization();
     }
-    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override
-    {
-        auto target = tryGetTargetTable();
-        return target && target->supportsTrivialCountOptimization(storage_snapshot, query_context);
-    }
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
     bool supportsPartitionBy() const override { return getTargetTable()->supportsPartitionBy(); }
     bool supportsTTL() const override { return getTargetTable()->supportsTTL(); }
+    bool supportsStatistics() const override { return getTargetTable()->supportsStatistics(); }
 
     QueryProcessingStage::Enum getQueryProcessingStage(
         ContextPtr local_context,
@@ -243,8 +265,8 @@ public:
         return target->tryLockForShare(query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     }
 
-    std::optional<UInt64> totalRows(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalRows(query_context) : std::optional<UInt64>{}; }
-    std::optional<UInt64> totalBytes(ContextPtr query_context) const override { auto target = tryGetTargetTable(); return target ? target->totalBytes(query_context) : std::optional<UInt64>{}; }
+    std::optional<UInt64> totalRows(ContextPtr query_context) const override;
+    std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override { auto target = tryGetTargetTable(); return target ? target->totalBytesUncompressed(settings) : std::optional<UInt64>{}; }
     std::optional<UInt64> lifetimeRows() const override { auto target = tryGetTargetTable(); return target ? target->lifetimeRows() : std::optional<UInt64>{}; }
     std::optional<std::optional<UInt64>> tryLifetimeRows() const override
@@ -267,7 +289,7 @@ public:
     }
 
     ColumnSizeByName getColumnSizes() const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes() : ColumnSizeByName{}; }
-    ColumnSizeByName getColumnSizes(const Names & columns) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns) : ColumnSizeByName{}; }
+    ColumnSizeByName getColumnSizes(const Names & columns, bool calculate_subcolumn_sizes) const override { auto target = tryGetTargetTable(); return target ? target->getColumnSizes(columns, calculate_subcolumn_sizes) : ColumnSizeByName{}; }
     std::optional<ColumnSizeByName> tryGetColumnSizes() const override
     {
         auto target = tryGetTargetTable();

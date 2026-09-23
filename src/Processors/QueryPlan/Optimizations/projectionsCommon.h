@@ -1,7 +1,12 @@
 #pragma once
+
 #include <Interpreters/ActionsDAG.h>
+
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+
+#include <expected>
+#include <unordered_map>
 
 namespace DB
 {
@@ -15,7 +20,17 @@ namespace DB::QueryPlanOptimizations
 {
 
 /// Common checks that projection can be used for this step.
-bool canUseProjectionForReadingStep(ReadFromMergeTree * reading);
+std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTree * reading);
+
+/// Keeps only the projection named `preferred_name` when it is in the list, otherwise leaves the list as is.
+void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name);
+
+/// Records `reason` in `reject_reasons` for every projection of `projections` that is not in `kept`, keeping a reason that is already there.
+void rejectProjections(
+    std::unordered_map<String, String> & reject_reasons,
+    const std::vector<const ProjectionDescription *> & projections,
+    const std::vector<const ProjectionDescription *> & kept,
+    const String & reason);
 
 /// Max blocks for sequential consistency reading from replicated table.
 PartitionIdToMaxBlockPtr getMaxAddedBlocks(ReadFromMergeTree * reading);
@@ -69,6 +84,9 @@ size_t filterPartsByProjection(
 
 /// This function fills ProjectionCandidate structure for specified projection.
 /// It returns false if for some reason we cannot read from projection.
+/// `top_k_filter_info` is the TopK stamp of the read the projection would replace (if any), so
+/// that the query condition cache consult inside the candidate analysis observes the same TopK
+/// gating and key salting as the read itself.
 bool analyzeProjectionCandidate(
     ProjectionCandidate & candidate,
     const MergeTreeDataSelectExecutor & reader,
@@ -77,6 +95,7 @@ bool analyzeProjectionCandidate(
     const StorageMetadataPtr & parent_metadata,
     ReadFromMergeTree::AnalysisResult & parent_reading_select_result,
     const SelectQueryInfo & projection_query_info,
+    const std::optional<TopKFilterInfo> & top_k_filter_info,
     const ContextPtr & context);
 
 /// Performs part-level filtering using projection to skip irrelevant data parts.

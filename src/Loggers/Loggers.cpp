@@ -449,14 +449,22 @@ DB::AsyncLogQueueSizes Loggers::getAsynchronousMetricsFromAsyncLogs()
 
 void Loggers::stopAsyncLoggingThreads()
 {
+    /// Fail closed: the caller quiesces the process around `remapExecutable`, so a thread that could not
+    /// be joined must abort the remap rather than be left running while the text segment is rewritten.
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
-        async->close();
+        async->closeAndJoinThreads();
 }
 
 void Loggers::startAsyncLoggingThreads()
 {
     if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
         async->open();
+}
+
+void Loggers::closeAsyncLogging()
+{
+    if (auto * async = dynamic_cast<DB::OwnAsyncSplitChannel *>(split.get()))
+        async->close();
 }
 
 void Loggers::stopLogging()

@@ -1,19 +1,20 @@
 #include <string_view>
+#include <DataTypes/DataTypesBinaryEncoding.h>
+#include <IO/Operators.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
+#include <Interpreters/Context.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
-#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
+#include <Processors/QueryPlan/RuntimeFilterBloomSizing.h>
 #include <Processors/QueryPlan/Serialization.h>
 #include <Processors/Transforms/BuildRuntimeFilterTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
-#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/Exception.h>
-#include <Interpreters/Context.h>
+#include <Common/ThreadStatus.h>
 
 namespace DB
 {
@@ -32,14 +33,7 @@ namespace QueryPlanSerializationSetting
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-    extern const int PARAMETER_OUT_OF_BOUND;
 }
-
-/// Runtime bloom filter should be small and fast otherwise it is pointless
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_BYTES = 16 * 1024 * 1024;
-static constexpr UInt64 MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 10;
-static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_BYTES = 512 * 1024;
-static constexpr UInt64 DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS = 3;
 
 
 static ITransformingStep::Traits getTraits()
@@ -63,15 +57,9 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     const DataTypePtr & filter_column_type_,
     String filter_name_,
     String filter_key_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_bytes_,
-    UInt64 bloom_filter_hash_functions_,
+    RuntimeFilterBuildOptions build_options_,
     Float64 pass_ratio_threshold_for_disabling_,
-    UInt64 blocks_to_skip_before_reenabling_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
-    bool allow_to_use_not_exact_filter_,
-    bool track_key_range_,
-    std::optional<UInt64> distinct_keys_hint_)
+    UInt64 blocks_to_skip_before_reenabling_)
     : ITransformingStep(
         input_header_,
         input_header_,
@@ -80,31 +68,12 @@ BuildRuntimeFilterStep::BuildRuntimeFilterStep(
     , filter_column_type(filter_column_type_)
     , filter_name(filter_name_)
     , filter_key(std::move(filter_key_))
-    , exact_values_limit(exact_values_limit_)
-    , bloom_filter_bytes(bloom_filter_bytes_)
-    , bloom_filter_hash_functions(bloom_filter_hash_functions_)
+    , build_options(std::move(build_options_))
     , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
     , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
-    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
-    , allow_to_use_not_exact_filter(allow_to_use_not_exact_filter_)
-    , track_key_range(track_key_range_)
-    , distinct_keys_hint(distinct_keys_hint_)
 {
-    if (!bloom_filter_bytes)
-        bloom_filter_bytes = DEFAULT_RUNTIME_BLOOM_FILTER_BYTES;
-    if (bloom_filter_bytes > MAX_RUNTIME_BLOOM_FILTER_BYTES)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter size {} is too big, maximum: {}",
-            bloom_filter_bytes, MAX_RUNTIME_BLOOM_FILTER_BYTES);
-
-    if (!bloom_filter_hash_functions)
-        bloom_filter_hash_functions = DEFAULT_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS;
-    if (bloom_filter_hash_functions > MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS)
-        throw Exception(
-            ErrorCodes::PARAMETER_OUT_OF_BOUND,
-            "Specified runtime bloom filter hash function count {} is too big, maximum: {}",
-            bloom_filter_hash_functions, MAX_RUNTIME_BLOOM_FILTER_HASH_FUNCTIONS);
+    build_options.bloom = resolveRuntimeBloomFilterDefaults(build_options.bloom);
+    validateRuntimeBloomFilterParameters(build_options.bloom);
 }
 
 void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
@@ -131,15 +100,8 @@ void BuildRuntimeFilterStep::transformPipeline(QueryPipelineBuilder & pipeline, 
             filter_name,
             filter_key,
             /*filters_to_merge_=*/streams - 1,
-            exact_values_limit,
-            bloom_filter_bytes,
-            bloom_filter_hash_functions,
-            pass_ratio_threshold_for_disabling,
-            blocks_to_skip_before_reenabling,
-            max_ratio_of_set_bits_in_bloom_filter,
-            allow_to_use_not_exact_filter,
-            track_key_range,
-            distinct_keys_hint,
+            build_options,
+            RuntimeFilterConfig{pass_ratio_threshold_for_disabling, blocks_to_skip_before_reenabling},
             query_context);
     });
 }
@@ -149,14 +111,14 @@ void BuildRuntimeFilterStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings) const
+void BuildRuntimeFilterStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
 {
-    settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = exact_values_limit;
-    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = bloom_filter_bytes;
-    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions] = bloom_filter_hash_functions;
+    settings[QueryPlanSerializationSetting::join_runtime_filter_exact_values_limit] = build_options.exact_values_limit;
+    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes] = build_options.bloom.bytes;
+    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions] = build_options.bloom.hash_functions;
     settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling] = pass_ratio_threshold_for_disabling;
     settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling] = blocks_to_skip_before_reenabling;
-    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits] = max_ratio_of_set_bits_in_bloom_filter;
+    settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits] = build_options.max_ratio_of_set_bits;
 }
 
 void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
@@ -164,7 +126,7 @@ void BuildRuntimeFilterStep::serialize(Serialization & ctx) const
     writeStringBinary(filter_column_name, ctx.out);
     encodeDataType(filter_column_type, ctx.out);
     writeStringBinary(filter_name, ctx.out);
-    writeBinary(allow_to_use_not_exact_filter, ctx.out);
+    writeBinary(build_options.polarity == RuntimeFilterPolarity::Contains, ctx.out);
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
@@ -187,7 +149,7 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
     const UInt64 bloom_filter_bytes = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_bytes];
     const UInt64 bloom_filter_hash_functions = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_hash_functions];
     const Float64 pass_ratio_threshold_for_disabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_pass_ratio_threshold_for_disabling];
-    const Float64 blocks_to_skip_before_reenabling = static_cast<Float64>(ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling]);
+    const UInt64 blocks_to_skip_before_reenabling = ctx.settings[QueryPlanSerializationSetting::join_runtime_filter_blocks_to_skip_before_reenabling];
     const Float64 max_ratio_of_set_bits_in_bloom_filter = ctx.settings[QueryPlanSerializationSetting::join_runtime_bloom_filter_max_ratio_of_set_bits];
 
     /// A deserialized step carries no random lookup key (it is never serialized); runtime filters are
@@ -198,14 +160,16 @@ QueryPlanStepPtr BuildRuntimeFilterStep::deserialize(Deserialization & ctx)
         filter_column_type,
         std::move(filter_name),
         /*filter_key_=*/String{},
-        exact_values_limit,
-        bloom_filter_bytes,
-        bloom_filter_hash_functions,
+        RuntimeFilterBuildOptions{
+            .exact_values_limit = exact_values_limit,
+            .bloom = RuntimeBloomFilterParameters{bloom_filter_bytes, bloom_filter_hash_functions},
+            .max_ratio_of_set_bits = max_ratio_of_set_bits_in_bloom_filter,
+            .polarity = allow_to_use_not_exact_filter ? RuntimeFilterPolarity::Contains : RuntimeFilterPolarity::NotContains,
+            .track_key_range = false,
+            .distinct_keys_hint = std::nullopt,
+            .distinct_keys_hint_matches_filter_key = false},
         pass_ratio_threshold_for_disabling,
-        blocks_to_skip_before_reenabling,
-        max_ratio_of_set_bits_in_bloom_filter,
-        allow_to_use_not_exact_filter,
-        /*track_key_range_=*/false); /// deserialized step is inert (no rendezvous key), so it never builds
+        blocks_to_skip_before_reenabling); /// deserialized step is inert (no rendezvous key), so it never builds
 }
 
 QueryPlanStepPtr BuildRuntimeFilterStep::clone() const
@@ -236,7 +200,7 @@ void BuildRuntimeFilterStep::describeActions(FormatSettings & format_settings) c
     }
     else
     {
-        format_settings.out << prefix << "Allow not exact filter: " << allow_to_use_not_exact_filter << '\n';
+        format_settings.out << prefix << "Allow not exact filter: " << (build_options.polarity == RuntimeFilterPolarity::Contains) << '\n';
     }
 }
 
