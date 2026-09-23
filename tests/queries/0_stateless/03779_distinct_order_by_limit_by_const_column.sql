@@ -53,3 +53,49 @@ SELECT DISTINCT 'new' AS my_field FROM (SELECT 'old' AS my_field, number FROM nu
 -- the redefined type.
 SELECT toUInt16(1) AS x, number FROM (SELECT toUInt8(1) AS x, number FROM numbers(3)) ORDER BY number LIMIT 1 BY x SETTINGS enable_analyzer=1;
 SELECT toTypeName(x) FROM (SELECT toUInt16(1) AS x FROM (SELECT toUInt8(1) AS x, number FROM numbers(3)) ORDER BY number LIMIT 1 BY x) SETTINGS enable_analyzer=1;
+
+SELECT number, 'grp' AS grp
+FROM numbers(5)
+LIMIT 2 BY grp;
+
+SELECT number, 'grp' AS grp
+FROM numbers(100000)
+LIMIT 2 BY grp
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10, log_comment = '03779_limit_by_const_early_stop';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT if(count() > 0 AND max(read_rows) < 1000, 'OK', 'FAIL')
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND log_comment = '03779_limit_by_const_early_stop'
+  AND type = 'QueryFinish';
+
+SET enable_analyzer = 1;
+
+-- Keep the constant as a ColumnConst, but prevent the analyzer from folding the
+-- ORDER BY key away, so this checks the final sorted-stream LIMIT BY transform.
+SELECT count() > 0
+FROM (EXPLAIN PIPELINE
+      SELECT number, identity(1) AS k
+      FROM numbers(100000)
+      ORDER BY k
+      LIMIT 2 BY k
+      SETTINGS max_threads = 1, max_block_size = 10)
+WHERE explain LIKE '%LimitBySortedStreamTransform%';
+
+SELECT number, identity(1) AS k
+FROM numbers(100000)
+ORDER BY k
+LIMIT 2 BY k
+FORMAT Null
+SETTINGS max_threads = 1, max_block_size = 10, log_comment = '03779_limit_by_const_early_stop_sorted';
+
+SYSTEM FLUSH LOGS query_log;
+
+SELECT if(count() > 0 AND max(read_rows) < 1000, 'OK', 'FAIL')
+FROM system.query_log
+WHERE current_database = currentDatabase()
+  AND log_comment = '03779_limit_by_const_early_stop_sorted'
+  AND type = 'QueryFinish';

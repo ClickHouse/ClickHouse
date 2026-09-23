@@ -9,7 +9,44 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_CONNECT_NATS;
+}
+
+void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration)
+{
+    if (!configuration.ca_file.empty())
+    {
+        auto status = natsOptions_LoadCATrustedCertificates(options, configuration.ca_file.c_str());
+        if (status != NATS_OK)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot load NATS trusted CA certificates from {}. Nats status text: {}. Last error message: {}",
+                configuration.ca_file, natsStatus_GetText(status), getNATSLastError());
+    }
+
+    if (!configuration.client_cert_file.empty())
+    {
+        auto status = natsOptions_LoadCertificatesChain(
+            options, configuration.client_cert_file.c_str(), configuration.client_key_file.c_str());
+        if (status != NATS_OK)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot load NATS client certificate chain from {} with key {}. Nats status text: {}. Last error message: {}",
+                configuration.client_cert_file, configuration.client_key_file,
+                natsStatus_GetText(status), getNATSLastError());
+    }
+}
+
+void validateNATSCertificates(const NATSConfiguration & configuration)
+{
+    natsOptions * options = nullptr;
+    auto status = natsOptions_Create(&options);
+    if (status != NATS_OK)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not initialize NATS options. Nats error: {}", natsStatus_GetText(status));
+
+    NATSOptionsPtr holder(options, &natsOptions_Destroy);
+    loadNATSCertificates(options, configuration);
 }
 
 /// disconnectedCallback may be called after connection destroy
@@ -19,17 +56,8 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     : configuration(configuration_)
     , log(std::move(log_))
     , options(std::move(options_))
-    , statistics(nullptr, &natsStatistics_Destroy)
     , connection(nullptr, &natsConnection_Destroy)
 {
-    natsStatistics * new_statistics = nullptr;
-    auto status = natsStatistics_Create(&new_statistics);
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not create NATS statistics. Nats error: {}", natsStatus_GetText(status));
-    statistics.reset(new_statistics);
-
     if (!configuration.username.empty() && !configuration.password.empty())
         natsOptions_SetUserInfo(options.get(), configuration.username.c_str(), configuration.password.c_str());
     if (!configuration.token.empty())
@@ -42,6 +70,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     if (configuration.secure)
     {
         natsOptions_SetSecure(options.get(), true);
+        loadNATSCertificates(options.get(), configuration);
     }
 
     // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert
@@ -78,6 +107,12 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     natsOptions_SetReconnectWait(options.get(), configuration.reconnect_wait);
     natsOptions_SetDisconnectedCB(options.get(), disconnectedCallback, this);
     natsOptions_SetReconnectedCB(options.get(), reconnectedCallback, this);
+    /// Without this the library reports asynchronous errors - a rejected authentication, most
+    /// notably - by printing them to `stderr`, which leaves a table that has stopped consuming
+    /// without an explanation in the server log. The handler knows only the connection, not the
+    /// table: `StorageNATS` names the table when it replaces the connection the library closed,
+    /// and reports the error recorded on it, see `lastErrorForLog`.
+    natsOptions_SetErrorHandler(options.get(), errorCallback, this);
 }
 NATSConnection::~NATSConnection()
 {
@@ -92,6 +127,17 @@ String NATSConnection::connectionInfoForLog() const
         return "url: [hidden]";
     }
     return "cluster: [hidden]";
+}
+
+String NATSConnection::lastErrorForLog()
+{
+    std::lock_guard lock(mutex);
+    if (!connection)
+        return "none";
+
+    const char * last_error = nullptr;
+    natsConnection_GetLastError(connection.get(), &last_error);
+    return last_error && *last_error ? last_error : "none";
 }
 
 bool NATSConnection::isConnected()
@@ -110,28 +156,6 @@ bool NATSConnection::isClosed()
 {
     std::lock_guard lock(mutex);
     return isClosedImpl(lock);
-}
-
-UInt64 NATSConnection::getReconnectCount()
-{
-    std::lock_guard lock(mutex);
-    if (!connection)
-        return 0;
-
-    auto status = natsConnection_GetStats(connection.get(), statistics.get());
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not get statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
-
-    uint64_t reconnects = 0;
-    status = natsStatistics_GetCounts(statistics.get(), nullptr, nullptr, nullptr, nullptr, &reconnects);
-    if (status != NATS_OK)
-        throw Exception(
-            ErrorCodes::CANNOT_CONNECT_NATS,
-            "Can not read statistics of connection to {}. Nats error: {}", connectionInfoForLog(), natsStatus_GetText(status));
-
-    return reconnects;
 }
 
 bool NATSConnection::connect()
@@ -194,6 +218,19 @@ void NATSConnection::reconnectedCallback(natsConnection *, void * connection)
 void NATSConnection::disconnectedCallback(natsConnection *, void * connection)
 {
     LOG_DEBUG(callback_logger, "Connection {} got disconnected from NATS server", connection);
+}
+
+void NATSConnection::errorCallback(natsConnection * nats_connection, natsSubscription *, natsStatus status, void * connection)
+{
+    const char * last_error = nullptr;
+    natsConnection_GetLastError(nats_connection, &last_error);
+
+    LOG_ERROR(
+        callback_logger,
+        "Connection {} got an asynchronous error from the NATS client. Nats status text: {}. Last error message: {}",
+        connection,
+        natsStatus_GetText(status),
+        last_error && *last_error ? last_error : "none");
 }
 
 }

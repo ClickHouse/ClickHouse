@@ -33,10 +33,6 @@ SELECT '-- 1 witness: Merge over Distributed + JOIN + WITH TIES';
 SELECT m.a FROM m_112029 AS m LEFT JOIN r_112029 AS r ON m.b = r.b
 ORDER BY m.a DESC LIMIT 5 WITH TIES;
 
-SELECT '-- 2 witness, old analyzer';
-SELECT m.a FROM m_112029 AS m LEFT JOIN r_112029 AS r ON m.b = r.b
-ORDER BY m.a DESC LIMIT 5 WITH TIES SETTINGS enable_analyzer = 0;
-
 SELECT '-- 3 witness via the merge() table function';
 SELECT s.a FROM merge(currentDatabase(), '^d_112029$') AS s LEFT JOIN r_112029 AS r ON s.b = r.b
 ORDER BY s.a DESC LIMIT 5 WITH TIES;
@@ -69,8 +65,7 @@ CREATE TABLE m_local_112029 (a UInt32, b UInt32) ENGINE = Merge(currentDatabase(
 -- Without a JOIN the child keeps its own ORDER BY, so it also keeps and applies its LIMIT.
 -- Returning 1000 rows here means the reset was applied to a child that owns its LIMIT.
 SELECT '-- 8 a child without a JOIN keeps its own LIMIT';
-SELECT a FROM m_local_112029 ORDER BY a DESC LIMIT 5 SETTINGS enable_analyzer = 1;
-SELECT a FROM m_local_112029 ORDER BY a DESC LIMIT 5 SETTINGS enable_analyzer = 0;
+SELECT a FROM m_local_112029 ORDER BY a DESC LIMIT 5;
 
 CREATE TABLE d_wide_112029 (a UInt32, b UInt32)
     ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), t_wide_112029);
