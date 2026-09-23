@@ -37,8 +37,6 @@ public:
     {
         PartialAggregation = 0,
         FinalAggregation = 1,
-        Scatter = 2,
-        AggregatingSharded = 3,
     };
 
     AggregatingStep(
@@ -56,8 +54,7 @@ public:
         SortDescription group_by_sort_description_,
         bool should_produce_results_in_order_of_bucket_number_,
         bool memory_bound_merging_of_aggregation_results_enabled_,
-        bool explicit_sorting_required_for_aggregation_in_order_,
-        bool enable_sharding_aggregator_);
+        bool explicit_sorting_required_for_aggregation_in_order_);
 
     static Block appendGroupingColumn(const Block & block, const Names & keys, bool has_grouping, bool use_nulls);
 
@@ -94,14 +91,19 @@ public:
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
-    void setLimitHint(size_t limit) { limit_hint = limit; }
+    /// `prefix_columns` is the number of leading columns of the group-by sort description
+    /// the query is ordered by; the in-order streams may stop only at a boundary of them.
+    void setLimitHint(size_t limit, size_t prefix_columns)
+    {
+        limit_hint = limit;
+        limit_hint_prefix_columns = prefix_columns;
+    }
     size_t getLimitHint() const { return limit_hint; }
     const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     const SortDescription & getSortDescription() const override;
 
     bool canUseProjection() const;
-    bool canUseShardedAggregation(const QueryPipelineBuilder & pipeline) const;
     /// Returns nullptr when the adaptive aggregator can engage, and otherwise a short reason
     /// for the trace log.
     const char * adaptiveAggregatorRejectionReason(const QueryPipelineBuilder & pipeline) const;
@@ -144,6 +146,8 @@ public:
     bool getFinal() const noexcept { return final; }
     void setFinal(bool new_value);
     void setProduceResultsInBucketOrder(bool new_value) { should_produce_results_in_order_of_bucket_number = new_value; }
+    /// Re-bases the aggregation onto a new input with a different key set; aggregates unchanged.
+    void rebaseOntoInput(const SharedHeader & new_input_header, Names new_keys);
     size_t getMaxBlockSize() const noexcept { return max_block_size; }
     size_t getMaxBlockSizeForAggregationInOrder() const noexcept { return aggregation_in_order_max_block_bytes; }
     size_t getMergeThreads() const noexcept { return merge_threads; }
@@ -183,15 +187,14 @@ private:
     bool should_produce_results_in_order_of_bucket_number;
     bool memory_bound_merging_of_aggregation_results_enabled;
     bool explicit_sorting_required_for_aggregation_in_order;
-    bool enable_sharding_aggregator;
 
     size_t limit_hint = 0;
+    size_t limit_hint_prefix_columns = 0;
 
     Processors aggregating_in_order;
     Processors aggregating_sorted;
     Processors finalizing;
 
-    Processors scatter;
     Processors aggregating;
 };
 

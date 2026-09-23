@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Parsers/IAST.h>
@@ -33,9 +34,6 @@
 
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Core/Streaming/StreamingVirtualColumns.h>
-
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <memory>
@@ -51,39 +49,13 @@ Names metadataStreamColumns(const StreamSettings & stream_settings, const Storag
 {
     Names columns{PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name};
 
-    if (!std::ranges::contains(columns, stream_settings.watermark->column))
-        columns.push_back(stream_settings.watermark->column);
+    if (!std::ranges::contains(columns, stream_settings.watermark->time_attribute_column))
+        columns.push_back(stream_settings.watermark->time_attribute_column);
 
     const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
     for (const auto & source_column : source_columns)
         if (!std::ranges::contains(columns, source_column))
             columns.push_back(source_column);
-
-    return columns;
-}
-
-/// User-requested columns + the commit-order key and the prewhere and row filter inputs.
-Names dataStreamColumns(Names columns, const PrewhereInfoPtr & prewhere_info, const FilterDAGInfoPtr & row_level_filter)
-{
-    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
-
-    if (prewhere_info)
-    {
-        const auto source_columns = prewhere_info->prewhere_actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
-
-    if (row_level_filter)
-    {
-        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
 
     return columns;
 }
@@ -150,34 +122,19 @@ Pipe buildPartitionReadingPipeline(
 {
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
-    const auto & prewhere_info = reading_context.prewhere_info;
-    const auto & row_level_filter = reading_context.row_level_filter;
     const auto & output_header = reading_context.output_header;
 
-    const auto columns_to_read = dataStreamColumns(reading_context.user_requested_columns, prewhere_info, row_level_filter);
-    auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, columns_to_read);
+    auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, reading_context.columns_to_read);
     if (!plan)
         return {};
 
-    /// Add filter built from the outer query analysis.
-    if (prewhere_info)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            prewhere_info->prewhere_actions.clone(),
-            prewhere_info->prewhere_column_name,
-            prewhere_info->remove_prewhere_column));
-    }
+    if (const auto & filter = reading_context.row_level_filter)
+        plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
 
-    /// Add row policy filter built from the outer query analysis.
-    if (row_level_filter)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            row_level_filter->actions.clone(),
-            row_level_filter->column_name,
-            row_level_filter->do_remove_column));
-    }
+    if (const auto & filter = reading_context.prewhere_filter)
+        plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
+
+    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
 
     /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
@@ -186,6 +143,7 @@ Pipe buildPartitionReadingPipeline(
         auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
         chassert(metadata_plan);
 
+        metadata_plan->addStep(std::make_unique<StampPartitionCursorsStep>(metadata_plan->getCurrentHeader(), partition_id, stream_settings.unordered));
         metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, context));
         metadata_plan->addStep(std::make_unique<RaiseWatermarksStep>(metadata_plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
         metadata_plan->addStep(std::make_unique<StampPartitionWatermarksStep>(metadata_plan->getCurrentHeader(), partition_id));
@@ -200,9 +158,6 @@ Pipe buildPartitionReadingPipeline(
         plan->unitePlans(std::move(align_step), std::move(plans));
     }
 
-    /// Add cursor calculation step.
-    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
-
     /// Add projection to required header.
     auto convert = ActionsDAG::makeConvertingActions(
         plan->getCurrentHeader()->getColumnsWithTypeAndName(),
@@ -211,9 +166,7 @@ Pipe buildPartitionReadingPipeline(
         context);
     plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(convert)));
 
-    /// Build pipeline.
-    plan->optimize(opt_settings);
-    auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context), /*do_optimize=*/false);
+    auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
     return QueryPipelineBuilder::getPipe(std::move(*builder), resources);
 }
 
@@ -232,8 +185,9 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
     const auto & output_header = reading_context.output_header;
-    const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-    const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
+    const auto storage_metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+    const auto streaming_metadata = extendMetadataWithStream(storage_metadata, stream_settings);
+    const auto storage_snapshot = reading_context.storage.getStorageSnapshot(streaming_metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
     const QueryPlanOptimizationSettings opt_settings(context);
 

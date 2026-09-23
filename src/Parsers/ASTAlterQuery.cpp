@@ -13,6 +13,7 @@
 #include <Parsers/ASTQueryParameter.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/ASTSQLSecurity.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTExpressionList.h>
@@ -102,6 +103,8 @@ ASTPtr ASTAlterCommand::clone() const
         res->statistics_decl = res->children.emplace_back(statistics_decl->clone()).get();
     if (partition)
         res->partition = res->children.emplace_back(partition->clone()).get();
+    if (partitions)
+        res->partitions = res->children.emplace_back(partitions->clone()).get();
     if (predicate)
         res->predicate = res->children.emplace_back(predicate->clone()).get();
     if (update_assignments)
@@ -184,6 +187,10 @@ void ASTAlterCommand::writeJSON(WriteBuffer & out) const
     w.writeChild("projection", projection);
     w.writeChild("statistics_decl", statistics_decl);
     w.writeChild("partition", partition);
+    /// The multi-partition `DELETE/UPDATE ... IN PARTITION p1, p2` form is carried separately from the
+    /// single-partition `partition` slot; without it the round-trip would silently widen the mutation to
+    /// the whole table.
+    w.writeChild("partitions", partitions);
     w.writeChild("predicate", predicate);
     w.writeChild("update_assignments", update_assignments);
     w.writeChild("comment", comment);
@@ -210,7 +217,8 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'command_type' field in `AlterCommand` during AST JSON deserialization");
     String command_type_str = r.getString("command_type");
     auto command_type_opt = magic_enum::enum_cast<Type>(command_type_str);
-    if (!command_type_opt)
+    /// `NO_TYPE` is the unset default rather than a command name; every accepted parse assigns a real type.
+    if (!command_type_opt || *command_type_opt == ASTAlterCommand::NO_TYPE)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ALTER command_type: '{}'", command_type_str);
     type = *command_type_opt;
 
@@ -245,12 +253,20 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
     execute_command_name = r.getString("execute_command_name");
     remove_property = r.getString("remove_property");
 
-    /// `order_by`, `sample_by`, `predicate`, `ttl`, `settings_resets`, `execute_args` and similar
-    /// are arbitrary expressions/lists with no single parser-produced node type, so they are
-    /// restored generically.
+    /// `snapshot_desc` and `execute_args` are arbitrary expressions/lists with no single parser-produced node type.
     auto readRawChild = [&](const char * key, IAST *& field)
     {
         auto child = r.readChild(key);
+        if (child)
+        {
+            field = child.get();
+            children.push_back(std::move(child));
+        }
+    };
+
+    auto readExprChild = [&](const char * key, IAST *& field)
+    {
+        auto child = r.readExpressionChild(key);
         if (child)
         {
             field = child.get();
@@ -277,8 +293,8 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
 
     readTypedChild.operator()<ASTColumnDeclaration>("col_decl", col_decl);
     readTypedChild.operator()<ASTIdentifier>("column", column);
-    readRawChild("order_by", order_by);
-    readRawChild("sample_by", sample_by);
+    readExprChild("order_by", order_by);
+    readExprChild("sample_by", sample_by);
     readTypedChild.operator()<ASTIndexDeclaration>("index_decl", index_decl);
     readTypedChild.operator()<ASTIdentifier>("index", index);
     readTypedChild.operator()<ASTConstraintDeclaration>("constraint_decl", constraint_decl);
@@ -332,7 +348,23 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         partition = partition_child.get();
         children.push_back(std::move(partition_child));
     }
-    readRawChild("predicate", predicate);
+    /// `partitions` is the multi-partition `IN PARTITION p1, p2, ...` form, which `ParserAlterQuery`
+    /// produces only for `DELETE` and `UPDATE` and never together with the single-partition `partition`
+    /// slot.
+    if (auto partitions_child = r.readPartitionListChild("partitions"))
+    {
+        if (type != ASTAlterCommand::DELETE && type != ASTAlterCommand::UPDATE)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partitions' (a multi-partition IN PARTITION) is only valid for the DELETE and UPDATE commands, "
+                "not '{}', during AST JSON deserialization",
+                magic_enum::enum_name(type));
+        if (partition)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'partition' and 'partitions' cannot be set at the same time during AST JSON deserialization");
+        partitions = partitions_child.get();
+        children.push_back(std::move(partitions_child));
+    }
+    readExprChild("predicate", predicate);
     /// `update_assignments` is an `ASTExpressionList` of `ASTAssignment` (`MutationCommand::parse`
     /// downcasts each child to `ASTAssignment`).
     readTypedChild.operator()<ASTExpressionList>("update_assignments", update_assignments);
@@ -348,7 +380,23 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
         comment = comment_child.get();
         children.push_back(std::move(comment_child));
     }
-    readRawChild("ttl", ttl);
+    readExprChild("ttl", ttl);
+    /// `TTLDescription::getTTLFromAST` reads a child that is not an `ASTTTLElement` as a column TTL,
+    /// so `ttl` carries the same list-of-`ASTTTLElement` contract as `ASTStorage`'s `ttl_table`.
+    if (ttl)
+    {
+        const auto * ttl_list = ttl->as<ASTExpressionList>();
+        if (!ttl_list)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'ttl' must be a list of TTL elements during AST JSON deserialization");
+        if (ttl_list->children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'ttl' must not be an empty list during AST JSON deserialization");
+        for (const auto & ttl_element : ttl_list->children)
+            if (!ttl_element || !ttl_element->as<ASTTTLElement>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'ttl' must be a list of TTL elements during AST JSON deserialization");
+    }
     readTypedChild.operator()<ASTSetQuery>("settings_changes", settings_changes);
     /// `settings_resets` is an `ASTExpressionList` of `ASTIdentifier` (the reset setting names).
     readTypedChild.operator()<ASTExpressionList>("settings_resets", settings_resets);
@@ -357,7 +405,11 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
             if (!setting || !setting->as<ASTIdentifier>())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER 'settings_resets' must contain only setting identifiers during AST JSON deserialization");
     /// `select` (MODIFY QUERY) is an `ASTSelectWithUnionQuery`; `refresh` (MODIFY REFRESH) an `ASTRefreshStrategy`.
-    readTypedChild.operator()<ASTSelectWithUnionQuery>("select", select);
+    if (auto select_child = r.readScreenedChildOfType<ASTSelectWithUnionQuery>("select"))
+    {
+        select = select_child.get();
+        children.push_back(std::move(select_child));
+    }
     readTypedChild.operator()<ASTSQLSecurity>("sql_security", sql_security);
     readTypedChild.operator()<ASTIdentifier>("rename_to", rename_to);
     readRawChild("snapshot_desc", snapshot_desc);
@@ -491,6 +543,7 @@ void ASTAlterCommand::readJSON(const Poco::JSON::Object & json)
                     "CLEAR STATISTICS ALL (no 'statistics_decl') must not set 'partition' during AST JSON deserialization");
             break;
         case ASTAlterCommand::ADD_CONSTRAINT:
+        case ASTAlterCommand::MODIFY_CONSTRAINT:
             require(constraint_decl, "constraint_decl");
             break;
         case ASTAlterCommand::DROP_CONSTRAINT:
@@ -1028,7 +1081,16 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
     {
         ostr << "DELETE";
 
-        if (partition)
+        if (partitions)
+        {
+            ostr << " IN PARTITION ";
+            /// The `ALTER` command list is formatted with a prepended whitespace; the flag must not leak
+            /// into the partition list, or it would emit a second space after `IN PARTITION`.
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            partitions->format(ostr, settings, state, nested_frame);
+        }
+        else if (partition)
         {
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
@@ -1042,7 +1104,15 @@ void ASTAlterCommand::formatImpl(WriteBuffer & ostr, const FormatSettings & sett
         ostr << "UPDATE ";
         update_assignments->format(ostr, settings, state, frame);
 
-        if (partition)
+        if (partitions)
+        {
+            ostr << " IN PARTITION ";
+            /// See the `DELETE` branch above.
+            auto nested_frame = frame;
+            nested_frame.expression_list_prepend_whitespace = false;
+            partitions->format(ostr, settings, state, nested_frame);
+        }
+        else if (partition)
         {
             ostr << " IN PARTITION ";
             partition->format(ostr, settings, state, frame);
@@ -1183,6 +1253,7 @@ void ASTAlterCommand::forEachPointerToChild(std::function<void(IAST **, boost::i
     f(&projection, nullptr);
     f(&statistics_decl, nullptr);
     f(&partition, nullptr);
+    f(&partitions, nullptr);
     f(&predicate, nullptr);
     f(&update_assignments, nullptr);
     f(&comment, nullptr);

@@ -5647,16 +5647,16 @@ Returns a UInt32 number containing the year and month number (YYYY * 100 + MM). 
 
 **Examples**
 
-**Convert current date to YYYYMM format**
+**Convert a date and time to YYYYMM format in another time zone**
 
 ```sql title=Query
-SELECT toYYYYMM(now(), 'US/Eastern')
+SELECT toYYYYMM(toDateTime('2026-01-01 03:04:05', 'UTC'), 'US/Eastern')
 ```
 
 ```response title=Response
-┌─toYYYYMM(now(), 'US/Eastern')─┐
-│                        202608 │
-└───────────────────────────────┘
+┌─toYYYYMM(toDateTime('2026-01-01 03:04:05', 'UTC'), 'US/Eastern')─┐
+│                                                           202512 │
+└──────────────────────────────────────────────────────────────────┘
 ```
 
 ## toYYYYMMDD {#toYYYYMMDD}

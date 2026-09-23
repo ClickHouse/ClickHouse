@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - يفرض الإخلاء وفقًا للأسبقية الثابتة (القيمة الأقل تعني أسبقية أعلى)؛ وتُخلي التخصيصات المعلّقة ذات الأسبقية الأعلى التخصيصات ذات الأسبقية الأقل؛ ويجب على العقد الفرعية تحديد `precedence` (القيمة الافتراضية هي 0).
 * `queue` - عقدة طرفية في التسلسل الهرمي قادرة على الاحتفاظ بالتخصيصات قيد التشغيل والمعلّقة.
 
-<div id="deprecated-configuration">
-  ## تهيئة XML المهملة
-</div>
-
-هناك طريقة بديلة لتحديد الأقراص التي يستخدمها مورد ما، وذلك من خلال `storage_configuration` الخاصة بالخادم:
-
-لتمكين جدولة IO لقرص معيّن، يجب تحديد `read_resource` و/أو `write_resource` في إعدادات التخزين. يحدّد ذلك لـ ClickHouse المورد الذي يجب استخدامه لكل طلب قراءة وكتابة على القرص المحدد. ويمكن أن يشير مورد القراءة ومورد الكتابة إلى اسم المورد نفسه، وهو ما يفيد مع أقراص Local SSD أو HDD. كما يمكن أن تشير عدة أقراص مختلفة إلى المورد نفسه، وهو ما يفيد مع الأقراص البعيدة إذا كنت تريد إتاحة تقسيم عادل لعرض نطاق الشبكة بين أعباء العمل مثلًا &quot;الإنتاج&quot; و&quot;التطوير&quot;.
-
-مثال:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-لاحظ أن خيارات إعدادات الخادم لها أولوية على أسلوب SQL في تعريف الموارد.
-
 <div id="see-also">
   ## راجع أيضًا
 </div>

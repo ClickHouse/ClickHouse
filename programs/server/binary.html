@@ -200,14 +200,26 @@
                 center: latLngToPixel(map.getCenter()),
             };
 
-            let query = `?zoom=${state.zoom}&x=${state.center.x}&y=${state.center.y}`;
+            /// Keep the parameters that are not related to the position, such as host and user.
+            const params = new URLSearchParams(window.location.search);
+
+            /// The password is already saved in `url` at startup, and it should not be kept in the address bar or in the browser history.
+            params.delete('password');
+
+            params.set('zoom', state.zoom);
+            params.set('x', state.center.x);
+            params.set('y', state.center.y);
 
             if (popup.isOpen() && map.getBounds().contains(popup.getLatLng())) {
                 state.popup = latLngToPixel(popup.getLatLng());
-                query += `&px=${state.popup.x}&py=${state.popup.y}`;
+                params.set('px', state.popup.x);
+                params.set('py', state.popup.y);
+            } else {
+                params.delete('px');
+                params.delete('py');
             }
 
-            history.replaceState(state, '', query);
+            history.replaceState(state, '', `?${params}`);
         }
 
         window.onpopstate = function(event) {
@@ -226,9 +238,14 @@
         if (window.location.search) {
             const params = new URLSearchParams(window.location.search);
 
-            map.setView(pixelToLatLng({x: params.get('x')|0, y: params.get('y')|0}), params.get('zoom'));
+            /// Move the view only if the position is specified, otherwise keep the default centered view.
+            if (params.has('x') && params.has('y')) {
+                map.setView(
+                    pixelToLatLng({x: params.get('x')|0, y: params.get('y')|0}),
+                    params.has('zoom') ? params.get('zoom')|0 : map.getZoom());
+            }
 
-            if (params.get('px') !== null && params.get('py') !== null) {
+            if (params.has('px') && params.has('py')) {
                 showPopup(params.get('px')|0, params.get('py')|0);
             }
         }

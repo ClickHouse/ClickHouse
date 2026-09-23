@@ -33,6 +33,18 @@ public:
         return target && target->isMergeTree();
     }
 
+    bool readsFromOtherTables() const override { return true; }
+    std::vector<StoragePtr> getUnderlyingStorages() const override
+    {
+        if (auto target = tryGetTargetTable())
+            return {target};
+        return {};
+    }
+
+    /// An `Alias` has no data of its own, so a bulk `TRUNCATE ALL TABLES` must skip it.
+    /// Only the bulk paths consult this; an explicit `TRUNCATE TABLE <alias>` still truncates the target.
+    bool supportsTruncate() const override { return false; }
+
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }
@@ -68,7 +80,8 @@ public:
     void alter(
         const AlterCommands & params,
         ContextPtr local_context,
-        AlterLockHolder & table_lock_holder) override;
+        AlterLockHolder & table_lock_holder,
+        DDLGuardPtr & ddl_guard) override;
 
     /// Truncate target table
     void truncate(
