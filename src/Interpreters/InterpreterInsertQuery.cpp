@@ -1120,6 +1120,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// stripped below.
     auto query_to_send = query.clone();
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+    /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out into the query text too.
+    ClusterProxy::resolveAutomaticUncompressedCacheOptOutInQuery(*query_to_send, local_context->getSettingsRef());
 
     /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
     /// function (`url`, `s3`, ...), while the query text still names that plain function. A node that runs
@@ -1151,6 +1153,8 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     {
         Settings stripped_settings = query_context->getSettingsRef();
         ClusterProxy::stripInitiatorOnlySettings(stripped_settings);
+        /// An explicit `use_uncompressed_cache = 0` is lost on the shard, so bake the opt-out in here too.
+        ClusterProxy::resolveAutomaticUncompressedCacheOptOut(stripped_settings);
         query_context->setSettings(stripped_settings);
     }
 
