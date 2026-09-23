@@ -26,6 +26,7 @@
 #include <fstream>
 #include <filesystem>
 #include <fmt/format.h>
+#include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include "config.h" // USE_SKIM
 
@@ -790,12 +791,31 @@ bool ReplxxLineReader::hintChosen()
 
 ReplxxLineReader::~ReplxxLineReader()
 {
-    if (history_file_fd >= 0 && close(history_file_fd))
-        rx.print("Close of history file failed: %s\n", errnoToString().c_str());
+    /// `Replxx::print` may fail with `std::runtime_error("write failed")` when e.g. the pty of the embedded
+    /// SSH client is gone already. A destructor is implicitly `noexcept`, so letting anything escape from
+    /// here would `std::terminate` the whole process.
+    try
+    {
+        if (history_file_fd >= 0 && close(history_file_fd))
+            rx.print("Close of history file failed: %s\n", errnoToString().c_str());
 
-    /// Reset cursor blinking
-    if (overwrite_mode)
-        rx.print("%s", "\033[0 q");
+        /// Reset cursor blinking
+        if (overwrite_mode)
+            rx.print("%s", "\033[0 q");
+    }
+    catch (...)
+    {
+        /// The reporting path must not be able to escape either: the `const char *` overload of
+        /// `tryLogCurrentException` builds a `String` for the logger name and calls `getLogger`
+        /// before it reaches its own `try`, so under memory pressure it can throw as well.
+        try
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+        catch (...) // NOLINT(bugprone-empty-catch) Ok: reporting failed, nothing more to do
+        {
+        }
+    }
 }
 
 LineReader::InputStatus ReplxxLineReader::readOneLine(const String & prompt)
