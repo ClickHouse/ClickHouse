@@ -951,6 +951,8 @@ namespace
         {
             settings_changes.push_back({key, value});
         }
+        /// The settings arrive in a protobuf map, so the profile must be moved first for its constraints to bind the rest.
+        moveProfileChangesToFront(settings_changes);
         query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
         query_context->applySettingsChanges(settings_changes);
 
@@ -1280,6 +1282,8 @@ namespace
                         SettingsChanges settings_changes;
                         for (const auto & [key, value] : external_table.settings())
                             settings_changes.push_back({key, value});
+                        /// The settings arrive in a protobuf map, so the profile must be moved first for its constraints to bind the rest.
+                        moveProfileChangesToFront(settings_changes);
                         external_table_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
                         external_table_context->applySettingsChanges(settings_changes);
                     }

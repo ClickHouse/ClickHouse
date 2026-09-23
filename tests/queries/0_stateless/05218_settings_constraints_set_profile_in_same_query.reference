@@ -5,10 +5,8 @@ SETTING_CONSTRAINT_VIOLATION
 SETTING_CONSTRAINT_VIOLATION
 -- a rejected statement leaves the profile unapplied
 UNKNOWN_SETTING
--- an unconstrained assignment before the profile change still applies
+-- an assignment before the profile change is not checked against the new constraints
 7
--- a constrained assignment before the profile change is rejected
-SETTING_CONSTRAINT_VIOLATION
 -- the constraints the profile installed are in force afterwards
 SETTING_CONSTRAINT_VIOLATION
 SETTING_CONSTRAINT_VIOLATION
@@ -19,4 +17,6 @@ SETTING_CONSTRAINT_VIOLATION
 -- a readonly profile rejects a value assigned after it
 READONLY
 -- a MAX constraint rejects a larger value assigned after it
+SETTING_CONSTRAINT_VIOLATION
+-- a later, looser profile change does not lift the constraint in force at the assignment
 SETTING_CONSTRAINT_VIOLATION

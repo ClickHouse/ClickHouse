@@ -623,7 +623,7 @@ def test_settings_profile_constraints():
             {"max_execution_time": "999", "profile": profile},
         ]:
             e = query_and_get_error("SELECT 1", settings=settings)
-            assert "SETTING_CONSTRAINT_VIOLATION" in e.display_text
+            assert "Setting max_execution_time should not be changed" in e.display_text
         assert query("SELECT getSetting('max_execution_time')", settings={"profile": profile}) == "10\n"
     finally:
         query(f"DROP SETTINGS PROFILE {profile}")
@@ -647,7 +647,7 @@ def test_settings_profile_constraints_external_table():
                 settings=settings,
             )
             e = query_and_get_error("SELECT * FROM ext1 ORDER BY UserID", external_tables=[ext])
-            assert "SETTING_CONSTRAINT_VIOLATION" in e.display_text
+            assert "Setting max_execution_time should not be changed" in e.display_text
     finally:
         query(f"DROP SETTINGS PROFILE {profile}")
 
