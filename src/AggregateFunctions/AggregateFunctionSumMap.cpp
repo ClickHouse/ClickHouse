@@ -805,10 +805,10 @@ void registerAggregateFunctionSumMap(AggregateFunctionFactory & factory)
     FunctionDocumentation::Description sumMappedArrays_description = R"(
 Totals one or more `value` arrays according to the keys specified in the `key` array. Returns a tuple of arrays: keys in sorted order, followed by values summed for the corresponding keys without overflow.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and all `value` arrays must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax sumMappedArrays_syntax = R"(
 sumMappedArrays(key, value1 [, value2, ...])
@@ -847,10 +847,10 @@ FROM sum_map
 GROUP BY timeslot;
         )",
         R"(
-┌────────────timeslot─┬─sumMappedArrays(statusMap.status, statusMap.requests)─┬─sumMappedArrays(statusMapTuple)─────────┐
-│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])                        │ ([1,2,3,4,5],[10,10,20,10,10])          │
-│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])                        │ ([4,5,6,7,8],[10,10,20,10,10])          │
-└─────────────────────┴───────────────────────────────────────────────────────┴─────────────────────────────────────────┘
+┌────────────timeslot─┬─sumMappedArrays(statusMap.status, statusMap.requests)─┬─sumMappedArrays(statusMapTuple)─┐
+│ 2000-01-01 00:00:00 │ ([1,2,3,4,5],[10,10,20,10,10])                        │ ([1,2,3,4,5],[10,10,20,10,10])  │
+│ 2000-01-01 00:01:00 │ ([4,5,6,7,8],[10,10,20,10,10])                        │ ([4,5,6,7,8],[10,10,20,10,10])  │
+└─────────────────────┴───────────────────────────────────────────────────────┴─────────────────────────────────┘
         )"
     },
     {
@@ -876,14 +876,9 @@ SELECT
 FROM multi_metrics;
         )",
         R"(
-┌─result────────────────────────────────────────────────────────────────────────┐
-│ (['Chrome', 'Edge', 'Firefox', 'Safari'], [350, 40, 180, 50], [45, 4, 18, 5]) │
-└───────────────────────────────────────────────────────────────────────────────┘
--- In this example:
--- The result tuple contains three arrays
--- First array: keys (browser names) in sorted order
--- Second array: total impressions for each browser
--- Third array: total clicks for each browser
+┌─result─────────────────────────────────────────────────────────────┐
+│ (['Chrome','Edge','Firefox','Safari'],[350,40,180,50],[45,4,18,5]) │
+└────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
@@ -902,10 +897,10 @@ FROM multi_metrics;
     FunctionDocumentation::Description minMappedArrays_description = R"(
 Calculates the minimum from `value` array according to the keys specified in the `key` array.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax minMappedArrays_syntax = R"(
 minMappedArrays(key, value)
@@ -924,9 +919,9 @@ SELECT minMappedArrays(a, b)
 FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1]));
         )",
         R"(
-┌─minMappedArrays(a, b)───────────┐
-│ ([1, 2, 3], [2, 1, 1])          │
-└─────────────────────────────────┘
+┌─minMappedArrays(a, b)─┐
+│ ([1,2,3],[2,1,1])     │
+└───────────────────────┘
         )"
     }
     };
@@ -945,10 +940,10 @@ FROM VALUES('a Array(Int32), b Array(Int64)', ([1, 2], [2, 2]), ([2, 3], [1, 1])
     FunctionDocumentation::Description maxMappedArrays_description = R"(
 Calculates the maximum from `value` array according to the keys specified in the `key` array.
 
-:::note
+<Note>
 - Passing a tuple of keys and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax maxMappedArrays_syntax = R"(
 maxMappedArrays(key, value)
@@ -991,10 +986,10 @@ FROM VALUES('a Array(Char), b Array(Int64)', (['x', 'y'], [2, 2]), (['y', 'z'], 
 Totals a `value` array according to the keys specified in the `key` array. Returns a tuple of two arrays: keys in sorted order, and values summed for the corresponding keys.
 It differs from the [`sumMap`](/reference/functions/aggregate-functions/sumMap) function in that it does summation with overflow - i.e. returns the same data type for the summation as the argument data type.
 
-:::note
+<Note>
 - Passing a tuple of key and value arrays is identical to passing an array of keys and an array of values.
 - The number of elements in `key` and `value` must be the same for each row that is totaled.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax sumMapWithOverflow_syntax = R"(
 sumMapWithOverflow(key, value)
@@ -1033,10 +1028,10 @@ FROM sum_map
 GROUP BY timeslot;
         )",
         R"(
-┌────────────timeslot─┬─toTypeName(sumMap⋯usMap.requests))─┬─toTypeName(sumMa⋯usMap.requests))─┐
-│ 2000-01-01 00:01:00 │ Tuple(Array(UInt8), Array(UInt64)) │ Tuple(Array(UInt8), Array(UInt8)) │
-│ 2000-01-01 00:00:00 │ Tuple(Array(UInt8), Array(UInt64)) │ Tuple(Array(UInt8), Array(UInt8)) │
-└─────────────────────┴────────────────────────────────────┴───────────────────────────────────┘
+┌────────────timeslot─┬─toTypeName(sumMap(statusMap.status, statusMap.requests))─┬─toTypeName(sumMapWithOverflow(statusMap.status, statusMap.requests))─┐
+│ 2000-01-01 00:00:00 │ Tuple(Array(UInt8), Array(UInt64))                       │ Tuple(Array(UInt8), Array(UInt8))                                    │
+│ 2000-01-01 00:01:00 │ Tuple(Array(UInt8), Array(UInt64))                       │ Tuple(Array(UInt8), Array(UInt8))                                    │
+└─────────────────────┴──────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -1050,10 +1045,10 @@ FROM sum_map
 GROUP BY timeslot;
         )",
         R"(
-┌────────────timeslot─┬─toTypeName(sumMap(statusMapTuple))─┬─toTypeName(sumM⋯tatusMapTuple))─┐
-│ 2000-01-01 00:01:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8)) │
-│ 2000-01-01 00:00:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8)) │
-└─────────────────────┴────────────────────────────────────┴─────────────────────────────────┘
+┌────────────timeslot─┬─toTypeName(sumMap(statusMapTuple))─┬─toTypeName(sumMapWithOverflow(statusMapTuple))─┐
+│ 2000-01-01 00:00:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8))                │
+│ 2000-01-01 00:01:00 │ Tuple(Array(Int8), Array(Int64))   │ Tuple(Array(Int8), Array(Int8))                │
+└─────────────────────┴────────────────────────────────────┴────────────────────────────────────────────────┘
         )"
     }
     };

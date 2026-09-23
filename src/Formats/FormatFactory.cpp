@@ -16,6 +16,7 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
@@ -23,6 +24,7 @@
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Defines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 
@@ -53,7 +55,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
-    extern const SettingsBool allow_experimental_nullable_tuple_type;
+    extern const SettingsBool enable_nullable_tuple_type;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
     extern SettingsBool format_geojson_validate_geometry;
@@ -105,6 +107,17 @@ FormatSettings getFormatSettings(const ContextPtr & context)
     return getFormatSettings(context, settings);
 }
 
+FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Settings & settings)
+{
+    if (settings[Setting::output_format_arrow_unsupported_types].changed
+        || !settings[Setting::output_format_arrow_unsupported_types_as_binary].changed)
+        return settings[Setting::output_format_arrow_unsupported_types];
+
+    return settings[Setting::output_format_arrow_unsupported_types_as_binary]
+        ? FormatSettings::ArrowUnsupportedTypes::BINARY
+        : FormatSettings::ArrowUnsupportedTypes::THROW;
+}
+
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
 {
     FormatSettings format_settings;
@@ -113,11 +126,19 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.avro.output_codec = settings[Setting::output_format_avro_codec];
     format_settings.avro.output_sync_interval = settings[Setting::output_format_avro_sync_interval];
     format_settings.avro.schema_registry_url = settings[Setting::format_avro_schema_registry_url].toString();
-    format_settings.avro.schema_registry_timeouts.connection_timeout = settings[Setting::format_avro_schema_registry_connection_timeout];
-    format_settings.avro.schema_registry_timeouts.send_timeout = settings[Setting::format_avro_schema_registry_send_timeout];
-    format_settings.avro.schema_registry_timeouts.receive_timeout = settings[Setting::format_avro_schema_registry_receive_timeout];
-    format_settings.avro.schema_registry_retry.max_retries = settings[Setting::format_avro_schema_registry_max_retries];
-    format_settings.avro.schema_registry_retry.initial_backoff_ms = settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms];
+    /// `doSettingsSanityCheckClamp` bounds these at apply time, but it does not run for
+    /// `ApplicationType::CLIENT`, which builds format settings of its own for every statement and
+    /// reaches the registry when it parses `INSERT ... FROM INFILE`. Clamp here to cover it too.
+    format_settings.avro.schema_registry_timeouts.connection_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_connection_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.send_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_send_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_timeouts.receive_timeout
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_receive_timeout], MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS);
+    format_settings.avro.schema_registry_retry.max_retries
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_max_retries], MAX_SCHEMA_REGISTRY_RETRIES);
+    format_settings.avro.schema_registry_retry.initial_backoff_ms
+        = std::min<UInt64>(settings[Setting::format_avro_schema_registry_retry_initial_backoff_ms], MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS);
     format_settings.avro.string_column_pattern = settings[Setting::output_format_avro_string_column_pattern].toString();
     format_settings.avro.output_rows_in_file = settings[Setting::output_format_avro_rows_in_file];
     format_settings.avro.output_confluent_subject = settings[Setting::output_format_avro_confluent_subject].toString();
@@ -204,6 +225,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
@@ -348,7 +370,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
-    format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
+    format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
+    format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
+    format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -376,7 +400,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
-    format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
+    format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::enable_nullable_tuple_type];
     format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.geojson.validate_geometry = settings[Setting::format_geojson_validate_geometry];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
@@ -432,40 +456,6 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
         const Poco::URI & avro_schema_registry_url = settings[Setting::format_avro_schema_registry_url];
         if (!avro_schema_registry_url.empty())
             context->getRemoteHostFilter().checkURL(avro_schema_registry_url);
-    }
-
-    /// Schema Registry timeouts must be greater than 0 and less than 10 minutes (600 seconds).
-    {
-        static constexpr UInt64 max_seconds = 600;
-        auto check_timeout = [](UInt64 value, const char * name)
-        {
-            if (value == 0 || value >= max_seconds)
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Setting '{}' must be greater than 0 and less than {} seconds (10 minutes), got {}",
-                    name, max_seconds, value);
-        };
-        const auto & timeouts = format_settings.avro.schema_registry_timeouts;
-        check_timeout(timeouts.connection_timeout, "format_avro_schema_registry_connection_timeout");
-        check_timeout(timeouts.send_timeout, "format_avro_schema_registry_send_timeout");
-        check_timeout(timeouts.receive_timeout, "format_avro_schema_registry_receive_timeout");
-    }
-
-    /// Schema Registry retry policy: bound retries and backoff.
-    {
-        static constexpr UInt64 max_retries_limit = 20;
-        static constexpr UInt64 max_initial_backoff_ms = 60000;
-        const auto & retry = format_settings.avro.schema_registry_retry;
-        if (retry.max_retries > max_retries_limit)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_max_retries' must be between 0 and {}, got {}",
-                max_retries_limit, retry.max_retries);
-        if (retry.initial_backoff_ms == 0 || retry.initial_backoff_ms > max_initial_backoff_ms)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Setting 'format_avro_schema_registry_retry_initial_backoff_ms' must be greater than 0 and less than or equal to {}, got {}",
-                max_initial_backoff_ms, retry.initial_backoff_ms);
     }
 
     if (context->getClientInfo().interface == ClientInfo::Interface::HTTP
@@ -557,6 +547,12 @@ InputFormatPtr FormatFactory::getInputImpl(
     auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
     auto & buf = owned_buf ? *owned_buf : _buf;
 
+    /// With `aggregate_function_input_format` = 'value' or 'array', the format parses the values the aggregate functions take
+    /// instead of their states, and a wrapper on top of it builds the states. See AggregateFunctionStatesFromValuesInputFormat.
+    std::optional<Block> header_to_parse
+        = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(sample, format_settings.aggregate_function_input_format);
+    const Block & format_sample = header_to_parse ? *header_to_parse : sample;
+
     // Decide whether to use ParallelParsingInputFormat.
 
     size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
@@ -591,15 +587,15 @@ InputFormatPtr FormatFactory::getInputImpl(
         const auto & input_getter = creators.input_creator;
 
         /// Const reference is copied to lambda.
-        auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
+        auto parser_creator = [input_getter, format_sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
-            { return input_getter(input, sample, row_input_format_params, format_settings); };
+            { return input_getter(input, format_sample, row_input_format_params, format_settings); };
 
         /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
         ///       ParallelParsingInputFormat.
         ParallelParsingInputFormat::Params params{
             buf,
-            sample,
+            format_sample,
             parser_creator,
             creators.file_segmentation_engine_creator,
             name,
@@ -616,20 +612,20 @@ InputFormatPtr FormatFactory::getInputImpl(
         && object_with_metadata.has_value())
     {
         format = creators.random_access_input_creator_with_metadata(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
+            buf, format_sample, format_settings, context->getReadSettings(), is_remote_fs,
             parser_shared_resources, format_filter_info, object_with_metadata, context);
     }
     // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
+            buf, format_sample, format_settings, context->getReadSettings(), is_remote_fs,
             parser_shared_resources, format_filter_info);
     }
     // 4. Use the normal creator for sequential reading
     else
     {
-        format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
+        format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
     }
 
     if (owned_buf)
@@ -647,6 +643,10 @@ InputFormatPtr FormatFactory::getInputImpl(
     /// (Not needed in the parallel_parsing case above because VALUES format doesn't support it.)
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
         values->setContext(context);
+
+    if (header_to_parse)
+        format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
+            std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
 
     return format;
 }

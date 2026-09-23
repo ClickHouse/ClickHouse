@@ -34,7 +34,11 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
+#include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Interpreters/StorageID.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DatabasesCommon.h>
 #include <Databases/DataLake/Common.h>
@@ -83,21 +87,32 @@ String StorageObjectStorage::getPathSample(ContextPtr context)
     if (context->getSettingsRef()[Setting::use_hive_partitioning])
         local_distributed_processing = false;
 
+    /// An archive entry is exposed as `<archive path>::<path in archive>` (see `ObjectInfoInArchive::getPath`),
+    /// so the sample path can be synthesized the same way as for a plain object as long as the member name is
+    /// known. A glob in the member name requires opening the archive to enumerate its entries, but the sample
+    /// path is needed only to infer hive partitioning, and `parseHivePartitioningKeysAndValues` looks only at
+    /// the directory part of the path - which is fully contained in the outer archive path. So a globbed member
+    /// name is simply omitted from the sample instead of disabling the fast path.
+    const bool is_archive = configuration->isArchive();
+    const bool member_name_is_known = !is_archive || !configuration->isPathInArchiveWithGlobs();
+    const String archive_suffix = member_name_is_known && is_archive ? "::" + configuration->getPathInArchive() : "";
+
     /// For non-glob paths, return directly without any S3 API calls.
-    if (!configuration->isArchive() && !path.hasGlobs() && !local_distributed_processing)
-        return path.path;
+    /// Besides saving a request, this keeps hive partition inference working for an explicitly
+    /// specified key that does not exist (or is filtered out before reading): the path string
+    /// itself carries the partition columns, so it must not depend on the object being present.
+    if (!path.hasGlobs() && !local_distributed_processing)
+        return path.path + archive_suffix;
 
     /// For pure brace-expansion globs like {a,b,c}.tsv (no wildcards * or ? involved),
     /// we can expand the glob locally and return the first path without making any S3 API calls.
     /// This avoids a redundant HeadObject request that would otherwise be issued by
     /// creating a file iterator just to get a sample path string.
-    /// Archives are excluded because they need the file iterator to return paths from inside
-    /// the archive (e.g. archive.zip::file.csv), not the raw archive path.
-    if (!configuration->isArchive() && containsOnlyEnumGlobs(path.path))
+    if (containsOnlyEnumGlobs(path.path))
     {
         auto expanded = expandSelectionGlob(path.path);
         if (!expanded.empty())
-            return expanded.front();
+            return expanded.front() + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);
@@ -158,14 +173,26 @@ StorageObjectStorage::StorageObjectStorage(
     , background_operations_assignee(*this, table_id_, BackgroundJobsAssignee::Type::DataProcessing, Context::getGlobalContextInstance())
 {
     configuration->initPartitionStrategy(partition_by_, columns_in_table_or_function_definition, context);
+
+    /// Validate the configuration (RemoteHostFilter / HTTPHeaderFilter / format) before any remote access.
+    configuration->check(context);
+
+    /// A columnless CREATE in a catalog database must still reach `create(...)` for engines that can attach
+    /// and register an existing table (its schema read from storage); others keep requiring explicit columns.
+    const bool columnless_catalog_create = columns_in_table_or_function_definition.empty() && catalog
+        && configuration->supportsCreateFromExistingTableInCatalog();
+    const bool creating_new_storage = !is_table_function && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE
+        && (!columns_in_table_or_function_definition.empty() || columnless_catalog_create);
+
     const bool need_resolve_columns_or_format = columns_in_table_or_function_definition.empty() || (configuration->format == "auto");
     const bool need_resolve_sample_path = context->getSettingsRef()[Setting::use_hive_partitioning]
         && !configuration->partition_strategy
         && !configuration->isDataLakeConfiguration();
     const bool catalog_manages_created_location
         = catalog_ && catalog_->managesTableLocation() && mode == LoadingStrictnessLevel::CREATE;
-    const bool do_lazy_init
-        = (lazy_init || catalog_manages_created_location) && !need_resolve_columns_or_format && !need_resolve_sample_path;
+    const bool is_attach = mode >= LoadingStrictnessLevel::ATTACH;
+    const bool do_lazy_init = (lazy_init || catalog_manages_created_location || is_attach)
+        && !need_resolve_columns_or_format && !need_resolve_sample_path;
     LOG_DEBUG(
         log, "StorageObjectStorage: lazy_init={}, need_resolve_columns_or_format={}, "
         "need_resolve_sample_path={}, is_table_function={}, is_datalake_query={}, columns_in_table_or_function_definition={}",
@@ -180,9 +207,9 @@ StorageObjectStorage::StorageObjectStorage(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Delta lake CDF is allowed only for deltaLake table function");
     }
 
-    if (!is_table_function && !columns_in_table_or_function_definition.empty() && !is_datalake_query && mode == LoadingStrictnessLevel::CREATE)
+    if (creating_new_storage)
     {
-        LOG_DEBUG(log, "Creating new storage with specified columns");
+        LOG_DEBUG(log, "Creating new storage{}", columns_in_table_or_function_definition.empty() ? "" : " with specified columns");
         configuration->create(
             object_storage, context, columns_in_table_or_function_definition, partition_by_, order_by_, if_not_exists_, catalog, storage_id);
     }
@@ -234,11 +261,6 @@ StorageObjectStorage::StorageObjectStorage(
 
         configuration->setSchemaHash(StorageObjectStorageConfiguration::computeSchemaHash(columns));
     }
-
-    /// Validate the configuration before schema/format inference, so that e.g. the HTTP host/header
-    /// filters are enforced before any inference network request reads remote data. The `url` table
-    /// function does the same in `TableFunctionURL::getActualTableStructure`.
-    configuration->check(context);
 
     if (need_resolve_columns_or_format)
         resolveSchemaAndFormat(columns, configuration->format, object_storage, configuration, format_settings, sample_path, context);
@@ -447,7 +469,7 @@ bool StorageObjectStorage::supportsParallelInsert() const
     return configuration->supportsParallelInsert();
 }
 
-IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
+std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(ContextPtr query_context)
 {
     if (!configuration->isDataLakeConfiguration())
     return nullptr;
@@ -455,6 +477,27 @@ IDataLakeMetadata * StorageObjectStorage::getExternalMetadata(ContextPtr query_c
 configuration->update(object_storage, query_context);
 
     return configuration->getExternalMetadata();
+}
+
+bool StorageObjectStorage::isTransactionalRefreshTarget()
+{
+    /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
+    if (!isIcebergStorage())
+        return false;
+    if (catalog && !catalog->isTransactional())
+        return false;
+    return true;
+}
+
+CursorTreeNodePtr StorageObjectStorage::loadRefreshCursor(ContextPtr query_context)
+{
+    auto metadata = getExternalMetadata(query_context);
+    if (!metadata)
+        return nullptr;
+    auto stored = metadata->getRefreshCursor(query_context);
+    if (!stored || stored->empty())
+        return nullptr;
+    return refreshCursorFromStorage(*stored);
 }
 
 void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)
@@ -494,6 +537,17 @@ void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const Con
             "Failed to list object storage, cannot use hive partitioning. "
             "Error: {}",
             getCurrentExceptionMessage(true));
+        return;
+    }
+
+    /// An empty listing is not a resolution: the prefix may simply not have data yet (e.g. the
+    /// table was created before the first file landed). Caching it would permanently disable hive
+    /// partitioning for this storage instance: once files appear, schema-declared partition
+    /// columns would silently read file defaults instead of the path values, and filters on them
+    /// would drop all rows. Stay unresolved, like endpoint failures, so the next query retries.
+    if (sample_path.empty())
+    {
+        LOG_TRACE(log, "An empty listing, hive partitioning resolution stays deferred until files appear");
         return;
     }
 
@@ -684,7 +738,7 @@ void StorageObjectStorage::read(
         if (auto start_version = settings[Setting::delta_lake_snapshot_start_version].value;
             start_version != DeltaLake::TableSnapshot::LATEST_SNAPSHOT_VERSION)
         {
-            if (const auto * delta_kernel_metadata = dynamic_cast<const DeltaLakeMetadataDeltaKernel *>(configuration->getExternalMetadata());
+            if (const auto delta_kernel_metadata = std::dynamic_pointer_cast<const DeltaLakeMetadataDeltaKernel>(configuration->getExternalMetadata());
                 delta_kernel_metadata != nullptr)
             {
                 auto source_header = storage_snapshot->getSampleBlockForColumns(column_names);
@@ -775,6 +829,18 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
+    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+}
+
+SinkToStoragePtr StorageObjectStorage::createSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & local_context)
+{
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
@@ -962,9 +1028,56 @@ std::pair<ColumnsDescription, std::string> StorageObjectStorage::resolveSchemaAn
     return std::pair(columns, format);
 }
 
+namespace
+{
+bool hasPartitionStrategyArgument(const ASTs & args)
+{
+    for (const auto & arg : args)
+    {
+        const auto * function = arg->as<ASTFunction>();
+        if (!function || function->name != "equals" || !function->arguments)
+            continue;
+
+        const auto & children = function->arguments->children;
+        if (children.size() == 2 && children[0]->getColumnName() == "partition_strategy")
+            return true;
+    }
+
+    return false;
+}
+}
+
 void StorageObjectStorage::addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const
 {
     configuration->addStructureAndFormatToArgsIfNeeded(args, "", configuration->format, context, /*with_structure=*/false);
+
+    if (configuration->partition_strategy_was_inferred
+        && configuration->partition_strategy_type == PartitionStrategyFactory::StrategyType::NONE
+        && !configuration->getRawPath().hasGlobsIgnorePlaceholders()
+        && !hasPartitionStrategyArgument(args))
+    {
+        /// An implicit strategy `none` on a non-globbed path (a `CREATE` under
+        /// `file_like_engine_default_partition_strategy = 'wildcard'`) is not recoverable from
+        /// the path shape on reload: `initPartitionStrategy` resolves such a path to `hive` when
+        /// loading from metadata. It must therefore be persisted as an explicit
+        /// `partition_strategy = 'none'` engine argument, which only the S3 and Azure parsers
+        /// accept. For any other backend, refuse the definition instead of creating a table
+        /// that silently switches to the `hive` strategy after a server restart.
+        const auto storage_type = configuration->getType();
+        if (storage_type != ObjectStorageType::S3 && storage_type != ObjectStorageType::Azure)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "`PARTITION BY` without an explicit `partition_strategy` resolves to 'none' under "
+                "`file_like_engine_default_partition_strategy = 'wildcard'`, and this engine can not persist "
+                "`partition_strategy = 'none'` in the table metadata, so the table would change to the 'hive' "
+                "strategy after a server restart. Set `file_like_engine_default_partition_strategy = 'hive'` "
+                "or remove `PARTITION BY`");
+
+        ASTs partition_strategy_args{
+            make_intrusive<ASTIdentifier>("partition_strategy"),
+            make_intrusive<ASTLiteral>("none")};
+        args.push_back(makeASTOperator("equals", std::move(partition_strategy_args)));
+    }
 }
 
 SchemaCache & StorageObjectStorage::getSchemaCache(const ContextPtr & context, const std::string & storage_engine_name)
@@ -1025,13 +1138,13 @@ void StorageObjectStorage::checkMutationIsPossible(const MutationCommands & comm
 
 Pipe StorageObjectStorage::executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context)
 {
-    auto * metadata = getExternalMetadata(context);
+    auto metadata = getExternalMetadata(context);
     if (!metadata)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "EXECUTE command '{}' is not supported by this storage", command_name);
     return metadata->executeCommand(command_name, args, object_storage, configuration, catalog, context, storage_id);
 }
 
-void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
     /// Do not interleave with the hive partitioning resolution, which also updates the metadata.
     std::lock_guard lock(hive_partitioning_resolution_mutex);
@@ -1053,6 +1166,12 @@ void StorageObjectStorage::alter(const AlterCommands & params, ContextPtr contex
         ->alterTable(context, storage_id, new_metadata, /*validate_new_create_query=*/true);
     setInMemoryMetadata(new_metadata);
 }
+Pipe StorageObjectStorage::alterPartition(
+    const StorageMetadataPtr & /*metadata_snapshot*/, const PartitionCommands & commands, ContextPtr context)
+{
+    return configuration->alterPartition(commands, std::move(context), catalog, getStorageID());
+}
+
 
 void StorageObjectStorage::checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const
 {
@@ -1077,6 +1196,15 @@ void StorageObjectStorage::shutdown(bool)
 bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & assignee)
 {
     return configuration->scheduleDataProcessingJob(assignee, *this);
+}
+
+void StorageObjectStorage::checkAlterPartitionIsPossible(
+    const PartitionCommands & commands,
+    const StorageMetadataPtr & /*metadata_snapshot*/,
+    const Settings & /*settings*/,
+    ContextPtr context) const
+{
+    configuration->checkAlterPartitionIsPossible(object_storage, context, commands);
 }
 
 }

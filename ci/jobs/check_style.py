@@ -383,6 +383,19 @@ def strip_shell_comment(line):
     return line
 
 
+SQL_BLOCK_COMMENT_RE = re.compile(r"/\*.*?\*/", re.DOTALL)
+
+
+def strip_sql_comments(text):
+    """
+    Remove both comment forms of ClickHouse SQL from `text`: `/* ... */`, which may span lines, and
+    `--` to the end of its line. Quoting is not tracked, so a `--` inside a string literal is cut
+    as well; no check here reads such a literal.
+    """
+    text = SQL_BLOCK_COMMENT_RE.sub(" ", text)
+    return "\n".join(line.split("--")[0] for line in text.splitlines())
+
+
 # `clickhouse-local` is not the server: it runs against its own `--path`, so a filesystem
 # path it reports from a system table points into the test's own scratch directory, and
 # removing or rewriting a file there is not a manipulation of the server's data.
@@ -580,6 +593,159 @@ def check_no_server_data_manipulation(files):
     return "\n".join(errors)
 
 
+FAILPOINT_STATEMENT_RE = re.compile(
+    r"\bSYSTEM\s+(?:(?P<disable_all>DISABLE\s+ALL\s+FAILPOINTS)"
+    r"|(?P<action>ENABLE|DISABLE)\s+FAILPOINT\s+(?P<name>[^\s;'\")]+))",
+    re.IGNORECASE,
+)
+
+# A fail point name spelled through a shell variable cannot be resolved here, so a disable of one
+# stands for a disable of any name - see `check_failpoints_are_disabled`.
+FAILPOINT_LITERAL_NAME_RE = re.compile(r"^\w+$")
+
+# Only a test that talks to the server can leave a fail point armed for the next one. A
+# `clickhouse-local` invocation keeps its fail points in its own process, which exits with the test.
+SERVER_CLIENT_RE = re.compile(
+    r"\$\{?CLICKHOUSE_(?:CLIENT|CURL|BENCHMARK)|\bclickhouse(?:-|\s+)(?:client|benchmark)\b"
+)
+
+# Where the statement that surrounds a `SYSTEM ... FAILPOINT` match begins. Only the text of that
+# statement is inspected, so a keyword from a neighbouring one cannot leak into the decision.
+FAILPOINT_STATEMENT_SEPARATORS = ";\"'`"
+
+# `SYSTEM DISABLE ALL FAILPOINTS` is server-wide in the other direction as well: it disarms the
+# fail points a concurrently running test armed, so it stands in for the per-name disables only in
+# a test that runs alone. `SYSTEM DROP` carries the same requirement, in `various_checks.sh`.
+NO_PARALLEL_TAG_RE = re.compile(r"(--|#)\s*[Tt]ags:.*\bno-parallel\b")
+
+
+def failpoint_statements(text):
+    """
+    Yield `(action, name)` for every `SYSTEM ENABLE|DISABLE FAILPOINT` statement in `text`, and
+    `("disable_all", None)` for every `SYSTEM DISABLE ALL FAILPOINTS`, which takes no name.
+
+    `EXPLAIN SYSTEM ENABLE FAILPOINT ...` is skipped: it prints the parsed statement and arms
+    nothing, so it neither needs a disable nor stands in for one.
+    """
+    for match in FAILPOINT_STATEMENT_RE.finditer(text):
+        statement_start = max(
+            text.rfind(separator, 0, match.start())
+            for separator in FAILPOINT_STATEMENT_SEPARATORS
+        )
+        if "explain" in text[statement_start + 1 : match.start()].lower():
+            continue
+        if match.group("disable_all"):
+            yield "disable_all", None
+        else:
+            yield match.group("action").lower(), match.group("name")
+
+
+def check_failpoints_are_disabled(files):
+    """
+    A test that arms a fail point must disarm it: every `SYSTEM ENABLE FAILPOINT <name>` needs a
+    `SYSTEM DISABLE FAILPOINT <name>` in the same test.
+
+    Fail point state lives in the server process, not in the connection or the session, so one that
+    a test leaves armed goes on firing in whatever runs next. The stateless suite runs tests in
+    parallel, so that is another test's query: it fails, or hangs on a pauseable fail point, for a
+    reason that is nowhere in its own source, and the report blames the wrong change. Disarming on
+    the way out keeps the damage inside the test that asked for it.
+
+    The disable belongs on every path out of the test, not only the successful one - in a `.sh` test
+    that means a `trap ... EXIT`, since an early `exit` or a failing command under `set -e` skips
+    the rest of the file.
+
+    `SYSTEM DISABLE ALL FAILPOINTS` disarms everything the test armed, so it stands in for the
+    per-name disables - but only in a `no-parallel` test, because it disarms what the tests running
+    alongside armed as well.
+    """
+
+    errors = []
+    for test_case in files:
+        if "0_stateless" not in test_case:
+            continue
+        try:
+            with open(test_case, "r", encoding="utf-8", errors="replace") as f:
+                file_content = f.read()
+        except Exception as e:
+            errors.append(f"Error checking {test_case}: {e}")
+            continue
+
+        if "FAILPOINT" not in file_content.upper():
+            continue
+
+        if test_case.endswith(".sh"):
+            # Drop comments, `echo` payloads and `clickhouse-local` invocations, so only the
+            # statements that reach the server are left.
+            content = executable_shell_content(file_content.splitlines())
+            if not SERVER_CLIENT_RE.search(content):
+                continue
+        elif test_case.endswith(".py"):
+            content = "\n".join(
+                strip_shell_comment(line) for line in file_content.splitlines()
+            )
+        else:
+            content = strip_sql_comments(file_content)
+
+        enabled = []
+        disabled = set()
+        disables_all = False
+        for action, name in failpoint_statements(content):
+            if action == "enable":
+                enabled.append(name)
+            elif action == "disable_all":
+                disables_all = True
+            else:
+                disabled.add(name)
+
+        if not enabled:
+            continue
+
+        if disables_all and NO_PARALLEL_TAG_RE.search(file_content):
+            continue
+
+        # A name that comes from a shell variable cannot be resolved by a text check, on either
+        # side: a disable of an unresolvable name therefore stands for a disable of any name, and
+        # an unresolvable enable is satisfied by any disable in the file. The test that needs this
+        # - a helper function disabling the fail point its caller armed - is already correct.
+        disables_unresolvable_name = any(
+            not FAILPOINT_LITERAL_NAME_RE.match(name) for name in disabled
+        )
+
+        for name in dict.fromkeys(enabled):
+            if name in disabled or disables_unresolvable_name:
+                continue
+            if disabled and not FAILPOINT_LITERAL_NAME_RE.match(name):
+                continue
+            line_number = next(
+                (
+                    number
+                    for number, line in enumerate(file_content.splitlines(), 1)
+                    if re.search(
+                        r"ENABLE\s+FAILPOINT\s+" + re.escape(name), line, re.IGNORECASE
+                    )
+                ),
+                1,
+            )
+            if disables_all:
+                errors.append(
+                    f"{test_case}:{line_number} enables the fail point `{name}` and clears it only "
+                    f"with `SYSTEM DISABLE ALL FAILPOINTS`, in a test that has no `no-parallel` "
+                    f"tag. That statement also disarms the fail points the tests running alongside "
+                    f"armed. Either disable `{name}` by name, or tag the test `no-parallel`."
+                )
+                continue
+            errors.append(
+                f"{test_case}:{line_number} enables the fail point `{name}` and never disables it. "
+                f"Add `SYSTEM DISABLE FAILPOINT {name}` on every path out of the test (in a `.sh` "
+                f"test, from a `trap ... EXIT`). A fail point is server-global state: one left "
+                f"armed fires in a concurrently running test and fails it for a reason that is not "
+                f"in its own source."
+            )
+
+    return "\n".join(errors)
+
+
 def check_gaps_in_tests_numbers(file_paths, gap_threshold=100):
     test_numbers = set()
 
@@ -663,6 +829,21 @@ def check_pylint():
     res, out, err = Shell.get_res_stdout_stderr(
         "./ci/jobs/scripts/check_style/check-pylint"
     )
+    if err:
+        out += err
+    return out
+
+
+def check_system_table_documentation_pages():
+    # The system-table reference pages are generated from the structured `COMMENT` of each table.
+    # Generating them needs a `clickhouse` binary, which this job does not have, but the extraction
+    # from the C++ sources and the rewriting of a page are pure Python, and a page which was not
+    # regenerated after its source-owned comment changed is detected from the sources alone.
+    res, out, err = Shell.get_res_stdout_stderr(
+        "python3 ./ci/jobs/scripts/docs/autogenerate/test_system_table_pages.py"
+    )
+    if res == 0:
+        return ""
     if err:
         out += err
     return out
@@ -1092,6 +1273,76 @@ def check_clickhouse_spelling():
     return ""
 
 
+# Where the settings themselves are declared, per `SettingsChangesHistory.cpp` namespace. Used to
+# tell a setting that a change REMOVED from the code apart from one that still exists - only the
+# latter can be recorded in the history at all (see `check_settings_changes_history`). Mirrors
+# `LIST_OF_SETTINGS` in src/Core/Settings.cpp and `MERGE_TREE_SETTINGS` in
+# src/Storages/MergeTree/MergeTreeSettings.cpp.
+_SETTINGS_DECLARATION_SOURCES = {
+    "Session": ("src/Core/Settings.cpp", "src/Core/FormatFactorySettings.h"),
+    "MergeTree": ("src/Storages/MergeTree/MergeTreeSettings.cpp",),
+}
+
+# `DECLARE(Type, name, default, R"(...)", tier)` and its aliasing variant.
+_SETTINGS_DECLARE_RE = re.compile(
+    r"^\s*DECLARE(?:_WITH_ALIAS)?\(\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
+)
+# `MAKE_OBSOLETE(M, Type, name, default)` and friends. An obsolete or deprecated setting is still
+# a setting - it keeps its row in system.settings - so its history records are still required.
+# The longest alternative comes first: `MAKE_OBSOLETE` is a prefix of
+# `MAKE_OBSOLETE_MERGE_TREE_SETTING`.
+_SETTINGS_OBSOLETE_RE = re.compile(
+    r"^\s*MAKE_(?:OBSOLETE_MERGE_TREE_SETTING|OBSOLETE|DEPRECATED_BY_SERVER_CONFIG)\("
+    r"\s*\w+\s*,\s*[A-Za-z0-9_:]+\s*,\s*([A-Za-z0-9_]+)\s*,"
+)
+# The alias of a `DECLARE_WITH_ALIAS` sits on the line that closes the declaration:
+# `)", 0, insert_distributed_sync) \`. An alias is a settable name of its own - system.settings
+# has a row for it and history records may use it, `applyCompatibilitySetting` resolves aliases -
+# so it counts as declared.
+_SETTINGS_ALIAS_RE = re.compile(r'^\)"\s*,\s*[^,]+,\s*([A-Za-z0-9_]+)\)\s*\\?\s*$')
+
+
+def declared_setting_names():
+    """`({namespace: {name, ...}}, "")` for every setting declared in the checked-out tree, or
+    `(None, error)` when the declarations could not be read.
+
+    Fail-close: a missing file or a namespace that parses to nothing means the declaration macros
+    or their files moved, and quietly returning an empty set would exempt every setting from the
+    current-version-block rule in `check_settings_changes_history`. Pure text parsing of the
+    declaration macros."""
+    names = {}
+    for namespace, sources in _SETTINGS_DECLARATION_SOURCES.items():
+        found = set()
+        for source in sources:
+            source_path = Path(source)
+            if not source_path.is_file():
+                return None, (
+                    f"Cannot validate the settings history: the {namespace} settings are "
+                    f"declared in {source}, which does not exist. If the declarations moved, "
+                    f"update _SETTINGS_DECLARATION_SOURCES in ci/jobs/check_style.py."
+                )
+            for line in source_path.read_text(
+                encoding="utf-8", errors="ignore"
+            ).splitlines():
+                for regexp in (
+                    _SETTINGS_DECLARE_RE,
+                    _SETTINGS_OBSOLETE_RE,
+                    _SETTINGS_ALIAS_RE,
+                ):
+                    m = regexp.match(line)
+                    if m:
+                        found.add(m.group(1))
+                        break
+        if not found:
+            return None, (
+                f"Cannot validate the settings history: no {namespace} setting declaration was "
+                f"found in {', '.join(sources)}. If the declaration macros changed, update the "
+                f"parser in ci/jobs/check_style.py."
+            )
+        names[namespace] = found
+    return names, ""
+
+
 def check_settings_changes_history():
     """Every setting added, value-changed, removed, moved to another block, or sitting in a
     block whose `addSettingsChanges` header changed, in src/Core/SettingsChangesHistory.cpp by
@@ -1116,6 +1367,17 @@ def check_settings_changes_history():
     The old name cannot be demanded here: the setting is gone, and 03999_stateless_settings_history
     rejects a documented name that no longer exists, so requiring it would leave no history file
     that satisfies both guards.
+
+    A setting REMOVED from the code is exempt for the same reason: its records have to go with it.
+    A record naming a setting that is not in system.settings / system.merge_tree_settings is
+    rejected by 03999_stateless_settings_history, and `applyCompatibilitySetting` resolves every
+    recorded name, so nothing can be recorded for a setting that no longer exists - demanding an
+    entry would leave no way to drop a setting that was never released. The exemption is also safe:
+    `compatibility` only ever restores values of settings that exist, so a setting that is gone has
+    no default left for any release to disagree about - unlike the deletion of a record of a
+    setting that stays, which is what the removals paragraph above is about. A setting that is
+    merely made OBSOLETE keeps its row in system.settings, so its records stay required; only a
+    real removal is exempt.
 
     Runs only when that file changed; the list of changed setting names is provided by the
     store_data.py workflow hook (which parses the PR / merge-queue diff). Returns "" on
@@ -1189,6 +1451,28 @@ def check_settings_changes_history():
         # block) - nothing to validate against the current version block.
         return ""
 
+    declared, declared_error = declared_setting_names()
+    if declared_error:
+        return declared_error
+
+    def setting_still_exists(item):
+        """Whether the reported setting is still declared, i.e. whether the history can record it
+        at all - a setting this change removed from the code cannot be recorded anywhere (see the
+        removal paragraph in the docstring). Direction-agnostic on purpose: a record ADDED for a
+        name that is not declared is a dangling record, which 03999_stateless_settings_history
+        rejects outright, so there is nothing for this check to demand on top of that."""
+        declared_in_namespace = declared.get(item["namespace"])
+        if declared_in_namespace is None:
+            # An unrecognized namespace cannot be resolved to declarations - do not exempt it.
+            return True
+        return item["name"] in declared_in_namespace
+
+    changed = [item for item in changed if setting_still_exists(item)]
+    if not changed:
+        # Every reported setting was removed from the code by this change - nothing left to
+        # record in the current version block.
+        return ""
+
     version_txt = Path("cmake/autogenerated_versions.txt").read_text(encoding="utf-8")
     current_version = "{}.{}".format(
         re.search(r"SET\(VERSION_MAJOR (\d+)\)", version_txt).group(1),
@@ -1236,7 +1520,9 @@ def check_settings_changes_history():
             f"an entry for each under the '{current_version}' block (older blocks may keep their "
             f"entries for backports). If this is a correction of what an older release recorded "
             f"and not a default change made here, split it into a change that touches only "
-            f"{path}. If you RENAMED a setting, keep its record in the same block and change "
+            f"{path}. If you REMOVED a setting from the code, remove its declaration in this "
+            f"same change - a record is only demanded for a setting that is still declared. "
+            f"If you RENAMED a setting, keep its record in the same block and change "
             f"only the name in it - the values and the reason text must stay identical for the "
             f"rename to be recognized:\n" + "\n".join(sorted(set(violations)))
         )
@@ -1333,6 +1619,15 @@ if __name__ == "__main__":
                 files=functional_test_files,
             )
         )
+    testname = "failpoints_disabled_in_tests"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            run_check_concurrent(
+                check_name=testname,
+                check_function=check_failpoints_are_disabled,
+                files=functional_test_files,
+            )
+        )
     testname = "test_numbers_check"
     # Skip on release branches and backport PRs: backports cherry-pick a small
     # subset of test files, which legitimately leaves large gaps in the numbering.
@@ -1418,6 +1713,14 @@ if __name__ == "__main__":
             Result.from_commands_run(
                 name=testname,
                 command=check_embedded_doc_snippets,
+            )
+        )
+    testname = "system_table_documentation_pages"
+    if testpattern.lower() in testname.lower():
+        results.append(
+            Result.from_commands_run(
+                name=testname,
+                command=check_system_table_documentation_pages,
             )
         )
     testname = "ruff"

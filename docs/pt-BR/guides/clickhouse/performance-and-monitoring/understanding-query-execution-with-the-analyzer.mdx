@@ -40,7 +40,7 @@ Vamos ver cada elemento em ação durante a execução da consulta. Vamos usar a
 O objetivo de um parser é transformar o texto da consulta em uma AST (árvore sintática abstrata). Este passo pode ser visualizado usando `EXPLAIN AST`:
 
 ```sql
-EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
+EXPLAIN AST SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -64,8 +64,22 @@ EXPLAIN AST SELECT min(timestamp), max(timestamp) FROM session_events;
 
 A saída é uma Árvore Sintática Abstrata que pode ser visualizada como mostrado abaixo:
 
-<Image img="/images/guides/developer/analyzer2.webp" alt="Saída da AST" size="md" />
-
+```mermaid
+graph TD
+    swuq["SelectWithUnionQuery"] --> el_root["ExpressionList"]
+    el_root --> sq["SelectQuery"]
+    sq --> el_select["ExpressionList"]
+    sq --> tisq["TablesInSelectQuery"]
+    el_select --> fmin["Function min (alias minimum_date)"]
+    el_select --> fmax["Function max (alias maximum_date)"]
+    fmin --> el_min["ExpressionList"]
+    el_min --> id_min["Identifier timestamp"]
+    fmax --> el_max["ExpressionList"]
+    el_max --> id_max["Identifier timestamp"]
+    tisq --> tisqe["TablesInSelectQueryElement"]
+    tisqe --> te["TableExpression"]
+    te --> ti["TableIdentifier session_events"]
+```
 Cada nó tem filhos correspondentes, e a árvore como um todo representa a estrutura geral da sua consulta. Trata-se de uma estrutura lógica que ajuda no processamento de uma consulta. Do ponto de vista do usuário final (a menos que haja interesse na execução de consultas), ela não é tão útil; essa ferramenta é usada principalmente por desenvolvedores.
 
 <div id="analyzer">

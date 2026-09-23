@@ -10,6 +10,7 @@
 #include <Common/ZooKeeper/KeeperException.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 
 namespace DB
 {
@@ -18,6 +19,11 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
+}
+
+namespace FailPoints
+{
+extern const char paimon_incremental_read_pause_before_is_active_remove[];
 }
 
 PaimonStreamState::PaimonStreamState(
@@ -162,14 +168,19 @@ bool PaimonStreamState::activate()
             {
                 /// Stale node from our previous session — safe to reclaim.
                 /// Use versioned delete (CAS) to guard against TOCTOU races.
+                FailPointInjection::pauseFailPoint(
+                    FailPoints::paimon_incremental_read_pause_before_is_active_remove);
                 auto remove_code = keeper->tryRemove(is_active_path, stat.version);
-                if (remove_code != Coordination::Error::ZOK)
+                /// ZNONODE is this removal's postcondition, not a failure: Keeper reaps the
+                /// ephemeral itself once the session that created it expires.
+                if (remove_code != Coordination::Error::ZOK && remove_code != Coordination::Error::ZNONODE)
                 {
                     LOG_WARNING(log, "Failed to remove stale is_active node at {} (code: {}). "
                         "Will retry on next attempt.", is_active_path.string(), remove_code);
                     return false;
                 }
-                LOG_INFO(log, "Removed stale is_active node from previous session at {}", is_active_path.string());
+                LOG_INFO(log, "Cleared stale is_active node from previous session at {} ({})",
+                    is_active_path.string(), remove_code);
             }
             else
             {
