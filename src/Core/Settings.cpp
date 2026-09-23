@@ -6513,12 +6513,12 @@ Possible values:
     DECLARE(Map, insert_expected_column_types, "", R"(
 If not empty, an `INSERT` is refused unless the table it names declares these columns with exactly these types, checked with `insert_expected_table_engine` and consumed with it. A `Distributed` table forwards the setting to its shards instead of checking itself.
 
-Remote write over a `Distributed` table sets it to the `time_series` type the table declares, so that a shard-local table swapped for a `TimeSeries` table of another type refuses the batch instead of having the sink convert the samples into it.
+Remote write over a `Distributed` table sets it to the type of the samples column the table declares (`samples`, or `time_series` in tables of versions before 3), so that a shard-local table swapped for a `TimeSeries` table of another type refuses the batch instead of having the sink convert the samples into it.
 
 **Example**
 
 ```sql
-INSERT INTO t SETTINGS insert_expected_column_types = {'time_series': 'Array(Tuple(DateTime64(3), Float64))'} VALUES (...)
+INSERT INTO t SETTINGS insert_expected_column_types = {'samples': 'Array(Tuple(DateTime64(3), Float64))'} VALUES (...)
 ```
 )", 0) \
     \

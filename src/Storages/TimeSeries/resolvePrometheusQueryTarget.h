@@ -41,7 +41,7 @@ void checkNoBypassedReadRestriction(
     const StorageID & storage_id, const ContextPtr & context, std::string_view operation, std::string_view rewrite);
 
 /// SELECT on the wrapper, no row policy or filter the rewrite would skip, READ ON REMOTE and a local shard's own grants,
-/// all before the probe; then every replica's target must be a TimeSeries table of the wrapper's `time_series` type.
+/// all before the probe; then every replica's target must be a TimeSeries table of the wrapper's samples type.
 void checkPrometheusQueryDistributedRead(const IStorage & storage, const ContextPtr & context);
 
 /// The same probe for a write, which also refuses an unreachable replica or a missing table or type (it would take
