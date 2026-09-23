@@ -6929,6 +6929,20 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
+    DECLARE(Bool, query_plan_filter_push_down_below_limit_by, true, R"(
+Toggles pushing filters on `LIMIT BY` key columns below the `LIMIT BY` step.
+Only takes effect if setting [query_plan_enable_optimizations](#query_plan_enable_optimizations) is 1.
+It is read independently of [query_plan_filter_push_down](#query_plan_filter_push_down): the push-down pass also runs, with that setting off, once a `JOIN` runtime filter has been added.
+
+<Note>
+This is an expert-level setting which should only be used for debugging by developers. The setting may change in future in backward-incompatible ways or be removed.
+</Note>
+
+Possible values:
+
+- 0 - Disable
+- 1 - Enable
+)", 0) \
     DECLARE(Bool, query_plan_propagate_predicate_across_join, true, R"(
 Toggles a query-plan-level optimization which copies filter conjuncts from one side of an
 equi-join onto the other side via equi-key substitution, so that primary-key/index pruning
