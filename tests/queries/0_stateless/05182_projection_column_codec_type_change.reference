@@ -5,7 +5,9 @@ projection part type before the change
 d	UInt64
 declared codec after the change
 {'d':'CODEC(Delta(4), ZSTD(1))'}
-projection part type after the change
+projection part type after the metadata change
+d	UInt64
+projection part type after merge
 d	UInt32
 read from the projection
-499500
+500500

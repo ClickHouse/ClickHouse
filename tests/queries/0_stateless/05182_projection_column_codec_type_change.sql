@@ -24,8 +24,8 @@ SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p';
 
 DROP TABLE t_projection_untyped_delta;
 
--- Test type change with data already on disk. The projection part must be rebuilt with codec
--- arguments re-inferred for the new type (e.g., Delta(4) instead of Delta(8) for UInt32).
+-- Test type change with data already on disk. Existing projection parts keep their physical schema
+-- and are converted on read; a later merge rebuilds them with the newly inferred codec.
 DROP TABLE IF EXISTS t_projection_untyped_delta_parts;
 
 CREATE TABLE t_projection_untyped_delta_parts
@@ -50,12 +50,22 @@ SELECT 'declared codec after the change';
 SELECT codecs FROM system.projections
 WHERE database = currentDatabase() AND table = 't_projection_untyped_delta_parts';
 
-SELECT 'projection part type after the change';
+SELECT 'projection part type after the metadata change';
 SELECT column, type FROM system.projection_parts_columns
 WHERE database = currentDatabase() AND table = 't_projection_untyped_delta_parts' AND active
     AND name = 'p' AND column = 'd';
 
--- Reading it back through the projection decompresses what the rebuild wrote.
+-- Add another part so OPTIMIZE has work to do. The merged projection is written from the current
+-- metadata rather than carrying the old projection part over byte for byte.
+INSERT INTO t_projection_untyped_delta_parts VALUES (1000, 1000);
+OPTIMIZE TABLE t_projection_untyped_delta_parts FINAL;
+
+SELECT 'projection part type after merge';
+SELECT column, type FROM system.projection_parts_columns
+WHERE database = currentDatabase() AND table = 't_projection_untyped_delta_parts' AND active
+    AND name = 'p' AND column = 'd';
+
+-- Reading it back through the projection decompresses what the merge wrote.
 SELECT 'read from the projection';
 SELECT sum(d) FROM t_projection_untyped_delta_parts
 SETTINGS force_optimize_projection = 1, force_optimize_projection_name = 'p';
