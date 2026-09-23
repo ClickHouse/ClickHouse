@@ -358,10 +358,10 @@ size_t LazyOutput::buildOutputFromBlocksLimitAndOffset(
     return added_rows;
 }
 
-EmitPlan
-planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather)
+EmitPlan planJoinEmit(
+    const HashJoinTypes::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather)
 {
-    const bool row_store_initialized = data.row_store_state == HashJoin::RowStoreState::Initialized;
+    const bool row_store_initialized = data.row_store_state == HashJoinTypes::RowStoreState::Initialized;
     EmitPlan plan;
     plan.access_indexes.reserve(positions.size());
     std::vector<EmitColumnRequest> columnar_requests;

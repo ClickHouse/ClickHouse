@@ -4,7 +4,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Core/Defines.h>
 #include <DataTypes/IDataType.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
@@ -169,8 +169,8 @@ struct EmitPlan
 
 /// `type_name` is parallel to `positions`. `with_gather` is false for joinGet, whose output type may
 /// wrap the stored one in `Nullable` and which emits row by row through `buildJoinGetOutput`.
-EmitPlan
-planJoinEmit(const HashJoin::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
+EmitPlan planJoinEmit(
+    const HashJoinTypes::RightTableData & data, std::span<const size_t> positions, const NamesAndTypes & type_name, bool with_gather);
 
 /// Records the probe's matches as encoded ref words. Every strictness records rather than emits:
 /// the output columns are built later, by the emit kernels, from the words this collects.
@@ -183,7 +183,7 @@ public:
         const Block & block_with_columns_to_add,
         const Block & saved_block_sample,
         const TableJoin & table_join,
-        const HashJoin::RightTableData & joined_data,
+        const HashJoinTypes::RightTableData & joined_data,
         bool enable_prefetch_,
         std::vector<JoinOnKeyColumns> && join_on_keys_,
         ExpressionActionsPtr additional_filter_expression_,

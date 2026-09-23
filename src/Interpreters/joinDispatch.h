@@ -3,7 +3,7 @@
 #include <array>
 #include <base/constexpr_helpers.h>
 
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 
 
 /** Used in implementation of Join to process different data structures.
@@ -17,42 +17,42 @@ namespace DB
 template <JoinKind kind, JoinStrictness join_strictness, bool prefer_use_maps_all>
 struct MapGetterImpl;
 
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::RightAny, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::RightAny, prefer_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::RightAny, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::RightAny, prefer_use_maps_all>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
 
-template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::RightAny, false> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::RightAny, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::RightAny, false> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::RightAny, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::RightAny, false> { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::RightAny, true> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::RightAny, false> { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::RightAny, true> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = false; };
 
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Any, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Any, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Any, true> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Any, false> { using Map = HashJoin::MapsOne; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Any, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Any, prefer_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Any, false>  { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Any, true>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Any, true> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Any, false> { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Any, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Any, prefer_use_maps_all>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
 
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Left, JoinStrictness::All, prefer_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::All, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::All, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::All, prefer_use_maps_all>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Left, JoinStrictness::All, prefer_use_maps_all>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = false; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::All, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = false; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::All, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::All, prefer_use_maps_all>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
 
 /// Only SEMI LEFT and SEMI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Semi, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Semi, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Semi, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Semi, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Semi, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Semi, false>  { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Semi, true>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = false; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Semi, prefer_use_maps_all> { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Semi, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Semi, prefer_use_maps_all>  { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
 
 /// Only ANTI LEFT and ANTI RIGHT are valid. INNER and FULL are here for templates instantiation.
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, false>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, true>  { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoin::MapsAll; static constexpr bool flagged = true; };
-template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Anti, prefer_use_maps_all>  { using Map = HashJoin::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, false>  { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <> struct MapGetterImpl<JoinKind::Left, JoinStrictness::Anti, true>  { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Inner, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Right, JoinStrictness::Anti, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAll; static constexpr bool flagged = true; };
+template <bool prefer_use_maps_all> struct MapGetterImpl<JoinKind::Full, JoinStrictness::Anti, prefer_use_maps_all>  { using Map = HashJoinTypes::MapsOne; static constexpr bool flagged = false; };
 
 template <JoinKind kind, bool prefer_use_maps_all>
-struct MapGetterImpl<kind, JoinStrictness::Asof, prefer_use_maps_all> { using Map = HashJoin::MapsAsof; static constexpr bool flagged = false; };
+struct MapGetterImpl<kind, JoinStrictness::Asof, prefer_use_maps_all> { using Map = HashJoinTypes::MapsAsof; static constexpr bool flagged = false; };
 
 /// `Default` and `All` select between the two mapped flavours; `Set` is only defined for the shapes that
 /// can run on a set and falls back to the default map elsewhere, so that dispatch below stays total.
@@ -63,12 +63,12 @@ struct MapGetter : MapGetterImpl<kind, join_strictness, maps_kind == JoinMapsKin
 
 /// LEFT ANTI emits a row only when the key is missing, and LEFT SEMI emits the left row alone when
 /// nothing of the right side is selected, so neither ever reads a right row.
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = false; };
-template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, JoinMapsKind::Set> { using Map = HashJoin::MapsSet; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Anti, JoinMapsKind::Set> { using Map = HashJoinTypes::MapsSet; static constexpr bool flagged = false; };
+template <> struct MapGetter<JoinKind::Left, JoinStrictness::Semi, JoinMapsKind::Set> { using Map = HashJoinTypes::MapsSet; static constexpr bool flagged = false; };
 
 /// Constrain the pairs of routines that differ only in whether a right row can be read from the map.
 template <typename Maps>
-concept SetJoinMaps = std::is_same_v<std::decay_t<Maps>, HashJoin::MapsSet>;
+concept SetJoinMaps = std::is_same_v<std::decay_t<Maps>, HashJoinTypes::MapsSet>;
 
 template <typename Maps>
 concept MappedJoinMaps = !SetJoinMaps<Maps>;
@@ -78,9 +78,9 @@ concept MappedJoinMaps = !SetJoinMaps<Maps>;
 template <typename Map>
 constexpr JoinMapsKind mapsKindOf()
 {
-    if constexpr (std::is_same_v<std::decay_t<Map>, HashJoin::MapsAll>)
+    if constexpr (std::is_same_v<std::decay_t<Map>, HashJoinTypes::MapsAll>)
         return JoinMapsKind::All;
-    else if constexpr (std::is_same_v<std::decay_t<Map>, HashJoin::MapsSet>)
+    else if constexpr (std::is_same_v<std::decay_t<Map>, HashJoinTypes::MapsSet>)
         return JoinMapsKind::Set;
     else
         return JoinMapsKind::Default;
@@ -121,7 +121,7 @@ inline void dispatchOnMapsKind(JoinMapsKind maps_kind, Func && func)
 }
 
 /// Init specified join map
-inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoin::MapsVariant & maps, JoinMapsKind maps_kind = JoinMapsKind::Default)
+inline bool joinDispatchInit(JoinKind kind, JoinStrictness strictness, HashJoinTypes::MapsVariant & maps, JoinMapsKind maps_kind = JoinMapsKind::Default)
 {
     return static_for<0, KINDS.size() * STRICTNESSES.size()>([&](auto ij)
     {
