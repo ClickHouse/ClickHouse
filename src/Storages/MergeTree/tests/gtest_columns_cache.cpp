@@ -358,10 +358,15 @@ TEST(ColumnsCache, StaleWriteLeavesAFreshWriteOfTheSameKeyAlone)
     const auto generation = cache.getInvalidationGeneration(c.table_uuid);
 
     ColumnsCache::MappedPtr fresh;
+    bool fired = false;
     cache.on_entries_inserted_for_test = [&]
     {
         /// The write of the post-drop reader is an ordinary `setMany`; it must not re-enter here.
-        cache.on_entries_inserted_for_test = nullptr;
+        /// A flag and not resetting the hook: assigning to the `std::function` from inside its own
+        /// call destroys the closure whose captures the rest of this body still uses.
+        if (fired)
+            return;
+        fired = true;
 
         cache.clearAll();
         fresh = makeEntry(c, 0, 0, 8);
@@ -370,6 +375,7 @@ TEST(ColumnsCache, StaleWriteLeavesAFreshWriteOfTheSameKeyAlone)
 
     /// The stale write is rejected and charges nothing.
     EXPECT_EQ(cache.setMany({makeEntry(c, 0, 0, 8)}, generation), 0u);
+    EXPECT_TRUE(fired);
     cache.on_entries_inserted_for_test = nullptr;
 
     /// The fresh entry is still there, and the index still knows about it.
