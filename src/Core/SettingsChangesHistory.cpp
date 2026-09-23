@@ -54,6 +54,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
+            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -143,8 +145,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
             {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
             {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
-            {"allow_experimental_bernoulli_sample", false, false, "New setting to enable experimental Bernoulli sampling for tables without a SAMPLE BY key."},
-            {"bernoulli_sample_seed", 1, 1, "New setting for the seed of the experimental Bernoulli sampling path. 0 re-seeds randomly per query; any nonzero value is deterministic per part."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
