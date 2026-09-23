@@ -67,7 +67,8 @@ static ColumnsCachePtr getColumnsCacheIfEnabled(const ContextPtr & context, bool
 ///     is known; readers observe the result through the shared writes-disabled flag.
 ///   - runtime budget: a query-scoped atomic counter; once it reaches the budget,
 ///     further writes for the query are skipped.
-/// Either value of 0 means "use half of the server-level columns_cache_size".
+/// Either value of 0 means "use half of the current size limit of the cache" - the effective
+/// limit, which `autoResize` lowers under memory pressure, not the configured `columns_cache_size`.
 static MergeTreeReaderSettings adjustReaderSettingsForColumnsCacheWrites(
     MergeTreeReaderSettings settings,
     const ContextPtr & context,
