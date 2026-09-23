@@ -167,7 +167,8 @@ def test_invalid_shard_directory_format(started_cluster):
     """
     A subdirectory whose name is not one the sink writes names no destination, so its files can
     never be sent. It is renamed to 'unrecognized_<hash>' instead of being taken for a directory
-    queue, so it is not reported and a single stray subdirectory cannot break the attach.
+    queue, so it is not reported and a single stray subdirectory cannot break the attach. The old
+    name is kept in the file 'original_name' in it.
     """
     node.query("drop table if exists test.dist_invalid sync")
     node.query("drop table if exists test.local_invalid sync")
@@ -226,16 +227,22 @@ def test_invalid_shard_directory_format(started_cluster):
 
     listing = node.exec_in_container(["ls", "-1", data_path]).split()
 
-    # Every unrecognized name is renamed and nothing is deleted.
+    # Every unrecognized name is renamed and nothing is deleted. The old name, the only record of
+    # where the files were meant to be sent, is kept in a file next to them.
     renamed = [name for name in listing if name.startswith("unrecognized_")]
     assert len(renamed) == len(invalid_formats), listing
     assert sorted(listing) == sorted(renamed + ["shard1_all_replicas"]), listing
+    original_names = []
     for name in renamed:
-        assert node.exec_in_container(["ls", "-1", f"{data_path}/{name}"]).split() == [
-            "dummy.txt"
-        ]
+        assert sorted(
+            node.exec_in_container(["ls", "-1", f"{data_path}/{name}"]).split()
+        ) == ["dummy.txt", "original_name"]
+        original_names.append(
+            node.exec_in_container(["cat", f"{data_path}/{name}/original_name"])
+        )
+    assert sorted(original_names) == sorted(invalid_formats), original_names
 
-    # The old name is gone from the disk, from the reported path and from the log.
+    # The old name is gone from the directory names, from the reported path and from the log.
     node.query("SYSTEM FLUSH LOGS system.text_log")
     assert "hunter2" not in node.exec_in_container(["ls", "-1R", data_path])
     assert (
@@ -311,15 +318,13 @@ def test_selected_rows_not_double_counted(started_cluster, cluster):
         )
         node.query("system flush logs query_log")
 
-        read_rows, read_bytes, selected_rows, selected_bytes = node.query(
-            f"""
+        read_rows, read_bytes, selected_rows, selected_bytes = node.query(f"""
             select read_rows, read_bytes,
                    ProfileEvents['SelectedRows'], ProfileEvents['SelectedBytes']
             from system.query_log
             where query_id = '{query_id}' and type = 'QueryFinish'
             order by event_time_microseconds desc limit 1
-            """
-        ).split()
+            """).split()
 
         # The read amounts are pinned as well, so a query that stops reading the spool file cannot
         # satisfy the equalities with both sides at zero.

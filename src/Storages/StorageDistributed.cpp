@@ -113,6 +113,7 @@
 #include <Core/SettingsEnums.h>
 
 #include <IO/ReadHelpers.h>
+#include <IO/WriteBufferFromFile.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/ConnectionTimeouts.h>
@@ -1542,6 +1543,8 @@ Strings StorageDistributed::getDataPaths() const
 
 /// Prefix of a subdirectory renamed by renameUnrecognizedDirectoryQueue()
 static constexpr std::string_view unrecognized_directory_queue_prefix = "unrecognized_";
+/// File in such a subdirectory that holds its name before the rename
+static constexpr std::string_view unrecognized_directory_queue_original_name_file = "original_name";
 
 void StorageDistributed::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
@@ -1613,15 +1616,30 @@ void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem:
     /// it can never be sent. Renaming keeps it from being taken for a directory queue on every
     /// start; the files are left for the administrator to inspect or remove.
     const auto parent_path = dir_path.parent_path();
-    const auto new_name = fmt::format(
-        "{}{}", unrecognized_directory_queue_prefix, sipHash128String(dir_path.filename().string()));
+    const auto old_name = dir_path.filename().string();
+
+    /// The new name is a hash, because the old one may hold a password (a server older than 26.9
+    /// named the directory after `user:password@host:port`) and the new one is logged and shown.
+    /// The old name is the only record of where the files were meant to be sent, so it is kept in
+    /// a file next to them: a downgrade or a manual recovery needs it to replay them. Written
+    /// before the rename, so an interrupted start leaves the directory with its old name, and the
+    /// next start writes the file again.
+    {
+        WriteBufferFromFile out((dir_path / unrecognized_directory_queue_original_name_file).string());
+        writeString(old_name, out);
+        out.finalize();
+        out.sync();
+    }
+
+    const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, sipHash128String(old_name));
     std::filesystem::rename(dir_path, parent_path / new_name);
     /// Logged as a warning and not as an error: a server upgraded from a version that still wrote
     /// the old directory names meets this on the first start of every table with a non-empty
     /// queue, and it is the expected handling of it, not a failure of the server.
     LOG_WARNING(log, "Renamed an unrecognized subdirectory of {} to {}, the files in it will not be sent. "
-                     "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'",
-                     parent_path.string(), new_name);
+                     "A subdirectory used for async INSERT is named 'shardN_replicaM' or 'shardN_all_replicas'. "
+                     "Its old name is kept in the file '{}' in it",
+                     parent_path.string(), new_name, unrecognized_directory_queue_original_name_file);
 }
 
 void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)

@@ -163,7 +163,8 @@ private:
     void initializeDirectoryQueuesForDisk(const DiskPtr & disk);
 
     /// Rename a subdirectory whose name is not one `DistributedSink` writes, so that it is not
-    /// taken for a directory queue. The files in it are left untouched.
+    /// taken for a directory queue. The files in it are left untouched, and the old name is saved
+    /// in a file next to them.
     void renameUnrecognizedDirectoryQueue(const std::filesystem::path & dir_path) const;
 
     /// Remove the subdirectories quarantined by renameUnrecognizedDirectoryQueue(). They have no
