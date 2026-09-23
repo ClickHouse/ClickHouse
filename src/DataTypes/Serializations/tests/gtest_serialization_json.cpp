@@ -249,6 +249,19 @@ TEST(SerializationJSON, ParsingUsesFormatSettingsTimezoneWithoutQueryScope)
             EXPECT_EQ(type->getSubcolumn("t", column)->getInt(0), format_timezone.makeTime(12, 34, 56));
             EXPECT_EQ(type->getSubcolumn("t64", column)->getInt(0), format_timezone.makeTime(12, 34, 56) * 1000 + 123);
             EXPECT_EQ(type->getSubcolumn("fixed", column)->getUInt(0), DateLUT::instance("UTC").makeDateTime(2024, 1, 1, 12, 0, 0));
+
+            WriteBufferFromOwnString output;
+            serialization->serializeTextJSON(*column, 0, output, settings);
+            EXPECT_NE(output.str().find(R"("d":"2024-01-01 12:00:00")"), String::npos);
+            EXPECT_NE(output.str().find(R"("d64":"2024-01-01 12:00:00.123")"), String::npos);
+            EXPECT_NE(output.str().find(R"("fixed":"2024-01-01 12:00:00")"), String::npos);
+
+            auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths = 0)");
+            auto dynamic_serialization = dynamic_type->getDefaultSerialization();
+            auto dynamic_column = parseJSON(dynamic_type, dynamic_serialization, R"({"d":"2024-01-01 12:00:00"})", settings);
+            WriteBufferFromOwnString dynamic_output;
+            dynamic_serialization->serializeTextJSON(*dynamic_column, 0, dynamic_output, settings);
+            EXPECT_NE(dynamic_output.str().find(R"("d":"2024-01-01 12:00:00")"), String::npos);
         }
     }).get();
 }
