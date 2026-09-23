@@ -654,6 +654,7 @@ static void writeDataFiles(
         }
         output_format->flush();
         output_format->finalize();
+        data_file->manifest_list->statistics.addColumnSizesOnDisk(output_format->getColumnSizesOnDisk(), *sample_block);
         write_buffer->finalize();
         auto file_bytes = write_buffer->count();
         if (file_bytes == 0 && !data_file->patched_path.empty())
