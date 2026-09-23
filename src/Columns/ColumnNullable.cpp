@@ -1322,4 +1322,10 @@ bool ColumnNullable::hasOnlyTypeDefaults() const
     return memoryIsByte(data.data(), 0, data.size(), 1);
 }
 
+ColumnPlanes ColumnNullable::getPlanes() const
+{
+    ColumnPlanes planes(ColumnPlanes::Shape::Nullable, getNullMapData().data());
+    planes.children = {&getNestedColumn()};
+    return planes;
+}
 }
