@@ -57,20 +57,6 @@ size_t estimateRunReadMemory(size_t max_block_bytes, size_t buffer_size)
     return 4 * max_block_bytes + 2 * buffer_size + DBMS_DEFAULT_BUFFER_SIZE;
 }
 
-size_t estimateSortingWorkspace(size_t rows)
-{
-    /// A sorting permutation stores each row's original index. Include array padding and the
-    /// power-of-two capacity rounding, rather than counting only the indices themselves.
-    using Permutation = IColumn::Permutation;
-    const size_t permutation_bytes = roundUpToPowerOfTwoOrZero(PODArrayDetails::minimum_memory_for_elements(
-        rows, sizeof(Permutation::value_type), Permutation::pad_left, Permutation::pad_right));
-
-    /// Numeric radix sorting holds two value-index arrays alongside the permutation. Each pair can
-    /// occupy twice an index's size, and the histograms need up to 8 KiB. This allowance also covers
-    /// the equal-key ranges used by comparison sorting and duplicate removal.
-    return 5 * permutation_bytes + (8 << 10);
-}
-
 }
 
 ExternalDistinctTransform::ExternalDistinctTransform(
