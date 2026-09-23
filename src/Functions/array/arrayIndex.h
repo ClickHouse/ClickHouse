@@ -60,7 +60,6 @@ void findNumericHasBatch(
     const ColumnArray::Offset * offsets,
     UInt8 * result,
     size_t rows,
-    size_t min_array_size,
     T value);
 
 template <SupportedNumeric T>
@@ -74,7 +73,7 @@ void findNumericIndexOfBatch(
 
 #define ARRAY_INDEX_INSTANTIATION(T) \
     extern template void findNumericHasBatch<T>( \
-        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, size_t min_array_size, T value); \
+        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, T value); \
     extern template void findNumericIndexOfBatch<T>( \
         const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, size_t min_array_size, T value);
 
@@ -236,7 +235,7 @@ public:
     }
 
     template <size_t Case, typename Data, typename Target>
-    static ResultType linearSearch(
+    static constexpr ResultType linearSearch(
         const Data & data,
         const Target & target,
         size_t array_size,
@@ -298,7 +297,7 @@ public:
 private:
     /** Looking for the target element index in the data (array) */
     template <size_t Case, typename Data, typename Target>
-    static ResultType getIndex(
+    static constexpr ResultType getIndex(
         const Data & data,
         const Target & target,
         size_t array_size,
@@ -936,7 +935,6 @@ private:
                             data.offsets.data(),
                             result.getData().data(),
                             data.offsets.size(),
-                            ArrayIndexImpl::getOptimizedSearchMinSize<Initial, false>(),
                             converted_needle);
                     }
                     else

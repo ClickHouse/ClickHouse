@@ -68,15 +68,28 @@ ALWAYS_INLINE bool findNumericHasInternal(const T * data, size_t size, T value)
 template <SupportedNumeric T>
 ALWAYS_INLINE bool findNumericHas(const T * data, size_t size, T value)
 {
-    const size_t prefix_size = std::min(size, size_t(8));
-    for (size_t i = 0; i < prefix_size; ++i)
+    constexpr size_t prefix_size = 8;
+
+    if constexpr (sizeof(T) == 2 || sizeof(T) == 4)
+    {
+        constexpr size_t block_size = 64 / sizeof(T);
+        if (size >= block_size && size < prefix_size + block_size)
+        {
+            if (data[0] == value)
+                return true;
+            return findNumericHasInternal(data, size, value);
+        }
+    }
+
+    const size_t actual_prefix_size = std::min(size, prefix_size);
+    for (size_t i = 0; i < actual_prefix_size; ++i)
         if (data[i] == value)
             return true;
 
-    if (prefix_size == size)
+    if (actual_prefix_size == size)
         return false;
 
-    return findNumericHasInternal(data + prefix_size, size - prefix_size, value);
+    return findNumericHasInternal(data + actual_prefix_size, size - actual_prefix_size, value);
 }
 
 template <SupportedNumeric T>
@@ -157,9 +170,10 @@ void findNumericHasBatch(
     const ColumnArray::Offset * __restrict offsets,
     UInt8 * __restrict result,
     size_t rows,
-    size_t min_array_size,
     T value)
 {
+    constexpr size_t min_array_size = getOptimizedSearchMinSize<T, false>();
+
     ColumnArray::Offset previous_offset = 0;
     for (size_t row = 0; row < rows; ++row)
     {
@@ -216,7 +230,7 @@ void findNumericIndexOfBatch(
 
 #define INSTANTIATE(T) \
     template void findNumericHasBatch<T>( \
-        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, size_t min_array_size, T value); \
+        const T * data, const ColumnArray::Offset * offsets, UInt8 * result, size_t rows, T value); \
     template void findNumericIndexOfBatch<T>( \
         const T * data, const ColumnArray::Offset * offsets, UInt64 * result, size_t rows, size_t min_array_size, T value);
 

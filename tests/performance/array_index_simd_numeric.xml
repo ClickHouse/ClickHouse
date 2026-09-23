@@ -9,7 +9,9 @@
     <create_query>
         CREATE TABLE perf_array_index_simd_numeric
         (
+            u16 Array(UInt16),
             u32 Array(UInt32),
+            u64 Array(UInt64),
             f32 Array(Float32),
             f64 Array(Float64)
         ) ENGINE = Memory
@@ -25,7 +27,9 @@
     <fill_query>
         INSERT INTO perf_array_index_simd_numeric
         SELECT
+            materialize(range(96)::Array(UInt16)),
             materialize(range(4096)::Array(UInt32)),
+            materialize(range(192)::Array(UInt64)),
             materialize(arrayMap(x -> toFloat32(x), range(4096))),
             materialize(arrayMap(x -> toFloat64(x), range(4096)))
         FROM numbers(20000)
@@ -41,12 +45,22 @@
         FROM numbers(1000000)
     </fill_query>
     <query>
-        SELECT sum(has(u32, toUInt32(4294967295)))
+        SELECT sum(has(u32, 4294967295))
         FROM perf_array_index_simd_numeric
         FORMAT Null
     </query>
     <query>
-        SELECT sum(indexOf(u32, toUInt32(4294967295)))
+        SELECT sum(indexOf(u32, 4294967295))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u16, 65535))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(indexOf(u64, 18446744073709551615))
         FROM perf_array_index_simd_numeric
         FORMAT Null
     </query>
