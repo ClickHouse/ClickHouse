@@ -1002,6 +1002,68 @@ def test_expire_snapshots_keeps_anchors_of_failed_deletion(started_cluster_icebe
     assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n"
 
 
+@pytest.mark.parametrize("missing_anchor", ["manifest_list", "manifest"])
+def test_expire_snapshots_missing_anchor_does_not_commit(
+    started_cluster_iceberg_with_spark, missing_anchor
+):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = make_table_name("test_expire_missing_anchor", "local")
+
+    create_and_populate(
+        started_cluster_iceberg_with_spark, instance, "local", TABLE_NAME, 3
+    )
+
+    snapshot_ids = get_snapshot_ids(instance, TABLE_NAME)
+    retained_snapshot_id = snapshot_ids[0]
+
+    def rewind_to_first_snapshot(m):
+        m["current-snapshot-id"] = retained_snapshot_id
+        for ref in m.get("refs", {}).values():
+            ref["snapshot-id"] = retained_snapshot_id
+        m.setdefault("properties", {}).update(AGGRESSIVE_RETENTION)
+
+    update_iceberg_metadata(instance, TABLE_NAME, rewind_to_first_snapshot)
+
+    metadata = read_iceberg_metadata(instance, TABLE_NAME)
+    retained_manifest_list = next(
+        snapshot["manifest-list"]
+        for snapshot in metadata["snapshots"]
+        if snapshot["snapshot-id"] == retained_snapshot_id
+    )
+    expired_manifest_list = next(
+        snapshot["manifest-list"]
+        for snapshot in metadata["snapshots"]
+        if snapshot["snapshot-id"] != retained_snapshot_id
+    )
+
+    def manifest_paths(manifest_list):
+        return set(
+            instance.query(
+                f"SELECT manifest_path FROM file('{manifest_list}', Avro) FORMAT TSV"
+            )
+            .strip()
+            .splitlines()
+        )
+
+    if missing_anchor == "manifest_list":
+        anchor_to_remove = expired_manifest_list
+    else:
+        retained_manifests = manifest_paths(retained_manifest_list)
+        expired_only_manifests = manifest_paths(expired_manifest_list) - retained_manifests
+        assert expired_only_manifests, "Expected an expired-only manifest"
+        anchor_to_remove = next(iter(expired_only_manifests))
+
+    instance.exec_in_container(["rm", anchor_to_remove])
+
+    error = instance.query_and_get_error(
+        f"ALTER TABLE {TABLE_NAME} EXECUTE expire_snapshots(expire_before = '{FAR_FUTURE}');",
+        settings=ICEBERG_SETTINGS,
+    )
+    assert error
+    assert os.path.basename(anchor_to_remove) in error
+    assert get_snapshot_ids(instance, TABLE_NAME) == snapshot_ids
+
+
 # ---------------------------------------------------------------------------
 # Coverage gap tests (PR #99130)
 # ---------------------------------------------------------------------------

@@ -363,28 +363,6 @@ Iceberg::IcebergPathFromMetadata resolveFileIdentity(
     return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
 }
 
-/// Only a confirmed missing object is safe to skip: committing expiration would otherwise leak its subtree.
-bool isAlreadyGone(
-    const Iceberg::IcebergPathFromMetadata & path,
-    const ObjectStoragePtr & object_storage,
-    const PersistentTableComponents & persistent_table_components,
-    const ContextPtr & context,
-    ExternalStorageCache & external_storages)
-{
-    try
-    {
-        auto [storage, key] = resolveObjectStorageForPath(
-            persistent_table_components.path_resolver.getTableLocation(),
-            path.serialize(), object_storage, external_storages, context,
-            persistent_table_components.path_resolver);
-        return !storage->exists(StoredObject(key));
-    }
-    catch (...) /// Ok: the probe cannot answer, so the original error is rethrown by the caller
-    {
-        return false;
-    }
-}
-
 void collectAllFilePaths(
     const Iceberg::ManifestFileIterator::ManifestFileEntriesHandle & entries_handle,
     const ObjectStoragePtr & object_storage,
@@ -520,13 +498,8 @@ ExpiredFiles collectExpiredFiles(
         }
         catch (...)
         {
-            if (!isAlreadyGone(manifest_list_path, object_storage, persistent_table_components, context, external_storages))
-            {
-                tryLogCurrentException(log, fmt::format("Failed to read manifest list {}", manifest_list_path));
-                throw;
-            }
-            LOG_WARNING(log, "Manifest list {} is already gone, skipping", manifest_list_path);
-            continue;
+            tryLogCurrentException(log, fmt::format("Failed to read manifest list {}", manifest_list_path));
+            throw;
         }
 
         for (const auto & manifest_entry : manifest_keys)
@@ -574,14 +547,8 @@ ExpiredFiles collectExpiredFiles(
             }
             catch (...)
             {
-                if (!isAlreadyGone(
-                        manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, external_storages))
-                {
-                    tryLogCurrentException(log, fmt::format("Failed to read manifest file {}", manifest_entry.manifest_file_path));
-                    throw;
-                }
-                LOG_WARNING(log, "Manifest file {} is already gone, skipping", manifest_entry.manifest_file_path);
-                continue;
+                tryLogCurrentException(log, fmt::format("Failed to read manifest file {}", manifest_entry.manifest_file_path));
+                throw;
             }
 
             seen_expired_manifest_paths.insert(manifest_id);
