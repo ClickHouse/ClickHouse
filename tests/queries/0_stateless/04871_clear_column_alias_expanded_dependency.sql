@@ -3,7 +3,8 @@
 -- MATERIALIZED column is legal. A dependency hidden behind an ALIAS or a subcolumn must be rejected
 -- up front, in `ALTER` validation, not after the mutation has been queued.
 
--- A MATERIALIZED column reads an EPHEMERAL column through an ALIAS.
+-- A MATERIALIZED column reads an EPHEMERAL column through an ALIAS: it is not recalculated and
+-- keeps its stored value, the same as when it reads the EPHEMERAL column directly.
 DROP TABLE IF EXISTS t_clear_alias_dep;
 
 CREATE TABLE t_clear_alias_dep
@@ -16,10 +17,9 @@ CREATE TABLE t_clear_alias_dep
 
 INSERT INTO t_clear_alias_dep (a) VALUES (1);
 
-ALTER TABLE t_clear_alias_dep CLEAR COLUMN a; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
+ALTER TABLE t_clear_alias_dep CLEAR COLUMN a SETTINGS mutations_sync = 2;
 
--- The rejection happened in validation: nothing was queued.
-SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_clear_alias_dep';
+SELECT a, m FROM t_clear_alias_dep;
 
 DROP TABLE t_clear_alias_dep;
 

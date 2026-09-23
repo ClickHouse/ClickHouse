@@ -2490,17 +2490,11 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     /// CLEAR COLUMN triggers recalculation of the MATERIALIZED columns that read
                     /// the cleared column, directly or through another recalculated MATERIALIZED
-                    /// column. Reject up front, instead of queueing a mutation that can never
-                    /// succeed or that would corrupt the parts, when:
-                    /// - the recalculation would read an EPHEMERAL column: its values exist only
-                    ///   during INSERT and are not stored in parts;
-                    /// - the recalculated column is required by the sorting or partition key:
-                    ///   the mutation rewrites it in place, without re-sorting rows or moving
-                    ///   parts between partitions, breaking the key invariants.
-                    NameSet ephemeral_names;
-                    for (const auto & col : all_columns.getEphemeral())
-                        ephemeral_names.insert(col.name);
-
+                    /// column. A MATERIALIZED column reading an EPHEMERAL column is not recalculated
+                    /// and keeps its stored value. Reject up front, instead of queueing a mutation
+                    /// that would corrupt the parts, when the recalculated column is required by the
+                    /// sorting or partition key: the mutation rewrites it in place, without re-sorting
+                    /// rows or moving parts between partitions, breaking the key invariants.
                     /// Expand ALIAS bodies and canonicalize subcolumn reads exactly like
                     /// `MutationsInterpreter` does, otherwise a MATERIALIZED column that reaches the
                     /// cleared column through an ALIAS or a subcolumn would pass this validation and
@@ -2520,15 +2514,6 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     Names partition_key_columns = metadata->getColumnsRequiredForPartitionKey();
                     for (const auto & stale_column : stale_columns)
                     {
-                        for (const auto & required_column : materialized_column_inputs.by_column.at(stale_column))
-                        {
-                            if (ephemeral_names.contains(required_column))
-                                throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                                    "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but it "
-                                    "depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
-                                    backQuote(command.column_name), backQuote(stale_column), backQuote(required_column));
-                        }
-
                         if (std::find(sorting_key_columns.begin(), sorting_key_columns.end(), stale_column) != sorting_key_columns.end())
                             throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
                                 "Cannot clear column {}: the MATERIALIZED column {} has to be recalculated, but the "

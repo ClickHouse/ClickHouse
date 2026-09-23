@@ -1976,10 +1976,20 @@ std::optional<String> MaterializedColumnInputInfo::findFirstUnsafeColumn(const N
 MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const ColumnsDescription & columns, ContextPtr context)
 {
     /// EPHEMERAL columns are included in the analysis set so TreeRewriter can resolve
-    /// MATERIALIZED expressions that reference them; the callers reject such dependencies.
+    /// MATERIALIZED expressions that reference them. Such a MATERIALIZED column cannot be
+    /// recalculated outside INSERT, so it is left out of the result (see below).
     NamesAndTypesList source_columns = columns.getAllPhysical();
+    NameSet ephemeral_names;
     for (const auto & col : columns.getEphemeral())
+    {
         source_columns.push_back(col);
+        ephemeral_names.insert(col.name);
+    }
+
+    auto reads_ephemeral = [&](const Names & inputs)
+    {
+        return std::ranges::any_of(inputs, [&](const auto & input) { return ephemeral_names.contains(input); });
+    };
 
     NameSet all_column_names;
     for (const auto & column : columns)
@@ -2029,18 +2039,30 @@ MaterializedColumnInputInfo collectMaterializedColumnInputsAfterExpansion(const 
         if (column.default_desc.kind != ColumnDefaultKind::Materialized || !column.default_desc.expression)
             continue;
 
-        if (legacy_capture_violations.contains(column.name))
+        Names inputs;
+        bool is_unsafe_legacy = legacy_capture_violations.contains(column.name);
+        if (is_unsafe_legacy)
         {
-            result.unsafe_legacy_columns.insert(column.name);
-            result.by_column.emplace(column.name, collect_raw_inputs_following_aliases(column.default_desc));
-            continue;
+            inputs = collect_raw_inputs_following_aliases(column.default_desc);
+        }
+        else
+        {
+            auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns, context);
+            validateNoCyclicAliasesAfterExpansion(column.name, query, columns);
+            replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
+            auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
+            inputs = syntax_result->requiredSourceColumns();
         }
 
-        auto query = cloneAndExpandColumnDefaultExpressionWithAliases(column.default_desc, columns, context);
-        validateNoCyclicAliasesAfterExpansion(column.name, query, columns);
-        replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, source_columns);
-        auto syntax_result = TreeRewriter(context).analyze(query, source_columns);
-        result.by_column.emplace(column.name, syntax_result->requiredSourceColumns());
+        /// A MATERIALIZED column reading an EPHEMERAL column (directly or through an ALIAS) is never
+        /// recalculated by a mutation and keeps its stored value; `MutationsInterpreter` warns when it
+        /// goes stale. Leaving it out of the result also keeps the closure from walking through it.
+        if (reads_ephemeral(inputs))
+            continue;
+
+        if (is_unsafe_legacy)
+            result.unsafe_legacy_columns.insert(column.name);
+        result.by_column.emplace(column.name, std::move(inputs));
     }
     return result;
 }

@@ -67,7 +67,7 @@ SELECT id, c, src, k, direct FROM t_clear_key_materialized ORDER BY id;
 
 DROP TABLE t_clear_key_materialized;
 
-SELECT '-- a MATERIALIZED column made stale through another one cannot be silently kept';
+SELECT '-- a MATERIALIZED column reading an EPHEMERAL column is not recomputed';
 
 DROP TABLE IF EXISTS t_clear_transitive_ephemeral;
 
@@ -79,21 +79,14 @@ CREATE TABLE t_clear_transitive_ephemeral
     m1 UInt64 MATERIALIZED c + 1,
     m2 UInt64 MATERIALIZED m1 + e
 )
-ENGINE = MergeTree ORDER BY id;
+ENGINE = MergeTree ORDER BY id
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_clear_transitive_ephemeral (id, c, e) VALUES (1, 5, 7);
 
--- `m2` reads `m1`, which reads the cleared `c`, so `m2` would have to be recomputed too - but it
--- also reads the EPHEMERAL `e`, which cannot be read back from the part. Reject the ALTER instead
--- of committing an `m2` that no longer matches its declared expression.
-ALTER TABLE t_clear_transitive_ephemeral CLEAR COLUMN c; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-
-SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_clear_transitive_ephemeral';
-SELECT id, c, m1, m2 FROM t_clear_transitive_ephemeral ORDER BY id;
-
--- Clearing a column outside the closure of the EPHEMERAL-dependent column is still allowed.
-ALTER TABLE t_clear_transitive_ephemeral ADD COLUMN other UInt64;
-ALTER TABLE t_clear_transitive_ephemeral CLEAR COLUMN other;
+-- `m1` is recomputed from the cleared `c`. `m2` reads `m1`, but it also reads the EPHEMERAL `e`,
+-- which cannot be read back from the part, so it is not recomputed and keeps its stored value.
+ALTER TABLE t_clear_transitive_ephemeral CLEAR COLUMN c;
 SELECT id, c, m1, m2 FROM t_clear_transitive_ephemeral ORDER BY id;
 
 DROP TABLE t_clear_transitive_ephemeral;

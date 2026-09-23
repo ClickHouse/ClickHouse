@@ -398,6 +398,8 @@ struct MaterializedColumnInputInfo
 /// canonicalized to their owning storage column. For stored expressions that predate
 /// alias-lambda capture validation, collect conservative raw dependencies while following
 /// table-scope `ALIAS` columns and record the host column in `unsafe_legacy_columns`.
+/// A `MATERIALIZED` column that reads an `EPHEMERAL` column is left out: it cannot be
+/// recalculated outside `INSERT`, so a `CLEAR COLUMN` never rewrites it.
 /// `AlterCommands::validate` and `MutationsInterpreter` both build the input of
 /// `collectMaterializedColumnsStaleAfterClear` through this helper, so `ALTER` validation and
 /// mutation preparation cannot disagree about which recalculations a `CLEAR COLUMN` triggers.

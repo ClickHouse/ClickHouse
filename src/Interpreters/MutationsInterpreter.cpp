@@ -850,12 +850,6 @@ void MutationsInterpreter::prepare(bool dry_run)
 
     MaterializedColumnDependencies materialized_dependencies(columns_desc, context);
 
-    /// EPHEMERAL columns exist only during INSERT; the guards below skip or reject the
-    /// recalculation of a MATERIALIZED column that reads one.
-    NameSet ephemeral_columns;
-    for (const auto & col : columns_desc.getEphemeral())
-        ephemeral_columns.insert(col.name);
-
     /// Readable MATERIALIZED dependency graph; EPHEMERAL inputs are excluded.
     std::unordered_map<String, Names> column_to_affected_materialized;
     std::unordered_map<String, NameSet> materialized_column_dependencies;
@@ -1743,22 +1737,6 @@ void MutationsInterpreter::prepare(bool dry_run)
                     "but the partition key depends on it, and the rewritten values would disagree with the "
                     "partition the parts are placed in",
                     backQuote(name));
-        }
-
-        /// Recalculation reads the inputs of the MATERIALIZED expression from the existing part, but
-        /// EPHEMERAL values only exist during INSERT and are not stored. The direct case is rejected
-        /// in the command loop above; reject the transitive one here as well, instead of committing a
-        /// mutation that leaves the column inconsistent with its declared expression.
-        for (const auto & name : clear_stale_materialized)
-        {
-            for (const auto & dep : materialized_column_inputs.by_column.at(name))
-            {
-                if (ephemeral_columns.contains(dep))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot clear the requested column(s): the MATERIALIZED column {} has to be recalculated, "
-                        "but it depends on the EPHEMERAL column {}, whose values cannot be read from existing parts",
-                        backQuote(name), backQuote(dep));
-            }
         }
 
         /// Only the MATERIALIZED columns the clear makes stale are recomputed. A MATERIALIZED

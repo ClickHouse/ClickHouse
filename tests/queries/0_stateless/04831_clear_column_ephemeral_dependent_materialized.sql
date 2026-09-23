@@ -1,6 +1,8 @@
--- CLEAR COLUMN must be rejected up front when a MATERIALIZED column depends both on
--- the cleared column and on an EPHEMERAL column: the recalculation cannot read
--- EPHEMERAL values from existing parts, so the mutation could never succeed.
+-- A MATERIALIZED column that depends both on the cleared column and on an EPHEMERAL column cannot
+-- be recalculated by the mutation, because EPHEMERAL values exist only during INSERT. `CLEAR COLUMN`
+-- is still accepted, and such a column keeps the value stored at INSERT time.
+
+SET mutations_sync = 2;
 
 DROP TABLE IF EXISTS t_clear_ephemeral;
 
@@ -10,19 +12,17 @@ CREATE TABLE t_clear_ephemeral
     e UInt64 EPHEMERAL 7,
     m UInt64 MATERIALIZED a + e
 )
-ENGINE = MergeTree ORDER BY tuple();
+ENGINE = MergeTree ORDER BY tuple()
+SETTINGS enable_block_number_column = 0, enable_block_offset_column = 0;
 
 INSERT INTO t_clear_ephemeral (a, e) VALUES (1, 2);
 
-ALTER TABLE t_clear_ephemeral CLEAR COLUMN a SETTINGS mutations_sync = 1; -- { serverError ALTER_OF_COLUMN_IS_FORBIDDEN }
-
--- The ALTER was rejected before queueing a mutation.
-SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 't_clear_ephemeral';
+ALTER TABLE t_clear_ephemeral CLEAR COLUMN a;
 SELECT a, m FROM t_clear_ephemeral;
 
--- Clearing a column that no EPHEMERAL-dependent MATERIALIZED column reads is still allowed.
+-- Clearing a column that no MATERIALIZED column reads leaves everything as is.
 ALTER TABLE t_clear_ephemeral ADD COLUMN b UInt64;
-ALTER TABLE t_clear_ephemeral CLEAR COLUMN b SETTINGS mutations_sync = 1;
+ALTER TABLE t_clear_ephemeral CLEAR COLUMN b;
 SELECT a, m FROM t_clear_ephemeral;
 
 DROP TABLE t_clear_ephemeral;
