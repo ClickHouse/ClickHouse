@@ -97,6 +97,7 @@ CREATE TABLE table
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
+                                [, dictionary_compression_codec = 'codec']
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
@@ -137,6 +138,7 @@ ALTER TABLE table
                                 -- Optional advanced parameters:
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
+                                [, dictionary_compression_codec = 'codec']
                                 [, posting_list_block_size = C]
                                 [, posting_list_codec = 'none' | 'bitpacking' | 'pfor' ]
                             )
@@ -595,7 +597,23 @@ Optional parameter `posting_list_codec` (default: `none`) specifies the codec fo
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
 - `pfor` - apply differential (delta) coding, followed by PFor bit-packing (each within blocks of fixed size). Like `bitpacking`, but the per-block bit width is chosen to minimise the total size and the values that do not fit are stored separately as patched exceptions, so a single large gap no longer widens the whole block. Blocks whose deltas are all equal collapse to a constant.
 
-The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
+Optional parameter `dictionary_compression_codec` (default: empty) specifies the compression codec of the index dictionary.
+An empty value means the dictionary is compressed with the part's default data codec, which is what happens if the parameter is not given.
+
+An unanchored `LIKE` or `ILIKE` pattern (`%needle%`) that is evaluated by a dictionary scan reads the whole dictionary, one independently seekable compressed block at a time, so for the dictionary decompression speed matters more than compression ratio does. See [LIKE/ILIKE queries](#like-ilike-queries-perf) for when a pattern is evaluated that way.
+The parameter takes effect whenever it names a codec different from the part's default, in either direction. The speed gain of choosing `LZ4` below needs a part default heavier than `LZ4`: without an explicit `default_compression_codec` the part default is chosen by part size, so a small freshly inserted part is already on `LZ4`, and only larger merged or mutated parts, or a table that sets a heavier `default_compression_codec`, can gain.
+`LZ4` is the suggested value for a text index over ordinary text: on a corpus of real source text, measured on local disk, it cut unanchored `LIKE` and `ILIKE` time by 24-30% for 1.6% more index size.
+It is not the default because the trade-off depends on the indexed column.
+A column of mostly rare tokens produces a dictionary that the default `ZSTD` compresses several times better than `LZ4` does, and there the same change was worth 2-3% of query time while adding 164% to the index size.
+Both shapes are supported, so the parameter is left to the table owner, who can tell which one their column is.
+
+Two further properties are worth knowing.
+The separate posting list and positions substreams are compressed as they are built and are not affected by this codec, so on an index whose bulk is those substreams the size cost is small.
+The posting lists of rare tokens are embedded in the dictionary blocks instead, so this codec does compress them, which is where the 164% above comes from.
+And if the part's default codec encrypts while this codec does not, the default codec is used instead, so that the indexed tokens are never written unencrypted.
+The index header is a separate substream that always keeps the part's default codec and holds the first token of every dictionary block, so an encrypting codec set here does not by itself encrypt every indexed token.
+
+The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), `text_index_dictionary_compression_codec`, [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.
 
 The main use case of the table-level settings is to change the index parameters of an existing table without dropping and re-creating the text index on all table parts.
