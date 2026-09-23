@@ -6735,6 +6735,14 @@ bool MergeTreeData::containsTableDataOnNewDisk(const DiskPtr & disk) const
     return false;
 }
 
+void MergeTreeData::applyEscapeIndexFilenamesSetting(StorageInMemoryMetadata & metadata) const
+{
+    const bool escape = (*getSettings())[MergeTreeSetting::escape_index_filenames];
+    metadata.escape_index_filenames = escape;
+    for (auto & index : metadata.secondary_indices)
+        index.escape_filenames = escape;
+}
+
 void MergeTreeData::changeSettings(
     const ASTPtr & new_settings,
     AlterLockHolder & /* table_lock_holder */,
@@ -6806,9 +6814,6 @@ void MergeTreeData::changeSettings(
                 getContext()->wasBackgroundPoolAutoLowered());
         }
 
-        bool has_escape_index_filenames_changed
-            = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames] != (*copy)[MergeTreeSetting::escape_index_filenames];
-
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
@@ -6822,15 +6827,7 @@ void MergeTreeData::changeSettings(
         StorageInMemoryMetadata new_metadata = *storage_metadata_snapshot;
         new_metadata.setSettingsChanges(new_settings);
 
-        if (has_escape_index_filenames_changed)
-        {
-            /// We need to update the metadata fields and indices so we use the new setting when reading indices
-            bool new_value = (*storage_settings.get())[MergeTreeSetting::escape_index_filenames];
-            new_metadata.escape_index_filenames = new_value;
-            for (auto & idx : new_metadata.secondary_indices)
-                idx.escape_filenames = new_value;
-        }
-
+        applyEscapeIndexFilenamesSetting(new_metadata);
         setInMemoryMetadata(new_metadata);
 
         if (has_storage_policy_changed)

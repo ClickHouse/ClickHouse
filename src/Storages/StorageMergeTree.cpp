@@ -474,8 +474,6 @@ void StorageMergeTree::alter(
     /// This alter can be performed at new_metadata level only
     if (commands.isSettingsAlter())
     {
-        changeSettings(new_metadata.settings_changes, table_lock_holder);
-
         if (statistics_changed)
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
@@ -485,6 +483,8 @@ void StorageMergeTree::alter(
 
         try
         {
+            /// changeSettings derives the index filename escaping, so it must publish after new_metadata.
+            changeSettings(new_metadata.settings_changes, table_lock_holder);
             /// Safe because the early max_query_size check already passed.
             DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
         }
@@ -600,6 +600,8 @@ void StorageMergeTree::alter(
             try
             {
                 changeSettings(new_metadata.settings_changes, table_lock_holder);
+                /// setProperties publishes new_metadata below, so it must carry the escaping derived from the new settings.
+                applyEscapeIndexFilenamesSetting(new_metadata);
                 checkTTLExpressions(new_metadata, old_metadata);
 
                 /// Validate setting-dependent metadata against the just-applied settings
