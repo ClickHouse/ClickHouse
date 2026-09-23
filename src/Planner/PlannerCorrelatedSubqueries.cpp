@@ -1471,6 +1471,11 @@ QueryPlan buildLogicalJoinForLateral(
         std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
         if (join_algorithms.empty())
             join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+        /// This is a user join, so its size limits still apply, but under join_overflow_mode = 'break'
+        /// the build side (the buffered input stream) could stop early, which both drops outer rows
+        /// and lets the lateral side read the buffer before its writer finished. Enforce the limits
+        /// with THROW instead.
+        result_join->getJoinSettings().join_overflow_mode = OverflowMode::THROW;
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
