@@ -347,7 +347,7 @@ struct TableFor<FixedHashMap<Key, Mapped, Cell, Size, Alloc, size_bits>>
 };
 
 /// `HashJoin`'s single-level maps are bucket-partitioned tables with one bucket (`BITS_FOR_BUCKET_SERIAL`):
-/// `JoinHashMap` is a `TwoLevelHashMapTable` over `HashMapTable`, `JoinFixedHashMap` a `TwoLevelHashTable`
+/// `JoinHashMap` is a `TwoLevelHashMapTable` over `HashMapTable`, `JoinFixedHashMap` a `PartitionedFixedHashTable`
 /// over `FixedHashMap`. Both take `cell_type`, `key_type` and `LookupResult` from the inner table. The
 /// routing layer adds no state to a cell. The two specializations strip the routing layer and delegate
 /// to the inner table's trait. The cells stay bit-identical to what `HashJoin`'s probe code reads.
@@ -364,16 +364,14 @@ struct TableFor<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Alloc, ImplTable, 
     using Type = typename TableFor<ImplTable<Key, Cell, Hash, Grower, Alloc>>::Type;
 };
 
-template <
-    typename Key,
-    typename Cell,
-    typename Hash,
-    typename Grower,
-    typename Alloc,
-    typename Impl,
-    Int32 bits_for_bucket,
-    typename BucketHash>
-struct TableFor<TwoLevelHashTable<Key, Cell, Hash, Grower, Alloc, Impl, bits_for_bucket, BucketHash>>
+template <typename Key, typename Cell, typename Hash, typename Grower, typename Alloc, typename Impl, Int32 bits_for_bucket>
+struct TableFor<TwoLevelHashTable<Key, Cell, Hash, Grower, Alloc, Impl, bits_for_bucket>>
+{
+    using Type = typename TableFor<Impl>::Type;
+};
+
+template <typename Impl, size_t bits_for_bucket>
+struct TableFor<PartitionedFixedHashTable<Impl, bits_for_bucket>>
 {
     using Type = typename TableFor<Impl>::Type;
 };
