@@ -362,7 +362,7 @@ def update_quickstart_page(file_path: Path, use_cases: List[str], products: List
     searchable_value = 'true' if searchable else 'false'
     if searchable_lines:
         frontmatter = re.sub(
-            rf'^searchable:\s*.*$', f'searchable: {searchable_value}', frontmatter,
+            r'^searchable:\s*.*$', f'searchable: {searchable_value}', frontmatter,
             count=1, flags=re.MULTILINE)
     else:
         frontmatter, replacements = re.subn(
