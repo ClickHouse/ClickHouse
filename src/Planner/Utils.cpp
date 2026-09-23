@@ -26,8 +26,6 @@
 
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDummy.h>
-#include <Storages/StorageAlias.h>
-#include <Storages/StorageView.h>
 
 #include <Interpreters/Context.h>
 #include <Parsers/ASTFunction.h>
@@ -645,12 +643,10 @@ static void checkAccessRightsForFilter(const QueryTreeNodePtr & filter_query_tre
     {
         /// A parameterized view is resolved as a `TableFunctionNode` wrapping a real `StorageView`, see
         /// `prepareBuildQueryPlanForTableExpression`. Regular table functions are checked in `ITableFunction::execute`.
-        const auto & table_function_storage = table_function_node->getStorage();
-        const auto * storage_view = table_function_storage ? table_function_storage->as<StorageView>() : nullptr;
-        if (!storage_view || !storage_view->isParameterizedView())
+        if (!table_function_node->isParameterizedView())
             return;
 
-        storage = table_function_storage;
+        storage = table_function_node->getStorage();
         storage_id = table_function_node->getStorageID();
         storage_snapshot = table_function_node->getStorageSnapshot();
     }
