@@ -1425,7 +1425,7 @@ ALTER TABLE my_table MODIFY SETTING tags_cache_max_series = 0; -- Disables the c
 ALTER TABLE my_table RESET SETTING tags_cache_max_series; -- Restores default (0)
 ```
 
-Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator. Modifying or truncating inner target tables directly is unsupported while the cache is active; use `TRUNCATE TABLE` on the outer `TimeSeries` table instead.
+Note that changing `id_generator` while data is already in the tags table can produce different IDs for the same metric+tag combination — old rows keep their old IDs, new rows use the new generator. Modifying or truncating inner target tables directly is unsupported while the cache is active; use `TRUNCATE TABLE` on the outer `TimeSeries` table instead. Each server keeps its own cache, so if the inner tables are replicated outside a `Replicated` database, run that `TRUNCATE TABLE` on every replica (e.g. with `ON CLUSTER`): truncating a replicated inner table from one replica doesn't reset the caches of the others.
 
 The other settings can't be changed with `ALTER ... MODIFY SETTING`: most of them are baked into the schema of the inner tables at `CREATE` time,
 and the `version` setting is pinned automatically at `CREATE` time and identifies the schema itself (see [Schema versioning](#schema-versioning)).

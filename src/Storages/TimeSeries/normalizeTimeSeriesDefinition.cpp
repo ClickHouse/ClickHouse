@@ -42,7 +42,8 @@ namespace
             if (create_query.hasTargetTableID(kind))
             {
                 auto table = readTargetTable(create_query.getTargetTableID(kind), context);
-                params.external_target_columns[kind] = table->getInMemoryMetadataPtr(context, false)->columns;
+                auto metadata = table->getInMemoryMetadataPtr(context, false);
+                params.external_target_columns[kind] = metadata->columns;
                 params.external_target_engines[kind] = table->getName();
             }
         }
