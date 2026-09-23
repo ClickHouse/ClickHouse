@@ -31,7 +31,6 @@ namespace Setting
 {
     extern const SettingsBool parallelize_output_from_storages;
     extern const SettingsBool distributed_aggregation_memory_efficient;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsMaxThreads max_threads;
@@ -437,17 +436,9 @@ NameDependencies IStorage::getDependentViewsByColumn(ContextPtr context) const
         if (view_metadata->select.inner_query)
         {
             const auto & select_query = view_metadata->select.inner_query;
-            Names required_columns;
-            if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            {
-                auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
-                auto query_tree = interpreter.getQueryTree();
-                required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
-            }
-            else
-            {
-                required_columns = InterpreterSelectQuery(select_query, context, SelectQueryOptions{}.noModify()).getRequiredColumns();
-            }
+            auto interpreter = InterpreterSelectQueryAnalyzer(select_query, context, SelectQueryOptions{}.noModify());
+            auto query_tree = interpreter.getQueryTree();
+            Names required_columns = collectSelectedColumnsFromTable(query_tree, current_storage_id, context);
 
             for (const auto & col_name : required_columns)
                 name_deps[col_name].push_back(view_id.table_name);
