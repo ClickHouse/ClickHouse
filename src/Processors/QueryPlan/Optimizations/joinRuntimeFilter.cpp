@@ -416,8 +416,9 @@ RuntimeFilterPlanningResult tryAddJoinRuntimeFilter(
         if (key_dags)
         {
             /// preCalculateKeys updates the logical join's input headers even if every runtime
-            /// filter is later skipped, so the caller must still rerun expression merging.
-            result.plan_changed = true;
+            /// filter is later skipped, so the caller must rerun expression merging without
+            /// forcing unrelated filter rewrites.
+            result.join_inputs_changed = true;
             relation_stats_cache.invalidate(node);
             auto get_node_column_with_type_and_name = [](const auto * e) { return ColumnWithTypeAndName(e->result_type, e->result_name); };
             join_keys_probe_side = std::ranges::to<ColumnsWithTypeAndName>(key_dags->first.keys | std::views::transform(get_node_column_with_type_and_name));
@@ -678,7 +679,6 @@ RuntimeFilterPlanningResult tryAddJoinRuntimeFilter(
     std::erase_if(join_algorithms, [](auto join_algorithm) { return !supportsRuntimeFilter(join_algorithm); });
 
     result.filter_added = true;
-    result.plan_changed = true;
     return result;
 }
 

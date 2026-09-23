@@ -344,7 +344,7 @@ void optimizeTreeSecondPass(
         return true;
     };
     bool join_runtime_filters_were_added = false;
-    bool join_runtime_filter_plan_was_changed = false;
+    bool join_runtime_filter_inputs_were_changed = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
@@ -358,7 +358,7 @@ void optimizeTreeSecondPass(
             {
                 const auto result = tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings, relation_stats_cache);
                 join_runtime_filters_were_added |= result.filter_added;
-                join_runtime_filter_plan_was_changed |= result.plan_changed;
+                join_runtime_filter_inputs_were_changed |= result.join_inputs_changed;
             }
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
@@ -367,10 +367,11 @@ void optimizeTreeSecondPass(
                 convert_logical_join_to_physical(frame_node);
         });
 
-    /// A new filter node has to be pushed down. Runtime filters are re-merged unconditionally as
-    /// before; a copied predicate alone is no reason to run a rewrite the user turned off
-    const bool rewrite_regardless_of_settings = join_runtime_filter_plan_was_changed;
-    if (join_runtime_filter_plan_was_changed || predicates_were_propagated)
+    /// Precalculating join keys can add Expression steps even when no runtime filter can be built;
+    /// those expressions must still be merged. Only an installed runtime filter justifies ignoring
+    /// the user's merge-filter and filter-push-down settings.
+    const bool rewrite_regardless_of_settings = join_runtime_filters_were_added;
+    if (join_runtime_filter_inputs_were_changed || predicates_were_propagated)
     {
         traverseQueryPlan(stack, root,
             [&](auto & frame_node)
@@ -384,7 +385,7 @@ void optimizeTreeSecondPass(
                     /// comes out off, so the filter stops above the opaque `ReadFromLocalReplica` instead of
                     /// entering the local plan, and `max_step_description_length` comes out 0, which truncates
                     /// the description of every step merged here to the empty string.
-                    if (rewrite_regardless_of_settings || optimization_settings.merge_expressions)
+                    if (join_runtime_filter_inputs_were_changed || optimization_settings.merge_expressions)
                         changed_nodes += tryMergeExpressions(&frame_node, nodes, extra_settings);
                     if (rewrite_regardless_of_settings || optimization_settings.merge_filters)
                         changed_nodes += tryMergeFilters(&frame_node, nodes, extra_settings);

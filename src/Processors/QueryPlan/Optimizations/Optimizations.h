@@ -221,7 +221,8 @@ size_t tryRemoveUnusedColumns(QueryPlan::Node * node, QueryPlan::Nodes &, const 
 struct RuntimeFilterPlanningResult
 {
     bool filter_added = false;
-    bool plan_changed = false;
+    /// preCalculateKeys updated the logical join's input headers and may have added Expression steps.
+    bool join_inputs_changed = false;
 };
 
 /// Build BloomFilter from right side of JOIN and add condition that looks up into this BloomFilter to the left side of the JOIN.

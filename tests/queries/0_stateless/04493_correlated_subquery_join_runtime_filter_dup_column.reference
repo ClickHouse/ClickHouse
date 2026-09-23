@@ -20,6 +20,8 @@ SETTINGS correlated_subqueries_default_join_kind = 'right', correlated_subquerie
 0	0	0	0
 1	1	1	1
 2	2	2	2
+-- failed runtime filter attempt honors disabled filter rewrites
+1
 1
 1
 -- Post-`preCalculateKeys` shapes: when the join key is a computed expression, `preCalculateKeys`

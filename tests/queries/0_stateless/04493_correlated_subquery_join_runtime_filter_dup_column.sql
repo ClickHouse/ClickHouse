@@ -37,6 +37,30 @@ ORDER BY 1
 SETTINGS correlated_subqueries_default_join_kind = 'right', correlated_subqueries_use_in_memory_buffer = 0;
 -- { echoOff }
 
+-- preCalculateKeys updates the logical join before runtime-filter planning rejects the duplicated
+-- build key. The required expression re-merge must not also override disabled filter rewrites.
+SELECT '-- failed runtime filter attempt honors disabled filter rewrites';
+SELECT countIf(explain LIKE '%Filter (%') = 2 AND countIf(explain LIKE 'Filter (%') = 1
+FROM (
+    EXPLAIN PLAN actions = 1
+    SELECT *
+    FROM
+    (
+        SELECT *
+        FROM
+        (
+            SELECT l.a, r.number
+            FROM (SELECT number AS a FROM numbers(100)) AS l
+            ANY RIGHT JOIN (SELECT number, * FROM numbers(3)) AS r ON l.a = r.number
+            ORDER BY a
+        )
+        WHERE a > 10
+    )
+    WHERE a < 90
+    SETTINGS query_plan_filter_push_down = 0, query_plan_merge_filters = 0,
+             query_plan_merge_expressions = 0, enable_parallel_replicas = 0
+);
+
 -- A runtime filter is still built for a normal join without duplicated column names.
 -- Pin join_algorithm='hash': the filter is only added for hash-family algorithms
 -- (supportsRuntimeFilter), and CI randomizes join_algorithm, so an unpinned run may
