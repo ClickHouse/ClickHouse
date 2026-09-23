@@ -224,7 +224,7 @@ void MergeTreeIndexReader::readRange(size_t mark_begin, size_t mark_end, IMergeT
         stream->seekToMark(mark_begin);
 
     const size_t count = mark_end - mark_begin;
-    granules.deserializeBinaryBulk(count, *stream->getDataBuffer(), version);
+    granules.deserializeBinaryBulk(mark_begin, count, *stream->getDataBuffer(), version);
     stream_mark = mark_end;
 }
 

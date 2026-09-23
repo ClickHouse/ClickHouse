@@ -800,14 +800,43 @@ MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind classifyFastKind(const IDataT
 }
 
 template <typename T>
+bool fastKindMatchesColumn(const IColumn & column)
+{
+    return typeid_cast<const ColumnVector<T> *>(&column) != nullptr;
+}
+
+bool fastKindMatchesColumn(MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind kind, const IColumn & column)
+{
+    using FastKind = MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind;
+    switch (kind)
+    {
+        case FastKind::U8:  return fastKindMatchesColumn<UInt8>(column);
+        case FastKind::U16: return fastKindMatchesColumn<UInt16>(column);
+        case FastKind::U32: return fastKindMatchesColumn<UInt32>(column);
+        case FastKind::U64: return fastKindMatchesColumn<UInt64>(column);
+        case FastKind::I8:  return fastKindMatchesColumn<Int8>(column);
+        case FastKind::I16: return fastKindMatchesColumn<Int16>(column);
+        case FastKind::I32: return fastKindMatchesColumn<Int32>(column);
+        case FastKind::I64: return fastKindMatchesColumn<Int64>(column);
+        case FastKind::F32: return fastKindMatchesColumn<Float32>(column);
+        case FastKind::F64: return fastKindMatchesColumn<Float64>(column);
+        case FastKind::None: return true;
+    }
+    return false;
+}
+
+/// The column type is checked against the `FastKind` once, in the constructor of
+/// `MergeTreeIndexBulkGranulesMinMaxColumnar`.
+template <typename T>
 ALWAYS_INLINE void fastReadPair(IColumn & min_col, IColumn & max_col, ReadBuffer & istr)
 {
     auto & min_data = assert_cast<ColumnVector<T> &>(min_col).getData();
     auto & max_data = assert_cast<ColumnVector<T> &>(max_col).getData();
+    /// The same byte order as `SerializationNumber::serializeBinary`, which wrote the granule.
     T raw;
-    readPODBinary(raw, istr);
+    readBinaryLittleEndian(raw, istr);
     min_data.push_back(raw);
-    readPODBinary(raw, istr);
+    readBinaryLittleEndian(raw, istr);
     max_data.push_back(raw);
 }
 
@@ -828,14 +857,26 @@ MergeTreeIndexBulkGranulesMinMaxColumnar::MergeTreeIndexBulkGranulesMinMaxColumn
         column.min_col = type->createColumn();
         column.max_col = type->createColumn();
         column.fast_kind = classifyFastKind(*type);
+        if (!fastKindMatchesColumn(column.fast_kind, *column.min_col))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} of type {} does not match the fast read path of the minmax index", column.min_col->getName(), type->getName());
     }
+}
+
+void MergeTreeIndexBulkGranulesMinMaxColumnar::startGranules(size_t granule_num)
+{
+    const size_t num_granules = size();
+    if (num_granules == 0)
+        first_granule = granule_num;
+    else if (granule_num != first_granule + num_granules)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Granules of the minmax index must be read consecutively, expected granule {}, got {}", first_granule + num_granules, granule_num);
 }
 
 void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinary(
     size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version)
 {
-    /// Rows are chunk-local, so `granule_num` is intentionally ignored.
-    (void)granule_num;
+    startGranules(granule_num);
 
     const size_t num_columns = cols.size();
     Field min_val;
@@ -941,8 +982,11 @@ ReadPairFn readPairFunction(MergeTreeIndexBulkGranulesMinMaxColumnar::FastKind k
 
 }
 
-void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(
+    size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version)
 {
+    startGranules(first_granule_num);
+
     const size_t num_columns = cols.size();
     for (auto & column : cols)
     {
@@ -960,7 +1004,7 @@ void MergeTreeIndexBulkGranulesMinMaxColumnar::deserializeBinaryBulk(size_t coun
         if (!fns[i])
         {
             for (size_t g = 0; g < count; ++g)
-                deserializeBinary(g, istr, version);
+                deserializeBinary(first_granule_num + g, istr, version);
             return;
         }
     }
@@ -983,10 +1027,21 @@ IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPos
 {
     const auto & bulk = assert_cast<const MergeTreeIndexBulkGranulesMinMaxColumnar &>(*idx_granules);
 
-    FilteredGranules all_granules(bulk.size());
-    std::iota(all_granules.begin(), all_granules.end(), 0);
-    if (!minmax_actions || index_data_types.size() != bulk.cols.size() || bulk.size() == 0)
-        return all_granules;
+    if (!minmax_actions)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Minmax index condition {} does not support bulk filtering", getDescription());
+    if (index_data_types.size() != bulk.cols.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Minmax index condition has {} columns, but the granules have {}", index_data_types.size(), bulk.cols.size());
+
+    if (bulk.size() == 0)
+        return {};
+
+    auto all_granules = [&bulk]
+    {
+        FilteredGranules all(bulk.size());
+        std::iota(all.begin(), all.end(), bulk.first_granule);
+        return all;
+    };
 
     Block block;
     for (size_t i = 0; i < bulk.cols.size(); ++i)
@@ -1002,14 +1057,14 @@ IMergeTreeIndexCondition::FilteredGranules MergeTreeIndexConditionMinMax::getPos
     minmax_actions->execute(block, num_rows);
     const auto & can_be_true = block.getByName(OUTPUT_CAN_BE_TRUE).column;
     if (const auto * constant = typeid_cast<const ColumnConst *>(can_be_true.get()))
-        return constant->getUInt(0) == 0 ? FilteredGranules{} : all_granules;
+        return constant->getUInt(0) == 0 ? FilteredGranules{} : all_granules();
 
     const auto & data = assert_cast<const ColumnUInt8 &>(*can_be_true).getData();
     FilteredGranules out;
     out.reserve(data.size());
     for (size_t i = 0; i < data.size(); ++i)
         if (data[i])
-            out.push_back(i);
+            out.push_back(bulk.first_granule + i);
     return out;
 }
 

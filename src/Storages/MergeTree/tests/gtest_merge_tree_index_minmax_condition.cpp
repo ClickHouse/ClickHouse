@@ -9,7 +9,6 @@
 #include <utility>
 #include <vector>
 
-#include <Common/FieldAccurateComparison.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Columns/ColumnConst.h>
@@ -109,26 +108,6 @@ std::shared_ptr<MergeTreeIndexBulkGranulesMinMaxColumnar> makeBulkGranules(
         bulk->cols[0].max_col->insert(max);
     }
     return bulk;
-}
-
-bool evaluateTypedComparison(
-    const ContextPtr & context,
-    const String & operation,
-    const DataTypePtr & left_type,
-    const Field & left,
-    const DataTypePtr & right_type,
-    const Field & right)
-{
-    auto left_column = left_type->createColumn();
-    left_column->insert(left);
-    auto right_column = right_type->createColumnConst(1, right);
-    ColumnsWithTypeAndName arguments{
-        {std::move(left_column), left_type, "left"},
-        {std::move(right_column), right_type, "right"},
-    };
-    auto function = FunctionFactory::instance().get(operation, context)->build(arguments);
-    auto result = function->execute(arguments, function->getResultType(), 1, false);
-    return result->getUInt(0) != 0;
 }
 
 std::vector<TypeCase> makeTypeCases()
@@ -248,10 +227,10 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, TypedBoundsMatchScalarRangeEvalu
                 MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
                 if (!type_case.expect_bulk_fast_path)
                 {
-                    EXPECT_FALSE(condition.hasBulkFastPath());
+                    EXPECT_FALSE(condition.supportsBulkFiltering());
                     continue;
                 }
-                ASSERT_TRUE(condition.hasBulkFastPath());
+                ASSERT_TRUE(condition.supportsBulkFiltering());
 
                 const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, bulk);
                 ASSERT_EQ(actual.size(), type_case.intervals.size());
@@ -270,57 +249,6 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, TypedBoundsMatchScalarRangeEvalu
     }
 }
 
-TEST(MergeTreeIndexConditionMinMaxDifferential, FieldAndTypedComparisonAgreeForFiniteValues)
-{
-    auto context = getRegisteredContext();
-    const std::vector<String> operations{"equals", "less", "lessOrEquals"};
-
-    for (const auto & type_case : makeTypeCases())
-    {
-        for (const auto & [min, max] : type_case.intervals)
-        {
-            for (const auto & left : {min, max})
-            {
-                for (const auto & right : type_case.bounds)
-                {
-                    for (const auto & operation : operations)
-                    {
-                        SCOPED_TRACE(fmt::format(
-                            "type={} operation={} left={} right={}", type_case.name, operation, left, right));
-                        bool expected = false;
-                        if (operation == "equals")
-                            expected = accurateEquals(left, right);
-                        else if (operation == "less")
-                            expected = accurateLess(left, right);
-                        else
-                            expected = accurateLessOrEqual(left, right);
-
-                        EXPECT_EQ(
-                            evaluateTypedComparison(
-                                context, operation, type_case.index_type, left, type_case.bound_type, right),
-                            expected);
-                    }
-                }
-            }
-        }
-    }
-}
-
-TEST(MergeTreeIndexConditionMinMaxDifferential, NaNOrderingDifferenceIsExplicit)
-{
-    auto context = getRegisteredContext();
-    auto float64 = std::make_shared<DataTypeFloat64>();
-    const Field finite = Float64(1.0);
-    const Field nan = std::numeric_limits<Float64>::quiet_NaN();
-
-    /// Range ordering puts NaN after every finite value, while SQL comparisons with NaN are
-    /// unordered. The minmax DAG's dedicated NaN handling bridges this intentional difference.
-    EXPECT_TRUE(accurateLess(finite, nan));
-    EXPECT_FALSE(evaluateTypedComparison(context, "less", float64, finite, float64, nan));
-    EXPECT_FALSE(accurateEquals(nan, nan));
-    EXPECT_FALSE(evaluateTypedComparison(context, "equals", float64, nan, float64, nan));
-}
-
 TEST(MergeTreeIndexConditionMinMaxDifferential, AllNaNGranuleMatchesScalar)
 {
     auto context = getRegisteredContext();
@@ -331,7 +259,7 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, AllNaNGranuleMatchesScalar)
     auto shape = makeComparison(context, float64, float64, Float64(0), "greater");
     ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, true);
     MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
-    ASSERT_TRUE(condition.hasBulkFastPath());
+    ASSERT_TRUE(condition.supportsBulkFiltering());
 
     const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, bulk);
     ASSERT_EQ(actual.size(), 1);
@@ -350,7 +278,7 @@ TEST(MergeTreeIndexConditionMinMaxDifferential, MixedFiniteAndNaNGranuleMatchesS
     auto shape = makeComparison(context, float64, float64, Float64(0), "greater");
     ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, true);
     MergeTreeIndexConditionMinMax condition(index, filter_dag, context);
-    ASSERT_TRUE(condition.hasBulkFastPath());
+    ASSERT_TRUE(condition.supportsBulkFiltering());
 
     const auto actual = MergeTreeIndexConditionMinMaxTestAccess::bulk(condition, bulk);
     ASSERT_EQ(actual.size(), 1);

@@ -550,11 +550,12 @@ static void setDirectComparison(
     if (!op || !type)
         return;
 
-    /// A non-NULL constant does not need Nullable or LowCardinality wrappers.
-    const auto constant_type = value.isNull() ? type : removeLowCardinalityAndNullable(type);
+    /// `extractAtomFromTree` does not build an atom from a NULL constant, so the constant needs
+    /// neither Nullable nor LowCardinality wrappers.
+    chassert(!value.isNull());
     element.direct_comparison = KeyCondition::RPNElement::DirectComparison{
         *op,
-        std::make_shared<ConstantValue>(value, constant_type),
+        std::make_shared<ConstantValue>(value, removeLowCardinalityAndNullable(type)),
     };
 }
 
@@ -1828,7 +1829,7 @@ bool KeyCondition::getConstant(const ASTPtr & expr, Block & block_with_constants
 
 bool KeyCondition::hasOnlyConjunctions() const
 {
-    return std::ranges::none_of(rpn, [](RPNElement element) { return element.function == RPNElement::FUNCTION_OR; });
+    return std::ranges::none_of(rpn, [](const RPNElement & element) { return element.function == RPNElement::FUNCTION_OR; });
 }
 
 bool KeyCondition::everyDisjunctionIsOverUnownedLeaves() const

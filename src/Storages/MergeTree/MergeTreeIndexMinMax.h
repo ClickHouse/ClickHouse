@@ -68,13 +68,12 @@ public:
     /// Evaluate a columnar batch and return its surviving granule numbers.
     FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr & idx_granules) const override;
 
-    /// Whether this condition can be evaluated in bulk.
-    bool hasBulkFastPath() const { return minmax_actions != nullptr; }
+    /// Only when the RPN is lowered to `minmax_actions`, which requires `use_minmax_index_bulk_filtering`.
+    bool supportsBulkFiltering() const override { return minmax_actions != nullptr; }
 
     /// Bulk omits per-leaf partial-disjunction bits, so it is compatible only when
     /// this index owns no leaf below an OR.
-    bool bulkPreservesDisjunctionPrecision() const { return condition.everyDisjunctionIsOverUnownedLeaves(); }
-
+    bool bulkFilteringPreservesPartialDisjunctions() const override { return condition.everyDisjunctionIsOverUnownedLeaves(); }
 
     ~MergeTreeIndexConditionMinMax() override = default;
 private:
@@ -99,8 +98,8 @@ public:
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
 
-    /// Bulk filtering: see MergeTreeIndexBulkGranulesMinMaxColumnar. The caller (filterMarksUsingIndex)
-    /// additionally gates this on the `use_minmax_index_bulk_filtering` setting.
+    /// Bulk filtering: see `MergeTreeIndexBulkGranulesMinMaxColumnar`. Whether a query uses it is decided by
+    /// `MergeTreeIndexConditionMinMax::supportsBulkFiltering`.
     bool supportsBulkFiltering() const override { return true; }
     MergeTreeIndexBulkGranulesPtr createIndexBulkGranules() const override;
 
@@ -130,10 +129,10 @@ struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBu
     explicit MergeTreeIndexBulkGranulesMinMaxColumnar(const Block & index_sample_block);
     void deserializeBinary(size_t granule_num, ReadBuffer & istr, MergeTreeIndexVersion version) override;
     /// Optimized bulk read for fast-kind columns: one virtual call per chunk (instead of per
-    /// granule) and a tight inner `readPODBinary` loop. For columns whose `fast_kind` is
+    /// granule) and a tight inner `readBinaryLittleEndian` loop. For columns whose `fast_kind` is
     /// `None` (Nullable, Decimal, DateTime64, UUID, String, ...) this falls back to
     /// looping over the per-granule `deserializeBinary`.
-    void deserializeBinaryBulk(size_t count, ReadBuffer & istr, MergeTreeIndexVersion version) override;
+    void deserializeBinaryBulk(size_t first_granule_num, size_t count, ReadBuffer & istr, MergeTreeIndexVersion version) override;
 
     /// Native type used by the raw-byte read path; `None` uses normal deserialization.
     enum class FastKind : UInt8
@@ -156,7 +155,12 @@ struct MergeTreeIndexBulkGranulesMinMaxColumnar final : public IMergeTreeIndexBu
     Serializations serializations;
     FormatSettings format_settings;
     std::vector<PerColumn> cols;
+    /// Granules are consecutive: row `i` of the columns holds granule `first_granule + i`.
+    size_t first_granule = 0;
     size_t size() const { return cols.empty() ? 0 : cols.front().min_col->size(); }
+
+private:
+    void startGranules(size_t granule_num);
 };
 
 struct MergeTreeIndexBulkGranulesMinMax final : public IMergeTreeIndexBulkGranules

@@ -2710,20 +2710,10 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     }
 
     /// Whether we should use a more optimal filtering.
-    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering && index_helper->supportsBulkFiltering() && !use_skip_indexes_for_disjunctions;
-
-    /// Minmax bulk filtering has its own setting and supports only lowerable conditions.
-    /// With partial disjunctions, this index must own no leaf below an OR.
-    if (typeid_cast<const MergeTreeIndexMinMax *>(index_helper.get()))
-    {
-        const auto * minmax_condition = typeid_cast<const MergeTreeIndexConditionMinMax *>(condition.get());
-        bulk_filtering
-            = reader_settings.secondary_indices_enable_bulk_filtering
-            && reader_settings.use_minmax_index_bulk_filtering
-            && minmax_condition
-            && minmax_condition->hasBulkFastPath()
-            && (!use_skip_indexes_for_disjunctions || minmax_condition->bulkPreservesDisjunctionPrecision());
-    }
+    bool bulk_filtering = reader_settings.secondary_indices_enable_bulk_filtering
+        && index_helper->supportsBulkFiltering()
+        && condition->supportsBulkFiltering()
+        && (!use_skip_indexes_for_disjunctions || condition->bulkFilteringPreservesPartialDisjunctions());
 
     auto skip_index_granularity = index_helper->index.granularity;
     const auto & index_granularity = part_info->getIndexGranularity();
@@ -2882,7 +2872,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
         /// evaluation rejects. Adjacent survivors still merge when the threshold is zero.
         const size_t bulk_min_marks_for_seek = use_skip_indexes_for_disjunctions ? 0 : min_marks_for_seek;
 
-        /// `getPossibleGranules` returns chunk-local indices in ascending order.
+        /// `getPossibleGranules` returns index marks in ascending order.
         for (size_t i = 0; i < ranges_size; ++i)
         {
             const MarkRange & index_range = index_ranges[i];
@@ -2900,9 +2890,8 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
                 /// part (as opposed to silently falling back to the per-granule scalar path).
                 ProfileEvents::increment(ProfileEvents::IndexBulkFilteringEvaluatedGranules, chunk_end - chunk_begin);
 
-                for (size_t local_idx : condition->getPossibleGranules(chunk_granules))
+                for (size_t index_mark : condition->getPossibleGranules(chunk_granules))
                 {
-                    const size_t index_mark = chunk_begin + local_idx;
                     MarkRange data_range(
                         std::max(ranges[i].begin, index_mark * skip_index_granularity),
                         std::min(ranges[i].end, (index_mark + 1) * skip_index_granularity));
