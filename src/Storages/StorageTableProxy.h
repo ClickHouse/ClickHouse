@@ -165,6 +165,13 @@ public:
     }
 
     /// A table nothing has touched is not loaded, so there is nothing to ask.
+    void checkTableCanBeRenamed(const StorageID & new_name) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->checkTableCanBeRenamed(new_name);
+    }
+
     void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
     {
         std::lock_guard lock{nested_mutex};

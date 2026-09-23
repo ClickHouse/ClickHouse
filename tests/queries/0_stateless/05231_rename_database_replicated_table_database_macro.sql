@@ -49,9 +49,11 @@ SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String}
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound TO {CLICKHOUSE_DATABASE_1:Identifier}.lazy_moved; -- { serverError NOT_IMPLEMENTED }
 SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
--- Loaded, the table answers for itself.
+-- Loaded, the table answers for itself, for both renames.
 SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
+RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound TO {CLICKHOUSE_DATABASE_1:Identifier}.lazy_moved; -- { serverError NOT_IMPLEMENTED }
+SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
 -- The renames left nothing behind under either name.
