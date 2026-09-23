@@ -152,12 +152,17 @@ BlockIO InterpreterUpdateQuery::execute()
                 visitor.substituteDatabaseInTableFunctions(*update_query.predicate);
             if (update_query.assignments)
                 visitor.substituteDatabaseInTableFunctions(*update_query.assignments);
-
-            checkNoRowPolicyForSetOperands(query_ptr, resolved_table_id.database_name, getContext());
         }
 
         DDLQueryOnClusterParams params;
         params.access_to_check = std::move(required_access);
+        if (resolved_table_id)
+        {
+            params.additional_access_check = [captured_query_ptr = query_ptr, resolved_table_id, context = getContext()]
+            {
+                checkNoRowPolicyForSetOperands(captured_query_ptr, resolved_table_id.database_name, context);
+            };
+        }
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 

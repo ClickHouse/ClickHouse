@@ -490,17 +490,22 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
-
-            for (const auto & child : alter.command_list->children)
-            {
-                const auto & command = child->as<const ASTAlterCommand &>();
-                if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
-                    checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
-            }
         }
 
         DDLQueryOnClusterParams params;
         params.access_to_check = getRequiredAccess(table);
+        if (table_id)
+        {
+            params.additional_access_check = [captured_query_ptr = query_ptr, table_id, context = getContext()]
+            {
+                for (const auto & child : captured_query_ptr->as<const ASTAlterQuery &>().command_list->children)
+                {
+                    const auto & command = child->as<const ASTAlterCommand &>();
+                    if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+                        checkNoRowPolicyForSetOperands(child, table_id.database_name, context);
+                }
+            };
+        }
         return executeDDLQueryOnCluster(query_ptr, getContext(), params);
     }
 

@@ -31,6 +31,14 @@ def assert_set_policy_error(error, table):
     assert "because a row policy applies to it" in error
 
 
+def assert_privilege_error(error, privilege, table=None):
+    assert "ACCESS_DENIED" in error
+    assert privilege in error
+    if table:
+        assert table in error
+    assert "because a row policy applies to it" not in error
+
+
 def test_worker_checks_set_row_policy(started_cluster):
     for node in (initiator, worker):
         node.query("CREATE TABLE set_rp (k UInt64) ENGINE = Set")
@@ -139,11 +147,43 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
         "GRANT ALTER DELETE, ALTER UPDATE ON default.cluster_data_rp "
         "TO cluster_mutator_role"
     )
-    initiator.query("GRANT SELECT ON default.cluster_set_rp TO cluster_mutator_role")
     initiator.query(
         "CREATE ROW POLICY cluster_set_rp_filter ON cluster_set_rp "
         "USING k = 1 TO cluster_mutator_role"
     )
+
+    source_access_error = initiator.query_and_get_error(
+        "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
+        "DELETE WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+    )
+    assert_privilege_error(source_access_error, "SELECT", "default.cluster_set_rp")
+
+    initiator.query("GRANT SELECT ON default.cluster_set_rp TO cluster_mutator_role")
+    initiator.query(
+        "REVOKE ALTER DELETE ON default.cluster_data_rp FROM cluster_mutator_role"
+    )
+    target_access_error = initiator.query_and_get_error(
+        "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
+        "DELETE WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+    )
+    assert_privilege_error(
+        target_access_error, "ALTER DELETE", "default.cluster_data_rp"
+    )
+    initiator.query(
+        "GRANT ALTER DELETE ON default.cluster_data_rp TO cluster_mutator_role"
+    )
+
+    initiator.query("REVOKE CLUSTER ON *.* FROM cluster_mutator_role")
+    cluster_access_error = initiator.query_and_get_error(
+        "UPDATE cluster_data_rp ON CLUSTER cluster "
+        "SET v = v + 1 WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+        settings={"enable_lightweight_update": 1},
+    )
+    assert_privilege_error(cluster_access_error, "CLUSTER")
+    initiator.query("GRANT CLUSTER ON *.* TO cluster_mutator_role")
 
     alter_error = initiator.query_and_get_error(
         "ALTER TABLE cluster_data_rp ON CLUSTER cluster "

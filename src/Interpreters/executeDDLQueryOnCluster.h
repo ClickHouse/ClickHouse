@@ -6,6 +6,8 @@
 #include <Parsers/IAST_fwd.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 
+#include <functional>
+
 
 namespace zkutil
 {
@@ -36,6 +38,9 @@ struct DDLQueryOnClusterParams
 
     /// Privileges which the current user should have to execute a query.
     AccessRightsElements access_to_check;
+
+    /// An authorization check which must run after the standard cluster and query checks but before enqueueing.
+    std::function<void()> additional_access_check;
 
     /// Use retries when creating nodes "query-0000000000", "query-0000000001", "query-0000000002" in ZooKeeper.
     ZooKeeperRetriesInfo retries_info;

@@ -46,9 +46,11 @@
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Processors/Sources/ThrowingExceptionSource.h>
 #include <Analyzer/FunctionNode.h>
+#include <Analyzer/Identifier.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/Resolve/IdentifierResolver.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 #include <Analyzer/Resolve/QueryAnalyzer.h>
@@ -125,11 +127,12 @@ void checkNoRowPolicyForSetOperands(const ASTPtr & mutation_ast, const String & 
             && function->arguments->children.size() == 2)
         {
             const auto & right_operand = function->arguments->children[1];
-            if (right_operand->as<ASTTableIdentifier>())
+            if (const auto * table_identifier = right_operand->as<ASTTableIdentifier>())
             {
-                auto table_id = context->resolveStorageID(right_operand);
-                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
-                if (auto * storage_set = storage ? dynamic_cast<StorageSet *>(storage.get()) : nullptr)
+                auto resolved = IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(
+                    Identifier(table_identifier->name_parts), context);
+                auto * table_node = resolved.resolved_identifier ? resolved.resolved_identifier->as<TableNode>() : nullptr;
+                if (auto * storage_set = table_node ? dynamic_cast<StorageSet *>(table_node->getStorage().get()) : nullptr)
                     storage_set->checkNoRowPolicy(context);
             }
         }
