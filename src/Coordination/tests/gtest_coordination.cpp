@@ -1515,7 +1515,7 @@ public:
 
     /// Seeds a batch with reads parked at `boundary` in `intermediate_reads`, the way
     /// `dispatchThread` does through `flush_to_intermediate_reads`: initialize at the fill site,
-    /// then move the reads into the batch, then `activate`, which is what classifies the prefix.
+    /// then move the reads into the batch, then `activate`.
     /// `InFlightBatch` documents 0 < next_request_idx < requests.size(); requests.size() is
     /// reserved for `late_reads`.
     static size_t seedIntermediateReads(
