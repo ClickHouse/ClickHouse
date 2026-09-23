@@ -25,6 +25,7 @@
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Cluster.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DDLTask.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -1521,9 +1522,10 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     DDLLogEntry entry;
-    /// Parser-only settings have already served their purpose on the initiator. Keep them out of the
-    /// normalized query text so older replicas do not reject settings they do not know about.
+    /// Initiator-only and parser-only settings have already served their purpose. Keep them out of the
+    /// normalized query text so replicas do not reapply them and older replicas do not reject unknown settings.
     auto query_to_enqueue = query->clone();
+    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_enqueue);
     removeSettingsFromQuery(query_to_enqueue, getDDLQueryParserOnlySettingNames());
     entry.query = query_to_enqueue->formatWithSecretsOneLine();
     entry.initiator = host_fqdn_id;

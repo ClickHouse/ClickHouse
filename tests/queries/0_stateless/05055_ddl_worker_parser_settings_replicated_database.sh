@@ -7,8 +7,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-DB="rdb_parser_settings_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-TABLE="ddl_queue_parser_settings"
+DB="ddl_worker_parser_settings_rdb_05055_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+TABLE="ddl_worker_parser_settings_replicated_database_05055"
 ZK_PATH="/clickhouse/databases/${CLICKHOUSE_TEST_ZOOKEEPER_PREFIX}/${DB}"
 
 cleanup()
@@ -34,6 +34,7 @@ ${CLICKHOUSE_CLIENT} \
             enable_json_ast_dialect = 1,
             implicit_select = 1,
             allow_settings_after_format_in_insert = 1,
+            database = 'system',
             join_use_nulls = 1"
 
 ${CLICKHOUSE_CLIENT} --query "
@@ -42,10 +43,12 @@ ${CLICKHOUSE_CLIENT} --query "
             'enable_json_ast_dialect',
             'implicit_select',
             'allow_settings_after_format_in_insert'
-        ] AS parser_settings
+        ] AS parser_settings,
+        ['database ='] AS initiator_only_settings
     SELECT
         count() = 1,
         countIf(NOT arrayExists(setting -> position(value, setting) > 0, parser_settings)) = count(),
+        countIf(NOT arrayExists(setting -> position(value, setting) > 0, initiator_only_settings)) = count(),
         countIf(position(value, 'join_use_nulls') > 0) = count()
     FROM system.zookeeper
     WHERE path = '${ZK_PATH}/log'

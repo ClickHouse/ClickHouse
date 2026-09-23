@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -euo pipefail
 
-TABLE="ddl_queue_parser_settings_05055"
+TABLE="ddl_worker_parser_settings_on_cluster_05055"
 
 cleanup()
 {
