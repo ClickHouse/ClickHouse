@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"enable_prometheus_remote_write_v2", false, false, "New setting to accept Prometheus Remote Write 2.0 (`io.prometheus.write.v2.Request`) on Prometheus write handlers. Added an alias `allow_experimental_prometheus_remote_write_v2`."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
@@ -141,7 +142,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
-            {"enable_prometheus_remote_write_v2", false, false, "New setting to accept Prometheus Remote Write 2.0 (`io.prometheus.write.v2.Request`) on Prometheus write handlers. Added an alias `allow_experimental_prometheus_remote_write_v2`."},
             {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
             {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
         });
