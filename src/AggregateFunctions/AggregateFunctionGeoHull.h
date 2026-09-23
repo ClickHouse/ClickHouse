@@ -1,5 +1,7 @@
 #pragma once
 
+#include <base/defines.h>
+
 #include <boost/geometry/core/access.hpp>
 #include <boost/multiprecision/cpp_int.hpp>
 
@@ -29,7 +31,7 @@ private:
 
     static_assert(std::numeric_limits<double>::is_iec559 && std::numeric_limits<double>::digits == 53);
 
-    [[gnu::noinline]] static int exactSign(const std::array<double, 6> & coordinates)
+    NO_INLINE static int exactSign(const std::array<double, 6> & coordinates)
     {
         std::array<uint64_t, 6> mantissas; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
         std::array<unsigned, 6> exponents; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - filled by the loop below before read
