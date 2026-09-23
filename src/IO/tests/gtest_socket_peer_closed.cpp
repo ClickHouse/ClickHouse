@@ -4,6 +4,8 @@
 
 #include <IO/SocketPeerClosed.h>
 
+#include <netinet/in.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -89,6 +91,43 @@ TEST(SocketPeerClosed, ClosedWithPendingDataThenDrain)
     /// Buffer drained, only the FIN remains, so report closed.
     EXPECT_EQ(SocketState::Closed, getSocketState(Socket{p.fds[0]}));
     EXPECT_TRUE(isSocketPeerClosed(Socket{p.fds[0]}));
+}
+
+TEST(SocketPeerClosed, PeerReset)
+{
+    /// A loopback TCP connection, because only TCP has a reset: an `AF_UNIX` socket pair can only
+    /// be closed in order.
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(listener, 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    socklen_t address_size = sizeof(address);
+    ASSERT_EQ(0, ::bind(listener, reinterpret_cast<const sockaddr *>(&address), address_size));
+    ASSERT_EQ(0, ::listen(listener, 1));
+    ASSERT_EQ(0, ::getsockname(listener, reinterpret_cast<sockaddr *>(&address), &address_size));
+
+    const int client = ::socket(AF_INET, SOCK_STREAM, 0);
+    ASSERT_GE(client, 0);
+    ASSERT_EQ(0, ::connect(client, reinterpret_cast<const sockaddr *>(&address), address_size));
+    const int accepted = ::accept(listener, nullptr, nullptr);
+    ASSERT_GE(accepted, 0);
+    ::close(listener);
+
+    EXPECT_EQ(SocketState::Idle, getSocketState(Socket{client}));
+
+    /// A zero linger timeout makes `close` abort the connection: the peer gets a reset, not a FIN.
+    const linger abort_on_close{.l_onoff = 1, .l_linger = 0};
+    ASSERT_EQ(0, ::setsockopt(accepted, SOL_SOCKET, SO_LINGER, &abort_on_close, sizeof(abort_on_close)));
+    ::close(accepted);
+
+    pollfd fd{.fd = client, .events = POLLIN, .revents = 0};
+    ASSERT_EQ(1, ::poll(&fd, 1, 5000));
+
+    /// A reset connection must not pass for an idle one, or a pool would hand it out again.
+    EXPECT_EQ(SocketState::Closed, getSocketState(Socket{client}));
+    EXPECT_TRUE(isSocketPeerClosed(Socket{client}));
+    ::close(client);
 }
 
 TEST(SocketPeerClosed, InvalidFd)
