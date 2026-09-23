@@ -2,6 +2,7 @@
 from helpers.iceberg_utils import get_uuid_str
 from .external_paths_utils import (
     ALL_ROWS,
+    _create_iceberg_s3_table,
     _rewrite_paths_to_local_uri,
     create_and_upload_table,
     external_bucket,
@@ -52,10 +53,19 @@ def test_same_bucket_external_path_requires_source_grant(started_cluster_iceberg
     minio_url = f"http://{started_cluster_iceberg_with_spark.minio_host}:{started_cluster_iceberg_with_spark.minio_port}"
     table_function = (f"icebergS3('{minio_url}/{base_bucket}/{base_path}/', "
                       f"'minio', 'ClickHouse_Minio_P@ssw0rd')")
+    _create_iceberg_s3_table(started_cluster_iceberg_with_spark, TABLE_NAME, base_path)
+
+    iceberg_files_query = (
+        f"SELECT file_path FROM system.iceberg_files "
+        f"WHERE database = 'default' AND table = '{TABLE_NAME}' AND content = 'DATA' ORDER BY file_path")
+    expected_paths = instance.query(iceberg_files_query)
+    assert expected_paths
 
     instance.query(f"DROP USER IF EXISTS {user}")
     instance.query(f"CREATE USER {user}")
     instance.query(f"GRANT CREATE TEMPORARY TABLE ON *.* TO {user}")
+    instance.query(f"GRANT SHOW TABLES ON {TABLE_NAME} TO {user}")
+    instance.query(f"GRANT SELECT ON system.iceberg_files TO {user}")
     instance.query(f"GRANT READ ON S3('{minio_url}/{base_bucket}/{base_path}/.*') TO {user}")
 
     error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id", user=user)
@@ -64,11 +74,15 @@ def test_same_bucket_external_path_requires_source_grant(started_cluster_iceberg
     error = instance.query_and_get_error(f"SELECT count() FROM {table_function}", user=user)
     assert "ACCESS_DENIED" in error, error
 
+    assert instance.query(iceberg_files_query, user=user) == ""
+
     instance.query(f"GRANT READ ON S3('s3a://{base_bucket}/{external_prefix}/.*') TO {user}")
     assert instance.query(f"SELECT * FROM {table_function} ORDER BY id", user=user) == ALL_ROWS
     assert instance.query(f"SELECT count() FROM {table_function}", user=user) == "3\n"
+    assert instance.query(iceberg_files_query, user=user) == expected_paths
 
     instance.query(f"DROP USER {user}")
+    instance.query(f"DROP TABLE {TABLE_NAME}")
 
 
 def test_external_local_file_requires_file_grant(started_cluster_iceberg_with_spark):
