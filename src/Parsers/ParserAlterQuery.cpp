@@ -1366,16 +1366,16 @@ When planning an `ALTER TABLE`, distinguish a metadata change from the work requ
 | `RENAME COLUMN` | No row rewrite, but it is an ordering barrier after earlier mutations. | Metadata wait follows `alter_sync`. | Earlier mutations and replica availability. |
 | `DROP COLUMN` | Removes column files; this is not purely a metadata change. | Metadata and mutation ordering apply. | Number and size of column files. |
 | `MODIFY COLUMN` default, comment, or representation-preserving type | No immediate rewrite. | Metadata wait follows `alter_sync`. | Metadata size and replica availability. |
-| Other `MODIFY COLUMN` type changes | A `READ_COLUMN` mutation rewrites the affected column in existing parts. | Asynchronous by default; `alter_sync` controls waiting. | Affected parts and bytes, conversion cost, and background load. |
+| Other `MODIFY COLUMN` type changes | A `READ_COLUMN` mutation rewrites the affected column in existing parts. | Wait behavior follows `alter_sync` (default `1`; Cloud default `0`). | Affected parts and bytes, conversion cost, and background load. |
 | `UPDATE`, `DELETE`, and `MATERIALIZE ...` | Background mutations rewrite affected parts. | Asynchronous by default; `mutations_sync` controls waiting. | Affected parts and bytes, and background load. |
 
 ## Synchronicity of ALTER Queries {#synchronicity-of-alter-queries}
 
-For non-replicated tables, all `ALTER` queries are performed synchronously. For replicated tables, the query just adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. However, the query can wait for these actions to be completed on all the replicas.
+By default, `ALTER` queries on non-replicated tables wait for their work to complete. With `alter_sync = 0`, an `ALTER` that performs background work can return before that work finishes. For replicated tables, the query adds instructions for the appropriate actions to `ZooKeeper`, and the actions themselves are performed as soon as possible. The query can wait for these actions to be completed on all replicas.
 
-For `ALTER` queries that creates mutations (e.g.: including, but not limited to `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, `MATERIALIZE STATISTIC`) the synchronicity is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting.
+For `ALTER` queries that create mutations through the mutation execution path (including, but not limited to, `UPDATE`, `DELETE`, `MATERIALIZE INDEX`, `MATERIALIZE PROJECTION`, `MATERIALIZE COLUMN`, `APPLY DELETED MASK`, `APPLY PATCHES`, `CLEAR STATISTIC`, and `MATERIALIZE STATISTIC`), synchronicity is defined by the [mutations_sync](/reference/settings/session-settings/mutations#mutations_sync) setting.
 
-For other `ALTER` queries which only modify the metadata, you can use the [alter_sync](/reference/settings/session-settings/alter#alter_sync) setting to set up waiting.
+For other `ALTER` queries, including `MODIFY COLUMN` rewrites, [alter_sync](/reference/settings/session-settings/alter#alter_sync) controls waiting.
 
 You can specify how long (in seconds) to wait for inactive replicas to execute all `ALTER` queries with the [replication_wait_for_inactive_replica_timeout](/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) setting.
 
@@ -1596,7 +1596,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 Some type changes are metadata-only because their on-disk representation is unchanged. These include extending an enum and conversions between `Date` and `UInt16` or between `DateTime` and `UInt32`; the same rule applies recursively inside `Array` and `Nullable` types. Some JSON type-hint changes and named-tuple additions can also avoid an immediate rewrite when the corresponding settings are enabled.
 
-Other type changes create a `READ_COLUMN` mutation that rewrites the affected column in existing parts. The mutation runs asynchronously by default. Use [`alter_sync`](/reference/settings/session-settings/alter#alter_sync) when the client must wait, and monitor progress in [`system.mutations`](/reference/system-tables/mutations).
+Other type changes create a `READ_COLUMN` mutation that rewrites the affected column in existing parts. Wait behavior follows [`alter_sync`](/reference/settings/session-settings/alter#alter_sync): it defaults to `1` in ClickHouse and to `0` in ClickHouse Cloud. Monitor progress in [`system.mutations`](/reference/system-tables/mutations).
 
 The query also can change the order of the columns using `FIRST | AFTER` clause, see [ADD COLUMN](#add-column) description, but column type is mandatory in this case.
 
