@@ -136,23 +136,6 @@ size_t automaticReaders(const SharedState & state)
     return 2;
 }
 
-/// The values of a column of a wide part, expanded on the host a piece at a time.
-class RawColumnReader
-{
-public:
-    RawColumnReader(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings)
-        : in(MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings))
-    {
-    }
-
-    /// Expands up to `room.size()` bytes into `room` and answers how many, none once the column is
-    /// read out.
-    size_t readInto(std::span<char> room) { return in.readBig(room.data(), room.size()); }
-
-private:
-    CompressedReadBufferFromFile in;
-};
-
 class GPUCompressedColumnsSource : public ISource
 {
 public:
@@ -178,12 +161,7 @@ protected:
         const DataPartPtr & part = state->parts[part_idx];
 
         MutableColumns result_columns = getPort().getHeader().cloneEmptyColumns();
-        if (result_columns.size() != state->columns.size())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "A row of {} per-part results does not fit an output header of {} columns",
-                state->columns.size(),
-                result_columns.size());
+        chassert(result_columns.size() == state->columns.size());
 
         for (size_t i = 0; i < state->columns.size(); ++i)
             result_columns[i]->insert(reduceColumn(*part, i));
@@ -192,10 +170,6 @@ protected:
     }
 
 private:
-    /// The accumulator of a column, and with it the staging and device buffers, outlives the part:
-    /// pinning host memory is a call into the driver, and a query over many parts must not make it
-    /// once per part.
-    /// The accumulator of a column takes either compressed blocks of one codec or plain values.
     struct ColumnAccumulator
     {
         std::optional<GPU::GPUCodec> codec;
@@ -238,11 +212,12 @@ private:
         else
         {
             accumulator = &accumulatorFor(column_idx, std::nullopt);
-            RawColumnReader reader(part, column.column, state->read_settings);
+            CompressedReadBufferFromFile reader(MergeTreeCompressedBlockReader::openColumnFile(part, column.column, state->read_settings));
 
             while (true)
             {
-                const size_t read = reader.readInto(accumulator->reserveRaw(raw_piece_bytes));
+                const std::span<char> room = accumulator->reserveRaw(raw_piece_bytes);
+                const size_t read = reader.readBig(room.data(), room.size());
                 accumulator->commitRaw(read);
                 if (read == 0)
                     break;
@@ -393,7 +368,7 @@ private:
     }
 
     /// Reads a column of a part as compressed blocks for the device to expand, or as values
-    /// expanded on the host.
+    /// expanded on the host, a piece at a time.
     struct ColumnReader
     {
         ColumnReader(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings, bool on_device)
@@ -402,11 +377,11 @@ private:
             if (on_device)
                 blocks.emplace(part, column, read_settings);
             else
-                raw.emplace(part, column, read_settings);
+                raw = std::make_unique<CompressedReadBufferFromFile>(MergeTreeCompressedBlockReader::openColumnFile(part, column, read_settings));
         }
 
         std::optional<MergeTreeCompressedBlockReader> blocks;
-        std::optional<RawColumnReader> raw;
+        std::unique_ptr<CompressedReadBufferFromFile> raw;
         size_t element_size;
         size_t bytes_read = 0;
         bool done = false;
@@ -491,7 +466,8 @@ private:
             ColumnReader & column = *readers[behind];
             if (column.raw)
             {
-                const size_t read = column.raw->readInto(accumulator.reserveRawBytes(reader_index, behind, raw_piece_bytes));
+                const std::span<char> room = accumulator.reserveRawBytes(reader_index, behind, raw_piece_bytes);
+                const size_t read = column.raw->readBig(room.data(), room.size());
                 accumulator.commitRawBytes(reader_index, behind, read);
                 if (read == 0)
                 {
