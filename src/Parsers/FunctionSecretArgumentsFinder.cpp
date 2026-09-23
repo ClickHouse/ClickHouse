@@ -313,11 +313,8 @@ void FunctionSecretArgumentsFinder::findMySQLFunctionSecretArguments()
     }
 }
 
-void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+void FunctionSecretArgumentsFinder::markNamedArgumentsWithUnreadableKeys(size_t start)
 {
-    for (const auto & key : tls_credentials_secret_keys)
-        findSecretNamedArgument(key, start);
-
     /// The named-collection parser does not require the key of a `key = value` argument to be a plain
     /// literal or identifier: `getKeyValueFromASTImpl` evaluates it as a constant expression, so
     /// `mysql(creds, concat('ssl_ca', '_pem') = 'SECRET', table = 't')` passes a TLS credential too.
@@ -338,6 +335,14 @@ void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t sta
 
         markSecretArgument(i, /* argument_is_named= */ true);
     }
+}
+
+void FunctionSecretArgumentsFinder::findTLSCredentialsSecretArguments(size_t start)
+{
+    for (const auto & key : tls_credentials_secret_keys)
+        findSecretNamedArgument(key, start);
+
+    markNamedArgumentsWithUnreadableKeys(start);
 }
 
 void FunctionSecretArgumentsFinder::findMongoDBSecretArguments()
@@ -383,8 +388,8 @@ void FunctionSecretArgumentsFinder::findRedisTableEngineSecretArguments()
 
     if (isNamedCollectionName(0))
     {
-        if (findSecretNamedArgument("password", 1))
-            return;
+        findSecretNamedArgument("password", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
     }
     else
     {
@@ -400,6 +405,7 @@ void FunctionSecretArgumentsFinder::findArrowFlightSecretArguments()
     {
         /// ArrowFlight(named_collection, ..., password = 'password')
         findSecretNamedArgument("password", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
     }
     else
     {
@@ -1002,7 +1008,15 @@ void FunctionSecretArgumentsFinder::findRedisFunctionSecretArguments()
 void FunctionSecretArgumentsFinder::findYTsaurusStorageTableEngineSecretArguments()
 {
     // YTsaurus('base_uri', 'yt_path', 'auth_token')
+    /// Formatting precedes argument validation, so argument 2 is hidden whatever argument 0 is.
     markSecretArgument(2);
+
+    if (isNamedCollectionName(0))
+    {
+        /// YTsaurus(named_collection, ..., oauth_token = 'token')
+        findSecretNamedArgument("oauth_token", 1);
+        markNamedArgumentsWithUnreadableKeys(1);
+    }
 }
 
 void FunctionSecretArgumentsFinder::findBigQuerySecretArguments()

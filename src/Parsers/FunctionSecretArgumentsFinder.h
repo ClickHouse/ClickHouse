@@ -219,6 +219,9 @@ protected:
     /// duplicate-key validation runs, so `session_token = 'a', session_token = 'b'` must hide both.
     bool findSecretNamedArgument(std::string_view key, size_t start = 0);
 
+    /// Hides the value of every `key = value` argument from `start` on whose key is not a plain literal.
+    void markNamedArgumentsWithUnreadableKeys(size_t start);
+
     /// Masks the secrets of an S3 named-collection form: the secret named overrides (every occurrence,
     /// in any order; the span covering them may hide a non-secret argument in between, which is safe)
     /// and the `headers(...)` / `extra_credentials(...)` map overrides.
