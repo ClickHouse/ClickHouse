@@ -1287,8 +1287,6 @@ CompressionCodecPtr getTextIndexDictionaryCodec(const String & codec_name, const
 
     auto codec = CompressionCodecFactory::instance().get(codec_name);
 
-    /// Replacing an encrypting default codec with a non-encrypting one would write the indexed tokens
-    /// in plaintext. The same rule guards the adaptive codec in MergeTreeDataPartWriterOnDisk.
     if (default_codec->isEncryption() && !codec->isEncryption())
         return default_codec;
 

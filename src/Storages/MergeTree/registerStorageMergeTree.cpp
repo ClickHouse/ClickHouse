@@ -1014,10 +1014,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 if (codec.empty())
                     return;
-                /// A replay must not re-judge a codec the initiator committed, and a full-definition
-                /// `ATTACH` replay passes `is_fresh_definition`, so all three replay terms are needed.
-                /// A value the definition omits is not committed: it comes from this node's own
-                /// `<merge_tree>` defaults, so the rule above still judges it on a replay.
+                /// A full-definition `ATTACH` replay passes `is_fresh_definition`, so the replay terms are needed too.
                 if ((is_ddl_replay || is_stored_definition || is_shared_catalog_replay) && is_stored_in_definition(name))
                     return;
                 if (is_fresh_definition || !is_stored_in_definition(name))
@@ -1070,11 +1067,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
-        /// A text index's `dictionary_compression_codec` argument names a codec the same way the settings
-        /// validated above do, so it goes through the same gate. `textIndexValidator` cannot do it: it runs
-        /// from the table constructor and has no access to the query settings the gate reads.
-        /// The replay terms are the ones the statistics check above already applies, for the same reason:
-        /// a replica refusing a definition the initiator committed would retry its queue entry forever.
+        /// `textIndexValidator` cannot apply this gate: it has no access to the query settings the gate reads.
         if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE
             && is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay)
         {

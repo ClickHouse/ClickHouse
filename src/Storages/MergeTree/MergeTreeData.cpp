@@ -5674,8 +5674,7 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
             if (codec.empty())
                 continue;
 
-            /// A secondary replay does not re-judge a value the initiator committed. A `RESET SETTING`
-            /// value is not one: it comes from this node's own config defaults, so it is still judged.
+            /// A `RESET SETTING` value comes from this node's own config defaults, not from the initiator.
             if (is_secondary_replay && command.type == AlterCommand::MODIFY_SETTING)
                 continue;
 
@@ -6309,11 +6308,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    /// A text index's `dictionary_compression_codec` argument names a codec, so it goes through the same gate
-    /// as the codec-valued settings checked earlier in this function.
-    /// Only a value this ALTER introduces is judged. `commands.apply` above produced the effective metadata,
-    /// so a command that installs nothing (`ADD INDEX IF NOT EXISTS` naming an index that already exists)
-    /// leaves nothing to check, and a codec the table already carries was gated when it was introduced.
     if (!is_secondary_replay)
     {
         for (const auto & index : new_metadata.secondary_indices)

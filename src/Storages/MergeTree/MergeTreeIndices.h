@@ -440,10 +440,7 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-/// Returns the `dictionary_compression_codec` argument of a text index definition, if it names one.
-/// Returns nullopt for any other index type, and for a definition whose arguments cannot be parsed:
-/// reporting malformed text index arguments belongs to `textIndexValidator`, which runs later and
-/// produces the canonical message, not to a caller that only wants to know about this one argument.
+/// Returns nullopt for any index type other than `text`, and for a definition whose arguments do not parse.
 std::optional<String> getTextIndexDictionaryCodecArgument(const IndexDescription & index);
 
 String getIndexFileName(const String & index_name, bool escape_filename);

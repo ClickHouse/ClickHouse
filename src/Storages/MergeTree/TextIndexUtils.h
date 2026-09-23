@@ -227,15 +227,11 @@ std::unique_ptr<MergeTreeReaderStream> makeTextIndexInputStream(
     const String & extension,
     const MergeTreeReaderSettings & reader_settings);
 
-/// Resolves the codec of a text index's dictionary substream from `text_index_dictionary_compression_codec`.
 /// An empty name means the part's default codec. An encrypting default codec is never replaced by a
 /// non-encrypting one, because the dictionary stores the indexed tokens.
 CompressionCodecPtr getTextIndexDictionaryCodec(const String & codec_name, const CompressionCodecPtr & default_codec);
 
-/// The dictionary codec of a TEMPORARY text index segment. A temporary segment is read once by the
-/// merge that consumes it and never by a query, so it keeps the part default codec. The exception is
-/// a dictionary codec that encrypts where the default does not: the temporary copy takes it too, so
-/// it is never less protected than the part it feeds.
+/// A temporary segment is read only by the merge that consumes it, so it keeps the part default codec.
 CompressionCodecPtr getTextIndexTemporarySegmentDictionaryCodec(
     const CompressionCodecPtr & dictionary_codec, const CompressionCodecPtr & default_codec);
 

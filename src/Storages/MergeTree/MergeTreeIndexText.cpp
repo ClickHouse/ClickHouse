@@ -2359,8 +2359,7 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     String dictionary_compression_codec = extractFieldOption<String>(options, ARGUMENT_DICTIONARY_COMPRESSION_CODEC)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_compression_codec].toString());
 
-    /// Rejects an unknown codec name, and a lossy codec: the dictionary has no column data type, so the
-    /// codec is built with a null type, and `get` refuses a lossy codec in that context.
+    /// Called for its exceptions: an unknown codec name, or a lossy one, refused for a null data type.
     if (!dictionary_compression_codec.empty())
         CompressionCodecFactory::instance().get(dictionary_compression_codec);
 
@@ -2455,9 +2454,6 @@ std::optional<String> getTextIndexDictionaryCodecArgument(const IndexDescription
     }
     catch (const Exception &)
     {
-        /// Arguments that do not parse are reported by `textIndexValidator`, which runs later and
-        /// produces the canonical message. Reporting them from here would attribute a malformed
-        /// definition to whichever caller happened to ask about this one argument.
         return {};
     }
 }

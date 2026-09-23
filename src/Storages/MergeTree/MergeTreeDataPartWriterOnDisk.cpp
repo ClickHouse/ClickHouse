@@ -187,8 +187,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         /// through MergeTextIndexesTask which writes standalone files.
         const bool packs_this_index = packing_enabled && text_index == nullptr;
 
-        /// Each text index resolves its own dictionary codec, because the argument that selects it
-        /// belongs to the index definition.
         CompressionCodecPtr text_index_dictionary_codec = text_index
             ? getTextIndexDictionaryCodec(text_index->getParams().dictionary_compression_codec, default_codec)
             : default_codec;
