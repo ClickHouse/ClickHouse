@@ -497,6 +497,15 @@ protected:
                 Traits::updateQueue(queue, settings, unit);
         }
 
+        /// Fails everything the queue still holds; a detached queue cannot process removals.
+        void purgeQueue()
+        {
+            if (!queue)
+                return;
+            detach(queue);
+            Traits::purgeQueue(queue);
+        }
+
     private:
         void removeQueue()
         {
@@ -644,6 +653,8 @@ public:
     ~WorkloadNodeCommon() override
     {
         /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        /// Their owners would wait forever for the removal a detached queue never processes.
+        impl.branch.purgeQueue();
         forEachSchedulerNode([](ISchedulerNode * node) { node->workload = nullptr; });
     }
 
