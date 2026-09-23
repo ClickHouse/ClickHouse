@@ -68,7 +68,9 @@ $CLICKHOUSE_CLIENT -q "SELECT * FROM ${TABLE} ORDER BY c0"
 
 mv "${TABLE_PATH}/v1.json" "${TABLE_PATH}/_delta_log/00000000000000000001.json"
 
-# The client forwards the server's own log record for the failed query, so the error name
+# The client forwards the server's own log record for the failed query, so each fragment
 # reaches stderr twice.
-$CLICKHOUSE_CLIENT -q "SELECT * FROM ${TABLE} ORDER BY c0" 2>&1 | grep -m1 -oF "INCORRECT_DATA"
+DRIFT_ERROR=$($CLICKHOUSE_CLIENT -q "SELECT * FROM ${TABLE} ORDER BY c0" 2>&1)
+echo "${DRIFT_ERROR}" | grep -m1 -oF "INCORRECT_DATA"
+echo "${DRIFT_ERROR}" | grep -m1 -oF "Column c1 is not present in the DeltaLake table schema"
 $CLICKHOUSE_CLIENT -q "SELECT c0 FROM ${TABLE} ORDER BY c0"

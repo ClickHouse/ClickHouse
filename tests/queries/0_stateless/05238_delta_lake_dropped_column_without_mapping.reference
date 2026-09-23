@@ -2,6 +2,7 @@
 1	10
 2	20
 INCORRECT_DATA
+Column c1 is not present in the DeltaLake table schema
 0
 1
 2
