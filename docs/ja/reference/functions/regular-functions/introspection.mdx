@@ -47,10 +47,6 @@ ClickHouseサーバープロセス内の仮想メモリアドレスを、ClickHo
 * `clickhouse-common-static-dbg` パッケージをインストールします。
 * 設定 [`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) を `1` に設定します。
 
-<Note>
-  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
-</Note>
-
 **構文**
 
 ```sql
@@ -71,7 +67,7 @@ addressToLine(address_of_binary_instruction)
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
@@ -91,7 +87,7 @@ trace:                   [140658411141617,94784174532828,94784076370703,94784076
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToLine(94784076370703) FORMAT Vertical;
+SELECT addressToLine(94784076370703) \G;
 ```
 
 ```response title=Response
@@ -110,7 +106,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> addressToLine(x), trace), '\n') AS trace_source_code_lines
 FROM system.trace_log
 LIMIT 1
-FORMAT Vertical;
+\G
 ```
 
 ```response title=Response
@@ -139,10 +135,6 @@ trace_source_code_lines: /lib/x86_64-linux-gnu/libpthread-2.27.so
 
 * `clickhouse-common-static-dbg` パッケージをインストールします。
 * 設定 [`allow_introspection_functions`](/ja/reference/settings/session-settings/allow#allow_introspection_functions) の値を `1` に設定します。
-
-<Note>
-  この関数は非決定論的です。同じ引数に対して異なる結果を返す場合があります。
-</Note>
 
 **構文**
 
@@ -240,10 +232,6 @@ WHERE
 
 ClickHouseサーバープロセス内の仮想メモリアドレスを、ClickHouseのオブジェクトファイル内のシンボルに変換します。
 
-<Note>
-  この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
-</Note>
-
 **構文**
 
 ```sql
@@ -264,11 +252,11 @@ ClickHouse のオブジェクトファイル内のシンボルを返します。
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
--- The `trace` field contains the stack trace at the moment of sampling.
+-- `trace` フィールドには、サンプリング時点のスタックトレースが含まれています。
 Row 1:
 ──────
 event_date:    2019-11-20
@@ -284,7 +272,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT addressToSymbol(94138803686098) FORMAT Vertical;
+SELECT addressToSymbol(94138803686098) \G;
 ```
 
 ```response title=Response
@@ -298,14 +286,14 @@ addressToSymbol(94138803686098): _ZNK2DB24IAggregateFunctionHelperINS_20Aggregat
 ```sql title=Query
 SET allow_introspection_functions=1;
 
--- The arrayMap function allows to process each individual element of the trace array by the addressToSymbols function.
--- The result of this processing is shown in the trace_symbols column of output.
+-- arrayMap関数を使用して、trace配列の各要素をaddressToSymbols関数で処理します。
+-- この処理の結果は、出力のtrace_symbolsカラムに表示されます。
 
 SELECT
     arrayStringConcat(arrayMap(x -> addressToSymbol(x), trace), '\n') AS trace_symbols
 FROM system.trace_log
 LIMIT 1
-FORMAT Vertical;
+\G
 ```
 
 ```response title=Response
@@ -360,7 +348,7 @@ C++ 関数名を返します。シンボルが無効な場合は空文字列を�
 **`trace_log` システムテーブルから最初の文字列を取得する**
 
 ```sql title=Query
-SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.trace_log LIMIT 1 \G;
 ```
 
 ```response title=Response
@@ -380,7 +368,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
 
 ```sql title=Query
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
+SELECT demangle(addressToSymbol(94138803686098)) \G;
 ```
 
 ```response title=Response
@@ -401,7 +389,7 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-FORMAT Vertical;
+\G
 ```
 
 ```response title=Response

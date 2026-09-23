@@ -31,6 +31,7 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTExplainQuery.h>
 #include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTForeignKeyDeclaration.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTIdentifier.h>
@@ -57,7 +58,6 @@
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTShowColumnsQuery.h>
-#include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ASTStreamSettings.h>
@@ -202,7 +202,6 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"SystemQuery", [] { return make_intrusive<ASTSystemQuery>(); }},
         {"ShowTablesQuery", [] { return make_intrusive<ASTShowTablesQuery>(); }},
         {"ShowColumnsQuery", [] { return make_intrusive<ASTShowColumnsQuery>(); }},
-        {"ShowIndexesQuery", [] { return make_intrusive<ASTShowIndexesQuery>(); }},
         {"KillQueryQuery", [] { return make_intrusive<ASTKillQueryQuery>(); }},
         {"OptimizeQuery", [] { return make_intrusive<ASTOptimizeQuery>(); }},
         {"DeleteQuery", [] { return make_intrusive<ASTDeleteQuery>(); }},
@@ -224,6 +223,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"Assignment", [] { return make_intrusive<ASTAssignment>(); }},
         {"TableOverride", [] { return make_intrusive<ASTTableOverride>(); }},
         {"TableOverrideList", [] { return make_intrusive<ASTTableOverrideList>(); }},
+        {"ForeignKeyDeclaration", [] { return make_intrusive<ASTForeignKeyDeclaration>(); }},
         {"IdentifierTypePair", [] { return make_intrusive<ASTIdentifierTypePair>(); }},
     };
 
