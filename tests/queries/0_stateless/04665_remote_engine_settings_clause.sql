@@ -28,11 +28,15 @@ SYSTEM FLUSH LOGS query_log;
 
 -- The query that overrides the storage setting names it explicitly, so it is the one carrying
 -- `skip_unavailable_shards` in `Settings`; the others inherit it from the storage.
+-- Each side reads its latest row only, so an earlier execution against the same database cannot
+-- answer for this one.
 SELECT skipped > 0, not_skipped = 0 FROM
 (
     SELECT
-        maxIf(ProfileEvents['DistributedShardsSkipped'], not has(Settings, 'skip_unavailable_shards')) AS skipped,
-        maxIf(ProfileEvents['DistributedShardsSkipped'], Settings['skip_unavailable_shards'] = '0') AS not_skipped
+        argMaxIf(ProfileEvents['DistributedShardsSkipped'], event_time_microseconds,
+                 not has(Settings, 'skip_unavailable_shards')) AS skipped,
+        argMaxIf(ProfileEvents['DistributedShardsSkipped'], event_time_microseconds,
+                 Settings['skip_unavailable_shards'] = '0') AS not_skipped
     FROM system.query_log
     WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
       AND query LIKE '%FROM remote_engine_with_settings%'
@@ -51,12 +55,11 @@ SYSTEM FLUSH LOGS query_log;
 -- `log_comment` rather than its text. Naming `log_comment` does not name `skip_unavailable_shards`,
 -- which the query still inherits from the reattached storage, so the skip it reports is the persisted
 -- setting being applied.
-SELECT skipped > 0 FROM
-(
-    SELECT max(ProfileEvents['DistributedShardsSkipped']) AS skipped
-    FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
-      AND log_comment = '04665_after_attach'
-);
+SELECT ProfileEvents['DistributedShardsSkipped'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'ExceptionWhileProcessing'
+  AND log_comment = '04665_after_attach'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP TABLE remote_engine_with_settings;

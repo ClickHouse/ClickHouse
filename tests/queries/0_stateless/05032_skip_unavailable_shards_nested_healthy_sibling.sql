@@ -45,17 +45,20 @@ SETTINGS prefer_localhost_replica = 0, skip_unavailable_shards = 1,
 -- The tolerant mode skips the nested shard and keeps them.
 SELECT count() FROM shard_0.outer_05032
 SETTINGS prefer_localhost_replica = 0, skip_unavailable_shards = 1,
-         skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing';
+         skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing',
+         log_comment = '05032_outer_tolerant';
 
 -- One outer shard skipped, so the outer query did not adopt the inner error as its own. The strict
 -- modes above skip none and report it instead, which the row count alone does not distinguish.
+-- The query is named by its `log_comment` and only its latest row is read, so an earlier execution
+-- against the same database neither adds a row here nor answers for this one.
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['DistributedShardsSkipped']
 FROM system.query_log
 WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
-  AND query LIKE '%FROM shard\_0.outer\_05032%'
-  AND query LIKE '%unavailable\_or\_exception\_before\_processing%'
-  AND query NOT LIKE '%system.query\_log%';
+  AND log_comment = '05032_outer_tolerant'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
 
 DROP DATABASE shard_0;
 DROP DATABASE shard_1;

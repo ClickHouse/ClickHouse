@@ -8,6 +8,9 @@
 DROP TABLE IF EXISTS dist_05031_all_dead;
 DROP TABLE IF EXISTS dist_05031_partial;
 DROP TABLE IF EXISTS dist_05031_mixed;
+DROP TABLE IF EXISTS dist_05031_inner;
+DROP TABLE IF EXISTS dist_05031_outer;
+DROP TABLE IF EXISTS dist_05031_reachable;
 DROP TABLE IF EXISTS data_05031;
 
 CREATE TABLE data_05031 (c0 UInt64) ENGINE = MergeTree() PRIMARY KEY tuple();
@@ -100,9 +103,11 @@ SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_num = 1; -- { 
 SELECT count() > 0 FROM (EXPLAIN PLAN SELECT count() FROM dist_05031_all_dead) SETTINGS skip_unavailable_shards = 1;
 SELECT count() > 0 FROM (EXPLAIN PIPELINE SELECT count() FROM dist_05031_all_dead) SETTINGS skip_unavailable_shards = 1;
 SELECT count() > 0 FROM (EXPLAIN PLAN distributed = 1 SELECT count() FROM dist_05031_all_dead)
-SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_num = 1, serialize_query_plan = 0;
+SETTINGS skip_unavailable_shards = 1, max_skip_unavailable_shards_num = 1, serialize_query_plan = 0,
+         log_comment = '05031_explain_plan_distributed';
 SELECT count() > 0 FROM (EXPLAIN PIPELINE distributed = 1 SELECT count() FROM dist_05031_all_dead)
-SETTINGS skip_unavailable_shards = 1, serialize_query_plan = 0;
+SETTINGS skip_unavailable_shards = 1, serialize_query_plan = 0,
+         log_comment = '05031_explain_pipeline_distributed';
 SELECT count() > 0 FROM (EXPLAIN PLAN distributed = 1 SELECT count() FROM dist_05031_all_dead)
 SETTINGS skip_unavailable_shards = 1, serialize_query_plan = 1;
 
@@ -110,16 +115,17 @@ SETTINGS skip_unavailable_shards = 1, serialize_query_plan = 1;
 -- `DistributedShardsSkipped` while still returning their explain output. Asserting both halves is
 -- what distinguishes a diagnostic that tolerates the dead cluster from one that fails on it, since a
 -- diagnostic that failed would raise instead and neither its output nor its row would be here.
+-- Each arm carries its own `log_comment` and contributes its latest row only, so rows an earlier
+-- execution against the same database left behind neither raise the count nor answer for this one.
 SYSTEM FLUSH LOGS query_log;
 SELECT count() = 2, min(skipped) > 0
 FROM
 (
-    SELECT ProfileEvents['DistributedShardsSkipped'] AS skipped
+    SELECT argMax(ProfileEvents['DistributedShardsSkipped'], event_time_microseconds) AS skipped
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND type = 'QueryFinish'
-      AND query LIKE '%EXPLAIN % distributed = 1 SELECT count() FROM dist\_05031\_all\_dead%'
-      AND query NOT LIKE '%serialize\_query\_plan = 1%'
-      AND query NOT LIKE '%system.query\_log%'
+    WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
+      AND log_comment IN ('05031_explain_plan_distributed', '05031_explain_pipeline_distributed')
+    GROUP BY log_comment
 );
 
 -- A Distributed table can be the target of another one. When the inner layer has no shard left, the
@@ -136,11 +142,15 @@ CREATE TABLE dist_05031_outer (c0 UInt64)
 ENGINE = Distributed(test_cluster_two_shards, currentDatabase(), dist_05031_inner);
 
 SELECT count() FROM dist_05031_outer
-SETTINGS skip_unavailable_shards = 1; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SETTINGS skip_unavailable_shards = 1,
+         log_comment = '05031_outer_default'; -- { serverError ALL_CONNECTION_TRIES_FAILED }
 SELECT count() FROM dist_05031_outer
-SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable'; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable',
+         log_comment = '05031_outer_unavailable'; -- { serverError ALL_CONNECTION_TRIES_FAILED }
 SELECT count() FROM dist_05031_outer
-SETTINGS skip_unavailable_shards = 1, skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing'; -- { serverError ALL_CONNECTION_TRIES_FAILED }
+SETTINGS skip_unavailable_shards = 1,
+         skip_unavailable_shards_mode = 'unavailable_or_exception_before_processing',
+         log_comment = '05031_outer_tolerant'; -- { serverError ALL_CONNECTION_TRIES_FAILED }
 
 -- The three arms above report the same code through two different mechanisms, so the code alone does
 -- not say which one ran. The number of shards the outer query skipped separates them: under the two
@@ -151,12 +161,13 @@ SELECT countIf(mode = 'strict' AND skipped = 0) = 2, countIf(mode = 'tolerant' A
 FROM
 (
     SELECT
-        if(query LIKE '%unavailable\_or\_exception\_before\_processing%', 'tolerant', 'strict') AS mode,
-        ProfileEvents['DistributedShardsSkipped'] AS skipped
+        if(log_comment = '05031_outer_tolerant', 'tolerant', 'strict') AS mode,
+        argMax(ProfileEvents['DistributedShardsSkipped'], event_time_microseconds) AS skipped
     FROM system.query_log
     WHERE current_database = currentDatabase() AND is_initial_query
       AND type = 'ExceptionWhileProcessing'
-      AND query LIKE '%FROM dist\_05031\_outer%'
+      AND log_comment IN ('05031_outer_default', '05031_outer_unavailable', '05031_outer_tolerant')
+    GROUP BY log_comment
 );
 
 -- A reachable single shard still finalizes the aggregate itself: no initiator-side Aggregating step.
@@ -172,4 +183,6 @@ DROP TABLE dist_05031_reachable;
 DROP TABLE dist_05031_all_dead;
 DROP TABLE dist_05031_partial;
 DROP TABLE dist_05031_mixed;
+DROP TABLE dist_05031_outer;
+DROP TABLE dist_05031_inner;
 DROP TABLE data_05031;

@@ -82,6 +82,8 @@ check_skipped_shard_span "$trace_id" "%throwIf%" \
 # Every shard of a three-shard cluster skipped without returning data. The query fails with
 # `ALL_CONNECTION_TRIES_FAILED`, and the shard whose skip raises it is recorded like its two siblings
 # instead of carrying that failure: all three spans, not two. Checked on both execution paths.
+${CLICKHOUSE_CLIENT} -q "drop table if exists dist_05055_all_dead"
+trap '${CLICKHOUSE_CLIENT} -q "drop table if exists dist_05055_all_dead"' EXIT
 ${CLICKHOUSE_CLIENT} -q "
     create table dist_05055_all_dead (dummy UInt8)
     engine = Distributed(test_cluster_multiple_nodes_all_unavailable, system, one)"
