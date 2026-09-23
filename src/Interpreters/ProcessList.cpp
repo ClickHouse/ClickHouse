@@ -1170,10 +1170,16 @@ void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
 
 void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr &)
 {
-    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
+    UInt64 value = waiting_queries_amount.load();
+    while (true)
+    {
+        if (value == 0)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
+        if (waiting_queries_amount.compare_exchange_weak(value, value - 1))
+            break;
+    }
 
-    if (waiting_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
+    CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
 }
 
 void ProcessList::incrementWaiters(const QueryStatusPtr & status)

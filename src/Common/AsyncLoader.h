@@ -434,7 +434,7 @@ public:
     void prioritize(const LoadJobPtr & job, size_t new_pool);
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
-    // Throws if job is FAILED or CANCELED unless `no_throw` is set. Returns or throws immediately if called on non-pending job.
+    // Throws if job is FAILED or CANCELED unless `no_throw` is set, and also if `on_waiters_increment` throws to cancel the wait, which `no_throw` does not suppress.
     // Waiting for a not scheduled job is considered to be LOGICAL_ERROR, use waitLoad() helper instead to make sure the job is scheduled.
     // There are more rules if `wait()` is called from another job:
     //  1) waiting on a dependent job is considered to be LOGICAL_ERROR;
