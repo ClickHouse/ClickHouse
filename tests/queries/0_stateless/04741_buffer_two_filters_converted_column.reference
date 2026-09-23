@@ -9,6 +9,8 @@ C single row policy on the converted column
 {'a':1,'b':2}
 A row policy and PREWHERE on the converted column
 {'a':1,'b':2}
+A the policy reached the destination read
+1
 J PREWHERE on another column
 {'a':1,'b':2}
 I row policy on another column

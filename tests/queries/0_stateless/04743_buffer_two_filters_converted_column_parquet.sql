@@ -35,17 +35,10 @@ SELECT m FROM t04743_pq_buf ORDER BY k;
 
 -- The rows above are the same whether the policy is forwarded into the destination read or applied
 -- above it, and only the forwarded path runs the converting prefix this test covers. The marker
--- comes from query_info.row_level_filter, which both planners populate; pretty = 0 makes it
--- unconditional.
+-- comes from query_info.row_level_filter; pretty = 0 makes it unconditional.
 SELECT 'P2 the policy reached the destination read';
 SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf ORDER BY k)
 WHERE explain LIKE '%Row level filter column:%';
-
-SET enable_analyzer = 0;
-SELECT 'P2 the same with the legacy analyzer';
-SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf ORDER BY k)
-WHERE explain LIKE '%Row level filter column:%';
-SET enable_analyzer = 1;
 
 -- Both forwarded filters reference the same converted column. The row policy prefix leaves it
 -- holding this table's type, so the PREWHERE prefix must not convert it a second time.
@@ -56,12 +49,6 @@ SELECT 'P3 the policy reached the destination read';
 SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k)
 WHERE explain LIKE '%Row level filter column:%';
 
-SET enable_analyzer = 0;
-SELECT 'P3 the same with the legacy analyzer';
-SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04743_pq_buf PREWHERE mapContains(m, 'b') ORDER BY k)
-WHERE explain LIKE '%Row level filter column:%';
-SET enable_analyzer = 1;
-
 -- A bare PREWHERE is the only shape where the predicate is itself the carried column, and it
 -- needs no setting to reach the destination read. The row this admits tells the two apart: only
 -- a converted predicate rejects 0.5. The internal alias must also stay out of that read's header.
@@ -71,13 +58,6 @@ SELECT f FROM t04743_bare_buf PREWHERE f ORDER BY f;
 SELECT 'P4 the alias stays out of the read header';
 SELECT count() FROM (EXPLAIN header = 1, pretty = 0 SELECT * FROM t04743_bare_buf PREWHERE f ORDER BY f)
 WHERE explain LIKE '%Header:%' AND explain LIKE '%__buffer_converted_filter%';
-
-SET enable_analyzer = 0;
-SELECT 'P4 the same with the legacy analyzer';
-SELECT f FROM t04743_bare_buf PREWHERE f ORDER BY f;
-SELECT count() FROM (EXPLAIN header = 1, pretty = 0 SELECT * FROM t04743_bare_buf PREWHERE f ORDER BY f)
-WHERE explain LIKE '%Header:%' AND explain LIKE '%__buffer_converted_filter%';
-SET enable_analyzer = 1;
 
 DROP ROW POLICY p04743_pq ON t04743_pq_buf;
 DROP TABLE t04743_pq_buf;

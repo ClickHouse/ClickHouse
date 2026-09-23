@@ -3,6 +3,11 @@
 -- Reading a Buffer whose destination declares a column differently logs a warning per read.
 SET send_logs_level = 'error';
 
+-- A predicate over a Map is rewritten to read the `keys` subcolumn, which a destination declaring
+-- that column as the equivalent Array(Tuple(...)) does not have, so the arms below would measure
+-- that rewrite instead of the forwarded filter's own conversion.
+SET optimize_functions_to_subcolumns = 0;
+
 DROP TABLE IF EXISTS t04741_map_dst;
 DROP TABLE IF EXISTS t04741_map_buf;
 DROP TABLE IF EXISTS t04741_arr_dst;
@@ -82,6 +87,13 @@ SELECT m FROM t04741_map_buf ORDER BY m;
 -- and the PREWHERE prefix must not convert it again.
 SELECT 'A row policy and PREWHERE on the converted column';
 SELECT m FROM t04741_map_buf PREWHERE mapContains(m, 'b') ORDER BY m;
+
+-- Applied above the read instead of forwarded into it, the policy returns these same rows through
+-- the single-PREWHERE path, which works either way, so assert the plan as well. The marker comes
+-- from query_info.row_level_filter; pretty = 0 makes it unconditional.
+SELECT 'A the policy reached the destination read';
+SELECT count() > 0 FROM (EXPLAIN actions = 1, pretty = 0 SELECT m FROM t04741_map_buf PREWHERE mapContains(m, 'b') ORDER BY m)
+WHERE explain LIKE '%Row level filter column:%';
 
 SELECT 'J PREWHERE on another column';
 SELECT m FROM t04741_map_buf PREWHERE k = 1 ORDER BY m;

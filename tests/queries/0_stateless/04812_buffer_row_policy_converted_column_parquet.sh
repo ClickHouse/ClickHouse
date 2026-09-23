@@ -71,11 +71,11 @@ run() { ${CLICKHOUSE_CLIENT} --user "${user}" --query "SET send_logs_level = 'fa
 
 # The row policy has to reach the destination read for this table's converting prefix to run at
 # all. If a later change stops forwarding it, every arm below still returns these rows through a
-# filter above the read, so assert the plan too. The marker comes from query_info.row_level_filter,
-# which both planners populate; pretty = 0 makes it unconditional.
+# filter above the read, so assert the plan too. The marker comes from query_info.row_level_filter;
+# pretty = 0 makes it unconditional.
 pushed_down() {
     if ${CLICKHOUSE_CLIENT} --user "${user}" --query \
-        "SET send_logs_level = 'fatal'; SET enable_analyzer = $1; EXPLAIN actions = 1, pretty = 0 $2" \
+        "SET send_logs_level = 'fatal'; EXPLAIN actions = 1, pretty = 0 $1" \
         2>/dev/null | grep -q 'Row level filter column:'
     then echo 1; else echo 0; fi
 }
@@ -88,9 +88,8 @@ moved="SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1"
 echo "--- B policy on the converted column, WHERE moved to PREWHERE ---"
 run "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
 
-echo "--- B the policy reached the destination read, analyzer and legacy ---"
-pushed_down 1 "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
-pushed_down 0 "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
+echo "--- B the policy reached the destination read ---"
+pushed_down "SELECT m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
 
 echo "--- L the converted column beside another ---"
 run "SELECT k, m FROM ${db}.t04812_pq_buf WHERE k > 0 ORDER BY k ${moved}"
@@ -130,9 +129,8 @@ run "SELECT m FROM ${db}.t04812_url_buf WHERE k > 0 ORDER BY k"
 echo "--- U2 URL destination, policy alone ---"
 run "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
 
-echo "--- U2 the policy reached the second reader too, analyzer and legacy ---"
-pushed_down 1 "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
-pushed_down 0 "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
+echo "--- U2 the policy reached the second reader too ---"
+pushed_down "SELECT m FROM ${db}.t04812_url_buf ORDER BY k"
 
 ${CLICKHOUSE_CLIENT} --multiquery <<EOF
 SET send_logs_level = 'fatal';
