@@ -2,17 +2,18 @@
 
 #include <base/types.h>
 
-#include <memory>
 #include <mutex>
 #include <optional>
-#include <vector>
 
 namespace DB
 {
 
-/// The objects of this server that a query resolved by name while it was analyzed: dictionaries, the embedded
-/// dictionaries and `Join` tables.  Every sub-context of a query points at the same query context, and
-/// the resolvers may run on several threads at once (a scalar subquery executes during analysis), hence the mutex.
+/// The first object of this server that a query resolved by name while it was analyzed: a dictionary, the embedded
+/// dictionaries or a `Join` table. A worker of `make_distributed_plan` shares the table data but not these objects, and
+/// one of them is enough to run the query locally, so only the first is kept: the resolvers run at execution as well,
+/// once per block for `dictGet`, and every call after the first costs a single load of the flag. Written by the
+/// resolvers through `Context::addUsedServerLocalObject`, read by the fallback decision once analysis is done; the
+/// writers of a query finish before its planning starts, so the read needs no synchronization of its own.
 struct UsedServerLocalObjects
 {
     enum class Kind : UInt8
@@ -28,21 +29,17 @@ struct UsedServerLocalObjects
         String name;
     };
 
+    /// Stores the first call's object; later calls are no-ops.
     void add(Kind kind, const String & name);
 
-    /// The first object resolved, for the reason text; insertion order.
-    std::optional<Entry> first() const;
-
-    size_t size() const;
-
-    /// The entry added at `position`, for a caller that wants to know what a step it just ran resolved.
-    std::optional<Entry> at(size_t position) const;
+    /// The recorded object, or nothing.
+    const std::optional<Entry> & get() const { return entry; }
 
     static std::string_view kindName(Kind kind);
 
 private:
-    std::vector<Entry> entries;
-    mutable std::mutex mutex;
+    std::once_flag once;
+    std::optional<Entry> entry;
 };
 
 using UsedServerLocalObjectsPtr = std::shared_ptr<UsedServerLocalObjects>;

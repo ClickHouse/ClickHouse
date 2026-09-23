@@ -93,9 +93,6 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     for (const auto & name : read.getAllColumnNames())
         if (auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
             required_columns.push_back(*column);
-
-    const auto & used = optimization_settings.used_server_local_objects;
-    const size_t used_before = used->size();
     try
     {
         /// Resolution records additional object usages
@@ -109,10 +106,10 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
             read.getStorageID().getFullTableName(), e.message());
     }
 
-    const size_t used_after = used->size();
-    if (used_after > used_before)
+    const auto & used = optimization_settings.used_server_local_objects;
+    if (used && used->get().has_value())
     {
-        const auto entry = used->at(used_before);
+        const auto &entry = used->get();
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
             UsedServerLocalObjects::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
@@ -444,21 +441,6 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         return PreformattedMessage::create(
             "make_distributed_plan cannot use a forced projection: a distributed read is bucketed and cannot be served from a projection");
 
-    /// Every dictionary, embedded dictionary and `Join` table the query resolved by name while it was analyzed exists
-    /// on the initiator, not necessarily on a worker, and the fragment ships only the name. Read after the walk: the
-    /// column-default analysis above resolves during it.
-    const auto & used = optimization_settings.used_server_local_objects;
-    if (!used)
-    {
-        /// No query context, so nothing could have been recorded; the plan is taken as free of such objects.
-        LOG_TRACE(getLogger("makeDistributedPlan"), "No record of the server-local objects the query resolved; assuming none");
-        return std::nullopt;
-    }
-    if (auto entry = used->first())
-        return PreformattedMessage::create(
-            "make_distributed_plan does not support {} {}: it is an object of the initiator",
-            UsedServerLocalObjects::kindName(entry->kind), entry->name);
-
     /// One walk over the main tree, stopping at the first reason. The order of the checks inside
     /// `getReasonNodeCannotBeDistributed` decides which reason a plan with several defects reports.
     std::vector<QueryPlan::Node *> stack{&root};
@@ -485,6 +467,22 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         for (auto * child : node->children)
             stack.push_back(child);
     }
+
+
+    /// A dictionary, embedded dictionary or `Join` table the query resolved by name while it was analyzed exists on
+    /// the initiator, not necessarily on a worker, and the fragment ships only the name. Read before the walk; the
+    /// column-default check inside the walk records for reads whose defaults the query text never touched.
+    const auto & used = optimization_settings.used_server_local_objects;
+    if (!used)
+    {
+        /// No query context, so nothing could have been recorded; the plan is taken as free of such objects.
+        LOG_TRACE(getLogger("makeDistributedPlan"), "No record of the server-local objects the query resolved; assuming none");
+        return std::nullopt;
+    }
+    if (const auto & entry = used->get())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator",
+            UsedServerLocalObjects::kindName(entry->kind), entry->name);
 
     return std::nullopt;
 }
