@@ -578,8 +578,10 @@ SELECT uniqHLL(number % 10) FROM numbers(1000);
     FunctionDocumentation::Category category_uniqHLL = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_uniqHLL = {description_uniqHLL, syntax_uniqHLL, arguments_uniqHLL, {}, returned_value_uniqHLL, examples_uniqHLL, introduced_in_uniqHLL, category_uniqHLL};
 
+    /// The Apache DataSketches HLL estimate depends on the order of the input rows.
+    AggregateFunctionProperties properties_uniqHLL = { .returns_default_when_only_null = true, .is_order_dependent = true };
     factory.registerFunction("uniqHLL",
-        {createAggregateFunctionUniqHLL, documentation_uniqHLL, properties});
+        {createAggregateFunctionUniqHLL, documentation_uniqHLL, properties_uniqHLL});
 #endif
 
 }

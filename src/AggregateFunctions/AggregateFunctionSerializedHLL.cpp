@@ -227,7 +227,9 @@ AggregateFunctionPtr createAggregateFunctionSerializedHLL(
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory);
 void registerAggregateFunctionSerializedHLL(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    /// The Apache DataSketches state depends on the order of the input rows (and of the merged sketches),
+    /// so the returned sketch bytes and the estimates derived from them are order-dependent.
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
     FunctionDocumentation::Description description = R"(
 Creates a serialized HyperLogLog (HLL) sketch for approximate cardinality estimation.

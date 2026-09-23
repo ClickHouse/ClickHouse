@@ -185,7 +185,9 @@ AggregateFunctionPtr createAggregateFunctionMergeSerializedQuantiles(
 void registerAggregateFunctionMergeSerializedQuantiles(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergeSerializedQuantiles(AggregateFunctionFactory & factory)
 {
-    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = false };
+    /// The Apache DataSketches state depends on the order of the input rows (and of the merged sketches),
+    /// so the returned sketch bytes and the estimates derived from them are order-dependent.
+    AggregateFunctionProperties properties = { .returns_default_when_only_null = true, .is_order_dependent = true };
 
     FunctionDocumentation::Description description = R"(
 Merges multiple serialized Quantiles sketches into a single sketch.
