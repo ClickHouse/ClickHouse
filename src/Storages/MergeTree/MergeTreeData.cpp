@@ -9662,11 +9662,15 @@ namespace
 /// the backup. The files of the part have already been copied from the backup to the destination disk, so
 /// an OS-level failure while accessing them is a failure of that disk (no space, readonly filesystem,
 /// permissions, I/O error, ...) - except for a missing file, which means the backup does not contain it.
+/// `UNIQUE_KEY_DENSE_INDEX_UNREADABLE` means that `unique_key_index.sst` could not be validated on the
+/// destination disk and was left in place for a retry (a corrupt one is rebuilt instead), so it says
+/// nothing about the backup either.
 bool isDestinationSideError(const Exception & e)
 {
     if (const auto * errno_exception = dynamic_cast<const ErrnoException *>(&e))
         return errno_exception->getErrno() != ENOENT;
-    return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED;
+    return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED
+        || e.code() == ErrorCodes::UNIQUE_KEY_DENSE_INDEX_UNREADABLE;
 }
 
 /// Whether a non-`DB::Exception` error comes from parsing the metadata files of a part with Poco
