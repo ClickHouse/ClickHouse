@@ -250,10 +250,16 @@ static bool isClickHouseApp(std::string_view app_suffix, std::vector<char *> & a
 /// We do allow `dlopen()` in case of OpenSSL FIPS build,
 /// because it requires a FIPS provider (i.e. fips.so), which is loaded dynamically.
 ///
+/// And in a build with the GPU engine, because CUDA has no other way to reach a device: there is
+/// no static driver library to link: even `libcudart_static.a` finds the driver by
+/// `dlopen("libcuda.so.1")`, and with the stub below in place it is told there is none and reports
+/// that the driver is too old. So `-DENABLE_GPU=1` gives up this protection for the whole binary,
+/// which is one more reason for that build to stay experimental.
+///
 /// Not on WebAssembly: Emscripten's libc unconditionally defines `dlerror` (its own code
 /// pulls it in), so the override would be a duplicate symbol at the link - and a sandbox
 /// cannot load libraries in the first place.
-#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || defined(OS_WASM))
+#if !(defined(USE_MUSL) || USE_OPENSSL_FIPS || USE_GPU || defined(OS_WASM))
 extern "C"
 {
     void * dlopen(const char *, int);

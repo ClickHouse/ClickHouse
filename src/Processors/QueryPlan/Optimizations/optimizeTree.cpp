@@ -491,6 +491,8 @@ void optimizeTreeSecondPass(
                 if (optimization_settings.query_plan_optimize_count_from_text_index)
                     optimizeTrivialCountFromTextIndex(*frame.node, nodes, optimization_settings);
 
+                optimizeAggregationFromGPUCompressedColumns(*frame.node, nodes, optimization_settings);
+
                 /// Exchanges do not preserve the order an in-order aggregation needs, so keep
                 /// hash aggregation whenever a distributed plan is intended.
                 if (optimization_settings.aggregation_in_order && !optimization_settings.make_distributed_plan)

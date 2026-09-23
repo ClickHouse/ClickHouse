@@ -3986,6 +3986,7 @@ Possible values:
 
  Skipping it disables only this rewrite, not parallelism in general: the join runs as a single `full_sorting_merge`, and MergeTree sides read in order can still be sharded at the source by primary-key ranges (which order by the same comparison the join uses, so equal keys stay together) when `query_plan_join_shard_by_pk_ranges` is enabled.
 
+
 - prefer_partial_merge
 
  ClickHouse always tries to use `partial_merge` join if possible, otherwise, it uses `hash`. *Deprecated*, same as `partial_merge,hash`.
@@ -9553,6 +9554,119 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
+Compute supported aggregations on a CUDA GPU instead of on the CPU.
+
+What is supported so far is `sum` over a column of a fixed-width numeric type (`UInt8` to
+`UInt64`, `Int8` to `Int64`, `Float32`, `Float64`), with or without `GROUP BY`, in a query over a
+single local `MergeTree` table. A `GROUP BY` key has to be a fixed-width integer: floats are
+excluded from the keys, because cuDF groups them by IEEE equality, which would put `0.0` and `-0.0`
+in one group where ClickHouse puts them in two.
+
+Everything else - another aggregate function, a `Nullable`, `Decimal` or `LowCardinality` argument
+or key, `ROLLUP`, `CUBE`, `GROUPING SETS`, `WITH TOTALS`, `group_by_use_nulls`, several tables, a
+distributed query - is aggregated on the CPU as before, so this setting does not change what a
+query returns, only where it is computed. `EXPLAIN` names the step `GPUAggregating` when the device
+is used.
+
+Requires a build with `-DENABLE_GPU=1` and has no effect without one. In a build that has it, a
+query which would have used the device on a machine that has none usable fails, rather than quietly
+aggregating on the CPU.
+
+:::note
+Every value has to cross the PCIe link to reach the device, and that link is narrower than the
+CPU's own path to memory - so a sum whose column has to be sent over is normally **slower** than
+the same sum on the CPU, and slower still than the CPU using several threads.
+
+Measured on a Tesla T4 over 1.49 GiB of `UInt64`: the reduction itself takes 8 ms, sending the
+values to the device takes 353 ms, and the whole query is 0.77 s against 0.35 s for the same query
+on sixteen cores. So a `sum` whose column has to be sent is currently about twice as slow as the
+CPU's, and the device pays for itself only once the data reaches it by some cheaper route than one
+uncompressed copy per query.
+
+`GPUAggregationRows`, `GPUAggregationBatches` and `GPUAggregationMicroseconds` in `system.events`
+say how much was summed and how long the device calls took.
+:::
+
+:::note
+`sum` over a `Float32` or `Float64` column adds the values in a different order than the CPU
+implementation does, so the last bits of the result can differ from it. The order is fixed, so
+repeated runs of the same query agree with each other. Integer sums are identical to the CPU's,
+wraparound included.
+:::
+
+Possible values:
+
+- 0 - Aggregations are computed on the CPU.
+- 1 - Supported aggregations are computed on a GPU.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
+How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
+to the device.
+
+A block is 65536 rows, half a megabyte of `UInt64` - too little to occupy either the link or the
+device on its own, so blocks are gathered into a batch first. Measured on a Tesla T4 over 300
+million rows, the size barely matters to the time: `sum` of three columns without `GROUP BY` took
+2.3 s with a 16 MiB batch and 2.4 s with 256 MiB, and the keyed `sum` into ten million groups took
+3.2 s with 32 MiB and 3.0 s with 256 MiB, against 0.4 s and 3.3 s on sixteen cores.
+
+What the size does decide is memory. A batch is staged in pinned host memory and held on the
+device, and the device's table of groups is sized so that every row of a batch could be a new
+group, so a query with few groups still holds a batch's worth of them. The default favours the
+many-groups case, which is the one the device is for.
+
+A `GROUP BY` that reads whole parts as compressed blocks (`ReadFromGPUCompressedColumns`) groups
+each part as it arrives on the device, and this setting does not apply to it.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_aggregation_readers, 0, R"(
+How many threads read the parts of a `GROUP BY` that `allow_experimental_gpu_aggregation` runs over
+compressed blocks (`ReadFromGPUCompressedColumns`), each a part at a time. 0 chooses by what the
+threads have to do.
+
+A reading thread copies the compressed blocks of a part into pinned host memory for the device to
+fetch, and one thread copies slower than the link carries - about 4 GB/s against 6 GB/s of PCIe 3
+on a Tesla T4 - so one reader leaves the link idle, and two fill it: over 300 million rows grouped
+by a `UInt8` key, one reader took 0.95 s, two 0.53 s, and four or eight were slower than two.
+
+A column that `gpu_aggregation_device_decompression_max_ratio` leaves to the host is expanded by
+the reading thread as well, which is work per byte rather than per block, and two threads no
+longer keep up with the link: grouping 300 million rows of such a `UInt64` by a `UInt32` key took
+1.34 s with two readers, 0.84 s with four and 0.77 s with eight, against 1.08 s expanded on the
+device. Yet each reader holds a part's buffers in pinned memory and on the device, and with four
+columns of a part in flight eight readers lost what they gained: grouping by two keys took 1.37 s
+with four readers and 1.78 s with eight. So with 0 the query gets two readers when every column is
+expanded on the device, and a quarter of the CPU cores, at least two, when some column is
+expanded on the host.
+
+Each reader holds a part's compressed blocks in pinned memory and its expanded columns on the
+device while they are grouped, so more readers take more of both.
+)", EXPERIMENTAL) \
+    DECLARE(Float, gpu_aggregation_device_decompression_max_ratio, 0.5, R"(
+How well a column of a part has to be compressed - its compressed bytes as a fraction of its
+uncompressed bytes, at most this - for an aggregation that `allow_experimental_gpu_aggregation`
+runs over compressed blocks (`ReadFromGPUCompressedColumns`) to expand it on the device. A column
+compressed worse is expanded on the CPU by the reading thread and sent as it is. With the default
+of 0.5 a column that compression does not halve is sent whole.
+
+Expanding on the device costs it about as long per uncompressed byte as the link takes to carry
+one - on a Tesla T4 behind PCIe 3 x8, both come to some 6 GB/s - and the device cannot group
+while it expands, whereas a copy over the link runs beside the grouping. So a column that
+compression does not shrink can be cheaper sent whole, given reading threads to expand it (see
+`gpu_aggregation_readers`), when the device has little else to do: over 300 million rows of a
+`UInt64` that LZ4 compresses to 96% of its size, a `sum` of it by a `UInt32` key of a hundred
+thousand values took 1.08 s expanded on the device and 0.86 s sent whole with a threshold of 0.5,
+and by a key of ten million values 1.34 s against 1.00 s. Where the device is busy grouping
+anyway, the reading threads' work and the buffers they hold on both sides of the link can cost
+more than they save: a `sum`, `min` and `max` of three such columns by the key of ten million
+values took 4% longer sent whole, and by a key of 251 values 3% longer. Measure before changing
+this for a workload.
+
+Possible values:
+
+- 1 - Every column is expanded on the device.
+- 0 - Every column is expanded on the CPU and sent whole.
+- A fraction in between - the threshold on a column's compression ratio.
 )", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
