@@ -1,6 +1,6 @@
 ---
 description: 'يولّد بيانات عشوائية وفق مخطط محدد. ويتيح ملء جداول الاختبار
-  بهذه البيانات. ليست كل الأنواع مدعومة.'
+  بهذه البيانات.'
 sidebarTitle: 'generateRandom'
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
@@ -13,17 +13,13 @@ doc_type: 'reference'
 ويتيح ملء جداول الاختبار بهذه البيانات.
 ليست كل الأنواع مدعومة.
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```sql
 generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
 ```
 
-<div id="arguments">
-  ## المعاملات
-</div>
+## المعاملات {#arguments}
 
 | Argument            | Description                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------- |
@@ -33,15 +29,11 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | الحد الأقصى لطول جميع السلاسل النصية المُولَّدة. القيمة الافتراضية هي `10`.                              |
 | `max_array_length`  | الحد الأقصى لعدد العناصر في جميع المصفوفات أو الخرائط المُولَّدة. القيمة الافتراضية هي `10`.             |
 
-<div id="returned-value">
-  ## القيمة المعادة
-</div>
+## القيمة المعادة {#returned-value}
 
 كائن جدول يتضمن المخطط المطلوب.
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -114,9 +106,7 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   يمكن أن يُنتج ‎`generateRandom(generateRandomStructure(), [بذرة عشوائية], max_string_length, max_array_length)`‎، عند ضبط ‎`max_array_length`‎ على قيمة كبيرة بما يكفي، مخرجات ضخمة جدًا بسبب العمق المحتمل الكبير للتداخل (حتى 16) في الأنواع المعقدة (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
 
-<div id="related-content">
-  ## محتوى ذي صلة
-</div>
+## محتوى ذي صلة {#related-content}
 
 * المدوّنة: [إنشاء بيانات عشوائية في ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

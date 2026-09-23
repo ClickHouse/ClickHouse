@@ -1,6 +1,6 @@
 ---
 description: '指定したスキーマでランダムデータを生成します。そのデータを使用してテスト用テーブルに
-  データを投入できます。すべての型がサポートされているわけではありません。'
+  データを投入できます。'
 sidebarTitle: 'generateRandom'
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
@@ -13,17 +13,13 @@ doc_type: 'reference'
 そのデータを使用してテスト用テーブルにデータを投入できます。
 すべての型がサポートされているわけではありません。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 | 引数                  | 説明                                                      |
 | ------------------- | ------------------------------------------------------- |
@@ -33,15 +29,11 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | 生成されるすべての文字列の最大長。既定値は `10` です。                          |
 | `max_array_length`  | 生成されるすべてのArrayまたは Map の最大要素数。既定値は `10` です。                 |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定したスキーマを持つテーブルオブジェクト。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -114,9 +106,7 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` で `max_array_length` を十分大きくすると、複合型 (`Array`, `Tuple`, `Map`, `Nested`) のネストが深くなる可能性がある (最大 16 階層) ため、出力が非常に大きくなることがあります。
 </Note>
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouseでランダムデータを生成する方法](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

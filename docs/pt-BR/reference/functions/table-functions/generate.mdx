@@ -1,6 +1,6 @@
 ---
 description: 'Gera dados aleatórios com um esquema especificado. Permite preencher tabelas de teste
-  com esses dados. Nem todos os tipos são compatíveis.'
+  com esses dados.'
 sidebarTitle: 'generateRandom'
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
@@ -13,17 +13,13 @@ Gera dados aleatórios com um esquema especificado.
 Permite preencher tabelas de teste com esses dados.
 Nem todos os tipos são compatíveis.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento           | Descrição                                                                                                             |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -33,15 +29,11 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | Comprimento máximo de todas as strings geradas. O padrão é `10`.                                                      |
 | `max_array_length`  | Número máximo de elementos de todos os arrays ou maps gerados. O padrão é `10`.                                       |
 
-<div id="returned-value">
-  ## Valor retornado
-</div>
+## Valor retornado {#returned-value}
 
 Um objeto de tabela com o esquema solicitado.
 
-<div id="usage-example">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -114,9 +106,7 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` com um `max_array_length` grande o suficiente pode gerar uma saída realmente enorme devido à profundidade potencialmente grande de aninhamento (até 16) de tipos complexos (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Como gerar dados aleatórios no ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

@@ -1,6 +1,6 @@
 ---
 description: 'Генерирует случайные данные по заданной схеме. Позволяет заполнять тестовые таблицы
-  этими данными. Поддерживаются не все типы.'
+  этими данными.'
 sidebarTitle: 'generateRandom'
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
@@ -13,17 +13,13 @@ doc_type: 'reference'
 Позволяет заполнять тестовые таблицы этими данными.
 Поддерживаются не все типы.
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
 ```
 
-<div id="arguments">
-  ## Аргументы
-</div>
+## Аргументы {#arguments}
 
 | Аргумент            | Описание                                                                                                                                               |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -33,15 +29,11 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | Максимальная длина всех генерируемых строк. Значение по умолчанию — `10`.                                                                              |
 | `max_array_length`  | Максимальное количество элементов во всех генерируемых массивах или значениях типа Map. Значение по умолчанию — `10`.                                  |
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Объект таблица с запрошенной схемой.
 
-<div id="usage-example">
-  ## Пример использования
-</div>
+## Пример использования {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -114,9 +106,7 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   `generateRandom(generateRandomStructure(), [начальное значение генератора случайных чисел], max_string_length, max_array_length)` при достаточно большом `max_array_length` может сгенерировать по-настоящему огромный объём данных из-за возможной большой глубины вложенности (до 16) сложных типов (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
 
-<div id="related-content">
-  ## Связанные материалы
-</div>
+## Связанные материалы {#related-content}
 
 * Блог: [Генерация случайных данных в ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 

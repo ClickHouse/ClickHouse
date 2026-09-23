@@ -1,6 +1,6 @@
 ---
 description: 'Génère des données aléatoires selon un schéma donné. Permet de peupler des tables de test
-  avec ces données. Tous les types ne sont pas pris en charge.'
+  avec ces données.'
 sidebarTitle: 'generateRandom'
 slug: /sql-reference/table-functions/generate
 title: 'generateRandom'
@@ -13,17 +13,13 @@ Génère des données aléatoires selon un schéma donné.
 Permet de peupler des tables de test avec ces données.
 Tous les types ne sont pas pris en charge.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_string_length'[, 'max_array_length']]]])
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
 | Argument            | Description                                                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,15 +29,11 @@ generateRandom(['name TypeName[, name TypeName]...', [, 'random_seed'[, 'max_str
 | `max_string_length` | Longueur maximale de toutes les chaînes générées. La valeur par défaut est `10`.                                                |
 | `max_array_length`  | Nombre maximal d’éléments pour tous les tableaux ou objets Map générés. La valeur par défaut est `10`.                          |
 
-<div id="returned-value">
-  ## Valeur renvoyée
-</div>
+## Valeur renvoyée {#returned-value}
 
 Un objet de type table avec le schéma demandé.
 
-<div id="usage-example">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#usage-example}
 
 ```sql
 SELECT * FROM generateRandom('a Array(Int8), d Decimal32(4), c Tuple(DateTime64(3), UUID)', 1, 10, 2) LIMIT 3;
@@ -114,9 +106,7 @@ SELECT * FROM generateRandom(11) LIMIT 3;
   `generateRandom(generateRandomStructure(), [random seed], max_string_length, max_array_length)` avec une valeur de `max_array_length` suffisamment élevée peut générer une sortie extrêmement volumineuse en raison de la profondeur d&#39;imbrication potentiellement importante (jusqu&#39;à 16) des types complexes (`Array`, `Tuple`, `Map`, `Nested`).
 </Note>
 
-<div id="related-content">
-  ## Contenu associé
-</div>
+## Contenu associé {#related-content}
 
 * Blog : [Générer des données aléatoires dans ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
 
