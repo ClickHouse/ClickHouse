@@ -31,10 +31,10 @@ INSERT INTO t_redundant_json VALUES (1, '{"k":1.0}');
 SELECT 'json, excluding bound alone', count() FROM t_redundant_json
 WHERE j >= '{"k":2}'::JSON
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
-SELECT 'json, chain pruned', count() FROM t_redundant_json
+SELECT 'json, pruning on, chain kept', count() FROM t_redundant_json
 WHERE j >= '{"k":1.0}'::JSON AND j >= '{"k":2}'::JSON
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
-SELECT 'json, chain kept', count() FROM t_redundant_json
+SELECT 'json, pruning off, chain kept', count() FROM t_redundant_json
 WHERE j >= '{"k":1.0}'::JSON AND j >= '{"k":2}'::JSON
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
@@ -44,10 +44,10 @@ INSERT INTO t_redundant_array_dynamic VALUES (1, [1.0::Float64]);
 SELECT 'array(dynamic), excluding bound alone', count() FROM t_redundant_array_dynamic
 WHERE a >= [2::Int64]::Array(Dynamic)
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
-SELECT 'array(dynamic), chain pruned', count() FROM t_redundant_array_dynamic
+SELECT 'array(dynamic), pruning on, chain kept', count() FROM t_redundant_array_dynamic
 WHERE a >= [1.0::Float64]::Array(Dynamic) AND a >= [2::Int64]::Array(Dynamic)
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
-SELECT 'array(dynamic), chain kept', count() FROM t_redundant_array_dynamic
+SELECT 'array(dynamic), pruning off, chain kept', count() FROM t_redundant_array_dynamic
 WHERE a >= [1.0::Float64]::Array(Dynamic) AND a >= [2::Int64]::Array(Dynamic)
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
@@ -58,10 +58,10 @@ INSERT INTO t_redundant_array_variant VALUES (1, [1.0::Float64]);
 SELECT 'array(variant), excluding bound alone', count() FROM t_redundant_array_variant
 WHERE a >= [2::Int64]::Array(Variant(Float64, Int64))
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
-SELECT 'array(variant), chain pruned', count() FROM t_redundant_array_variant
+SELECT 'array(variant), pruning on, chain kept', count() FROM t_redundant_array_variant
 WHERE a >= [1.0::Float64]::Array(Variant(Float64, Int64)) AND a >= [2::Int64]::Array(Variant(Float64, Int64))
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
-SELECT 'array(variant), chain kept', count() FROM t_redundant_array_variant
+SELECT 'array(variant), pruning off, chain kept', count() FROM t_redundant_array_variant
 WHERE a >= [1.0::Float64]::Array(Variant(Float64, Int64)) AND a >= [2::Int64]::Array(Variant(Float64, Int64))
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
@@ -69,10 +69,10 @@ SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 -- map that drops exact duplicates, while `compareAt` separates them by discriminator.
 CREATE TABLE t_redundant_variant_shared_field (id UInt32, a Array(Variant(Date, UInt64))) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_redundant_variant_shared_field VALUES (1, [1::UInt64]);
-SELECT 'shared field, chain pruned', count() FROM t_redundant_variant_shared_field
+SELECT 'shared field, pruning on, chain kept', count() FROM t_redundant_variant_shared_field
 WHERE a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [1::UInt64]::Array(Variant(Date, UInt64))
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
-SELECT 'shared field, chain kept', count() FROM t_redundant_variant_shared_field
+SELECT 'shared field, pruning off, chain kept', count() FROM t_redundant_variant_shared_field
 WHERE a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [1::UInt64]::Array(Variant(Date, UInt64))
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
@@ -83,10 +83,10 @@ INSERT INTO t_redundant_plain VALUES (1, [1]);
 SELECT 'self-typed constant, excluding bound alone', count() FROM t_redundant_plain
 WHERE a >= [1::UInt8]::Array(Dynamic)
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
-SELECT 'self-typed constant, chain pruned', count() FROM t_redundant_plain
+SELECT 'self-typed constant, pruning on, chain kept', count() FROM t_redundant_plain
 WHERE a >= [toDate(5)]::Array(Dynamic) AND a >= [1::UInt8]::Array(Dynamic)
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1;
-SELECT 'self-typed constant, chain kept', count() FROM t_redundant_plain
+SELECT 'self-typed constant, pruning off, chain kept', count() FROM t_redundant_plain
 WHERE a >= [toDate(5)]::Array(Dynamic) AND a >= [1::UInt8]::Array(Dynamic)
 SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1;
 
@@ -112,7 +112,7 @@ SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 1, opt
 -- alternative sorts before every `Int64` one whatever the values are, so the two orders disagree here.
 CREATE TABLE t_redundant_variant_top (id UInt32, b Variant(Float64, Int64), f Float64) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t_redundant_variant_top VALUES (1, 9e9::Float64, 9e9);
-SELECT 'top-level variant, chain pruned', count() FROM t_redundant_variant_top
+SELECT 'top-level variant, pruning on, chain kept', count() FROM t_redundant_variant_top
 WHERE b >= 5.0::Float64::Variant(Float64, Int64) AND b >= 2::Int64::Variant(Float64, Int64)
 SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, use_variant_default_implementation_for_comparisons = 0;
 
@@ -129,7 +129,7 @@ SELECT 'plan, ordinary range conjuncts pruned', count() FROM
      WHERE a >= [1::UInt64] AND a >= [2::UInt64]
      SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1)
 WHERE explain ILIKE '%function_name: greaterOrEquals,%';
-SELECT 'plan, self-typed notIn merges', count() FROM
+SELECT 'plan, self-typed notIn skipped with pruning on', count() FROM
     (EXPLAIN QUERY TREE SELECT count() FROM t_redundant_variant_shared_field
      WHERE a != [1::UInt64]::Array(Variant(Date, UInt64)) AND a != [toDate(1)]::Array(Variant(Date, UInt64)) AND a != [5::UInt64]::Array(Variant(Date, UInt64))
      SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 1, optimize_min_inequality_conjunction_chain_length = 3)
