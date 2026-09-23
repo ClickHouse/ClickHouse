@@ -13,8 +13,6 @@ namespace DB
 
 #if USE_AVRO
 
-/// Returns {} when a written column has no field of that name; the schema's own ids are kept then,
-/// and the format layer refuses such a write before any statistic is read.
 static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
 {
     const auto & field_id_by_name = mapper.getStorageColumnEncoding();
