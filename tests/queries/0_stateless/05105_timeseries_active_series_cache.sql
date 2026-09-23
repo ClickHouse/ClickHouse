@@ -179,11 +179,10 @@ DROP TABLE ts_cache;
 DROP TABLE ts_nocache;
 DROP TABLE ts_bounds;
 
--- A later block that is a full cache hit must still advance the tags pipeline. The target sink keeps
--- the part it just wrote delayed until its next consume(), so skipping the push would let the samples
--- push commit the previous block's samples while its tags were still delayed. Counted through
--- `part_log` rather than by rows, because the tags target is a ReplacingMergeTree and a background
--- merge could collapse the duplicate id.
+-- A later block of the same insert that repeats a series already written by an earlier block writes no
+-- tags row: the series is pending in the sink even though it reaches the cache only when the insert
+-- finishes. Counted through `part_log` rather than by rows of the table, because the tags target is a
+-- ReplacingMergeTree and a background merge could collapse a duplicate id.
 DROP TABLE IF EXISTS ts_multiblock;
 CREATE TABLE ts_multiblock ENGINE = TimeSeries SETTINGS store_min_time_and_max_time = 0, tags_cache_max_series = 1000;
 
@@ -197,13 +196,12 @@ SETTINGS max_block_size = 1, max_insert_block_size = 1,
 
 SYSTEM FLUSH LOGS part_log;
 
-SELECT 'multi-block insert, second block a full cache hit: tags parts match samples parts:';
-SELECT
-    (SELECT count() FROM system.part_log WHERE database = currentDatabase() AND event_type = 'NewPart'
-        AND table = (SELECT concat('.inner_id.tags.', toString(uuid)) FROM system.tables
-                     WHERE database = currentDatabase() AND name = 'ts_multiblock'))
-    = (SELECT count() FROM system.part_log WHERE database = currentDatabase() AND event_type = 'NewPart'
-        AND table = (SELECT concat('.inner_id.samples.', toString(uuid)) FROM system.tables
-                     WHERE database = currentDatabase() AND name = 'ts_multiblock'));
+SELECT 'multi-block insert, second block repeats the series: tags rows written, samples rows written:';
+SELECT sum(rows) FROM system.part_log WHERE database = currentDatabase() AND event_type = 'NewPart'
+    AND table = (SELECT concat('.inner_id.tags.', toString(uuid)) FROM system.tables
+                 WHERE database = currentDatabase() AND name = 'ts_multiblock');
+SELECT sum(rows) FROM system.part_log WHERE database = currentDatabase() AND event_type = 'NewPart'
+    AND table = (SELECT concat('.inner_id.samples.', toString(uuid)) FROM system.tables
+                 WHERE database = currentDatabase() AND name = 'ts_multiblock');
 
 DROP TABLE ts_multiblock;

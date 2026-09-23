@@ -40,5 +40,6 @@ max_time advanced to the latest sample:
 external tags: both inserts write tags:
 2
 2
-multi-block insert, second block a full cache hit: tags parts match samples parts:
+multi-block insert, second block repeats the series: tags rows written, samples rows written:
 1
+2

@@ -985,21 +985,17 @@ namespace
 
             case ViewTarget::TagsMinMax:
             {
-                const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
-                if (engine_name != (aggregate_min_time_and_max_time ? "AggregatingMergeTree" : "ReplacingMergeTree"))
+                /// The generated engine always aggregates the bounds, `aggregate_min_time_and_max_time` doesn't apply here.
+                if (engine_name != "AggregatingMergeTree")
                     return;
 
                 /// The primary key and the sorting key are connected, so they are considered together.
                 bool primary_key_is_generated = !inner_engine.primary_key
                     || (inner_engine.primary_key->formatWithSecretsOneLine() == "metric_name");
-                const String generated_sorting_key
-                    = aggregate_min_time_and_max_time ? "metric_name, id" : "metric_name, id, min_time, max_time";
-                if (primary_key_is_generated && sorting_key_equals(generated_sorting_key))
+                if (primary_key_is_generated && sorting_key_equals("metric_name, id"))
                 {
                     inner_engine.reset(inner_engine.primary_key);
                     inner_engine.reset(inner_engine.order_by);
-                    if (!aggregate_min_time_and_max_time)
-                        remove_settings({{"allow_nullable_key", Field{1}}});
                 }
 
                 remove_settings({{"index_granularity", settings[TimeSeriesSetting::tags_index_granularity].value}});
@@ -1161,31 +1157,20 @@ namespace
                 add_column_if_missing(TimeSeriesColumnNames::MetricName,
                     makeASTDataType("LowCardinality", makeASTDataType("String")));
 
-                if (time_series_settings[TimeSeriesSetting::aggregate_min_time_and_max_time])
+                /// The rows of a time series are always collapsed into one interval by the engine, so the columns
+                /// need a custom SimpleAggregateFunction type (`aggregate_min_time_and_max_time` doesn't apply here).
+                auto make_agg_type = [&](const String & func_name) -> ASTPtr
                 {
-                    /// The rows are collapsed by the engine, so the columns need a custom SimpleAggregateFunction type.
-                    auto make_agg_type = [&](const String & func_name) -> ASTPtr
-                    {
-                        DataTypePtr ts_type = makeNullable(resolved_types.timestamp_type);
-                        AggregateFunctionProperties properties;
-                        auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
-                        auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
-                        auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
-                        return dataTypeToAST(type);
-                    };
+                    DataTypePtr ts_type = makeNullable(resolved_types.timestamp_type);
+                    AggregateFunctionProperties properties;
+                    auto func = AggregateFunctionFactory::instance().get(func_name, NullsAction::EMPTY, {ts_type}, {}, properties);
+                    auto custom_name = std::make_unique<DataTypeCustomSimpleAggregateFunction>(func, DataTypes{ts_type}, Array{});
+                    auto type = DataTypeFactory::instance().getCustom(std::make_unique<DataTypeCustomDesc>(std::move(custom_name)));
+                    return dataTypeToAST(type);
+                };
 
-                    add_column_if_missing(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
-                    add_column_if_missing(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
-                }
-                else
-                {
-                    /// Without aggregation the bounds go into the sorting key instead, the same way the tags
-                    /// table carried them before version MIN_WITH_SEPARATE_TAGS_MIN_MAX.
-                    add_column_if_missing(TimeSeriesColumnNames::MinTime,
-                        dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
-                    add_column_if_missing(TimeSeriesColumnNames::MaxTime,
-                        dataTypeToAST(makeNullable(resolved_types.timestamp_type)));
-                }
+                add_column_if_missing(TimeSeriesColumnNames::MinTime, make_agg_type("min"));
+                add_column_if_missing(TimeSeriesColumnNames::MaxTime, make_agg_type("max"));
                 break;
             }
 
@@ -1708,9 +1693,10 @@ namespace
 
             case ViewTarget::TagsMinMax:
             {
-                const bool aggregate_min_time_and_max_time = settings[TimeSeriesSetting::aggregate_min_time_and_max_time];
+                /// The bounds of a time series are always merged into one row, so `aggregate_min_time_and_max_time`
+                /// doesn't apply here.
                 if (!inner_engine.engine)
-                    set_engine(aggregate_min_time_and_max_time ? "AggregatingMergeTree" : "ReplacingMergeTree");
+                    set_engine("AggregatingMergeTree");
 
                 if (needs_sorting_key())
                 {
@@ -1719,15 +1705,6 @@ namespace
                     ASTs key_columns;
                     key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName));
                     key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
-                    if (!aggregate_min_time_and_max_time)
-                    {
-                        /// Without aggregation a row is kept per distinct pair of bounds, so they belong to the key.
-                        key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MinTime));
-                        key_columns.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MaxTime));
-
-                        /// These columns are nullable, so the sorting key needs `allow_nullable_key`.
-                        set_engine_setting("allow_nullable_key", 1);
-                    }
                     set_sorting_key(std::move(key_columns));
                 }
 
@@ -1924,8 +1901,34 @@ namespace
             {
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_is_string(TimeSeriesColumnNames::MetricName);
-                check_column_min_max_time(TimeSeriesColumnNames::MinTime);
-                check_column_min_max_time(TimeSeriesColumnNames::MaxTime);
+
+                /// The rows of a time series are merged by the engine, so an aggregate-function wrapper must merge
+                /// `min_time` with `min` and `max_time` with `max`: any other function would narrow or invert the bounds
+                /// and let a time-bounded read prune a live series.
+                auto check_column_aggregated_by = [&](std::string_view column_name, std::string_view expected_function)
+                {
+                    check_column_min_max_time(column_name);
+                    const auto & type = target_table_columns.get(String(column_name)).type;
+                    String function_name;
+                    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+                        function_name = simple->getFunctionName();
+                    else if (const auto * aggregate = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
+                        function_name = aggregate->getFunctionName();
+                    else
+                        return;
+                    if (function_name != expected_function)
+                        throw Exception(
+                            ErrorCodes::BAD_TYPE_OF_FIELD,
+                            "{}: Column {} in the {} table has type {}, but its values must be aggregated with function {}",
+                            table_id.getNameForLogs(),
+                            column_name,
+                            target_kind,
+                            type->getName(),
+                            expected_function);
+                };
+
+                check_column_aggregated_by(TimeSeriesColumnNames::MinTime, "min");
+                check_column_aggregated_by(TimeSeriesColumnNames::MaxTime, "max");
                 break;
             }
 

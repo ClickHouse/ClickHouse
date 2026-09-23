@@ -1,4 +1,4 @@
-"""Creation and metadata time filtering with external tags at version 7."""
+"""Creation, selector reads and metadata time filtering with external tags at version 7."""
 
 import pytest
 import requests
@@ -59,6 +59,15 @@ def test_create_with_external_tags_in_atomic_database():
         "WHERE database = 'external_tags' AND startsWith(name, '.inner_id.tagsminmax.')"
     ) == "0\n"
     assert node.query("SELECT count() FROM external_tags.ext_tags") == "3\n"
+
+
+def test_selector_with_external_tags():
+    # The bounds stay in the external tags table, so the selector filters the series by them there.
+    for start, end, expected in ((1900, 2100, "1"), (0, 9000, "3"), (2100, 2900, "0")):
+        assert node.query(
+            "SELECT count() FROM timeSeriesSelector('external_tags', 'prometheus', "
+            f"'http_requests{{job=\"api\"}}', toDateTime64({start}, 3), toDateTime64({end}, 3))"
+        ) == f"{expected}\n"
 
 
 @pytest.mark.parametrize("selector", [None, '{job="api"}', 'http_requests{job="api"}'])

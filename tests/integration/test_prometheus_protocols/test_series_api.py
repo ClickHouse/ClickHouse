@@ -230,13 +230,22 @@ def test_series_time_range_is_inclusive_and_supports_one_sided_bounds():
 
 
 def test_series_time_range_without_metric_name_matcher():
+    # Both `regex_metric` series match the selector too, but have samples only at 1000.
     data = get_json_from_api(
         "/api/v1/series",
-        params={"match[]": '{host="server1"}', "start": "1030", "end": "1040"},
+        params={"match[]": '{host=~"server.+"}', "start": "1015", "end": "1040"},
     )["data"]
-    assert data == [
-        {"__name__": "cpu_usage", "host": "server1", "datacenter": "us-east"}
-    ]
+    assert sorted_series(data) == sorted_series(
+        [
+            {"__name__": "cpu_usage", "host": "server1", "datacenter": "us-east"},
+            {"__name__": "cpu_usage", "host": "server2", "datacenter": "us-west"},
+            {"__name__": "memory_usage", "host": "server1", "datacenter": "us-east"},
+        ]
+    )
+    assert get_json_from_api(
+        "/api/v1/series",
+        params={"match[]": '{host=~"server.+"}', "start": "1031", "end": "1040"},
+    )["data"] == []
 
 
 def test_time_series_target_functions_require_source_select():

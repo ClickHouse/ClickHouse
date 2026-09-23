@@ -15,6 +15,7 @@ DROP TABLE IF EXISTS ts_v7;
 DROP TABLE IF EXISTS ts_v6;
 DROP TABLE IF EXISTS ts_v6_copy;
 DROP TABLE IF EXISTS ts_no_bounds;
+DROP TABLE IF EXISTS ts_v7_no_agg;
 
 SELECT '-- a new table is split, and its tags target loses the engine that carried the bounds';
 
@@ -70,6 +71,26 @@ ALTER TABLE ts_v7 MODIFY SETTING filter_by_min_time_and_max_time = 0;
 SELECT count() FROM timeSeriesSelector(ts_v7, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
 
 DROP TABLE ts_v7;
+
+SELECT '-- the bounds are always aggregated, aggregate_min_time_and_max_time is ignored from version 7';
+
+CREATE TABLE ts_v7_no_agg ENGINE = TimeSeries SETTINGS aggregate_min_time_and_max_time = 0;
+
+SELECT engine, engine_full LIKE '%ORDER BY (metric_name, id) %' AS keyed_like_tags
+FROM system.tables WHERE database = currentDatabase() AND name LIKE '.inner\_id.tagsminmax.%';
+
+SELECT name, type FROM system.columns
+WHERE database = currentDatabase() AND table LIKE '.inner\_id.tagsminmax.%' AND name IN ('min_time', 'max_time')
+ORDER BY position;
+
+DROP TABLE ts_v7_no_agg;
+
+SELECT '-- the bounds must be merged with min and max';
+
+CREATE TABLE ts_v7_bad ENGINE = TimeSeries
+    TAGS MIN MAX INNER COLUMNS (min_time SimpleAggregateFunction(max, Nullable(DateTime64(3)))); -- { serverError BAD_TYPE_OF_FIELD }
+CREATE TABLE ts_v7_bad ENGINE = TimeSeries
+    TAGS MIN MAX INNER COLUMNS (max_time SimpleAggregateFunction(min, Nullable(DateTime64(3)))); -- { serverError BAD_TYPE_OF_FIELD }
 
 SELECT '-- a table pinned to version 6 keeps the old single-table layout';
 

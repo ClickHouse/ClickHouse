@@ -112,10 +112,6 @@ private:
     /// Accumulates series IDs written by this sink, committed to the active series cache on finish.
     std::vector<UInt128> pending_cached_ids;
     HashSet<UInt128, HashCRC32<UInt128>> pending_cached_set;
-
-    /// True once a tags block has been pushed, i.e. the tags pipeline may be holding a part that
-    /// only its next push will commit.
-    bool tags_pushed = false;
 };
 
 }

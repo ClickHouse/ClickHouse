@@ -20,6 +20,11 @@ AggregatingMergeTree	1
 -- a series with no bounds row is pruned while filtering is on, and returns once it is off
 0
 1
+-- the bounds are always aggregated, aggregate_min_time_and_max_time is ignored from version 7
+AggregatingMergeTree	1
+min_time	SimpleAggregateFunction(min, Nullable(DateTime64(3)))
+max_time	SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+-- the bounds must be merged with min and max
 -- a table pinned to version 6 keeps the old single-table layout
 0
 2
