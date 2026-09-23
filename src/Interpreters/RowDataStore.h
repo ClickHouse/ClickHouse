@@ -44,6 +44,9 @@ public:
     /// Compute the row-major layout for `columns` in input order.
     static RowLayoutPtr computeLayout(const Columns & columns, const DataTypes & types);
 
+    /// The row length every store built from `layout` has.
+    static size_t rowLengthOf(const RowLayout & layout) { return layout.empty() ? 0 : layout.back().offset + layout.back().size; }
+
     /// Create the row-major buffer and fills it with rows from `columns` in input order.
     static std::shared_ptr<RowDataStore> create(const RowLayoutPtr & layout, const Columns & columns);
 
@@ -53,12 +56,8 @@ public:
 
     const FieldLayout & getFieldLayout(size_t input_col_index) const;
 
-    /// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
-    std::optional<size_t> getBatchSize() const;
-
     const char * getRowAt(size_t index) const { return chars.data() + index * row_length; }
     size_t size() const { return row_length != 0 ? chars.size() / row_length : 0; }
-    size_t byteSizeAt(size_t /*n*/) const { return row_length; }
     size_t allocatedBytes() const { return chars.empty() ? 0 : chars.allocated_bytes(); }
 
 private:
@@ -75,5 +74,8 @@ private:
 };
 
 bool isRowStorageUseful(const ColumnPtr & column);
+
+/// Derives optimal batch size for reading and writing into the row store based on L2 cache size.
+size_t rowStoreBatchSize(size_t row_length);
 
 }

@@ -12,12 +12,15 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/IDataType.h>
+#include <Interpreters/RowDataStore.h>
 #include <Common/PODArray.h>
 #include <Common/assert_cast.h>
 #include <Common/memcpySmall.h>
+#include <Common/typeid_cast.h>
 
 #include <algorithm>
 #include <cstring>
+#include <limits>
 
 namespace DB
 {
@@ -30,6 +33,33 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A contiguous run of source rows in one block, or - when `block_no` is `default_rows` - a run of
+/// unmatched rows. A reranged build side and an `Array`'s nested column are both made of runs.
+struct GatherRange
+{
+    static constexpr UInt32 default_rows = std::numeric_limits<UInt32>::max();
+
+    UInt32 block_no = 0;
+    UInt64 begin = 0;
+    UInt64 length = 0;
+
+    constexpr bool isDefault() const { return block_no == default_rows; }
+};
+
+using GatherRanges = PaddedPODArray<GatherRange>;
+
+/// Buffers shared by all output columns of one emit call, since expanding a selection gives the same
+/// answer for every column. A column stored as `ColumnReplicated` is the exception: its row remap is
+/// per column, so it gets its own `remapped` pass over `flat`.
+struct EmitScratch
+{
+    PaddedPODArray<UInt64> flat;
+    PaddedPODArray<UInt64> remapped;
+    GatherRanges ranges;
+    bool flat_ready = false;
+    bool ranges_ready = false;
+};
 
 /// 32 rows of lead cover one source row's memory latency.
 constexpr size_t look_ahead = 32;
@@ -44,27 +74,35 @@ constexpr UInt64 no_open_run = 1;
 /// `STRIDE` is 0 when the width is only known at run time, as for a `FixedString(n)` of arbitrary `n`.
 /// A compile-time width turns the copy into one load and one store. `default_pattern` is the `stride`
 /// bytes a zero ref word writes.
-template <bool from_row_list, size_t STRIDE>
+/// `row_major` reads the plane as a row store's field: `row_store_row_length` bytes from one row's
+/// value to the next, instead of the values sitting back to back.
+template <bool from_row_list, bool from_row_store, size_t STRIDE>
 void gatherFixedStride(
     IColumn & dst,
     const void * const * sources,
     size_t dynamic_stride,
+    std::optional<size_t> row_store_row_length,
     const UInt64 * row_refs_begin,
     const UInt64 * row_refs_end,
     size_t rows_to_add,
     const char * default_pattern)
 {
     const size_t stride = STRIDE ? STRIDE : dynamic_stride;
+    const size_t row_step = from_row_store ? *row_store_row_length : stride;
     const std::span<char> out_span = dst.insertRawUninitialized(rows_to_add);
     chassert(out_span.size() == rows_to_add * stride);
 
     char * out = out_span.data();
 
+    auto source_at = [&](UInt64 ref_word)
+    {
+        return static_cast<const char *>(sources[refWordBlockNo(ref_word)])
+            + static_cast<size_t>(refWordRowNo(ref_word)) * row_step;
+    };
+
     auto copy_ref = [&](UInt64 ref_word)
     {
-        const char * from = static_cast<const char *>(sources[refWordBlockNo(ref_word)])
-            + static_cast<size_t>(refWordRowNo(ref_word)) * stride;
-        memcpy(out, from, stride);
+        memcpy(out, source_at(ref_word), stride);
         out += stride;
     };
 
@@ -76,9 +114,7 @@ void gatherFixedStride(
             /// Only an inline word carries a (block_no, row_number) address.
             const UInt64 ahead = row_refs_begin[i + look_ahead];
             if (refWordIsInline(ahead))
-                __builtin_prefetch(
-                    static_cast<const char *>(sources[refWordBlockNo(ahead)])
-                    + static_cast<size_t>(refWordRowNo(ahead)) * stride);
+                __builtin_prefetch(source_at(ahead));
         }
 
         const UInt64 word = row_refs_begin[i];
@@ -126,6 +162,7 @@ void gatherFixedDispatch(
     IColumn & dst,
     const void * const * sources,
     size_t stride,
+    std::optional<size_t> row_store_row_length,
     const UInt64 * row_refs_begin,
     const UInt64 * row_refs_end,
     size_t rows_to_add,
@@ -134,7 +171,14 @@ void gatherFixedDispatch(
     withStride(
         stride,
         [&]<size_t STRIDE>
-        { gatherFixedStride<from_row_list, STRIDE>(dst, sources, stride, row_refs_begin, row_refs_end, rows_to_add, default_pattern); });
+        {
+            if (row_store_row_length)
+                gatherFixedStride<from_row_list, true, STRIDE>(
+                    dst, sources, stride, row_store_row_length, row_refs_begin, row_refs_end, rows_to_add, default_pattern);
+            else
+                gatherFixedStride<from_row_list, false, STRIDE>(
+                    dst, sources, stride, row_store_row_length, row_refs_begin, row_refs_end, rows_to_add, default_pattern);
+        });
 }
 
 /// `row' = indexes[row]`, so the word addresses the replicated block's nested column. An identity
@@ -278,7 +322,9 @@ void gatherRawRanges(
     withStride(stride, [&]<size_t STRIDE> { gatherRawRangesStride<STRIDE>(dst, bases, stride, ranges, total_rows, default_pattern); });
 }
 
-void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count);
+void gatherNodeRows(
+    IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count,
+    std::optional<size_t> row_store_row_length = std::nullopt);
 void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges & ranges, size_t total_rows);
 
 /// The unmatched row of a `Kind::Rows` node. Below a `Nullable` the row is NULL and the enclosing
@@ -303,11 +349,15 @@ void copyRows(IColumn & dst, const IColumn & src, size_t begin, size_t length)
 
 /// `Nullable` over a fixed-width column in one pass: each word is read once and serves both planes,
 /// with one lead prefetch per plane, instead of a null-map pass and a value pass over the same words.
-template <size_t STRIDE>
-void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
+/// Row-major, the null byte and the value are adjacent bytes of the same row.
+template <bool row_major, size_t STRIDE>
+void gatherNullableFixedStride(
+    ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     const GatherNode & nested = node.children[0];
     const size_t stride = STRIDE ? STRIDE : nested.stride;
+    const size_t null_step = row_major ? *row_store_row_length : 1;
+    const size_t value_step = row_major ? *row_store_row_length : stride;
     const void * const * null_by_block = node.data_by_block.data();
     const void * const * value_by_block = nested.data_by_block.data();
     const char * default_pattern = nested.default_pattern.data();
@@ -327,8 +377,8 @@ void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, co
             {
                 const UInt32 ahead_block = refWordBlockNo(ahead);
                 const size_t ahead_row = refWordRowNo(ahead);
-                __builtin_prefetch(static_cast<const char *>(null_by_block[ahead_block]) + ahead_row);
-                __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * stride);
+                __builtin_prefetch(static_cast<const char *>(null_by_block[ahead_block]) + ahead_row * null_step);
+                __builtin_prefetch(static_cast<const char *>(value_by_block[ahead_block]) + ahead_row * value_step);
             }
         }
         const UInt64 word = words[i];
@@ -341,23 +391,36 @@ void gatherNullableFixedStride(ColumnNullable & dst, const GatherNode & node, co
         }
         const UInt32 block_no = refWordBlockNo(word);
         const size_t row = refWordRowNo(word);
-        null_out[i] = static_cast<const char *>(null_by_block[block_no])[row];
-        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + row * stride, stride);
+        null_out[i] = static_cast<const char *>(null_by_block[block_no])[row * null_step];
+        memcpy(value_out, static_cast<const char *>(value_by_block[block_no]) + row * value_step, stride);
         value_out += stride;
     }
     chassert(value_out == value_span.data() + value_span.size());
 }
 
-void gatherNullableRows(ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count)
+void gatherNullableRows(
+    ColumnNullable & dst, const GatherNode & node, const UInt64 * words, size_t count,
+    std::optional<size_t> row_store_row_length = std::nullopt)
 {
     const GatherNode & nested = node.children[0];
     if (nested.kind == GatherNode::Kind::Fixed)
     {
-        withStride(nested.stride, [&]<size_t STRIDE> { gatherNullableFixedStride<STRIDE>(dst, node, words, count); });
+        withStride(
+            nested.stride,
+            [&]<size_t STRIDE>
+            {
+                if (row_store_row_length)
+                    gatherNullableFixedStride<true, STRIDE>(dst, node, words, count, row_store_row_length);
+                else
+                    gatherNullableFixedStride<false, STRIDE>(dst, node, words, count, row_store_row_length);
+            });
         return;
     }
-    gatherFixedDispatch<false>(dst.getNullMapColumn(), node.data_by_block.data(), 1, words, words + count, count, &null_map_default);
-    gatherNodeRows(dst.getNestedColumn(), node.children[0], words, count);
+    /// A row store holds nothing but fixed-width values, so only a column-major node gets here.
+    chassert(!row_store_row_length);
+    gatherFixedDispatch<false>(
+        dst.getNullMapColumn(), node.data_by_block.data(), 1, std::nullopt, words, words + count, count, &null_map_default);
+    gatherNodeRows(dst.getNestedColumn(), nested, words, count);
 }
 
 /// The characters of `gatherStringRows`, one copy per run of consecutive rows of one block. `row_no`
@@ -749,16 +812,17 @@ void gatherRowsByRanges(IColumn & dst, const GatherNode & node, const GatherRang
     }
 }
 
-void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count)
+void gatherNodeRows(IColumn & dst, const GatherNode & node, const UInt64 * words, size_t count, std::optional<size_t> row_store_row_length)
 {
     using enum GatherNode::Kind;
     switch (node.kind)
     {
         case Fixed:
             gatherFixedDispatch<false>(
-                dst, node.data_by_block.data(), node.stride, words, words + count, count, node.default_pattern.data());
+                dst, node.data_by_block.data(), node.stride, row_store_row_length, words, words + count, count,
+                node.default_pattern.data());
             break;
-        case Nullable: gatherNullableRows(assert_cast<ColumnNullable &>(dst), node, words, count); break;
+        case Nullable: gatherNullableRows(assert_cast<ColumnNullable &>(dst), node, words, count, row_store_row_length); break;
         case String: gatherStringRows(assert_cast<ColumnString &>(dst), node, words, count); break;
         case Array: gatherArrayRows(assert_cast<ColumnArray &>(dst), node, words, count); break;
         case Tuple: gatherTupleRows(assert_cast<ColumnTuple &>(dst), node, words, count); break;
@@ -806,6 +870,21 @@ void gatherNodeRanges(IColumn & dst, const GatherNode & node, const GatherRanges
     throwNoGatherKernel(type, column, "the emitted type and the stored column are different shapes");
 }
 
+/// The `stride` bytes an unmatched row of a fixed-width column writes. Held as data rather than
+/// derived, because a fixed-width default is not always bitwise zero - an `Enum`'s is its first value.
+/// `type` is null below a `Nullable`, where `insertDefault` fills the nested planes from the nested
+/// *column*'s default instead; the two differ for an `Enum`, and `assumeNotNull` sees it.
+std::vector<char> fixedDefaultPattern(const IColumn & column, const IDataType * type)
+{
+    MutableColumnPtr default_row = column.cloneEmpty();
+    if (type)
+        type->insertDefaultInto(*default_row);
+    else
+        default_row->insertDefault();
+    const std::string_view default_bytes = default_row->getRawData();
+    return {default_bytes.begin(), default_bytes.end()};
+}
+
 /// The declared types of the columns `ColumnPlanes::children` holds for a column of `type`.
 DataTypes childTypes(ColumnPlanes::Shape shape, const IDataType & type)
 {
@@ -820,6 +899,40 @@ DataTypes childTypes(ColumnPlanes::Shape shape, const IDataType & type)
         case Fixed:
         case String:
         case Rows: return {};
+    }
+}
+
+void gatherColumn(
+    IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch,
+    std::optional<size_t> row_store_row_length = std::nullopt)
+{
+    chassert(src.node);
+    const GatherNode & node = *src.node;
+
+    /// Keeping a sorted build side's runs as runs is the whole point of having reranged it. A
+    /// replicated source is the exception: `row' = indexes[row]` breaks any run.
+    if (selection.shape == RefWordShape::Ranges && !src.remap_by_block)
+    {
+        chassert(!row_store_row_length);
+        gatherNodeRanges(dst, node, rangesOf(selection, scratch), selection.rows);
+    }
+
+    /// The dominant case - fixed width, no replicated block - reads the flat and list shapes as
+    /// they are. Every other kernel needs the one word per row that `flatWords` produces.
+    else if (node.kind == GatherNode::Kind::Fixed && !src.remap_by_block)
+    {
+        if (selection.shape == RefWordShape::Flat)
+            gatherFixedDispatch<false>(
+                dst, node.data_by_block.data(), node.stride, row_store_row_length, selection.begin, selection.end, selection.rows,
+                node.default_pattern.data());
+        else
+            gatherFixedDispatch<true>(
+                dst, node.data_by_block.data(), node.stride, row_store_row_length, selection.begin, selection.end, selection.rows,
+                node.default_pattern.data());
+    }
+    else
+    {
+        gatherNodeRows(dst, node, flatWords(selection, src.remap_by_block, scratch), selection.rows, row_store_row_length);
     }
 }
 }
@@ -860,17 +973,10 @@ void resolveGatherNode(
         node.data_by_block.resize(num_blocks);
         switch (planes.shape)
         {
-            case Fixed: {
-                MutableColumnPtr default_row = column.cloneEmpty();
-                if (default_from_type)
-                    type->insertDefaultInto(*default_row);
-                else
-                    default_row->insertDefault();
-                const std::string_view default_bytes = default_row->getRawData();
-                chassert(default_bytes.size() == node.stride);
-                node.default_pattern.assign(default_bytes.begin(), default_bytes.end());
+            case Fixed:
+                node.default_pattern = fixedDefaultPattern(column, default_from_type ? type.get() : nullptr);
+                chassert(node.default_pattern.size() == node.stride);
                 break;
-            }
             case String: node.aux_by_block.resize(num_blocks); break;
             case Variant:
                 if (planes.children.empty() || planes.children.size() >= ColumnVariant::NULL_DISCRIMINATOR)
@@ -908,33 +1014,114 @@ void resolveGatherNode(
             node.children[i], child_types[i], *planes.children[i], block_no, num_blocks, default_from_type && planes.shape == Tuple);
 }
 
-void gatherColumn(IColumn & dst, const GatherColumn & src, const RefWordSelection & selection, EmitScratch & scratch)
+void resolveRowStoreGatherNode(
+    GatherNode & node,
+    const DataTypePtr & type,
+    const RowDataStore & row_store,
+    const ColumnAccessIndex & access,
+    size_t block_no,
+    size_t num_blocks)
 {
-    chassert(src.node);
-    const GatherNode & node = *src.node;
+    using enum GatherNode::Kind;
 
-    /// Keeping a sorted build side's runs as runs is the whole point of having reranged it. A
-    /// replicated source is the exception: `row' = indexes[row]` breaks any run.
-    if (selection.shape == RefWordShape::Ranges && !src.remap_by_block)
+    const char * const field = row_store.getRowAt(0) + access.field_offset;
+    /// A nullable field spends its first byte on the null flag and the rest on the value.
+    const size_t value_size = access.is_nullable ? access.field_size - 1 : access.field_size;
+
+    const bool first = !node.column_type;
+    if (first)
     {
-        gatherNodeRanges(dst, node, rangesOf(selection, scratch), selection.rows);
-    }
-    /// The dominant case - fixed width, no replicated block - reads the flat and list shapes as
-    /// they are. Every other kernel needs the one word per row that `flatWords` produces.
-    else if (node.kind == GatherNode::Kind::Fixed && !src.remap_by_block)
-    {
-        if (selection.shape == RefWordShape::Flat)
-            gatherFixedDispatch<false>(
-                dst, node.data_by_block.data(), node.stride, selection.begin, selection.end, selection.rows,
-                node.default_pattern.data());
+        const MutableColumnPtr emit_column = type->createColumn();
+        const IColumn & emit_column_ref = *emit_column;
+        const auto * emit_nullable = typeid_cast<const ColumnNullable *>(&emit_column_ref);
+        if (static_cast<bool>(emit_nullable) != access.is_nullable)
+            throwTypeDisagrees(*type, emit_column_ref);
+        const IColumn & value_column = emit_nullable ? emit_nullable->getNestedColumn() : emit_column_ref;
+        if (!value_column.isFixedAndContiguous() || value_column.sizeOfValueIfFixed() != value_size)
+            throwNoGatherKernel(*type, emit_column_ref, "the row store holds it at another width");
+
+        node.column_type = &typeid(emit_column_ref);
+        node.kind = access.is_nullable ? Nullable : Fixed;
+        node.data_by_block.resize(num_blocks);
+        if (access.is_nullable)
+        {
+            node.children.resize(1);
+            GatherNode & nested = node.children[0];
+            nested.column_type = &typeid(value_column);
+            nested.kind = Fixed;
+            nested.stride = value_size;
+            nested.data_by_block.resize(num_blocks);
+            nested.default_pattern = fixedDefaultPattern(value_column, /*type=*/ nullptr);
+            chassert(nested.default_pattern.size() == nested.stride);
+        }
         else
-            gatherFixedDispatch<true>(
-                dst, node.data_by_block.data(), node.stride, selection.begin, selection.end, selection.rows,
-                node.default_pattern.data());
+        {
+            node.stride = value_size;
+            node.default_pattern = fixedDefaultPattern(value_column, type.get());
+            chassert(node.default_pattern.size() == node.stride);
+        }
     }
     else
     {
-        gatherNodeRows(dst, node, flatWords(selection, src.remap_by_block, scratch), selection.rows);
+        const GatherNode & value_node = access.is_nullable ? node.children[0] : node;
+        if (value_node.stride != value_size)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Join emit cannot read a right column of type {} from the row store: the stored blocks keep it as a {}-byte value and "
+                "as a {}-byte value",
+                type->getName(), value_node.stride, value_size);
+    }
+
+    node.data_by_block[block_no] = field;
+    if (access.is_nullable)
+        node.children[0].data_by_block[block_no] = field + 1;
+}
+
+void gatherJoinOutputColumns(
+    MutableColumns & columns,
+    std::span<const GatherColumn> gather,
+    const RefWordSelection & selection,
+    std::optional<size_t> row_store_row_length)
+{
+    chassert(columns.size() == gather.size());
+
+    /// Header derivation (`JoiningTransform::transformHeader`) runs the join over an empty block, and
+    /// reaches here with nothing recorded and nothing to append.
+    if (selection.begin == selection.end)
+        return;
+
+    EmitScratch scratch;
+    for (size_t dst_idx = 0; dst_idx < gather.size(); ++dst_idx)
+    {
+        if (!gather[dst_idx].node || gather[dst_idx].in_row_store)
+            continue;
+
+        gatherColumn(*columns[dst_idx], gather[dst_idx], selection, scratch);
+    }
+
+    if (!row_store_row_length.has_value())
+        return;
+
+    const UInt64 * flat = flatWords(selection, /*remap_by_block=*/ nullptr, scratch);
+    const size_t batch_rows = rowStoreBatchSize(*row_store_row_length);
+
+    for (size_t batch_begin = 0; batch_begin < selection.rows; batch_begin += batch_rows)
+    {
+        const size_t rows = std::min(batch_rows, selection.rows - batch_begin);
+        const RefWordSelection batch{
+            .begin = flat + batch_begin, .end = flat + batch_begin + rows, .rows = rows, .shape = RefWordShape::Flat};
+
+        EmitScratch batch_scratch;
+        for (size_t dst_idx = 0; dst_idx < gather.size(); ++dst_idx)
+        {
+            if (!gather[dst_idx].in_row_store)
+                continue;
+            /// Sized once for the whole selection, as every batch appends to the same column.
+            if (batch_begin == 0)
+                columns[dst_idx]->reserve(columns[dst_idx]->size() + selection.rows);
+
+            gatherColumn(*columns[dst_idx], gather[dst_idx], batch, batch_scratch, row_store_row_length);
+        }
     }
 }
 

@@ -76,11 +76,7 @@ struct LazyOutput
     /// `byteSizeAt` accounting and `buildJoinGetOutput`'s nullable dispatch.
     const StoredBlock * const * stored_columns = nullptr;
 
-    /// Per-block row store base pointers (block_no -> RowDataStore*), from StoredColumnsIndex::rowStoresData().
-    /// Shared by all row-store columns of a block; a specific column is a field_offset/field_size slice.
-    const RowDataStore * const * block_row_stores = nullptr;
-
-    /// Per output column, the source descriptor `gatherColumn` reads. Resolved once per probe block,
+    /// Per output column, the source descriptor the emit reads. Resolved once per probe block,
     /// as it is a property of the join rather than of an output chunk. Empty for joinGet.
     std::vector<GatherColumn> emit_gather;
 
@@ -88,11 +84,9 @@ struct LazyOutput
 
     bool join_data_sorted = false;
     bool output_by_row_list = false;
-    size_t output_by_row_list_threshold = 0;
-    size_t join_data_avg_perkey_rows = 0;
 
     ColumnAccessIndexes output_access_indexes;
-    bool has_row_store = false;
+    std::optional<size_t> row_store_row_length;
     bool has_columns = false;
 
     const PaddedPODArray<UInt64> & getRowRefs() const { return row_refs; }
@@ -129,39 +123,22 @@ struct LazyOutput
 
     void buildJoinGetOutput(size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
 
-    /// The columnar output columns read the recorded words in whatever shape they have.
-    void emitColumnarOutputs(MutableColumns & columns, const RefWordSelection & selection) const;
-
-    /// The row store is not addressed by ref words: it needs every ref resolved to a row pointer.
-    /// This resolves them once, into one pointer array that every row-store column reads.
-    void fillRowStoreOutputsByPointers(MutableColumns & columns, const RefWordSelection & selection) const;
-
-    /// Each row-store column resolves the refs for itself, so no per-output-row array is kept. The
-    /// choice for keys with many rows, where the output outgrows both inputs.
-    void fillRowStoreOutputsByRefLists(
-        size_t size_to_reserve, MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end) const;
-
-    template<bool from_row_store, bool from_columns>
     [[nodiscard]] size_t buildOutputFromBlocksLimitAndOffset(
         MutableColumns & columns, const UInt64 * row_refs_begin, const UInt64 * row_refs_end,
         const PaddedPODArray<UInt64> & left_sizes, const IColumn::Offsets & left_offsets,
         size_t rows_offset, size_t rows_limit, size_t bytes_limit) const;
-
-private:
-    template<typename F>
-    void dispatchOutputs(F && f) const;
 };
 
 /// What one emit's output columns read: the access index of each saved-block column in `positions`
-/// and, for the columnar ones, the gather source, resolved once per probe. Only the requested
-/// positions are built, so `StorageJoin` queries selecting different right-column subsets each get
-/// their own columns built rather than reusing another query's table.
+/// and its gather source, resolved once per probe. Only the requested positions are built, so
+/// `StorageJoin` queries selecting different right-column subsets each get their own columns built
+/// rather than reusing another query's table.
 struct EmitPlan
 {
     ColumnAccessIndexes access_indexes;
-    /// Parallel to `access_indexes`; empty for a row-store column, and for every column when not resolved.
+    /// Parallel to `access_indexes`; empty for every column when not resolved.
     std::vector<GatherColumn> gather;
-    bool has_row_store = false;
+    std::optional<size_t> row_store_row_length;
     bool has_columns = false;
 };
 
@@ -208,11 +185,8 @@ public:
         std::vector<size_t> right_indexes;
         right_indexes.reserve(num_columns_to_add);
 
-        lazy_output.output_by_row_list_threshold = join.getTableJoin().outputByRowListPerkeyRowsThreshold();
         lazy_output.join_data_sorted = join.getJoinedData()->sorted;
-        lazy_output.join_data_avg_perkey_rows = join.getJoinedData()->avgPerKeyRows();
         lazy_output.stored_columns = join.getJoinedData()->stored_columns_index->blocksData();
-        lazy_output.block_row_stores = join.getJoinedData()->stored_columns_index->rowStoresData();
 
         for (const auto & src_column : block_with_columns_to_add)
         {
@@ -249,7 +223,7 @@ public:
         EmitPlan plan = planJoinEmit(*join.getJoinedData(), right_indexes, lazy_output.type_name, !is_join_get);
         lazy_output.output_access_indexes = std::move(plan.access_indexes);
         lazy_output.emit_gather = std::move(plan.gather);
-        lazy_output.has_row_store = plan.has_row_store;
+        lazy_output.row_store_row_length = plan.row_store_row_length;
         lazy_output.has_columns = plan.has_columns;
     }
 
