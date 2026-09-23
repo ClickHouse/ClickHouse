@@ -459,6 +459,9 @@ class Targeting:
     # these files returns thousands of tests and floods the candidate pool with noise
     # (the real signal lives in the other files touched by the same PR).  Skip them
     # from precise coverage admission.
+    # Directories compiled into the instrumented server binary.
+    COVERAGE_SOURCE_PREFIXES = ("src/", "programs/", "base/")
+
     SHARED_REGISTRY_FILES = frozenset(
         {
             "src/Common/ProfileEvents.cpp",
@@ -545,7 +548,9 @@ class Targeting:
             {
                 (canonical_coverage_path(path), line)
                 for path, line in changed_lines
-                if canonical_coverage_path(path).startswith("src/")
+                if canonical_coverage_path(path).startswith(
+                    self.COVERAGE_SOURCE_PREFIXES
+                )
                 and canonical_coverage_path(path) not in self.SHARED_REGISTRY_FILES
             }
         )

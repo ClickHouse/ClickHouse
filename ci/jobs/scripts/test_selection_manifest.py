@@ -1,6 +1,5 @@
 import json
 from dataclasses import asdict
-from datetime import datetime, timezone
 from pathlib import Path
 
 from ci.jobs.scripts.coverage_selection import validate_snapshots
@@ -124,11 +123,9 @@ def load_selection(info, config=SELECTION_CONFIG):
     if manifest["coverage_lines"]:
         if manifest.get("canary", {}).get("status") != "OK":
             raise ValueError("Selection manifest has no successful coverage canary")
-        validate_snapshots(
-            manifest["coverage_snapshots"],
-            datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
-            config,
-        )
+        # Validate against the producer's cutoff, so every job of the attempt
+        # accepts the same manifest regardless of when it starts.
+        validate_snapshots(manifest["coverage_snapshots"], manifest["cutoff"], config)
     tests = [record["test"] for record in manifest["tests"]]
     if len(tests) != len(set(tests)):
         raise ValueError("Selection manifest contains duplicate tests")

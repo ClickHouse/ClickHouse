@@ -2334,7 +2334,7 @@ jobs:
           PYTHONUNBUFFERED=1 python3 -m praktika run 'Stateless tests (arm_binary, sequential)' --workflow "PR" --ci --timestamp
 
   stateless_tests_amd_asan_ubsan_db_disk_distributed_plan_targeted:
-    runs-on: [self-hosted, pr-amd-small-mem]
+    runs-on: [self-hosted, pr-amd-large]
     needs: [build_amd_asan_ubsan, build_arm_tidy, config_workflow, dockers_build_amd, dockers_build_arm, dockers_build_multiplatform_manifest, fast_test, select_functional_tests, style_check]
     if: ${{ !cancelled() && !contains(needs.*.outputs.pipeline_status, 'failure') && !contains(needs.*.outputs.pipeline_status, 'undefined') && !contains(fromJson(needs.config_workflow.outputs.data).workflow_config.cache_success_base64, 'U3RhdGVsZXNzIHRlc3RzIChhbWRfYXNhbl91YnNhbiwgZGIgZGlzaywgZGlzdHJpYnV0ZWQgcGxhbiwgdGFyZ2V0ZWQp') }}
     name: "Stateless tests (amd_asan_ubsan, db disk, distributed plan, targeted)"

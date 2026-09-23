@@ -192,6 +192,12 @@ common_ft_job_config = Job.Config(
             # publishes. Both are runner inputs, so the digest must cover them.
             "./ci/jobs/scripts/find_tests.py",
             "./ci/praktika/result.py",
+            # The selector modules decide which tests a targeted job runs.
+            "./ci/jobs/select_functional_tests.py",
+            "./ci/jobs/scripts/coverage_selection.py",
+            "./ci/jobs/scripts/test_selection_config.py",
+            "./ci/jobs/scripts/test_selection_manifest.py",
+            "./ci/defs/functional_test_selection.py",
             # `find_tests.py` selects the targeted tests from CIDB and reads
             # `Info`, so both modules decide which tests this job runs.
             "./ci/praktika/cidb.py",
@@ -2167,20 +2173,30 @@ class JobConfigs:
 
     # Every PR stateless environment is derived from these concrete configurations.
     # Targeted sanitizer jobs combine shards and execution flavors per configuration.
+    # The ASan configuration exists only as sequential `db disk` shards, whose
+    # small runner cannot hold the parallel distributed-plan workload that the
+    # targeted job also runs. Use the runner of the parallel distributed-plan job.
     stateless_tests_sanitizer_pr_jobs = require_selection(
-        targeted_variants(
-            [
-                job
-                for job in functional_tests_jobs
-                if job.parameter.startswith(
-                    (
-                        "amd_asan_ubsan, db disk, distributed plan,",
-                        "amd_tsan, s3 storage,",
+        [
+            (
+                job.set_runs_on(RunnerLabels.AMD_LARGE)
+                if job.parameter.startswith("amd_asan_ubsan,")
+                else job
+            )
+            for job in targeted_variants(
+                [
+                    job
+                    for job in functional_tests_jobs
+                    if job.parameter.startswith(
+                        (
+                            "amd_asan_ubsan, db disk, distributed plan,",
+                            "amd_tsan, s3 storage,",
+                        )
                     )
-                )
-            ],
-            allow_failure=False,
-        )
+                ],
+                allow_failure=False,
+            )
+        ]
     )
     functional_tests_pr_jobs = [
         job

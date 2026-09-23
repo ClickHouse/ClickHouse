@@ -40,7 +40,8 @@ def evaluate_case(case, cidb=None):
     lines = [
         (path, line)
         for path, line in Targeting._parse_diff_lines(case["diff"])
-        if path.startswith("src/") and path not in Targeting.SHARED_REGISTRY_FILES
+        if path.startswith(Targeting.COVERAGE_SOURCE_PREFIXES)
+        and path not in Targeting.SHARED_REGISTRY_FILES
     ]
     hunks = Targeting._parse_diff_hunk_ranges(case["diff"])
     snapshots = (

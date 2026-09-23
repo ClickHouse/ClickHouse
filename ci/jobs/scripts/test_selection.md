@@ -40,7 +40,7 @@ preserving filtering by `file`. It combines their observations under one
 repository-relative path before scoring. Absolute paths and parent traversal
 are rejected when interpreting selection inputs. Generated protobuf coverage
 under `ci/tmp/build/` remains in the export; selection only considers changed
-source paths under `src/`.
+source paths under `src/`, `programs/`, and `base/`.
 
 Each shard runs a post-export smoke check through the production selector query
 and scorer against its uploaded coverage. The export step fails if the selector
