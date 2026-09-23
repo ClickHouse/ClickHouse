@@ -32,12 +32,18 @@ public:
 
     const Aggregator::Params & getParams() const { return params; }
 
+    /// Tells the step that its input is one row per group already - the read of compressed
+    /// blocks grouped every part on the device - so that it passes the rows on in its own header
+    /// instead of grouping them again.
+    void setInputGrouped() { input_grouped = true; }
+
 private:
     void updateOutputHeader() override;
 
     Aggregator::Params params;
 
     size_t batch_bytes;
+    bool input_grouped = false;
 };
 
 }

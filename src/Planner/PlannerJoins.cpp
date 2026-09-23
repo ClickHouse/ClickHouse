@@ -40,7 +40,7 @@
 #include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
-#include <GPU/GPUAccumulator.h>
+#include <GPU/GPUDevice.h>
 #include <GPU/GPUJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>

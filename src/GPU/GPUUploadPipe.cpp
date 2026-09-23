@@ -1,267 +1,204 @@
-#include <GPU/Utils.h>
+#include <GPU/GPUUploadPipe.h>
+
+#if USE_GPU
+
+#include <GPU/GPUDevice.h>
+#include <GPU/GPUTypeMapping.h>
+
+#include <Common/Exception.h>
+
+#include <algorithm>
+
+namespace DB::ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
 
 namespace DB::GPU
 {
 
-int createGPUBuffer(GPUElementType element_type, GPUBuffer ** handle, char * error, size_t error_size)
+void DeviceColumn::appendCompressed(
+    Decompressor & decompressor, GPUCodec codec, std::string_view host_compressed, std::span<const CompressedBlock> blocks)
+{
+    decompressor.decompress(codec, host_compressed, blocks, values.grow(decompressedBytesOf(blocks)));
+}
+
+void DeviceColumn::dropFront(size_t num_rows)
+{
+    const size_t bytes = num_rows * sizeOf(element_type);
+    if (bytes > values.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Dropping {} rows of a device column of {}", num_rows, rows());
+
+    const size_t tail = values.size() - bytes;
+    if (tail == 0)
+    {
+        values.clear();
+        return;
+    }
+
+    spare.clear();
+    checkCuda(
+        cudaMemcpyAsync(spare.grow(tail), values.data() + bytes, tail, cudaMemcpyDeviceToDevice, deviceStream()),
+        "Cannot move {} bytes to the front of a device column",
+        tail);
+    std::swap(values, spare);
+}
+
+bool UploadPipe::canUpload(const IDataType & type)
+{
+    return elementTypeOf(type).has_value();
+}
+
+UploadPipe::UploadPipe(const IDataType & type, size_t stage_bytes_, bool compressed_)
+    : element_type(elementTypeOrThrow(type))
+    , element_size(sizeOf(element_type))
+    , stage_bytes(stage_bytes_)
+    , compressed(compressed_)
+    , device(element_type)
+{
+}
+
+UploadPipe::~UploadPipe()
 {
     try
     {
-        if (handle == nullptr)
-            throw std::logic_error("nowhere to put the handle");
-
-        *handle = nullptr;
-
-        setUpDeviceMemoryResourceOnce();
-
-        auto state = std::make_unique<GPUBufferState>();
-        state->element = elementLayoutOf(element_type);
-
-        *handle = reinterpret_cast<GPUBuffer *>(state.release());
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        return handleException(error, error_size, e.what());
+        waitForUploads();
     }
     catch (...)
     {
-        return handleException(error, error_size, "unknown exception");
+        tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 }
 
-void destroyGPUBuffer(GPUBuffer * handle)
+void UploadPipe::stage(const IColumn & column)
 {
-    delete reinterpret_cast<GPUBufferState *>(handle);
-}
+    if (compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A pipe that decodes compressed blocks cannot also take plain values");
 
-void clearGPUBuffer(GPUBuffer * handle)
-{
-    if (handle != nullptr)
-        reinterpret_cast<GPUBufferState *>(handle)->used_bytes = 0;
-}
-
-int appendToGPUBuffer(GPUBuffer * handle, const void * host_data, size_t bytes, char * error, size_t error_size)
-{
-    try
-    {
-        if (handle == nullptr)
-            throw std::logic_error("no buffer to append to");
-
-        if (bytes == 0)
-            return 0;
-
-        auto & state = *reinterpret_cast<GPUBufferState *>(handle);
-        const rmm::cuda_stream_view stream = cudf::get_default_stream();
-
-        reserveColumnBuffer(state.values, state.used_bytes + bytes, stream);
-
-        if (const cudaError_t status = cudaMemcpyAsync(
-                static_cast<char *>(state.values.data()) + state.used_bytes,
-                host_data,
-                bytes,
-                cudaMemcpyHostToDevice,
-                stream.value());
-            status != cudaSuccess)
-            throw std::runtime_error(std::string("cannot copy values to the device: ") + cudaGetErrorString(status));
-
-        state.used_bytes += bytes;
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        return handleException(error, error_size, e.what());
-    }
-    catch (...)
-    {
-        return handleException(error, error_size, "unknown exception");
-    }
-}
-
-int appendCompressedToGPUBuffer(
-    GPUBuffer * handle,
-    GPUCodec codec,
-    const void * host_data,
-    const size_t * compressed_offsets,
-    const size_t * compressed_bytes,
-    const size_t * decompressed_bytes,
-    size_t num_blocks,
-    char * error,
-    size_t error_size)
-{
-    try
-    {
-        if (handle == nullptr)
-            throw std::logic_error("no buffer to append to");
-
-        if (num_blocks == 0)
-            return 0;
-
-        auto & state = *reinterpret_cast<GPUBufferState *>(handle);
-        const rmm::cuda_stream_view stream = cudf::get_default_stream();
-
-        const CompressedTotals totals = compressedTotalsOf(compressed_offsets, compressed_bytes, decompressed_bytes, num_blocks);
-
-        reserveColumnBuffer(state.values, state.used_bytes + totals.decompressed, stream);
-
-        decompressBlocksIntoDevice(
-            codec,
-            host_data,
-            compressed_offsets,
-            compressed_bytes,
-            decompressed_bytes,
-            num_blocks,
-            totals.compressed,
-            totals.decompressed,
-            totals.max_decompressed,
-            static_cast<char *>(state.values.data()) + state.used_bytes,
-            stream);
-
-        state.used_bytes += totals.decompressed;
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        return handleException(error, error_size, e.what());
-    }
-    catch (...)
-    {
-        return handleException(error, error_size, "unknown exception");
-    }
-}
-
-int syncGPUBuffer(GPUBuffer * handle, char * error, size_t error_size)
-{
-    try
-    {
-        if (handle == nullptr)
-            throw std::logic_error("no buffer to synchronize");
-
-        cudf::get_default_stream().synchronize();
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        return handleException(error, error_size, e.what());
-    }
-    catch (...)
-    {
-        return handleException(error, error_size, "unknown exception");
-    }
-}
-
-int gpuBufferRows(GPUBuffer * handle, size_t * num_rows, char * error, size_t error_size)
-{
-    try
-    {
-        if (handle == nullptr || num_rows == nullptr)
-            throw std::logic_error("no buffer to measure");
-
-        const auto & state = *reinterpret_cast<const GPUBufferState *>(handle);
-        if (state.used_bytes % state.element.size != 0)
-            throw std::logic_error(
-                "the buffer holds " + std::to_string(state.used_bytes) + " bytes, not a whole number of "
-                + std::to_string(state.element.size) + "-byte values");
-
-        *num_rows = state.used_bytes / state.element.size;
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        return handleException(error, error_size, e.what());
-    }
-    catch (...)
-    {
-        return handleException(error, error_size, "unknown exception");
-    }
-}
-
-struct GPUMarkerState
-{
-    cudaEvent_t event = nullptr;
-};
-
-GPUMarker * createGPUMarker(char * error, size_t error_size)
-{
-    try
-    {
-        setUpDeviceMemoryResourceOnce();
-
-        auto state = std::make_unique<GPUMarkerState>();
-        if (const cudaError_t status = cudaEventCreateWithFlags(&state->event, cudaEventDisableTiming);
-            status != cudaSuccess)
-            throw std::runtime_error(std::string("cannot create a CUDA event: ") + cudaGetErrorString(status));
-
-        return reinterpret_cast<GPUMarker *>(state.release());
-    }
-    catch (const std::exception & e)
-    {
-        writeError(error, error_size, e.what());
-        return nullptr;
-    }
-    catch (...)
-    {
-        writeError(error, error_size, "unknown exception");
-        return nullptr;
-    }
-}
-
-void destroyGPUMarker(GPUMarker * marker)
-{
-    if (marker == nullptr)
+    const size_t num_rows = column.size();
+    if (num_rows == 0)
         return;
 
-    auto * state = reinterpret_cast<GPUMarkerState *>(marker);
-    if (state->event != nullptr)
-        cudaEventDestroy(state->event);
-    delete state;
+    const std::string_view raw = rawValuesOf(column, num_rows, element_size);
+
+    if (currentSlot().staged.size() + raw.size() > stage_bytes)
+        sendStagedToDevice();
+
+    /// A block larger than the whole staging buffer is sent straight from the column's own memory.
+    if (raw.size() > stage_bytes)
+    {
+        device.appendPlain(raw);
+        staged_bytes += raw.size();
+        return;
+    }
+
+    currentSlot().staged.append(raw);
+    staged_bytes += raw.size();
 }
 
-int recordGPUMarker(GPUMarker * marker, char * error, size_t error_size)
+std::span<char> UploadPipe::reserveRaw(size_t max_bytes)
 {
-    try
-    {
-        if (marker == nullptr)
-            throw std::logic_error("no marker to record");
+    if (compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A pipe that decodes compressed blocks cannot also take plain values");
 
-        auto & state = *reinterpret_cast<GPUMarkerState *>(marker);
-        if (const cudaError_t status = cudaEventRecord(state.event, cudf::get_default_stream().value());
-            status != cudaSuccess)
-            throw std::runtime_error(std::string("cannot record a CUDA event: ") + cudaGetErrorString(status));
+    if (currentSlot().staged.size() >= stage_bytes)
+        sendStagedToDevice();
 
-        return 0;
-    }
-    catch (const std::exception & e)
-    {
-        return handleException(error, error_size, e.what());
-    }
-    catch (...)
-    {
-        return handleException(error, error_size, "unknown exception");
-    }
+    PinnedBuffer & staged = currentSlot().staged;
+    staged.reserve(stage_bytes);
+    return {staged.data() + staged.size(), std::min(max_bytes, stage_bytes - staged.size())};
 }
 
-int waitGPUMarker(GPUMarker * marker, char * error, size_t error_size)
+void UploadPipe::commitRaw(size_t bytes)
 {
-    try
-    {
-        if (marker == nullptr)
-            throw std::logic_error("no marker to wait for");
+    currentSlot().staged.grow(bytes);
+    staged_bytes += bytes;
+}
 
-        auto & state = *reinterpret_cast<GPUMarkerState *>(marker);
-        if (const cudaError_t status = cudaEventSynchronize(state.event); status != cudaSuccess)
-            throw std::runtime_error(std::string("cannot wait for a CUDA event: ") + cudaGetErrorString(status));
+void UploadPipe::stageCompressedBlock(GPUCodec block_codec, std::string_view payload, size_t decompressed_bytes)
+{
+    if (!compressed)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A pipe of plain values cannot take compressed blocks");
 
-        return 0;
-    }
-    catch (const std::exception & e)
+    if (!blocks.empty() && (currentSlot().staged.size() + payload.size() > stage_bytes || codec != block_codec))
+        sendStagedToDevice();
+
+    codec = block_codec;
+
+    blocks.push_back({
+        .offset = currentSlot().staged.size(),
+        .compressed_bytes = payload.size(),
+        .decompressed_bytes = decompressed_bytes,
+    });
+
+    currentSlot().staged.append(payload);
+    staged_bytes += decompressed_bytes;
+}
+
+void UploadPipe::sendStagedToDevice()
+{
+    Slot & slot = currentSlot();
+
+    if (slot.staged.empty())
+        return;
+
+    if (compressed)
     {
-        return handleException(error, error_size, e.what());
+        device.appendCompressed(decompressor, *codec, slot.staged.bytes(), blocks);
+        blocks.clear();
+        slot.staged.clear();
+        return;
     }
-    catch (...)
+
+    device.appendPlain(slot.staged.bytes());
+
+    slot.copied.record();
+    slot.in_flight = true;
+
+    current_slot = (current_slot + 1) % num_slots;
+
+    Slot & next = currentSlot();
+    if (next.in_flight)
     {
-        return handleException(error, error_size, "unknown exception");
+        next.copied.wait();
+        next.in_flight = false;
+    }
+
+    next.staged.clear();
+}
+
+const DeviceColumn & UploadPipe::flush()
+{
+    sendStagedToDevice();
+    return device;
+}
+
+void UploadPipe::waitForUploads()
+{
+    for (auto & slot : slots)
+    {
+        if (!slot.in_flight)
+            continue;
+
+        slot.copied.wait();
+        slot.in_flight = false;
     }
 }
 
+void UploadPipe::reset()
+{
+    for (auto & slot : slots)
+    {
+        if (!slot.in_flight)
+            slot.staged.clear();
+    }
+
+    blocks.clear();
+    codec.reset();
+    device.dropFront(device.rows());
+    staged_bytes = device.bytes();
 }
+
+}
+
+#endif

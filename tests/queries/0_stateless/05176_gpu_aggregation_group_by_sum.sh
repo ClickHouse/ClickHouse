@@ -48,9 +48,14 @@ GPU_SETTINGS=()
 if [ "$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.build_options WHERE name = 'USE_GPU'")" == "1" ]; then
     # The setting throws on a machine that has no usable device, which is the point of it - so ask
     # for one aggregation it would take over and see whether this machine is such a one.
-    if $CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 \
-        --query "SELECT sum(v_u64) FROM gpu_group_by" > /dev/null 2>&1; then
+    # A device that fails for any other reason than being absent is a bug, and is reported as one
+    # rather than being compared with itself on the CPU.
+    PROBE_ERROR=$($CLICKHOUSE_CLIENT --allow_experimental_gpu_aggregation 1 \
+        --query "SELECT sum(v_u64) FROM gpu_group_by" 2>&1 > /dev/null)
+    if [ -z "$PROBE_ERROR" ]; then
         GPU_SETTINGS=(--allow_experimental_gpu_aggregation 1)
+    elif [[ "$PROBE_ERROR" != *"Cannot aggregate on a GPU"* ]]; then
+        echo "$PROBE_ERROR"
     fi
 fi
 

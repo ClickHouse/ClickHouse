@@ -22,9 +22,11 @@ GPUAggregatingTransform::GPUAggregatingTransform(
     const SharedHeader & input_header_,
     const SharedHeader & output_header_,
     const Aggregator::Params & params,
-    size_t batch_bytes)
+    size_t batch_bytes,
+    bool input_grouped_)
     : IAccumulatingTransform(input_header_, output_header_)
     , empty_result_for_empty_set(params.empty_result_for_aggregation_by_empty_set)
+    , input_grouped(input_grouped_)
 {
     const auto aggregations = gpuAggregationsOf(params);
     if (!aggregations)
@@ -45,6 +47,31 @@ GPUAggregatingTransform::GPUAggregatingTransform(
         argument_positions.push_back(input_header_->getPositionByName(argument_name));
         argument_types.push_back(input_header_->getByName(argument_name).type);
         result_types.push_back(aggregate.function->getResultType());
+    }
+
+    if (input_grouped)
+    {
+        if (params.keys.empty())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "A GPU aggregation without keys was told its input is grouped already");
+
+        for (const auto & key : params.keys)
+            key_positions.push_back(input_header_->getPositionByName(key));
+
+        for (size_t i = 0; i < params.aggregates.size(); ++i)
+        {
+            const auto & argument = input_header_->getByPosition(argument_positions[i]);
+            const auto & result = output_header_->getByPosition(key_positions.size() + i);
+            if (!argument.type->equals(*result.type))
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "A grouped input passes column {} of type {} on as {} of type {}",
+                    argument.name,
+                    argument.type->getName(),
+                    result.name,
+                    result.type->getName());
+        }
+
+        return;
     }
 
     if (params.keys.empty())
@@ -79,6 +106,18 @@ void GPUAggregatingTransform::consume(Chunk chunk)
 
     const Columns & columns = chunk.getColumns();
 
+    if (input_grouped)
+    {
+        Columns grouped;
+        grouped.reserve(key_positions.size() + argument_positions.size());
+        for (const size_t position : key_positions)
+            grouped.push_back(columns[position]);
+        for (const size_t position : argument_positions)
+            grouped.push_back(columns[position]);
+        grouped_chunks.emplace_back(std::move(grouped), num_rows);
+        return;
+    }
+
     if (!group_by_accumulator)
     {
         for (size_t i = 0; i < accumulators.size(); ++i)
@@ -105,6 +144,15 @@ void GPUAggregatingTransform::consume(Chunk chunk)
 
 Chunk GPUAggregatingTransform::generate()
 {
+    if (input_grouped)
+    {
+        if (grouped_chunks.empty())
+            return {};
+        Chunk chunk = std::move(grouped_chunks.front());
+        grouped_chunks.pop_front();
+        return chunk;
+    }
+
     if (generated)
         return {};
 

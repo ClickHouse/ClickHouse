@@ -2,57 +2,27 @@
 
 #if USE_GPU
 
-#include <GPU/GPUAccumulator.h>
-#include <GPU/GPUJoin.h>
+#include <GPU/GPUTypeMapping.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/Exception.h>
-#include <Common/ProfileEvents.h>
-#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 
 #include <mutex>
 #include <utility>
 
-namespace ProfileEvents
-{
-    extern const Event GPUJoinBuildRows;
-    extern const Event GPUJoinProbeRows;
-    extern const Event GPUJoinMatchedRows;
-    extern const Event GPUJoinMicroseconds;
-}
-
 namespace DB
 {
 namespace ErrorCodes
 {
-    extern const int GPU_ERROR;
     extern const int LOGICAL_ERROR;
     extern const int SET_SIZE_LIMIT_EXCEEDED;
 }
 
 namespace
 {
-bool isIntegerElementType(GPU::GPUElementType element_type)
-{
-    switch (element_type)
-    {
-        case GPU::GPUElementType::UInt8:
-        case GPU::GPUElementType::UInt16:
-        case GPU::GPUElementType::UInt32:
-        case GPU::GPUElementType::UInt64:
-        case GPU::GPUElementType::Int8:
-        case GPU::GPUElementType::Int16:
-        case GPU::GPUElementType::Int32:
-        case GPU::GPUElementType::Int64:
-            return true;
-        default:
-            return false;
-    }
-}
-
 bool everyColumnIsFixedWidthNumeric(const Block & block)
 {
     for (const auto & column : block)
@@ -100,7 +70,7 @@ bool GPUHashJoin::isSupported(const TableJoin & table_join, const Block & left_s
         return false;
 
     const auto key_element_type = GPU::elementTypeOf(*left_key_type);
-    if (!key_element_type || !isIntegerElementType(*key_element_type))
+    if (!key_element_type || !GPU::isInteger(*key_element_type))
         return false;
 
     return everyColumnIsFixedWidthNumeric(left_sample_block) && everyColumnIsFixedWidthNumeric(right_sample_block);

@@ -16,6 +16,13 @@ namespace ErrorCodes
 MergeTreeCompressedBlockReader::MergeTreeCompressedBlockReader(
     const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings)
     : CompressedReadBufferBase(nullptr)
+    , file(openColumnFile(part, column, read_settings))
+{
+    compressed_in = file.get();
+}
+
+std::unique_ptr<ReadBufferFromFileBase> MergeTreeCompressedBlockReader::openColumnFile(
+    const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings)
 {
     if (part.getType() != MergeTreeDataPartType::Wide)
         throw Exception(
@@ -31,8 +38,7 @@ MergeTreeCompressedBlockReader::MergeTreeCompressedBlockReader(
         throw Exception(
             ErrorCodes::LOGICAL_ERROR, "Column {} of part {} has no single stream", column.name, part.name);
 
-    file = part.getDataPartStorage().readFile(*stream_name + ".bin", read_settings, /*read_hint=*/std::nullopt);
-    compressed_in = file.get();
+    return part.getDataPartStorage().readFile(*stream_name + ".bin", read_settings, /*read_hint=*/std::nullopt);
 }
 
 std::optional<MergeTreeCompressedBlockReader::Block> MergeTreeCompressedBlockReader::next()

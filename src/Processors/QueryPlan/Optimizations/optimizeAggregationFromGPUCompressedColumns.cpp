@@ -15,13 +15,17 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
-#include <GPU/GPUAccumulator.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <GPU/GPUDevice.h>
+#include <GPU/GPUFilterCompiler.h>
+#include <GPU/GPUTypeMapping.h>
 #include <Interpreters/Context.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Compression/ICompressionCodec.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
+#include <Storages/SelectQueryInfo.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
 
@@ -47,6 +51,8 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_gpu_aggregation;
     extern const SettingsUInt64 gpu_aggregation_batch_bytes;
+    extern const SettingsUInt64 gpu_aggregation_readers;
+    extern const SettingsFloat gpu_aggregation_device_decompression_max_ratio;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsInt64 max_partitions_to_read;
     extern const SettingsUInt64 max_rows_to_read;
@@ -73,6 +79,7 @@ constexpr size_t max_rows_per_part = (1UL << 31) - 1;
 
 struct ReducedAggregates
 {
+    Names keys;
     Names arguments;
     std::vector<GPU::GPUAggregationKind> aggregations;
 };
@@ -80,9 +87,6 @@ struct ReducedAggregates
 std::optional<ReducedAggregates> collectReducedAggregates(const GPUAggregatingStep & aggregating)
 {
     const Aggregator::Params & params = aggregating.getParams();
-
-    if (!params.keys.empty())
-        GPU_COMPRESSED_REFUSE("the aggregation has GROUP BY keys");
 
     if (params.aggregates.empty())
         GPU_COMPRESSED_REFUSE("the aggregation has no aggregate functions");
@@ -100,7 +104,7 @@ std::optional<ReducedAggregates> collectReducedAggregates(const GPUAggregatingSt
     for (const auto & aggregate : params.aggregates)
         arguments.push_back(aggregate.argument_names.front());
 
-    return ReducedAggregates{.arguments = std::move(arguments), .aggregations = std::move(*aggregations)};
+    return ReducedAggregates{.keys = params.keys, .arguments = std::move(arguments), .aggregations = std::move(*aggregations)};
 }
 
 std::optional<String> passedThroughInputName(const ActionsDAG & dag, const String & name)
@@ -125,10 +129,12 @@ struct MatchedChain
     std::unordered_map<String, String> read_names;
 };
 
-std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const Names & arguments)
+std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const Names & keys, const Names & arguments)
 {
     MatchedChain matched;
 
+    for (const auto & key : keys)
+        matched.read_names[key] = key;
     for (const auto & argument : arguments)
         matched.read_names[argument] = argument;
 
@@ -174,10 +180,17 @@ std::optional<MatchedChain> matchChain(QueryPlan::Node & aggregating_node, const
     }
 }
 
-std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToReduce>> matchReducedColumns(
+struct ReadColumns
+{
+    std::vector<NameAndTypePair> keys;
+    std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> columns;
+};
+
+std::optional<ReadColumns> matchReducedColumns(
     const GPUAggregatingStep & aggregating,
     const ReadFromMergeTree & reading,
     const std::unordered_map<String, String> & read_names,
+    const Names & keys,
     const std::vector<GPU::GPUAggregationKind> & aggregations)
 {
     const Block & read_header = *reading.getOutputHeader();
@@ -187,6 +200,39 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToReduce>> matchRe
     const auto & aggregates = aggregating.getParams().aggregates;
 
     std::unordered_map<String, GPU::GPUAggregationKind> aggregation_by_read_name;
+    std::unordered_map<String, size_t> key_position_by_read_name;
+    ReadColumns matched;
+
+    for (const auto & key : keys)
+    {
+        const auto read_name = read_names.find(key);
+        if (read_name == read_names.end())
+            GPU_COMPRESSED_REFUSE("a key column the descent did not translate");
+
+        const String & name = read_name->second;
+
+        const ColumnWithTypeAndName * read_column = read_header.findByName(name);
+        if (!read_column)
+            GPU_COMPRESSED_REFUSE("a key column that is not in the read step's header");
+
+        if (metadata->virtuals.has(name))
+            GPU_COMPRESSED_REFUSE("a key column that is a virtual column");
+
+        if (!table_columns.hasPhysical(name))
+            GPU_COMPRESSED_REFUSE("a key column that is not a stored column of the table");
+
+        if (!table_columns.getPhysical(name).type->equals(*read_column->type))
+            GPU_COMPRESSED_REFUSE("a key column whose type differs from the table's");
+
+        if (table_columns.hasCompressionCodec(name))
+            GPU_COMPRESSED_REFUSE("a key column with a CODEC of its own");
+
+        const auto [seen, inserted] = key_position_by_read_name.emplace(name, matched.keys.size());
+        if (!inserted)
+            GPU_COMPRESSED_REFUSE("a column that is a key twice over");
+
+        matched.keys.emplace_back(name, read_column->type);
+    }
 
     for (size_t i = 0; i < aggregates.size(); ++i)
     {
@@ -222,41 +268,127 @@ std::optional<std::vector<ReadFromGPUCompressedColumns::ColumnToReduce>> matchRe
         if (table_columns.hasCompressionCodec(name))
             GPU_COMPRESSED_REFUSE("an aggregated column with a CODEC of its own");
 
+        if (key_position_by_read_name.contains(name))
+            GPU_COMPRESSED_REFUSE("a column that is both a key and an aggregated column");
+
         const auto [seen, inserted] = aggregation_by_read_name.emplace(name, aggregation);
         if (!inserted && seen->second != aggregation)
             GPU_COMPRESSED_REFUSE("a column that two aggregates reduce by different aggregate functions");
     }
 
-    std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> columns;
-    columns.reserve(read_header.columns());
+    matched.columns.reserve(read_header.columns());
 
     for (const auto & read_column : read_header)
     {
-        const auto aggregation = aggregation_by_read_name.find(read_column.name);
-        if (aggregation == aggregation_by_read_name.end())
-            GPU_COMPRESSED_REFUSE("the read produces a column nothing aggregates");
-
         if (!GPU::elementTypeOf(*read_column.type))
             GPU_COMPRESSED_REFUSE("a column of a type the device has no element type for");
 
-        columns.push_back({
+        if (key_position_by_read_name.contains(read_column.name))
+            continue;
+
+        const auto aggregation = aggregation_by_read_name.find(read_column.name);
+        if (aggregation == aggregation_by_read_name.end())
+            GPU_COMPRESSED_REFUSE("the read produces a column nothing aggregates or groups by");
+
+        matched.columns.push_back({
             .column = NameAndTypePair(read_column.name, read_column.type),
             .result_type = read_column.type,
             .aggregation = aggregation->second,
         });
     }
 
-    return columns;
+    if (!matched.keys.empty())
+    {
+        DataTypes key_types;
+        DataTypes argument_types;
+        std::vector<GPU::GPUAggregationKind> column_aggregations;
+        for (const auto & key : matched.keys)
+            key_types.push_back(key.type);
+        for (const auto & column : matched.columns)
+        {
+            argument_types.push_back(column.column.type);
+            column_aggregations.push_back(column.aggregation);
+        }
+
+        if (!GPU::canGroupByReduceOnDevice(key_types, argument_types, argument_types, column_aggregations))
+            GPU_COMPRESSED_REFUSE("keys or aggregated columns of types the device does not group by");
+    }
+
+    return matched;
+}
+
+/// The `PREWHERE` of a keyed read as a program for the device, when the read has one and the
+/// device can evaluate it. The read's header is without the predicate's column, so the columns the
+/// predicate reads come along as a group of their own; `readIsOfWholeParts` still holds, since a
+/// `PREWHERE` filters rows, not parts.
+struct MatchedFilter
+{
+    std::optional<ReadFromGPUCompressedColumns::DeviceFilter> filter;
+};
+
+std::optional<MatchedFilter> matchPrewhere(const ReadFromMergeTree & reading, bool keyed)
+{
+    const PrewhereInfoPtr prewhere = reading.getPrewhereInfo();
+    if (!prewhere)
+        return MatchedFilter{};
+
+    if (!keyed)
+        GPU_COMPRESSED_REFUSE("a PREWHERE in a keyless read, whose one row per part would have to be filtered on the CPU");
+
+    if (!prewhere->need_filter)
+        GPU_COMPRESSED_REFUSE("a PREWHERE that does not filter");
+
+    if (!prewhere->remove_prewhere_column)
+        GPU_COMPRESSED_REFUSE("a PREWHERE whose column the read keeps");
+
+    /// The read's other outputs are the `PREWHERE`'s outputs, which must be its inputs as they
+    /// are for the read's header to name stored columns.
+    for (const ActionsDAG::Node * output : prewhere->prewhere_actions.getOutputs())
+    {
+        if (output->result_name == prewhere->prewhere_column_name)
+            continue;
+        if (output->type != ActionsDAG::ActionType::INPUT)
+            GPU_COMPRESSED_REFUSE("a PREWHERE that computes a column besides its predicate");
+    }
+
+    String refusal;
+    auto compiled = GPU::compileGPUFilter(prewhere->prewhere_actions, prewhere->prewhere_column_name, refusal);
+    if (!compiled)
+        GPU_COMPRESSED_REFUSE("a PREWHERE the device does not evaluate: " + refusal);
+
+    const StorageMetadataPtr metadata = reading.getStorageMetadata();
+    const ColumnsDescription & table_columns = metadata->getColumns();
+
+    for (const auto & column : compiled->columns)
+    {
+        if (metadata->virtuals.has(column.name))
+            GPU_COMPRESSED_REFUSE("a PREWHERE over a virtual column");
+
+        if (!table_columns.hasPhysical(column.name))
+            GPU_COMPRESSED_REFUSE("a PREWHERE over a column that is not a stored column of the table");
+
+        if (!table_columns.getPhysical(column.name).type->equals(*column.type))
+            GPU_COMPRESSED_REFUSE("a PREWHERE over a column whose type differs from the table's");
+
+        if (table_columns.hasCompressionCodec(column.name))
+            GPU_COMPRESSED_REFUSE("a PREWHERE over a column with a CODEC of its own");
+    }
+
+    return MatchedFilter{ReadFromGPUCompressedColumns::DeviceFilter{
+        .program = compiled->program,
+        .columns = std::move(compiled->columns),
+        .description = prewhere->prewhere_column_name,
+    }};
 }
 
 bool readIsOfWholeParts(const ReadFromMergeTree & reading)
 {
-    /// Any of these filters rows, and a filtered part's result is not the result over its whole
-    /// column. A filter
-    /// pushed into the read is `filter_actions_dag`; `PREWHERE` and the row-level filter have
-    /// places of their own, and each has a deferred form that a lazy `FINAL` plan leaves behind.
-    if (reading.getFilterActionsDAG() || reading.getPrewhereInfo() || reading.getRowLevelFilter())
-        GPU_COMPRESSED_REFUSE("a filter, PREWHERE or row-level filter in the read");
+    /// A row-level filter drops rows, and a filtered part's result is not the result over its
+    /// whole column. A filter pushed into the read as `filter_actions_dag` only prunes what is
+    /// read, which `matchWholeParts` sees; a `PREWHERE` is `matchPrewhere`'s to take or refuse.
+    /// Each of the last two has a deferred form that a lazy `FINAL` plan leaves behind.
+    if (reading.getRowLevelFilter())
+        GPU_COMPRESSED_REFUSE("a row-level filter in the read");
 
     if (reading.getDeferredPrewhereInfo() || reading.getDeferredRowLevelFilter())
         GPU_COMPRESSED_REFUSE("a deferred PREWHERE or row-level filter in the read");
@@ -364,8 +496,7 @@ bool queryLimitsAllowReading(const ReadFromMergeTree & reading)
     return true;
 }
 
-std::optional<DataPartsVector> matchWholeParts(
-    const ReadFromMergeTree & reading, const std::vector<ReadFromGPUCompressedColumns::ColumnToReduce> & columns)
+std::optional<DataPartsVector> matchWholeParts(const ReadFromMergeTree & reading, const ReadColumns & columns)
 {
     const MergeTreeData::MutationsSnapshotPtr & mutations = reading.getMutationsSnapshot();
 
@@ -414,14 +545,29 @@ std::optional<DataPartsVector> matchWholeParts(
         if (!part->default_codec || !GPU::codecOf(part->default_codec->getMethodByte()))
             GPU_COMPRESSED_REFUSE("a part written with a codec the device cannot expand");
 
-        for (const auto & column : columns)
+        /// A column's `.bin` file holds every value of the part only under the default
+        /// serialization: a sparse one leaves the default values out and keeps their positions in
+        /// a stream of its own.
+        const auto part_stores = [&](const String & name)
         {
-            const auto part_column = part->tryGetColumn(column.column.name);
-            if (!part_column || !part_column->type->equals(*read_header.getByName(column.column.name).type))
-                GPU_COMPRESSED_REFUSE("a part that does not store an aggregated column with the table's type");
-
+            const auto part_column = part->tryGetColumn(name);
+            if (!part_column || !part_column->type->equals(*read_header.getByName(name).type))
+                return false;
             if (!part->hasColumnFiles(*part_column))
-                GPU_COMPRESSED_REFUSE("a part that has no files for an aggregated column");
+                return false;
+            return part->getSerialization(name)->getKindStack() == ISerialization::KindStack{ISerialization::Kind::DEFAULT};
+        };
+
+        for (const auto & key : columns.keys)
+        {
+            if (!part_stores(key.name))
+                GPU_COMPRESSED_REFUSE("a part that does not store a key column with the table's type and the default serialization");
+        }
+
+        for (const auto & column : columns.columns)
+        {
+            if (!part_stores(column.column.name))
+                GPU_COMPRESSED_REFUSE("a part that does not store an aggregated column with the table's type and the default serialization");
         }
 
         parts.push_back(part);
@@ -449,7 +595,7 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!reduced)
         return false;
 
-    auto chain = matchChain(node, reduced->arguments);
+    auto chain = matchChain(node, reduced->keys, reduced->arguments);
     if (!chain)
         return false;
 
@@ -465,8 +611,12 @@ bool optimizeAggregationFromGPUCompressedColumns(
     if (!readIsOfWholeParts(*reading))
         return false;
 
-    auto columns = matchReducedColumns(*aggregating, *reading, chain->read_names, reduced->aggregations);
+    auto columns = matchReducedColumns(*aggregating, *reading, chain->read_names, reduced->keys, reduced->aggregations);
     if (!columns)
+        return false;
+
+    auto filter = matchPrewhere(*reading, !columns->keys.empty());
+    if (!filter)
         return false;
 
     if (!reading->getAnalyzedResult())
@@ -497,9 +647,11 @@ bool optimizeAggregationFromGPUCompressedColumns(
 
     LOG_DEBUG(
         getLogger("GPUCompressedColumns"),
-        "Aggregating compressed columns on the device: {} whole parts, {} columns",
+        "Aggregating compressed columns on the device: {} whole parts, {} keys, {} columns{}",
         parts->size(),
-        columns->size());
+        columns->keys.size(),
+        columns->columns.size(),
+        filter->filter ? ", a PREWHERE over " + std::to_string(filter->filter->columns.size()) + " columns" : "");
 
     SharedHeader header = reading->getOutputHeader();
 
@@ -508,19 +660,33 @@ bool optimizeAggregationFromGPUCompressedColumns(
         GPU_COMPRESSED_REFUSE("the step above the read would see a different header");
 
     auto & source_node = nodes.emplace_back();
+    const bool keyed = !columns->keys.empty();
+
     source_node.step = std::make_unique<ReadFromGPUCompressedColumns>(
         header,
-        std::move(*columns),
+        std::move(columns->keys),
+        std::move(columns->columns),
+        std::move(filter->filter),
         std::move(*parts),
         reading->getStorageSnapshot(),
         context,
         context->getSettingsRef()[Setting::gpu_aggregation_batch_bytes],
-        reading->getNumStreams());
+        reading->getNumStreams(),
+        context->getSettingsRef()[Setting::gpu_aggregation_readers],
+        context->getSettingsRef()[Setting::gpu_aggregation_device_decompression_max_ratio]);
 
     source_node.step->setStepDescription(
-        "Compressed columns decompressed and reduced on the device, one row per part", settings.max_step_description_length);
+        keyed ? "Compressed columns decompressed and grouped on the device, one row per group"
+              : "Compressed columns decompressed and reduced on the device, one row per part",
+        settings.max_step_description_length);
 
     chain->above_read->children.front() = &source_node;
+
+    /// The keyed read groups every part on the device and emits one row per group, so the
+    /// aggregation above it has nothing left to group; a keyless read emits one row per part.
+    if (keyed)
+        typeid_cast<GPUAggregatingStep *>(node.step.get())->setInputGrouped();
+
     return true;
 }
 

@@ -2,40 +2,54 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 
+/** The vocabulary shared by the two sides of `src/GPU`.
+  *
+  * The `Cudf*` files talk to cuDF and are compiled by nvcc against libstdc++; everything else is
+  * compiled with the rest of ClickHouse by clang against libc++. The two meet in the `I*`
+  * interfaces, whose signatures name only the types of this header: nothing of either standard
+  * library crosses between them, and the cuDF side only ever sees device pointers.
+  *
+  * Exceptions do cross. Everything linked into the binary - both sides, cuDF, rmm - resolves its
+  * `__cxa_*`, personality and unwinder symbols against ClickHouse's own libc++abi and libunwind,
+  * because `libstdc++.so` comes last on the link line (see `cmake/linux/default_libs.cmake`), so a
+  * `throw` on the cuDF side unwinds into a `catch (const std::exception &)` on this one, and
+  * `what()` dispatches to the thrower's vtable. What must not cross is an object whose layout the
+  * two sides disagree on: the standard exception classes exist twice in the binary, and libc++'s
+  * `std::exception` is not even the same size as libstdc++'s. The cuDF side therefore throws its
+  * own `CudfError`, whose message and `what` are its own - see `Cudf.h`. cuDF's internal
+  * `CUDF_EXPECTS` failures are `std::logic_error`s built on the wrong side, and remain fatal.
+  */
 namespace DB::GPU
 {
 
-struct GPUBuffer;
-struct GPUMarker;
-struct GPUGroupBy;
-struct GPUHashTableState;
-
-struct GPUMarkerDeleter
+template <typename T>
+struct GPUSpan
 {
-    void operator()(GPUMarker * marker) const noexcept;
-};
+    const T * values = nullptr;
+    size_t count = 0;
 
-struct GPUBufferDeleter
-{
-    void operator()(GPUBuffer * buffer) const noexcept;
-};
+    GPUSpan() = default;
 
-struct GPUGroupByDeleter
-{
-    void operator()(GPUGroupBy * group_by) const noexcept;
-};
+    GPUSpan(const T * values_, size_t count_)
+        : values(values_), count(count_)
+    {
+    }
 
-struct GPUHashTableDeleter
-{
-    void operator()(GPUHashTableState * hash_table) const noexcept;
-};
+    template <typename Container, typename = typename Container::value_type>
+    GPUSpan(const Container & container)
+        : values(container.data()), count(container.size())
+    {
+    }
 
-using GPUMarkerPtr = std::unique_ptr<GPUMarker, GPUMarkerDeleter>;
-using GPUBufferPtr = std::unique_ptr<GPUBuffer, GPUBufferDeleter>;
-using GPUGroupByPtr = std::unique_ptr<GPUGroupBy, GPUGroupByDeleter>;
-using GPUHashTablePtr = std::unique_ptr<GPUHashTableState, GPUHashTableDeleter>;
+    const T & operator[](size_t index) const { return values[index]; }
+
+    size_t size() const { return count; }
+    bool empty() const { return count == 0; }
+
+    const T * begin() const { return values; }
+    const T * end() const { return values + count; }
+};
 
 enum class GPUElementType : int
 {
@@ -51,13 +65,6 @@ enum class GPUElementType : int
     Float64 = 9,
 };
 
-enum class GPUResultType : int
-{
-    UInt64 = 0,
-    Int64 = 1,
-    Float64 = 2,
-};
-
 enum class GPUAggregationKind : int
 {
     Sum = 0,
@@ -69,6 +76,96 @@ enum class GPUCodec : int
 {
     LZ4 = 0,
     ZSTD = 1,
+};
+
+/// One aggregate function of a keyed aggregation: what it reads, and what it leaves. A `sum`
+/// leaves a group in `result_type`, eight bytes wide; a `min` or `max` leaves it in `element_type`.
+struct GPUGroupByValue
+{
+    GPUElementType element_type;
+    GPUElementType result_type;
+    GPUAggregationKind aggregation;
+};
+
+/// A column of fixed-width values in device memory, as the cuDF side receives it.
+struct DeviceColumnView
+{
+    GPUElementType element_type;
+    const char * data = nullptr;
+    size_t rows = 0;
+};
+
+/// A column of fixed-width values in host memory, sized for what the cuDF side copies into it.
+struct HostColumnView
+{
+    GPUElementType element_type;
+    char * data = nullptr;
+    size_t rows = 0;
+};
+
+/// What a keyed aggregation on the device takes at most. Its key columns are packed into one
+/// eight-byte key, and its layouts travel to the kernels as parameters of fixed size.
+constexpr size_t max_group_by_keys = 8;
+constexpr size_t max_group_by_key_bytes = 8;
+constexpr size_t max_group_by_values = 8;
+
+/** A `WHERE` the device evaluates per row before it groups the row: a program for a stack machine
+  * of a few instructions, over the columns of the predicate. A comparison pops two values and
+  * pushes a boolean; `And`, `Or` and `Not` work on booleans; `IsTrue` turns a value into a boolean
+  * the way ClickHouse reads a `WHERE` on a plain column, true when it is not zero. Integers compare
+  * by their value whatever their signs; a comparison between an integer and a float is not
+  * compiled, so that the device never rounds an integer to compare it.
+  */
+enum class GPUFilterOp : int
+{
+    /// Pushes the row's value of filter column `operand`.
+    PushColumn = 0,
+    /// Pushes constant `operand`.
+    PushConstant = 1,
+    Equals = 2,
+    NotEquals = 3,
+    Less = 4,
+    LessOrEquals = 5,
+    Greater = 6,
+    GreaterOrEquals = 7,
+    And = 8,
+    Or = 9,
+    Not = 10,
+    IsTrue = 11,
+};
+
+struct GPUFilterInstruction
+{
+    GPUFilterOp op;
+    uint32_t operand;
+};
+
+enum class GPUFilterValueKind : int
+{
+    Signed = 0,
+    Unsigned = 1,
+    Float = 2,
+};
+
+/// A constant of the predicate: the bits of an `Int64`, a `UInt64` or a `Float64`.
+struct GPUFilterConstant
+{
+    GPUFilterValueKind kind;
+    uint64_t bits;
+};
+
+constexpr size_t max_filter_columns = 8;
+constexpr size_t max_filter_instructions = 32;
+constexpr size_t max_filter_constants = 16;
+constexpr size_t max_filter_stack = 8;
+
+struct GPUFilterProgram
+{
+    GPUFilterInstruction code[max_filter_instructions];
+    uint32_t length = 0;
+    GPUFilterConstant constants[max_filter_constants];
+    uint32_t num_constants = 0;
+    uint32_t num_columns = 0;
 };
 
 constexpr bool isInteger(GPUElementType type)
@@ -97,113 +194,5 @@ constexpr size_t sizeOf(GPUElementType type)
     }
     return 0;
 }
-
-int reduceOnGPU(
-    GPUElementType element_type,
-    GPUResultType result_type,
-    GPUAggregationKind aggregation,
-    const GPUBuffer * values,
-    size_t num_rows,
-    void * result,
-    char * error,
-    size_t error_size);
-
-int createGPUGroupBy(
-    const GPUElementType * key_element_types,
-    size_t num_keys,
-    const GPUElementType * value_element_types,
-    const GPUResultType * value_result_types,
-    const GPUAggregationKind * value_aggregations,
-    size_t num_values,
-    GPUGroupBy ** handle,
-    char * error,
-    size_t error_size);
-
-int addBatchToGPUGroupBy(
-    GPUGroupBy * handle,
-    const void * const * key_host_data,
-    const void * const * value_host_data,
-    size_t num_rows,
-    char * error,
-    size_t error_size);
-
-int finalizeGPUGroupBy(GPUGroupBy * handle, size_t * num_groups, char * error, size_t error_size);
-
-int copyGPUGroupsOut(
-    GPUGroupBy * handle,
-    void * const * key_host_data,
-    void * const * value_host_data,
-    char * error,
-    size_t error_size);
-
-void destroyGPUGroupBy(GPUGroupBy * handle);
-
-int probeGPUDevice(char * error, size_t error_size);
-
-int allocatePinnedHostMemory(size_t bytes, void ** host_ptr, char * error, size_t error_size);
-
-void freePinnedHostMemory(void * host_ptr);
-
-int createGPUBuffer(GPUElementType element_type, GPUBuffer ** handle, char * error, size_t error_size);
-
-void destroyGPUBuffer(GPUBuffer * handle);
-
-int appendToGPUBuffer(GPUBuffer * handle, const void * host_data, size_t bytes, char * error, size_t error_size);
-
-int appendCompressedToGPUBuffer(
-    GPUBuffer * handle,
-    GPUCodec codec,
-    const void * host_data,
-    const size_t * compressed_offsets,
-    const size_t * compressed_bytes,
-    const size_t * decompressed_bytes,
-    size_t num_blocks,
-    char * error,
-    size_t error_size);
-
-int syncGPUBuffer(GPUBuffer * handle, char * error, size_t error_size);
-
-int gpuBufferRows(GPUBuffer * handle, size_t * num_rows, char * error, size_t error_size);
-
-void clearGPUBuffer(GPUBuffer * handle);
-
-GPUMarker * createGPUMarker(char * error, size_t error_size);
-
-void destroyGPUMarker(GPUMarker * marker);
-
-int recordGPUMarker(GPUMarker * marker, char * error, size_t error_size);
-
-int waitGPUMarker(GPUMarker * marker, char * error, size_t error_size);
-
-int createGPUHashTable(
-    GPUElementType key_element_type,
-    const GPUElementType * payload_element_types,
-    size_t num_payloads,
-    GPUHashTableState ** handle,
-    char * error,
-    size_t error_size);
-
-int buildGPUHashTable(GPUHashTableState * handle, char * error, size_t error_size);
-
-int copyGPUMatchesOut(
-    GPUHashTableState * handle,
-    uint32_t * probe_row_indices,
-    void * const * payload_host_data,
-    char * error,
-    size_t error_size);
-
-void destroyGPUHashTable(GPUHashTableState * handle);
-
-int setGPUHashTableBuildSide(
-    GPUHashTableState * handle,
-    const GPUBuffer * key_buffer,
-    const GPUBuffer * const * payload_buffers,
-    size_t num_payloads,
-    size_t num_rows,
-    char * error,
-    size_t error_size);
-
-int probeGPUHashTable(
-    GPUHashTableState * handle, const GPUBuffer * key_buffer, size_t num_rows, size_t * num_matches, char * error, size_t error_size);
 
 }

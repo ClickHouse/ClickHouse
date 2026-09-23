@@ -3,7 +3,7 @@
 #if USE_GPU
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <GPU/GPUAccumulator.h>
+#include <GPU/GPUTypeMapping.h>
 #include <IO/Operators.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/GPUAggregatingTransform.h>
@@ -121,19 +121,22 @@ void GPUAggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, cons
     pipeline.resize(1);
 
     pipeline.addTransform(std::make_shared<GPUAggregatingTransform>(
-        pipeline.getSharedHeader(), getOutputHeader(), params, batch_bytes));
+        pipeline.getSharedHeader(), getOutputHeader(), params, batch_bytes, input_grouped));
 }
 
 void GPUAggregatingStep::describeActions(FormatSettings & settings) const
 {
     params.explain(settings);
     settings.out << settings.detail_prefix << "Batch: " << batch_bytes << " bytes\n";
+    if (input_grouped)
+        settings.out << settings.detail_prefix << "Input grouped by the read\n";
 }
 
 void GPUAggregatingStep::describeActions(JSONBuilder::JSONMap & map) const
 {
     params.explain(map);
     map.add("Batch Bytes", batch_bytes);
+    map.add("Input Grouped", input_grouped);
 }
 
 void GPUAggregatingStep::updateOutputHeader()

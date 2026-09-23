@@ -37,6 +37,10 @@ public:
     MergeTreeCompressedBlockReader(
         const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings);
 
+    /// Opens the one `.bin` file of `column` in a wide part, with the same checks.
+    static std::unique_ptr<ReadBufferFromFileBase>
+    openColumnFile(const IMergeTreeDataPart & part, const NameAndTypePair & column, const ReadSettings & read_settings);
+
     /// The next block, or nothing once the column is read out.
     std::optional<Block> next();
 

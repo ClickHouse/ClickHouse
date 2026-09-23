@@ -660,7 +660,7 @@ set (CUDF_SOURCES
     "${CUDF_EMBED_DIR}/cudf_fragments.s"
 )
 
-# Sources unreachable from src/GPU: 170 of 469, 4.2 of cuDF's 16.6 CPU-hours.
+# Sources unreachable from src/GPU: 161 of 469, about 4 of cuDF's 16.6 CPU-hours.
 # Everything under src/join is reachable: src/GPU/GPUHashJoin.cpp calls cudf::hash_join.
 # Derived, not hand-picked - every archive member outside the transitive closure of the island's
 # undefined symbols. Regenerate by resolving `nm -u` of libclickhouse_gpu_cudf.a against
@@ -677,15 +677,6 @@ list (REMOVE_ITEM CUDF_SOURCES
     "${CUDF_DIR}/src/dictionary/remove_keys.cu"
     "${CUDF_DIR}/src/filling/calendrical_month_sequence.cu"
     "${CUDF_DIR}/src/filling/repeat.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby.cpp"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/aggregate.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/impl.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_first.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_first_nested.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_nested.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_subsequent.cu"
-    "${CUDF_DIR}/src/groupby/streaming_groupby/insert_subsequent_nested.cu"
     "${CUDF_DIR}/src/hash/md5_hash.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x64_128.cu"
     "${CUDF_DIR}/src/hash/murmurhash3_x86_32.cu"

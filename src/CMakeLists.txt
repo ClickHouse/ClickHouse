@@ -117,10 +117,10 @@ if (ENABLE_GPU)
 
     add_headers_and_sources(dbms GPU)
     list (REMOVE_ITEM dbms_sources
-        GPU/Utils.cpp
-        GPU/GPUAggregation.cpp
-        GPU/GPUUploadPipe.cpp
-        GPU/GPUHashJoin.cpp
+        GPU/Cudf.cpp
+        GPU/CudfReduction.cpp
+        GPU/RecordGroupBy.cpp
+        GPU/CudfHashJoin.cpp
     )
 endif ()
 
@@ -578,7 +578,7 @@ add_library (dbms STATIC ${dbms_headers} ${dbms_sources})
 target_link_libraries (dbms PRIVATE ch_contrib::libdivide daemon)
 
 if (ENABLE_GPU)
-    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf)
+    target_link_libraries (dbms PRIVATE clickhouse_gpu_cudf ch_gpu::cudart ch_contrib::nvcomp)
 endif ()
 target_link_libraries (dbms PRIVATE ch_contrib::sql_console_resources)
 target_link_libraries (dbms PRIVATE ch_contrib::clickstack_resources)
