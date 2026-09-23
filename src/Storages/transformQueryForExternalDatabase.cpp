@@ -1015,6 +1015,9 @@ static void normalizeSubqueryForExternalDatabaseImpl(ASTPtr & node, LiteralEscap
 
 void normalizeSubqueryForExternalDatabase(ASTPtr & node, LiteralEscapingStyle literal_escaping_style)
 {
+    /// The names of a parametric `tuple('a', 'b')(x, y)` only affect the ClickHouse result type, and
+    /// the syntax is ClickHouse-only, so drop them just like `transformQueryForExternalDatabaseImpl` does.
+    dropTupleFunctionParameters(node);
     normalizeSubqueryForExternalDatabaseImpl(node, literal_escaping_style, RowValueContext::Disallowed);
 }
 
