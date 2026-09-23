@@ -2577,7 +2577,7 @@ MergeTreeData::MutableDataPartPtr StorageReplicatedMergeTree::attachPartHelperFo
                         const String target = try_no ? broken_dir + DetachedPartInfo::TRY_N_SUFFIX + toString(try_no) : broken_dir;
                         try
                         {
-                            part->renameTo(fs::path(DETACHED_DIR_NAME) / target, /* remove_new_dir_if_exists */ false);
+                            part->renameTo(pathToGenericString(fs::path(DETACHED_DIR_NAME) / target), /* remove_new_dir_if_exists */ false);
                             rename_info.old_dir.clear();
                         }
                         catch (const Exception & e)
