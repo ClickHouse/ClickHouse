@@ -93,6 +93,8 @@ public:
     ///
     /// If `deadline` is set, throws TIMEOUT_EXCEEDED when the deadline is reached
     /// (in addition to any process-list time limit on `local_context`).
+    void dropFailedFiles();
+
     void waitForPathToBeProcessed(
         const std::string & path,
         ContextPtr local_context,

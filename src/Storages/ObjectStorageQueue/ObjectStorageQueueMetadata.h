@@ -66,6 +66,7 @@ struct ObjectStorageQueueMetadataCacheWeightFunction
 class ObjectStorageQueueMetadata
 {
 public:
+    void dropFailedFiles();
     using FileMetadataPtr = std::shared_ptr<ObjectStorageQueueIFileMetadata>;
     using FileStatusesCache = CacheBase<
         UInt128,

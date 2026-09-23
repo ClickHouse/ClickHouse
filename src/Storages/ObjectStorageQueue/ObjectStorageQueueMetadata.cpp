@@ -1999,3 +1999,27 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::sha
 }
 
 }
+
+namespace DB
+{
+    namespace ErrorCodes
+    {
+        extern const int LOGICAL_ERROR;
+    }
+
+    void ObjectStorageQueueMetadata::dropFailedFiles()
+    {
+        const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
+        const auto zk_client = getZooKeeper();
+
+        static constexpr const char * LOCK_OPERATION_MANUAL = "manual_cleanup";
+        auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
+            zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_MANUAL);
+
+        if (!ephemeral_node)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cleanup is already being executed by another node");
+
+        /// 0 TTL means drop all failed files immediately
+        cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", 0, 0);
+    }
+}
