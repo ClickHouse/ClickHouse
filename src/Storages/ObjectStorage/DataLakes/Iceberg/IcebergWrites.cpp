@@ -837,7 +837,16 @@ void generateManifestList(
     // file manually so we can embed the full schema JSON with field-ids intact,
     // without triggering the DataFileWriter constructor's eager writeHeader()
     // which commits encoder state before we can override avro.schema.
-    if (manifest_entry_names.empty() && !use_previous_snapshots)
+    //
+    // The condition must be the exact complement of the carry-forward predicate below
+    // ("use_previous_snapshots || !carry_forward_manifest_paths.empty()"), otherwise this
+    // shortcut returns before entries that the caller expects to be carried over from the
+    // parent snapshot are written. A caller that adds no new manifests and names everything
+    // it retains through `carry_forward_manifest_paths` (`DROP PARTITION`, and
+    // `OPTIMIZE ... MANIFEST` when only delete manifests survive) would otherwise commit an
+    // empty manifest list: the snapshot summary still reports the old row count while the
+    // table reads as empty. Keep the two conditions in sync.
+    if (manifest_entry_names.empty() && !use_previous_snapshots && carry_forward_manifest_paths.empty())
     {
         // For an empty manifest list (e.g. after TRUNCATE), we write a minimal valid
         // Avro Object Container File manually rather than using avro::DataFileWriter.
