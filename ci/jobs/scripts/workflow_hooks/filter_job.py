@@ -1,4 +1,5 @@
 import re
+from pathlib import PurePosixPath
 
 from ci.defs.defs import JobNames
 from ci.defs.job_configs import JobConfigs, build_digest_config
@@ -10,6 +11,7 @@ from ci.jobs.scripts.workflow_hooks.new_tests_check import (
     has_new_integration_tests,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
+from ci.jobs.scripts.workflow_hooks.store_data import PRODUCT_CODE_PATHS
 from ci.praktika.info import Info
 from ci.praktika.utils import Shell
 
@@ -141,6 +143,176 @@ def _has_coverage_pipeline_changes(changed_files):
         if any(p.startswith(path) for path in _COVERAGE_PIPELINE_PATHS):
             return True
     return False
+
+
+# Stress tests, fuzzers and the SQL conformance suites (`SQLLogic test`,
+# `SQLStorm test`) are skipped in a PR that changes fewer than this many lines
+# (additions + deletions) of product code - counted by the `store_data.py`
+# pre-hook as `product_changed_lines` over `PRODUCT_CODE_PATHS`, the part of the
+# build digest that ends up in the built server. Tests, docs and CI scripts do
+# not count. The `ci-force-all` label (`Labels.CI_FORCE_ALL`) bypasses every
+# filter hook, including this one, so it is the way to run these jobs on a small
+# PR.
+SMALL_PR_CHANGED_LINES = 100
+
+# Only the main PR workflow skips these jobs. `BackportPR` is a `pull_request`
+# workflow using this same hook, and a backport has to be validated in full
+# whatever its size: it lands in a release branch, which `ClickGap` (which fuzzes
+# every commit merged to master) never fuzzes afterwards.
+# Must match the workflow name in ci.workflows.pull_request.
+SMALL_PR_WORKFLOW = "PR"
+
+# The `targeted` AST fuzzer variants fuzz the tests that exercise the PR's changed
+# symbols, i.e. they are designed for exactly the small PRs this rule skips the
+# untargeted fuzzers on, so they keep running. `SQLLogic test` and `SQLStorm test`
+# run fixed third-party suites unrelated to the change: over the 30 days before
+# 2026-09-19 their only PR failures were infrastructure (`Start ClickHouse`,
+# `Download dataset`), at 108 and 19 minutes per run.
+_STRESS_AND_FUZZER_JOB_PREFIXES = (
+    JobNames.STRESS,
+    JobNames.ASTFUZZER,
+    JobNames.BUZZHOUSE,
+    JobNames.SQL_LOGIC_TEST,
+    JobNames.SQL_STORM_TEST,
+)
+
+# Digest inputs of the skippable jobs that must not switch the skip off: a fifth
+# of all commits touches the stateless suite, so exempting it would make the rule
+# never fire. It is the only path of that frequency, and the other test inputs of
+# these jobs are deliberately absent: `tests/config`, from which the runners
+# install their server configuration (`run-fuzzer.sh` copies `listen.xml`,
+# `ssl_certs.xml`, `server.crt` and friends, `stress.py` installs
+# `cannot_allocate_thread_injection.xml`), and `tests/*.txt`, the blacklists
+# `tests/clickhouse-test` reads to decide which tests run. Both change in well
+# under 1% of commits.
+_COMMON_TEST_PATHS = ("tests/queries/0_stateless/",)
+
+# Machinery of these jobs that is not a digest input of theirs, but still decides
+# what they do or whether they run at all.
+_EXTRA_STRESS_AND_FUZZER_PATHS = (
+    # The fuzzers themselves live in the server code.
+    "src/Client/BuzzHouse/",
+    "src/Common/QueryFuzzer*",
+    # This rule, and the pre-hook computing the line count it reads.
+    "ci/jobs/scripts/workflow_hooks/filter_job.py",
+    "ci/jobs/scripts/workflow_hooks/store_data.py",
+    # What defines these jobs and puts them into the workflow: their commands,
+    # parameters, runners, timeouts and digests. A PR that rewrites the job
+    # definition and touches a few lines of `src/` on top would otherwise skip the
+    # very jobs it redefined. Same reasoning as `_COVERAGE_PIPELINE_PATHS` above.
+    "ci/defs/job_configs.py",
+    "ci/defs/defs.py",
+    "ci/workflows/pull_request.py",
+    # And praktika itself, which decides how any of it is scheduled and run.
+    "ci/praktika/",
+)
+
+
+def _stress_and_fuzzer_paths():
+    """Paths whose change makes a PR run the stress tests, fuzzers and SQL suites whatever its
+    size. Derived from the digest `include_paths` of the very jobs this rule can
+    skip, so an input added to one of them keeps its exemption here without a
+    second edit, minus `_COMMON_TEST_PATHS` and plus
+    `_EXTRA_STRESS_AND_FUZZER_PATHS`.
+    """
+    paths = set(_EXTRA_STRESS_AND_FUZZER_PATHS)
+    for job in (
+        *JobConfigs.stress_test_jobs,
+        *JobConfigs.ast_fuzzer_jobs,
+        *JobConfigs.buzz_fuzzer_jobs,
+        JobConfigs.sqllogic_test_master_job,
+        JobConfigs.sqlstorm_test_job,
+    ):
+        for path in job.digest_config.include_paths:
+            path = path.removeprefix("./")
+            if path not in _COMMON_TEST_PATHS:
+                paths.add(path)
+    return tuple(sorted(paths))
+
+
+_STRESS_AND_FUZZER_PATHS = _stress_and_fuzzer_paths()
+
+
+def _uncounted_build_paths():
+    """Build-digest inputs whose changed lines `store_data.py` does not count - it
+    counts `PRODUCT_CODE_PATHS` only. Their diff size says nothing about the size
+    of the change to the binary: a bumped gitlink under `contrib/` is two lines and
+    an arbitrary amount of new third-party code, and a one-line compiler flag in
+    `ci/jobs/build_clickhouse.py` rebuilds everything. A PR touching one of them is
+    therefore never small, which keeps the invariant that every input of the build
+    digest either counts towards the threshold or takes the PR out of the rule.
+    """
+    counted = {path.rstrip("/") for path in PRODUCT_CODE_PATHS}
+    return tuple(
+        sorted(
+            path
+            for path in (p.removeprefix("./") for p in build_digest_config.include_paths)
+            if path.rstrip("/") not in counted
+        )
+    )
+
+
+_UNCOUNTED_BUILD_PATHS = _uncounted_build_paths()
+_BUILD_DIGEST_EXCLUDES = tuple(
+    p.removeprefix("./") for p in build_digest_config.exclude_paths
+)
+
+
+def _is_stress_or_fuzzer_job(job_name):
+    return job_name.startswith(_STRESS_AND_FUZZER_JOB_PREFIXES) and "targeted" not in job_name
+
+
+def _matches_digest_path(path, patterns):
+    """Whether `path` is covered by one of `patterns`, matched the way praktika
+    matches a job's digest `include_paths` in `Job.is_affected_by`: a pattern is a
+    directory prefix, an exact path, or a glob. Prefix matching alone would silently
+    ignore the glob entries - `tests/*.txt` holds the blacklists `clickhouse-test`
+    reads, and no file name starts with that string.
+
+    `path` must already have its `./` prefix stripped. That is done by the caller,
+    with `removeprefix("./")` rather than the `.`-then-`/` idiom of the older helpers
+    in this file, because some of these paths are root dotfiles (`.gitmodules`).
+    """
+    for pattern in patterns:
+        pattern = pattern.rstrip("/")
+        if PurePosixPath("/" + path).match("/" + pattern) or path.startswith(
+            pattern + "/"
+        ):
+            return True
+    return False
+
+
+def _has_stress_or_fuzzer_changes(changed_files):
+    return any(
+        _matches_digest_path(f.removeprefix("./"), _STRESS_AND_FUZZER_PATHS)
+        for f in changed_files
+    )
+
+
+def _has_uncounted_build_changes(changed_files):
+    """True if the PR changes the built binary in a way the line count does not see
+    - see `_uncounted_build_paths`."""
+    for f in changed_files:
+        p = f.removeprefix("./")
+        if _matches_digest_path(p, _UNCOUNTED_BUILD_PATHS) and not _matches_digest_path(
+            p, _BUILD_DIGEST_EXCLUDES
+        ):
+            return True
+    return False
+
+
+def _is_small_pr(info):
+    """True if the PR changes fewer than `SMALL_PR_CHANGED_LINES` lines of product
+    code. False when the count is unknown (the pre-hook failed to fetch it), so an
+    API hiccup runs the jobs instead of skipping them, and false outside the main
+    PR workflow - see `SMALL_PR_WORKFLOW`."""
+    if info.pr_number <= 0 or info.workflow_name != SMALL_PR_WORKFLOW:
+        return False
+    product_changed_lines = info.get_kv_data("product_changed_lines")
+    if not isinstance(product_changed_lines, int):
+        print("WARNING: product_changed_lines is not stored - do not skip stress tests, fuzzers and SQL suites")
+        return False
+    return product_changed_lines < SMALL_PR_CHANGED_LINES
 
 
 _info_cache = None
@@ -333,6 +505,23 @@ def should_skip_job(job_name):
                 "Skipped, no changes in src/Coordination, tests/stress/keeper, or keeper_stress_job.py",
             )
         return False, ""
+
+    # Skip the stress tests, fuzzers and SQL conformance suites on small PRs. Each
+    # of these jobs takes up to 1-3 hours and they rarely catch anything a change
+    # of this size introduces;
+    # the targeted AST fuzzer still runs, and ClickGap fuzzes every merged PR on
+    # master once more. Bypass: the `ci-force-all` label.
+    if (
+        _is_stress_or_fuzzer_job(job_name)
+        and _is_small_pr(_info_cache)
+        and not _has_uncounted_build_changes(changed_files)
+        and not _has_stress_or_fuzzer_changes(changed_files)
+    ):
+        return (
+            True,
+            f"Skipped, fewer than {SMALL_PR_CHANGED_LINES} lines of product code changed "
+            f"(add the '{Labels.CI_FORCE_ALL}' label to run)",
+        )
 
     if (
         Labels.CI_BUILD in _info_cache.pr_labels
