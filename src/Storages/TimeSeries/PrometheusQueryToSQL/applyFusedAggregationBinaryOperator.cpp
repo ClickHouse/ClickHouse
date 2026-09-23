@@ -108,11 +108,7 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     }
 
     if (argument.store_method == StoreMethod::EMPTY)
-    {
-        SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::EMPTY};
-        res.value_data_type = argument.value_data_type;
-        return res;
-    }
+        return SQLQueryPiece{operator_node, operator_node->result_type, StoreMethod::EMPTY};
 
     argument = toVectorGrid(std::move(argument), context);
 
@@ -145,8 +141,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
                 makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y")),
                 applyMathBinaryOperatorToAST(
                     operator_node->operator_name, make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("y"))),
-            left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type),
-            right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values), context.scalar_data_type)));
+            left_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values)),
+            right_transform(make_intrusive<ASTIdentifier>(ColumnNames::Values))));
         builder.select_list.back()->setAlias(ColumnNames::Values);
 
         if (left_aggregation->by || left_aggregation->without)

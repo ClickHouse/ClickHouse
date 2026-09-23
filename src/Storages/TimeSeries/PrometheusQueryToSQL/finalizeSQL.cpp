@@ -31,16 +31,15 @@ namespace
                         getPromQLText(result, context),
                         result.type,
                         result.store_method,
-                        toString(result.start_time, context.timestamp_scale),
-                        toString(result.end_time, context.timestamp_scale),
-                        toString(result.step, context.timestamp_scale));
+                        toString(result.start_time, context.result_timestamp_scale),
+                        toString(result.end_time, context.result_timestamp_scale),
+                        toString(result.step, context.result_timestamp_scale));
     }
 
     /// Finalizes a SQL query returning a scalar as two columns "time", "value".
     ASTPtr finalizeScalarAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::SCALAR);
-        const auto & scalar_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
         ASTPtr value;
 
@@ -57,7 +56,7 @@ namespace
                 ///        <scalar_value> AS value
 
                 /// <scalar_value> AS value
-                value = timeSeriesScalarToAST(result.scalar_value, scalar_data_type);
+                value = timeSeriesScalarToAST(result.scalar_value);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -65,11 +64,11 @@ namespace
             case StoreMethod::SINGLE_SCALAR:
             {
                 /// SELECT <start_time> AS timestamp,
-                ///        value::scalar_data_type AS value
+                ///        value::Float64 AS value
                 /// FROM <subquery>
 
-                /// value::scalar_data_type AS value
-                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type);
+                /// value::Float64 AS value
+                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value));
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -77,13 +76,12 @@ namespace
             case StoreMethod::SCALAR_GRID:
             {
                 /// SELECT <start_time> AS timestamp,
-                ///        values[1]::scalar_data_type AS value
+                ///        values[1]::Float64 AS value
                 /// FROM <scalar_grid>
 
                 /// values[1] AS value
                 value = timeSeriesScalarASTCast(
-                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
-                    scalar_data_type);
+                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -103,7 +101,7 @@ namespace
             throwCannotFinalize(result, context);
 
         /// <start_time> AS timestamp
-        ASTPtr timestamp = timeSeriesTimestampToAST(result.start_time, context.timestamp_data_type);
+        ASTPtr timestamp = timeSeriesTimestampToAST(result.start_time, context.result_timestamp_type);
         timestamp->setAlias(ColumnNames::Timestamp);
 
         SelectQueryBuilder builder;
@@ -138,7 +136,7 @@ namespace
         if (result.start_time != result.end_time)
             throwCannotFinalize(result, context);
 
-        ASTPtr timestamp = timeSeriesTimestampToAST(result.start_time, context.timestamp_data_type);
+        ASTPtr timestamp = timeSeriesTimestampToAST(result.start_time, context.result_timestamp_type);
         timestamp->setAlias(ColumnNames::Timestamp);
 
         ASTPtr value = make_intrusive<ASTLiteral>(result.string_value);
@@ -163,7 +161,6 @@ namespace
     ASTPtr finalizeInstantVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::INSTANT_VECTOR);
-        const auto & scalar_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
         ASTPtr tags;
         ASTPtr value;
@@ -173,14 +170,14 @@ namespace
         {
             case StoreMethod::EMPTY:
             {
-                /// SELECT * FROM null('tags Array(Tuple(String, String)), timestamp timestamp_data_type, value scalar_data_type')
+                /// SELECT * FROM null('tags Array(Tuple(String, String)), timestamp result_timestamp_type, value Float64')
                 SelectQueryBuilder builder;
                 builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
-                String structure = fmt::format("{} Array(Tuple(String, String)), {} {}, {} {}",
+                String structure = fmt::format("{} Array(Tuple(String, String)), {} {}, {} Float64",
                     ColumnNames::Tags,
-                    ColumnNames::Timestamp, context.timestamp_data_type->getName(),
-                    ColumnNames::Value, scalar_data_type->getName());
+                    ColumnNames::Timestamp, context.result_timestamp_type->getName(),
+                    ColumnNames::Value);
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -194,7 +191,7 @@ namespace
                 ///        <scalar_value> AS value
 
                 /// <scalar_value> AS value
-                value = timeSeriesScalarToAST(result.scalar_value, scalar_data_type);
+                value = timeSeriesScalarToAST(result.scalar_value);
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -203,11 +200,11 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        <start_time> AS timestamp,
-                ///        value::scalar_data_type AS value
+                ///        value::Float64 AS value
                 /// FROM <subquery>
 
-                /// value::scalar_data_type
-                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type);
+                /// value::Float64
+                value = timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value));
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -216,13 +213,12 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        <start_time> AS timestamp,
-                ///        values[1]::scalar_data_type AS value
+                ///        values[1]::Float64 AS value
                 /// FROM <scalar_grid>
 
-                /// values[1]::scalar_data_type AS value
+                /// values[1]::Float64 AS value
                 value = timeSeriesScalarASTCast(
-                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)),
-                    scalar_data_type);
+                    makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u)));
                 value->setAlias(ColumnNames::Value);
                 break;
             }
@@ -231,7 +227,7 @@ namespace
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
                 ///        <start_time> AS timestamp,
-                ///        assumeNotNull(values[1])::scalar_data_type AS value
+                ///        assumeNotNull(values[1])::Float64 AS value
                 /// FROM <vector_grid>
                 /// WHERE isNotNull(values[1])
 
@@ -244,8 +240,7 @@ namespace
                     makeASTFunction(
                         "assumeNotNull",
                         makeASTFunction(
-                            "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u))),
-                    scalar_data_type);
+                            "arrayElement", make_intrusive<ASTIdentifier>(ColumnNames::Values), make_intrusive<ASTLiteral>(1u))));
                 value->setAlias(ColumnNames::Value);
 
                 /// WHERE isNotNull(values[1])
@@ -278,7 +273,7 @@ namespace
             throwCannotFinalize(result, context);
 
         /// <start_time> AS timestamp
-        ASTPtr timestamp = timeSeriesTimestampToAST(result.start_time, context.timestamp_data_type);
+        ASTPtr timestamp = timeSeriesTimestampToAST(result.start_time, context.result_timestamp_type);
         timestamp->setAlias(ColumnNames::Timestamp);
 
         SelectQueryBuilder builder;
@@ -303,7 +298,6 @@ namespace
     ASTPtr finalizeRangeVectorAsSQL(SQLQueryPiece && result, ConverterContext & context)
     {
         chassert(result.type == ResultType::RANGE_VECTOR);
-        const auto & scalar_data_type = result.value_data_type ? result.value_data_type : context.scalar_data_type;
 
         const auto * samples_outer_column_name = ColumnNames::getOuterSamples(context.time_series_version);
 
@@ -318,13 +312,13 @@ namespace
         {
             case StoreMethod::EMPTY:
             {
-                /// SELECT * FROM null('tags Array(Tuple(String, String)), samples Array(Tuple(timestamp_data_type, scalar_data_type))')
+                /// SELECT * FROM null('tags Array(Tuple(String, String)), samples Array(Tuple(result_timestamp_type, Float64))')
                 SelectQueryBuilder builder;
                 builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
-                String structure = fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, {}))",
+                String structure = fmt::format("{} Array(Tuple(String, String)), {} Array(Tuple({}, Float64))",
                     ColumnNames::Tags,
-                    samples_outer_column_name, context.timestamp_data_type->getName(), scalar_data_type->getName());
+                    samples_outer_column_name, context.result_timestamp_type->getName());
 
                 builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -342,7 +336,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(result.start_time, result.end_time, result.step)),
-                    timeSeriesScalarToAST(result.scalar_value, scalar_data_type));
+                    timeSeriesScalarToAST(result.scalar_value));
                 break;
             }
 
@@ -350,7 +344,7 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           arrayResize([], <count_of_time_steps>, value::scalar_data_type)) AS samples
+                ///                           arrayResize([], <count_of_time_steps>, value::Float64)) AS samples
                 /// FROM <subquery>
 
                 /// arrayResize([], <count_of_time_steps>, value)
@@ -358,7 +352,7 @@ namespace
                     "arrayResize",
                     make_intrusive<ASTLiteral>(Array{}),
                     make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(result.start_time, result.end_time, result.step)),
-                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type));
+                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value)));
                 break;
             }
 
@@ -366,21 +360,21 @@ namespace
             {
                 /// SELECT materialize([]::Array(Tuple(String, String))) AS tags,
                 ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>,
-                ///                           values::Array(scalar_data_type)) AS samples
+                ///                           values::Array(Float64)) AS samples
                 /// FROM <scalar_grid>
 
-                /// values::Array(scalar_data_type)
+                /// values::Array(Float64)
                 values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTLiteral>(fmt::format("Array({})", scalar_data_type->getName())));
+                    make_intrusive<ASTLiteral>("Array(Float64)"));
                 break;
             }
 
             case StoreMethod::VECTOR_GRID:
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(scalar_data_type))) AS samples
+                ///        timeSeriesFromGrid(<start_time>, <end_time>, <step>, values::Array(Nullable(Float64))) AS samples
                 /// FROM <vector_grid>
                 /// WHERE notEmpty(samples)
 
@@ -388,11 +382,11 @@ namespace
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                /// values::Array(Nullable(scalar_data_type))
+                /// values::Array(Nullable(Float64))
                 values = makeASTFunction(
                     "CAST",
                     make_intrusive<ASTIdentifier>(ColumnNames::Values),
-                    make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", scalar_data_type->getName())));
+                    make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
 
                 where = makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(samples_outer_column_name));
                 break;
@@ -401,7 +395,7 @@ namespace
             case StoreMethod::RAW_DATA:
             {
                 /// SELECT timeSeriesGroupToTags(group) AS tags,
-                ///        timeSeriesGroupArray(timestamp::timestamp_data_type, value::scalar_data_type) AS samples
+                ///        CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
                 /// FROM <raw_data>
                 /// GROUP BY group
                 /// HAVING notEmpty(samples)
@@ -410,11 +404,13 @@ namespace
                 tags = makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(ColumnNames::Group));
                 tags->setAlias(ColumnNames::Tags);
 
-                /// timeSeriesGroupArray(timestamp, value) AS samples
+                /// CAST(timeSeriesGroupArray(timestamp, value), 'Array(Tuple(result_timestamp_type, Float64))') AS samples
+                /// The column `value` of raw data can be Float32 (see the comment for StoreMethod::RAW_DATA),
+                /// so we cast the aggregated arrays, which is cheaper than casting the raw data before aggregation.
                 time_series = makeASTFunction(
-                    "timeSeriesGroupArray",
-                    timeSeriesTimestampASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), context.timestamp_data_type),
-                    timeSeriesScalarASTCast(make_intrusive<ASTIdentifier>(ColumnNames::Value), scalar_data_type));
+                    "CAST",
+                    makeASTFunction("timeSeriesGroupArray", make_intrusive<ASTIdentifier>(ColumnNames::Timestamp), make_intrusive<ASTIdentifier>(ColumnNames::Value)),
+                    make_intrusive<ASTLiteral>(fmt::format("Array(Tuple({}, Float64))", context.result_timestamp_type->getName())));
                 time_series->setAlias(samples_outer_column_name);
 
                 group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
@@ -447,9 +443,9 @@ namespace
             chassert(values);
             time_series = makeASTFunction(
                     "timeSeriesFromGrid",
-                    timeSeriesTimestampToAST(result.start_time, context.timestamp_data_type),
-                    timeSeriesTimestampToAST(result.end_time, context.timestamp_data_type),
-                    timeSeriesDurationToAST(result.step, context.timestamp_data_type),
+                    timeSeriesTimestampToAST(result.start_time, context.result_timestamp_type),
+                    timeSeriesTimestampToAST(result.end_time, context.result_timestamp_type),
+                    timeSeriesDurationToAST(result.step, context.result_timestamp_type),
                     std::move(values));
             time_series->setAlias(samples_outer_column_name);
         }

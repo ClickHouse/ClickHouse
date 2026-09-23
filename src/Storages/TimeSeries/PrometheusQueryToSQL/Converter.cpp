@@ -125,10 +125,7 @@ Converter::Converter(std::shared_ptr<const PrometheusQueryTree> promql_tree_, Pr
 
 ColumnsDescription Converter::getResultColumns() const
 {
-    ConverterContext context{promql_tree, settings};
-    auto query_piece = visitNode(promql_tree->getRoot(), context);
-    query_piece.type = result_type;
-    return DB::PrometheusQueryToSQL::getResultColumns(*promql_tree, settings, query_piece.value_data_type);
+    return DB::PrometheusQueryToSQL::getResultColumns(*promql_tree, settings);
 }
 
 

@@ -135,11 +135,7 @@ SQLQueryPiece applyFunctionQuantileOverTime(
 
     auto node_range = context.node_range_getter.get(function_node);
     if (node_range.empty())
-    {
-        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        res.value_data_type = arguments[1].value_data_type;
-        return res;
-    }
+        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     auto start_time = node_range.start_time;
     auto end_time = node_range.end_time;
@@ -149,20 +145,12 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     auto range_argument = std::move(arguments[1]);
 
     if (range_argument.store_method == StoreMethod::EMPTY)
-    {
-        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        res.value_data_type = range_argument.value_data_type;
-        return res;
-    }
+        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
 
     /// The level goes last: it may register a scalar subquery, which is left unused if the result is found empty above.
     QuantileLevel quantile_level = getQuantileLevel(arguments[0], context);
     if (!quantile_level.ast)
-    {
-        SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        res.value_data_type = range_argument.value_data_type;
-        return res;
-    }
+        return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
     ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(range_argument, context);
 
@@ -198,10 +186,10 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     aggregate_function_arguments.push_back(std::move(quantile_level.ast));
     ASTPtr result_values = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesQuantileToGrid", std::move(aggregate_function_arguments)),
-        timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
+        timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+        timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+        timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+        timeSeriesDurationToAST(window, context.result_timestamp_type));
 
     if (fixed_at_node)
         result_values = repeatFixedAtResultOverGrid(

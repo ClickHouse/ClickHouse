@@ -49,21 +49,18 @@ SQLQueryPiece applySimpleFunction(
     for (size_t i = 0; i != arguments.size(); ++i)
     {
         auto & argument = arguments[i];
-        const auto & argument_value_data_type
-            = argument.value_data_type ? argument.value_data_type : context.scalar_data_type;
-        res.value_data_type = mergeValueDataType(res.value_data_type, argument.value_data_type);
 
         switch (argument.store_method)
         {
             case StoreMethod::EMPTY:
             {
                 /// If one of the argument is empty then the result is also empty.
-                return res;
+                return SQLQueryPiece{node, node->result_type, StoreMethod::EMPTY};
             }
 
             case StoreMethod::CONST_SCALAR:
             {
-                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value, argument_value_data_type));
+                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value));
 
                 if (res.store_method != StoreMethod::SCALAR_GRID && res.store_method != StoreMethod::VECTOR_GRID)
                     res.store_method = StoreMethod::SINGLE_SCALAR;

@@ -29,20 +29,15 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
                         getPromQLText(query_piece, context), query_piece.type, ResultType::INSTANT_VECTOR);
     }
 
-    const auto & scalar_data_type = query_piece.value_data_type ? query_piece.value_data_type : context.scalar_data_type;
-
     switch (query_piece.store_method)
     {
         case StoreMethod::EMPTY:
         {
-            /// SELECT * FROM null('group UInt64, values Array(Nullable(scalar_data_type))')
+            /// SELECT * FROM null('group UInt64, values Array(Nullable(Float64))')
             SelectQueryBuilder builder;
             builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
-            String structure = fmt::format("{} UInt64, {} Array(Nullable({}))",
-                ColumnNames::Group,
-                ColumnNames::Values,
-                scalar_data_type->getName());
+            String structure = fmt::format("{} UInt64, {} Array(Nullable(Float64))", ColumnNames::Group, ColumnNames::Values);
 
             builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
@@ -67,7 +62,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             ASTPtr value = (query_piece.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(query_piece.scalar_value, scalar_data_type)
+                ? timeSeriesScalarToAST(query_piece.scalar_value)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             builder.select_list.push_back(makeASTFunction(

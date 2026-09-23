@@ -2,13 +2,11 @@
 
 #include <Common/Exception.h>
 #include <Core/DecimalFunctions.h>
-#include <DataTypes/DataTypesNumber.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromSelector.h>
@@ -26,12 +24,6 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
-    const DataTypePtr & timestampValueDataType()
-    {
-        static const DataTypePtr data_type = std::make_shared<DataTypeFloat64>();
-        return data_type;
-    }
-
     /// Returns the InstantSelector if `node` is a bare InstantSelector or an Offset node
     /// directly wrapping a bare InstantSelector; returns nullptr for any other expression
     /// (unary/binary operators, aggregations, functions, etc.).
@@ -62,11 +54,7 @@ namespace
         switch (argument.store_method)
         {
             case StoreMethod::EMPTY:
-            {
-                SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-                res.value_data_type = timestampValueDataType();
-                return res;
-            }
+                return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
             case StoreMethod::CONST_SCALAR:
             case StoreMethod::SINGLE_SCALAR:
@@ -74,11 +62,7 @@ namespace
             {
                 auto node_range = context.node_range_getter.get(function_node);
                 if (node_range.empty())
-                {
-                    SQLQueryPiece res{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-                    res.value_data_type = timestampValueDataType();
-                    return res;
-                }
+                    return SQLQueryPiece{function_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
 
                 if (node_range.start_time == node_range.end_time)
                 {
@@ -87,8 +71,7 @@ namespace
                     res.start_time = node_range.start_time;
                     res.end_time = node_range.end_time;
                     res.step = node_range.step;
-                    res.scalar_value = DecimalUtils::convertTo<Float64>(node_range.start_time, context.timestamp_scale);
-                    res.value_data_type = timestampValueDataType();
+                    res.scalar_value = DecimalUtils::convertTo<Float64>(node_range.start_time, context.result_timestamp_scale);
                     return res;
                 }
                 else
@@ -104,14 +87,13 @@ namespace
                         "CAST",
                         makeASTFunction(
                             "timeSeriesRange",
-                            timeSeriesTimestampToAST(node_range.start_time, context.timestamp_data_type),
-                            timeSeriesTimestampToAST(node_range.end_time, context.timestamp_data_type),
-                            timeSeriesDurationToAST(node_range.step, context.timestamp_data_type)),
-                        make_intrusive<ASTLiteral>(fmt::format("Array({})", timestampValueDataType()->getName()))));
+                            timeSeriesTimestampToAST(node_range.start_time, context.result_timestamp_type),
+                            timeSeriesTimestampToAST(node_range.end_time, context.result_timestamp_type),
+                            timeSeriesDurationToAST(node_range.step, context.result_timestamp_type)),
+                        make_intrusive<ASTLiteral>("Array(Float64)")));
 
                     builder.select_list.back()->setAlias(ColumnNames::Values);
                     res.select_query = builder.getSelectQuery();
-                    res.value_data_type = timestampValueDataType();
 
                     return res;
                 }
@@ -127,7 +109,6 @@ namespace
                 res.start_time = argument.start_time;
                 res.end_time = argument.end_time;
                 res.step = argument.step;
-                res.value_data_type = timestampValueDataType();
 
                 SelectQueryBuilder builder;
                 builder.from_table = subquery_name;
@@ -138,9 +119,9 @@ namespace
                     "CAST",
                     makeASTFunction(
                         "timeSeriesRange",
-                        timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                        timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                        timeSeriesDurationToAST(argument.step, context.timestamp_data_type)),
+                        timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                        timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                        timeSeriesDurationToAST(argument.step, context.result_timestamp_type)),
                     make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
 
                 ASTPtr lambda_expr = makeASTFunction(
@@ -200,14 +181,11 @@ SQLQueryPiece applyFunctionTimestamp(
     {
         /// Direct instant vector selector (plus optional direct offset/@ modifier):
         /// Returns the raw sample timestamp from storage.
-        auto instant_selector_text = instant_selector->toString(*context.promql_tree);
-        auto range_selector = fromRangeSelector(instant_selector_text, instant_selector, context);
-        auto res = applyFunctionOverRange(instant_selector, "timestamp", {std::move(range_selector)}, context);
+        auto res = fromSelectorSampleTimestamps(instant_selector, context);
         if (offset_node)
             res = applyOffset(offset_node, std::move(res), context);
         res.node = function_node;
-        res.value_data_type = timestampValueDataType();
-        return res;
+        return dropMetricName(std::move(res), context);
     }
 
     /// General instant vector expression:
