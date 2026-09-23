@@ -461,6 +461,9 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
+    /// Throws `FAULT_INJECTED` from `Transaction::commit()` after a part renamed by a rollback-undoing
+    /// transaction has been committed. Used to test that a failed commit leaves no permanently named part.
+    extern const char merge_tree_transaction_fail_after_empty_part_rename[];
 }
 
 namespace ErrorCodes
@@ -11522,6 +11525,36 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
         for (const auto & part : precommitted_parts)
             part->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 
+        if (undo_renames_on_rollback)
+        {
+            for (const auto & [part, previous_dir] : renamed_parts_previous_dirs)
+            {
+                try
+                {
+                    /// A part storage transaction that has not been committed still holds its `moveDirectory`,
+                    /// so on an object storage disk the new directory is not there; on a local disk the move
+                    /// already ran.
+                    if (!part->getDataPartStorage().exists())
+                        continue;
+                    if (part->getDataPartStorage().getPartDirectory() == previous_dir)
+                        continue;
+
+                    /// Any free temporary name is enough here: loadDataParts skips a `tmp` prefix.
+                    auto rollback_dir = part->getDataPartStorage().getRelativePathForPrefix(
+                        data.log.load(), "tmp_rollback", /*detached*/ false, /*broken*/ false);
+                    if (!rollback_dir)
+                        continue;
+
+                    part->renameTo(*rollback_dir, /*remove_new_dir_if_exists*/ false);
+                }
+                catch (...)
+                {
+                    tryLogCurrentException(
+                        data.log, fmt::format("Failed to rename rolled back part {} out of {}", part->name, previous_dir));
+                }
+            }
+        }
+
         auto non_detached_precommitted_parts = precommitted_parts;
 
         /// Remove detached parts from working set.
@@ -11594,6 +11627,12 @@ void MergeTreeData::Transaction::clear()
     chassert(precommitted_parts.size() >= precommitted_parts_need_rename.size());
     precommitted_parts.clear();
     precommitted_parts_need_rename.clear();
+    renamed_parts_previous_dirs.clear();
+}
+
+void MergeTreeData::Transaction::setUndoRenamesOnRollback()
+{
+    undo_renames_on_rollback = true;
 }
 
 void MergeTreeData::Transaction::renameParts()
@@ -11601,6 +11640,8 @@ void MergeTreeData::Transaction::renameParts()
     for (const auto & part_need_rename : precommitted_parts_need_rename)
     {
         LOG_TEST(data.log, "Renaming part to {}", part_need_rename->name);
+        if (undo_renames_on_rollback)
+            renamed_parts_previous_dirs.emplace_back(part_need_rename, part_need_rename->getDataPartStorage().getPartDirectory());
         part_need_rename->renameTo(part_need_rename->name, true);
     }
     precommitted_parts_need_rename.clear();
@@ -11624,8 +11665,17 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         auto settings = data.getSettings();
 
         for (const auto & part : precommitted_parts)
+        {
             if (part->getDataPartStorage().hasActiveTransaction())
                 part->getDataPartStorage().commitTransaction();
+
+            fiu_do_on(FailPoints::merge_tree_transaction_fail_after_empty_part_rename,
+            {
+                if (undo_renames_on_rollback && !renamed_parts_previous_dirs.empty())
+                    throw Exception(ErrorCodes::FAULT_INJECTED,
+                        "Injected failure into MergeTreeData::Transaction::commit after a renamed part was committed");
+            });
+        }
 
         /// Collect covered parts and call addNewPartAndRemoveCovered before NOEXCEPT_SCOPE,
         /// because lockRemovalTID inside addNewPartAndRemoveCovered can throw SERIALIZATION_ERROR.

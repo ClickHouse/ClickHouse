@@ -385,6 +385,12 @@ public:
         /// bound, while data parts lock is the bottleneck)
         void renameParts();
 
+        /// On rollback, rename the parts this transaction renamed out of their permanent names, into a free
+        /// temporary directory that the part loader skips. Only for callers whose parts are still private to the
+        /// transaction: a part already committed to Keeper must keep its permanent directory, otherwise a restart
+        /// cannot recover it. Not for parts from `detached/`. Call this before renameParts().
+        void setUndoRenamesOnRollback();
+
         void addPart(MutableDataPartPtr & part, bool need_rename);
 
         void rollback(DataPartsLock * acquired_lock = nullptr);
@@ -411,6 +417,9 @@ public:
 
         MutableDataParts precommitted_parts;
         MutableDataParts precommitted_parts_need_rename;
+
+        bool undo_renames_on_rollback = false;
+        std::vector<std::pair<MutableDataPartPtr, String>> renamed_parts_previous_dirs;
     };
 
     using TransactionUniquePtr = std::unique_ptr<Transaction>;

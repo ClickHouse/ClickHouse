@@ -2924,6 +2924,7 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
         sleepForMilliseconds(200);
     } while (true);
 
+    transaction.setUndoRenamesOnRollback();
     transaction.renameParts();
 
     /// `covered_parts` above is only the precommit selection: `commit` reacquires the parts lock and
@@ -3649,6 +3650,8 @@ void StorageMergeTree::movePartitionToTable(const StoragePtr & dest_table, const
 
         Transaction dest_transaction(*dest_table_storage, txn.get());
         Transaction src_transaction(*this, txn.get());
+        dest_transaction.setUndoRenamesOnRollback();
+        src_transaction.setUndoRenamesOnRollback();
 
         {
             auto dest_data_parts_lock = dest_table_storage->lockParts();
