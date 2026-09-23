@@ -192,6 +192,7 @@ namespace DistributedSetting
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
     extern const DistributedSettingsBool flush_on_detach;
+    extern const DistributedSettingsBool fsync_directories;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
 }
 
@@ -1589,11 +1590,24 @@ void StorageDistributed::removeUnrecognizedDirectoryQueues(const DiskPtr & disk)
         if (it->is_directory() && it->path().filename().string().starts_with(unrecognized_directory_queue_prefix))
             dir_paths.push_back(it->path());
 
+    if (dir_paths.empty())
+        return;
+
+    /// Like the removal of a directory queue, so that with `fsync_directories` the directories
+    /// do not come back after a crash that follows `TRUNCATE TABLE`.
+    auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
     for (const auto & dir_path : dir_paths)
     {
         LOG_DEBUG(log, "Removing {}, which holds files of an async INSERT that cannot be sent", dir_path.string());
         std::filesystem::remove_all(dir_path);
     }
+}
+
+SyncGuardPtr StorageDistributed::getDirectorySyncGuard(const DiskPtr & disk, const std::string & relative_path) const
+{
+    if ((*distributed_settings)[DistributedSetting::fsync_directories])
+        return disk->getDirectorySyncGuard(relative_path);
+    return nullptr;
 }
 
 StoragePolicyPtr StorageDistributed::getStoragePolicy() const
@@ -1610,7 +1624,7 @@ static bool isDirectoryQueueName(const std::string & name)
     return Cluster::Address::tryParseFullString(name).has_value();
 }
 
-void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem::path & dir_path) const
+void StorageDistributed::renameUnrecognizedDirectoryQueue(const DiskPtr & disk, const std::filesystem::path & dir_path) const
 {
     /// The name is not one `DistributedSink` writes, so it names no destination and the files in
     /// it can never be sent. Renaming keeps it from being taken for a directory queue on every
@@ -1625,6 +1639,7 @@ void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem:
     /// before the rename, so an interrupted start leaves the directory with its old name, and the
     /// next start writes the file again.
     {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path + old_name);
         WriteBufferFromFile out((dir_path / unrecognized_directory_queue_original_name_file).string());
         writeString(old_name, out);
         out.finalize();
@@ -1632,7 +1647,10 @@ void StorageDistributed::renameUnrecognizedDirectoryQueue(const std::filesystem:
     }
 
     const auto new_name = fmt::format("{}{}", unrecognized_directory_queue_prefix, sipHash128String(old_name));
-    std::filesystem::rename(dir_path, parent_path / new_name);
+    {
+        auto dir_sync_guard = getDirectorySyncGuard(disk, relative_data_path);
+        std::filesystem::rename(dir_path, parent_path / new_name);
+    }
     /// Logged as a warning and not as an error: a server upgraded from a version that still wrote
     /// the old directory names meets this on the first start of every table with a non-empty
     /// queue, and it is the expected handling of it, not a failure of the server.
@@ -1680,7 +1698,7 @@ void StorageDistributed::initializeDirectoryQueuesForDisk(const DiskPtr & disk)
         }
         else if (!isDirectoryQueueName(dir_name))
         {
-            renameUnrecognizedDirectoryQueue(dir_path);
+            renameUnrecognizedDirectoryQueue(disk, dir_path);
         }
         else
         {

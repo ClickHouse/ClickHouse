@@ -163,12 +163,14 @@ def test_remove_replica(started_cluster):
     )
 
 
-def test_invalid_shard_directory_format(started_cluster):
+@pytest.mark.parametrize("fsync_directories", [0, 1])
+def test_invalid_shard_directory_format(started_cluster, fsync_directories):
     """
     A subdirectory whose name is not one the sink writes names no destination, so its files can
     never be sent. It is renamed to 'unrecognized_<hash>' instead of being taken for a directory
     queue, so it is not reported and a single stray subdirectory cannot break the attach. The old
-    name is kept in the file 'original_name' in it.
+    name is kept in the file 'original_name' in it. With fsync_directories, the rename and the
+    removal on TRUNCATE go through the directory sync guard, like the rest of the spool.
     """
     node.query("drop table if exists test.dist_invalid sync")
     node.query("drop table if exists test.local_invalid sync")
@@ -177,7 +179,8 @@ def test_invalid_shard_directory_format(started_cluster):
     )
     node.query(
         "create table test.dist_invalid (x UInt64, s String) "
-        "engine = Distributed('test_cluster_internal_replication', test, local_invalid)"
+        "engine = Distributed('test_cluster_internal_replication', test, local_invalid) "
+        f"settings fsync_directories = {fsync_directories}"
     )
 
     node.query("insert into test.dist_invalid values (1, 'a'), (2, 'bb')")
@@ -201,10 +204,12 @@ def test_invalid_shard_directory_format(started_cluster):
         "shard+1_replica1",
         "shard1_replica01",
         "shard01_all_replicas",
-        # As a server older than 26.9 would have named it with
-        # use_compact_format_in_distributed_parts_names=0.
-        "default:hunter2@127%2E0%2E0%2E1:9000",
     ]
+    # As a server older than 26.9 would have named it with
+    # use_compact_format_in_distributed_parts_names=0. The password is unique per run, because the
+    # text_log keeps the queries of an earlier run, which mention it.
+    password = f"hunter2_{fsync_directories}"
+    invalid_formats.append(f"default:{password}@127%2E0%2E0%2E1:9000")
     for invalid_dir in invalid_formats:
         invalid_path = f"{data_path}/{invalid_dir}"
         node.exec_in_container(["mkdir", "-p", invalid_path])
@@ -244,17 +249,17 @@ def test_invalid_shard_directory_format(started_cluster):
 
     # The old name is gone from the directory names, from the reported path and from the log.
     node.query("SYSTEM FLUSH LOGS system.text_log")
-    assert "hunter2" not in node.exec_in_container(["ls", "-1R", data_path])
+    assert password not in node.exec_in_container(["ls", "-1R", data_path])
     assert (
         node.query(
             "SELECT count() FROM system.distribution_queue "
-            "WHERE database = 'test' AND table = 'dist_invalid' AND position(data_path, 'hunter2') > 0"
+            f"WHERE database = 'test' AND table = 'dist_invalid' AND position(data_path, '{password}') > 0"
         ).strip()
         == "0"
     )
     assert (
         node.query(
-            "SELECT count() FROM system.text_log WHERE position(message, 'hunter2') > 0"
+            f"SELECT count() FROM system.text_log WHERE position(message, '{password}') > 0"
         ).strip()
         == "0"
     )
