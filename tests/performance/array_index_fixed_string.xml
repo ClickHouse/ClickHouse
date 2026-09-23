@@ -1,0 +1,33 @@
+<test>
+    <create_query>DROP TABLE IF EXISTS perf_arr_fs</create_query>
+    <create_query>CREATE TABLE perf_arr_fs(
+        arr Array(FixedString(8)),
+        arr_str Array(String)
+        ) ENGINE = MergeTree() ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO perf_arr_fs
+        SELECT arrayMap(i -> toFixedString(concat('v', toString((number % 97) + i)), 8), range(20)),
+               arrayMap(i -> concat('v', toString((number % 97) + i)), range(20))
+        FROM numbers(5000000)
+    </fill_query>
+
+    <!-- A needle of the same width as the element needs no conversion to a common type. -->
+    <query>SELECT count() FROM perf_arr_fs WHERE has(arr, toFixedString('v57', 8))</query>
+    <query>SELECT count() FROM perf_arr_fs WHERE indexOf(arr, toFixedString('v57', 8)) > 0</query>
+    <query>SELECT count() FROM perf_arr_fs WHERE countEqual(arr, toFixedString('v57', 8)) > 0</query>
+
+    <!-- A needle of a different width, or a `String` needle, has `String` as the common type, so
+         these also pay a conversion of the whole element column. -->
+    <query>SELECT count() FROM perf_arr_fs WHERE has(arr, toFixedString('v57', 12))</query>
+    <query>SELECT count() FROM perf_arr_fs WHERE indexOf(arr, toFixedString('v57', 12)) > 0</query>
+    <query>SELECT count() FROM perf_arr_fs WHERE has(arr, 'v57')</query>
+    <query>SELECT count() FROM perf_arr_fs WHERE hasAny(arr, [toFixedString('v57', 12)])</query>
+
+    <!-- `String` elements against a `FixedString` needle: the same pair of types the other way up. -->
+    <query>SELECT count() FROM perf_arr_fs WHERE has(arr_str, toFixedString('v57', 8))</query>
+    <query>SELECT count() FROM perf_arr_fs WHERE has(arr_str, 'v57')</query>
+
+    <drop_query>DROP TABLE IF EXISTS perf_arr_fs</drop_query>
+</test>
