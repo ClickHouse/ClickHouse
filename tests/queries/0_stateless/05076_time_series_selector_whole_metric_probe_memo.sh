@@ -30,7 +30,12 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The test runner can enable the query result cache, and its key ignores `log_comment`. Every
 # scenario below needs a byte-identical query to answer differently the second time, which a cache
 # hit defeats. On `$CH` so it also covers statements a later scenario adds.
-CH="${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 --session_timezone UTC --use_query_cache 0"
+#
+# The query condition cache is a separate cache the runner also randomizes, and it makes the second
+# of two identical queries read fewer marks on its own: with it on, scenario C's marks comparison is
+# satisfied even by a selector whose verdict is never remembered, so it would no longer measure the
+# probe being skipped.
+CH="${CLICKHOUSE_CLIENT} --allow_experimental_time_series_table 1 --session_timezone UTC --use_query_cache 0 --use_query_condition_cache 0"
 
 # Scenario B counts statements to count verdict uses, which needs one plan build per statement. A
 # non-zero `automatic_parallel_replicas_mode` builds a second complete plan to decide whether
