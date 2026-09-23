@@ -280,7 +280,7 @@ inline const auto & getOptimizations()
         /// Runs after liftUpArrayJoin/liftUpFunctions/mergeExpressions, so the sort key computation
         /// has already been pushed below the ARRAY JOIN and the SortingStep is usually its direct parent.
         {tryTopKThroughArrayJoin, "topKThroughArrayJoin", &QueryPlanOptimizationSettings::top_k_through_array_join},
-    }};
+    });
 
     return optimizations;
 }
