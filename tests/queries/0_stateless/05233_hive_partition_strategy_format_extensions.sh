@@ -38,6 +38,43 @@ PARTITION BY key;
 SELECT 'json lake:';
 SELECT id, key FROM 05233_json;
 
+-- The rest of the JSON family is commonly stored in .json files as well.
+INSERT INTO FUNCTION s3('$path/json_strings_lake/key=13/data.json', 'test', 'testtest', 'JSONStringsEachRow') SELECT 20 AS id;
+
+CREATE TABLE 05233_json_strings (id UInt64, key UInt64)
+ENGINE = S3('$path/json_strings_lake', 'test', 'testtest', format = 'JSONStringsEachRow', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'json lake as JSONStringsEachRow:';
+SELECT id, key FROM 05233_json_strings;
+
+INSERT INTO FUNCTION s3('$path/json_compact_lake/key=14/data.json', 'test', 'testtest', 'JSONCompactEachRowWithNames') SELECT 21 AS id;
+
+CREATE TABLE 05233_json_compact (id UInt64, key UInt64)
+ENGINE = S3('$path/json_compact_lake', 'test', 'testtest', format = 'JSONCompactEachRowWithNames', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'json lake as JSONCompactEachRowWithNames:';
+SELECT id, key FROM 05233_json_compact;
+
+INSERT INTO FUNCTION s3('$path/json_object_lake/key=15/data.json', 'test', 'testtest', 'JSONObjectEachRow') SELECT 22 AS id;
+
+CREATE TABLE 05233_json_object (id UInt64, key UInt64)
+ENGINE = S3('$path/json_object_lake', 'test', 'testtest', format = 'JSONObjectEachRow', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'json lake as JSONObjectEachRow:';
+SELECT id, key FROM 05233_json_object;
+
+INSERT INTO FUNCTION s3('$path/json_columns_lake/key=16/data.json', 'test', 'testtest', 'JSONColumns') SELECT 23 AS id;
+
+CREATE TABLE 05233_json_columns (id UInt64, key UInt64)
+ENGINE = S3('$path/json_columns_lake', 'test', 'testtest', format = 'JSONColumns', partition_strategy = 'hive')
+PARTITION BY key;
+
+SELECT 'json lake as JSONColumns:';
+SELECT id, key FROM 05233_json_columns;
+
 -- A pre-existing lake of .csv files with a header row.
 INSERT INTO FUNCTION s3('$path/csv_lake/key=2/data.csv', 'test', 'testtest', 'CSVWithNames') SELECT 42 AS id;
 
@@ -168,6 +205,10 @@ SELECT id, key FROM 05233_gz_explicit ORDER BY id;
 
 DROP TABLE 05233_jsonl;
 DROP TABLE 05233_json;
+DROP TABLE 05233_json_strings;
+DROP TABLE 05233_json_compact;
+DROP TABLE 05233_json_object;
+DROP TABLE 05233_json_columns;
 DROP TABLE 05233_csv;
 DROP TABLE 05233_tsv;
 DROP TABLE 05233_jsonlines;

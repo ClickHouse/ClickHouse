@@ -2,6 +2,14 @@ jsonl lake:
 1	1
 json lake:
 7	3
+json lake as JSONStringsEachRow:
+20	13
+json lake as JSONCompactEachRowWithNames:
+21	14
+json lake as JSONObjectEachRow:
+22	15
+json lake as JSONColumns:
+23	16
 csv lake:
 42	2
 tsv lake:

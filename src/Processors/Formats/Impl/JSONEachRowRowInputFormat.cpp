@@ -426,6 +426,7 @@ void registerInputFormatJSONEachRow(FormatFactory & factory)
     factory.registerFileExtension("json", "JSONEachRow", /*used_for_format_inference=*/ false);
 
     register_format("JSONStringsEachRow", true);
+    factory.registerFileExtension("json", "JSONStringsEachRow", /*used_for_format_inference=*/ false);
 
     factory.markFormatSupportsSubsetOfColumns("JSONEachRow");
     factory.markFormatSupportsSubsetOfColumns("JSONLines");
