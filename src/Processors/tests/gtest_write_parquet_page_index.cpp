@@ -15,12 +15,18 @@
 
 #    include <DataTypes/DataTypeNullable.h>
 #    include <DataTypes/DataTypeString.h>
+#    include <IO/ReadBufferFromFile.h>
+#    include <IO/ReadHelpers.h>
+#    include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #    include <Poco/TemporaryFile.h>
 #    include <arrow/io/file.h>
 #    include <parquet/column_reader.h>
 #    include <parquet/file_reader.h>
 #    include <parquet/page_index.h>
 #    include <parquet/thrift_internal.h>
+
+#    include <algorithm>
+#    include <numeric>
 
 using namespace DB;
 namespace
@@ -508,6 +514,267 @@ TEST(Parquet, WriteParquetPageIndexOversizedStringStats)
     ASSERT_TRUE(offset_index_location.has_value());
     ASSERT_GT(offset_index_location.value().offset, 0);
     ASSERT_GT(offset_index_location.value().length, 0);
+}
+
+namespace parq = parquet::format;
+
+String readFileToString(const String & path)
+{
+    ReadBufferFromFile in(path);
+    String contents;
+    readStringUntilEOF(contents, in);
+    return contents;
+}
+
+/// A Parquet file ends with the serialized FileMetaData, its 4-byte size, and "PAR1".
+parq::FileMetaData readFooter(const String & file)
+{
+    int32_t footer_size = 0;
+    memcpy(&footer_size, file.data() + file.size() - 8, 4);
+    parq::FileMetaData footer;
+    /// The length comes from the file, so a corrupt one must not be indexed with; an empty struct
+    /// then fails the caller's assertions instead.
+    if (footer_size > 0 && size_t(footer_size) + 8 <= file.size())
+        DB::Parquet::deserializeThriftStruct(
+            footer, file.data() + file.size() - 8 - size_t(footer_size), size_t(footer_size));
+    return footer;
+}
+
+struct NanCountStats
+{
+    Int64 num_values = 0;
+    bool chunk_has_nan_count = false;
+    Int64 chunk_nan_count = 0;
+    bool has_min_max = false;
+    double min_value = 0;
+    double max_value = 0;
+    bool dictionary_encoded = false;
+    bool has_column_index = false;
+    bool index_has_nan_counts = false;
+    size_t num_pages = 0;
+    std::vector<Int64> page_nan_counts;
+};
+
+/// Arrow's parquet::Statistics and parquet::ColumnIndex expose no NaN count, so read the
+/// serialized thrift structs directly.
+NanCountStats readNanCountStats(const String & file, const parq::ColumnChunk & column)
+{
+    NanCountStats res;
+    const auto & meta = column.meta_data;
+    res.num_values = meta.num_values;
+    res.chunk_has_nan_count = meta.statistics.__isset.nan_count;
+    res.chunk_nan_count = meta.statistics.nan_count;
+    res.has_min_max = meta.statistics.__isset.min_value && meta.statistics.__isset.max_value;
+    if (res.has_min_max && meta.statistics.min_value.size() == sizeof(double)
+        && meta.statistics.max_value.size() == sizeof(double))
+    {
+        memcpy(&res.min_value, meta.statistics.min_value.data(), sizeof(double));
+        memcpy(&res.max_value, meta.statistics.max_value.data(), sizeof(double));
+    }
+    res.dictionary_encoded
+        = std::find(meta.encodings.begin(), meta.encodings.end(), parq::Encoding::RLE_DICTIONARY) != meta.encodings.end();
+
+    if (column.__isset.offset_index_offset)
+    {
+        parq::OffsetIndex offset_index;
+        DB::Parquet::deserializeThriftStruct(
+            offset_index, file.data() + column.offset_index_offset, size_t(column.offset_index_length));
+        res.num_pages = offset_index.page_locations.size();
+    }
+    if (column.__isset.column_index_offset)
+    {
+        parq::ColumnIndex column_index;
+        DB::Parquet::deserializeThriftStruct(
+            column_index, file.data() + column.column_index_offset, size_t(column.column_index_length));
+        res.has_column_index = true;
+        res.index_has_nan_counts = column_index.__isset.nan_counts;
+        res.page_nan_counts = column_index.nan_counts;
+    }
+    return res;
+}
+
+std::vector<double> valuesWithNaNsPerPage(
+    const std::vector<size_t> & nans_per_page, size_t page_rows, const std::function<double(size_t)> & finite_value)
+{
+    std::vector<double> values;
+    values.reserve(nans_per_page.size() * page_rows);
+    for (size_t page = 0; page < nans_per_page.size(); ++page)
+    {
+        for (size_t i = 0; i < page_rows; ++i)
+        {
+            /// Row 0 of a page is never NaN, so every page keeps a min and a max.
+            const bool is_nan = i >= 1 && i <= nans_per_page[page];
+            values.push_back(is_nan ? std::numeric_limits<double>::quiet_NaN() : finite_value(page * page_rows + i));
+        }
+    }
+    return values;
+}
+
+ColumnWithTypeAndName float64Column(const std::vector<double> & values, const String & name)
+{
+    auto column = ColumnFloat64::create();
+    for (double value : values)
+        column->insertValue(value);
+    return ColumnWithTypeAndName(std::move(column), std::make_shared<DataTypeFloat64>(), name);
+}
+
+SourcePtr singleChunkSource(ColumnsWithTypeAndName columns_with_names)
+{
+    Block header;
+    Columns columns;
+    const size_t num_rows = columns_with_names.at(0).column->size();
+    for (auto & column : columns_with_names)
+    {
+        header.insert(ColumnWithTypeAndName(column.type, column.name));
+        columns.push_back(column.column);
+    }
+    Chunks chunks;
+    chunks.emplace_back(std::move(columns), num_rows);
+    return std::make_shared<SourceFromChunks>(std::make_shared<const Block>(header), std::move(chunks));
+}
+
+/// Parquet computes float min/max from non-NaN values only, so a reader needs the NaN count to tell a
+/// NaN-free column from one whose NaNs were skipped, and parquet.thrift requires the count for float
+/// types even when it is zero. Both readers here only compare it against zero, so its exact value and
+/// its per-page alignment have no SQL oracle.
+TEST(Parquet, WriteNanCountStatistics)
+{
+    constexpr size_t page_rows = 32;
+    const std::vector<size_t> nans_per_page{1, 2, 3, 4};
+    const size_t num_rows = nans_per_page.size() * page_rows;
+    const Int64 total_nans = 1 + 2 + 3 + 4;
+
+    ColumnsWithTypeAndName columns;
+    columns.push_back(float64Column(
+        valuesWithNaNsPerPage(nans_per_page, page_rows, [](size_t row) { return double(row); }), "mixed"));
+    columns.push_back(float64Column(
+        valuesWithNaNsPerPage({0, 0, 0, 0}, page_rows, [](size_t row) { return double(row) * 0.5; }), "nan_free"));
+    columns.push_back(
+        float64Column(std::vector<double>(num_rows, std::numeric_limits<double>::quiet_NaN()), "all_nan"));
+    auto ints = ColumnInt64::create();
+    for (size_t row = 0; row < num_rows; ++row)
+        ints->insertValue(Int64(row));
+    columns.push_back(ColumnWithTypeAndName(std::move(ints), std::make_shared<DataTypeInt64>(), "ints"));
+
+    FormatSettings format_settings;
+    format_settings.parquet.parallel_encoding = false;
+    format_settings.parquet.write_page_index = true;
+    format_settings.parquet.write_checksums = false;
+    format_settings.parquet.output_compression_method = FormatSettings::ParquetCompression::NONE;
+    format_settings.parquet.write_batch_size = page_rows;
+    format_settings.parquet.data_page_size = 8;
+    format_settings.parquet.max_dictionary_size = 0;
+
+    Poco::File("tmp").createDirectories();
+    Poco::TemporaryFile parquet_file("tmp");
+    writeParquet(singleChunkSource(columns), format_settings, parquet_file.path());
+
+    const String file = readFileToString(parquet_file.path());
+    ASSERT_GT(file.size(), 8u);
+    ASSERT_EQ(file.substr(file.size() - 4), "PAR1");
+    const parq::FileMetaData footer = readFooter(file);
+    ASSERT_EQ(footer.row_groups.size(), 1u);
+    ASSERT_EQ(footer.row_groups[0].columns.size(), 4u);
+
+    const auto mixed = readNanCountStats(file, footer.row_groups[0].columns[0]);
+    EXPECT_EQ(mixed.num_values, Int64(num_rows));
+    ASSERT_TRUE(mixed.chunk_has_nan_count);
+    EXPECT_EQ(mixed.chunk_nan_count, total_nans);
+    ASSERT_TRUE(mixed.has_min_max);
+    EXPECT_EQ(mixed.min_value, 0.0);
+    EXPECT_EQ(mixed.max_value, double(num_rows - 1));
+    ASSERT_TRUE(mixed.has_column_index);
+    ASSERT_TRUE(mixed.index_has_nan_counts);
+    EXPECT_EQ(mixed.num_pages, nans_per_page.size());
+    EXPECT_EQ(mixed.page_nan_counts, (std::vector<Int64>{1, 2, 3, 4}));
+    EXPECT_EQ(std::accumulate(mixed.page_nan_counts.begin(), mixed.page_nan_counts.end(), Int64(0)), total_nans);
+
+    const auto nan_free = readNanCountStats(file, footer.row_groups[0].columns[1]);
+    ASSERT_TRUE(nan_free.chunk_has_nan_count);
+    EXPECT_EQ(nan_free.chunk_nan_count, 0);
+    ASSERT_TRUE(nan_free.has_min_max);
+    EXPECT_EQ(nan_free.min_value, 0.0);
+    EXPECT_EQ(nan_free.max_value, double(num_rows - 1) * 0.5);
+    ASSERT_TRUE(nan_free.index_has_nan_counts);
+    EXPECT_EQ(nan_free.page_nan_counts, (std::vector<Int64>{0, 0, 0, 0}));
+
+    const auto all_nan = readNanCountStats(file, footer.row_groups[0].columns[2]);
+    ASSERT_TRUE(all_nan.chunk_has_nan_count);
+    EXPECT_EQ(all_nan.chunk_nan_count, Int64(num_rows));
+    EXPECT_FALSE(all_nan.has_min_max);
+    /// No page of an all-NaN column has bounds, so its column index is not written at all.
+    EXPECT_FALSE(all_nan.has_column_index);
+    EXPECT_EQ(all_nan.num_pages, nans_per_page.size());
+
+    const auto integers = readNanCountStats(file, footer.row_groups[0].columns[3]);
+    EXPECT_FALSE(integers.chunk_has_nan_count);
+    ASSERT_TRUE(integers.has_column_index);
+    EXPECT_FALSE(integers.index_has_nan_counts);
+}
+
+/// When the dictionary grows too big the writer discards the encoded column and re-encodes it from
+/// row zero. The serialized counts must still be the column's own counts, which a summed statistic
+/// only satisfies if it is reset there, and neither reader site can see the difference: both only
+/// compare the count against zero.
+TEST(Parquet, WriteNanCountAfterDictionaryFallback)
+{
+    constexpr size_t page_rows = 32;
+    const std::vector<size_t> nans_per_page{1, 2, 3, 4, 5, 6, 7, 8};
+    const std::vector<Int64> expected_page_nan_counts{1, 2, 3, 4, 5, 6, 7, 8};
+    const size_t num_rows = nans_per_page.size() * page_rows;
+    const Int64 total_nans = 1 + 2 + 3 + 4 + 5 + 6 + 7 + 8;
+
+    /// The first three pages repeat four values, so the dictionary stays small; the distinct values
+    /// from page 3 on overflow the small limit below, several pages into the column.
+    auto finite_value
+        = [](size_t row) { return row < 3 * page_rows ? double(row % 4) : 1000.0 + double(row); };
+    const auto values = valuesWithNaNsPerPage(nans_per_page, page_rows, finite_value);
+
+    FormatSettings format_settings;
+    format_settings.parquet.parallel_encoding = false;
+    format_settings.parquet.write_page_index = true;
+    format_settings.parquet.write_checksums = false;
+    format_settings.parquet.output_compression_method = FormatSettings::ParquetCompression::NONE;
+    format_settings.parquet.write_batch_size = page_rows;
+    format_settings.parquet.data_page_size = 8;
+
+    Poco::File("tmp").createDirectories();
+    Poco::TemporaryFile fallback_file("tmp");
+    Poco::TemporaryFile dictionary_file("tmp");
+
+    format_settings.parquet.max_dictionary_size = 200;
+    writeParquet(singleChunkSource({float64Column(values, "val")}), format_settings, fallback_file.path());
+    /// Control: the same data with the default limit, where the dictionary survives.
+    format_settings.parquet.max_dictionary_size = 1024 * 1024;
+    writeParquet(singleChunkSource({float64Column(values, "val")}), format_settings, dictionary_file.path());
+
+    const auto check = [&](const String & path, bool expect_dictionary)
+    {
+        const String file = readFileToString(path);
+        ASSERT_GT(file.size(), 8u);
+        const parq::FileMetaData footer = readFooter(file);
+        ASSERT_EQ(footer.row_groups.size(), 1u);
+        ASSERT_EQ(footer.row_groups[0].columns.size(), 1u);
+
+        const auto stats = readNanCountStats(file, footer.row_groups[0].columns[0]);
+        ASSERT_EQ(stats.dictionary_encoded, expect_dictionary);
+        EXPECT_EQ(stats.num_values, Int64(num_rows));
+        ASSERT_TRUE(stats.chunk_has_nan_count);
+        EXPECT_EQ(stats.chunk_nan_count, total_nans);
+        ASSERT_TRUE(stats.has_min_max);
+        EXPECT_EQ(stats.min_value, 0.0);
+        EXPECT_EQ(stats.max_value, 1000.0 + double(num_rows - 1));
+        ASSERT_TRUE(stats.has_column_index);
+        ASSERT_TRUE(stats.index_has_nan_counts);
+        EXPECT_EQ(stats.num_pages, nans_per_page.size());
+        EXPECT_EQ(stats.page_nan_counts.size(), stats.num_pages);
+        EXPECT_EQ(stats.page_nan_counts, expected_page_nan_counts);
+        EXPECT_EQ(std::accumulate(stats.page_nan_counts.begin(), stats.page_nan_counts.end(), Int64(0)), total_nans);
+    };
+
+    /// The fallback is observed, not assumed: an abandoned dictionary leaves no RLE_DICTIONARY encoding.
+    check(fallback_file.path(), false);
+    check(dictionary_file.path(), true);
 }
 }
 #endif

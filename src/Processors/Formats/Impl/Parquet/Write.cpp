@@ -54,9 +54,20 @@ struct StatisticsNumeric
         ? std::numeric_limits<T>::infinity() : std::numeric_limits<T>::max();
     T max = std::numeric_limits<T>::has_infinity
         ? -std::numeric_limits<T>::infinity() : std::numeric_limits<T>::lowest();
+    /// NaN is excluded from float min/max, so the bounds alone cannot tell a NaN-free column from one
+    /// whose NaNs were skipped; parquet.thrift requires this count for float types even when it is zero.
+    Int64 nan_count = 0;
 
     void add(SourceType x)
     {
+        if constexpr (is_floating_point<T>)
+        {
+            if (std::isnan(static_cast<T>(x)))
+            {
+                ++nan_count;
+                return;
+            }
+        }
         min = std::min(min, static_cast<T>(x));
         max = std::max(max, static_cast<T>(x));
     }
@@ -65,6 +76,7 @@ struct StatisticsNumeric
     {
         min = std::min(min, s.min);
         max = std::max(max, s.max);
+        nan_count += s.nan_count;
     }
 
     void clear() { *this = {}; }
@@ -72,6 +84,9 @@ struct StatisticsNumeric
     parq::Statistics get(const WriteOptions &)
     {
         parq::Statistics s;
+        /// Set before the empty check: an all-NaN column has no min/max but still has a count.
+        if constexpr (is_floating_point<T>)
+            s.__set_nan_count(nan_count);
         if (min > max) // empty
             return s;
         s.__isset.min_value = s.__isset.max_value = true;
@@ -1069,6 +1084,12 @@ void writeColumnImpl(
                 /// Note: has_null_count is always equal across all pages of the same column.
                 s.indexes.column_index.__isset.null_counts = true;
                 s.indexes.column_index.null_counts.emplace_back(page_stats.null_count);
+            }
+            if (page_stats.__isset.nan_count)
+            {
+                /// Note: set for a float column and for no other, so also equal across pages.
+                s.indexes.column_index.__isset.nan_counts = true;
+                s.indexes.column_index.nan_counts.emplace_back(page_stats.nan_count);
             }
             s.indexes.column_index.null_pages.push_back(all_null_page);
         }
