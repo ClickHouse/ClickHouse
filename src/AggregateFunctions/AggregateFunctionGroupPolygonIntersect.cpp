@@ -802,7 +802,7 @@ SELECT wkt(groupPolygonIntersection(p)) FROM (
             R"(
 MULTIPOLYGON(((1 3,3 3,3 1,1 1,1 3)))
         )"}};
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::GeoPolygon;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
