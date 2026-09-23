@@ -1037,8 +1037,7 @@ void SchemaConverter::processPrimitiveColumn(
         return true;
     };
 
-    /// Same for the hash filters. `decoded_bits`/`decoded_signed` describe the DECODED values, which
-    /// for a 64-bit physical type are the physical width rather than the declared one.
+    /// For a 64-bit physical type the decoded width is the physical width, not the declared one.
     auto allow_int_hash_filters = [&](size_t decoded_bits, bool decoded_signed, size_t physical_bits) -> bool
     {
         chassert(out_inferred_type);
