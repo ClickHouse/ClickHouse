@@ -1325,6 +1325,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
 
 void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     const NameSet & dropped_skip_index_archive_file_names,
+    const NameToNameVector & renamed_skip_index_archive_file_names,
     IDataPartStorage & new_storage,
     const WriteSettings & write_settings,
     const ReadSettings & read_settings,
@@ -1355,6 +1356,9 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
         any_kept = true;
         copyArchiveEntryTo(*source_archive, file_name, writer, read_settings, write_settings);
     }
+
+    for (const auto & [rename_from, rename_to] : renamed_skip_index_archive_file_names)
+        writer.moveFile(rename_from, rename_to);
 
     if (!any_kept)
         return;

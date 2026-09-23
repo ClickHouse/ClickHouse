@@ -87,7 +87,9 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     prebuilt_cursors.resize(columns_.size());
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    const auto index_name = data_part_info_for_read->getAlterConversions()->getIndexOldFileName(
+        index.index->index.name, index.index->index.escape_filenames);
+    auto index_format = index.index->getDeserializedFormat(*data_part, index_name);
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state
@@ -391,7 +393,9 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    const auto index_name = data_part_info_for_read->getAlterConversions()->getIndexOldFileName(
+        index.index->index.name, index.index->index.escape_filenames);
+    auto index_format = index.index->getDeserializedFormat(*data_part, index_name);
     if (index_format.version != 2)
         return;
 
@@ -404,7 +408,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
-        index.index->getFileName() + positions_substream->suffix,
+        index_name + positions_substream->suffix,
         positions_substream->extension,
         MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
 
@@ -562,9 +566,12 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
 {
+    const auto index_name = data_part_info_for_read->getAlterConversions()->getIndexOldFileName(
+        index.index->index.name, index.index->index.escape_filenames);
+
     return makeTextIndexInputStream(
         *data_part_info_for_read,
-        index.index->getFileName() + substream.suffix,
+        index_name + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));
 }

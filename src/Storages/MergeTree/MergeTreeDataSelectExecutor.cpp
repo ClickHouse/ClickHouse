@@ -1064,14 +1064,21 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
             index_sizes.clear();
 
+            auto alter_conversions = MergeTreeData::getAlterConversionsForPart(part.data_part, mutations_snapshot, context
+#if CLICKHOUSE_CLOUD
+                , context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
             for (const auto & idx : skip_indexes.useful_indices)
             {
                 size_t index_size = 0;
-                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
+                const auto index_name = alter_conversions->getIndexOldFileName(idx.index->index.name, idx.index->index.escape_filenames);
+                auto format = idx.index->getDeserializedFormat(*part.data_part, index_name);
 
                 for (const auto & substream : format.substreams)
                 {
-                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    String stream_name = index_name + substream.suffix;
                     /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
                     /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
                     /// reordering accounts for them instead of treating them as free.
@@ -2700,10 +2707,11 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     PartialDisjunctionResult & partial_disjunction_result,
     LoggerPtr log)
 {
-    if (!index_helper->getDeserializedFormat(*part_info, index_helper->getFileName()))
+    const auto index_name = part_info->getAlterConversions()->getIndexOldFileName(index_helper->index.name, index_helper->index.escape_filenames);
+    if (!index_helper->getDeserializedFormat(*part_info, index_name))
     {
         LOG_DEBUG(log, "File for index {} does not exist ({}.*). Skipping it.", backQuote(index_helper->index.name),
-            (fs::path(part_info->getDataPartStorage()->getFullPath()) / index_helper->getFileName()).string());
+            (fs::path(part_info->getDataPartStorage()->getFullPath()) / index_name).string());
         return {ranges, in_read_hints};
     }
 
@@ -3080,7 +3088,9 @@ MergeTreeIndexBulkGranulesMinMaxPtr MergeTreeDataSelectExecutor::getMinMaxIndexG
     UncompressedCache * uncompressed_cache,
     VectorSimilarityIndexCache * vector_similarity_index_cache)
 {
-    if (!skip_index_minmax->getDeserializedFormat(*part_info, skip_index_minmax->getFileName()))
+    const auto index_name = part_info->getAlterConversions()->getIndexOldFileName(
+        skip_index_minmax->index.name, skip_index_minmax->index.escape_filenames);
+    if (!skip_index_minmax->getDeserializedFormat(*part_info, index_name))
     {
         return nullptr;
     }

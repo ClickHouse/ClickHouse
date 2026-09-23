@@ -5224,6 +5224,7 @@ void MergeTreeData::checkAlterIsPossible(const AlterCommands & commands, Context
             AlterCommand::DROP_COLUMN,
             AlterCommand::MODIFY_COLUMN,
             AlterCommand::RENAME_COLUMN,
+            AlterCommand::RENAME_INDEX,
             AlterCommand::ADD_PROJECTION,
             AlterCommand::DROP_PROJECTION,
             AlterCommand::MODIFY_PROJECTION,
@@ -5876,6 +5877,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         if (command.type == AlterCommand::ADD_INDEX && !is_custom_partitioned)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER ADD INDEX is not supported for tables with the old syntax");
+        }
+        if (command.type == AlterCommand::RENAME_INDEX && !is_custom_partitioned)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "ALTER RENAME INDEX is not supported for tables with the old syntax");
         }
         if (command.type == AlterCommand::ADD_PROJECTION)
         {
@@ -13239,9 +13244,27 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     {
         for (const MutationCommand & mutation_command : commands)
         {
-            if (command.type == AlterCommand::DROP_INDEX && mutation_command.index_name == command.index_name)
+            const bool is_index_mutation = mutation_command.type == MutationCommand::Type::DROP_INDEX
+                || mutation_command.type == MutationCommand::Type::MATERIALIZE_INDEX
+                || mutation_command.type == MutationCommand::Type::RENAME_INDEX;
+            const auto & mutation_index_name = mutation_command.type == MutationCommand::Type::DROP_INDEX
+                ? mutation_command.column_name
+                : mutation_command.index_name;
+            const bool mutation_touches_source = is_index_mutation
+                && (mutation_index_name == command.index_name
+                    || (mutation_command.type == MutationCommand::Type::RENAME_INDEX && mutation_command.rename_to == command.index_name));
+            const bool mutation_touches_destination = is_index_mutation
+                && (mutation_index_name == command.rename_to
+                    || (mutation_command.type == MutationCommand::Type::RENAME_INDEX && mutation_command.rename_to == command.rename_to));
+
+            if (command.type == AlterCommand::DROP_INDEX && mutation_touches_source)
             {
                 throw_exception(mutation_name, "drop", "index", command.index_name);
+            }
+            else if (command.type == AlterCommand::RENAME_INDEX
+                     && (mutation_touches_source || mutation_touches_destination))
+            {
+                throw_exception(mutation_name, "rename", "index", command.index_name);
             }
             else if (command.type == AlterCommand::DROP_PROJECTION
                      && mutation_command.projection_name == command.projection_name)

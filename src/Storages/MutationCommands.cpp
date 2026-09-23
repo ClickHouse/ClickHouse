@@ -27,7 +27,7 @@ namespace ErrorCodes
 
 bool MutationCommand::isBarrierCommand() const
 {
-    return type == RENAME_COLUMN;
+    return type == RENAME_COLUMN || type == RENAME_INDEX;
 }
 
 bool MutationCommand::isPureMetadataCommand() const
@@ -46,7 +46,8 @@ bool MutationCommand::isDropOrRename() const
         || type == Type::DROP_INDEX
         || type == Type::DROP_PROJECTION
         || type == Type::DROP_STATISTICS
-        || type == Type::RENAME_COLUMN;
+        || type == Type::RENAME_COLUMN
+        || type == Type::RENAME_INDEX;
 }
 
 bool MutationCommand::affectsAllColumns() const
@@ -262,6 +263,13 @@ std::optional<MutationCommand> MutationCommand::parse(
     {
         res.type = MutationCommand::Type::RENAME_COLUMN;
         res.column_name = command.column->as<ASTIdentifier &>().name();
+        res.rename_to = command.rename_to->as<ASTIdentifier &>().name();
+        return res;
+    }
+    if (parse_alter_commands && command.type == ASTAlterCommand::RENAME_INDEX)
+    {
+        res.type = MutationCommand::Type::RENAME_INDEX;
+        res.index_name = command.index->as<ASTIdentifier &>().name();
         res.rename_to = command.rename_to->as<ASTIdentifier &>().name();
         return res;
     }

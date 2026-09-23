@@ -16,6 +16,7 @@
 #include <DataTypes/NestedUtils.h>
 #include <Disks/SingleDiskVolume.h>
 #include <IO/HashingWriteBuffer.h>
+#include <IO/PackedFilesWriter.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -391,6 +392,7 @@ static void splitAndModifyMutationCommands(
                 }
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
+                     || command.type == MutationCommand::Type::RENAME_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
                      || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
@@ -660,6 +662,7 @@ static void splitAndModifyMutationCommands(
                 for_file_renames.push_back(command);
             }
             else if (command.type == MutationCommand::Type::DROP_INDEX
+                     || command.type == MutationCommand::Type::RENAME_INDEX
                      || command.type == MutationCommand::Type::DROP_PROJECTION
                      || command.type == MutationCommand::Type::DROP_STATISTICS)
             {
@@ -1346,6 +1349,7 @@ static NameToNameVector collectFilesForRenames(
     StorageMetadataPtr metadata_snapshot,
     MergeTreeData::DataPartPtr source_part,
     MergeTreeData::DataPartPtr new_part,
+    const AlterConversionsPtr & alter_conversions,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
     const String & mrk_extension)
@@ -1414,7 +1418,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 for (const auto & extension : owned_index_extensions)
                 {
-                    const String index_filename = getIndexFileName(command.column_name, metadata_snapshot->escape_index_filenames);
+                    const String index_filename = alter_conversions->getIndexOldFileName(command.column_name, metadata_snapshot->escape_index_filenames);
                     const String stream_name = index_filename + substream;
 
                     /// Resolve against checksums first (no I/O), then fall back to storage so `DROP
@@ -1542,6 +1546,46 @@ static NameToNameVector collectFilesForRenames(
                     }
                 }
             }
+        }
+    }
+
+    const auto & index_factory = MergeTreeIndexFactory::instance();
+    const auto & data_settings = *source_part->storage.getSettings();
+    const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+    for (const auto & [rename_to, rename_from] : alter_conversions->getIndexRenameMap())
+    {
+        const auto index_it = std::ranges::find_if(
+            metadata_snapshot->getSecondaryIndices(),
+            [&rename_to](const auto & index) { return index.name == rename_to; });
+        if (index_it == metadata_snapshot->getSecondaryIndices().end())
+            continue;
+
+        auto index = index_factory.get(metadata_snapshot, *index_it, data_settings);
+        const String old_file_name = getIndexFileName(rename_from, index->index.escape_filenames);
+        const String new_file_name = index->getFileName();
+        auto rename_stream = [&](const String & stream_name, const String & extension)
+        {
+            if (source_disk_storage && source_disk_storage->isFileInPackedSkipIndicesArchive(stream_name + extension))
+                return;
+
+            auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->checksums);
+            if (!actual_stream_name)
+                actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, extension, source_part->getDataPartStorage());
+            if (!actual_stream_name)
+                return;
+
+            const String target_stream_name = replaceFileNameToHashIfNeeded(
+                new_file_name + stream_name.substr(old_file_name.size()), data_settings, &new_part->getDataPartStorage());
+            if (*actual_stream_name != target_stream_name)
+                add_rename(*actual_stream_name + extension, target_stream_name + extension);
+        };
+
+        for (const auto & substream : index->getAllSubstreamsInPart(
+                 source_part->checksums, old_file_name, &source_part->getDataPartStorage()))
+        {
+            const String old_stream_name = old_file_name + substream.suffix;
+            rename_stream(old_stream_name, substream.extension);
+            rename_stream(old_stream_name, mrk_extension);
         }
     }
 
@@ -1891,6 +1935,7 @@ struct MutationContext
     NameSet materialized_projections;
     NameSet materialized_statistics;
     NameSet indices_to_drop_names;
+    AlterConversionsPtr alter_conversions;
 
     IMergedBlockOutputStream::GatheredData all_gathered_data;
     MergeTreeData::MutableDataPartPtr new_data_part;
@@ -1919,6 +1964,7 @@ struct MutationContext
     /// the freshly recomputed entries and the preserved ones, without hardlinking (and risking
     /// truncating) the source's skp_idx.packed inode.
     NameSet preserved_skip_index_archive_file_names;
+    NameToNameVector renamed_skip_index_archive_file_names;
     /// Skip-index files on disk but missing from `checksums.txt`, so no checksums-based resolver
     /// sees them. Merged into `files_to_skip` so the hardlink loop drops them.
     NameSet orphan_skip_index_files;
@@ -2646,6 +2692,7 @@ private:
             /// For compact parts we need to recalculate indices because rewrite of compact part may produce a little bit different data part
             /// with different number of marks.
             bool need_recalculate = ctx->materialized_indices.contains(idx.name)
+                || ctx->alter_conversions->isIndexRenamed(idx.name)
                 || (!is_full_wide_part && ctx->source_part->hasSecondaryIndex(idx.name, ctx->metadata_snapshot))
                 || ctx->source_part->isSkipIndexInPackedArchive(*index_ptr)
                 || index_checksums_missing;
@@ -3140,6 +3187,7 @@ private:
             {
                 disk_storage->filterPackedSkipIndicesArchiveTo(
                     ctx->dropped_skip_index_archive_file_names,
+                    ctx->renamed_skip_index_archive_file_names,
                     ctx->new_data_part->getDataPartStorage(),
                     ctx->context->getWriteSettings(),
                     ctx->context->getReadSettings(),
@@ -3259,6 +3307,11 @@ private:
                 {
                     auto out_typed = static_pointer_cast<MergedColumnOnlyOutputStream>(ctx->out);
                     out_typed->preloadPackedSkipIndicesArchive(*source_disk_storage, ctx->preserved_skip_index_archive_file_names);
+                    if (auto * packed_writer = out_typed->getSkipIndicesPackedWriter())
+                    {
+                        for (const auto & [rename_from, rename_to] : ctx->renamed_skip_index_archive_file_names)
+                            packed_writer->moveFile(rename_from, rename_to);
+                    }
                 }
             }
 
@@ -3675,6 +3728,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     ASTPtr indices_recalc_expr_list = make_intrusive<ASTExpressionList>();
     const auto & indices = metadata_snapshot->getSecondaryIndices();
     bool is_full_part_storage = isFullPartStorage(source_part->getDataPartStorage());
+    const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
 
     /// DROP INDEX commands do not go through the mutations interpreter (they live in
     /// for_file_renames), so ctx->indices_to_drop_names (normally filled by the interpreter) is
@@ -3775,10 +3829,42 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
     /// and therefore needs every surviving index that lives inside the archive in indices_to_recalc.
     /// On the other hand, a mutation that only touches per-file indices (or materializes a brand
     /// new index that isn't packed) leaves the archive untouched.
-    const auto * source_disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
-
     if (source_disk_storage)
     {
+        for (const auto & [rename_to, rename_from] : ctx->alter_conversions->getIndexRenameMap())
+        {
+            const auto index_it = std::ranges::find_if(
+                indices,
+                [&rename_to](const auto & index) { return index.name == rename_to; });
+            if (index_it == indices.end())
+                continue;
+
+            auto index = index_factory.get(metadata_snapshot, *index_it, *ctx->data->getSettings());
+            const String old_file_name = getIndexFileName(rename_from, index->index.escape_filenames);
+            const String new_file_name = index->getFileName();
+            for (const auto & substream : index->getAllSubstreamsInPart(
+                     source_part->checksums, old_file_name, &source_part->getDataPartStorage()))
+            {
+                const String old_stream_name = old_file_name + substream.suffix;
+                const String new_stream_name = new_file_name + substream.suffix;
+                const String data_from = old_stream_name + substream.extension;
+                const String data_to = new_stream_name + substream.extension;
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(data_from))
+                {
+                    ctx->renamed_skip_index_archive_file_names.emplace_back(data_from, data_to);
+                    ctx->preserved_skip_index_archive_file_names.insert(data_from);
+                }
+
+                const String marks_from = old_stream_name + ctx->mrk_extension;
+                const String marks_to = new_stream_name + ctx->mrk_extension;
+                if (source_disk_storage->isFileInPackedSkipIndicesArchive(marks_from))
+                {
+                    ctx->renamed_skip_index_archive_file_names.emplace_back(marks_from, marks_to);
+                    ctx->preserved_skip_index_archive_file_names.insert(marks_from);
+                }
+            }
+        }
+
         /// DROP INDEX removes the index from metadata before the mutation runs, so ctx->indices_to_drop
         /// (set of shared_ptr keyed off current metadata) stays empty here. Probe the source archive
         /// directly for each dropped name across the union of substream/extension patterns used by
@@ -3821,7 +3907,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
 
         for (const auto & idx_name : ctx->indices_to_drop_names)
         {
-            const String idx_file_name = getIndexFileName(idx_name, escape_filenames);
+            const String idx_file_name = ctx->alter_conversions->getIndexOldFileName(idx_name, escape_filenames);
             for (const auto & sub : known_substream_suffixes)
             {
                 for (const auto & ext : known_index_extensions)
@@ -3856,6 +3942,7 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             && !ctx->indices_to_recalc.empty();
 
         bool archive_dirty = !ctx->dropped_skip_index_archive_file_names.empty()
+            || !ctx->renamed_skip_index_archive_file_names.empty()
             || (source_has_archive && writer_can_open_archive);
         if (!archive_dirty)
             for (const auto & idx : ctx->indices_to_recalc)
@@ -3879,6 +3966,8 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 if (ctx->indices_to_drop_names.contains(index.name))
                     continue;
                 if (already_in_recalc.contains(index.name))
+                    continue;
+                if (ctx->alter_conversions->isIndexRenamed(index.name))
                     continue;
 
                 auto index_ptr = index_factory.get(metadata_snapshot, index, *ctx->data->getSettings());
@@ -3956,6 +4045,7 @@ bool MutateTask::prepare()
         , nullptr
 #endif
     );
+    ctx->alter_conversions = alter_conversions;
     auto context_for_reading = Context::createCopy(ctx->context);
 
     /// Allow mutations to work when force_index_by_date or force_primary_key is on.
@@ -4298,6 +4388,7 @@ bool MutateTask::prepare()
             ctx->metadata_snapshot,
             ctx->source_part,
             ctx->new_data_part,
+            alter_conversions,
             ctx->for_file_renames,
             updated_columns_in_patches,
             ctx->mrk_extension);

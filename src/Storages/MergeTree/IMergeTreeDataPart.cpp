@@ -988,14 +988,19 @@ void IMergeTreeDataPart::loadIndexMarksToCache(MarkCache * index_mark_cache) con
     if (secondary_indices.empty())
         return;
 
-    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), std::make_shared<AlterConversions>());
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(shared_from_this(), storage.getMutationsSnapshot({}), storage.getContext()
+#if CLICKHOUSE_CLOUD
+        , nullptr
+#endif
+    );
+    auto info_for_read = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
     auto read_settings = storage.getContext()->getReadSettings();
     std::vector<std::unique_ptr<MergeTreeMarksLoader>> loaders;
 
     for (const auto & index_description : secondary_indices)
     {
         auto skip_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, index_description, *storage.getSettings());
-        auto index_name = skip_index->getFileName();
+        auto index_name = alter_conversions->getIndexOldFileName(skip_index->index.name, skip_index->index.escape_filenames);
         auto index_format = skip_index->getDeserializedFormat(*this, index_name);
 
         if (!index_format)
@@ -3310,13 +3315,18 @@ void IMergeTreeDataPart::calculateSecondaryIndicesSizesOnDisk() const
     auto storage_metadata_snapshot = storage.getInMemoryMetadataPtr(storage.getContext(), false);
     auto secondary_indices_descriptions = storage_metadata_snapshot->secondary_indices;
     IndexSizeByName new_secondary_index_sizes;
+    auto alter_conversions = MergeTreeData::getAlterConversionsForPart(shared_from_this(), storage.getMutationsSnapshot({}), storage.getContext()
+#if CLICKHOUSE_CLOUD
+        , nullptr
+#endif
+    );
 
     /// A substream with no standalone checksums entry (e.g. bundled in skp_idx.packed) is sized
     /// via getFileSizeOrZeroResolved below, so `secondary_indices_compressed_bytes` reflects it too.
     for (auto & index_description : secondary_indices_descriptions)
     {
         auto index_ptr = MergeTreeIndexFactory::instance().get(storage_metadata_snapshot, index_description, *storage.getSettings());
-        auto index_name = index_ptr->getFileName();
+        auto index_name = alter_conversions->getIndexOldFileName(index_ptr->index.name, index_ptr->index.escape_filenames);
         /// Union of all on-disk versions (`getAllSubstreamsInPart`) so the size counts every payload
         /// present, including a stale legacy file a part may still carry alongside the current one.
         auto index_substreams = index_ptr->getAllSubstreamsInPart(checksums, index_name, &getDataPartStorage());

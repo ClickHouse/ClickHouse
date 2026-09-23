@@ -2072,7 +2072,8 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
                     && command.type != MutationCommand::Type::DROP_INDEX
                     && command.type != MutationCommand::Type::DROP_PROJECTION
                     && command.type != MutationCommand::Type::DROP_STATISTICS
-                    && command.type != MutationCommand::Type::RENAME_COLUMN)
+                    && command.type != MutationCommand::Type::RENAME_COLUMN
+                    && command.type != MutationCommand::Type::RENAME_INDEX)
                 {
                     commands_for_size_validation.push_back(command);
                 }
@@ -2383,6 +2384,11 @@ static bool isMaterializedByMerge(
         if (command.clear)
             return false;
 
+        /// A renamed index is still stored under its old name until this mutation runs. A merge
+        /// cannot carry that name conversion in the resulting part, so keep the barrier pending.
+        if (command.type == MutationCommand::RENAME_INDEX)
+            return false;
+
         /// A metadata mutation scoped to this very partition stays pending too. `AlterConversions`
         /// does not honour the scope, so whether the merge materializes such a command for the
         /// merged part alone is not something to rely on. No command reaches this today: `RENAME
@@ -2440,7 +2446,7 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     /// combines a rename with an `UPDATE` puts both into one entry, and a merge does not materialize
     /// that entry.
     ///
-    /// Only `RENAME COLUMN` needs this barrier. The other metadata mutation a merge materializes is
+    /// Only `RENAME COLUMN` and `RENAME INDEX` need this barrier. The other metadata mutation a merge materializes is
     /// `DROP COLUMN` - including its `CLEAR COLUMN` form - and applying it a second time to the
     /// merged part is a no-op rather than a loss, so the merged part not recording it costs nothing.
     /// A `CLEAR COLUMN` pending in front of a mutation that still has to run does spoil the values
@@ -2450,7 +2456,7 @@ std::optional<Int64> StorageMergeTree::getMutationVersionForMergedPart(
     {
         for (const auto & command : *it->second.commands)
         {
-            if (command.type == MutationCommand::RENAME_COLUMN)
+            if (command.type == MutationCommand::RENAME_COLUMN || command.type == MutationCommand::RENAME_INDEX)
                 return {};
         }
     }

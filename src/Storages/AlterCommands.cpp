@@ -578,6 +578,16 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
 
         return command;
     }
+    if (command_ast->type == ASTAlterCommand::RENAME_INDEX)
+    {
+        AlterCommand command;
+        command.ast = command_ast->clone();
+        command.type = AlterCommand::RENAME_INDEX;
+        command.index_name = command_ast->index->as<ASTIdentifier &>().name();
+        command.rename_to = command_ast->rename_to->as<ASTIdentifier &>().name();
+        command.if_exists = command_ast->if_exists;
+        return command;
+    }
     if (command_ast->type == ASTAlterCommand::DROP_STATISTICS)
     {
         AlterCommand command;
@@ -1067,6 +1077,45 @@ void AlterCommand::apply(
 
             metadata.secondary_indices.erase(erase_it);
         }
+    }
+    else if (type == RENAME_INDEX)
+    {
+        auto index_it = std::find_if(
+            metadata.secondary_indices.begin(),
+            metadata.secondary_indices.end(),
+            [this](const auto & index)
+            {
+                return index.name == index_name;
+            });
+
+        if (index_it == metadata.secondary_indices.end())
+        {
+            if (if_exists)
+                return;
+            auto hints = metadata.secondary_indices.getHints(index_name);
+            auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to rename{}",
+                backQuote(index_name), hints_string);
+        }
+
+        if (index_it->isImplicitlyCreated())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename implicitly created index {}", backQuote(index_name));
+
+        if (metadata.secondary_indices.has(rename_to))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                "Cannot rename index {} to {}: an index with this name already exists",
+                backQuote(index_name), backQuote(rename_to));
+
+        auto definition_ast = index_it->definition_ast->clone();
+        definition_ast->as<ASTIndexDeclaration &>().name = rename_to;
+        const bool is_implicitly_created = index_it->isImplicitlyCreated();
+        const bool escape_filenames = index_it->escape_filenames;
+        *index_it = IndexDescription::getIndexFromAST(
+            definition_ast,
+            metadata.columns,
+            is_implicitly_created,
+            escape_filenames,
+            context);
     }
     else if (type == ADD_STATISTICS)
     {
@@ -1630,7 +1679,7 @@ MutationStageDecision AlterCommand::getMutationStageDecision(
     if (isRemovingProperty() || type == REMOVE_TTL || type == REMOVE_SAMPLE_BY)
         return decision;
 
-    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == DROP_STATISTICS)
+    if (type == DROP_INDEX || type == DROP_PROJECTION || type == RENAME_COLUMN || type == RENAME_INDEX || type == DROP_STATISTICS)
     {
         decision.requires_mutation = true;
         return decision;
@@ -1715,7 +1764,8 @@ bool AlterCommand::isDropOrRename() const
         || type == Type::DROP_STATISTICS
         || type == Type::DROP_CONSTRAINT
         || type == Type::DROP_PROJECTION
-        || type == Type::RENAME_COLUMN;
+        || type == Type::RENAME_COLUMN
+        || type == Type::RENAME_INDEX;
 }
 
 std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets) const
@@ -1771,6 +1821,12 @@ std::optional<MutationCommand> AlterCommand::tryConvertToMutationCommand(Storage
     {
         result.type = MutationCommand::Type::RENAME_COLUMN;
         result.column_name = column_name;
+        result.rename_to = rename_to;
+    }
+    else if (type == RENAME_INDEX)
+    {
+        result.type = MutationCommand::Type::RENAME_INDEX;
+        result.index_name = index_name;
         result.rename_to = rename_to;
     }
 
@@ -1943,6 +1999,7 @@ void AlterCommands::apply(
 void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets)
 {
     auto columns = metadata.columns;
+    auto indices = metadata.secondary_indices;
     std::unordered_set<String> columns_with_full_type_modify;
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
@@ -1958,7 +2015,43 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     {
         auto & command = (*this)[i];
         bool has_column = columns.has(command.column_name) || (share_nested_offsets && columns.hasNested(command.column_name));
-        if (command.type == AlterCommand::MODIFY_COLUMN)
+        if (command.type == AlterCommand::RENAME_INDEX)
+        {
+            auto index_it = std::find_if(
+                indices.begin(),
+                indices.end(),
+                [&command](const auto & index)
+                {
+                    return index.name == command.index_name;
+                });
+
+            if (index_it == indices.end() && command.if_exists)
+                command.ignore = true;
+            else if (index_it != indices.end())
+                index_it->name = command.rename_to;
+        }
+        else if (command.type == AlterCommand::ADD_INDEX)
+        {
+            if (std::ranges::none_of(indices, [&command](const auto & index) { return index.name == command.index_name; }))
+            {
+                IndexDescription index;
+                index.name = command.index_name;
+                indices.emplace_back(std::move(index));
+            }
+        }
+        else if (command.type == AlterCommand::DROP_INDEX && !command.partition && !command.clear)
+        {
+            auto index_it = std::find_if(
+                indices.begin(),
+                indices.end(),
+                [&command](const auto & index)
+                {
+                    return index.name == command.index_name;
+                });
+            if (index_it != indices.end())
+                indices.erase(index_it);
+        }
+        else if (command.type == AlterCommand::MODIFY_COLUMN)
         {
             if (!has_column && command.if_exists)
                 command.ignore = true;
@@ -2105,6 +2198,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         share_nested = (*merge_tree->getSettings())[MergeTreeSetting::share_nested_offsets];
 
     auto all_columns = metadata->columns;
+    auto all_indices = metadata->secondary_indices;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
     /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
@@ -2168,6 +2262,94 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// doesn't depend on how the same logical alter is spelled.
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
+
+        if (command.type == AlterCommand::ADD_INDEX)
+        {
+            if (all_indices.has(command.index_name))
+            {
+                if (!command.if_not_exists)
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot add index {}: index with this name already exists", command.index_name);
+            }
+            else
+            {
+                all_indices.emplace_back(IndexDescription::getIndexFromAST(
+                    command.index_decl, all_columns, /* is_implicitly_created */ false, metadata->escape_index_filenames, context));
+            }
+        }
+        else if (command.type == AlterCommand::DROP_INDEX)
+        {
+            if (!command.partition && !command.clear)
+            {
+                auto index_it = std::find_if(
+                    all_indices.begin(),
+                    all_indices.end(),
+                    [&command](const auto & index)
+                    {
+                        return index.name == command.index_name;
+                    });
+
+                if (index_it == all_indices.end())
+                {
+                    if (!command.if_exists)
+                    {
+                        auto hints = all_indices.getHints(command.index_name);
+                        auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to drop{}",
+                            backQuote(command.index_name), hints_string);
+                    }
+                }
+                else
+                    all_indices.erase(index_it);
+            }
+        }
+        else if (command.type == AlterCommand::RENAME_INDEX)
+        {
+            for (size_t j = i + 1; j < size(); ++j)
+            {
+                const auto & next_command = (*this)[j];
+                if (next_command.type == AlterCommand::RENAME_INDEX)
+                {
+                    if (next_command.index_name == command.rename_to)
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Transitive index renames in a single ALTER query are not allowed (don't make sense)");
+                    if (next_command.index_name == command.index_name)
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot rename index '{}' to two different names in a single ALTER query",
+                            backQuote(command.index_name));
+                }
+            }
+
+            auto index_it = std::find_if(
+                all_indices.begin(),
+                all_indices.end(),
+                [&command](const auto & index)
+                {
+                    return index.name == command.index_name;
+                });
+
+            if (index_it == all_indices.end())
+            {
+                if (!command.if_exists)
+                {
+                    auto hints = all_indices.getHints(command.index_name);
+                    auto hints_string = !hints.empty() ? ", may be you meant: " + toString(hints) : "";
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Wrong index name. Cannot find index {} to rename{}",
+                        backQuote(command.index_name), hints_string);
+                }
+            }
+            else
+            {
+                if (index_it->isImplicitlyCreated())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot rename implicitly created index {}", backQuote(command.index_name));
+
+                if (all_indices.has(command.rename_to))
+                    throw Exception(ErrorCodes::ILLEGAL_COLUMN,
+                        "Cannot rename index {} to {}: an index with this name already exists",
+                        backQuote(command.index_name), backQuote(command.rename_to));
+
+                index_it->name = command.rename_to;
+            }
+        }
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

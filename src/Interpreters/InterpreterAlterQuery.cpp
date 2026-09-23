@@ -794,6 +794,11 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
                 required_access.emplace_back(AccessType::ALTER_DROP_INDEX, database, table);
             break;
         }
+        case ASTAlterCommand::RENAME_INDEX:
+        {
+            required_access.emplace_back(AccessType::ALTER_RENAME_INDEX, database, table);
+            break;
+        }
         case ASTAlterCommand::MATERIALIZE_INDEX:
         {
             required_access.emplace_back(AccessType::ALTER_MATERIALIZE_INDEX, database, table);

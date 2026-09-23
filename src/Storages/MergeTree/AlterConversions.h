@@ -13,7 +13,7 @@ using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Alter conversions which should be applied on-fly for part.
 /// Built from of the most recent mutation commands for part.
-/// Now ALTER RENAME COLUMN, ALTER UPDATE and ALTER DELETE are applied.
+/// Now ALTER RENAME COLUMN/INDEX, ALTER UPDATE and ALTER DELETE are applied.
 /// Contains patch parts which should be applied for regular part.
 class AlterConversions : private boost::noncopyable
 {
@@ -32,6 +32,7 @@ public:
     };
 
     const std::vector<RenamePair> & getRenameMap() const { return rename_map; }
+    const std::vector<RenamePair> & getIndexRenameMap() const { return index_rename_map; }
 
     /// Column was renamed (lookup by value in rename_map)
     bool columnHasNewName(const std::string & old_name) const;
@@ -41,6 +42,11 @@ public:
     bool isColumnRenamed(const std::string & new_name) const;
     /// Get column old name before rename (lookup by key in rename_map)
     std::string getColumnOldName(const std::string & new_name) const;
+
+    /// Is this name the new name of an index in a part (lookup by key in index_rename_map).
+    bool isIndexRenamed(const std::string & new_name) const;
+    /// Get the physical index file name before rename.
+    std::string getIndexOldFileName(const std::string & new_name, bool escape_filenames) const;
 
     /// Column was dropped by a pending mutation (data in part is stale).
     /// `name` is the name the column has in the part, not in the current metadata.
@@ -107,6 +113,9 @@ private:
 
     /// Rename map new_name -> old_name.
     std::vector<RenamePair> rename_map;
+
+    /// Index rename map new_name -> old_name.
+    std::vector<RenamePair> index_rename_map;
 
     /// Columns that were dropped by pending mutations.
     /// If a column with the same name is re-added, old data in parts should be ignored.
