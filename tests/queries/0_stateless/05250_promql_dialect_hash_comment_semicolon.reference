@@ -12,3 +12,11 @@
 Cannot find the end of the PromQL statement
 -- max_query_size crossed only after a semicolon in a comment
 Max query size exceeded
+-- multiple statements: each one runs, the parse of one does not skip the rest
+[('__name__','up'),('instance','host1')]	30
+[('__name__','up'),('instance','host2')]	10
+[]	40
+-- multiple statements in clickhouse-local, with SET statements between them
+[('__name__','up'),('instance','host1')]	5
+[('instance','host1')]	10
+done

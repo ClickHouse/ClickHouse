@@ -95,24 +95,30 @@ bool ParserPrometheusQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     const auto * begin = pos->begin;
 
     // The same parsers are used in the client and the server, so the parser have to detect the end of a single query in case of multiquery queries
-    const char * text_end = begin;
-    for (Pos lookahead = pos; ; ++lookahead)
+    /// The PromQL scan is bounded by the SQL tokens seen so far: the text up to the next SQL `;` (or the
+    /// end of input) is scanned, and the lookahead goes on only if that `;` is inside a PromQL comment
+    /// or string. The lookahead must not run to the end of input, because it advances the maximum
+    /// parsed position, which `tryParseQuery` reports as the end of the query, so the rest of a
+    /// multi-statement input would be skipped.
+    const char * end = nullptr;
+    for (Pos lookahead = pos; !end; ++lookahead)
     {
-        if (lookahead->isEnd())
-        {
-            text_end = lookahead->begin;
-            break;
-        }
-
         /// The lexer returns this token forever once the input crosses `max_query_size`, so it is
         /// terminal. The SQL prescan in `tryParseQuery` stops at a `;`, which may be inside a PromQL
         /// comment, so it doesn't see it. The lookahead has advanced the maximum parsed position
         /// to this token, and `tryParseQuery` reports it as the lexical error.
         if (lookahead->type == TokenType::ErrorMaxQuerySizeExceeded)
             return false;
-    }
 
-    const auto * end = findEndOfPromQLStatement(begin, text_end);
+        if (lookahead->isEnd())
+            end = findEndOfPromQLStatement(begin, lookahead->begin);
+        else if (lookahead->type == TokenType::Semicolon)
+        {
+            const char * found = findEndOfPromQLStatement(begin, lookahead->end);
+            if (found != lookahead->end)
+                end = found;
+        }
+    }
 
     /// Move to the SQL token at the statement end. The SQL tokens of a PromQL comment or string can
     /// differ from the PromQL ones, e.g. an apostrophe in a comment opens a SQL string literal which

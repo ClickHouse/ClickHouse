@@ -44,4 +44,21 @@ echo "-- max_query_size crossed only after a semicolon in a comment"
 promql_client --max_query_size 50 -q $'sum(up #keep ; comment\n+ up + up + up + up + up + up + up + up + up)' 2>&1 \
     | grep -o -m1 'Max query size exceeded'
 
+echo "-- multiple statements: each one runs, the parse of one does not skip the rest"
+promql_client -m -q $'up{instance="host1"}; up{instance="host2"} #a ; b\n; sum(up)' | cut -f1,3
+
+echo "-- multiple statements in clickhouse-local, with SET statements between them"
+$CLICKHOUSE_LOCAL --allow_experimental_time_series_table 1 -m -q "
+CREATE TABLE ts ENGINE = TimeSeries;
+INSERT INTO ts (metric_name, tags, samples) VALUES ('up', map('instance', 'host1'), [(toDateTime64(1700000000, 3), 5)]);
+SET dialect = 'promql';
+SET promql_table = 'ts';
+SET promql_evaluation_time = 1700000000;
+up #x ; y
+;
+up * 2;
+SET dialect = 'clickhouse';
+SELECT 'done';
+" | cut -f1,3
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE ts"
