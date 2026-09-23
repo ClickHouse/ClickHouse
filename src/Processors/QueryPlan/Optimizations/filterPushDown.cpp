@@ -1310,7 +1310,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///        select number as x, number % 4 as y from numbers(10)
         ///    ) group by y with totals) where y != 2`
         /// Optimization will replace totals row `y, sum(x)` from `(0, 45)` to `(0, 37)`.
-        /// It is expected to ok, cause AST optimization `enable_optimize_predicate_expression = 1` also brakes it.
+        /// It is expected to be OK, because the AST-level push-down that preceded this optimization did the same.
         if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, keys))
             return updated_steps;
     }

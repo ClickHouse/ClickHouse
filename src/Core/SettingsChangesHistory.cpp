@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"query_plan_filter_push_down_below_limit_by", true, true, "Setting newly added in 26.10 to gate the push-down of filters on `LIMIT BY` key columns below the `LIMIT BY` step, which shipped in 26.7. The meaningful semantic change is registered under the 26.7 block so `compatibility` with a version before 26.7 reverts it; the previous value here is deliberately equal to the new one, because 26.7 through 26.9 already had the optimization enabled."},
+            {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
