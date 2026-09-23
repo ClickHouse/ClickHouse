@@ -4,16 +4,20 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/AddDefaultDatabaseVisitor.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedColumnDependencies.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/MutationsNonDeterministicHelpers.h>
+#include <Interpreters/misc.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/StorageFromMergeTreeDataPart.h>
 #include <Storages/StorageMergeTree.h>
+#include <Storages/StorageSet.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/PatchParts/PatchPartInfo.h>
 #include <Processors/Transforms/FilterTransform.h>
@@ -109,6 +113,35 @@ namespace ErrorCodes
     extern const int UNEXPECTED_EXPRESSION;
     extern const int ILLEGAL_STATISTICS;
     extern const int INCORRECT_QUERY;
+}
+
+void checkNoRowPolicyForSetOperands(const ASTPtr & mutation_ast, const String & default_database, const ContextPtr & context)
+{
+    ASTPtr ast = mutation_ast->clone();
+    AddDefaultDatabaseVisitor visitor(context, default_database);
+    visitor.visit(ast);
+
+    const auto check = [&](const ASTPtr & node, const auto & self) -> void
+    {
+        if (const auto * function = node->as<ASTFunction>();
+            function && functionIsInOrGlobalInOperator(function->name) && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            const auto & right_operand = function->arguments->children[1];
+            if (right_operand->as<ASTTableIdentifier>())
+            {
+                auto table_id = context->resolveStorageID(right_operand);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                if (auto * storage_set = storage ? dynamic_cast<StorageSet *>(storage.get()) : nullptr)
+                    storage_set->checkNoRowPolicy(context);
+            }
+        }
+
+        for (const auto & child : node->children)
+            self(child, self);
+    };
+
+    check(ast, check);
 }
 
 /// Returns whether the analyzer should be used for mutations.

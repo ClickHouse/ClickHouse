@@ -98,6 +98,8 @@ BlockIO InterpreterDeleteQuery::execute()
         && table_id.database_name != DatabaseCatalog::SYSTEM_DATABASE)
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Delete queries are prohibited");
 
+    checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {

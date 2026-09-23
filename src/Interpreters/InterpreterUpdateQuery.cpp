@@ -176,6 +176,8 @@ BlockIO InterpreterUpdateQuery::execute()
     if (auto supports = table->supportsLightweightUpdate(); !supports)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Lightweight updates are not supported. {}", supports.error().text);
 
+    checkNoRowPolicyForSetOperands(query_ptr, table_id.database_name, getContext());
+
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
