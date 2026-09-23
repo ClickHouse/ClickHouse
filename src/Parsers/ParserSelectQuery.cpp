@@ -1311,9 +1311,51 @@ Take this implementation specificity into account when programming queries.
 It is possible to obtain the same result by applying [GROUP BY](/reference/statements/select/group-by) across the same set of values as specified as `SELECT` clause, without using any aggregate functions. But there are few differences from `GROUP BY` approach:
 
 - `DISTINCT` can be applied together with `GROUP BY`.
-- When [ORDER BY](/reference/statements/select/order-by) is omitted and [LIMIT](/reference/statements/select/limit) is defined, the query stops running immediately after the required number of different rows has been read.
-- When `ORDER BY` is omitted, the same holds for a [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range without `ALL`: the query stops running once the range has ended.
-- Data blocks are output as they are processed, without waiting for the entire query to finish running.
+- Before external execution starts, a query without [ORDER BY](/reference/statements/select/order-by) can stop as soon as it has read enough different rows to satisfy [LIMIT](/reference/statements/select/limit).
+- Before external execution starts and when `ORDER BY` is omitted, a [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range without `ALL` can also stop the query once the range has ended.
+- Data blocks are output as they are processed until external execution starts.
+
+## DISTINCT in External Memory {#distinct-in-external-memory}
+
+`DISTINCT` can write temporary data to disk to process sets of unique values that are too large to
+keep in memory. This requires additional disk I/O and can make queries slower.
+
+Two settings control when spilling starts:
+
+- `max_bytes_before_external_distinct` sets a threshold in bytes of total query memory. It defaults
+  to `0` (disabled).
+- `max_bytes_ratio_before_external_distinct` sets a fraction of available memory under server or
+  user limits, measured at the start of execution. It defaults to `0.5` and has no effect when
+  neither limit applies.
+
+When both thresholds apply, the smaller is used. Set both settings to `0` to disable spilling.
+
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. For example, this query uses a 16 MiB spill threshold
+with a 256 MiB query memory limit:
+
+```sql
+SELECT DISTINCT number % 1000000 AS id
+FROM numbers(2000000)
+SETTINGS
+    max_bytes_before_external_distinct = 16777216,
+    max_bytes_ratio_before_external_distinct = 0,
+    max_memory_usage = 268435456;
+```
+
+These thresholds do not cap memory usage. Leave room for other query processing and the spill
+itself. Spilling may also start earlier under memory pressure.
+
+Rows can be returned before spilling, and a `LIMIT` satisfied at this stage can finish the query early.
+Once spilling starts, the rest of the input must be read before the remaining results can be returned.
+If the query includes `ORDER BY`, those results are returned in the requested order.
+
+When `DISTINCT` uses input sorted by a prefix of its keys, it does not spill. A large group of rows
+with the same prefix can still use substantial memory.
+
+As with `optimize_distinct_in_order`, spilling may deduplicate floating-point values that have
+different binary representations but compare equal, including `0.0` and `-0.0`, or `NaN` values
+with different payloads.
 )DOCS_MD",
         .syntax = R"(
 SELECT DISTINCT [ON (column1, column2, ...)] expr_list ...
@@ -3086,7 +3128,7 @@ LIMIT [n] AFTER start_expr [UNTIL end_expr]
 LIMIT [n] UNTIL end_expr
 ```
 
-Returns the rows from the first row where `start_expr` is true, or from the start of the stream when `AFTER` is omitted, up to but excluding the first row where `end_expr` is true; `n` caps the length of that range. `AFTER start_expr ALL` opens a range at every matching row. See [LIMIT ... AFTER ... UNTIL](#limit-after-until) below.
+Returns the rows from the first row where `start_expr` is true, or from the start of the stream when `AFTER` is omitted, up to but excluding the first row at or after that start where `end_expr` is true; `n` caps the length of that range. `AFTER start_expr ALL` opens a range at every matching row. See [LIMIT ... AFTER ... UNTIL](#limit-after-until) below.
 
 ## Negative limits {#negative-limits}
 
@@ -3222,12 +3264,16 @@ LIMIT [n] UNTIL end_expr
 
 - `AFTER start_expr`: Start output from the first row where `start_expr` is true (that row is included).
 - `AFTER start_expr ALL`: Output the union of all matching ranges that start where `start_expr` is true, without duplicating rows when ranges overlap.
-- `UNTIL end_expr`: Stop before the first row where `end_expr` is true (that row is excluded).
+- `UNTIL end_expr`: End each range before the first row at or after its start where `end_expr` is true (that row is excluded).
 - `n`: Optional row count. Without `ALL` it is the maximum length of the single opened range. With `AFTER ... ALL` it is the length of *each* opened range, so the total result can exceed `n` (for example, `LIMIT 2 AFTER number IN (2, 6) ALL` can return up to four rows). To cap the total number of result rows, use the `limit` setting, which is applied as a global limit after the range.
 
 Stream order (the order rows are read) defines “first” match; use `ORDER BY` to control it.
 
-Without `ALL`, if the first `UNTIL` match appears before the first `AFTER` match, the result is empty. With `AFTER ... ALL`, later `AFTER` matches can still open new ranges.
+`UNTIL` matches before a range starts have no effect. If both conditions match the starting row, the range is empty. If no `UNTIL` match occurs at or after the start, the range continues to its row count `n` or the end of the stream. With `AFTER ... ALL`, later `AFTER` matches can open new ranges after an earlier range ends.
+
+With `AFTER` and without `ALL`, the range step evaluates `AFTER` until it finds a chunk containing a start match. It then evaluates `UNTIL` in that chunk and subsequent chunks while the range remains open. Expressions are evaluated over whole chunks, so `UNTIL` can still be evaluated for rows before the start within the starting chunk.
+
+If `UNTIL` contains stateful functions such as `rowNumberInAllBlocks`, or functions that are non-deterministic within the query, it is evaluated from the first chunk to preserve those functions' behavior. Without `ALL`, `AFTER` is evaluated only through the starting chunk; subsequent chunks evaluate only `UNTIL`. End matches before the start still have no effect.
 
 **Examples:**
 
@@ -3274,7 +3320,7 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 7;
 └────────┘
 ```
 
-Without `n` but with `UNTIL`, the range runs from the first `AFTER` match up to the first `UNTIL` match:
+Without `n` but with `UNTIL`, the range runs from the first `AFTER` match up to the first `UNTIL` match at or after it:
 
 ```sql
 SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL number >= 6;
@@ -3283,6 +3329,20 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number >= 2 UNTIL num
 ```response
 ┌─number─┐
 │      2 │
+│      3 │
+│      4 │
+│      5 │
+└────────┘
+```
+
+An `UNTIL` match before the start is ignored; here `number = 1` has no effect, and the range ends before `number = 6`:
+
+```sql
+SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number = 3 UNTIL number IN (1, 6);
+```
+
+```response
+┌─number─┐
 │      3 │
 │      4 │
 │      5 │
@@ -3338,11 +3398,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 Without `n` and without `UNTIL`, every opened range runs to the end of the stream, so `AFTER start_expr ALL` returns the same rows as `AFTER start_expr`.
 
-:::note
+<Note>
 - `WITH TIES`, fractional/negative `LIMIT`/`OFFSET`, and `OFFSET` are not supported together with `AFTER`/`UNTIL`.
 - Preliminary `LIMIT` pushdown is disabled when `AFTER`/`UNTIL` is used.
 - `AFTER` and `UNTIL` are recognized as keywords only when a boundary expression follows them, so an identifier named `after` or `until` still works as a row count (`LIMIT after`, `LIMIT after BY x`). When both readings are possible the keyword wins: `LIMIT after(2)` is the range `LIMIT AFTER (2)`; write `LIMIT (after(2))` to call a function named `after`.
-:::
+</Note>
 
 `UNTIL` alone returns the rows from the start of the stream up to the first row where the condition is true:
 

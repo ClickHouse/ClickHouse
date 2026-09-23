@@ -166,7 +166,7 @@ Tuple
 ('Hello',4)
 OK
 OK
-tuple	Tuple(\n    x Nullable(Int64),\n    s Nullable(String))					
+tuple	Nullable(Tuple(x Nullable(Int64), s Nullable(String)))					
 (0,'Hello')
 (1,'Hello')
 (2,'Hello')
@@ -184,7 +184,7 @@ tuple	Tuple(\n    x Nullable(Int64),\n    s Nullable(String))
 (4,'Hello')
 OK
 OK
-tuple	Tuple(Nullable(Int64), Nullable(String))					
+tuple	Nullable(Tuple(Nullable(Int64), Nullable(String)))					
 (0,'Hello')
 (1,'Hello')
 (2,'Hello')
@@ -214,7 +214,7 @@ Nested types
 [[0,1,2],[0,1,2,3]]	((3,'Hello'),'Hello')	{'a':{'a.a':3,'a.b':4},'b':{'b.a':3,'b.b':4}}
 [[0,1,2,3],[0,1,2,3,4]]	((4,'Hello'),'Hello')	{'a':{'a.a':4,'a.b':5},'b':{'b.a':4,'b.b':5}}
 nested1	Array(Array(Nullable(Int64)))					
-nested2	Tuple(Tuple(\n    x Nullable(Int64),\n    s Nullable(String)), Nullable(String))					
+nested2	Nullable(Tuple(Nullable(Tuple(x Nullable(Int64), s Nullable(String))), Nullable(String)))					
 nested3	Map(String, Map(String, Nullable(Int64)))					
 [[],[0]]	((0,'Hello'),'Hello')	{'a':{'a.a':0,'a.b':1},'b':{'b.a':0,'b.b':1}}
 [[0],[0,1]]	((1,'Hello'),'Hello')	{'a':{'a.a':1,'a.b':2},'b':{'b.a':1,'b.b':2}}
@@ -226,7 +226,7 @@ nested3	Map(String, Map(String, Nullable(Int64)))
 [({'a':[0,1],'b':[0,1,2]},[{'c':([0,1],[0,1,2])},{'d':([0,1,2,3],[0,1,2,3,4])}])]
 [({'a':[0,1,2],'b':[0,1,2,3]},[{'c':([0,1,2],[0,1,2,3])},{'d':([0,1,2,3,4],[0,1,2,3,4,5])}])]
 [({'a':[0,1,2,3],'b':[0,1,2,3,4]},[{'c':([0,1,2,3],[0,1,2,3,4])},{'d':([0,1,2,3,4,5],[0,1,2,3,4,5,6])}])]
-nested	Array(Tuple(Map(String, Array(Nullable(Int64))), Array(Map(String, Array(Array(Nullable(Int64)))))))					
+nested	Array(Nullable(Tuple(Map(String, Array(Nullable(Int64))), Array(Map(String, Array(Array(Nullable(Int64))))))))					
 [({'a':[],'b':[0]},[{'c':[[],[0]]},{'d':[[0,1],[0,1,2]]}])]
 [({'a':[0],'b':[0,1]},[{'c':[[0],[0,1]]},{'d':[[0,1,2],[0,1,2,3]]}])]
 [({'a':[0,1],'b':[0,1,2]},[{'c':[[0,1],[0,1,2]]},{'d':[[0,1,2,3],[0,1,2,3,4]]}])]

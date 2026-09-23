@@ -27,22 +27,6 @@
                     <max>200</max>
                 </table_function_remote_max_addresses>
 
-                <!--
-                    Don't waste cycles testing the old interpreter. Spend time in the analyzer instead.
-                    `<min>1</min>` rather than `<readonly/>`: a no-op explicit `enable_analyzer=1` must
-                    still be accepted, because `compatibility` in the same request stops the constraint
-                    check from filtering unchanged settings and `<readonly/>` would reject it.
-
-                    This constraint only rejects an explicit change. `compatibility` below 24.3 reverts
-                    `enable_analyzer` to 0 without one, so the `<enable_analyzer>1</enable_analyzer>`
-                    value in the profile below is load-bearing too: it keeps the setting `changed`,
-                    which is what makes `compatibility` leave it alone. Do not remove it as redundant.
-                    `ast_fuzzer_job.py` additionally never picks a compatibility version below 24.3.
-                -->
-                <enable_analyzer>
-                    <min>1</min>
-                </enable_analyzer>
-
                 <!-- Recursion-limiting constraints (max_ast_depth, max_parser_depth,
                      max_parser_backtracks) and the max_threads cap live in
                      limit-recursion-settings.xml, installed alongside this file and
@@ -106,7 +90,6 @@
             <allow_nondeterministic_optimize_skip_unused_shards>1</allow_nondeterministic_optimize_skip_unused_shards>
             <allow_not_comparable_types_in_comparison_functions>1</allow_not_comparable_types_in_comparison_functions>
             <allow_not_comparable_types_in_order_by>1</allow_not_comparable_types_in_order_by>
-            <allow_nullable_tuple_in_extracted_subcolumns>1</allow_nullable_tuple_in_extracted_subcolumns>
             <allow_settings_after_format_in_insert>1</allow_settings_after_format_in_insert>
             <allow_suspicious_codecs>1</allow_suspicious_codecs>
             <allow_suspicious_fixed_string_types>1</allow_suspicious_fixed_string_types>
@@ -118,14 +101,10 @@
             <allow_suspicious_types_in_order_by>1</allow_suspicious_types_in_order_by>
             <allow_suspicious_variant_types>1</allow_suspicious_variant_types>
             <enable_alp_codec>1</enable_alp_codec>
-            <!-- Not just a default: this pin is what stops `compatibility` from reverting the
-                 analyzer behind the constraint's back. See the constraint comment above. -->
-            <enable_analyzer>1</enable_analyzer>
             <enable_full_text_index>1</enable_full_text_index>
             <enable_lightweight_delete>1</enable_lightweight_delete>
             <enable_lightweight_update>1</enable_lightweight_update>
             <enable_materialized_cte>1</enable_materialized_cte>
-            <enable_nullable_tuple_type>1</enable_nullable_tuple_type>
             <enable_order_by_all>1</enable_order_by_all>
             <enable_positional_arguments>1</enable_positional_arguments>
             <enable_quantized_codec>1</enable_quantized_codec>
