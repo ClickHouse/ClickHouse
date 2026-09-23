@@ -120,62 +120,82 @@ timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_stop SYNC" >/dev/null 2>&1
 # The oracle here is the attempt REPORTING cancellation, not the task leaving system.merges: a
 # released blocker leaves the mutation schedulable, so the entry legitimately reappears and the
 # arm above's oracle is unsatisfiable for this shape.
-$CLICKHOUSE_CLIENT -q "
-    CREATE TABLE t_toggle (id UInt64) ENGINE = MergeTree ORDER BY id
-    SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = ''"
-$CLICKHOUSE_CLIENT -q "INSERT INTO t_toggle SELECT number FROM numbers(1000)"
-$CLICKHOUSE_CLIENT -q "
-    ALTER TABLE t_toggle DELETE WHERE id IN (
-        SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
-    ) SETTINGS mutations_sync = 0, enable_parallel_replicas = 0"
+#
+# A round that does cancel a read also restarts its mutation, whose new attempt sequence needs ~9s
+# to back off to its steady cadence again, so one read can only be toggled that often. Independent
+# reads are toggled in the same round to fit more of them into the budget below.
+toggles=(t_toggle1 t_toggle2 t_toggle3)
+for t in "${toggles[@]}"; do
+    $CLICKHOUSE_CLIENT -q "
+        CREATE TABLE $t (id UInt64) ENGINE = MergeTree ORDER BY id
+        SETTINGS number_of_free_entries_in_pool_to_execute_mutation = 0, auto_statistics_types = '';
+        INSERT INTO $t SELECT number FROM numbers(1000);
+        ALTER TABLE $t DELETE WHERE id IN (
+            SELECT * FROM s3('http://localhost:19999/dummy.parquet', 'NOSIGN', 'One')
+        ) SETTINGS mutations_sync = 0, enable_parallel_replicas = 0"
+done
 for _ in {1..150}; do
     started=$($CLICKHOUSE_CLIENT -q "
         SELECT count() FROM system.merges
-        WHERE database = currentDatabase() AND table = 't_toggle'")
-    [[ "$started" -ge 1 ]] && break
+        WHERE database = currentDatabase() AND startsWith(table, 't_toggle')")
+    [[ "$started" -ge "${#toggles[@]}" ]] && break
     sleep 0.2
 done
-echo "toggle: mutation started: $([[ "$started" -ge 1 ]] && echo 1 || echo 0)"
+echo "toggle: mutation started: $([[ "$started" -ge "${#toggles[@]}" ]] && echo 1 || echo 0)"
 
 # An entry in system.merges only means the task is running: the subquery's S3 client is built later,
 # and under a sanitizer that took 16s, so a toggle can be over before the read makes its first
 # attempt and cancel nothing. Each round leaves the mutation schedulable, so it is simply retried.
+# No round is STARTED past the deadline below, which leaves one whole round plus the teardown
+# inside the flaky check's per-test limit of 180s however slow the arms above were.
 cancelled=0
 toggle_deadline=$((SECONDS + 70))
-while [[ "$SECONDS" -lt "$toggle_deadline" ]]; do
-    # Long enough for the retry loop to back off to seconds, so the release below lands between two
-    # of the read's own checks; jittered, because a fixed wait plus the fixed restart after a
-    # cancelled attempt reproduces the same phase every round.
-    sleep "$((5 + RANDOM % 4))"
-    # One call: the window is a server-side sleep, so client startup cannot stretch it, and the
-    # baseline is read at the moment of the release. The blocker must stay cancelled long enough for
-    # a poller to see it, since back to back nothing observes it and there is nothing to latch.
-    baseline=$($CLICKHOUSE_CLIENT -q "
-        SYSTEM STOP MERGES t_toggle;
-        SELECT sleep(0.5) FORMAT Null;
-        SYSTEM START MERGES t_toggle;
-        SELECT max(toUnixTimestamp(latest_fail_time))
-        FROM system.mutations
-        WHERE database = currentDatabase() AND table = 't_toggle'")
-    [[ -n "$baseline" ]] || continue
+[[ "$toggle_deadline" -gt 105 ]] && toggle_deadline=105
+while [[ "$cancelled" -eq 0 && "$SECONDS" -lt "$toggle_deadline" ]]; do
+    # The read tests cancellation once per retry attempt, 5s apart once its backoff has saturated.
+    # The settle both waits for that and is drawn over a whole attempt period: a narrower draw
+    # resonates with it, because the restart after a cancelled attempt re-creates the same phase.
+    settle=$((9000 + RANDOM % 5100))
+    sleep "$(printf '%d.%03d' $((settle / 1000)) $((settle % 1000)))"
+    armed=
+    for t in "${toggles[@]}"; do
+        # One call: the window is a server-side sleep plus two round trips, so client startup cannot
+        # stretch it, and the fail times bracket it. An attempt that fell INSIDE the window read the
+        # blocker itself, which proves nothing, so that round is spent on a fresh draw, not on the
+        # poll below. The blocker must stay cancelled long enough for a poller to see it, since back
+        # to back nothing observes it and there is nothing to latch.
+        mapfile -t stamps < <($CLICKHOUSE_CLIENT -q "
+            SELECT max(toUnixTimestamp(latest_fail_time)) FROM system.mutations
+            WHERE database = currentDatabase() AND table = '$t';
+            SYSTEM STOP MERGES $t;
+            SELECT sleep(0.2) FORMAT Null;
+            SYSTEM START MERGES $t;
+            SELECT max(toUnixTimestamp(latest_fail_time)) FROM system.mutations
+            WHERE database = currentDatabase() AND table = '$t'")
+        [[ "${#stamps[@]}" -eq 2 && "${stamps[0]}" == "${stamps[1]}" ]] \
+            && armed+=" OR (table = '$t' AND toUnixTimestamp(latest_fail_time) > ${stamps[1]})"
+    done
+    [[ -n "$armed" ]] || continue
     # A released blocker answers every later poll with "not cancelled", so a cancellation recorded
     # after the release can only come from one that was persisted. An earlier one would only show
     # the read reading the blocker itself, which the arm above already covers.
-    seen_deadline=$((SECONDS + 8))
+    seen_deadline=$((SECONDS + 10))
     while [[ "$SECONDS" -lt "$seen_deadline" ]]; do
         seen=$($CLICKHOUSE_CLIENT -q "
             SELECT countIf(latest_fail_reason LIKE '%Cancelled mutating parts%'
-                           AND toUnixTimestamp(latest_fail_time) > $baseline)
+                           AND (${armed# OR }))
             FROM system.mutations
-            WHERE database = currentDatabase() AND table = 't_toggle'")
+            WHERE database = currentDatabase()")
         if [[ "${seen:-0}" -ge 1 ]]; then
             cancelled=1
             break
         fi
         sleep 0.5
     done
-    [[ "$cancelled" -eq 1 ]] && break
 done
 echo "toggle stop/start cancels the read: $cancelled"
-$CLICKHOUSE_CLIENT -q "KILL MUTATION WHERE database = currentDatabase() AND table = 't_toggle' FORMAT Null"
-timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE t_toggle SYNC" >/dev/null 2>&1
+$CLICKHOUSE_CLIENT -q "
+    KILL MUTATION WHERE database = currentDatabase() AND startsWith(table, 't_toggle') FORMAT Null"
+for t in "${toggles[@]}"; do
+    timeout 60 $CLICKHOUSE_CLIENT -q "DROP TABLE $t SYNC" >/dev/null 2>&1
+done
