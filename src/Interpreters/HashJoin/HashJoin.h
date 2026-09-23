@@ -38,7 +38,7 @@ namespace JoinStuff
 class JoinUsedFlags;
 }
 
-/** Data structure for implementation of hash JOIN.
+/** Hash join: the join behind `join_algorithm = 'hash'` (and its alias `parallel_hash`).
   * It is a hash table: keys -> rows of joined ("right") table.
   *
   * JOIN-s could be of these types:
@@ -68,7 +68,7 @@ class JoinUsedFlags;
   * Thus, LEFT and RIGHT JOINs are not symmetric in terms of implementation.
   *
   * All JOINs are done by equality condition on keys (equijoin).
-  * Non-equality and other conditions are not supported.
+  * The non-equi part of a mixed ON condition is checked on each matched pair of rows.
   *
   * Implementation:
   *
@@ -101,11 +101,10 @@ class JoinUsedFlags;
   *  (zero, empty string, etc. and NULL for Nullable data types).
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
-  */
-
-/** Partitioned hash join: the join behind `join_algorithm = 'hash'` (and its alias `parallel_hash`).
   *
-  * `parallel_hash` probes one shared map. Once the build side outgrows the last-level cache,
+  * Partitioned build:
+  *
+  * The former `parallel_hash` probed one shared map. Once the build side outgrows the last-level cache,
   * every lookup is a cold miss. This join keeps one hash table for the whole right side and
   * builds it in partitions. The cell buffer is `2^bits` contiguous ranges. A partition is the
   * set of build rows whose home cell lies in one range. The route's top `bits` name a row's
@@ -124,11 +123,10 @@ class JoinUsedFlags;
   * Post-build scatters keys and row locators. Workers insert. One thread drains overflow that
   * wrapped past a range end.
   *
-  * A join with several disjuncts (`ON a OR b`) holds one clause per disjunct over the one store, as
-  * `HashJoin` holds one map per disjunct. The fill routes every row to every clause. The barrier builds
-  * the tables, at once when no memory budget applies and one after another under a budget. The probe
-  * walks the clauses in order. A right row reached through several keys is emitted once
-  * (`KnownRowsHolder`).
+  * A join with several disjuncts (`ON a OR b`) holds one clause per disjunct over the one store. The fill
+  * routes every row to every clause. The barrier builds the tables, at once when no memory budget applies
+  * and one after another under a budget. The probe walks the clauses in order. A right row reached
+  * through several keys is emitted once (`KnownRowsHolder`).
   *
   * The table doubles in place when a wrapping insert would take the last empty cell. It also
   * doubles between waves when the projected fill would exceed 50%. Duplicates of a key are
@@ -136,16 +134,18 @@ class JoinUsedFlags;
   *
   * Probe looks up from the home cell. Above the prefetch threshold, AMAC (asynchronous memory
   * access chaining) keeps a ring of in-flight lookups whose cache misses overlap. Emit, used
-  * flags and per-kind logic are the standard `HashJoin` machinery.
+  * flags and per-kind logic do not depend on the partitioning.
   *
   * `HashJoinClause` owns the table and the build. This class owns the block store, fill lanes,
-  * used flags and the probe. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
+  * used flags and the probe, and everything the emit machinery needs: block preparation, the saved
+  * block sample, the shared row store and the output samples. The maps in `data` stay empty and
+  * the clauses' tables replace them. Used flags are `cells + 1` entries (offset 0 is the zero-value cell).
   * That is the layout `JoinUsedFlags` and the non-joined scan expect.
   *
   * Several disjuncts, or a mixed non-equi ON condition on a RIGHT or FULL join, make a right row
   * reachable through several keys. Such a row needs a used flag per right-table row, not per cell.
   * Those joins keep the flags per row (`used_flags_per_row`), attached to the stored blocks. Their
-  * non-joined scan walks the stored blocks instead of the table, as `HashJoin` does.
+  * non-joined scan walks the stored blocks instead of the table.
   *
   * The Join table engine (`StorageJoin`) runs this join in a third mode, `join_table_mode`: one
   * single-partition table, created empty with the join and filled one block at a time under the
@@ -155,10 +155,6 @@ class JoinUsedFlags;
   * the storage's stored blocks and which shares the table and its arena by pointer
   * (`shareJoinTable`), with used flags of its own sized to the table. `joinGet` is a one-block probe
   * of the storage's instance.
-  *
-  * This class also owns everything the emit machinery needs: block preparation, the saved
-  * block sample, the shared row store, the used flags, the output samples. The maps in `data` stay empty and
-  * the clauses' tables replace them.
   */
 class HashJoin : public IJoin, public HashJoinTypes
 {
@@ -231,8 +227,8 @@ public:
     JoinResultPtr joinBlock(Block block) override;
     JoinResultPtr joinBlock(Block block, size_t lane) override;
 
-    /// Every parallel fill stream reports totals at its end-of-fill. Unlike the base class's
-    /// unsynchronized default, these need a guard, as the parallel `HashJoin` layout has.
+    /// Every parallel fill stream reports totals at its end-of-fill. Unlike the unsynchronized
+    /// default of `IJoin`, these need a guard.
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
 
@@ -277,7 +273,7 @@ public:
     const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
 
     /// The planner reads the matched count of the previous run to decide on the row store. It is
-    /// published at destruction, as the other hash joins publish theirs.
+    /// published at destruction.
     void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
@@ -526,7 +522,7 @@ private:
     JoinResultPtr probeImpl(Block block, size_t lane, const Block * join_get_columns = nullptr);
 
     /// Returns the number of probe rows processed: all of them, unless a mixed ON condition stops the
-    /// block at `max_joined_block_rows`, as the standard join does.
+    /// block at `max_joined_block_rows`.
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
     size_t joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 

@@ -101,7 +101,7 @@ JoinResultPtr HashJoin::probeDispatch(Block block, size_t lane)
         }
     }
 
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination for PartitionedHashJoin: {} {}", strictness, kind);
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong JOIN combination for HashJoin: {} {}", strictness, kind);
 }
 
 }

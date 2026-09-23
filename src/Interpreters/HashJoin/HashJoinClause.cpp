@@ -624,7 +624,7 @@ bool insertJoinTableRows(
     using Mapped = typename Table::mapped_type;
     if constexpr (std::is_same_v<Mapped, AsofRowRefs>)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: a Join table cannot be ASOF");
     }
     else
     {
@@ -1221,7 +1221,7 @@ size_t HashJoinClause::finishPassScratch(PassScratch & scratch, SpanWriter & wri
         } \
         else \
         { \
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: duplicate scratch on a map that does not store lists"); \
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: duplicate scratch on a map that does not store lists"); \
         } \
         break; \
     }
@@ -1337,7 +1337,7 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
         if (reason == GrowReason::LastFreeCell)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "PartitionedHashJoin: the shared hash table of {} cells cannot grow to hold a projection of {} distinct keys "
+                "HashJoin: the shared hash table of {} cells cannot grow to hold a projection of {} distinct keys "
                 "(need {}, resident {}); the size estimate that created it was too low",
                 table.cellCount(),
                 projected,
@@ -1346,7 +1346,7 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
         /// A skipped quality grow is expected under a tight budget; it is not a user-facing warning.
         LOG_DEBUG(
             log,
-            "PartitionedHashJoin: skipping a load-factor grow; projection {}, current fill {}/{}, need {}",
+            "HashJoin: skipping a load-factor grow; projection {}, current fill {}/{}, need {}",
             projected,
             occupied,
             table.cellCount(),
@@ -1446,7 +1446,7 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
     for (size_t pos = 0; pos < table.newCellCount(); ++pos)
         seen += !table.isEmptyCell(table.newCellAt(pos));
     if (seen != occupied)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: rehash wrote {} occupied cells, expected {}", seen, occupied);
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: rehash wrote {} occupied cells, expected {}", seen, occupied);
 #endif
 
     table.adoptRehash();
@@ -1464,7 +1464,7 @@ void HashJoinClause::growHashJoinTable(Table & table, UInt64 occupied, UInt64 pr
 void HashJoinClause::grow(UInt64 occupied, UInt64 projected, GrowReason reason, size_t extra_reserved)
 {
     if (!table_maps || !post_build_ctx)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: grow called without a table");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: grow called without a table");
 
     forHashJoinTable(
         *table_maps, hash_join.data->type, [&](auto & table) { growHashJoinTable(table, occupied, projected, reason, extra_reserved); });
@@ -1590,7 +1590,7 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
 
 void HashJoinClause::tryConvertToFixedHashMap()
 {
-    /// `HashJoin`'s conversion, on the shared table. Its conditions: the setting, a 32- or 64-bit integer
+    /// The fixed-map conversion, on the shared table. Its conditions: the setting, a 32- or 64-bit integer
     /// key, not ASOF (its per-key sorted vectors are not copied), at most 2^18 keys in a range at most 2^18
     /// wide, and above 2^16 cells at least a quarter full. The fixed map then takes at most about twice
     /// the memory of the table it replaces. Row refs point at stored blocks, not at cells, so the mapped
@@ -1741,7 +1741,7 @@ size_t HashJoinClause::sizeDegreeFor(size_t reserve) const
     if (degree > 32)
         throw Exception(
             ErrorCodes::LIMIT_EXCEEDED,
-            "PartitionedHashJoin: a table of degree {} would exceed the 2^31 distinct-key cap (size_degree <= 32)",
+            "HashJoin: a table of degree {} would exceed the 2^31 distinct-key cap (size_degree <= 32)",
             degree);
     return degree;
 }
@@ -1988,7 +1988,7 @@ void HashJoinClause::publishTableSize(const PostBuildContext & ctx)
         if constexpr (is_hash_join_table<Table>) \
         { \
             if (!shape_maps.TYPE->fullyCommitted()) \
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: the shared hash table is published with uncommitted ranges"); \
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: the shared hash table is published with uncommitted ranges"); \
             if (shape_maps.TYPE->hasZero()) \
                 ++distinct; \
             shape_maps.TYPE->setSize(distinct); \
@@ -2024,8 +2024,7 @@ void HashJoinClause::verifyPublishedTable(const Table & table) const
         {
             const RowRefList & mapped = cell->getMapped();
             if (mapped.isCount() || mapped.isFill())
-                throw Exception(
-                    ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a build-time word survived publication in cell {}", position);
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: a build-time word survived publication in cell {}", position);
             rows += mapped.rows();
         };
         if (table.hasZero())
@@ -2039,7 +2038,7 @@ void HashJoinClause::verifyPublishedTable(const Table & table) const
         if (rows != stats.inserted_rows)
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
-                "PartitionedHashJoin: the published table holds {} rows in its duplicate layout but {} rows were inserted",
+                "HashJoin: the published table holds {} rows in its duplicate layout but {} rows were inserted",
                 rows,
                 stats.inserted_rows);
     }

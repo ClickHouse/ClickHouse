@@ -646,9 +646,9 @@ void expectCrossingStats(const CrossingBuild & crossing)
 
 /// Build blocks carrying a worker id, and probe blocks a lane, the join has no entry for must still
 /// produce the exact multiset.
-/// Several ON clauses: one table per clause over the one store. The key count is the clauses' sum, as
-/// `HashJoin` counts its maps, and the probe emits a matching pair once however many clauses reach it.
-TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
+/// Several ON clauses: one table per clause over the one store. The key count is the clauses' sum, and
+/// the probe emits a matching pair once however many clauses reach it.
+TEST(HashJoin, SeveralClausesMatchHashJoin)
 {
     BuildOptions options;
     options.second_clause_on_ids = true;
@@ -680,7 +680,7 @@ TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
     expectSameRows(probeKeys(*built.join, keys), expected);
 }
 
-TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
+TEST(HashJoin, OutOfRangeLaneFallsBackToPool)
 {
     /// The lane table holds 2 x num_threads = 8 lanes, so `% 9` sends every ninth block to lane 8.
     /// That lane takes the thread-id map in `getFillLane` and the shared pool in `acquireProbeScratch`.
@@ -705,7 +705,7 @@ TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
 }
 
 /// Above `parallel_hash_join_threshold` rows every worker gets a partition, but never more partitions than distinct keys.
-TEST(PartitionedHashJoin, PartitionFloorNeverExceedsDistinctKeys)
+TEST(HashJoin, PartitionFloorNeverExceedsDistinctKeys)
 {
     /// Two keys with 300000 rows each on four workers: the table is tiny, so the cache-size rule alone
     /// picks one partition. The threshold rule wants one partition per worker and stops at two, one per key.
@@ -723,7 +723,7 @@ TEST(PartitionedHashJoin, PartitionFloorNeverExceedsDistinctKeys)
 }
 
 /// A spill budget that covers the single-partition build but not the scatter transient of one partition per worker keeps one partition.
-TEST(PartitionedHashJoin, RowsFloorDeclinedUnderBudget)
+TEST(HashJoin, RowsFloorDeclinedUnderBudget)
 {
     /// The one-partition-per-worker plan scatters every row's position and key at once. The first
     /// build, under a budget far above any peak, takes that plan; its final byte count is the row
@@ -755,7 +755,7 @@ TEST(PartitionedHashJoin, RowsFloorDeclinedUnderBudget)
 }
 
 /// A table sized far below the key count grows until the build fits, on the ungrouped and on the grouped scatter alike.
-TEST(PartitionedHashJoin, UndersizedTableGrows)
+TEST(HashJoin, UndersizedTableGrows)
 {
     /// A safety factor of 0.25 reserves a quarter of the keys. Growth restores the fill; the build
     /// must not throw and the probe must still be an identity.
@@ -788,7 +788,7 @@ TEST(PartitionedHashJoin, UndersizedTableGrows)
 }
 
 /// Releasing every fill lane block before the barrier, as the spill switch does, hands over every row and leaves the join holding no bytes.
-TEST(PartitionedHashJoin, FillLaneDrainLeavesNoBytes)
+TEST(HashJoin, FillLaneDrainLeavesNoBytes)
 {
     constexpr size_t distinct_keys = 100000;
     constexpr size_t duplicates = 2;
@@ -809,7 +809,7 @@ TEST(PartitionedHashJoin, FillLaneDrainLeavesNoBytes)
 
 /// The L1 descriptor cap bounds the partition count to what a quarter of L1 holds. It does so only
 /// while it is switched on.
-TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
+TEST(HashJoin, DescriptorCapClampsPlan)
 {
     /// With a 256-byte L1, a quarter of L1 holds four 16-byte per-partition descriptors. The cap
     /// then limits a 2M-key build to four partitions. With the cap off the same L1 changes nothing.
@@ -833,7 +833,7 @@ TEST(PartitionedHashJoin, DescriptorCapClampsPlan)
 
 /// A forced partition count above the per-pass ceiling splits into passes whose bits sum to the plan, with every row
 /// conserved and exact results.
-TEST(PartitionedHashJoin, ForcedBitsSplitIntoPasses)
+TEST(HashJoin, ForcedBitsSplitIntoPasses)
 {
     /// 2048 partitions under a 1024-per-pass ceiling take two passes of 6 and 5 bits. 4096 partitions
     /// under a 16-way ceiling take three passes of 4 bits. Each key's two rows stay adjacent through
@@ -889,7 +889,7 @@ TEST(PartitionedHashJoin, ForcedBitsSplitIntoPasses)
 
 /// Rows whose owner insert reaches the end of the last partition range overflow. The drain wraps
 /// them into partition 0 as exact runs.
-TEST(PartitionedHashJoin, RangeCrossingWraparound)
+TEST(HashJoin, RangeCrossingWraparound)
 {
     /// One worker over four partitions and eight workers over sixteen, AMAC on and off. The ring's
     /// combined read-and-insert step and the sequential walk must both hand the boundary rows to the
@@ -909,7 +909,7 @@ TEST(PartitionedHashJoin, RangeCrossingWraparound)
 }
 
 /// Each later scatter group that meets a key again writes exactly one header for it, on the AMAC ring and the sequential loops alike.
-TEST(PartitionedHashJoin, GroupedScatterExactSpans)
+TEST(HashJoin, GroupedScatterExactSpans)
 {
     /// A budget between the grouped memory floor and the ungrouped peak splits the scatter into block
     /// ranges. The duplicate-major layout puts a key's rows one per block, so they arrive in different
@@ -957,7 +957,7 @@ TEST(PartitionedHashJoin, GroupedScatterExactSpans)
 }
 
 /// The arena and scratch predictions cover what a build of two rows per key actually uses.
-TEST(PartitionedHashJoin, ArenaAndScratchPredictionsCoverActuals)
+TEST(HashJoin, ArenaAndScratchPredictionsCoverActuals)
 {
     /// Every key twice, one group: 16 arena bytes per key, and the first-group scratch bound is 28
     /// bytes per key.
@@ -983,7 +983,7 @@ TEST(PartitionedHashJoin, ArenaAndScratchPredictionsCoverActuals)
 /// The statistics cache receives every build's exact distinct count. The next build under the same
 /// key sizes its table from it instead of from its sketch. A build that outgrows the cached count
 /// grows its table and republishes the count.
-TEST(PartitionedHashJoin, SizesTableFromPublishedStatistics)
+TEST(HashJoin, SizesTableFromPublishedStatistics)
 {
     static std::atomic<UInt64> key_counter{0};
     const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
@@ -1030,7 +1030,7 @@ TEST(PartitionedHashJoin, SizesTableFromPublishedStatistics)
 
 /// When the owner inserts fill their ranges under a budget that refused the load-factor grow, the drain grows the table
 /// once and finishes exactly.
-TEST(PartitionedHashJoin, FullRangesGrowInDrain)
+TEST(HashJoin, FullRangesGrowInDrain)
 {
     /// The estimate is off by more than 2x, so the load-factor grow before the drain is refused under
     /// a budget of one byte. Lifting the budget for the drain lets the grow at the last free cell run
@@ -1060,7 +1060,7 @@ TEST(PartitionedHashJoin, FullRangesGrowInDrain)
 }
 
 /// A grow at the last free cell that the budget cannot pay for throws `LOGICAL_ERROR` instead of hanging or overfilling the table.
-TEST(PartitionedHashJoin, GrowRefusedThrows)
+TEST(HashJoin, GrowRefusedThrows)
 {
 #ifdef DEBUG_OR_SANITIZER_BUILD
     GTEST_SKIP() << "a refused grow raises LOGICAL_ERROR, which aborts instead of throwing in debug and sanitizer builds";
@@ -1086,7 +1086,7 @@ TEST(PartitionedHashJoin, GrowRefusedThrows)
 
 /// A single-partition insert grows its table mid-way. Growth happens at the last free cell and at
 /// the load factor. Each grow doubles the table once.
-TEST(PartitionedHashJoin, SinglePartitionGrowsMidPass)
+TEST(HashJoin, SinglePartitionGrowsMidPass)
 {
     /// One partition, so the walk wraps instead of overflowing. At safety 0.4 the keys would fill
     /// every cell, so the capacity guard fires. The degree ends at the initial one plus the resizes.
@@ -1121,7 +1121,7 @@ TEST(PartitionedHashJoin, SinglePartitionGrowsMidPass)
 
 /// `RightAny` over a build whose keys chain across scatter groups emits each key's first-inserted row, although the
 /// probe walks the newest range first.
-TEST(PartitionedHashJoin, HeadRowOfChainIsFirstInserted)
+TEST(HashJoin, HeadRowOfChainIsFirstInserted)
 {
     /// RIGHT and FULL `RightAny` keep `MapsAll` and emit one row per probe row: the head of the key's
     /// chain. The budget sits at the grouped memory floor, so the duplicate-major layout writes chains.
@@ -1156,7 +1156,7 @@ TEST(PartitionedHashJoin, HeadRowOfChainIsFirstInserted)
 
 /// A grouped scatter whose first group holds only NULL keys, so inserts nothing, sizes the later groups without
 /// dividing by zero and builds exactly.
-TEST(PartitionedHashJoin, FirstGroupOfSkippedRowsOnly)
+TEST(HashJoin, FirstGroupOfSkippedRowsOnly)
 {
     /// A first block of 65536 NULL keys, then the duplicate-major layout under a grouping budget. The
     /// projection at the first group boundary sees zero rows inserted;
@@ -1204,7 +1204,7 @@ TEST(PartitionedHashJoin, FirstGroupOfSkippedRowsOnly)
 
 /// `boundaryProjection` answers the sketch term for an empty first group and switches to the linear extrapolation only
 /// once the exact count leaves the sketch's band.
-TEST(PartitionedHashJoin, BoundaryProjectionSkippedFirstGroup)
+TEST(HashJoin, BoundaryProjectionSkippedFirstGroup)
 {
     /// A first group of only skipped rows inserts nothing: the load-factor projection is the sketch
     /// term, not a division by zero. `FirstGroupOfSkippedRowsOnly` is the real case; this pins the helper.
@@ -1218,7 +1218,7 @@ TEST(PartitionedHashJoin, BoundaryProjectionSkippedFirstGroup)
 
 /// Rows of a key already in the table are not projected as new keys. 100000 more rows of one key
 /// therefore force no grow.
-TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
+TEST(HashJoin, DuplicateRowsDoNotForceGrowth)
 {
     /// 1000 unique keys, then 100000 rows of the first key, over sixteen partitions under a one-byte
     /// grow budget. A wanted grow would be refused and counted, or throw at the last free cell. The
@@ -1257,7 +1257,7 @@ TEST(PartitionedHashJoin, DuplicateRowsDoNotForceGrowth)
 }
 
 /// A load-factor grow the budget cannot pay for is skipped and counted, and the build still completes exactly.
-TEST(PartitionedHashJoin, LoadFactorGrowSkippedUnderBudget)
+TEST(HashJoin, LoadFactorGrowSkippedUnderBudget)
 {
     /// At safety 0.6 the cells outnumber the keys but the fill would pass 50%; a one-byte budget
     /// refuses the doubling, so the table stays as planned and the probe still finds every row.
@@ -1274,7 +1274,7 @@ TEST(PartitionedHashJoin, LoadFactorGrowSkippedUnderBudget)
 
 /// A grouped scatter whose table grows mid-way keeps sizing later groups against the budget: within budget plus one
 /// block, or exactly one block once the resident set alone exceeds it.
-TEST(PartitionedHashJoin, GroupSizedAfterGrowth)
+TEST(HashJoin, GroupSizedAfterGrowth)
 {
     /// 55 MiB groups this layout but cannot pay for a 4 MiB doubling on a ~53 MiB resident set; 80 MiB
     /// already fits ungrouped. 62 MiB is still grouped and leaves headroom for the doubling the group
@@ -1307,7 +1307,7 @@ TEST(PartitionedHashJoin, GroupSizedAfterGrowth)
 
 /// A table past 2^32 cells is refused at the plan. The degree constructor throws. A reserve that
 /// maps to degree 33 fails the barrier with `LIMIT_EXCEEDED`.
-TEST(PartitionedHashJoin, DegreeCapAtPlan)
+TEST(HashJoin, DegreeCapAtPlan)
 {
     /// `HashJoinTable.DegreeCap` checks that this reserve maps to degree 33 and that the table refuses it.
     const size_t reserve_for_33 = (1uz << 31) + 1;
@@ -1322,7 +1322,7 @@ TEST(PartitionedHashJoin, DegreeCapAtPlan)
 }
 
 /// An ASOF build, always one partition, grows its undersized table and answers every probe like an ungrown control.
-TEST(PartitionedHashJoin, SinglePartitionAsofGrows)
+TEST(HashJoin, SinglePartitionAsofGrows)
 {
     /// ASOF tables have no ranges to split, so the build is one partition whatever its size. At safety
     /// 0.4 the table must grow; the control at the default safety never grows. Both must answer a probe
@@ -1387,7 +1387,7 @@ TEST(PartitionedHashJoin, SinglePartitionAsofGrows)
 }
 
 /// A key the drain creates in one group and extends in a later one gets exactly one header and one more range. Every row of it is found.
-TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
+TEST(HashJoin, DrainCreatedKeyAppendedByLaterGroup)
 {
     /// The unique padding never creates spans, so the drain stats count only A and B. Both hash into
     /// the full window of the last range, so every row of theirs overflows. In group 1 the drain
@@ -1456,7 +1456,7 @@ TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
     EXPECT_EQ(probeKeys(*built.join, {key_b}).size(), 3u);
 }
 
-TEST(PartitionedHashJoin, DestructionWithAllocationFailure)
+TEST(HashJoin, DestructionWithAllocationFailure)
 {
     std::thread([]
     {
@@ -1693,7 +1693,7 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
 
 }
 
-TEST(PartitionedHashJoin, SinglePartitionAsofGrowthFailureReleasesLookups)
+TEST(HashJoin, SinglePartitionAsofGrowthFailureReleasesLookups)
 {
     std::thread(
         []
@@ -1703,7 +1703,7 @@ TEST(PartitionedHashJoin, SinglePartitionAsofGrowthFailureReleasesLookups)
         .join();
 }
 
-TEST(PartitionedHashJoin, SinglePartitionAsofGrowthReleasesLookups)
+TEST(HashJoin, SinglePartitionAsofGrowthReleasesLookups)
 {
     std::thread(
         []

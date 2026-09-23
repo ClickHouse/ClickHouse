@@ -86,7 +86,7 @@ ALWAYS_INLINE inline UInt64 hashJoinTableMix(size_t hash_value)
   * The probe is the standard linear walk over one `{buf, mask}` pair, wrapping at the end of the buffer.
   *
   * `Cell` and `Hash` are the standard join map's, taken from `HashJoinTypes::MapsTemplate`. The cells
-  * are bit-identical to `HashJoin`'s. Every key getter works on this table unchanged: it provides
+  * are bit-identical to that map's. Every key getter works on this table unchanged: it provides
   * `find`, `offsetInternal`, `prefetch` and the type aliases `ColumnsHashing` reads. The partitioned
   * build does not `emplace`: it claims cells through `claim` under its own ownership protocol. The
   * table's size is published once at the end. `emplace` exists for the Join table engine alone, whose

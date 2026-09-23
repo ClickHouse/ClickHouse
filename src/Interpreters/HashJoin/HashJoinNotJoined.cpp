@@ -323,7 +323,7 @@ private:
 bool HashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     /// Without equi keys nothing reaches a table, so no right row is ever marked used and the scan cannot
-    /// be split (`HashJoin::anyClauseHasRightKeys`).
+    /// be split.
     const bool any_clause_has_right_keys = std::ranges::any_of(
         table_join->getClauses(), [](const TableJoin::JoinOnClause & on_clause) { return !on_clause.key_names_right.empty(); });
     return parallel_non_joined_allowed && table_join->allowParallelNonJoinedRowsProcessing()

@@ -870,7 +870,7 @@ size_t HashJoin::joinRightColumns(const std::vector<const Map *> & tables, Added
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
     if constexpr (join_features.is_asof_join)
     {
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: an ASOF join has exactly one ON clause");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: an ASOF join has exactly one ON clause");
     }
     else
     {
@@ -918,7 +918,7 @@ size_t HashJoin::joinRightColumns(const std::vector<const Map *> & tables, Added
 
         Arena pool;
 
-        /// The look-ahead prefetch of the first clause's table only, as `HashJoin` prefetches its first map.
+        /// The look-ahead prefetch reads the first clause's table only.
         constexpr bool can_prefetch = join_prefetch_supported<KeyGetter, Map>;
         bool use_prefetch = false;
         if constexpr (can_prefetch)
@@ -940,8 +940,8 @@ size_t HashJoin::joinRightColumns(const std::vector<const Map *> & tables, Added
                 added_columns.matched_rows.reserve(rows);
             }
 
-            /// Stop once the result reaches `max_joined_block_rows`, as `HashJoin` does: one left row can match
-            /// thousands of right rows through the clauses together. `probeImpl` hands the rest of the block back.
+            /// Stop once the result reaches `max_joined_block_rows`: one left row can match thousands of
+            /// right rows through the clauses together. `probeImpl` hands the rest of the block back.
             IColumn::Offset current_offset = 0;
             size_t i = 0;
             for (; i < rows && current_offset < added_columns.max_joined_block_rows; ++i)
@@ -1010,7 +1010,7 @@ JoinResultPtr HashJoin::probeImpl(Block block, size_t lane, const Block * join_g
     ScatteredBlock scattered_block{std::move(block)};
 
     if (!clauses.front().hasTable() && scattered_block.rows() > 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: probe started before the build phase finished");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: probe started before the build phase finished");
 
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
 

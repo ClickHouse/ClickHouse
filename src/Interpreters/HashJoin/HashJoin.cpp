@@ -460,7 +460,7 @@ HashJoin::HashJoin(
     if (!HashJoinTableMaps::isSupportedType(data->type))
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "PartitionedHashJoin was created for an unsupported map type {}; the plan-time gate must reject this shape",
+            "HashJoin was created for an unsupported map type {}; the plan-time gate must reject this shape",
             data->type);
 
     for (size_t clause_idx = 0; clause_idx < table_join->getClauses().size(); ++clause_idx)
@@ -501,10 +501,9 @@ HashJoin::HashJoin(
         /// `StorageJoin` accepts one key clause, no mixed ON condition and no ASOF at `CREATE`, so these
         /// are not user errors.
         if (clauses.size() != 1 || used_flags_per_row)
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table has exactly one key clause and no mixed ON condition");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: a Join table has exactly one key clause and no mixed ON condition");
         if (getStrictness() == JoinStrictness::Asof)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table cannot be ASOF");
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: a Join table cannot be ASOF");
         clauses.front().createJoinTable();
     }
 
@@ -624,7 +623,7 @@ HashJoin::~HashJoin()
     /// Table first: cells point into the arenas and the row store.
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinTeardownMicroseconds);
 
-    /// Other hash joins publish the matched count from their destructors too.
+    /// The matched count serves the row store decision of the next run, see `onProbePhaseFinish`.
     if (build_phase_finished && probe_phase_finished && hash_table_matches.has_value()
         && match_stats_collecting_params.isCollectionAndUseEnabled())
     {
@@ -744,13 +743,13 @@ const TableJoin & HashJoin::getTableJoin() const
 void HashJoin::shareJoinTable(const HashJoin & source)
 {
     if (!join_table_mode || !source.join_table_mode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: only the instances of a Join table share its table");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: only the instances of a Join table share its table");
     /// `StorageJoin` checked the kind and strictness; the map type follows from the key columns, which
     /// are the storage's. Both have to agree, or the probe would read the cells through the wrong layout.
     if (clauses.front().mapsVariantIndex() != source.clauses.front().mapsVariantIndex() || data->type != source.data->type)
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
-            "PartitionedHashJoin: the query's join shape (maps {}, type {}) does not match the Join table's (maps {}, type {})",
+            "HashJoin: the query's join shape (maps {}, type {}) does not match the Join table's (maps {}, type {})",
             clauses.front().mapsVariantIndex(),
             data->type,
             source.clauses.front().mapsVariantIndex(),
@@ -872,7 +871,7 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, s
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::HashJoinPartitionedBuildMicroseconds);
 
     if (build_phase_finished || stored_blocks_released)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: addBlockToJoin called after the build phase finished");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: addBlockToJoin called after the build phase finished");
 
     /// Key preparation plus the per-row hash, route and sketch update. The partition plan comes later,
     /// at the barrier, so every plan pays exactly this much here.
@@ -883,9 +882,9 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, s
     if (rows == 0)
         return true;
 
-    /// `RowRef::row_no` is 32-bit, as in `HashJoin`.
+    /// `RowRef::row_no` is 32-bit.
     if (rows > std::numeric_limits<UInt32>::max()) [[unlikely]]
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for PartitionedHashJoin: {}", rows);
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Too many rows in right table block for HashJoin: {}", rows);
 
     FillBlock fill;
     fill.rows = rows;
@@ -1152,9 +1151,8 @@ void HashJoin::onBuildPhaseFinish()
     }
 
     /// A previous run's exact count replaces the sketch estimate. The table it sizes needs no safety
-    /// margin and, when the data has not changed, no grow: the preallocation `HashJoin` made from the
-    /// same cache entry. The entry counts the keys of every clause together, and each clause sizes from
-    /// it. `HashJoin` reserves each of its maps from the one entry the same way.
+    /// margin and, when the data has not changed, no grow. The entry counts the keys of every clause
+    /// together, and each clause sizes from it.
     const bool exact = readDistinctKeysFromStatisticsCache();
     for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
         clauses[clause_idx].setDistinctEstimate(exact ? static_cast<double>(*cached_distinct_keys) : merged[clause_idx].estimate(), exact);
@@ -1194,7 +1192,7 @@ HashJoin::PostBuildPlan HashJoin::planPostBuild()
 void HashJoin::runPostBuildPhase()
 {
     if (join_table_mode)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: a Join table's join has no post-build phase");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: a Join table's join has no post-build phase");
     chassert(!build_phase_finished);
 
     bool all_unique = true;
@@ -1292,14 +1290,13 @@ void HashJoin::runPostBuildPhase()
 
     /// The entry is for the next run of this query. Join reordering, `rhs_size_estimation`,
     /// runtime-filter sizing and this join's own table size (`readDistinctKeysFromStatisticsCache`)
-    /// read `HashJoinEntry` whatever algorithm produced it. `ht_size` is the exact distinct count,
-    /// summed over the clauses, as `HashJoin` publishes its `keys_to_join`. Nothing else writes this key for
-    /// this join.
+    /// read `HashJoinEntry`. `ht_size` is the exact distinct count, summed over the clauses. Nothing else
+    /// writes this key for this join.
     if (stats_collecting_params.isCollectionAndUseEnabled() && distinct_keys)
         getHashTablesStatistics<HashJoinEntry>().update(
             {.ht_size = distinct_keys, .source_rows = data->rows_to_join}, stats_collecting_params);
 
-    /// `HashJoin` converts and publishes from one map only; several clauses keep their hash tables.
+    /// Only the table of a single clause is converted and published; several clauses keep their hash tables.
     const bool one_clause = clauses.size() == 1;
     if (one_clause)
         clauses.front().tryConvertToFixedHashMap();
@@ -1333,8 +1330,8 @@ void HashJoin::runPostBuildPhase()
 
 void HashJoin::finishBuildPhase(bool all_values_unique_)
 {
-    /// Leaf barrier over the empty map. ALL becomes RightAny when every key was unique. The probe
-    /// dispatches on the promoted strictness. Flags are then resized to the whole table.
+    /// `finishMapsBuild` sizes the flags to the empty maps in `data`, and ALL becomes RightAny when every
+    /// key was unique. The probe dispatches on the promoted strictness. Flags are then resized to the whole table.
     all_values_unique = all_values_unique_;
     finishMapsBuild();
     reinitUsedFlags();
@@ -1368,8 +1365,8 @@ void HashJoin::reinitUsedFlags()
     if (used_flags_per_row)
         return;
 
-    /// One per-offset space of `cells + 1` (offset 0 is the zero-value cell). Must run after the leaf
-    /// barrier, which sized flags to its empty map. `reinit` only grows.
+    /// One per-offset space of `cells + 1` (offset 0 is the zero-value cell). Must run after
+    /// `finishMapsBuild`, which sized the flags to the empty maps in `data`. `reinit` only grows.
     const size_t flags = clauses.front().tableCells() + 1;
     joinDispatch(
         getKind(),
@@ -1399,11 +1396,10 @@ JoinResultPtr HashJoin::joinBlock(Block block, size_t lane)
 
 size_t HashJoin::getTotalRowCount() const
 {
-    /// The distinct keys summed over the clauses' tables, as `HashJoin` reports them: `max_rows_in_join`
-    /// and the `JoinSwitcher` limit count hash table rows, not input rows. A Join table's keys are shared
-    /// with the per-query instances, so they are read from the table rather than from this instance's
-    /// fill counter. Before the barrier the lanes only have the sketches, so the count is their estimate,
-    /// never above the rows seen.
+    /// The distinct keys summed over the clauses' tables: `max_rows_in_join` and the `JoinSwitcher` limit
+    /// count hash table rows, not input rows. A Join table's keys are shared with the per-query instances,
+    /// so they are read from the table rather than from this instance's fill counter. Before the barrier
+    /// the lanes only have the sketches, so the count is their estimate, never above the rows seen.
     if (join_table_mode || build_phase_finished)
     {
         size_t keys = 0;
@@ -1515,7 +1511,7 @@ bool HashJoin::readDistinctKeysFromStatisticsCache()
     /// The entry `runPostBuildPhase` publishes: the exact distinct count of the previous run of this
     /// query. The cache keeps it until a run finds less than half of it, so it overstates by at most 2x.
     /// It understates only when the data grew, and then the table grows during the build, as it did
-    /// before. Sized from it the table is the preallocation `HashJoin` made, counted in the same event.
+    /// before. A table sized from it counts as a preallocation (`HashJoinPreallocatedElementsInHashTables`).
     const auto hint = getSizeHint(stats_collecting_params);
     if (!hint || hint->ht_size > stats_collecting_params.max_size_to_preallocate)
         return false;
@@ -1681,8 +1677,7 @@ std::shared_ptr<IJoin> HashJoin::cloneWithBuildRowsHint(
     /// Every reachable clone path preserves a supported shape; re-checked so that a future caller
     /// which does not surfaces as an exception instead of wrong results.
     if (!isSupported(*table_join_))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: attempt to clone with a join shape the algorithm does not support");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: attempt to clone with a join shape the algorithm does not support");
     return std::make_shared<HashJoin>(
         table_join_,
         right_sample_block_,
@@ -1697,8 +1692,7 @@ std::shared_ptr<IJoin>
 HashJoin::cloneNoParallel(const std::shared_ptr<TableJoin> & table_join_, SharedHeader, SharedHeader right_sample_block_) const
 {
     if (!isSupported(*table_join_))
-        throw Exception(
-            ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: attempt to clone with a join shape the algorithm does not support");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: attempt to clone with a join shape the algorithm does not support");
     auto shard_join = std::make_shared<HashJoin>(
         table_join_, right_sample_block_, /*num_threads_=*/1, any_take_last_row, HashJoinStatsCollectingParams{}, /*max_bytes_before_external_join_=*/0, build_rows_hint);
     shard_join->parallel_non_joined_allowed = false;
@@ -1786,7 +1780,7 @@ Block HashJoin::releaseNextStoredBlock()
 BlocksList HashJoin::releaseJoinedBlocks(bool restructure)
 {
     if (build_phase_finished)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "PartitionedHashJoin: the right blocks were asked for after the build phase finished");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: the right blocks were asked for after the build phase finished");
 
     dropFillAuxiliary();
     BlocksList blocks;
@@ -1925,7 +1919,7 @@ size_t HashJoin::getKeysToJoin() const
     if (!data)
         return 0;
 
-    /// A running total: `HashJoin` sets it from its own table, and summing the maps would cost a pass per block.
+    /// A running total, set from the tables by `finishBuildPhase` and after every block of a Join table.
     return data->keys_to_join.load(std::memory_order_relaxed);
 }
 

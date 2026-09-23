@@ -267,7 +267,7 @@ void SpillingHashJoin::onBuildPhaseFinish()
             {
                 LOG_DEBUG(
                     log,
-                    "All blocks fit in memory ({} bytes, {} rows), promoting PartitionedHashJoin",
+                    "All blocks fit in memory ({} bytes, {} rows), promoting HashJoin",
                     partitioned_join->getTotalByteCount(),
                     partitioned_join->getTotalRowCount());
                 chosen_join = partitioned_join;

@@ -106,7 +106,7 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 ///   - bit 63 is 1: the key has exactly one row so far; the word IS the encoded RowRef (inline).
 ///   - bit 63 is 0 and the word is not 0: an 8-aligned arena pointer in bits 47..3, a count in
 ///     bits 62..48 (saturating; see COUNT_SAT), and a tag in bits 2..0 naming the layout:
-///       `TAG_BATCH` a `Batch` node (the standard `HashJoin` insert path, see below);
+///       `TAG_BATCH` a `Batch` node (the per-row insert of a Join table, see below);
 ///       `TAG_RUN`   a headerless block of `count` contiguous refs, `count` exact in [2, MAX_RANGE_REFS];
 ///       `TAG_CHAIN` a newest-first chain of ranges; the pointer is the newest range's 16-byte header.
 ///       `TAG_COUNT`, `TAG_FILL`, `TAG_FILL_H` are build-time words `HashJoin` never publishes.
@@ -621,7 +621,7 @@ private:
     /// stable across inserts, so this only rewrites the count bits of an already-resident cache line.
     /// Only the 48-bit bound is checked here, not the tag bits: a `Batch` is 8-aligned (see the
     /// `static_assert` below), so its pointer's tag bits are zero by construction. Checking them
-    /// would keep the old word live across `insert` for nothing (`insert` is the `HashJoin` build loop).
+    /// would keep the old word live across `insert` for nothing (`insert` is the build loop of a Join table).
     void setListWord(Batch * b, UInt64 total_rows_)
     {
         const UInt64 ptr = reinterpret_cast<UInt64>(b);
@@ -652,9 +652,8 @@ inline RowRefList refsOf(UInt64 word)
     return RowRefList::fromWord(word);
 }
 
-/// The run and chain layouts (`TAG_RUN`, `TAG_CHAIN`) of `forEachRef`, out of line: the standard
-/// `HashJoin` never publishes them. Keeping their decode out of the emit loop's inlined body lets
-/// that loop close on one conditional back-edge.
+/// The run and chain layouts (`TAG_RUN`, `TAG_CHAIN`) of `forEachRef`, out of line. Keeping their
+/// decode out of the emit loop's inlined body lets that loop close on one conditional back-edge.
 template <typename F>
 NO_INLINE void forEachRefOfRangeChain(UInt64 word, F & f)
 {
