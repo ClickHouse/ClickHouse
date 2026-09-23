@@ -42,6 +42,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
@@ -1090,7 +1091,12 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         return {};
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
-    if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+    /// A data lake answers `supportsReplication()` with `isDataLakeConfiguration()`, which says nothing about
+    /// concurrent writers. The Iceberg sink re-reads the metadata and retries a conflicting commit; the Delta
+    /// one does not, so its per-node commits race for a single log version.
+    const auto * object_storage = dynamic_cast<const StorageObjectStorage *>(dst_storage.get());
+    const bool lake_retries_conflicting_commits = object_storage && object_storage->isIcebergStorage();
+    if (!(dst_storage->isMergeTree() || lake_retries_conflicting_commits) || !dst_storage->supportsReplication())
         return {};
 
     if (!targetAbsorbsDistributedWrite(dst_storage))

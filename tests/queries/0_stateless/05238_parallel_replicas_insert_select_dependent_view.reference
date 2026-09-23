@@ -13,3 +13,6 @@ alias with a view on the alias: distributed write	0
 alias with a view on the alias: distributed read	1
 alias without any view: rows	60000
 alias without any view: distributed write	0
+non-replicating sink: rows	30000
+non-replicating sink: distributed write	0
+non-replicating sink: distributed read	1

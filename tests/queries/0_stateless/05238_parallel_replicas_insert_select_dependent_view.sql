@@ -4,6 +4,8 @@
 -- later read of the view from one replica misses the rows the others inserted. The distributed write is
 -- refused whenever a dependent view is reachable, and where the reachable set is not enumerable here at
 -- all (an `Alias` target), while a concrete replicated target without views keeps it (the first arm below).
+-- The last arm is the shape issue #121169 reported: a sink that does not replicate at all, where every
+-- replica resolves the same destination and only one replica's share of the rows survives.
 
 SET enable_analyzer = 1; -- parallel distributed insert select for replicated tables works only with analyzer
 SET automatic_parallel_replicas_mode = 0;
@@ -113,6 +115,27 @@ WHERE type = 'QueryStart' AND query_kind = 'Insert' AND log_comment = '05238_ali
     AND (current_database = currentDatabase() OR has(databases, currentDatabase()))
     AND event_date >= yesterday() AND event_time >= now() - 600;
 
+-- 5) A sink that does not replicate at all (issue #121169). Every replica's sink resolves the same
+-- destination file, so a distributed write would keep only one replica's share.
+DROP TABLE IF EXISTS dst_file;
+CREATE TABLE dst_file (k UInt64) ENGINE = File(TSV);
+
+INSERT INTO dst_file SELECT k FROM src SETTINGS log_comment = '05238_file';
+
+SELECT 'non-replicating sink: rows', count() FROM dst_file;
+SYSTEM FLUSH LOGS query_log;
+SELECT 'non-replicating sink: distributed write', count() > 1 FROM system.query_log
+WHERE type = 'QueryStart' AND query_kind = 'Insert' AND log_comment = '05238_file'
+    AND (current_database = currentDatabase() OR has(databases, currentDatabase()))
+    AND event_date >= yesterday() AND event_time >= now() - 600;
+SELECT 'non-replicating sink: distributed read',
+    maxIf(ProfileEvents['ParallelReplicasUsedCount'] > 0, is_initial_query)
+FROM system.query_log
+WHERE type = 'QueryFinish' AND query_kind = 'Insert' AND log_comment = '05238_file'
+    AND (current_database = currentDatabase() OR has(databases, currentDatabase()))
+    AND event_date >= yesterday() AND event_time >= now() - 600;
+
+DROP TABLE dst_file;
 DROP TABLE al;
 DROP TABLE dst_alias SYNC;
 DROP TABLE mv_repl;

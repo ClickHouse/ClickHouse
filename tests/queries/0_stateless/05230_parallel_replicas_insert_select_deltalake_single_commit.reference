@@ -4,3 +4,9 @@ commits after insert: 2
 rows	30000
 insert executions	1
 parallel read	1
+cluster source: commits after create: 1
+cluster source: insert: ok
+cluster source: commits after insert: 2
+cluster source: rows	30000
+cluster source: insert executions	1
+cluster source: distributed read	1

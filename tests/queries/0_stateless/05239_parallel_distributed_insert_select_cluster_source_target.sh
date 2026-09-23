@@ -9,7 +9,8 @@
 # target that does not replicate keeps a different subset of the rows on each node, and an `Alias`
 # reports the engine of the table it points at while owning views of its own that the check on the
 # forwarded-to table does not see. Both shapes fall back to the initiator. The first case below is the
-# control that the rig forwards the INSERT at all.
+# control that the rig forwards the INSERT at all, and the last one is the control for the opposite
+# direction: an Iceberg target keeps it.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -38,6 +39,10 @@ CREATE MATERIALIZED VIEW al_view TO al_view_dest AS SELECT k FROM al;
 CREATE TABLE dst_bare (k UInt64)
     ENGINE = ReplicatedMergeTree('/clickhouse/tables/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/05239_bare', 'r1') ORDER BY k;
 CREATE TABLE al_bare ENGINE = Alias(currentDatabase(), 'dst_bare');
+
+SET allow_experimental_insert_into_iceberg = 1;
+CREATE TABLE dst_iceberg (k UInt64)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}/iceberg', 'Parquet');
 "
 
 # Every INSERT runs first; the query log is flushed once, below, before the assertions.
@@ -46,6 +51,11 @@ for target in dst_plain dst_view al al_bare; do
     INSERT INTO ${target} SELECT k FROM ${SRC}
     SETTINGS parallel_distributed_insert_select = 2, enable_analyzer = 1, log_comment = '05239_${target}'"
 done
+
+${CLICKHOUSE_CLIENT} -q "
+INSERT INTO dst_iceberg SELECT k FROM ${SRC}
+SETTINGS parallel_distributed_insert_select = 2, enable_analyzer = 1,
+    allow_experimental_insert_into_iceberg = 1, log_comment = '05239_dst_iceberg'"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH LOGS query_log"
 
@@ -87,7 +97,13 @@ forwarded 'alias without any view: distributed write' al_bare
 distributed_read 'alias without any view: distributed read' al_bare
 ${CLICKHOUSE_CLIENT} -q "SELECT 'alias without any view: rows', count() FROM dst_bare"
 
+forwarded 'iceberg: distributed write' dst_iceberg
+${CLICKHOUSE_CLIENT} -q "SET allow_experimental_insert_into_iceberg = 1;
+    SELECT 'iceberg: rows', count() FROM dst_iceberg"
+
 ${CLICKHOUSE_CLIENT} -q "
+SET allow_experimental_insert_into_iceberg = 1;
+DROP TABLE dst_iceberg;
 DROP TABLE al_bare; DROP TABLE dst_bare SYNC;
 DROP TABLE al_view; DROP TABLE al_view_dest; DROP TABLE al; DROP TABLE dst_alias SYNC;
 DROP TABLE mv; DROP TABLE dst_view SYNC;

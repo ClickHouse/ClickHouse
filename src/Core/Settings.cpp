@@ -1493,7 +1493,7 @@ Since v25.4, `INSERT ... SELECT` from a `ReplicatedMergeTree` or `SharedMergeTre
 - `parallel_distributed_insert_select = 2`
 - `enable_parallel_replicas = 1`
 
-That form, and the one used when the `SELECT` reads a cluster table function such as `s3Cluster`, both run the whole `INSERT` on every node over that node's own slice of the read, so they apply only where each node's write becomes visible on all of the others. The `INSERT` falls back to running on the initiator alone when the target is reached through an `Alias`, and when a dependent materialized view is reachable from it: a view target that does not replicate would keep a different subset of the rows on each node.
+That form, and the one used when the `SELECT` reads a cluster table function such as `s3Cluster`, both run the whole `INSERT` on every node over that node's own slice of the read, so they apply only where each node's write becomes visible on all of the others. The `INSERT` falls back to running on the initiator alone when the target is a Delta Lake table, because the nodes would commit one transaction each and those commits race for a single log version; when the target is reached through an `Alias`; and when a dependent materialized view is reachable from it, because a view target that does not replicate would keep a different subset of the rows on each node. Reading stays distributed in all of those cases.
 )", 0) \
     DECLARE(UInt64, distributed_group_by_no_merge, 0, R"(
 Do not merge aggregation states from different servers for distributed query processing, you can use this in case it is for certain that there are different keys on different shards
