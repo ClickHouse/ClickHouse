@@ -55052,10 +55052,6 @@
     "source": "/zh/reference/settings/session-settings/window-view"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
-    "source": "/get-started/quickstarts/tutorial"
-  },
-  {
     "destination": "/products/cloud/guides/security/cloud-access-management/manage-cloud-users",
     "source": "/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments"
   },
