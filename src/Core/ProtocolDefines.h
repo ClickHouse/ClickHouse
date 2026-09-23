@@ -143,6 +143,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP
 /// plan setting name. Gates writing it in `AggregatingStep::serializeSettings` /
 /// `MergingAggregatedStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRING_KEYS_SETTING = 5;
+/// First global query-plan version that writes version 1 of `ArrayJoin`, which carries the
+/// `array_join_use_nulls` flag (bit 32). A step below version 1 with the flag set fails closed on both
+/// sides, because an older peer would silently pad with default values instead of `NULL`s.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS = 20;
 /// First query-plan serialization version that knows the `enable_adaptive_aggregator` and
 /// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
 /// `AggregatingStep::serializeSettings`.
