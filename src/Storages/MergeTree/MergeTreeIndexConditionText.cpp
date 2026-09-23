@@ -2072,7 +2072,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueSetNode(
             return false;
 
         /// `m['key']` is the key's first occurrence: is_rest = 0.
-        tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, /*is_rest=*/ false));
+        tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, false));
     }
 
     /// A query with no tokens reads as "nothing to search for", which direct read turns into an
