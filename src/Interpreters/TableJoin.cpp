@@ -592,7 +592,7 @@ void TableJoin::setUsedColumns(const Names & column_names)
     /// `column_names` may contain duplicates (e.g., from `ActionsDAG::getRequiredColumnsNames`
     /// when the DAG has multiple input nodes with the same name). We must not add more entries
     /// to `result_columns_from_left_table` / `columns_added_by_join` than actually exist
-    /// in the input columns, otherwise `HashJoin::getNonJoinedBlocks` will see a count mismatch.
+    /// in the input columns, otherwise `PartitionedHashJoin::getNonJoinedBlocks` will see a count mismatch.
     std::unordered_map<std::string_view, size_t> left_seen_count;
     std::unordered_map<std::string_view, size_t> right_seen_count;
 

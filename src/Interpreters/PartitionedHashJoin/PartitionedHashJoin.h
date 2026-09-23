@@ -115,7 +115,7 @@ public:
     /// change while this instance reads it.
     void shareJoinTable(const PartitionedHashJoin & source);
 
-    /// Keeps the storage's read lock for this instance's lifetime, as `HashJoin::setLock` does.
+    /// Keeps the storage's read lock for this instance's lifetime.
     void setLock(TableLockHolder holder) { storage_join_lock = std::move(holder); }
 
     /// A query's instance of a Join table is probed through `FilledJoinStep`: there is no right stream
@@ -129,7 +129,7 @@ public:
         return !shared_from_join_table && supportParallelNonJoinedBlocksProcessing();
     }
 
-    /// `joinGet` over the storage's instance, with the contract of `HashJoin::joinGet`. The key types
+    /// `joinGet` over the storage's instance. The key types
     /// and the result type are checked first. Then the keys are probed as one block with `LEFT ANY`
     /// semantics, and the requested column comes back with a default for every key not found.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;

@@ -175,15 +175,6 @@ PartitionedHashJoin::PartitionedHashJoin(
             [&](auto kind_, auto strictness_, auto & map_)
             { allocate_per_row_flags = MapGetter<kind_, strictness_, mapsKindOf<decltype(map_)>()>::flagged; });
 
-    /// `HashJoin`'s constructor derived the row store layout as `hash` builds it, so it gave way to the
-    /// rerange optimization. This join never reranges its rows: derive the layout without that rule.
-    if (hash_join->data->row_store_state == HashJoin::RowStoreState::Disabled && table_join->isRowStoreEnabled()
-        && hash_join->isRowStoreSupported() && hash_join->isRightTableRerangeEnabled())
-    {
-        hash_join->data->row_store_state = HashJoin::RowStoreState::Enabled;
-        hash_join->initRowStore(hash_join->data->sample_block, /*may_rerange=*/false);
-    }
-
     /// Sized once and never resized, because the lock-free paths index them without synchronizing
     /// against growth. Twice the thread count leaves room for pipelines with more transforms than
     /// threads; a lane index past the table takes the mutexed fallback.

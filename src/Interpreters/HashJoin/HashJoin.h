@@ -191,36 +191,10 @@ public:
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
-    /// Used by joinGet function that turns StorageJoin into a dictionary.
-    ColumnWithTypeAndName joinGet(const Block & block, const Block & block_with_columns_to_add) const;
-
-    bool isFilled() const override { return from_storage_join; }
-
-    void setTotals(const Block & block) override;
-    const Block & getTotals() const override;
-
-    JoinPipelineType pipelineType() const override
-    {
-        /// No need to process anything in the right stream if hash table was already filled
-        if (from_storage_join)
-            return JoinPipelineType::FilledRight;
-
-        /// Default pipeline processes right stream at first and then left.
-        return JoinPipelineType::FillRightFirst;
-    }
-
-    /** For RIGHT and FULL JOINs.
-      * A stream that will contain default values from left table, joined with rows from right table, that was not joined before.
-      * Use only after all calls to joinBlock was done.
-      * left_sample_block is passed without account of 'use_nulls' setting (columns will be converted to Nullable inside).
-      */
     IBlocksStreamPtr getNonJoinedBlocks(
         const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
 
     void onBuildPhaseFinish() override;
-
-    bool hasPostBuildPhase() const override;
-    void runPostBuildPhase() override;
 
     /// Number of unique keys in all built JOIN maps.
     size_t getTotalRowCount() const final;
@@ -519,17 +493,9 @@ public:
 
     using RightTableDataPtr = std::shared_ptr<RightTableData>;
 
-    /// We keep correspondence between used_flags and hash table internal buffer.
-    /// Hash table cannot be modified during HashJoin lifetime and must be protected with lock.
-    void setLock(TableLockHolder rwlock_holder)
-    {
-        storage_join_lock = rwlock_holder;
-    }
-
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks(bool restructure);
     /// One saved right block back in the structure of the right input, for an algorithm that takes
     /// the blocks over: the columns of `right_sample_block` by name, their nullability restored.
     static Block restoreRightBlock(const Block & saved_block, const Block & right_sample_block);
@@ -553,8 +519,6 @@ public:
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
 
-    /// Creates a row store based on the already initialized layout and fills from block columns.
-    RowDataStorePtr createRowStoreForBlock(const Block & block) const;
     /// Packs a prepared right block (`prepareRightBlock`) into its stored form. When the row store is
     /// initialized, the columns its layout admits go into a `RowDataStore` and the rest stay columnar.
     /// Otherwise every column stays columnar. A caller that already built this block's row store passes it in.
@@ -571,7 +535,6 @@ public:
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
 
 private:
-    friend class NotJoinedHash;
     friend class JoinSource;
     /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
     /// own partitioned maps. It needs the access the join methods have.
@@ -587,22 +550,17 @@ private:
     JoinKind kind;
     JoinStrictness strictness;
 
-    /// This join was created from StorageJoin and it is already filled.
-    bool from_storage_join = false;
-
     const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
 
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
-
-    mutable std::mutex totals_mutex;
 
     /// Right table data. StorageJoin shares it between many Join objects.
     /// Flags that indicate that particular row already used in join.
     /// Flag is stored for every record in hash map.
     /// Number of this flags equals to hashtable buffer size (plus one for zero value).
     /// Changes in hash table broke correspondence,
-    /// so we must guarantee constantness of hash table during HashJoin lifetime (using method setLock)
+    /// so we must guarantee constantness of hash table during HashJoin lifetime
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
 
     std::unique_ptr<MatchedRowsStats> matched_rows_stats;
@@ -647,10 +605,6 @@ private:
 
     LoggerPtr log;
 
-    /// Should be set via setLock to protect hash table from modification from StorageJoin
-    /// If set HashJoin instance is not available for modification (addBlockToJoin)
-    TableLockHolder storage_join_lock = nullptr;
-
     /// Unchecked as in without `doDebugAsserts`. That walk cannot run while `PartitionedHashJoin`'s threads append.
     size_t getTotalByteCountUnchecked() const;
 
@@ -675,23 +629,13 @@ private:
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
     bool needUsedFlagsForPerRightTableRow(std::shared_ptr<TableJoin> table_join_) const;
 
-    bool isRightTableRerangeEnabled() const;
-    bool rightTableCanBeReranged() const;
-    void tryRerangeRightTableData();
-
-    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS> // NOLINT(readability-identifier-naming)
-    void tryRerangeRightTableDataImpl(Map & map);
-
     bool isRowStoreSupported() const;
 
-    /// Layout is from the sample block, before any fill thread. `may_rerange` is false for a caller
-    /// that never reorders the stored rows. For such a caller the row store need not yield to the
-    /// rerange optimization.
-    void initRowStore(const Block & block, bool may_rerange = true);
+    /// Layout is from the sample block, before any fill thread.
+    void initRowStore(const Block & block);
 
     void reinitUsedFlags();
 
-    bool hasNonJoinedRows() const;
     bool recordsRowRefsForStats() const;
 
     void doDebugAsserts() const;

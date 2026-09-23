@@ -22,7 +22,7 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-/** RIGHT/FULL non-joined rows of the shared table; counterpart of `NotJoinedHash`. With per-offset
+/** RIGHT/FULL non-joined rows of the shared table. With per-offset
   * used flags, stream `i` of `n` owns cell positions `[i * cells / n, (i + 1) * cells / n)`. A
   * cell's used flag is its position plus one. Stream 0 also emits the zero-value cell and rows
   * whose keys were never inserted (saved null maps). With per-row used flags (`used_flags_per_row`:
@@ -189,8 +189,7 @@ private:
     template <bool with_row_store, bool with_columns, typename Mapped>
     void collectMapped(const Mapped & mapped, Collected & out) const
     {
-        /// The same walk as `CollectorNonJoined`, which is file-local to `HashJoin.cpp`. ASOF never
-        /// reaches here, being LEFT/INNER only.
+        /// ASOF never reaches here, being LEFT/INNER only.
         if constexpr (std::is_same_v<Mapped, RowRefList>)
         {
             for (auto it = mapped.begin(); it.ok(); ++it)
@@ -260,8 +259,8 @@ private:
         return collected.rows;
     }
 
-    /// Per-row used flags: every stored row nothing marked, whether it entered a table or not, as
-    /// `NotJoinedHash` walks them. The streams take the stored blocks round-robin by block number.
+    /// Per-row used flags: every stored row nothing marked, whether it entered a table or not.
+    /// The streams take the stored blocks round-robin by block number.
     template <bool with_row_store, bool with_columns>
     size_t fillFromStoredBlocks(MutableColumns & columns_right)
     {
@@ -287,8 +286,8 @@ private:
         return collected.rows;
     }
 
-    /// The rows that never entered the table, from the null maps saved when the build ended; as
-    /// `NotJoinedHash::fillNullsFromBlocks` does. Not partitioned, so exactly one stream emits them.
+    /// The rows that never entered the table, from the null maps saved when the build ended.
+    /// Not partitioned, so exactly one stream emits them.
     template <bool with_row_store, bool with_columns>
     void fillNullsFromBlocks(MutableColumns & columns_right, size_t & rows_added)
     {
@@ -347,8 +346,8 @@ IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
     if (!JoinCommon::hasNonJoinedBlocks(*table_join))
         return {};
 
-    /// The same check `HashJoin::getNonJoinedBlocks` makes, and skipped for the same shape: with several
-    /// clauses every right key is among the columns to add, so the invariant does not hold.
+    /// Skipped with several clauses: every right key is then among the columns to add, so the invariant
+    /// does not hold.
     size_t left_columns_count = left_sample_block.columns();
     if (hash_join->canRemoveColumnsFromLeftBlock())
         left_columns_count = table_join->getOutputColumns(JoinTableSide::Left).size();
