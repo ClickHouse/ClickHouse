@@ -11,13 +11,17 @@
 
 DROP TABLE IF EXISTS t_autopr_gate;
 DROP TABLE IF EXISTS t_autopr_gate_2;
+DROP TABLE IF EXISTS t_autopr_gate_log;
 
 -- ReplacingMergeTree so that the FINAL case below is a legal query; plain MergeTree rejects FINAL
 -- outright, and eligibility is otherwise identical (both are non-replicated MergeTree family).
 CREATE TABLE t_autopr_gate (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a;
 CREATE TABLE t_autopr_gate_2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+-- Not a MergeTree, so nothing in it can be read with replicas.
+CREATE TABLE t_autopr_gate_log (a UInt64) ENGINE = Log;
 INSERT INTO t_autopr_gate SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_autopr_gate_2 SELECT number, number % 10 FROM numbers(1000);
+INSERT INTO t_autopr_gate_log SELECT number FROM numbers(1000);
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
@@ -73,6 +77,15 @@ SELECT b, count() FROM t_autopr_gate GROUP BY b FORMAT Null
 SETTINGS parallel_replicas_for_non_replicated_merge_tree = 1, log_comment = 'autopr_gate_eligible_by_query_settings_2';
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 
+-- A `UNION` whose first branch cannot be read with replicas while a later one can. The eligibility
+-- check answers "possibly eligible" here - the walk it uses stops at the first branch, so its verdict
+-- on the rest of the query is worthless, and the planner does read the second branch with replicas.
+-- No candidate plan is built all the same: a plan containing a `UnionStep` fails
+-- `plan_is_simple_enough` in `considerEnablingParallelReplicas`, which never asks for one. Should that
+-- ever be relaxed, this line flips to 1 - which is the point, and not a regression.
+SELECT a FROM t_autopr_gate_log UNION ALL SELECT a FROM t_autopr_gate FORMAT Null
+SETTINGS log_comment = 'autopr_gate_union_eligible_branch_second';
+
 SYSTEM FLUSH LOGS query_log;
 
 SELECT log_comment, ProfileEvents['AutomaticParallelReplicasProbePlansBuilt'] > 0 AS candidate_plan_built
@@ -84,3 +97,4 @@ ORDER BY log_comment;
 
 DROP TABLE t_autopr_gate;
 DROP TABLE t_autopr_gate_2;
+DROP TABLE t_autopr_gate_log;
