@@ -116,10 +116,6 @@ if (ENABLE_GPU)
     add_subdirectory (GPU)
 
     add_headers_and_sources(dbms GPU)
-    list (REMOVE_ITEM dbms_sources
-        GPU/Cudf.cpp
-        GPU/CudfReduction.cpp
-    )
 endif ()
 
 if (ENABLE_EXAMPLES)

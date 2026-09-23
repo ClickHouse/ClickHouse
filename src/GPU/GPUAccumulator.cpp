@@ -47,7 +47,7 @@ GPUAccumulator::GPUAccumulator(
     , batch_bytes(std::clamp(batch_bytes_, element_size, max_batch_rows * element_size))
     , codec(codec_)
     , reduction(onDevice(
-          [&] { return IReduction::create(element_type, result_type, aggregation); },
+          [&] { return std::make_unique<CudfReduction>(element_type, result_type, aggregation); },
           "Cannot set up a `{}` of {} on the device",
           aggregationName(aggregation_),
           argument_type.getName()))
@@ -248,7 +248,7 @@ GroupByGPUAccumulator::GroupByGPUAccumulator(
     , key_pipes(pipesFor(key_types, batch_rows, compressed))
     , value_pipes(pipesFor(argument_types, batch_rows, compressed))
     , group_by(onDevice(
-          [&] { return IGroupBy::create(key_element_types, values); },
+          [&] { return std::make_unique<RecordGroupBy>(key_element_types, values); },
           "Cannot set up a `GROUP BY` over {} keys on the device",
           key_element_types.size()))
 {

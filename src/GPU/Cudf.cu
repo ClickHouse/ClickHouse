@@ -1,16 +1,67 @@
-#include <GPU/Cudf.h>
+#include <GPU/Cudf.cuh>
 
 #include <cudf/utilities/default_stream.hpp>
 
 #include <rmm/mr/cuda_async_view_memory_resource.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 
+#include <cxxabi.h>
+
+#include <cstdlib>
+#include <exception>
 #include <limits>
 #include <mutex>
 #include <string>
+#include <vector>
 
 namespace DB::GPU
 {
+
+namespace
+{
+
+std::string typeNameOf(const std::exception & exception)
+{
+    int status = 0;
+    char * demangled = abi::__cxa_demangle(typeid(exception).name(), nullptr, nullptr, &status);
+    std::string name = status == 0 && demangled ? demangled : typeid(exception).name();
+    std::free(demangled);
+    return name;
+}
+
+std::vector<std::exception_ptr> & foreignExceptions()
+{
+    static std::vector<std::exception_ptr> kept;
+    return kept;
+}
+
+std::mutex foreign_exceptions_mutex;
+
+}
+
+std::string describeForeign(const std::exception & exception)
+{
+    const std::string type = typeNameOf(exception);
+
+    /// Every exception cuDF and rmm throw derives from `std::logic_error` or `std::runtime_error`,
+    /// whose libstdc++ layout is the vtable pointer and then the message's characters, behind one
+    /// pointer; the standard exceptions without a message do not.
+    static const char * const without_message[] = {"bad_alloc", "bad_cast", "bad_typeid", "bad_function_call", "bad_variant_access", "bad_optional_access", "bad_exception", "std::exception"};
+    for (const char * bare : without_message)
+    {
+        if (type.find(bare) != std::string::npos)
+            return type;
+    }
+
+    const char * message = *reinterpret_cast<const char * const *>(reinterpret_cast<const char *>(&exception) + sizeof(void *));
+    return type + ": " + (message ? message : "");
+}
+
+void keepForeignAlive()
+{
+    std::lock_guard lock(foreign_exceptions_mutex);
+    foreignExceptions().push_back(std::current_exception());
+}
 
 void checkCuda(cudaError_t status, const std::string & what)
 {

@@ -7,8 +7,8 @@
 #include <GPU/GPUTypeMapping.h>
 #include <GPU/GPUTypes.h>
 #include <GPU/GPUUploadPipe.h>
-#include <GPU/IGroupBy.h>
-#include <GPU/IReduction.h>
+#include <GPU/RecordGroupBy.cuh>
+#include <GPU/CudfReduction.cuh>
 
 #include <Columns/IColumn.h>
 #include <Core/Field.h>
@@ -64,7 +64,7 @@ private:
     const size_t batch_bytes;
     const std::optional<GPUCodec> codec;
 
-    std::unique_ptr<IReduction> reduction;
+    std::unique_ptr<CudfReduction> reduction;
     UploadPipe pipe;
 };
 
@@ -225,7 +225,7 @@ private:
     std::vector<UploadPipe> key_pipes;
     std::vector<UploadPipe> value_pipes;
 
-    std::unique_ptr<IGroupBy> group_by;
+    std::unique_ptr<RecordGroupBy> group_by;
 
     std::optional<size_t> num_groups;
 

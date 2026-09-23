@@ -1,10 +1,12 @@
-#include <GPU/CudfReduction.h>
+#include <GPU/CudfReduction.cuh>
 
-#include <GPU/Cudf.h>
+#include <GPU/Cudf.cuh>
 
 #include <cudf/column/column_view.hpp>
 #include <cudf/reduction.hpp>
 #include <cudf/scalar/scalar.hpp>
+
+#include <rmm/device_buffer.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -105,18 +107,45 @@ constexpr size_t min_partials_bytes = 4096;
 
 }
 
-CudfReduction::CudfReduction(GPUElementType element_type_, GPUElementType result_type_, GPUAggregationKind aggregation_kind)
-    : element_type(element_type_)
-    , result_type(result_type_)
-    , output_type(cudfTypeOf(aggregation_kind == GPUAggregationKind::Sum ? result_type_ : element_type_))
-    , output_size(cudf::size_of(output_type))
-    , aggregation(reduceAggregationFor(aggregation_kind))
+struct CudfReduction::State
+{
+    const GPUElementType element_type;
+    const GPUElementType result_type;
+
+    /// What cuDF is asked to leave the result in: a `sum` accumulates in the wider result type,
+    /// a `min` or `max` stays in the input's.
+    const cudf::data_type output_type;
+
+    const size_t output_size;
+
+    const std::unique_ptr<cudf::reduce_aggregation> aggregation;
+
+    rmm::device_buffer partials;
+    size_t num_partials = 0;
+
+    State(GPUElementType element_type_, GPUElementType result_type_, GPUAggregationKind aggregation_kind)
+        : element_type(element_type_)
+        , result_type(result_type_)
+        , output_type(cudfTypeOf(aggregation_kind == GPUAggregationKind::Sum ? result_type_ : element_type_))
+        , output_size(cudf::size_of(output_type))
+        , aggregation(reduceAggregationFor(aggregation_kind))
+    {
+    }
+};
+
+CudfReduction::CudfReduction(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation)
 {
     if (sizeOf(result_type) != 8)
         throw CudfError(
             "a reduction into element type " + std::to_string(static_cast<int>(result_type)) + ", which is not eight bytes wide");
 
     initializeCudf();
+    state = new State(element_type, result_type, aggregation);
+}
+
+CudfReduction::~CudfReduction()
+{
+    delete state;
 }
 
 void CudfReduction::addBatch(DeviceColumnView values)
@@ -124,10 +153,13 @@ void CudfReduction::addBatch(DeviceColumnView values)
     if (values.rows == 0)
         throw CudfError("nothing to reduce");
 
+    auto & [element_type, result_type, output_type, output_size, aggregation, partials, num_partials] = *state;
+
     const rmm::cuda_stream_view stream = StreamRegistry::get().compute;
 
-    const std::unique_ptr<cudf::scalar> batch
-        = cudf::reduce(columnViewOf(values, element_type, "a batch of values"), *aggregation, output_type, stream);
+    const std::unique_ptr<cudf::scalar> batch = guarded(
+        "reducing a batch of " + std::to_string(values.rows) + " values",
+        [&] { return cudf::reduce(columnViewOf(values, element_type, "a batch of values"), *aggregation, output_type, stream); });
 
     if (batch->type() != output_type)
         throw CudfError(
@@ -151,6 +183,8 @@ void CudfReduction::addBatch(DeviceColumnView values)
 
 uint64_t CudfReduction::finalize()
 {
+    auto & [element_type, result_type, output_type, output_size, aggregation, partials, num_partials] = *state;
+
     if (num_partials == 0)
         return 0;
 
@@ -159,16 +193,12 @@ uint64_t CudfReduction::finalize()
     const cudf::column_view partial_column(output_type, static_cast<cudf::size_type>(num_partials), partials.data(), nullptr, 0);
     num_partials = 0;
 
-    const std::unique_ptr<cudf::scalar> value = cudf::reduce(partial_column, *aggregation, output_type, stream);
+    const std::unique_ptr<cudf::scalar> value
+        = guarded("reducing the batches' results", [&] { return cudf::reduce(partial_column, *aggregation, output_type, stream); });
     if (!value->is_valid(stream))
         throw CudfError("the device returned nothing for non-empty batches of values without nulls");
 
     return resultBitsOf(*value, result_type);
-}
-
-IReduction * IReduction::create(GPUElementType element_type, GPUElementType result_type, GPUAggregationKind aggregation)
-{
-    return new CudfReduction(element_type, result_type, aggregation);
 }
 
 }

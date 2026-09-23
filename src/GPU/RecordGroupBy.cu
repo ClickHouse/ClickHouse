@@ -1,6 +1,6 @@
 #include <GPU/RecordGroupBy.cuh>
 
-#include <GPU/Cudf.h>
+#include <GPU/Cudf.cuh>
 
 #include <cuco/static_set.cuh>
 
@@ -1248,10 +1248,13 @@ struct RecordGroupBy::State
 RecordGroupBy::RecordGroupBy(GPUSpan<GPUElementType> key_element_types_, GPUSpan<GPUGroupByValue> values_)
 {
     initializeCudf();
-    state = std::make_unique<State>(key_element_types_, values_);
+    state = guarded("setting up a `GROUP BY`", [&] { return new State(key_element_types_, values_); });
 }
 
-RecordGroupBy::~RecordGroupBy() = default;
+RecordGroupBy::~RecordGroupBy()
+{
+    delete state;
+}
 
 double RecordGroupBy::addBatch(
     GPUSpan<DeviceColumnView> keys, GPUSpan<DeviceColumnView> value_views, GPUSpan<DeviceColumnView> filter_columns, const GPUFilterProgram * filter)
@@ -1385,9 +1388,5 @@ void RecordGroupBy::copyGroupsOut(GPUSpan<HostColumnView> keys, GPUSpan<HostColu
     stream.synchronize();
 }
 
-IGroupBy * IGroupBy::create(GPUSpan<GPUElementType> key_element_types, GPUSpan<GPUGroupByValue> values)
-{
-    return new RecordGroupBy(key_element_types, values);
-}
 
 }

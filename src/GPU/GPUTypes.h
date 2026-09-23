@@ -15,10 +15,12 @@
   * because `libstdc++.so` comes last on the link line (see `cmake/linux/default_libs.cmake`), so a
   * `throw` on the cuDF side unwinds into a `catch (const std::exception &)` on this one, and
   * `what()` dispatches to the thrower's vtable. What must not cross is an object whose layout the
-  * two sides disagree on: the standard exception classes exist twice in the binary, and libc++'s
-  * `std::exception` is not even the same size as libstdc++'s. The cuDF side therefore throws its
-  * own `CudfError`, whose message and `what` are its own - see `Cudf.h`. cuDF's internal
-  * `CUDF_EXPECTS` failures are `std::logic_error`s built on the wrong side, and remain fatal.
+  * two sides disagree on: the standard exception classes exist twice in the binary, and the
+  * process binds the names both define - `what`, the destructors - to libc++'s definitions,
+  * which do not know the layout of a `std::logic_error` built on the cuDF side. The cuDF side
+  * therefore throws its own `CudfError`, whose message and `what` are its own, and wraps its
+  * calls into cuDF in `guarded`, which turns what cuDF throws into a `CudfError` without asking
+  * or destroying the original - see `Cudf.cuh`.
   */
 namespace DB::GPU
 {

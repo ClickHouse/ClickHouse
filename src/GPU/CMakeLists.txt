@@ -1,6 +1,6 @@
 add_library (clickhouse_gpu_cudf STATIC
-    Cudf.cpp
-    CudfReduction.cpp
+    Cudf.cu
+    CudfReduction.cu
     RecordGroupBy.cu
 )
 
