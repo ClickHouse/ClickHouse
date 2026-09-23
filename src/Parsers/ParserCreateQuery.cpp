@@ -272,9 +272,8 @@ bool ParserConstraintDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
 }
 
 
-bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+bool parseProjectionDeclarationBody(IParser::Pos & pos, Expected & expected, const String & name, ASTPtr & node)
 {
-    ParserIdentifier name_p;
     ParserProjectionSelectQuery query_p;
     ParserSetQuery settings_p(/* parse_only_internals_ = */ true);
     ParserToken s_lparen(TokenType::OpeningRoundBracket);
@@ -284,14 +283,10 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     ParserExpressionWithOptionalArguments type_p;
     ParserNotEmptyExpressionList expression_list_p(/* allow_alias_without_as_keyword */ false);
     ParserKeyword s_with_settings(Keyword::WITH_SETTINGS);
-    ASTPtr name;
     ASTPtr query;
     ASTPtr index;
     ASTPtr type;
     ASTPtr with_settings;
-
-    if (!name_p.parse(pos, name, expected))
-        return false;
 
     if (s_lparen.ignore(pos, expected))
     {
@@ -330,7 +325,7 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     }
 
     auto projection = make_intrusive<ASTProjectionDeclaration>();
-    projection->name = name->as<ASTIdentifier &>().name();
+    projection->name = name;
     if (query)
         projection->set(projection->query, query);
     if (index)
@@ -342,6 +337,15 @@ bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected &
     node = projection;
 
     return true;
+}
+
+bool ParserProjectionDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
+{
+    ParserIdentifier name_p;
+    ASTPtr name;
+    if (!name_p.parse(pos, name, expected))
+        return false;
+    return parseProjectionDeclarationBody(pos, expected, name->as<ASTIdentifier &>().name(), node);
 }
 
 bool ParserForeignKeyDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
@@ -710,10 +714,11 @@ bool ParserStorage::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
         }
 
-        /// For TABLE we only allow SETTINGS without ENGINE in order to support default_table_engine
-        /// Special handling is provided in InterpreterSetQuery::applySettingsFromQuery to differentiate between engine and query settings
-        /// For DATABASE we currently don't allow SETTINGS without ENGINE (it could be implemented in a similar fashion if necessary)
-        if ((engine_kind == TABLE_ENGINE || parsed_engine_keyword) && s_settings.ignore(pos, expected))
+        /// SETTINGS without ENGINE is allowed for both TABLE and DATABASE, so that the engine can come
+        /// from `default_table_engine` for a table and from the only default database engine (`Atomic`)
+        /// for a database. Special handling is provided in `InterpreterSetQuery::applySettingsFromQuery`
+        /// to differentiate between engine and query settings.
+        if (s_settings.ignore(pos, expected))
         {
             if (!settings_p.parse(pos, settings, expected))
                 return false;
@@ -921,7 +926,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         if (storage && storage->engine && (storage->engine->name == "TimeSeries"))
         {
             is_time_series_table = true;
-            ParserViewTargets({ViewTarget::Samples, ViewTarget::Tags, ViewTarget::Metrics, ViewTarget::RecentSamples}).parse(pos, targets, expected);
+            ParserViewTargets({ViewTarget::Samples, ViewTarget::RecentSamples, ViewTarget::Tags, ViewTarget::MetricFamilies}).parse(pos, targets, expected);
         }
 
         return true;
@@ -1952,6 +1957,7 @@ CREATE DICTIONARY ...
 CREATE FUNCTION ...
 CREATE NAMED COLLECTION ...
 CREATE USER | ROLE | ROW POLICY | MASKING POLICY | QUOTA | SETTINGS PROFILE ...
+CREATE TOKEN ...
 )",
         .related = {"ATTACH", "DROP", "CREATE TABLE", "CREATE DATABASE", "CREATE VIEW", "CREATE DICTIONARY"},
     });
@@ -2009,6 +2015,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 
 ### SETTINGS {#settings}
 
+The `SETTINGS` clause may be used without an `ENGINE` clause, in which case the default database engine
+(`Atomic`) is used. It may hold both settings of the database engine and ordinary query settings; each
+name is dispatched to whichever of the two it belongs to.
+
+#### disk {#disk}
+
+The disk used to store the table metadata files of the database. It can name a disk from the server
+configuration, or define one inline with the `disk` function, the same way a single table does:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+Applies to database engines that store table metadata on disk (`Atomic`, `Ordinary`). If unspecified,
+the disk defined in the `database_disk.disk` server setting is used.
+
 #### lazy_load_tables {#lazy-load-tables}
 
 When enabled, tables are not fully loaded during database startup. Instead, a lightweight proxy is created for each table and the real table engine is materialized on first access. This reduces startup time and memory usage for databases with many tables where only a subset is actively queried.
@@ -2017,7 +2040,7 @@ When enabled, tables are not fully loaded during database startup. Instead, a li
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-Applies to database engines that store table metadata on disk (e.g. `Atomic`, `Ordinary`). Views, materialized views, dictionaries, and tables backed by table functions are always loaded eagerly regardless of this setting.
+Applies to database engines that store table metadata on disk (e.g. `Atomic`, `Ordinary`). Views, materialized views, dictionaries, `Alias` tables, `TimeSeries` tables, and tables backed by table functions are always loaded eagerly regardless of this setting.
 
 **When to use:** This setting is useful for databases with a large number of tables (hundreds or thousands) where only a subset is actively queried. It reduces server startup time and memory usage by deferring the creation of table engine objects, scanning of data parts, and initialization of background threads until first access.
 
@@ -2101,14 +2124,21 @@ For replicating the schema and data of an existing table:
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-This creates a table with the same schema and data as an existing table.  After the new table is created, all partitions from `db.table` are attached to it. In other words, the data of `db.table` is cloned into `db2.table_clone` upon creation. This query is equivalent to the following:
+This creates a table with the same schema and data as an existing table.  After the new table is created, all partitions from `db.table` are attached to it. In other words, the data of `db.table` is cloned into `db2.table_clone` upon creation.
+
+<Note>
+`CLONE AS` is not supported when the destination database uses the [Replicated](/reference/engines/database-engines/replicated) database engine.
+
+Instead use:
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
 ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
 ```
+</Note>
 
-For both features, you can specify a different engine for the table. If the engine is not specified, the same engine will be used as for the original table (`db.table`).
+For both features, you can specify a different engine for the table.
+If the engine is not specified, the same engine will be used as for the original table (`db.table`).
 
 ### Create a table with a table function {#from-a-table-function}
 
@@ -2966,7 +2996,7 @@ ENGINE = MergeTree ORDER BY x;
 The specialized codecs above can shrink the right data dramatically, but choosing them takes expertise, and no single choice fits a column whose data changes over time. With the MergeTree setting [`enable_adaptive_codec_selection`](/reference/settings/merge-tree-settings) enabled, ClickHouse chooses for you. For columns that use the default codec (`CODEC(Default)` or no `CODEC` at all), each block is written with whichever codec would compress it smallest, chosen among the table's default codec, `NONE`, and specialized codecs suited to the column type.
 
 <Note>
-Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, and `IPv4`. Other columns select between the default codec and `NONE`.
+Specialized codecs are currently chosen for integers up to 64 bits, enums, dates and times, `Decimal32`/`Decimal64`, `IPv4`, and `Float32`/`Float64`. Other columns select between the default codec and `NONE` for their values.
 </Note>
 
 A block is never larger than the default codec would make it, and incompressible data is stored raw (compressing it would produce a slightly larger file that is slower to read). The work happens in the background, on merges and mutations, where the data is recompressed anyway. Insert speed is unaffected. Queries often get faster: less data is fetched from disk, every block a query reads must be decompressed first, and specialized codecs decompress faster than the default `LZ4`. Each block records the codec it was written with, so reading requires no setting, and the feature can be switched off at any time with all data remaining readable.
@@ -3253,7 +3283,7 @@ REFRESH [EVERY|AFTER interval [OFFSET interval]]
 [RANDOMIZE FOR interval]
 [DEPENDS ON [db.]name [, [db.]name [, ...]]]
 [SETTINGS name = value [, name = value [, ...]]]
-[APPEND]
+[APPEND [INCREMENTAL]]
 [TO[db.]name] [(columns)] [ENGINE = engine]
 [EMPTY]
 [DEFINER = { user | CURRENT_USER }] [SQL SECURITY { DEFINER | NONE }]
@@ -3269,11 +3299,12 @@ The `REFRESH` clause must specify at least one of `EVERY`, `AFTER`, or `DEPENDS 
 
 Periodically runs the corresponding query and stores its result into a table.
 * If `APPEND` is specified, each refresh inserts rows into the table without deleting existing rows. The insert is not atomic, just like a regular `INSERT INTO ... SELECT` query.
+* If `APPEND INCREMENTAL` is specified, each refresh runs the query over only the rows committed to the source table since the previous refresh, and appends the result.
 * Otherwise, each refresh atomically replaces the table's previous contents.
 
 Differences from regular non-refreshable materialized views:
 * No insert trigger. When new data is inserted into the table specified in `SELECT`, it's *not* automatically pushed to the refreshable materialized view. Instead, data insertion only takes place during the periodic or manual refresh runs.
-* No restrictions on the `SELECT` query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed.
+* No restrictions on the `SELECT` query. Table functions (e.g. `url()`), views, UNION, JOIN, are all allowed. `APPEND INCREMENTAL` is the one exception: it requires a single plain `MergeTree` source table with `enable_block_number_column = 1` and `enable_block_offset_column = 1`, and rejects `JOIN`, `UNION`, subqueries, views, and table functions.
 
 <Note>
 The settings in the `REFRESH ... SETTINGS` part of the query are refresh settings (e.g. `refresh_retries`), distinct from regular settings (e.g. `max_threads`). Regular settings can be specified using `SETTINGS` at the end of the query.
@@ -3431,7 +3462,7 @@ The schedule (`EVERY` or `AFTER`) is mandatory: the statement always replaces *a
 
 - `ALTER TABLE ... MODIFY SETTING refresh_retries = ...` is not supported on materialized views; you must go through `MODIFY REFRESH`.
 
-- Adding or removing `APPEND` is not supported.
+- Changing the refresh mode is not supported: `APPEND` and `INCREMENTAL` can neither be added nor removed.
 
 - The `all_replicas` setting cannot be changed after creation.
 </Note>
@@ -3767,6 +3798,7 @@ If the table was detached permanently, it won't be reattached at the server star
 ### With Specified Path to Table Data {#with-specified-path-to-table-data}
 
 The query creates a new table with provided structure and attaches table data from the provided directory in `user_files`.
+The user needs the `READ ON FILE` and `WRITE ON FILE` privileges for this query: it reads the directory and moves it to the data path of the new table.
 
 **Syntax**
 

@@ -20,7 +20,7 @@
 #include <Analyzer/AggregationUtils.h>
 #include <Analyzer/SetUtils.h>
 
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
@@ -42,6 +42,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -85,14 +86,13 @@ namespace Setting
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsUInt64 max_rows_in_set;
     extern const SettingsUInt64 max_bytes_in_set;
     extern const SettingsOverflowMode set_overflow_mode;
-    extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_correlated_subqueries;
     extern const SettingsBool rewrite_in_to_join;
     extern const SettingsMap additional_table_filters;
 }
@@ -437,9 +437,7 @@ bool hasLateAttachedTableFilter(
 
     const auto has_nontrivial_row_policy = [&](const ContextPtr & context)
     {
-        const auto row_policy_filter = context->getRowPolicyFilter(
-            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        return row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        return getEffectiveRowPolicyFilter(*table->getStorage(), context) != nullptr;
     };
 
     /// A scalar query can have its own context. Check both contexts even though they normally
@@ -471,6 +469,8 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || query.hasOrderBy()
         || query.hasLimitBy()
         || query.hasLimit()
+        || query.hasLimitAfter()
+        || query.hasLimitUntil()
         || query.hasOffset())
         return false;
 
@@ -667,9 +667,9 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     /// (`nullIn` compares `NULL`s, `in` does not), not of the `transform_null_in` setting, which
     /// only renames `in` to `nullIn` before this rewrite. Types that cannot be inside `Nullable`,
     /// such as `Array(...)` or `Map(...)`, are left as they are - the `Nullable` wrapper would be
-    /// rejected when the column is created. `Tuple(...)` is excluded explicitly, because it reports
-    /// that it can be inside `Nullable` while a `Nullable(Tuple(...))` column cannot be created by
-    /// default.
+    /// rejected when the column is created. `Tuple(...)` is left as it is as well: a tuple array
+    /// that contains `NULL` already has `Nullable(Tuple(...))` elements, and the tuple comparison
+    /// gives the same results as the scalar one without the wrapper.
     if ((rhs_has_null || !compare_nulls)
         && !isTuple(common_type))
         common_type = makeNullableOrLowCardinalityNullableSafe(common_type);
@@ -1843,10 +1843,10 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// the single-key shape just identified, which stays on the regular `IN` path.
                 /// Otherwise enabling `rewrite_in_to_join` alone would change query acceptance even
                 /// though no correlated rewrite happens.
-                if (!scope.context->getSettingsRef()[Setting::allow_experimental_correlated_subqueries])
+                if (!scope.context->getSettingsRef()[Setting::allow_correlated_subqueries])
                     throw Exception(
                         ErrorCodes::SUPPORT_IS_DISABLED,
-                        "Setting 'rewrite_in_to_join' requires 'allow_experimental_correlated_subqueries' to also be enabled");
+                        "Setting 'rewrite_in_to_join' requires 'allow_correlated_subqueries' to also be enabled");
 
                 /// Rewrite 'x IN subquery' to 'EXISTS (SELECT 1 FROM (SELECT * AS _unique_name_ FROM subquery) WHERE x = _unique_name_ LIMIT 1)'
 
@@ -1855,7 +1855,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
                 auto subquery_node = std::move(in_second_argument);
 
-                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+                /// Name the column after the subquery it projects rather than at random: two
+                /// identical `IN` expressions have to stay identical through the rewrite, or the
+                /// analyzer rejects a query that repeats one of them under a single alias with
+                /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` - a query it accepts without the rewrite. The
+                /// name only has to differ from the names of the outer scope, which the prefix
+                /// already takes care of.
+                const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
+                String unique_column_name
+                    = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
@@ -2237,7 +2245,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         allow_niladic_functions);
 
     /// Mask arguments if needed
-    if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!canDisplaySecrets(scope.context))
     {
         if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
@@ -2327,24 +2335,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
     {
         checkFunctionNodeHasEmptyNullsAction(function_node);
         if (scope.context->getSettingsRef()[Setting::transform_null_in])
-        {
-            static constexpr std::array<std::pair<std::string_view, std::string_view>, 4> in_function_to_replace_null_in_function_map =
-            {{
-                {"in", "nullIn"},
-                {"notIn", "notNullIn"},
-                {"globalIn", "globalNullIn"},
-                {"globalNotIn", "globalNotNullIn"},
-            }};
-
-            for (const auto & [in_function_name, in_function_name_to_replace] : in_function_to_replace_null_in_function_map)
-            {
-                if (function_name == in_function_name)
-                {
-                    function_name = in_function_name_to_replace;
-                    break;
-                }
-            }
-        }
+            function_name = getNullInFunctionName(function_name);
 
         auto & function_in_arguments_nodes = function_node.getArguments().getNodes();
         if (function_in_arguments_nodes.size() != 2)
@@ -2531,7 +2522,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                     /// element into the tuple type, so a non-parseable value raises the same parsing
                     /// error (e.g. `('a', 'b') IN (_table)` over a `merge` table) instead of
                     /// `NO_COMMON_TYPE`. The cast target stays non-`Nullable`: `Nullable(Tuple)`
-                    /// columns are gated by `allow_experimental_nullable_tuple_type`, and the
+                    /// columns are gated by `enable_nullable_tuple_type`, and the
                     /// constant `Set` path throws for a non-parseable tuple element rather than
                     /// skipping it, so a throwing `CAST` matches it.
                     if (left_is_tuple && !right_is_tuple)

@@ -29,6 +29,9 @@ public:
     std::string getName() const override { return "PasteJoin"; }
     const TableJoin & getTableJoin() const override { return *table_join; }
 
+    /// The left and right blocks are concatenated side by side by row position.
+    bool preservesLeftBlockOrder() const override { return true; }
+
     bool addBlockToJoin(const Block & /* block */, bool /* check_limits */) override
     {
         throw Exception(ErrorCodes::LOGICAL_ERROR, "PasteJoin::addBlockToJoin should not be called");

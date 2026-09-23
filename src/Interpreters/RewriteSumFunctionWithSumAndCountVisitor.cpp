@@ -12,7 +12,12 @@ namespace DB
 void RewriteSumFunctionWithSumAndCountMatcher::visit(ASTPtr & ast, const Data & data)
 {
     if (auto * func = ast->as<ASTFunction>())
+    {
+        if (func->isWindowFunction())
+            return;
+
         visit(*func, ast, data);
+    }
 }
 
 /** Rewrites `sum(column +/- literal)` into two individual functions

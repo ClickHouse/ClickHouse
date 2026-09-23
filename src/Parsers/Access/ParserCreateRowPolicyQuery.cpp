@@ -340,7 +340,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -349,7 +349,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -358,7 +358,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -372,6 +372,8 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 A multi-name list **cannot** be combined with a multi-table `ON` list in one group: `p1, p2 ON t1, t2` is rejected. After a multi-name group, you also cannot append another comma-separated `name ON target` group in the same statement.
 
 Optional `ON CLUSTER` applies to the whole statement (one cluster name). ClickHouse does **not** accept a different `ON CLUSTER` per policy name packed into a single create — run separate `CREATE ROW POLICY` statements when policies must be created on different clusters.
+
+`CREATE ROW POLICY` requires the [CREATE ROW POLICY](/reference/statements/grant#access-management) privilege on the table the policy is created on. `OR REPLACE` throws away an existing policy of the same name, including which roles it applies to, so it additionally requires the [DROP ROW POLICY](/reference/statements/grant#access-management) privilege on that table. The `DROP ROW POLICY` privilege is required whether or not the policy already exists, so the statement cannot be used to find out which policies exist.
 
 ## Multiple names and tables {#multiple-names-and-tables}
 
@@ -420,6 +422,8 @@ In the `TO` section you can provide a list of users and roles this policy should
 
 Keyword `ALL` means all the ClickHouse users, including current user. Keyword `ALL EXCEPT` allows excluding some users from the all users list, for example, `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
+Roles named in the `TO` section, including those after `ALL EXCEPT`, are matched against the current user's enabled roles ([`system.enabled_roles`](/reference/system-tables/enabled_roles)), not against every role granted to the user, so [`SET ROLE`](/reference/statements/set-role) can change which policies apply.
+
 ## AS Clause {#as-clause}
 
 It's allowed to have more than one policy enabled on the same table for the same user at one time. So we need a way to combine the conditions from multiple policies.
@@ -440,9 +444,11 @@ A policy can be defined as restrictive as an alternative. Restrictive policies a
 Here is the general formula:
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+If no permissive condition applies, the first condition has no effect and only the restrictive policies decide, because `access_control_improvements.users_without_row_policies_can_read_rows` is enabled by default. A user to whom no condition applies therefore sees every row, and `access_control_improvements.throw_on_unmatched_row_policies`, disabled by default, raises an exception instead when the table does have conditions and none of them apply.
 
 For example, the following policies:
 
@@ -464,6 +470,12 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 
 enable the user `peter` to see table1 rows only if both `b=1` AND `c=2`, although
 any other table in mydb would have only `b=1` policy applied for the user.
+
+## Tables that read from other tables {#tables-that-read-from-other-tables}
+
+A row policy filters rows where the data is actually read. An `Alias` table returns the rows of its target table as its own, so the row policies of the target apply to reads through the alias as well, combined with the policies of the alias itself using a logical `AND`. A `Merge` table applies the policies of the tables it reads from. One exception: when a matched table reads remotely, such as a `Distributed` table, the remote server processes the query before the policy is applied, because the policy runs above that table's read rather than at the read. Such a query can fail, when it aggregates without selecting the policy's columns, or return fewer rows than the policy allows, when the remote server applies an `ORDER BY ... LIMIT` to rows the policy would have hidden. Define the policy on the underlying local tables of each remote server instead.
+
+This does not extend to every table that reads from another table. A `Buffer` table and a materialized view read through their destination or target table do **not** inherit that table's row policies: the policy is written against the target's schema and, for a view with `SQL SECURITY DEFINER`, is evaluated for a different user than the one running the read. Define the policy on the table users actually query in those cases.
 
 ## Distributed and remote-backed tables {#distributed-and-remote-backed-tables}
 
@@ -553,7 +565,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 )",

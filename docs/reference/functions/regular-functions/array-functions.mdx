@@ -72,7 +72,7 @@ Introduced in: v20.4.0
 
 Calculates the area under the precision-recall (PR) curve.
 A precision-recall curve is created by plotting precision on the y-axis and recall on the x-axis across all thresholds.
-The resulting value ranges from 0 to 1, with a higher value indicating better model performance.
+The resulting value ranges from 0 to 1, with a higher value indicating better model performance, unless a score is `NaN`, in which case the result is `NaN`.
 The PR AUC is particularly useful for imbalanced datasets, providing a clearer comparison of performance compared to ROC AUC on those cases.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
 
@@ -105,7 +105,7 @@ For example:
 
 **Returned value**
 
-Returns area under the precision-recall (PR) curve. [`Float64`](/reference/data-types/float)
+Returns area under the precision-recall (PR) curve, or `NaN` if any score is `NaN`. [`Float64`](/reference/data-types/float)
 
 **Examples**
 
@@ -715,7 +715,11 @@ Negative indexes are supported. In this case, the corresponding element is selec
 
 Operator `[n]` provides the same functionality.
 
-The first argument may also be a [QBit](/reference/data-types/qbit): the n-th vector element is reconstructed at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+The first argument may also be:
+
+- a [`Map`](/reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
+- a [`QBit`](/reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+- a [`JSON`](/reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
     
 
 **Syntax**
@@ -726,11 +730,11 @@ arrayElement(arr, n)
 
 **Arguments**
 
-- `arr` — The array to search. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). 
+- `arr` — The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit), [`JSON`](/reference/data-types/newjson) or `Nullable(JSON)`. - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `JSON` argument, a constant [`String`](/reference/data-types/string) path. 
 
 **Returned value**
 
-When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. [`Any`](/reference/data-types/index) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
+When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` returns the value of type `V`, for a `JSON` the value stored at the path. [`Any`](/reference/data-types/index) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
 
 **Examples**
 
@@ -784,6 +788,26 @@ SELECT [10, 20, 30, 40][[2, 4, 1]]
 [20,40,10]
 ```
 
+**Map key access**
+
+```sql title=Query
+SELECT map('a', 1, 'b', 2)['b']
+```
+
+```response title=Response
+2
+```
+
+**JSON bracket access**
+
+```sql title=Query
+SELECT json['a'] FROM (SELECT '{"a" : 42}'::JSON AS json)
+```
+
+```response title=Response
+42
+```
+
 ## arrayElementOrNull {#arrayElementOrNull}
 
 Introduced in: v1.1.0
@@ -803,6 +827,9 @@ Arrays in ClickHouse are one-indexed.
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
 
+The first argument may also be a [`Map`](/reference/data-types/map): an absent key gives `NULL` instead of the default value of the value type, as long as that type can be wrapped in `Nullable`.
+[`JSON`](/reference/data-types/newjson) is not supported here, use `arrayElement` instead.
+
 **Syntax**
 
 ```sql
@@ -811,11 +838,11 @@ arrayElementOrNull(arr, n)
 
 **Arguments**
 
-- `arr` — The array to search. [`Array(T)`](/reference/data-types/array). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). 
+- `arr` — The value to read an element from. [`Array(T)`](/reference/data-types/array) or [`Map(K, V)`](/reference/data-types/map). - `n` — Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`. 
 
 **Returned value**
 
-When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. [`Any`](/reference/data-types/index) or [`Nullable(T)`](/reference/data-types/nullable) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
+When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` the same rule applies to the value type `V`. [`Any`](/reference/data-types/index) or [`Nullable(T)`](/reference/data-types/nullable) or [`Array(T)`](/reference/data-types/array) or [`Array(Nullable(T))`](/reference/data-types/array)
 
 **Examples**
 
@@ -857,6 +884,16 @@ SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])
 
 ```response title=Response
 [10,NULL,20]
+```
+
+**Absent map key**
+
+```sql title=Query
+SELECT arrayElementOrNull(map('a', 1), 'z')
+```
+
+```response title=Response
+\N
 ```
 
 ## arrayEnumerate {#arrayEnumerate}
@@ -1557,6 +1594,76 @@ SELECT arrayFlatten([[[1]], [[2], [3]]]);
 
 ```response title=Response
 [1,2,3]
+```
+
+## arrayFlattenedLength {#arrayFlattenedLength}
+
+Introduced in: v26.9.0
+
+Returns the total number of elements of a multidimensional array, as if it was flattened with the [`arrayFlatten`](/reference/functions/regular-functions/array-functions#arrayFlatten) function.
+
+Function:
+
+- Applies to any depth of nested arrays.
+- Is equivalent to [`length`](/reference/functions/regular-functions/array-functions#length) for arrays that are already flat.
+- Follows only `Array` nesting. The elements are counted at the first level that is not an array, so elements of a nested [`Map`](/reference/data-types/map), [`Tuple`](/reference/data-types/tuple), [`Dynamic`](/reference/data-types/dynamic) or [`Variant`](/reference/data-types/variant) are not counted individually, even when they hold arrays themselves.
+
+This is the equivalent of `cardinality` in PostgreSQL, whereas in ClickHouse `cardinality` is an alias of `length` and counts only the elements of the outermost array.
+
+**Syntax**
+
+```sql
+arrayFlattenedLength(arr)
+```
+
+**Arguments**
+
+- `arr` — A possibly multidimensional array. [`Array(T)`](/reference/data-types/array)
+
+**Returned value**
+
+Returns the number of elements of the array after all nested arrays are flattened. [`UInt64`](/reference/data-types/int-uint)
+
+**Examples**
+
+**Nested array**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[1, 2], [3, 4]]);
+```
+
+```response title=Response
+4
+```
+
+**Deeper nesting**
+
+```sql title=Query
+SELECT arrayFlattenedLength([[[1]], [[2], [3]]]);
+```
+
+```response title=Response
+3
+```
+
+**Flat array**
+
+```sql title=Query
+SELECT arrayFlattenedLength([1, 2, 3]);
+```
+
+```response title=Response
+3
+```
+
+**Non-array elements are not traversed**
+
+```sql title=Query
+SELECT arrayFlattenedLength([map('a', [1, 2, 3])]);
+```
+
+```response title=Response
+1
 ```
 
 ## arrayFold {#arrayFold}
@@ -2767,7 +2874,8 @@ Introduced in: v20.4.0
 
 Calculates the area under the receiver operating characteristic (ROC) curve.
 A ROC curve is created by plotting True Positive Rate (TPR) on the y-axis and False Positive Rate (FPR) on the x-axis across all thresholds.
-The resulting value ranges from zero to one, with a higher value indicating better model performance.
+With `scale` set to true, the default, the resulting value ranges from zero to one, with a higher value indicating better model performance, and the result is `NaN` when the ROC AUC is undefined, for example if there are no positive or no negative labels.
+A `NaN` score always produces a `NaN` result.
 
 The ROC AUC (also known as simply AUC) is a concept in machine learning.
 For more details, please see [here](https://developers.google.com/machine-learning/glossary#pr-auc-area-under-the-pr-curve), [here](https://developers.google.com/machine-learning/crash-course/classification/roc-and-auc#expandable-1) and [here](https://en.wikipedia.org/wiki/Receiver_operating_characteristic#Area_under_the_curve).
@@ -2803,7 +2911,7 @@ For example:
 
 **Returned value**
 
-Returns area under the receiver operating characteristic (ROC) curve. [`Float64`](/reference/data-types/float)
+Returns area under the receiver operating characteristic (ROC) curve. Returns `NaN` if a score is `NaN`, and, when `scale` is true, also when the ROC AUC is undefined because there are no positive or no negative labels. [`Float64`](/reference/data-types/float)
 
 **Examples**
 

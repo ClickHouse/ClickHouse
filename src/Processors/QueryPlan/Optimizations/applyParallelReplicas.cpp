@@ -1,9 +1,16 @@
+#include <functional>
 #include <memory>
+#include <optional>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 #include <Core/Joins.h>
 #include <Core/Settings.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -26,9 +33,13 @@
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/TotalsHavingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/SelectQueryInfo.h>
+#include <Storages/StorageMerge.h>
 #include <Common/logger_useful.h>
 
 #include <unordered_set>
@@ -37,6 +48,7 @@ namespace DB
 {
 namespace Setting
 {
+extern const SettingsBool parallel_replicas_allow_merge_tables;
 extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
 }
 
@@ -45,8 +57,20 @@ namespace QueryPlanOptimizations
 
 constexpr bool debug_logging_enabled = false;
 
+/// Placeholder kept in a distributed fragment whose own output columns were all pruned away.
+constexpr std::string_view fragment_dummy_result_name = "__parallel_replicas_fragment_dummy";
+
 /// Plan-wide collector of the MergeTree reads to distribute (defined below; used by buildPlanFragment).
-static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node);
+/// A `MergeTree` read the pass would distribute, and the table it reads. A `Merge` read contributes one
+/// entry per underlying table while `consider_merges` is set - all sharing that one node - which is what the
+/// duplicate check of a union needs in order to judge a plan before any `Merge` is expanded.
+struct ReadToDistribute
+{
+    QueryPlan::Node * node;
+    StorageID storage_id;
+};
+
+static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges = false);
 
 /// Side of a JOIN; `Left`/`Right` double as the join node's child indices.
 enum class JoinSide : size_t
@@ -99,6 +123,18 @@ static bool mergeTreeReadCanBeShipped(const ReadFromMergeTree & read)
     if (read.isSelectedForTopKFilterOptimization())
         return false;
 
+    /// Direct read from a text index (`query_plan_direct_read_from_text_index`) rewrites the text-search
+    /// functions of the read's PREWHERE into `__text_index_*` virtual columns, which only this read's
+    /// index read tasks materialize. `ReadFromMergeTree::serialize` does not carry that task map, so a
+    /// replica deserializing the fragment fails with `Column '__text_index_...' not found in table`
+    /// while building the read step. Shipping it also breaks execution when PREWHERE and WHERE carry
+    /// different text-search queries, see https://github.com/ClickHouse/ClickHouse/issues/113664.
+    /// `supportsBucketedRead` refuses a bucketed distributed read for the same reason, but nothing
+    /// rejects an ordinary shipped fragment - `isSerializable` is unconditionally true for this step -
+    /// so the read has to be kept local here, as for Top-K above.
+    if (!read.getIndexReadTasks().empty())
+        return false;
+
     /// The pinned block-number boundary is not serialized: a follower rebuilds the read with
     /// max_block_numbers_to_read = nullptr and would read past the initiator's snapshot boundary.
     if (read.hasPinnedBlockNumbers())
@@ -142,6 +178,138 @@ static bool subtreeIsShippable(const QueryPlan::Node * node)
         "Keeping the plan fragment local: step '{}' is not serializable for remote execution",
         offending->step->getName());
     return false;
+}
+
+/// True if `predicate` holds for any `ActionsDAG` a step in this subtree hands to its `serialize` - a
+/// filter, an expression, a join's `ON` conditions, a `HAVING` over totals, or a source step's row-level
+/// filter and PREWHERE. Only those DAGs are visited, because only they reach a replica; a step which
+/// serializes a DAG not listed here would escape every check built on this walk. Child plans are walked
+/// too, so a subplan held by a step (`ReadFromMerge`) is not invisible.
+static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate);
+
+/// True if the DAG references an `IN`/`NOT IN` subquery set which cannot be shipped. This path always
+/// ships such a set as its subquery plan, never as data: `serializeSets` takes the `SubqueryPlan` branch
+/// unless `sets_must_be_ready` is set, which only `QueryPlan::serializeForDistributedTask` (the worker-task
+/// path) does - `ensureSerialized` here goes through `QueryPlan::serialize`. Every replica then rebuilds
+/// the set from that plan, so it is unshippable in three cases:
+/// - the plan is missing: the subquery source is non-clonable and took the destructive in-place build
+///   (dictionary / system-table subquery, nested `IN`, or a `GLOBAL IN` external table), which throws
+///   `Cannot serialize FutureSetFromSubquery with no query plan`;
+/// - the plan is there but holds a step with no `serialize`. `generateRandom()` is such a source: it is
+///   read through `ReadFromStorageStep`, whose `isSerializable` accepts only `system.one`, and shipping it
+///   throws `Method serialize is not implemented`. A present plan says nothing about serializability, so
+///   the plan itself has to be checked;
+/// - the plan is serializable but not deterministic. Rebuilding it per replica would then give each one a
+///   different set, and an `IN` is supposed to compare against a single set - wrong rows, no exception.
+///   `rand()` is the example: unlike `now()`, it is not constant-folded (folding needs a `ColumnConst`
+///   result), so it reaches the replicas as a live function and each evaluates it itself.
+static bool dagReferencesUnshippableSubquerySet(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (!node.column || !WhichDataType(node.result_type).isSet())
+            continue;
+        const auto * column_set = typeid_cast<const ColumnSet *>(node.column->getDataColumnPtr().get());
+        if (!column_set)
+            continue;
+        const auto future_set = column_set->getData();
+        const auto * from_subquery = typeid_cast<const FutureSetFromSubquery *>(future_set.get());
+        if (!from_subquery)
+            continue;
+
+        const auto * subquery_plan = from_subquery->getQueryPlan();
+        if (!subquery_plan)
+            return true;
+
+        if (const auto * offending = findNonSerializableStep(subquery_plan->getRootNode()))
+        {
+            LOG_DEBUG(
+                getLogger("ApplyParallelReplicas"),
+                "Keeping the plan fragment local: step '{}' of an IN-subquery set is not serializable for "
+                "remote execution",
+                offending->step->getName());
+            return true;
+        }
+
+        /// `dagContainsNonDeterministicFunction` asks for determinism *within* one query, which is the right
+        /// question here: `now()` and friends are folded to their value on the initiator and the value is
+        /// what gets serialized, so only a function which is recomputed per row - and therefore per replica -
+        /// is rejected.
+        if (checkQueryPlanActionDAGs(subquery_plan->getRootNode(), dagContainsNonDeterministicFunction))
+        {
+            LOG_DEBUG(
+                getLogger("ApplyParallelReplicas"),
+                "Keeping the plan fragment local: an IN-subquery set is not deterministic, so every replica "
+                "would build a different one");
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool checkQueryPlanActionDAGs(const QueryPlan::Node * node, const std::function<bool(const ActionsDAG &)> & predicate)
+{
+    if (!node)
+        return false;
+
+    auto * step = node->step.get();
+    if (const auto * filter = typeid_cast<const FilterStep *>(step))
+    {
+        if (predicate(filter->getExpression()))
+            return true;
+    }
+    else if (const auto * expression = typeid_cast<const ExpressionStep *>(step))
+    {
+        if (predicate(expression->getExpression()))
+            return true;
+    }
+    else if (const auto * join = typeid_cast<const JoinStepLogical *>(step))
+    {
+        /// `JoinStepLogical::serialize` writes this one DAG; `join_operator` (the `ON` conditions and the
+        /// residual filter) and `actions_after_join` are only node ids into it. An `ON` conjunct which reads
+        /// the preserved side of an outer join stays here instead of being pushed down to that side - see
+        /// `canPushDownFromOn` - so this is where such a set is found.
+        if (predicate(join->getActionsDAG()))
+            return true;
+    }
+    else if (const auto * totals_having = typeid_cast<const TotalsHavingStep *>(step))
+    {
+        /// A fragment never holds the outer query's `HAVING` - it ends at the partial aggregation, and
+        /// `HAVING` runs above the merge on the initiator. A set's subquery plan is shipped whole, though,
+        /// so `IN (SELECT ... GROUP BY ... WITH TOTALS HAVING ...)` does put one in the walked plan.
+        if (const auto * actions = totals_having->getActions())
+            if (predicate(*actions))
+                return true;
+    }
+    else if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(step))
+    {
+        /// Both are serialized with the read (`ReadFromMergeTree::serialize` writes `row_level_filter` and
+        /// `prewhere_info`), and index analysis builds the sets of both in place, so either can carry a set
+        /// whose plan is gone. A row policy (`USING k IN (SELECT ...)`) reaches the read this way.
+        if (const auto row_level_filter = source_with_filter->getRowLevelFilter())
+            if (predicate(row_level_filter->actions))
+                return true;
+
+        if (const auto prewhere_info = source_with_filter->getPrewhereInfo())
+            if (predicate(prewhere_info->prewhere_actions))
+                return true;
+    }
+
+    for (auto * child_plan : step->getChildPlans())
+        if (child_plan && checkQueryPlanActionDAGs(child_plan->getRootNode(), predicate))
+            return true;
+
+    for (const auto * child : node->children)
+        if (checkQueryPlanActionDAGs(child, predicate))
+            return true;
+    return false;
+}
+
+/// True if any step in the fragment references a subquery set which cannot be shipped. Used to keep that
+/// fragment local instead of shipping it.
+static bool fragmentHasUnshippableSubquerySet(const QueryPlan::Node * node)
+{
+    return checkQueryPlanActionDAGs(node, dagReferencesUnshippableSubquerySet);
 }
 
 class ApplyParallelReplicasVisitor : public QueryPlanVisitor<ApplyParallelReplicasVisitor, debug_logging_enabled>
@@ -424,6 +592,13 @@ public:
         // build plan fragment
         auto [plan_fragment, context] = buildPlanFragment(current_node);
 
+        /// The fragment is serialized and shipped to the replicas. An `IN` set is only ever shipped as its
+        /// subquery plan, so a referenced set whose plan is missing or unserializable makes the whole
+        /// fragment unserializable. Keep it local: leaving the split marker unconverted makes it a
+        /// pass-through, so the read runs single-node.
+        if (fragmentHasUnshippableSubquerySet(plan_fragment->getRootNode()))
+            return;
+
         auto parallel_replicas_plan = ClusterProxy::createParallelReplicasPlan(std::move(plan_fragment), context);
         if (!parallel_replicas_plan)
             return;
@@ -439,12 +614,24 @@ private:
         /// throw on a branching fragment (e.g. a view expanding to UNION ALL, or a JOIN).
         auto plan_fragment = std::make_unique<QueryPlan>(QueryPlan::cloneSubtree(split_node->children.front(), query_plan));
 
+        /// A fragment's result travels back from the replicas as a Block, whose row count is the size of
+        /// its first column, so a fragment with no output columns cannot report how many rows it produced.
+        /// Keep one materialized column so that count is always representable.
+        if (plan_fragment->getCurrentHeader()->columns() == 0)
+        {
+            auto adding_dummy = ActionsDAG::makeAddingConstantColumnActions(
+                String(fragment_dummy_result_name), std::make_shared<DataTypeUInt8>(), Field(0));
+            auto dummy_step = std::make_unique<ExpressionStep>(plan_fragment->getCurrentHeader(), std::move(adding_dummy));
+            dummy_step->setStepDescription("Materialize dummy column of a distributed plan fragment");
+            plan_fragment->addStep(std::move(dummy_step));
+        }
+
         ContextPtr context;
         /// Mark only the coordinated reads (collectReadsToDistribute follows a join's coordinated side) so they
         /// are deserialized in parallel-reading mode; the other side stays unmarked and is broadcast.
-        for (auto * read_node : collectReadsToDistribute(plan_fragment->getRootNode()))
+        for (const auto & read : collectReadsToDistribute(plan_fragment->getRootNode()))
         {
-            auto * read_step = typeid_cast<ReadFromMergeTree *>(read_node->step.get());
+            auto * read_step = typeid_cast<ReadFromMergeTree *>(read.node->step.get());
             read_step->enableParallelReadingFromReplicasForSerialization();
             context = read_step->getContext();
         }
@@ -461,7 +648,7 @@ private:
 /// reads are left local): the parallel-replicas coordinator drives every read of a shipped fragment and
 /// cannot distinguish duplicate announcements for one table, so such a union must not become a single
 /// distributed fragment (mirrors StorageView::getUnderlyingMergeTreeStorageForParallelReplicas).
-static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node * node)
+static std::vector<ReadToDistribute> collectReadsToDistribute(QueryPlan::Node * node, bool consider_merges)
 {
     if (!node)
         return {};
@@ -470,25 +657,44 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
     {
         if (!mergeTreeReadCanBeShipped(*read))
             return {};
-        return {node};
+        return {{node, read->getMergeTreeData().getStorageID()}};
+    }
+
+    /// A `Merge` read is still opaque at this point, so answer for the union it would be expanded into: the
+    /// reads of its underlying tables, all attributed to this node. That makes the verdict below - including
+    /// the duplicate check of an enclosing union - the same one the expanded plan would get, so the plan is
+    /// rewritten only when the rewrite is of use.
+    if (consider_merges)
+    {
+        if (auto * merge = typeid_cast<ReadFromMerge *>(node->step.get()))
+        {
+            if (!merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                return {};
+
+            const auto & storage_ids = merge->getExpandableReads(mergeTreeReadCanBeShipped);
+
+            std::vector<ReadToDistribute> reads;
+            reads.reserve(storage_ids.size());
+            for (const auto & storage_id : storage_ids)
+                reads.push_back({node, storage_id});
+            return reads;
+        }
     }
 
     if (typeid_cast<UnionStep *>(node->step.get()))
     {
-        std::vector<QueryPlan::Node *> reads;
+        std::vector<ReadToDistribute> reads;
         for (auto * child : node->children)
         {
-            auto child_reads = collectReadsToDistribute(child);
+            auto child_reads = collectReadsToDistribute(child, consider_merges);
             reads.insert(reads.end(), child_reads.begin(), child_reads.end());
         }
 
         std::unordered_set<StorageID, StorageID::DatabaseAndTableNameHash, StorageID::DatabaseAndTableNameEqual> seen;
-        for (auto * read_node : reads)
-        {
-            const auto & storage_id = typeid_cast<ReadFromMergeTree &>(*read_node->step).getMergeTreeData().getStorageID();
-            if (!seen.insert(storage_id).second)
+        for (const auto & read : reads)
+            if (!seen.insert(read.storage_id).second)
                 return {};
-        }
+
         return reads;
     }
 
@@ -507,11 +713,11 @@ static std::vector<QueryPlan::Node *> collectReadsToDistribute(QueryPlan::Node *
         if (coordinated_side == JoinSide::None)
             return {};
 
-        return collectReadsToDistribute(node->children.at(static_cast<size_t>(coordinated_side)));
+        return collectReadsToDistribute(node->children.at(static_cast<size_t>(coordinated_side)), consider_merges);
     }
 
     /// Non-join single-input step (Expression/Filter/Sorting/...): follow the only input.
-    return collectReadsToDistribute(node->children.at(0));
+    return collectReadsToDistribute(node->children.at(0), consider_merges);
 }
 
 /// FINAL is incompatible with parallel-replica reading (the FINAL merge path requires the read not to be
@@ -529,21 +735,38 @@ static bool planHasFinalMergeTreeRead(const QueryPlan::Node * node)
     return false;
 }
 
-/// A `FutureSetFromSubquery` (e.g. `WHERE x IN (SELECT ...)`) cannot yet be shipped: `addStepsToBuildSets`
-/// moves the subquery's plan out before the captured fragment is serialized, so serialization throws a
-/// `LOGICAL_ERROR` (#111876). Until fixed, detect the still-intact `DelayedCreatingSetsStep` and run the
-/// query locally, like the FINAL case above.
-/// TODO(#111876): serialize the subquery set at fragment-capture time so `IN (subquery)` can be distributed.
-static bool planHasSubquerySet(const QueryPlan::Node * node)
+/// A `Merge` table is opaque to the collectors above: `ReadFromMerge` unites the pipelines of its
+/// per-table subplans instead of their plans, so the underlying `MergeTree` reads do not exist yet while
+/// the plan is transformed. Expand every eligible `ReadFromMerge` into a plan-level union of those reads
+/// first, so that the rest of the pass treats a `Merge` exactly like a `UNION ALL` over its underlying
+/// tables. Ineligible ones (a child which is not a plain `MergeTree` read, a `FINAL` read, nothing to read)
+/// are left as they are and read by a single replica. Call it only once the plan is known to distribute
+/// something - see the caller.
+static void expandMergeReadsForParallelReplicas(QueryPlan & query_plan)
 {
-    if (!node)
-        return false;
-    if (const auto * delayed = typeid_cast<const DelayedCreatingSetsStep *>(node->step.get()); delayed && !delayed->getSets().empty())
-        return true;
-    for (const auto * child : node->children)
-        if (planHasSubquerySet(child))
-            return true;
-    return false;
+    auto * root = query_plan.getRootNode();
+    if (!root)
+        return;
+
+    /// Collect first: the expansion replaces the step of a visited node.
+    std::vector<QueryPlan::Node *> merge_nodes;
+    Stack stack;
+    traverseQueryPlan(
+        stack,
+        *root,
+        [&](QueryPlan::Node & node)
+        {
+            const auto * merge = typeid_cast<const ReadFromMerge *>(node.step.get());
+            if (merge && merge->getContext()->getSettingsRef()[Setting::parallel_replicas_allow_merge_tables])
+                merge_nodes.push_back(&node);
+        });
+
+    for (auto * node : merge_nodes)
+    {
+        auto & merge = typeid_cast<ReadFromMerge &>(*node->step);
+        if (!merge.getExpandableReads(mergeTreeReadCanBeShipped).empty())
+            query_plan.replaceNodeWithPlan(node, merge.expandForParallelReplicas());
+    }
 }
 
 /// Insertion phase: put a ParallelReplicasSplitStep directly above every eligible MergeTree read.
@@ -561,12 +784,23 @@ static void insertParallelReplicasSplit(QueryPlan & query_plan, QueryPlan::Nodes
     if (planHasFinalMergeTreeRead(root))
         return;
 
-    if (planHasSubquerySet(root))
+    /// Ask first whether anything would be distributed once the `Merge` reads are expanded into unions of
+    /// the reads of their underlying tables. The answer is not a property of one read: a `FULL`/`CROSS` join
+    /// yields nothing, and a union is rejected outright when two of its branches read the same table - which
+    /// the expansion itself can cause, by turning a `Merge` into a union of the very tables a sibling branch
+    /// reads. Deciding up front is what keeps a query which is not distributed on the plan it would have
+    /// without the feature, instead of on a union nothing distributes.
+    if (collectReadsToDistribute(root, /*consider_merges=*/ true).empty())
         return;
 
+    /// Now the same union and aggregation splitting as for a plain `MergeTree` table applies to a `Merge`.
+    /// Every eligible one is expanded, including a `Merge` on the broadcast side of a join, which has no read
+    /// of its own to distribute but is shipped inside the fragment and read in full by every replica.
+    expandMergeReadsForParallelReplicas(query_plan);
+
     std::unordered_set<const QueryPlan::Node *> eligible;
-    for (auto * node : collectReadsToDistribute(root))
-        eligible.insert(node);
+    for (const auto & read : collectReadsToDistribute(root))
+        eligible.insert(read.node);
     if (eligible.empty())
         return;
 
