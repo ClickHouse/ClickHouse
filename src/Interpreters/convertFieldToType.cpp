@@ -379,12 +379,13 @@ bool isNegativeDateTime64TicksSource(const Field & src)
 /// "matches the rows at the boundary".
 ///
 /// A materialization caller (`convert_inexact_floats`: the `INSERT ... VALUES` expression fallback in
-/// `ValuesBlockInputFormat` and the `values` table function) consumes the `Field` as the value to store and does not
-/// retry through `CAST`, so it applies `date_time_overflow_behavior` the way `ConvertImpl` does for the very same
-/// constant: `throw` raises `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`, while both `saturate` and the default `ignore` clamp
-/// to the nearest end of the window, i.e. the extreme representable tick. A `NaN` has no side to saturate to and stays
-/// Null. The other `convert_inexact_floats` callers never get here: `WITH FILL` converts a `DateTime64` bound into a
-/// plain `Decimal64` and rejects `Time64`, and a `RANGE` window frame offset is not implemented for either type.
+/// `ValuesBlockInputFormat`, the `values` table function and a numeric `WITH FILL FROM` / `TO` bound of a `DateTime64`
+/// sort key, converted in `PlannerSorting`) consumes the `Field` as the value to store and does not retry through
+/// `CAST`, so it applies `date_time_overflow_behavior` the way `ConvertImpl` does for the very same constant: `throw`
+/// raises `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`, while both `saturate` and the default `ignore` clamp to the nearest end
+/// of the window, i.e. the extreme representable tick. A `NaN` has no side to saturate to and stays Null. The other
+/// `convert_inexact_floats` callers never get here: `FillingTransform` converts a `DateTime64` bound into a plain
+/// `Decimal64` and rejects `Time64`, and a `RANGE` window frame offset is not implemented for either type.
 template <typename DecimalType>
 Field dateTime64OutOfWindow(
     const Field & src,
