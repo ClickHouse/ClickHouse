@@ -944,4 +944,8 @@ void ColumnString::batchSerializeAsComparable(
         [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
+ColumnPlanes ColumnString::getPlanes() const
+{
+    return ColumnPlanes(ColumnPlanes::Shape::String, offsets.data(), chars.data());
+}
 }
