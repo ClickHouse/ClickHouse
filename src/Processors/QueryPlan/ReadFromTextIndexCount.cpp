@@ -128,7 +128,7 @@ UInt64 computeCountForPart(
     auto make_stream = [&](const MergeTreeIndexSubstream & substream)
     {
         return makeTextIndexInputStream(
-            data_part->getDataPartStoragePtr(),
+            part_info,
             index.index->getFileName() + substream.suffix,
             substream.extension,
             MergeTreeIndexReader::patchSettings(reader_settings, substream.type));
@@ -191,7 +191,7 @@ UInt64 computeCountForPart(
         largest_segment_bytes = std::max(largest_segment_bytes, estimateLargestPostingListSegmentBytes(*token_info));
 
     auto postings_stream = makePostingsInputStream(
-        data_part->getDataPartStoragePtr(),
+        part_info,
         index.index->getFileName() + substreams[2].suffix,
         substreams[2].extension,
         reader_settings,
