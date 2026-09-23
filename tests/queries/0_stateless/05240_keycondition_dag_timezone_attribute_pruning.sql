@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas
+-- Tags: no-parallel-replicas, long
+-- long: it creates and drops dozens of tables, which takes over the 180 s flaky-check limit with `meta in keeper` and `s3 storage`.
 -- no-parallel-replicas: the `pruning_selected_parts` row below reads `ProfileEvents` from the
 -- initiator's `query_log`, and with parallel replicas the counters are reported where each
 -- read executes.
