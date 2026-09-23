@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <Interpreters/ITokenizer.h>
+#include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 
 #include <Common/PODArray.h>
@@ -40,10 +41,14 @@ std::map<std::string, Occurrences> collectPositions(MergeTreeIndexTextGranuleBui
 {
     std::map<std::string, Occurrences> result;
 
-    builder.position_map->forEachValue([&](const auto & key, auto & mapped)
+    builder.tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
+        const auto * positions = mapped.getPositions();
+        if (!positions)
+            return;
+
         auto & occurrences = result[std::string(static_cast<std::string_view>(key))];
-        for (const auto & entry : mapped.getEntries())
+        for (const auto & entry : positions->getEntries())
             for (UInt32 bit = 0; bit < RoaringishEntry::BITMAP_BITS; ++bit)
                 if (entry.bitmap & (1U << bit))
                     occurrences.emplace_back(entry.doc_id, entry.group * RoaringishEntry::BITMAP_BITS + bit);
@@ -68,16 +73,18 @@ MergeTreeIndexTextParams paramsWithPositions()
 TEST(MergeTreeIndexText, TokenPositionsAreContinuousWithinRow)
 {
     SplitByNonAlphaTokenizer tokenizer;
-    MergeTreeIndexTextGranuleBuilder builder(paramsWithPositions(), &tokenizer, nullptr);
+    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    MergeTreeIndexTextGranuleBuilder builder(paramsWithPositions(), &tokenizer, codec.get());
+    const auto context = builder.buildContext();
 
     PaddedDocument first("quick brown");
     PaddedDocument second("fox jumps");
-    builder.addDocument(first.view());
-    builder.addDocument(second.view());
+    builder.addDocument(first.view(), context);
+    builder.addDocument(second.view(), context);
     builder.incrementCurrentRow();
 
     PaddedDocument third("brown fox");
-    builder.addDocument(third.view());
+    builder.addDocument(third.view(), context);
     builder.incrementCurrentRow();
 
     auto positions = collectPositions(builder);
@@ -91,13 +98,15 @@ TEST(MergeTreeIndexText, TokenPositionsAreContinuousWithinRow)
 TEST(MergeTreeIndexText, TokenPositionsOfDocumentsAndTokens)
 {
     SplitByNonAlphaTokenizer tokenizer;
-    MergeTreeIndexTextGranuleBuilder builder(paramsWithPositions(), &tokenizer, nullptr);
+    auto codec = PostingListCodecFactory::createPostingListCodec(IPostingListCodec::Type::Bitpacking);
+    MergeTreeIndexTextGranuleBuilder builder(paramsWithPositions(), &tokenizer, codec.get());
+    const auto context = builder.buildContext();
 
     PaddedDocument document("quick brown");
     auto token = paddedToken("fox");
 
-    builder.addDocument(document.view());
-    builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()});
+    builder.addDocument(document.view(), context);
+    builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, context);
     builder.incrementCurrentRow();
 
     auto positions = collectPositions(builder);
