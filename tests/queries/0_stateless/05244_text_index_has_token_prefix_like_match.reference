@@ -53,12 +53,28 @@ Granules: 1/8
 Parts: 1 | Granules: 1
 Granules: 8/8
 Granules: 1/8
--- the index with a preprocessor is not used
+-- lower preprocessor: applied to the input and the prefix of hasTokenPrefix, hasTokenLike and hasTokenMatch do not use the index
+8
+8
 8
 0
+Parts: 1 | Granules: 1
+Granules: 8/8
+Granules: 1/8
+0
+8
 Parts: 1 | Granules: 8
 Granules: 8/8
--- the index with an array tokenizer is used with the tokenizer argument only
+8
+-- lowerUTF8 preprocessor: the index is not used
+8
+Parts: 1 | Granules: 8
+Granules: 8/8
+-- without the tokenizer argument, the tokenizer of the index is used (as for hasAnyTokens)
+8
+8
+0
+8
 8
 8
 Parts: 1 | Granules: 1
@@ -66,3 +82,17 @@ Granules: 8/8
 Granules: 1/8
 Parts: 1 | Granules: 8
 Granules: 8/8
+0	56
+1	8
+-- text_index_like_max_matched_tokens: a pattern matching too many tokens is evaluated on the column
+1111
+200
+111
+1111
+1111
+200
+111
+05244_matched_tokens_like	1
+05244_matched_tokens_match	1
+05244_matched_tokens_prefix	1
+05244_matched_tokens_unlimited	0

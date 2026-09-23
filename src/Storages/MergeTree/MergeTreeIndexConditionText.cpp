@@ -1789,19 +1789,27 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     if (isPerTokenPatternFunction(function_name))
     {
         /// Unlike `like`, the needle is applied to each token and not to the whole value, so the dictionary tokens
-        /// matching it are exactly the tokens the function looks for, and the index answer is exact. This holds only
-        /// if the function tokenizes like the index (the tokenizer argument is checked in `traverseAtomNode`) and the
-        /// index does not rewrite values or tokens.
-        if (!value_data_type.isString() || has_preprocessor || has_postprocessor
+        /// matching it are exactly the tokens the function looks for, and the index answer is exact.
+        /// As for `hasAnyTokens`, a function without the tokenizer argument is rewritten to use the index tokenizer
+        /// (see `optimizeDirectReadFromTextIndex`), and a tokenizer argument must match the index (see `traverseAtomNode`).
+        if (!value_data_type.isString() || has_postprocessor
             || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
             return false;
 
-        /// Without the tokenizer argument, the functions use `splitByNonAlpha`.
-        if (function_node.getArgumentsSize() == 2 && tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
-            return false;
+        String needle = value_field.safeGet<String>();
+
+        /// As for `hasAnyTokens`, the preprocessor is applied to the prefix and (by the rewrite) to the input. It is
+        /// correct only if the preprocessor maps a prefix of a token to a prefix of the mapped token, which holds for
+        /// ASCII `lower` and `upper` but not for e.g. `lowerUTF8` (final sigma depends on context). A LIKE pattern or a
+        /// regexp cannot be preprocessed at all: `lower` would turn `\D` into `\d`. Such an index is not used then.
+        if (has_preprocessor)
+        {
+            if (function_name != "hasTokenPrefix" || !preprocessor->isASCIILowerOrUpper())
+                return false;
+            needle = preprocessor->processConstant(needle);
+        }
 
         /// An empty needle matches either every token or none, a dictionary scan does not help.
-        const auto & needle = value_field.safeGet<String>();
         if (needle.empty())
             return false;
 

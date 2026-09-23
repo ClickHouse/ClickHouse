@@ -171,9 +171,16 @@ using FunctionHasTokenMatch = FunctionHasTokenPattern<TokenMatchMatcher>;
 
 constexpr auto text_index_note = R"(
 <Note>
-If column `input` has a [text index](/reference/engines/table-engines/mergetree-family/textindexes) with the same tokenizer and without a preprocessor or postprocessor, the function
-finds the matching tokens in the index dictionary and reads only their posting lists instead of tokenizing every row.
+Column `input` should have a [text index](/reference/engines/table-engines/mergetree-family/textindexes) defined for optimal performance.
+The function then finds the matching tokens in the index dictionary and reads only their posting lists instead of tokenizing every row.
+The index is not used if it has a [postprocessor](/reference/engines/table-engines/mergetree-family/textindexes#postprocessor-argument-optional),
+or if it has a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#preprocessor-argument-optional) other than `lower` or `upper` of the column (`hasTokenPrefix`) or any preprocessor at all (`hasTokenLike`, `hasTokenMatch`).
 </Note>
+)";
+
+constexpr auto tokenizer_description = R"(
+Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index, if the text index can be used, and the `splitByNonAlpha` tokenizer otherwise.
+The optional `tokenizer` argument sets the tokenizer explicitly, then the text index is used only if it has the same tokenizer.
 )";
 
 FunctionDocumentation::Arguments commonArguments(const char * needle_name, const char * needle_description)
@@ -181,7 +188,7 @@ FunctionDocumentation::Arguments commonArguments(const char * needle_name, const
     return {
         {"input", "The input column.", {"String", "FixedString", "Nullable(String)", "Nullable(FixedString)", "Array(String)", "Array(FixedString)", "Array(Nullable(String))", "Array(Nullable(FixedString))"}},
         {needle_name, needle_description, {"const String"}},
-        {"tokenizer", "The tokenizer to use. Valid arguments are the same as for [`tokens`](/reference/functions/regular-functions/splitting-merging-functions#tokens). Optional, if not set explicitly, defaults to `splitByNonAlpha`.", {"const String"}},
+        {"tokenizer", "The tokenizer to use. Valid arguments are the same as for [`tokens`](/reference/functions/regular-functions/splitting-merging-functions#tokens). Optional, if not set explicitly, defaults to the tokenizer of the text index or to `splitByNonAlpha`.", {"const String"}},
     };
 }
 
@@ -192,11 +199,13 @@ REGISTER_FUNCTION(HasTokenPrefix)
     FunctionDocumentation::Description description = String(R"(
 Returns 1 if at least one token of `input` starts with `prefix`, and 0 otherwise.
 
-`input` is split into tokens with the given tokenizer (`splitByNonAlpha` by default), as function [`tokens`](/reference/functions/regular-functions/splitting-merging-functions#tokens) does.
 The comparison is case-sensitive. An empty `prefix` matches every token, so the function returns 1 if `input` has at least one token.
 
 `hasTokenPrefix(input, prefix)` is equivalent to `arrayExists(t -> startsWith(t, prefix), tokens(input))`.
-)") + text_index_note;
+
+If the text index has the preprocessor `lower` or `upper`, it is applied to `input` and `prefix`, as for [`hasAnyTokens`](#hasAnyTokens).
+The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not.
+)") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenPrefix(input, prefix[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token starts with `prefix`, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
@@ -240,11 +249,10 @@ REGISTER_FUNCTION(HasTokenLike)
     FunctionDocumentation::Description description = String(R"(
 Returns 1 if at least one token of `input` matches the [`LIKE`](#like) pattern `pattern`, and 0 otherwise.
 
-`input` is split into tokens with the given tokenizer (`splitByNonAlpha` by default), as function [`tokens`](/reference/functions/regular-functions/splitting-merging-functions#tokens) does.
 The pattern is applied to each token separately and must match the whole token: `%` matches any sequence of bytes, `_` matches one character, and `\` escapes them.
 
 `hasTokenLike(input, pattern)` is equivalent to `arrayExists(t -> like(t, pattern), tokens(input))`.
-)") + text_index_note;
+)") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenLike(input, pattern[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches `pattern`, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {
@@ -279,12 +287,11 @@ REGISTER_FUNCTION(HasTokenMatch)
     FunctionDocumentation::Description description = String(R"(
 Returns 1 if at least one token of `input` matches the regular expression `regexp`, and 0 otherwise.
 
-`input` is split into tokens with the given tokenizer (`splitByNonAlpha` by default), as function [`tokens`](/reference/functions/regular-functions/splitting-merging-functions#tokens) does.
 The regular expression uses the [re2 syntax](https://github.com/google/re2/wiki/Syntax) and is applied to each token separately, like function [`match`](#match):
 it may match any part of the token, and the anchors `^` and `$` refer to the start and the end of the token.
 
 `hasTokenMatch(input, regexp)` is equivalent to `arrayExists(t -> match(t, regexp), tokens(input))`.
-)") + text_index_note;
+)") + tokenizer_description + text_index_note;
     FunctionDocumentation::Syntax syntax = "hasTokenMatch(input, regexp[, tokenizer])";
     FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if some token matches `regexp`, `0` otherwise.", {"UInt8"}};
     FunctionDocumentation::Examples examples = {

@@ -449,7 +449,7 @@ ASTPtr convertNodeToAST(const ActionsDAG::Node & node, const std::unordered_map<
 /// then this class replaces some nodes in the ActionsDAG (and references to them) to generate an equivalent query:
 ///     SELECT count() FROM table where __text_index_text_col_idx_hasToken_0
 ///
-/// Also this class processes text index functions (hasToken, hasAllTokens, hasAnyTokens):
+/// Also this class processes text index functions (hasToken, hasAllTokens, hasAnyTokens, hasPhrase, hasTokenPrefix, hasTokenLike, hasTokenMatch):
 /// applies tokenizer and preprocessors (lower, upper, etc.) for the haystack and needles arguments.
 /// It allows their stadalone executions without the direct read from text index.
 /// It is required to return the the same results as with the direct read.
@@ -606,15 +606,18 @@ private:
     /// has/hasAll/hasAny operate on array elements directly, bypassing the tokenizer, preprocessor, and postprocessor.
     static bool needApplyTokenizer(const String & function_name)
     {
-        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+        return function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
+            || function_name == "hasTokenPrefix" || function_name == "hasTokenLike" || function_name == "hasTokenMatch";
     }
 
     /// Returns true for functions that require applying the preprocessor to the haystack.
     /// has/hasAll/hasAny bypass both transforms.
+    /// A preprocessor cannot be applied to the pattern of hasTokenLike/hasTokenMatch, so the index does not serve them then.
     static bool needApplyPreprocessor(const String & function_name)
     {
         return function_name == "hasToken"
-            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase";
+            || function_name == "hasAllTokens" || function_name == "hasAnyTokens" || function_name == "hasPhrase"
+            || function_name == "hasTokenPrefix";
     }
 
     /// Returns true for functions that require applying the postprocessor to the haystack and needle.

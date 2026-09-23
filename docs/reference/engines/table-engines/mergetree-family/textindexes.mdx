@@ -849,9 +849,10 @@ Functions [hasTokenPrefix](/reference/functions/regular-functions/string-search-
 Unlike `LIKE`, `startsWith` and `match`, which apply the pattern to the whole value, these functions apply it to each token separately.
 The tokens of the index dictionary that match the pattern are therefore exactly the tokens the function looks for:
 ClickHouse finds them by a scan of the dictionary (a seek to the range of matching tokens for `hasTokenPrefix`), reads their posting lists, and answers the query with a [direct read](#direct-read).
-If too many tokens match (see setting [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
+If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
 
-The text index is used if the tokenizer of the function (the optional third argument, `splitByNonAlpha` by default) is the tokenizer of the index, and the index has no preprocessor or postprocessor.
+Like `hasAnyTokens`, the functions use the tokenizer of the index if their optional third argument is omitted; an explicit tokenizer argument must match the index tokenizer.
+The index is not used if it has a postprocessor. `hasTokenPrefix` also supports the `lower` and `upper` preprocessors (applied to the prefix as well), while `hasTokenLike` and `hasTokenMatch` do not use an index with a preprocessor, because a preprocessor cannot be applied to a pattern.
 
 Example:
 
@@ -1484,11 +1485,12 @@ The speed-up of a `value%` or `%value` pattern comes from skipping granules, so 
 The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
-The fallback mechanism is controlled by two settings:
+The fallback mechanism is controlled by three settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
+- [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens)
 
-This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
+This optimization supports functions `like`, `ilike`, `startsWith`, and `endsWith`, as well as [`hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch`](#functions-example-hastokenprefix-hastokenlike-hastokenmatch).
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
 For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:

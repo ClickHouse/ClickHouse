@@ -127,7 +127,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE
 
 DROP TABLE tab;
 
-SELECT '-- the index with a preprocessor is not used';
+SELECT '-- lower preprocessor: applied to the input and the prefix of hasTokenPrefix, hasTokenLike and hasTokenMatch do not use the index';
 
 CREATE TABLE tab
 (
@@ -143,11 +143,36 @@ INSERT INTO tab SELECT number, if(number < 8, 'Charged', 'other') FROM numbers(6
 
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'Charg');
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'charg');
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'CHARG');
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'CHARG')) WHERE explain LIKE '%Granules:%';
+SELECT count() FROM tab WHERE hasTokenLike(msg, 'charg%');
+SELECT count() FROM tab WHERE hasTokenLike(msg, 'Charg%');
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenLike(msg, 'Charg%')) WHERE explain LIKE '%Granules:%';
+SELECT count() FROM tab WHERE hasTokenMatch(msg, '^C');
+
+DROP TABLE tab;
+
+SELECT '-- lowerUTF8 preprocessor: the index is not used';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha, preprocessor = lowerUTF8(msg)) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+INSERT INTO tab SELECT number, if(number < 8, 'Charged', 'other') FROM numbers(64);
+
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'Charg');
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'Charg')) WHERE explain LIKE '%Granules:%';
 
 DROP TABLE tab;
 
-SELECT '-- the index with an array tokenizer is used with the tokenizer argument only';
+SELECT '-- without the tokenizer argument, the tokenizer of the index is used (as for hasAnyTokens)';
 
 CREATE TABLE tab
 (
@@ -161,9 +186,46 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 
 INSERT INTO tab SELECT number, if(number < 8, 'env:prod-eu', 'env:dev') FROM numbers(64);
 
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'env:prod');
 SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'env:prod', 'array');
 SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'prod');
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'env:prod', 'array')) WHERE explain LIKE '%Granules:%';
-SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'prod')) WHERE explain LIKE '%Granules:%';
+SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'prod', 'splitByNonAlpha');
+SELECT count() FROM tab WHERE hasTokenLike(tag, 'env:%-eu');
+SELECT count() FROM tab WHERE hasTokenMatch(tag, '^env:[a-z]+-');
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'env:prod')) WHERE explain LIKE '%Granules:%';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE hasTokenPrefix(tag, 'prod', 'splitByNonAlpha')) WHERE explain LIKE '%Granules:%';
+-- Also in the SELECT list.
+SELECT hasTokenPrefix(tag, 'env:prod') AS h, count() FROM tab GROUP BY h ORDER BY h;
+
+DROP TABLE tab;
+
+SELECT '-- text_index_like_max_matched_tokens: a pattern matching too many tokens is evaluated on the column';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    msg String,
+    INDEX idx(msg) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
+
+-- Every row has its own token, so all postings are small and embedded.
+INSERT INTO tab SELECT number, concat('req id', toString(number), ' ok') FROM numbers(2000);
+
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_prefix';
+SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_match';
+SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = '05244_matched_tokens_like';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = '05244_matched_tokens_unlimited';
+SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS use_skip_indexes = 0;
+
+SYSTEM FLUSH LOGS query_log;
+SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND event_date >= yesterday() AND log_comment LIKE '05244_matched_tokens_%'
+ORDER BY log_comment;
 
 DROP TABLE tab;
