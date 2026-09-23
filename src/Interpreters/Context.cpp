@@ -3802,9 +3802,10 @@ void Context::checkSettingsConstraintsInAnyOrder(SettingsChanges & changes, Sett
 
     /// Without an order, a change could be meant to take effect before or after the `profile` change,
     /// so it has to pass both. The list itself keeps its order, so which assignment wins is unchanged.
+    /// Nothing is dropped as a no-op: a change equal to the value before the profile still overrides it.
     {
         SharedLockGuard lock(mutex);
-        checkSettingsConstraintsWithLock(changes, source);
+        checkSettingsConstraintsWithLock(std::as_const(changes), source);
     }
     SettingsChanges profiles_first = changes;
     std::stable_partition(profiles_first.begin(), profiles_first.end(), [](const SettingChange & change) { return change.name == "profile"; });

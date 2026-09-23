@@ -8,3 +8,5 @@ SETTING_CONSTRAINT_VIOLATION
 SETTING_CONSTRAINT_VIOLATION
 -- a value within the constraint is still accepted
 1000000000
+-- a parameter equal to the value before the profile still overrides the profile
+OK

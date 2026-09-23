@@ -31,5 +31,16 @@ ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&max_memory_us
 echo '-- a value within the constraint is still accepted'
 ${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&profile=$MEMORY_PROFILE&max_memory_usage=1000000000" <<< "SELECT getSetting('max_memory_usage')"
 
+ROWS_PROFILE="profile_http_rows_$CLICKHOUSE_DATABASE"
+
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE IF EXISTS $ROWS_PROFILE"
+$CLICKHOUSE_CLIENT -q "CREATE SETTINGS PROFILE $ROWS_PROFILE SETTINGS max_result_rows = 12345"
+
+echo '-- a parameter equal to the value before the profile still overrides the profile'
+current=$(${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}" <<< "SELECT getSetting('max_result_rows')")
+result=$(${CLICKHOUSE_CURL} -sS -X POST --data-binary @- "${CLICKHOUSE_URL}&profile=$ROWS_PROFILE&max_result_rows=$current" <<< "SELECT getSetting('max_result_rows')")
+[[ "$result" == "$current" ]] && echo "OK" || echo "expected $current, got $result"
+
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $PROFILE"
 $CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $MEMORY_PROFILE"
+$CLICKHOUSE_CLIENT -q "DROP SETTINGS PROFILE $ROWS_PROFILE"
