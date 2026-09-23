@@ -36,6 +36,7 @@ namespace ErrorCodes
     extern const int ROCKSDB_ERROR;
     extern const int CORRUPTED_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int LOGICAL_ERROR;
 }
 
 /// Declares a `rocksdb::FileSystem` method override that unconditionally
@@ -258,9 +259,11 @@ SSTFileReader::SSTFileReader(const DataPartStoragePtr & storage, const String & 
 std::vector<rocksdb::Status> SSTFileReader::multiGet(
     const std::vector<rocksdb::Slice> & keys, std::vector<String> & values_out) const
 {
-    /// `SstFileReader::MultiGet` does not chunk - the caller must stay under
-    /// `PROBE_BATCH_SIZE`.
-    chassert(keys.size() <= PROBE_BATCH_SIZE);
+    /// `SstFileReader::MultiGet` only `assert`s its 32-key cap; over-limit
+    /// input is UB in release builds, so the bound is enforced here instead.
+    if (keys.size() > PROBE_BATCH_SIZE)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "UNIQUE KEY SST MultiGet called with {} keys, cap is {}", keys.size(), PROBE_BATCH_SIZE);
 
     auto statuses = index_reader->MultiGet(rocksdb::ReadOptions(), keys, &values_out);
     if (statuses.size() != keys.size() || values_out.size() != keys.size())

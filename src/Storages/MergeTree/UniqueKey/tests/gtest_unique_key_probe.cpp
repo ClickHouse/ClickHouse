@@ -303,8 +303,7 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchHitsExactKeyOnly)
     auto t = makeTarget({{10, 0}, {30, 2}});
     ASSERT_NE(t, nullptr);
 
-    /// 20 lies between stored keys 10 and 30 — Seek lands on 30 but the exact
-    /// compare must reject it.
+    /// 20 lies between stored keys 10 and 30 and must simply miss.
     const String e20 = encodeKey(20);
     const String e30 = encodeKey(30);
     std::vector<std::string_view> views{
@@ -384,6 +383,29 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
     ASSERT_EQ(out.size(), expected.size());
     for (size_t i = 0; i < expected.size(); ++i)
         EXPECT_EQ(out[i], expected[i]) << "mismatch at batch row " << i;
+}
+
+/// RocksDB's `MultiGet` caps at 32 keys and only `assert`s it - an over-limit
+/// batch is UB in release builds. `multiGet` must reject it before calling in.
+TEST_F(UniqueKeyProbeTest, MultiGetOverBatchLimitThrows)
+{
+    const String part_dir = "multiget_limit_part";
+    std::filesystem::create_directories(base / part_dir);
+    auto storage = std::make_shared<DataPartStorageOnDiskFull>(volume, "", part_dir);
+    SSTIndexWriter writer(*storage, getContext().context);
+    const String e = encodeKey(1);
+    writer.addEncoded(std::string_view(e), 0);
+    MergeTreeDataPartChecksums sst_checksums;
+    writer.finish(sst_checksums, /*fsync=*/false);
+
+    auto reader = openSSTReaderFromStorage(storage, SSTIndexWriter::FILE_NAME, ReadSettings{});
+
+    std::vector<String> values;
+    std::vector<rocksdb::Slice> keys(PROBE_BATCH_SIZE + 1, rocksdb::Slice(e.data(), e.size()));
+    EXPECT_ANY_THROW(reader->multiGet(keys, values));
+
+    keys.resize(PROBE_BATCH_SIZE);
+    EXPECT_NO_THROW(reader->multiGet(keys, values));
 }
 
 TEST_F(UniqueKeyProbeTest, InvalidReaderHandleFailsClosed)
