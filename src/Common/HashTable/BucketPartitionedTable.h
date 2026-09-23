@@ -3,12 +3,13 @@
 #include <concepts>
 #include <base/types.h>
 
-/** What a caller that fills a table bucket by bucket relies on, whatever the table's storage.
+/** What a caller that fills a table bucket by bucket relies on, whether the table is a `TwoLevelHashTable`
+  * or a `PartitionedFixedHashTable`.
   *
   * The bucket of a key is `getBucketFromHash(bucketRoutingHash(key, hash(key)))`, in that order.
   * The hash a table places its cells by is not always the one it routes by.
-  * See `PartitionedFixedHashMap`.
-  * `offsetInternal` numbers cells across all buckets.
+  * An iterator's `getBucket` is the bucket of the key it points to.
+  * `offsetInternal` numbers cells across all buckets once `computeBucketPrefix` has run.
   */
 template <typename Map>
 concept BucketPartitionedTable = requires(
@@ -40,6 +41,7 @@ concept BucketPartitionedTable = requires(
     { map.find(key, hash_value) } -> std::same_as<typename Map::LookupResult>;
     { const_map.has(key) } -> std::same_as<bool>;
 
+    map.computeBucketPrefix();
     { const_map.offsetInternal(const_lookup) } -> std::convertible_to<size_t>;
     { const_map.offsetInternalAtBucket(const_lookup, size_t{}) } -> std::convertible_to<size_t>;
 
@@ -52,6 +54,8 @@ concept BucketPartitionedTable = requires(
     { map.end() } -> std::same_as<typename Map::iterator>;
     { const_map.begin() } -> std::same_as<typename Map::const_iterator>;
     { const_map.end() } -> std::same_as<typename Map::const_iterator>;
+    { map.begin().getBucket() } -> std::convertible_to<size_t>;
+    { const_map.begin().getBucket() } -> std::convertible_to<size_t>;
 };
 
 template <typename Map>
