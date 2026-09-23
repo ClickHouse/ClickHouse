@@ -69,3 +69,5 @@ A tab's whole notebook — every cell, its content, and the small result snapsho
 The URL and the browser history follow the ACTIVE cell: the `#`-fragment carries that cell's query, and back and forward move between the cells (and tabs) you visited. Sharing the URL of a notebook shares the active cell's query, not the whole notebook.
 
 Duplicating a tab duplicates the whole notebook, without the results.
+
+Saving the tabs as Markdown (the save button in the tab bar) writes every cell of a notebook in order: each query cell as a fenced code block followed by its parameters and result tables, and each text cell as a fenced code block with the `markdown` info string. Loading such a document restores every tab with all of its cells; the results are not restored, so the loaded query cells start unrun.
