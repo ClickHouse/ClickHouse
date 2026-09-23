@@ -641,6 +641,12 @@ public:
         : BaseNode(event_queue_, SchedulerNodeInfo(settings))
     {}
 
+    ~WorkloadNodeCommon() override
+    {
+        /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
+        forEachSchedulerNode([](ISchedulerNode * node) { node->workload = nullptr; });
+    }
+
     void attachWorkloadChild(const WorkloadNodePtr & child) final
     {
         SCHED_DBG("{} -- attachWorkloadChild(child={})", this->getPath(), child->getWorkload());
