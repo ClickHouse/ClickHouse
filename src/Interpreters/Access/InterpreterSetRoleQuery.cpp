@@ -61,7 +61,21 @@ void InterpreterSetRoleQuery::setRole(const ASTSetRoleQuery & query)
 BlockIO InterpreterSetRoleQuery::setDefaultRole(const ASTPtr & updated_query_ptr, const ASTSetRoleQuery & query)
 {
     getContext()->getAccess()->checkCanAdministerDefaultRoles();
-    getContext()->checkAccess(query.to_users->collectRequiredGrants(AccessType::ALTER_USER));
+
+    /// The initiator of `SET DEFAULT ROLE ... TO CURRENT_USER ON CLUSTER` replaces the tag with its user name
+    /// (see below), so with `distributed_ddl_use_initial_user_and_roles` a DDL worker executes the query as that
+    /// user with the user's own name among `to_users`. The tag demands no grant, while a named user demands
+    /// `ALTER USER`, so checking the name here would fail on every host a query the initiator accepted. Do not
+    /// require a grant for the user's own name in a distributed query: the initiator has already checked the
+    /// query as the user wrote it, and the same change is available to the user through the tag anyway.
+    auto to_users_for_check = query.to_users;
+    if (getContext()->isDDLOrOnClusterInternal() && getContext()->getUserID())
+    {
+        auto without_self = boost::static_pointer_cast<ASTRolesOrUsersSet>(query.to_users->clone());
+        std::erase(without_self->names, getContext()->getUserName());
+        to_users_for_check = without_self;
+    }
+    getContext()->checkAccess(to_users_for_check->collectRequiredGrants(AccessType::ALTER_USER));
 
     auto & access_control = getContext()->getAccessControl();
 
