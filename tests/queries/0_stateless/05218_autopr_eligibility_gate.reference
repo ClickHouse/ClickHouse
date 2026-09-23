@@ -2,6 +2,7 @@ autopr_gate_eligible_by_nested_settings	1
 autopr_gate_eligible_by_query_settings	1
 autopr_gate_eligible_by_query_settings_2	1
 autopr_gate_eligible_plain	1
+autopr_gate_eligible_view_body	1
 autopr_gate_ineligible_final	0
 autopr_gate_ineligible_full_join	0
 autopr_gate_ineligible_one_replica	0

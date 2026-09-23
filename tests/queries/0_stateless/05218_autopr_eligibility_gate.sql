@@ -11,11 +11,13 @@
 
 DROP TABLE IF EXISTS t_autopr_gate;
 DROP TABLE IF EXISTS t_autopr_gate_2;
+DROP VIEW IF EXISTS v_autopr_gate;
 
 -- ReplacingMergeTree so that the FINAL case below is a legal query; plain MergeTree rejects FINAL
 -- outright, and eligibility is otherwise identical (both are non-replicated MergeTree family).
 CREATE TABLE t_autopr_gate (a UInt64, b UInt64) ENGINE = ReplacingMergeTree ORDER BY a;
 CREATE TABLE t_autopr_gate_2 (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE VIEW v_autopr_gate AS SELECT a, b FROM t_autopr_gate;
 INSERT INTO t_autopr_gate SELECT number, number % 100 FROM numbers(10000);
 INSERT INTO t_autopr_gate_2 SELECT number, number % 10 FROM numbers(1000);
 
@@ -59,6 +61,13 @@ SETTINGS enable_parallel_replicas = 0, log_comment = 'autopr_gate_ineligible_que
 SELECT b, count() FROM t_autopr_gate FINAL GROUP BY b FORMAT Null
 SETTINGS log_comment = 'autopr_gate_ineligible_final';
 
+-- Eligible through the body of a view. `parallel_replicas_allow_view_over_mergetree = 0` keeps the
+-- outer query of the view from being read with replicas, but the body is planned by its own
+-- interpreter and reads `t_autopr_gate` with replicas all the same, so the candidate plan is worth
+-- building.
+SELECT sum(b) FROM v_autopr_gate FORMAT Null
+SETTINGS parallel_replicas_allow_view_over_mergetree = 0, log_comment = 'autopr_gate_eligible_view_body';
+
 -- Eligible only through a subquery's own SETTINGS clause, which allows parallel replicas on
 -- non-replicated MergeTree again after the outer query forbade them. The subquery is planned with its
 -- own context and the read below it is made with replicas, so a check that only consulted the outer
@@ -90,5 +99,6 @@ WHERE current_database = currentDatabase()
   AND startsWith(log_comment, 'autopr_gate_')
 ORDER BY log_comment;
 
+DROP VIEW v_autopr_gate;
 DROP TABLE t_autopr_gate;
 DROP TABLE t_autopr_gate_2;

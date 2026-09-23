@@ -240,6 +240,13 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
 ///   re-enable what the outer query turned off, and the read below it is then made with replicas
 ///   although the outer context forbids it. The root's own clause is not a problem - it is in the
 ///   context the walk is handed.
+/// - A `View`: the walk stops at the view unless `parallel_replicas_allow_view_over_mergetree` lets it
+///   unwrap one, but the body is planned by its own interpreter either way, and `getViewContext`
+///   disables replicas inside it only in the case the walk does unwrap. With the setting at its
+///   default, `SELECT sum(a) FROM view_over_mergetree` reads the view's body with replicas.
+///   A `MaterializedView` reads its target table rather than planning a body, so it needs none of
+///   this: with `parallel_replicas_allow_materialized_views = 0` that read is not parallelized
+///   either, which is what the walk says.
 static bool walkCannotAnswerFor(const IQueryTreeNode * root)
 {
     std::vector<const IQueryTreeNode *> stack{root};
@@ -253,6 +260,10 @@ static bool walkCannotAnswerFor(const IQueryTreeNode * root)
 
         if (node != root)
             if (const auto * query_node = node->as<QueryNode>(); query_node && query_node->hasSettingsChanges())
+                return true;
+
+        if (const auto * table_node = node->as<TableNode>())
+            if (typeid_cast<const StorageView *>(table_node->getStorage().get()))
                 return true;
 
         for (const auto & child : node->getChildren())
