@@ -108,9 +108,26 @@ Int64 Socket::peek(char * buffer, size_t size) const
     /// socket, and this must not change that for a socket it does not own. So ask first, with a
     /// zero timeout, whether anything is readable - if nothing is, that is the would-block case
     /// the POSIX branch reports through `EAGAIN` - and only then peek, which can no longer block.
-    if (!(poll(Read, 0) & Read))
+    const int ready = poll(Read, 0);
+    if (!(ready & (Read | Error)))
     {
         ::WSASetLastError(WSAEWOULDBLOCK);
+        return -1;
+    }
+
+    if (!(ready & Read))
+    {
+        /// `Error` alone: the connection is reset, hung up, or the handle is no longer a socket.
+        /// That must not read as would-block, or a dead pooled connection passes for an idle one;
+        /// and `recv` is not promised to return at once here, so report the socket's pending error
+        /// instead - or end of stream, which is what a hang-up that left no error amounts to.
+        int error = 0;
+        int error_size = sizeof(error);
+        if (::getsockopt(toWinsock(handle), SOL_SOCKET, SO_ERROR, reinterpret_cast<char *>(&error), &error_size) == SOCKET_ERROR)
+            return -1;
+        if (error == 0)
+            return 0;
+        ::WSASetLastError(error);
         return -1;
     }
 
