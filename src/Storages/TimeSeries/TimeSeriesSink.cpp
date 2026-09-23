@@ -179,8 +179,8 @@ namespace
         }
     }
 
-    /// Fills columns metric_family_name, type, unit, help for the "metrics" table.
-    void fillMetricsColumns(
+    /// Fills the columns of the "metric families" table: the name of a metric family, type, unit, help.
+    void fillMetricFamiliesColumns(
         const IColumn & metric_family_column,
         const IColumn & type_column,
         const IColumn & unit_column,
@@ -254,7 +254,7 @@ namespace
         return count;
     }
 
-    /// Returns the total number of samples in the column `time_series` across all rows.
+    /// Returns the total number of samples in the outer column with samples across all rows.
     size_t getTotalSamples(const ColumnArray::Offsets & ts_offsets)
     {
         return ts_offsets.empty() ? 0 : ts_offsets.back();
@@ -434,9 +434,9 @@ TimeSeriesSink::TimeSeriesSink(
 
     insert_tags_and_samples = is_insert_column(TimeSeriesColumnNames::MetricName)
         || is_insert_column(TimeSeriesColumnNames::Tags)
-        || is_insert_column(TimeSeriesColumnNames::TimeSeries);
+        || is_insert_column(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
 
-    insert_metrics = is_insert_column(TimeSeriesColumnNames::MetricFamily)
+    insert_metric_families = is_insert_column(TimeSeriesColumnNames::MetricFamily)
         || is_insert_column(TimeSeriesColumnNames::Type)
         || is_insert_column(TimeSeriesColumnNames::Unit)
         || is_insert_column(TimeSeriesColumnNames::Help);
@@ -444,8 +444,8 @@ TimeSeriesSink::TimeSeriesSink(
     if (insert_tags_and_samples)
         initTagsAndSamplesPipelines();
 
-    if (insert_metrics)
-        initMetricsPipeline();
+    if (insert_metric_families)
+        initMetricFamiliesPipeline();
 }
 
 
@@ -459,8 +459,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
     if (insert_tags_and_samples)
         consumeTagsAndSamples(block);
 
-    if (insert_metrics)
-        consumeMetrics(block);
+    if (insert_metric_families)
+        consumeMetricFamilies(block);
 }
 
 
@@ -509,14 +509,15 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         tags_header_before_id.insert(ColumnWithTypeAndName{tags_map_type, TimeSeriesColumnNames::AllTags});
     }
 
-    /// Get timestamp/value types from the time_series array's inner tuple.
+    /// Get timestamp/value types from the inner tuple of the outer column with samples.
     /// This part is different from class PrometheusRemoteWriteProtocol.
     /// Class PrometheusRemoteWriteProtocol derives these types from the samples target metadata
     /// because it creates columns from protobuf data.
     /// And here we derive them from the input chunk's column because fillSamplesColumns()
     /// later does insertRangeFrom(), which requires matching binary representations.
     /// In the end any final difference is handled by the converting actions inside `samples_pipeline`.
-    auto [timestamp_type, scalar_type] = splitTimeSeriesType(getHeader().getByName(TimeSeriesColumnNames::TimeSeries).type);
+    const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion());
+    auto [timestamp_type, value_type] = splitTimeSeriesType(getHeader().getByName(samples_column_name).type);
 
     if (settings[TimeSeriesSetting::store_min_time_and_max_time])
     {
@@ -578,7 +579,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     Block samples_header;
     samples_header.insert(ColumnWithTypeAndName{id_type, TimeSeriesColumnNames::ID});
     samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Timestamp});
-    samples_header.insert(ColumnWithTypeAndName{scalar_type, TimeSeriesColumnNames::Value});
+    samples_header.insert(ColumnWithTypeAndName{value_type, TimeSeriesColumnNames::Value});
     samples_pipeline = createTargetPipeline(ViewTarget::Samples, samples_header);
 
     /// The recent samples table (if any) receives a copy of every samples block.
@@ -592,7 +593,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
     /// Step 1. Extract columns from the input block.
     const auto & metric_name_col = block.getByName(TimeSeriesColumnNames::MetricName);
     const auto & tags_col = block.getByName(TimeSeriesColumnNames::Tags);
-    const auto & time_series_col = block.getByName(TimeSeriesColumnNames::TimeSeries);
+    const auto & time_series_col = block.getByName(TimeSeriesColumnNames::getOuterSamples(time_series_storage.getVersion()));
 
     const auto * tags_map_column = typeid_cast<const ColumnMap *>(tags_col.column.get());
     if (!tags_map_column)
@@ -602,12 +603,12 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 
     const auto * ts_arrays = typeid_cast<const ColumnArray *>(time_series_col.column.get());
     if (!ts_arrays)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the time_series column, got {}", time_series_col.column->getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnArray for the column `{}`, got {}", time_series_col.name, time_series_col.column->getName());
     const auto * ts_tuples = typeid_cast<const ColumnTuple *>(&ts_arrays->getData());
     if (!ts_tuples)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple for the time_series column data, got {}", ts_arrays->getData().getName());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple for the data of the column `{}`, got {}", time_series_col.name, ts_arrays->getData().getName());
     if (ts_tuples->tupleSize() != 2)
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with 2 elements for the time_series column data, got {}", ts_tuples->tupleSize());
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Expected ColumnTuple with 2 elements for the data of the column `{}`, got {}", time_series_col.name, ts_tuples->tupleSize());
     const ColumnArray::Offsets & ts_offsets = ts_arrays->getOffsets();
     size_t total_samples = getTotalSamples(ts_offsets);
 
@@ -670,7 +671,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         *new_tags_names, *new_tags_values, *new_tags_offsets,
         columns_by_tag_name);
 
-    auto [timestamp_type, scalar_type] = splitTimeSeriesType(time_series_col.type);
+    auto [timestamp_type, value_type] = splitTimeSeriesType(time_series_col.type);
 
     /// Optionally fill min_time and max_time columns if enabled in settings.
     MutableColumnPtr min_time_column;
@@ -733,7 +734,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         auto timestamp_column = timestamp_type->createColumn();
         timestamp_column->reserve(total_samples);
 
-        auto value_column = scalar_type->createColumn();
+        auto value_column = value_type->createColumn();
         value_column->reserve(total_samples);
 
         fillSamplesColumns(
@@ -745,7 +746,7 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
         Block samples_block;
         samples_block.insert(ColumnWithTypeAndName{std::move(samples_id_column), id_type, TimeSeriesColumnNames::ID});
         samples_block.insert(ColumnWithTypeAndName{std::move(timestamp_column), timestamp_type, TimeSeriesColumnNames::Timestamp});
-        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), scalar_type, TimeSeriesColumnNames::Value});
+        samples_block.insert(ColumnWithTypeAndName{std::move(value_column), value_type, TimeSeriesColumnNames::Value});
 
         /// The samples table is written before the recent samples table: if the insert fails between
         /// the two writes, the sample is then missing from the recent samples table and just stays
@@ -760,33 +761,33 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
 }
 
 
-void TimeSeriesSink::initMetricsPipeline()
+void TimeSeriesSink::initMetricFamiliesPipeline()
 {
-    /// It's important to use here for `metrics_header`
-    /// the same data types as function consumeMetrics() uses to push blocks.
+    /// It's important to use here for `metric_families_header`
+    /// the same data types as function consumeMetricFamilies() uses to push blocks.
     /// There is a conversion step in the target pipelines, so we don't have to always
     /// match the data types of the columns in the "tags" or "samples" tables.
 
     const Block & header = getHeader();
 
-    Block metrics_header;
-    metrics_header.insert(ColumnWithTypeAndName{
-        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::MetricFamilyName});
+    Block metric_families_header;
+    metric_families_header.insert(ColumnWithTypeAndName{
+        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
 
-    metrics_header.insert(ColumnWithTypeAndName{
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
 
-    metrics_header.insert(ColumnWithTypeAndName{
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Unit).type, TimeSeriesColumnNames::Unit});
 
-    metrics_header.insert(ColumnWithTypeAndName{
+    metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Help).type, TimeSeriesColumnNames::Help});
 
-    metrics_pipeline = createTargetPipeline(ViewTarget::Metrics, metrics_header);
+    metric_families_pipeline = createTargetPipeline(ViewTarget::MetricFamilies, metric_families_header);
 }
 
 
-void TimeSeriesSink::consumeMetrics(const Block & block)
+void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 {
     /// Step 1. Extract columns from the input block.
     const auto & metric_family_col = block.getByName(TimeSeriesColumnNames::MetricFamily);
@@ -810,13 +811,13 @@ void TimeSeriesSink::consumeMetrics(const Block & block)
         return;
     }
 
-    /// Step 2. Build columns for the metrics block, skipping rows with empty metric_family.
+    /// Step 2. Build columns for the metric families block, skipping rows with empty metric_family.
     auto new_metric_family_column = metric_family_col.type->createColumn();
     auto new_type_column = type_col.type->createColumn();
     auto new_unit_column = unit_col.type->createColumn();
     auto new_help_column = help_col.type->createColumn();
 
-    fillMetricsColumns(
+    fillMetricFamiliesColumns(
         *metric_family_col.column,
         *type_col.column, *unit_col.column, *help_col.column,
         *new_metric_family_column,
@@ -825,14 +826,15 @@ void TimeSeriesSink::consumeMetrics(const Block & block)
     /// We've already checked that at least one non-empty `metric_family` is present.
     chassert(!new_metric_family_column->empty());
 
-    /// Step 3. Assemble the block and push it to the "metrics" table.
-    Block metrics_block;
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::MetricFamilyName});
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
-    metrics_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
+    /// Step 3. Assemble the block and push it to the "metric families" table.
+    Block metric_families_block;
+    metric_families_block.insert(ColumnWithTypeAndName{
+        std::move(new_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_type_column), type_col.type, TimeSeriesColumnNames::Type});
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
+    metric_families_block.insert(ColumnWithTypeAndName{std::move(new_help_column), help_col.type, TimeSeriesColumnNames::Help});
 
-    metrics_pipeline->push(std::move(metrics_block));
+    metric_families_pipeline->push(std::move(metric_families_block));
 }
 
 
@@ -844,8 +846,8 @@ void TimeSeriesSink::onFinish()
         samples_pipeline->executor->finish();
     if (recent_samples_pipeline)
         recent_samples_pipeline->executor->finish();
-    if (metrics_pipeline)
-        metrics_pipeline->executor->finish();
+    if (metric_families_pipeline)
+        metric_families_pipeline->executor->finish();
 }
 
 }

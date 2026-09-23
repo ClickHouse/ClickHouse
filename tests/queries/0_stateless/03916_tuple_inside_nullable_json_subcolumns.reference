@@ -15,10 +15,10 @@ INSERT INTO test
 SELECT NULL
 FROM numbers(4);
 SELECT json.d AS path, toTypeName(path) FROM test;
-(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
-(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
-(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
-(0,NULL)	Tuple(\n    e UInt32,\n    f Nullable(UInt32))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
+\N	Nullable(Tuple(e UInt32, f Nullable(UInt32)))
 SET allow_experimental_nullable_tuple_type = 1;
 DROP TABLE IF EXISTS test;
 CREATE TABLE test

@@ -182,7 +182,7 @@ SQLQueryPiece applyLabelManipulationFunction(
             else
             {
                 ASTPtr value = (first_argument.store_method == StoreMethod::CONST_SCALAR)
-                    ? timeSeriesScalarToAST(first_argument.scalar_value, context.scalar_data_type)
+                    ? timeSeriesScalarToAST(first_argument.scalar_value)
                     : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
                 values = makeASTFunction(
