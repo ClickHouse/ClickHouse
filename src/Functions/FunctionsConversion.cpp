@@ -421,7 +421,17 @@ ExecutableFunctionPtr FunctionCast::prepare(const ColumnsWithTypeAndName & /*sam
 template <typename ToDataType>
 FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_type, const ToDataType * const to_type, bool requested_result_is_nullable) const
 {
-    TypeIndex from_type_index = from_type->getTypeId();
+    const TypeIndex source_type_index = from_type->getTypeId();
+    /// An `Enum8`/`Enum16` column is the `ColumnVector<Int8>`/`ColumnVector<Int16>` holding its
+    /// underlying values, so the accurate path can dispatch it as that integer.
+    TypeIndex from_type_index = source_type_index;
+    if (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+    {
+        if (source_type_index == TypeIndex::Enum8)
+            from_type_index = TypeIndex::Int8;
+        else if (source_type_index == TypeIndex::Enum16)
+            from_type_index = TypeIndex::Int16;
+    }
     WhichDataType which(from_type_index);
     TypeIndex to_type_index = to_type->getTypeId();
     WhichDataType to(to_type_index);
@@ -466,7 +476,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
         }
     }
 
-    return [this, from_type_index, to_type]
+    return [this, from_type_index, source_type_index, to_type]
         (ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, const ColumnNullable * column_nullable, size_t input_rows_count)
     {
         ColumnPtr result_column;
@@ -565,7 +575,7 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
             {
                 throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE,
                     "Conversion from {} to {} is not supported",
-                    from_type_index, to_type->getName());
+                    source_type_index, to_type->getName());
             }
         }
 
