@@ -1532,7 +1532,7 @@ CurrentDatabaseInfo::CurrentDatabaseInfo(String full_name_)
         ReadBufferFromString in(full_name_);
         String database;
         const bool closed = full_name_.front() == '\'' ? tryReadQuotedString(database, in) : tryReadDoubleQuotedString(database, in);
-        if (closed && in.eof())
+        if (closed && !database.empty() && in.eof())
         {
             value = std::move(database);
             return;
@@ -3820,7 +3820,6 @@ CurrentDatabaseInfo Context::getCurrentDatabase() const
     SharedLockGuard lock(mutex);
     return current_database;
 }
-
 
 String Context::getInitialQueryId() const
 {
