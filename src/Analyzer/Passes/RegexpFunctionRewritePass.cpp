@@ -43,8 +43,8 @@ public:
         if (function_node->getFunctionName() == "replaceRegexpAll" || Poco::toLower(function_node->getFunctionName()) == "regexp_replace")
             handleReplaceRegexpAll(*function_node);
 
-        /// If an extract function has a regexp with some subpatterns and the regexp starts with ^.* or ending with an
-        /// unescaped .*$, remove this prefix and/or suffix.
+        /// If an extract function has a regexp with some subpatterns and the regexp ends with an
+        /// unescaped .*$, remove this suffix.
         if (function_node->getFunctionName() == "extract")
             handleExtract(*function_node);
     }
@@ -343,6 +343,71 @@ private:
 
         return !atoms.back().nullable;
     }
+    /// Whether a `\Q` quoted section reaches the end of the pattern. re2 treats everything after
+    /// `\Q` as literal text, up to a closing `\E` or the end of the pattern, so trailing `.*$` or
+    /// `$` bytes inside such a section are ordinary characters and not regexp syntax: they neither
+    /// anchor the match nor can be removed. The `extract` rewrite below decides from raw bytes
+    /// whether the pattern ends with syntax, so it has to decline for such a pattern. (The
+    /// `replaceRegexpAll` rewrite tokenizes the pattern instead and sees the quoted `$` for itself.)
+    static bool endsInsideQuotedLiteral(const std::string & regexp)
+    {
+        size_t i = 0;
+        while (i + 1 < regexp.size())
+        {
+            if (regexp[i] != '\\')
+            {
+                ++i;
+                continue;
+            }
+
+            if (regexp[i + 1] != 'Q')
+            {
+                /// An ordinary escape sequence - both of its bytes are consumed, so that the
+                /// second backslash of `\\Q` does not open a quoted section.
+                i += 2;
+                continue;
+            }
+
+            /// Inside a quoted section a backslash is a literal byte of its own, and only the
+            /// exact two-byte sequence `\E` closes the section.
+            i += 2;
+            while (i + 1 < regexp.size() && !(regexp[i] == '\\' && regexp[i + 1] == 'E'))
+                ++i;
+
+            if (i + 1 >= regexp.size())
+                return true;
+
+            i += 2;
+        }
+        return false;
+    }
+
+    /// Whether the pattern turns the `s` (dot matches a newline) flag off with an inline group,
+    /// `(?-s)` or `(?i-s:...)`. ClickHouse compiles regexp functions with `dot_nl` on, so `.`
+    /// normally matches a newline and a trailing `.*$` never constrains the match; with the flag
+    /// off it does. The scope of such a group is not tracked - any occurrence is enough to decline.
+    static bool disablesDotAll(const std::string & regexp)
+    {
+        for (size_t i = 0; i + 2 < regexp.size(); ++i)
+        {
+            if (regexp[i] != '(' || regexp[i + 1] != '?')
+                continue;
+
+            /// re2 flags are `i`, `m`, `s` and `U`, and everything after a `-` is turned off.
+            bool negated = false;
+            for (size_t j = i + 2; j < regexp.size(); ++j)
+            {
+                const char flag = regexp[j];
+                if (flag == '-')
+                    negated = true;
+                else if (flag == 's' && negated)
+                    return true;
+                else if (flag != 'i' && flag != 's' && flag != 'U' && flag != 'm')
+                    break; /// Not a flag group, or its flag list has ended.
+            }
+        }
+        return false;
+    }
 
     bool handleReplaceRegexpAll(FunctionNode & function_node)
     {
@@ -361,17 +426,20 @@ private:
         if (regexp.empty())
             return false;
 
-        /// A `^`-anchored pattern can only match at offset 0, so replacing all and replacing one are
-        /// the same. A pattern anchored only by a trailing `$` matches once at the end - unless it
-        /// can also match the empty string there, in which case a global replace replaces twice:
-        /// `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`, while `replaceRegexpOne` gives `fZ`.
+        /// A `^` at the very start cannot be quoted - a `\Q` would have to precede it - so it is
+        /// always an anchor, and the pattern can only match at offset 0. A pattern anchored only by
+        /// a trailing `$` matches once at the end - if the `$` is an anchor rather than quoted or
+        /// quantified text, and unless the pattern can also match the empty string there, in which
+        /// case a global replace replaces twice: `replaceRegexpAll('foo', 'o*$', 'Z')` is `fZZ`,
+        /// while `replaceRegexpOne` gives `fZ`.
         const bool starts_with_caret = regexp.front() == '^';
         if (!starts_with_caret && !endsWithRequiredDollarAnchor(regexp))
             return false;
 
         /// An inline `m` flag makes `^` and `$` match at every line boundary rather than only at the
-        /// ends of the subject, so the pattern can match once per line: `replaceRegexpAll` over
-        /// `(?m)a$` replaces every line's `a`, `replaceRegexpOne` only the first line's.
+        /// ends of the subject, so the pattern can match once per line and neither anchor proves a
+        /// single match: `replaceRegexpAll` over `(?m)a$` replaces every line's `a`, while
+        /// `replaceRegexpOne` replaces only the first line's.
         if (enablesMultiline(regexp))
             return false;
 
@@ -401,11 +469,9 @@ private:
         String regexp = constant_node->getValue().safeGet<String>();
 
         /// A NUL (`\0`) byte is an ordinary literal byte in the pattern (re2 is binary-safe), and the
-        /// analyzer no longer stops at it, so captures placed after a NUL are now visible here. The
-        /// `^.*` prefix removal below changes which occurrence is captured when the part after the
-        /// prefix can match at more than one offset (greedy `^.*` selects the last occurrence, while
-        /// the stripped pattern selects the first). Be conservative and skip the rewrite for patterns
-        /// containing a NUL, so this fix does not change `extract` results for such patterns.
+        /// analyzer no longer stops at it, so captures placed after a NUL are now visible here. Be
+        /// conservative and skip the rewrite for patterns containing a NUL, so that fix does not
+        /// change `extract` results for such patterns.
         if (regexp.contains('\0'))
             return;
 
@@ -413,22 +479,28 @@ private:
         if (!result.has_capture)
             return;
 
-        /// For simplicity, this optimization ignores alternations and only considers anchoring at the start or end of the pattern.
-        bool starts_with_caret_dot_star = regexp.starts_with("^.*") && !regexp.starts_with("^.*?");
-        bool ends_with_unescaped_dot_star_dollar = false;
-
-        if (regexp.size() >= 3 && regexp.ends_with(".*$"))
+        /// Only a trailing `.*$` is removed. Leftmost-first matching fixes where the match starts
+        /// before the tail is considered, so dropping the tail cannot change what is captured.
+        ///
+        /// A leading greedy `^.*` must be left alone: it consumes as much as it can and then
+        /// backtracks, so the capture binds at the *last* offset where the rest of the pattern
+        /// matches, while the stripped pattern binds at the first one.
+        /// `extract('a1b2c3', '^.*(\d)')` is `3` - the idiomatic "last digit" pattern - while
+        /// `extract('a1b2c3', '(\d)')` is `1`.
+        ///
+        /// The tail is only free of consequences while `.` matches a newline. ClickHouse compiles
+        /// regexp functions with `dot_nl` on, but an inline `(?-s)` turns it back off, and then
+        /// `.*$` cannot cross a newline: it pins the match to the last line, and dropping it moves
+        /// the capture to an earlier one.
+        ///
+        /// The tail also has to be regexp syntax rather than literal text: an unterminated `\Q`
+        /// quotes it, and then `.*$` are three ordinary characters to match.
+        ///
+        /// For simplicity, this optimization ignores alternations.
+        if (regexp.size() >= 3 && regexp.ends_with(".*$") && isUnescaped(regexp, regexp.size() - 3) && !disablesDotAll(regexp)
+            && !endsInsideQuotedLiteral(regexp))
         {
-            size_t dot_pos = regexp.size() - 3;
-            ends_with_unescaped_dot_star_dollar = isUnescaped(regexp, dot_pos);
-        }
-
-        if (starts_with_caret_dot_star || ends_with_unescaped_dot_star_dollar)
-        {
-            if (starts_with_caret_dot_star)
-                regexp = regexp.substr(3);
-            if (ends_with_unescaped_dot_star_dollar && regexp.ends_with(".*$"))
-                regexp = regexp.substr(0, regexp.size() - 3);
+            regexp = regexp.substr(0, regexp.size() - 3);
             function_node_arguments_nodes[1] = std::make_shared<ConstantNode>(std::move(regexp));
         }
     }
