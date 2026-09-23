@@ -170,9 +170,11 @@ def test_cluster_function_positional_compression(started_cluster):
     # An explicit `auto`, in any case, is accepted as well.
     for extra in ["", ", 'Parquet', 'auto'", ", 'Parquet', 'AUTO'"]:
         query_id = f"{table_name}_{len(extra)}"
-        assert 5 == int(
+        # Not `count()`: it can be answered from the table metadata without
+        # sending the query to the other nodes.
+        assert 15 == int(
             instance.query(
-                f"SELECT count() FROM deltaLakeAzureCluster(cluster, {positional}{extra})",
+                f"SELECT sum(a) FROM deltaLakeAzureCluster(cluster, {positional}{extra})",
                 query_id=query_id,
             )
         )
@@ -188,6 +190,6 @@ def test_cluster_function_positional_compression(started_cluster):
 
     # A real codec is still rejected.
     error = instance.query_and_get_error(
-        f"SELECT count() FROM deltaLakeAzureCluster(cluster, {positional}, 'Parquet', 'lzma')"
+        f"SELECT sum(a) FROM deltaLakeAzureCluster(cluster, {positional}, 'Parquet', 'lzma')"
     )
     assert "not supported by data lake engines" in error, error
