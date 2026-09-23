@@ -2058,8 +2058,8 @@ bool MergeTreeIndexConditionText::traverseMapContainsKeyValueNode(
     /// The pair is either the key's first occurrence or a repetition. Every entry has a token, so even
     /// an empty value is searchable here, unlike in `equals`.
     VectorWithMemoryTracking<String> tokens;
-    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_rest=*/ false));
-    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_rest=*/ true));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ false));
+    tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, *value, /*is_duplicate=*/ true));
 
     const auto function_name = function_node.getFunctionName();
     out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
