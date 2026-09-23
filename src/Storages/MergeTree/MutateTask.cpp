@@ -2692,8 +2692,23 @@ private:
             if (removed_projections.contains(projection.name))
                 continue;
 
+            /// This task's pipeline reads every column, so a rebuild is sound here.
+            bool source_projection_is_stale = false;
+            if (auto source_projection = ctx->source_part->getProjectionParts().find(projection.name);
+                source_projection != ctx->source_part->getProjectionParts().end()
+                && !ctx->source_part->hasBrokenProjection(projection.name))
+            {
+                source_projection_is_stale = projection.isStaleForPartColumns(
+                    ctx->source_part->getColumns(),
+                    ctx->source_part->getSerializationInfos(),
+                    source_projection->second->getColumns(),
+                    source_projection->second->getSerializationInfos(),
+                    ctx->metadata_snapshot->getColumns());
+            }
+
             bool need_recalculate =
                 (ctx->materialized_projections.contains(projection.name)
+                || source_projection_is_stale
                 || (!is_full_part_storage
                     && ctx->source_part->hasProjection(projection.name)
                     && !ctx->source_part->hasBrokenProjection(projection.name)))
@@ -4292,6 +4307,25 @@ bool MutateTask::prepare()
         {
             for (const auto & projection_name : ctx->metadata_snapshot->projections.getUnavailableNames())
                 ctx->files_to_skip.insert(projection_name + ".proj");
+
+            /// This task's pipeline reads only the columns the mutation changes, and the shared
+            /// projection calculation default-fills the rest, so a stale projection is left out of
+            /// the new part rather than rebuilt here.
+            for (const auto & projection : ctx->metadata_snapshot->getProjections())
+            {
+                auto source_projection = ctx->source_part->getProjectionParts().find(projection.name);
+                if (source_projection == ctx->source_part->getProjectionParts().end()
+                    || ctx->source_part->hasBrokenProjection(projection.name))
+                    continue;
+
+                if (projection.isStaleForPartColumns(
+                        ctx->source_part->getColumns(),
+                        ctx->source_part->getSerializationInfos(),
+                        source_projection->second->getColumns(),
+                        source_projection->second->getSerializationInfos(),
+                        ctx->metadata_snapshot->getColumns()))
+                    ctx->files_to_skip.insert(projection.getDirectoryName());
+            }
         }
 
         ctx->files_to_rename = MutationHelpers::collectFilesForRenames(

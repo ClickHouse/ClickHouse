@@ -354,7 +354,15 @@ size_t filterPartsByProjection(
 ///   (4) the projection part lacks it, the parent part lacks it too, and it is a parent TABLE column:
 ///       legitimate, the column was added after the part was written, so the default fill is correct
 ///       and identical on either read path (see 04412).
-static bool projectionPartHasRequiredColumns(
+/// Case (4) also has a type counterpart, asked once after the loop:
+///   (5) the parent part records another type than the table declares for a column the projection
+///       DERIVED a stored value from (a grouping key, an aggregate state, its own sort order): that
+///       value was computed from data the parent read no longer returns. A column the parent part
+///       records and the projection merely stores is not asked about, so (4) stays reachable; a column
+///       the parent part lacks contributes the inputs its DEFAULT is computed from, followed on through
+///       their own defaults, and a filtered projection additionally contributes the columns its WHERE
+///       reads; none of those is refused merely for being absent from the part.
+static bool canReadProjectionPart(
     const IMergeTreeDataPart & projection_part,
     const IMergeTreeDataPart & parent_part,
     const ProjectionDescription & projection,
@@ -382,7 +390,14 @@ static bool projectionPartHasRequiredColumns(
         /// (4) Legitimate late-added table column, missing from both parts; the default fill matches.
     }
 
-    return true;
+    /// (5) Over the projection's own dependencies: @required_column_names is narrowed by the
+    /// filtering caller to the columns the projection outputs.
+    return !projection.isStaleForPartColumns(
+        parent_part.getColumns(),
+        parent_part.getSerializationInfos(),
+        projection_part.getColumns(),
+        projection_part.getSerializationInfos(),
+        parent_table_columns);
 }
 
 bool analyzeProjectionCandidate(
@@ -403,7 +418,7 @@ bool analyzeProjectionCandidate(
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
         if (it != created_projections.end() && !it->second->is_broken
-            && projectionPartHasRequiredColumns(
+            && canReadProjectionPart(
                 *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names))
         {
             projection_parts.push_back(RangesInDataPart(
@@ -468,7 +483,7 @@ void filterPartsAndCollectProjectionCandidates(
     RangesInDataParts projection_parts;
     std::unordered_set<const IMergeTreeDataPart *> valid_parts;
 
-    /// Route a drifted projection part (see projectionPartHasRequiredColumns) to a parent read rather
+    /// Route a drifted projection part (see canReadProjectionPart) to a parent read rather
     /// than evaluating the filter over it, which would prune the wrong parent rows. Only the filter
     /// inputs the projection provides matter; the index-based mark estimate below is safe on its own.
     /// Defensive: such a part cannot currently reach here (a projection sort/INDEX column may not be an
@@ -489,7 +504,7 @@ void filterPartsAndCollectProjectionCandidates(
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(projection.name);
         if (it != created_projections.end() && !it->second->is_broken
-            && projectionPartHasRequiredColumns(
+            && canReadProjectionPart(
                 *it->second, *part_with_ranges.data_part, projection, parent_metadata, filter_required_columns))
         {
             RangesInDataPart projection_part(

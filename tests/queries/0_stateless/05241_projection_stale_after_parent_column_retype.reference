@@ -1,0 +1,148 @@
+-- A. changing only a time zone rewrites no data, so nothing can rebuild the projection
+A mutations	0
+A authoritative	9	1
+A authoritative	10	1
+A authoritative	11	1
+A authoritative	12	1
+A authoritative	13	1
+A authoritative	14	1
+A authoritative	15	1
+A authoritative	16	1
+A with projections	9	1
+A with projections	10	1
+A with projections	11	1
+A with projections	12	1
+A with projections	13	1
+A with projections	14	1
+A with projections	15	1
+A with projections	16	1
+-- B. a type conversion that has not been applied yet
+B pending	1
+B authoritative	1073741824	4
+B with projections	1073741824	4
+-- G. asking for the projection explicitly now reports that it cannot be used
+-- E. a part written after the type change keeps its projection, and the mixed read is correct
+E authoritative	7	2
+E authoritative	1073741824	4
+E with projections	7	2
+E with projections	1073741824	4
+-- C. a partition moved into another table, which has no conversion left to apply
+C mutations at destination	0
+C authoritative	1073741824	4
+C with projections	1073741824	4
+-- D. only the projection that reads the changed column is affected
+D untouched projection	0	1
+D untouched projection	1	1
+D untouched projection	2	1
+D untouched projection	3	1
+D changed column authoritative	1073741824	4
+D changed column with projections	1073741824	4
+-- I. a normal projection sorted by an expression: its stored order can skip matching rows
+I authoritative	4
+I with projections	4
+-- I2. a normal projection that cannot answer the query and is used only to prune parts: its
+--     stored order prunes away the very parts that hold the matching rows
+I2 control, projection prunes a part	1
+I2 after the retype, projection prunes nothing	0
+I2 authoritative	4
+I2 with projections	4
+-- O. a normal projection storing a column the part does not hold: its value was computed
+--    from the retyped column through the DEFAULT expression of that column
+O c not stored by the part	1
+O c stored by the projection	1
+O control, projection answers before the retype	1073741825	1
+O control, projection answers before the retype	1073741827	1
+O control, projection answers before the retype	1073741829	1
+O control, projection answers before the retype	1073741831	1
+O authoritative	1073741824	4
+O with projections	1073741824	4
+-- P. the DEFAULT of a stored column reads the retyped column through an ALIAS
+P c not stored by the part	1
+P c stored by the projection	1
+P control, projection answers before the retype	1073741825	1
+P control, projection answers before the retype	1073741827	1
+P control, projection answers before the retype	1073741829	1
+P control, projection answers before the retype	1073741831	1
+P authoritative	1073741824	4
+-- M. the changed column is read as part of a bigger column
+M authoritative	1073741824	4
+M with projections	1073741824	4
+-- H1. a column the part holds no values of because every value was the type default
+H1 column not stored	1
+H1 authoritative	9	4
+H1 with projections	9	4
+-- H2. a column added after the part was written, so the part records no type for it
+H2 column not stored	1
+H2 authoritative	1073741824	4
+H2 with projections	1073741824	4
+-- N. the price of refusing when the part records no type: the answer is right, the
+--    projection is skipped until a merge rewrites the part
+N answer	1073741825	4
+N after merge	1073741825	6
+-- J. the same price for a type change that happens to keep every value: the projection is
+--    skipped although its stored keys are still right. This is deliberate: whether the
+--    stored values survived a conversion cannot be decided without recomputing them, and
+--    the previous case shows how rewriting the part brings the projection back
+J authoritative	1073741825	1
+J authoritative	1073741827	1
+J authoritative	1073741829	1
+J authoritative	1073741831	1
+J with projections	1073741825	1
+J with projections	1073741827	1
+J with projections	1073741829	1
+J with projections	1073741831	1
+-- Q. an intermediate of a DEFAULT chain that the part does not record cannot be shown NOT to
+--    be staleness, so it is refused even with nothing retyped: the projection froze a value
+--    computed through that intermediate under a declaration no part recorded. This is the
+--    price arms N and J price, and rewriting the part brings the projection back the way
+--    arm N shows
+Q neither d nor c stored by the part	1
+Q authoritative	1073741824	4
+-- R. a filtered projection keeps answering when only a pass-through column is retyped
+R mutations	0
+R authoritative	0	9
+R authoritative	2	11
+R authoritative	4	13
+R authoritative	6	15
+R with the projection	0	9
+R with the projection	2	11
+R with the projection	4	13
+R with the projection	6	15
+-- S. a normal projection whose sort key is a column the part does not record: the stored
+--    copy and the order over it were both frozen under the type declared back then
+S dt not stored by the part	1
+S dt recorded by the projection	DateTime(\'UTC\')
+S control, projection answers before the retype	4
+S authoritative	4	1767211200
+S with projections	4	1767211200
+-- T. a filtered projection whose WHERE reads a column the part does not record: the row set
+--    it kept was decided under the type declared back then
+T projection rows	1
+T control, projection answers before the retype	1
+T authoritative	4
+T with projections	4
+-- V. an aggregate projection grouped by a column the part does not record: its keys are what
+--    that column\'s DEFAULT produced from the retyped column back then
+V h not stored by the part	1
+V h recorded by the projection	UInt8
+V control, projection answers before the retype	0	1
+V control, projection answers before the retype	1	1
+V control, projection answers before the retype	2	1
+V control, projection answers before the retype	3	1
+V no mutation for the retype	0
+V authoritative	9	1
+V authoritative	10	1
+V authoritative	11	1
+V authoritative	12	1
+V with projections	9	1
+V with projections	10	1
+V with projections	11	1
+V with projections	12	1
+-- W. a normal projection storing a DEFAULT output whose input neither part records: the
+--    stored value was computed while that input read as its old declaration, and no type on
+--    disk says which one that was, so this shape is refused for the same reason as arm Q
+W neither b nor c stored by the part	1
+W c stored by the projection	c	UInt8
+W projection rows	4
+W authoritative	9	4
+W with projections	9	4

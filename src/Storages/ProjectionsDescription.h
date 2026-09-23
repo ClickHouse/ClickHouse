@@ -29,6 +29,8 @@ class ASTProjectionSelectQuery;
 
 struct MergeTreeSettings;
 
+class SerializationInfoByName;
+
 /// Description of projections for Storage
 struct ProjectionDescription
 {
@@ -161,6 +163,21 @@ struct ProjectionDescription
     Block calculateByQuery(const Block & block, UInt64 starting_offset, ContextPtr context, const IColumnPermutation * perm_ptr = nullptr) const;
 
     String getDirectoryName() const { return name + ".proj"; }
+
+    /// Does the part record, for a column this projection reads, a type other than the one
+    /// @table_columns declares? A projection part holds values computed from the parent columns as
+    /// the part records them (grouping keys, aggregate states, a normal projection's sort order),
+    /// while a read of the parent converts those columns to the declared type. When the parent part
+    /// records no type for such a column, the type the PROJECTION part recorded is the evidence:
+    /// the projection froze what the column's DEFAULT produced under it, and a parent read now
+    /// synthesises that DEFAULT under the declared type instead.
+    /// Renames are not resolved: a rename changes no value.
+    bool isStaleForPartColumns(
+        const NamesAndTypesList & part_columns,
+        const SerializationInfoByName & part_serialization_infos,
+        const NamesAndTypesList & projection_part_columns,
+        const SerializationInfoByName & projection_part_serialization_infos,
+        const ColumnsDescription & table_columns) const;
 };
 
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;

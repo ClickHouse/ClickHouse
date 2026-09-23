@@ -1510,13 +1510,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         }
 
         /// An existing projection part may lack a column the current metadata expects (e.g. an ALIAS
-        /// selected by the projection was re-pointed by ALTER; see projectionPartHasRequiredColumns).
+        /// selected by the projection was re-pointed by ALTER; see canReadProjectionPart).
         /// Merging it directly would bake default values into the merged part, so rebuild from the parent
         /// instead. A parent TABLE column the parent part also lacks is a legitimate late-add and does
         /// not count.
         const auto projection_columns = projection.metadata->getColumns().getAllPhysical();
         const auto & parent_table_columns = global_ctx->metadata_snapshot->getColumns();
         bool projection_part_misses_column = false;
+        bool projection_part_is_stale = false;
 
         MergeTreeData::DataPartsVector projection_parts;
         for (const auto & part : global_ctx->future_part->parts)
@@ -1535,6 +1536,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
                     }
                 }
 
+                if (projection.isStaleForPartColumns(
+                        part->getColumns(),
+                        part->getSerializationInfos(),
+                        it->second->getColumns(),
+                        it->second->getSerializationInfos(),
+                        parent_table_columns))
+                    projection_part_is_stale = true;
+
                 projection_parts.push_back(it->second);
             }
         }
@@ -1549,8 +1558,24 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRe
         }
         else if (projection_parts.size() == global_ctx->future_part->parts.size())
         {
-            global_ctx->projections_to_merge.push_back(&projection);
-            global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
+            /// The merged part records the declared types, so a stale projection merged through
+            /// becomes indistinguishable from an up-to-date one. Unlike the three reasons above this
+            /// one is not gated on the IGNORE mode: a projection whose stored values were computed
+            /// from another type has to be rebuilt whatever the mode.
+            if (projection_part_is_stale)
+            {
+                LOG_DEBUG(
+                    ctx->log,
+                    "Projection {} will be rebuilt because a source part records another type than the table "
+                    "declares for a column it reads",
+                    projection.name);
+                global_ctx->projections_to_rebuild.push_back(&projection);
+            }
+            else
+            {
+                global_ctx->projections_to_merge.push_back(&projection);
+                global_ctx->projections_to_merge_parts[projection.name].assign(projection_parts.begin(), projection_parts.end());
+            }
         }
         else if (projection.with_block_number || projection.with_block_offset)
         {
