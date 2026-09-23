@@ -719,7 +719,7 @@ Use multiple threads for azure multipart upload.
 Throw an error, when ListObjects request cannot match any files
 )", 0) \
     DECLARE(Bool, object_storage_propagate_credentials_to_other_storages, false, R"(
-Reuse the base storage's `S3` credentials when accessing Iceberg table files located in a different endpoint. 
+Reuse the base storage's `S3` credentials when accessing Iceberg table files located in a different endpoint.
 Ignored if `s3_allow_server_credentials_in_user_queries` is disabled.
 )", 0) \
     DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(
