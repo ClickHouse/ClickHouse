@@ -1,0 +1,2 @@
+native INSERT trace socket sends are excluded from streamed samples
+ordinary native result socket sends remain visible in streamed samples

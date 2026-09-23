@@ -1119,7 +1119,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// do not reach the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is
     /// stripped below.
     auto query_to_send = query.clone();
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+    ClusterProxy::prepareSecondaryQueryAST(query_to_send);
 
     /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
     /// function (`url`, `s3`, ...), while the query text still names that plain function. A node that runs
