@@ -244,7 +244,8 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             {.current_metric = CurrentMetrics::TemporaryFilesForDistinct,
              .bytes_compressed = ProfileEvents::ExternalDistinctCompressedBytes,
              .bytes_uncompressed = ProfileEvents::ExternalDistinctUncompressedBytes,
-             .num_files = ProfileEvents::ExternalDistinctWritePart},
+             .num_files = ProfileEvents::ExternalDistinctWritePart,
+             .spilled_to_disk_operator = "distinct"},
             settings.temporary_files_buffer_size,
             settings.temporary_files_codec);
 
