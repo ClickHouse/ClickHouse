@@ -231,6 +231,13 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
 
 bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context)
 {
+    /// The walk below reports the `QUERY` nodes it descended through, so a tree that is a bare table
+    /// expression comes back empty however readable that table is, and would be reported ineligible.
+    /// The root of a query tree is always a query or a union - `findQueryForParallelReplicas`, the
+    /// planner's own entry into the same walk, rejects anything else outright - so state that here
+    /// rather than have the answer quietly depend on it.
+    chassert(query_tree_node->as<QueryNode>() || query_tree_node->as<UnionNode>());
+
     /// The plan-based implementation decides where to read with replicas by analyzing the query plan
     /// rather than the query tree, so the walk below does not describe what it will do. Report every
     /// query as possibly eligible there instead of risking a rejection of one it could parallelize.
