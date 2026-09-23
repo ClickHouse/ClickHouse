@@ -238,7 +238,7 @@ SELECT 'serialized plan', count() FROM (EXPLAIN actions = 1
     SETTINGS serialize_query_plan = 1
 ) WHERE explain LIKE '%HAVING pre-filter%';
 
-SELECT '--- the skipped-group count is exact for every operator, in both conversion paths ---';
+SELECT '--- the skipped-group count is 0 or exact for every operator, in both conversion paths ---';
 
 -- A lone count() takes the inline `is_simple_count` conversion.
 SELECT count(), sum(cnt) FROM (SELECT a, count() AS cnt FROM having_prefilter GROUP BY a HAVING cnt >= 4)
@@ -278,7 +278,19 @@ SYSTEM FLUSH LOGS query_log;
 
 -- `tests/clickhouse-test` gives every query of this file its own `log_comment` of
 -- `<test file name>-<database>`, so a `05218_` prefix here would also select those.
-SELECT log_comment, ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] AS groups_skipped
+--
+-- The elision is best effort: the pass may skip groups, it is never required to, and the retained
+-- `FilterStep` stays authoritative. So a run whose configuration does not reach the two-level bucket
+-- conversion skips nothing and is still correct - 1 of 50 runs of the private
+-- `amd_asan_ubsan, flaky check, s3 storage, meta in keeper` job reported 0 for every cell below, while
+-- the `EXPLAIN` cells above still carried the annotation. A skipped count is therefore accepted as 0 or
+-- as the exact number of groups the operator rejects, and never as anything else: a wrong operator, a
+-- mirrored bound mapped to the wrong operator, or a count read from the wrong aggregate's offset skips
+-- a different, non-zero number of groups. The setting-off cells must skip nothing.
+SELECT log_comment,
+       ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] IN (0, map(
+           '05218hp_ge_simple_on', 4000, '05218hp_lt_simple_on', 2000, '05218hp_le_general_on', 2000,
+           '05218hp_eq_general_on', 4000, '05218hp_ge_mirrored_on', 4000)[log_comment]) AS groups_skipped_ok
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND startsWith(log_comment, '05218hp_')

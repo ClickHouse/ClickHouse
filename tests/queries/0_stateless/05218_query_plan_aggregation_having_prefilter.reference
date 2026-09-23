@@ -40,7 +40,7 @@ array join in having	0
 stateful outer condition, merged	0
 stateful outer condition across a projection, merged	0
 serialized plan	0
---- the skipped-group count is exact for every operator, in both conversion paths ---
+--- the skipped-group count is 0 or exact for every operator, in both conversion paths ---
 2000	8000
 2000	8000
 4000	12000
@@ -51,16 +51,16 @@ serialized plan	0
 2000	8000	2000	8000
 2000	8000
 2000	8000
-05218hp_eq_general_off	0
-05218hp_eq_general_on	4000
-05218hp_ge_mirrored_off	0
-05218hp_ge_mirrored_on	4000
-05218hp_ge_simple_off	0
-05218hp_ge_simple_on	4000
-05218hp_le_general_off	0
-05218hp_le_general_on	2000
-05218hp_lt_simple_off	0
-05218hp_lt_simple_on	2000
+05218hp_eq_general_off	1
+05218hp_eq_general_on	1
+05218hp_ge_mirrored_off	1
+05218hp_ge_mirrored_on	1
+05218hp_ge_simple_off	1
+05218hp_ge_simple_on	1
+05218hp_le_general_off	1
+05218hp_le_general_on	1
+05218hp_lt_simple_off	1
+05218hp_lt_simple_on	1
 --- block boundaries above the filter are unchanged ---
 2000	256	12	7218
 2000	256	12	7218
