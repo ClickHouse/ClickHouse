@@ -119,6 +119,38 @@ def test_experimental_gate(pulsar_cluster):
     assert "SUPPORT_IS_DISABLED" in error
 
 
+def test_source_grant_required(pulsar_cluster):
+    # `Pulsar` declares the `PULSAR` source, so both `CREATE` and a full `ATTACH`
+    # need `READ, WRITE ON PULSAR`, like the other external source engines.
+    instance.query("CREATE DATABASE IF NOT EXISTS test")
+    instance.query("DROP USER IF EXISTS pulsar_grant_user")
+    instance.query("CREATE USER pulsar_grant_user")
+    try:
+        instance.query("GRANT CREATE TABLE, DROP TABLE ON test.* TO pulsar_grant_user")
+
+        create = pulsar_table("test.pulsar_reader", "grant_topic", "grant_group")
+        full_attach = pulsar_table("test.pulsar_reader_grant_attach", "grant_topic", "grant_group").replace(
+            "CREATE TABLE test.pulsar_reader_grant_attach",
+            "ATTACH TABLE test.pulsar_reader_grant_attach UUID '00000000-0000-0000-0000-000000000003'",
+            1,
+        )
+
+        assert "Not enough privileges" in instance.query_and_get_error(create, user="pulsar_grant_user")
+        assert "Not enough privileges" in instance.query_and_get_error(full_attach, user="pulsar_grant_user")
+        assert instance.query("EXISTS TABLE test.pulsar_reader") == "0\n"
+        assert instance.query("EXISTS TABLE test.pulsar_reader_grant_attach") == "0\n"
+
+        instance.query("GRANT READ, WRITE ON PULSAR TO pulsar_grant_user")
+
+        instance.query(create, user="pulsar_grant_user")
+        instance.query(full_attach, user="pulsar_grant_user")
+        assert instance.query("EXISTS TABLE test.pulsar_reader") == "1\n"
+        assert instance.query("EXISTS TABLE test.pulsar_reader_grant_attach") == "1\n"
+    finally:
+        instance.query("DROP TABLE IF EXISTS test.pulsar_reader_grant_attach SYNC")
+        instance.query("DROP USER IF EXISTS pulsar_grant_user")
+
+
 def test_direct_select_requires_setting(pulsar_cluster):
     instance.query("CREATE DATABASE IF NOT EXISTS test")
     instance.query(pulsar_table("test.pulsar_reader", "select_gate_topic", "select_gate_group"))
