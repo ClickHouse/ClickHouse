@@ -25,11 +25,11 @@ SELECT value FROM prometheusQuery(ts, 'increase(up[80s])', 1700000000);
 SELECT value FROM prometheusQuery(ts, 'delta(up[80s])', 1700000000);
 
 SELECT '--- range query, promql_exact_rate = 1: the previous sample is used inside the range ---';
-SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[20s])', 1699999960, 1700000000, 20);
+SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[40s])', 1699999960, 1700000000, 20);
 
 SELECT '--- range query, promql_exact_rate = 0 ---';
 SET promql_exact_rate = 0;
-SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[20s])', 1699999960, 1700000000, 20);
+SELECT arrayMap(x -> (toUnixTimestamp64Second(x.1), x.2), samples) FROM prometheusQueryRange(ts, 'increase(up[40s])', 1699999960, 1700000000, 20);
 
 SELECT '--- promql dialect ---';
 SET promql_table = 'ts', promql_evaluation_time = 1700000000;
