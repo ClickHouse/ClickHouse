@@ -327,7 +327,7 @@ class FunctionAssignCentroid : public IFunction
 public:
     static constexpr auto name = "assignCentroid";
 
-    explicit FunctionAssignCentroid(ContextPtr context_) : context(context_), dict_helper(std::move(context_)) {}
+    explicit FunctionAssignCentroid(ContextPtr context_) : dict_helper(std::move(context_)) {}
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionAssignCentroid>(context_); }
 
     String getName() const override { return name; }
@@ -360,7 +360,10 @@ public:
         /// while the query is analyzed: the `make_distributed_plan` fallback decision needs to know before the plan
         /// ships. Qualifying the name records without loading anything.
         if (const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+        {
+            const auto & context = dict_helper.getContext();
             context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dict_name_col->getValue<String>(), context);
+        }
 
         return std::make_shared<DataTypeUInt32>();
     }
@@ -408,7 +411,6 @@ private:
         return castColumn(full, target);
     }
 
-    ContextPtr context;
     mutable FunctionDictHelper dict_helper;
     mutable std::mutex cache_mutex;
     /// A `weak_ptr`, not a raw pointer: expression actions can outlive a query, and comparing raw addresses

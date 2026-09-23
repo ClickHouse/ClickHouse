@@ -82,10 +82,17 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
 {
     const auto & columns = read.getStorageMetadata()->getColumns();
-    Block columns_without_default;
+
+    /// The reader's routine takes the columns a part already contains and computes the defaults of the required
+    /// columns that are not among them. Declaring every column without a default as present and every column with
+    /// one as absent makes it list exactly the defaults (`nm`), never the plain columns (`k`); and the identifiers
+    /// inside the defaults then resolve to columns, so no call folds into a constant that would run here.
+    Block columns_present_in_parts;
     for (const auto & column : columns.getAllPhysical())
         if (!columns.getDefault(column.name))
-            columns_without_default.insert({column.type->createColumn(), column.type, column.name});
+            columns_present_in_parts.insert(ColumnWithTypeAndName(column.type, column.name));
+
+    /// What this read produces; virtual columns have no metadata entry and are skipped.
     NamesAndTypesList required_columns;
     for (const auto & name : read.getAllColumnNames())
         if (auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, name))
@@ -95,7 +102,8 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     size_t used_before = used ? used->size() : 0;
     try
     {
-        if (!resolveMissingDefaults(columns_without_default, required_columns, columns, read.getContext()))
+        /// Resolving the defaults is what makes their functions record the objects they reach.
+        if (!resolveMissingDefaults(columns_present_in_parts, required_columns, columns, read.getContext()))
             return std::nullopt;
     }
     catch (const Exception & e)
@@ -105,10 +113,14 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
             read.getStorageID().getFullTableName(), e.message());
     }
 
-    if (auto entry = used ? used->at(used_before) : std::nullopt)
+    size_t used_after = used ? used->size() : 0;
+    if (used_after > used_before)
+    {
+        auto entry = used->at(used_before);
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
             UsedServerLocalObjects::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());
+    }
     return std::nullopt;
 }
 
@@ -371,11 +383,12 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     /// (select_sequential_consistency) or the part-order virtual columns `_part_index` /
     /// `_part_starting_offset`.
     if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
+    {
         if (auto reason = getReasonReadCannotBeDistributed(read); reason.has_value())
             return reason;
-    if (const auto * read = typeid_cast<const ReadFromMergeTree *>(&step))
         if (auto reason = getReasonColumnDefaultsCannotBeShipped(*read, optimization_settings); reason.has_value())
             return reason;
+    }
 
     /// A FinishSorting expects rows already sorted by the read below it. This optimizer creates one
     /// only from a Full sorting, and only when no exchange separates the read from the sort. The old
@@ -435,6 +448,21 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
         return PreformattedMessage::create(
             "make_distributed_plan cannot use a forced projection: a distributed read is bucketed and cannot be served from a projection");
 
+    /// Every dictionary, embedded dictionary and `Join` table the query resolved by name while it was analyzed exists
+    /// on the initiator, not necessarily on a worker, and the fragment ships only the name. Read after the walk: the
+    /// column-default analysis above resolves during it.
+    const auto & used = optimization_settings.used_server_local_objects;
+    if (!used)
+    {
+        /// No query context, so nothing could have been recorded; the plan is taken as free of such objects.
+        LOG_TRACE(getLogger("makeDistributedPlan"), "No record of the server-local objects the query resolved; assuming none");
+        return std::nullopt;
+    }
+    if (auto entry = used->first())
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support {} {}: it is an object of the initiator",
+            UsedServerLocalObjects::kindName(entry->kind), entry->name);
+
     /// One walk over the main tree, stopping at the first reason. The order of the checks inside
     /// `getReasonNodeCannotBeDistributed` decides which reason a plan with several defects reports.
     std::vector<QueryPlan::Node *> stack{&root};
@@ -462,14 +490,6 @@ getReasonPlanCannotBeDistributed(QueryPlan::Node & root, const QueryPlanOptimiza
             stack.push_back(child);
     }
 
-    /// Every dictionary, embedded dictionary and `Join` table the query resolved by name while it was analyzed exists
-    /// on the initiator, not necessarily on a worker, and the fragment ships only the name. Read after the walk: the
-    /// column-default analysis above resolves during it.
-    if (const auto & used = optimization_settings.used_server_local_objects)
-        if (auto entry = used->first())
-            return PreformattedMessage::create(
-                "make_distributed_plan does not support {} {}: it is an object of the initiator",
-                UsedServerLocalObjects::kindName(entry->kind), entry->name);
     return std::nullopt;
 }
 

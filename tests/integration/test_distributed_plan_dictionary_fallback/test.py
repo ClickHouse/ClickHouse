@@ -115,6 +115,42 @@ def started_cluster():
             "ADD COLUMN plain String DEFAULT concat('p', toString(k))"
         )
         worker.query("SYSTEM SYNC REPLICA t_dflt")
+        # An ALIAS column with a dictionary call, on a table of its own: the analyzer resolves alias expressions of a table
+        # when it initializes the table expression, whichever columns the query uses, so the record sees the dictionary
+        # for every query over this table.
+        # Added by ALTER on the initiator: a CREATE with the alias would validate the expression on the worker, which has
+        # no dictionary; the replicated metadata change is not validated there.
+        for node in (initiator, worker):
+            node.query(
+                """
+                CREATE TABLE t_alias (k UInt64)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_alias', '{replica}') ORDER BY k
+                """
+            )
+        initiator.query("INSERT INTO t_alias SELECT number FROM numbers(100)")
+        initiator.query("ALTER TABLE t_alias ADD COLUMN al String ALIAS dictGet(d, 'name', k)")
+        worker.query("SYSTEM SYNC REPLICA t_alias")
+        # A materialized default whose dictionary exists on both nodes (each replica runs the mutation itself): every part
+        # holds the column, so no reader would evaluate the default, yet the check does not look at parts.
+        for node in (initiator, worker):
+            node.query(
+                """
+                CREATE TABLE t_mat (k UInt64)
+                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_mat', '{replica}') ORDER BY k
+                """
+            )
+            node.query("CREATE TABLE src_both (k UInt64, name String) ENGINE = MergeTree ORDER BY k")
+            node.query("INSERT INTO src_both SELECT number, concat('n', toString(number)) FROM numbers(100)")
+            node.query(
+                """
+                CREATE DICTIONARY d_both (k UInt64, name String) PRIMARY KEY k
+                SOURCE(CLICKHOUSE(TABLE 'src_both' DB 'default')) LAYOUT(FLAT()) LIFETIME(0)
+                """
+            )
+        initiator.query("INSERT INTO t_mat SELECT number FROM numbers(100)")
+        initiator.query("ALTER TABLE t_mat ADD COLUMN m String DEFAULT dictGet(d_both, 'name', k)")
+        initiator.query("ALTER TABLE t_mat MATERIALIZE COLUMN m SETTINGS mutations_sync = 2")
+        worker.query("SYSTEM SYNC REPLICA t_mat")
         # A materialized default whose dictionary was dropped afterwards: the parts hold the values, but the default
         # expression in the metadata no longer resolves. The dictionary has to exist on both replicas while the
         # materialization runs (each replica executes the mutation itself), and is dropped on both afterwards.
@@ -332,6 +368,42 @@ def test_dict_get_in_column_default_falls_back(started_cluster):
         _flush_logs()
         assert _remote_tasks(query_id) > 0, query
         assert _fallback_reasons(query_id) == "", query
+
+
+def test_column_default_check_boundaries(started_cluster):
+    """What the column-default check does and does not look at: only the columns the read produces (a query without a
+    defaulted column distributes; a virtual column is skipped), never the parts (a materialized default still falls back,
+    the accepted imprecision of the temporary check), and not aliases (the analyzer inlines them into the query)."""
+    for query, expected in [
+        ("SELECT k FROM t_dflt ORDER BY k LIMIT 2", "0\n1\n"),
+        ("SELECT k, _part != '' FROM t_dflt ORDER BY k LIMIT 2", "0\t1\n1\t1\n"),
+    ]:
+        query_id = str(uuid.uuid4())
+        assert initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id) == expected, query
+        _flush_logs()
+        assert _remote_tasks(query_id) > 0, query
+        assert _fallback_reasons(query_id) == "", query
+
+    query_id = str(uuid.uuid4())
+    assert initiator.query(f"SELECT k, m FROM t_mat ORDER BY k LIMIT 2 SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id) == "0\tn0\n1\tn1\n"
+    _flush_logs()
+    assert _remote_tasks(query_id) == 0
+    assert "does not support dictionary default.d_both: it is an object of the initiator, used by a column default of table default.t_mat" in _fallback_reasons(query_id)
+
+    # An ALIAS is inlined by the analyzer, so it is caught through the query text, not through the column-default check;
+    # and because the analyzer resolves the alias expressions of a table up front, a query that does not use the alias
+    # falls back as well. Accepted while dictionaries are disabled for distributed plans.
+    for query, expected in [
+        ("SELECT k, al FROM t_alias ORDER BY k LIMIT 2", "0\tn0\n1\tn1\n"),
+        ("SELECT k FROM t_alias ORDER BY k LIMIT 2", "0\n1\n"),
+    ]:
+        query_id = str(uuid.uuid4())
+        assert initiator.query(f"{query} SETTINGS {DISTRIBUTED_SETTINGS}", query_id=query_id) == expected, query
+        _flush_logs()
+        assert _remote_tasks(query_id) == 0, query
+        reasons = _fallback_reasons(query_id)
+        assert "does not support dictionary default.d: it is an object of the initiator" in reasons, query
+        assert "column default" not in reasons, query
 
 
 def test_unresolvable_column_default_falls_back(started_cluster):

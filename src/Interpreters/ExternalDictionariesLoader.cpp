@@ -94,8 +94,10 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
     dict.updateDictionaryComment(config.getString(key_in_config + ".comment", ""));
 }
 
-/// Every path by which a query reaches a dictionary by name passes here, so this is where a query's use of a
-/// dictionary is recorded for the `make_distributed_plan` fallback decision, under the qualified name.
+/// Records a query's use of a dictionary for the `make_distributed_plan` fallback decision, under the qualified
+/// name. Called by the public entry points (`getDictionary`, `tryGetDictionary`, `getDictionaryStructure`,
+/// `getDictionaryLayoutType`, `qualifyDictionaryNameWithDatabase`); `resolveDictionaryName` and `load` do not record,
+/// so a friend class that reaches a dictionary through them has to call this itself.
 void ExternalDictionariesLoader::recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const
 {
     local_context->addUsedServerLocalObject(

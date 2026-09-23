@@ -221,11 +221,13 @@ ASTPtr convertRequiredExpressions(Block & block, const NamesAndTypesList & requi
 }
 
 /// The expression list resolved against a table made of `header`'s columns, with the context the resolution ran in
-/// (the planner needs the same one afterwards).
+/// (the planner needs the same one afterwards) and the table itself: the column nodes of the expression point at it
+/// and it has to outlive them.
 struct ResolvedExpressionList
 {
     QueryTreeNodePtr expression;
     ContextMutablePtr context;
+    std::shared_ptr<TableNode> table;
 };
 
 ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr & expr_list, ContextPtr context)
@@ -243,7 +245,7 @@ ResolvedExpressionList resolveExpressionList(const Block & header, const ASTPtr 
     QueryAnalyzer analyzer(false);
     analyzer.resolve(expression, fake_table_expression, execution_context);
 
-    return {std::move(expression), std::move(execution_context)};
+    return {std::move(expression), std::move(execution_context), std::move(fake_table_expression)};
 }
 
 std::optional<ActionsDAG> createExpressionsAnalyzer(
@@ -255,7 +257,9 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     if (!expr_list)
         return {};
 
-    auto [expression, execution_context] = resolveExpressionList(header, expr_list, context);
+    auto resolved = resolveExpressionList(header, expr_list, context);
+    auto & expression = resolved.expression;
+    auto & execution_context = resolved.context;
 
     GlobalPlannerContextPtr global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
     auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
