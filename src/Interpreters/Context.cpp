@@ -3792,6 +3792,25 @@ void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource 
     checkSettingsConstraintsWithLock(changes, source);
 }
 
+void Context::checkSettingsConstraintsInAnyOrder(SettingsChanges & changes, SettingSource source)
+{
+    if (!hasProfileChange(changes))
+    {
+        checkSettingsConstraints(changes, source);
+        return;
+    }
+
+    /// Without an order, a change could be meant to take effect before or after the `profile` change,
+    /// so it has to pass both. The list itself keeps its order, so which assignment wins is unchanged.
+    {
+        SharedLockGuard lock(mutex);
+        checkSettingsConstraintsWithLock(changes, source);
+    }
+    SettingsChanges profiles_first = changes;
+    std::stable_partition(profiles_first.begin(), profiles_first.end(), [](const SettingChange & change) { return change.name == "profile"; });
+    checkSettingsConstraints(std::as_const(profiles_first), source);
+}
+
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
     /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.

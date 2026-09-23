@@ -1,7 +1,5 @@
 #include <Common/SettingsChanges.h>
 
-#include <algorithm>
-
 namespace DB
 {
 namespace
@@ -114,11 +112,6 @@ String SettingsChanges::namesToString() const
         result += change.name;
     }
     return result;
-}
-
-void moveProfileChangesToFront(SettingsChanges & changes)
-{
-    std::stable_partition(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
 }
 
 }

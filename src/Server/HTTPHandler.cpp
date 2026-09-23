@@ -409,10 +409,6 @@ void HTTPHandler::processQuery(
     if (auto header_value = request.get("X-ClickHouse-Format", ""); !header_value.empty())
         settings_changes.setSetting("output_format", header_value);
 
-    /// URL parameters have no meaningful order (and `setSetting` overwrites in place), so the profile
-    /// must be moved first for its constraints to bind the rest of the request.
-    moveProfileChangesToFront(settings_changes);
-
     ContextMutablePtr context;
     {
         /// To decide whether to make a detached query context, we need the run_query_in_background setting's value.
@@ -425,7 +421,7 @@ void HTTPHandler::processQuery(
         auto tmp_context = Context::createCopy(session->sessionContext());
         SettingsChanges settings_changes_copy = settings_changes;
 
-        tmp_context->checkSettingsConstraints(settings_changes_copy, SettingSource::QUERY);
+        tmp_context->checkSettingsConstraintsInAnyOrder(settings_changes_copy, SettingSource::QUERY);
         tmp_context->applySettingsChanges(settings_changes_copy);
 
         const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
@@ -482,7 +478,7 @@ void HTTPHandler::processQuery(
 
     context->setCurrentQueryId(query_id);
 
-    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+    context->checkSettingsConstraintsInAnyOrder(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
     const auto & settings = context->getSettingsRef();
