@@ -2815,6 +2815,11 @@ void HashJoin::publishSharedRuntimeFilters()
         /// stream-local filter has registered, and a snapshot taken then is empty for good. `replace`
         /// keeps `existing` as the metadata source of the replacement instead, so a late registration
         /// still completes the exact key set and the key range the probe side prunes with.
+        /// Publishing early does not change when the read-time granule pruning can start: the replacement
+        /// is `isReady` at once, but only `__applyFilter` (row-wise probing) looks at that. The pruning reads
+        /// `getRecordedKeyValues` / `getRecordedKeyRanges`, which go to `existing` and expose nothing until
+        /// its last registration, exactly as they would without the replacement. A probe part read before
+        /// the build side is complete is not pruned in either case.
         auto filter = std::make_unique<RuntimeFilter>(
             /*filters_to_merge_=*/0,
             existing->getConfig(),
