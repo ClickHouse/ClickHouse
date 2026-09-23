@@ -4845,7 +4845,12 @@ static void deserializeCapture(LambdaCapture & capture, ReadBuffer & in, size_t 
     }
 }
 
-static void serializeConstant(const IDataType & type, const IColumn & value, WriteBuffer & out, SerializedSetsRegistry & registry)
+static void serializeConstant(
+    const IDataType & type,
+    const IColumn & value,
+    WriteBuffer & out,
+    SerializedSetsRegistry & registry,
+    const Block * input_header)
 {
     if (WhichDataType(type).isSet())
     {
@@ -4905,18 +4910,19 @@ static void serializeConstant(const IDataType & type, const IColumn & value, Wri
                 ErrorCodes::LOGICAL_ERROR,
                 "Expected FunctionExpression for ColumnFunction. Got {}", function->getName());
 
-        /// A captured lambda held in a constant column: its names are composed the same way, so they are
-        /// normalized too. There is no input header at hand here (this is reached from a constant's value,
-        /// not from a step's payload), so the names are discriminated by their normalized text alone.
-        serializeCapture(function_expression->getCapture(), out, registry.for_cache_key, /*input_header=*/nullptr);
-        function_expression->getAcionsDAG().serialize(out, registry);
+        /// A captured lambda held in a constant column: its names are composed the same way, and it reads
+        /// the same header as the step whose payload this constant belongs to, so it is identified the same
+        /// way too. Without the header a capture of `__table1.id` and one of `__table2.id` normalize onto
+        /// one name and two different higher-order filters share a statistics entry.
+        serializeCapture(function_expression->getCapture(), out, registry.for_cache_key, input_header);
+        function_expression->getAcionsDAG().serialize(out, registry, input_header);
 
         const auto & captured_columns = column_function->getCapturedColumns();
         writeVarUInt(captured_columns.size(), out);
         for (const auto & captured_column : captured_columns)
         {
             encodeDataType(captured_column.type, out);
-            serializeConstant(*captured_column.type, *captured_column.column, out, registry);
+            serializeConstant(*captured_column.type, *captured_column.column, out, registry, input_header);
         }
 
         return;
@@ -5104,7 +5110,7 @@ void ActionsDAG::serialize(WriteBuffer & out, SerializedSetsRegistry & registry,
         /// hash-only and never deserialized, so omitting the carrier value is safe; the transmission
         /// path (`for_cache_key == false`) always writes it.
         if (has_column && !(registry.for_cache_key && node.is_runtime_filter_id))
-            serializeConstant(*node.result_type, *node.column, out, registry);
+            serializeConstant(*node.result_type, *node.column, out, registry, input_header);
 
         if (node.type == ActionType::INPUT)
         {
