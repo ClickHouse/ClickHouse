@@ -1461,12 +1461,15 @@ When the optimization is enabled, LIKE/ILIKE queries should be significantly fas
 
 The speed-up of a `value%` or `%value` pattern comes from skipping granules, so it depends on how the matching rows are laid out. Needles that match rows in every granule prune nothing, and the query pays for the dictionary scan on top of the full scan it would have done anyway. Disable [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan) for such workloads.
 
+The scan also has to match every token of a part's dictionary, so it is expensive on a part whose dictionary is large relative to the data it indexes, for example a column of identifiers or URLs where almost every token is distinct. Instead of disabling the optimization for the whole query, [text_index_like_max_dictionary_tokens_to_scan](/reference/settings/session-settings/text-index#text_index_like_max_dictionary_tokens_to_scan) caps how many dictionary tokens the scan may match in one data part, and evaluates the pattern on that part's rows once the cap is reached. A useful cap depends on how much data a part holds and not only on how many tokens or rows it holds, so it has to be measured per workload; the default `0` keeps the scan unlimited.
+
 The optimization is controlled by a setting:
 - [use_text_index_like_evaluation_by_dictionary_scan](/reference/settings/session-settings/use-text#use_text_index_like_evaluation_by_dictionary_scan)
 
-The fallback mechanism is controlled by two settings:
+The fallback mechanism is controlled by three settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
+- [text_index_like_max_dictionary_tokens_to_scan](/reference/settings/session-settings/text-index#text_index_like_max_dictionary_tokens_to_scan)
 
 This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).

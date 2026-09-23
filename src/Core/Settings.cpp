@@ -9223,6 +9223,16 @@ Maximum number of large postings to read when text index LIKE evaluation by the 
 
 Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
 )", 0) \
+    DECLARE(UInt64, text_index_like_max_dictionary_tokens_to_scan, 0, R"(
+Maximum number of dictionary tokens that text index LIKE evaluation by the dictionary scan may match in one data part.
+Once a part reaches the limit, the rest of its dictionary is not scanned and the pattern is evaluated on the rows of that part instead.
+
+The limit bounds the scan on a part whose dictionary is large relative to the data it indexes, where scanning the whole dictionary can cost more than the read it saves. A useful value depends on how many tokens a part holds and on how much data one row holds, so it has to be chosen per workload.
+
+`0` (the default) means no limit.
+
+Requires `use_text_index_like_evaluation_by_dictionary_scan` to be enabled.
+)", 0) \
     DECLARE(Bool, use_text_index_tokens_cache, true, R"(
 Whether to cache deserialized text index token infos in memory.
 Using the text index tokens cache can significantly reduce latency and increase throughput when working with a large number of text index queries.

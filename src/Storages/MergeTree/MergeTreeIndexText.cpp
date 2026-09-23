@@ -64,6 +64,7 @@ namespace ProfileEvents
     extern const Event TextIndexTokensCacheNegativeHits;
     extern const Event TextIndexTokensCacheNegativeMisses;
     extern const Event TextIndexDiscardPatternScan;
+    extern const Event TextIndexDiscardPatternScanByTokenBudget;
 }
 
 namespace DB
@@ -93,6 +94,7 @@ namespace MergeTreeSetting
 namespace Setting
 {
     extern const SettingsUInt64 text_index_like_max_postings_to_read;
+    extern const SettingsUInt64 text_index_like_max_dictionary_tokens_to_scan;
     extern const SettingsFloat text_index_hint_max_selectivity;
     extern const SettingsBool use_text_index_negative_tokens_cache;
 }
@@ -719,11 +721,14 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
     if (sparse_index.empty())
         return;
 
-    const size_t max_postings_to_read = condition_text.getContext()->getSettingsRef()[Setting::text_index_like_max_postings_to_read];
+    const auto & settings = condition_text.getContext()->getSettingsRef();
+    const size_t max_postings_to_read = settings[Setting::text_index_like_max_postings_to_read];
+    const size_t max_tokens_to_scan = settings[Setting::text_index_like_max_dictionary_tokens_to_scan];
     const auto block_ranges = blocksMatchingTokenKeyRanges(sparse_index, analyzer->getPatternTokenKeyRanges());
     const bool filter_tokens_by_literals = analyzer->canFilterTokensByLiterals();
 
     size_t postings_to_read = 0;
+    size_t tokens_scanned = 0;
     std::vector<size_t> matched_indices;
     PaddedPODArray<UInt8> candidate_marks;
     for (const auto & [range_begin, range_end] : block_ranges)
@@ -739,6 +744,15 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForPatterns(
             auto tokens_column = TextIndexSerialization::deserializeTokens(*data_buffer).first;
             const auto & block_tokens = assert_cast<const ColumnString &>(*tokens_column);
             size_t num_tokens = block_tokens.size();
+
+            if (max_tokens_to_scan != 0 && tokens_scanned + num_tokens > max_tokens_to_scan)
+            {
+                /// This block and the remaining ones are not scanned, so the set of matched pattern tokens is incomplete.
+                analyzer->bypassPatternQueries();
+                ProfileEvents::increment(ProfileEvents::TextIndexDiscardPatternScanByTokenBudget);
+                return;
+            }
+            tokens_scanned += num_tokens;
 
             matched_indices.clear();
 

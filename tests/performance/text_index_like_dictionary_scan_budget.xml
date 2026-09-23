@@ -1,0 +1,47 @@
+<test>
+  <settings>
+    <use_query_condition_cache>0</use_query_condition_cache>
+    <max_threads>1</max_threads>
+    <optimize_rewrite_like_perfect_affix>0</optimize_rewrite_like_perfect_affix>
+  </settings>
+
+  <!-- Every row carries eight tokens of its own, so the dictionary holds 16000000 tokens over 2000000 rows
+       of about 73 bytes: a pattern search has to match all of them, while the rows it saves reading are few
+       and cheap. That is the shape text_index_like_max_dictionary_tokens_to_scan exists for. Each needle is
+       measured with no limit, with a limit the search reaches, and with a limit far above the dictionary
+       that it never reaches, which is the control for the cost of the limit itself. The first needle is
+       also measured with the pattern evaluated on the rows instead, which is the floor the limit approaches.
+       The limit is a session setting this test introduces, so the queries that set it cannot run on the
+       reference server and are measured on the new one only; the queries that do not set it measure the
+       same work on both servers. -->
+  <create_query>
+    CREATE TABLE tab
+    (
+        id      UInt64,
+        message String,
+        INDEX   idx(message) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+  </create_query>
+
+  <fill_query>INSERT INTO tab SELECT number, arrayStringConcat(arrayMap(i -> concat('w', toString(number * 8 + i)), range(8)), ' ') FROM numbers(2000000) SETTINGS max_insert_block_size = 1000000, max_insert_threads = 8</fill_query>
+  <fill_query>OPTIMIZE TABLE tab FINAL</fill_query>
+
+  <query>SELECT count() FROM tab WHERE message LIKE '%w15999999%'</query>
+  <query>SELECT count() FROM tab WHERE message LIKE '%w15999999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 500000</query>
+  <query>SELECT count() FROM tab WHERE message LIKE '%w15999999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 50000000</query>
+  <query>SELECT count() FROM tab WHERE message LIKE '%w15999999%' SETTINGS use_text_index_like_evaluation_by_dictionary_scan = 0</query>
+
+  <!-- No ILIKE needle here may contain 'k' or 'K': such a needle is refused before the search starts,
+       because U+212A folds onto 'k'. -->
+  <query>SELECT count() FROM tab WHERE message ILIKE '%W15999999%'</query>
+  <query>SELECT count() FROM tab WHERE message ILIKE '%W15999999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 500000</query>
+
+  <!-- A needle shared by many tokens. The postings budget is raised so that it is the dictionary search,
+       not the posting lists, that these two queries measure. -->
+  <query>SELECT count() FROM tab WHERE message LIKE '%w1999%' SETTINGS text_index_like_max_postings_to_read = 1000000</query>
+  <query>SELECT count() FROM tab WHERE message LIKE '%w1999%' SETTINGS text_index_like_max_postings_to_read = 1000000, text_index_like_max_dictionary_tokens_to_scan = 500000</query>
+
+  <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+</test>
