@@ -42,8 +42,10 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageProxy.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -682,6 +684,22 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
 }
 
 
+static StoragePtr unwrapStorageProxy(const StoragePtr & storage)
+{
+    static constexpr size_t max_proxy_depth = 16;
+
+    StoragePtr nested_storage = storage;
+    for (size_t i = 0; i < max_proxy_depth && nested_storage; ++i)
+    {
+        const auto * proxy = dynamic_cast<const StorageProxy *>(nested_storage.get());
+        if (!proxy)
+            break;
+        nested_storage = proxy->getNested();
+    }
+    return nested_storage;
+}
+
+
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
@@ -699,7 +717,16 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     /// Each replica runs the whole INSERT over the rows its own coordinated read produced, which adds up
     /// to a single logical INSERT only where replication makes every replica's write visible on all of them.
-    if (!table->isMergeTree() || !table->supportsReplication())
+    /// Both answers must come from a concrete table: `StorageProxy` (a `lazy_load_tables` stand-in until
+    /// first access) does not forward `isMergeTree()`, and `Alias` forwards both plus owns dependent views.
+    auto target = unwrapStorageProxy(table);
+    if (!target || !target->isMergeTree() || !target->supportsReplication()
+        || dynamic_cast<const StorageAlias *>(target.get()))
+        return {};
+
+    /// Every replica also pushes its own slice through the target's dependent materialized views, so a
+    /// view target that does not replicate keeps a different subset of the rows on each replica.
+    if (InsertDependenciesBuilder::forwardedInsertReachesDependentView(table))
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
