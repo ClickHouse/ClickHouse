@@ -112,6 +112,20 @@ export const quickStartsData = [
     ]
   },
   {
+    "id": "tutorial",
+    "title": "دليل عملي متقدم",
+    "description": "تعرّف على كيفية إدخال البيانات والاستعلام عنها في ClickHouse باستخدام مجموعة بيانات نموذجية لسيارات الأجرة في مدينة نيويورك.",
+    "href": "/ar/get-started/quickstarts/tutorial",
+    "useCases": [
+      "real-time-analytics",
+      "data-warehousing"
+    ],
+    "products": [
+      "cloud",
+      "self-managed"
+    ]
+  },
+  {
     "id": "working-with-the-map-type",
     "title": "العمل مع نوع Map في ClickHouse",
     "description": "تعرّف على كيفية استخدام نوع Map في ClickHouse لتخزين بيانات مفتاح-قيمة ديناميكية والاستعلام عنها وتجميعها، باستخدام سمات الموارد في OTel كمثال عملي.",

@@ -29,12 +29,10 @@ from typing import Dict, List, Any, Optional, Tuple
 
 LOCALES = ('ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh')
 
-# The English NYC taxi tutorial was consolidated into the sample-datasets
-# section, while translated versions remain published until their replacements
-# are translated. These pages keep their localized navigation entries but are
-# omitted from the quickstarts explorer, whose filter metadata is canonicalized
-# from English quickstart pages.
-LOCALIZED_LEGACY_QUICKSTART_IDS = {'tutorial'}
+# Keep the legacy English NYC taxi tutorial as a direct-link compatibility
+# target for translated pages until their links are regenerated. It is not
+# rendered in the English quickstarts explorer.
+EXPLORER_EXCLUDED_QUICKSTART_IDS = {'tutorial'}
 
 CLOUD_SETUP_CARD = {
     'id': 'create-your-first-service-on-cloud',
@@ -497,8 +495,12 @@ def main():
 
     output_path = (project_root / 'snippets' / 'components' / 'QuickStartsGrid'
                    / 'quickstarts-data.jsx')
-    staged[output_path] = render_data_module(quickstarts)
-    print(f"✓ Staged {len(quickstarts)} quick-start(s) for {output_path}")
+    explorer_quickstarts = [
+        quickstart for quickstart in quickstarts
+        if quickstart['id'] not in EXPLORER_EXCLUDED_QUICKSTART_IDS
+    ]
+    staged[output_path] = render_data_module(explorer_quickstarts)
+    print(f"✓ Staged {len(explorer_quickstarts)} quick-start(s) for {output_path}")
 
     # Locale trees: same extraction against the translated pages, so titles and
     # descriptions come out localized and hrefs come out locale-prefixed
@@ -522,14 +524,9 @@ def main():
         # values against its option lists by string equality, and the
         # translation pipeline translates frontmatter tag values inconsistently.
         english_by_id = {qs['id']: qs for qs in quickstarts}
-        canonical_locale_quickstarts = []
         for entry in locale_quickstarts:
             english = english_by_id.get(entry['id'])
             if english is None:
-                if entry['id'] in LOCALIZED_LEGACY_QUICKSTART_IDS:
-                    print(f"  - {locale}/{entry['id']}: retained localized "
-                          "legacy page omitted from the explorer")
-                    continue
                 # A localized page whose id has no English counterpart cannot
                 # inherit canonical tags, so it would keep its own translated
                 # useCases/products — which slugify_tag collapses to "" for
@@ -544,11 +541,10 @@ def main():
                 continue
             entry['useCases'] = english['useCases']
             entry['products'] = english['products']
-            canonical_locale_quickstarts.append(entry)
         locale_output = (project_root / 'snippets' / locale / 'components'
                          / 'QuickStartsGrid' / 'quickstarts-data.jsx')
-        staged[locale_output] = render_data_module(canonical_locale_quickstarts)
-        print(f"✓ Staged {len(canonical_locale_quickstarts)} quick-start(s) for {locale_output}")
+        staged[locale_output] = render_data_module(locale_quickstarts)
+        print(f"✓ Staged {len(locale_quickstarts)} quick-start(s) for {locale_output}")
 
     if failures:
         print(f"\n✗ {failures} page(s) failed; nothing was written — "

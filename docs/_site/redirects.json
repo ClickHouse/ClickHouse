@@ -1,9 +1,5 @@
 [
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
-    "source": "/get-started/quickstarts/tutorial"
-  },
-  {
     "destination": "/get-started/setup/cloud",
     "source": "/get-started/quickstarts/create-your-first-service-on-cloud"
   },
@@ -3768,7 +3764,7 @@
     "source": "/getting-started/quick-start/oss"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/getting-started/tutorial"
   },
   {
@@ -3816,7 +3812,7 @@
     "source": "/getting_started/playground"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/getting_started/tutorial"
   },
   {
@@ -41484,7 +41480,7 @@
     "source": "/troubleshooting"
   },
   {
-    "destination": "/get-started/sample-datasets/nyc-taxi",
+    "destination": "/get-started/quickstarts/tutorial",
     "source": "/tutorial"
   },
   {
