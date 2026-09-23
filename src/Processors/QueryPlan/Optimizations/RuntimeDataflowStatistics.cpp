@@ -597,13 +597,13 @@ void RuntimeDataflowStatisticsCacheUpdater::recordColumns(
             /// without `sample_block`) samples them too: its states enter `sample_bytes`/`compressed_bytes`
             /// and its wrapper payload enters `plain_bytes`, so skipping the wrapper's sample here would
             /// derive the compression ratio from a different population of bytes than the total it divides.
+            /// For the same reason such a block samples its state-free sibling columns as well: their bytes
+            /// enter `plain_bytes`, and leaving them out would price them with the state-only ratio.
             if (col_has_states[i])
             {
                 sampleNonStatePartsCompression(cols[i].column, cols[i].type, 1, codecs, sample_bytes, compressed_bytes);
                 continue;
             }
-            if (!sample_block)
-                continue;
             auto [sample, compressed] = estimateCompressedColumnSize(cols[i], codecs);
             sample_bytes += sample;
             compressed_bytes += compressed;
