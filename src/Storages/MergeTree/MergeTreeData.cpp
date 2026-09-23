@@ -462,9 +462,8 @@ namespace FailPoints
     /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
     /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
     extern const char merge_tree_load_outdated_parts_pause[];
-    /// Throws `FAULT_INJECTED` while committing a transaction that undoes its renames on rollback, after at
-    /// least one of its renamed parts has been committed. Used to test that a failed commit leaves no
-    /// permanently named part behind.
+    /// Throws `FAULT_INJECTED` from `Transaction::commit()` after a part renamed by a rollback-undoing
+    /// transaction has been committed. Used to test that a failed commit leaves no permanently named part.
     extern const char merge_tree_transaction_fail_after_empty_part_rename[];
 }
 
@@ -11532,9 +11531,7 @@ void MergeTreeData::Transaction::rollback(DataPartsLock * acquired_lock)
                     if (part->getDataPartStorage().getPartDirectory() == previous_dir)
                         continue;
 
-                    /// Not back to `previous_dir`: by now the callers have released the holder for that name and
-                    /// a statement covering the same parts may legitimately own it. Any temporary name satisfies
-                    /// the invariant, because loadDataParts skips a `tmp` prefix.
+                    /// Any free temporary name is enough here: loadDataParts skips a `tmp` prefix.
                     auto rollback_dir = part->getDataPartStorage().getRelativePathForPrefix(
                         data.log.load(), "tmp_rollback", /*detached*/ false, /*broken*/ false);
                     if (!rollback_dir)
