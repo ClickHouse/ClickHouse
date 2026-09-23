@@ -29,7 +29,7 @@ def test_kill_throw_if_noop(start_cluster):
 
     with pytest.raises(QueryRuntimeException) as exc:
         node.query("KILL mutation where is_done = 0;")
-    assert "No query to kill" in str(exc.value)
+    assert "No mutation to kill" in str(exc.value)
 
 
 def test_kill_not_throw_if_noop(start_cluster):

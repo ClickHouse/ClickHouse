@@ -42,7 +42,7 @@ namespace ErrorCodes
 {
     extern const int ACCESS_DENIED;
     extern const int NOT_IMPLEMENTED;
-    extern const int NO_QUERY_TO_KILL;
+    extern const int NOTHING_TO_KILL;
 }
 
 
@@ -225,14 +225,14 @@ BlockIO InterpreterKillQueryQuery::execute()
         if (processes_block.empty())
         {
             if (kill_throw_if_noop)
-                throw Exception(ErrorCodes::NO_QUERY_TO_KILL, "No query to kill");
+                throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
             return res_io;
         }
 
         ProcessList & process_list = getContext()->getProcessList();
         QueryDescriptors queries_to_stop = extractQueriesExceptMeAndCheckAccess(processes_block, getContext());
         if (queries_to_stop.empty() && kill_throw_if_noop)
-            throw Exception(ErrorCodes::NO_QUERY_TO_KILL, "No query to kill");
+            throw Exception(ErrorCodes::NOTHING_TO_KILL, "No query to kill");
 
         auto header = processes_block.cloneEmpty();
         header.insert(0, {ColumnString::create(), std::make_shared<DataTypeString>(), "kill_status"});
@@ -264,7 +264,7 @@ BlockIO InterpreterKillQueryQuery::execute()
         if (mutations_block.empty())
         {
             if (kill_throw_if_noop)
-                throw Exception(ErrorCodes::NO_QUERY_TO_KILL, "No query to kill");
+                throw Exception(ErrorCodes::NOTHING_TO_KILL, "No mutation to kill");
             return res_io;
         }
 
