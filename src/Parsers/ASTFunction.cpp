@@ -1210,12 +1210,13 @@ bool isASTLambdaFunction(const ASTFunction & function)
 
 std::vector<String> getASTLambdaArgumentNames(const ASTFunction & function)
 {
+    /// `ASTFunction::arguments` is optional: a function written without parentheses has none.
     if (!function.arguments || function.arguments->children.size() != 2)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "lambda requires two arguments");
 
     const auto * lambda_args_tuple = function.arguments->children[0]->as<ASTFunction>();
 
-    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple")
+    if (!lambda_args_tuple || lambda_args_tuple->name != "tuple" || !lambda_args_tuple->arguments)
         throw Exception(ErrorCodes::TYPE_MISMATCH, "First argument of lambda must be a tuple");
 
     std::vector<String> names;
