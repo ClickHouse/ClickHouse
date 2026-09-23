@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: distributed planning requires the analyzer.
-
 -- The `cascades_aggregation_pushdown` variant-A top step is a merge-only `Aggregating`
 -- (`Params::only_merge`); under the default cost weights it takes the Local strategy: gather the
 -- state rows and merge on one node. This file pins that shape via EXPLAIN conjuncts and executes
