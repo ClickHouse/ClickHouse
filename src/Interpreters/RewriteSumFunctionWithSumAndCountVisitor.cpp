@@ -56,7 +56,6 @@ void RewriteSumFunctionWithSumAndCountMatcher::visit(const ASTFunction & functio
         return;
 
     ///all the types listed are numbers and supported by 'plus' and 'minus'.
-    /// Number is a deferred NumberLiteral (e.g. `3.14`), resolved to a concrete type downstream.
     Field::Types::Which literal_type = literal->value.getType();
     if (literal_type != Field::Types::UInt64 &&
         literal_type != Field::Types::Int64 &&

@@ -169,9 +169,7 @@ void buildLayoutParameterKeyValueCollection(
         {
             const auto field_type = field.getType();
             const bool is_number = field_type == Field::Types::UInt64 || field_type == Field::Types::Int64
-                || field_type == Field::Types::Float64 || field_type == Field::Types::UInt128
-                || field_type == Field::Types::Int128 || field_type == Field::Types::UInt256
-                || field_type == Field::Types::Int256;
+                || field_type == Field::Types::Float64 || Field::isWideInteger(field_type);
             if (!is_number && field_type != Field::Types::String)
             {
                 throw DB::Exception(

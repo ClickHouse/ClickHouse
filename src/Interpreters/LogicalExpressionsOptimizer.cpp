@@ -291,10 +291,8 @@ void LogicalExpressionsOptimizer::addInExpression(const DisjunctiveEqualityChain
     }
 
     /// Sort the literals so that they are specified in the same order in the IN expression.
-    /// A deferred NumberLiteral has no ordering of its own, so order by the resolved value while
-    /// keeping the original literal in the tuple: the IN set resolves each element against the
-    /// column type, preserving Decimal/wide-integer precision. resolveNumberLiteral is a no-op for
-    /// already-concrete fields, so other literal types keep their previous ordering.
+    /// A deferred number literal has no ordering of its own, so order by the resolved value but keep
+    /// the literal itself: the IN set still resolves it against the column type.
     ::sort(tuple.begin(), tuple.end(), [](const Field & lhs, const Field & rhs)
     {
         return lhs.resolveNumberLiteral() < rhs.resolveNumberLiteral();

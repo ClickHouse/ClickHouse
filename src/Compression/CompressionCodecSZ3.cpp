@@ -425,14 +425,11 @@ void registerCodecSZ3(CompressionCodecFactory & factory)
             auto error_bound_mode = getSZ3ErrorBoundMode(error_bound_mode_string);
 
             literal = children[2]->as<ASTLiteral>();
-            /// The bound is a Float64 but does not always arrive spelled as one: a large value formats
-            /// back as plain digits that reparse as a wide integer. Take any numeric spelling.
+            /// A large bound formats back as plain digits that reparse as an integer, so take any number.
             auto error_bound_value = literal ? literal->value.resolveNumberLiteral() : Field();
             const auto bound_type = error_bound_value.getType();
-            const bool bound_is_numeric = bound_type == Field::Types::Float64
-                || bound_type == Field::Types::UInt64 || bound_type == Field::Types::Int64
-                || bound_type == Field::Types::UInt128 || bound_type == Field::Types::Int128
-                || bound_type == Field::Types::UInt256 || bound_type == Field::Types::Int256;
+            const bool bound_is_numeric = bound_type == Field::Types::Float64 || bound_type == Field::Types::UInt64
+                || bound_type == Field::Types::Int64 || Field::isWideInteger(bound_type);
             if (!literal || !bound_is_numeric)
                 throw Exception(ErrorCodes::ILLEGAL_CODEC_PARAMETER, "3rd argument of codec 'SZ3' be a Float64");
             auto error_value = applyVisitor(FieldVisitorConvertToNumber<Float64>(), error_bound_value);

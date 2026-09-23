@@ -1058,7 +1058,6 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             ASTPtr arg_ast;
             while (ParserLiteral{}.parse(pos, arg_ast, expected))
             {
-                /// Decimal/exponent literals parse as NumberLiteral (deferred); resolve to a concrete type.
                 const auto value = arg_ast->as<ASTLiteral &>().value.resolveNumberLiteral();
                 const auto value_type = value.getType();
                 if (value_type == Field::Types::String)
@@ -1067,22 +1066,19 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                     res->instrumentation_arguments.emplace_back(value.safeGet<Int64>());
                 else if (value_type == Field::Types::UInt64)
                 {
-                    /// A non-negative integer larger than Int64::max can't be stored as Int64.
-                    if (value.safeGet<UInt64>() > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
+                    UInt64 uint_value = value.safeGet<UInt64>();
+                    if (uint_value > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                     {
                         expected.add(pos, "integer literal not exceeding Int64 maximum");
                         return false;
                     }
-                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(value.safeGet<UInt64>()));
+                    res->instrumentation_arguments.emplace_back(static_cast<Int64>(uint_value));
                 }
                 else if (value_type == Field::Types::Float64)
                     res->instrumentation_arguments.emplace_back(value.safeGet<Float64>());
-                else if (value_type == Field::Types::UInt128 || value_type == Field::Types::Int128
-                         || value_type == Field::Types::UInt256 || value_type == Field::Types::Int256)
-                    /// A wide integer only shows up when a large float argument is re-parsed: `1e20`
-                    /// is stored as Float64 and formats back as plain digits (100000000000000000000)
-                    /// that parse as a wide integer. Coerce it back to the same Float64, otherwise the
-                    /// formatted query no longer parses and the debug-build AST consistency check aborts.
+                else if (Field::isWideInteger(value_type))
+                    /// A Float64 argument such as `1e20` formats back as plain digits that reparse as a
+                    /// wide integer; take it as the same Float64 so the formatted query still parses.
                     res->instrumentation_arguments.emplace_back(applyVisitor(FieldVisitorConvertToNumber<Float64>(), value));
                 else
                 {

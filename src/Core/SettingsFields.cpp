@@ -143,17 +143,12 @@ namespace
                 return T(x);
             }
         }
-        if (f.getType() == Field::Types::UInt128 || f.getType() == Field::Types::Int128
-            || f.getType() == Field::Types::UInt256 || f.getType() == Field::Types::Int256)
-        {
-            /// A literal too large for UInt64 resolves to a wide integer, and used to arrive as a
-            /// Float64. Go through Float64 again: the branch above range-checks integer settings.
+        /// A literal too large for UInt64 used to arrive as a Float64; go through Float64 again so the
+        /// branch above range-checks it.
+        if (Field::isWideInteger(f.getType()))
             return fieldToNumber<T>(Field(applyVisitor(FieldVisitorConvertToNumber<Float64>(), f)));
-        }
         if (f.getType() == Field::Types::Number)
-        {
             return fieldToNumber<T>(f.resolveNumberLiteral());
-        }
         throw Exception(
             ErrorCodes::CANNOT_CONVERT_TYPE, "Invalid value {} of the setting, which needs {}", f, demangle(typeid(T).name()));
     }

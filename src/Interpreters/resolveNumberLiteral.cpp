@@ -122,81 +122,58 @@ bool normalizeDecimalLiteral(const String & text, String & out_text, UInt32 & ou
 std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
     const String & text, const DataTypePtr & reference_type, bool is_comparison)
 {
-    auto default_type = applyVisitor(FieldToDataType(), Field(NumberLiteral(text)));
-    WhichDataType which_default(default_type);
-    WhichDataType which_ref(reference_type ? removeNullable(reference_type) : default_type);
+    const Field resolved = Field(NumberLiteral(text)).resolveNumberLiteral();
+    auto default_type = applyVisitor(FieldToDataType(), resolved);
 
     DataTypePtr target_type = default_type;
-    /// For a Decimal comparison the literal is parsed straight into a wide Decimal from this text
-    /// (exact) instead of through Float64; it holds the normalized decimal spelling.
-    String decimal_text = text;
+    /// Set when the literal is parsed into a Decimal from its (normalized) text instead of `resolved`.
+    String decimal_text;
     if (reference_type)
     {
-        auto ref_unwrapped = removeNullable(reference_type);
+        auto ref = removeNullable(reference_type);
+        WhichDataType which_default(default_type);
+        WhichDataType which_ref(ref);
 
-        if (is_comparison && isDecimal(*ref_unwrapped))
+        if (is_comparison && isDecimal(*ref))
         {
-            /// Normalize the literal (fold the exponent, drop insignificant trailing zeroes) and parse
-            /// it into a wide Decimal with the resulting scale, so different spellings of the same value
-            /// (`1.5e-3` and `0.0015`, or a value padded with trailing zeroes) resolve identically and
-            /// exactly. Values that don't fit Decimal256 keep the Float64 default.
-            String normalized;
+            /// Fold the exponent and drop insignificant trailing zeroes first, so different spellings
+            /// of one value (`1.5e-3`, `0.0015`) resolve identically. A value that does not fit
+            /// Decimal256 keeps the Float64 default.
             UInt32 scale = 0;
-            if (normalizeDecimalLiteral(text, normalized, scale))
-            {
-                decimal_text = std::move(normalized);
-                target_type = std::make_shared<DataTypeDecimal<Decimal256>>(
-                    DataTypeDecimal<Decimal256>::maxPrecision(), scale);
-            }
+            if (normalizeDecimalLiteral(text, decimal_text, scale))
+                target_type = std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), scale);
         }
-        else if (which_default.isInt() && which_ref.isInt()
-                 && default_type->getSizeOfValueInMemory() <= ref_unwrapped->getSizeOfValueInMemory())
+        else if ((which_default.isInt() && which_ref.isInt()) || (which_default.isUInt() && (which_ref.isUInt() || which_ref.isInt())))
         {
-            target_type = ref_unwrapped;
-        }
-        else if (which_default.isUInt() && (which_ref.isUInt() || which_ref.isInt())
-                 && default_type->getSizeOfValueInMemory() <= ref_unwrapped->getSizeOfValueInMemory())
-        {
-            target_type = ref_unwrapped;
+            if (default_type->getSizeOfValueInMemory() <= ref->getSizeOfValueInMemory())
+                target_type = ref;
         }
         else if (which_default.isFloat() && which_ref.isFloat())
         {
-            target_type = ref_unwrapped;
+            target_type = ref;
         }
     }
 
-    /// For Decimal targets, convert from the normalized string text directly (preserves precision).
-    /// For other targets, resolve the NumberLiteral first (see NumberLiteral::toFloat64 for floats).
-    Field parsed_field;
-    if (isDecimal(*target_type))
-        parsed_field = tryConvertFieldToType(Field(decimal_text), *target_type);
-    else
-        parsed_field = tryConvertFieldToType(Field(NumberLiteral(text)).resolveNumberLiteral(), *target_type);
+    Field parsed_field = isDecimal(*target_type)
+        ? tryConvertFieldToType(Field(decimal_text), *target_type)
+        : tryConvertFieldToType(resolved, *target_type);
 
-    /// If conversion to target type failed, fall back to default type.
-    if (parsed_field.isNull() && !target_type->isNullable() && target_type != default_type)
+    if (parsed_field.isNull() && target_type != default_type)
     {
         target_type = default_type;
-        if (isDecimal(*target_type))
-            parsed_field = tryConvertFieldToType(Field(text), *target_type);
-        else
-            parsed_field = tryConvertFieldToType(Field(NumberLiteral(text)).resolveNumberLiteral(), *target_type);
+        parsed_field = tryConvertFieldToType(resolved, *default_type);
     }
 
-    if (!parsed_field.isNull() || (target_type && target_type->isNullable()))
-        return {parsed_field, target_type};
-
-    return {Field(), nullptr};
+    if (parsed_field.isNull())
+        return {Field(), nullptr};
+    return {parsed_field, target_type};
 }
 
-namespace
-{
-
-bool hasNestedNumberLiteral(const Field & field)
+bool fieldHasNumberLiteral(const Field & field)
 {
     auto any_of = [](const auto & container)
     {
-        return std::any_of(container.begin(), container.end(), [](const Field & element) { return hasNestedNumberLiteral(element); });
+        return std::any_of(container.begin(), container.end(), fieldHasNumberLiteral);
     };
 
     switch (field.getType())
@@ -208,6 +185,9 @@ bool hasNestedNumberLiteral(const Field & field)
         default: return false;
     }
 }
+
+namespace
+{
 
 /// `any_resolved` is set when the reference type decided an element's type. A null type means give up.
 std::pair<Field, DataTypePtr> resolveNested(const Field & field, const DataTypePtr & reference_type, bool & any_resolved)
@@ -327,45 +307,60 @@ std::pair<Field, DataTypePtr> resolveNested(const Field & field, const DataTypeP
 
 }
 
-bool fieldHasNumberLiteral(const Field & field)
+std::pair<Field, DataTypePtr> resolveNumberLiteralSetElement(const Field & element, const DataTypePtr & left_type)
 {
-    return hasNestedNumberLiteral(field);
-}
-
-std::pair<Field, DataTypePtr> resolveNumberLiteralSetElement(
-    const Field & element, const DataTypePtr & left_type)
-{
-    if (!left_type || !hasNestedNumberLiteral(element))
-        return {};
-
-    auto reference = removeNullable(removeLowCardinality(left_type));
-
-    if (element.getType() == Field::Types::Number)
-    {
-        if (!isNumber(*reference) && !isDecimal(*reference))
-            return {};
-        return resolveNumberLiteralForFunction(element.safeGet<NumberLiteral>().value, reference, /*is_comparison=*/ true);
-    }
-
-    return resolveNestedNumberLiteralsForComparison(element, reference);
-}
-
-std::pair<Field, DataTypePtr> resolveNestedNumberLiteralsForComparison(
-    const Field & field, const DataTypePtr & reference_type)
-{
-    /// A bare literal goes through the scalar path.
-    if (field.getType() != Field::Types::Tuple && field.getType() != Field::Types::Array
-        && field.getType() != Field::Types::Map)
-        return {};
-    if (!hasNestedNumberLiteral(field))
+    if (!left_type || !fieldHasNumberLiteral(element))
         return {};
 
     bool any_resolved = false;
-    auto [resolved_field, resolved_type] = resolveNested(field, reference_type, any_resolved);
+    auto [resolved_field, resolved_type] = resolveNested(element, left_type, any_resolved);
     if (!any_resolved || !resolved_type)
         return {};
-
     return {std::move(resolved_field), std::move(resolved_type)};
+}
+
+std::pair<Field, DataTypePtr> resolveNestedNumberLiteralsForComparison(const Field & field, const DataTypePtr & reference_type)
+{
+    /// A bare literal goes through the scalar path.
+    const auto type = field.getType();
+    if (type != Field::Types::Tuple && type != Field::Types::Array && type != Field::Types::Map)
+        return {};
+    return resolveNumberLiteralSetElement(field, reference_type);
+}
+
+DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_type)
+{
+    if (!left_type)
+        return nullptr;
+
+    auto type = removeNullable(removeLowCardinality(left_type));
+    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
+        return type;
+
+    return nullptr;
+}
+
+bool buildCompositeLiteralField(const String & function_name, Array elements, Field & out)
+{
+    if (function_name == "array")
+    {
+        out = std::move(elements);
+        return true;
+    }
+    if (function_name == "tuple")
+    {
+        out = Tuple(elements.begin(), elements.end());
+        return true;
+    }
+    if (function_name != "map" || elements.size() % 2 != 0)
+        return false;
+
+    Map pairs;
+    pairs.reserve(elements.size() / 2);
+    for (size_t i = 0; i < elements.size(); i += 2)
+        pairs.push_back(Tuple{elements[i], elements[i + 1]});
+    out = std::move(pairs);
+    return true;
 }
 
 }

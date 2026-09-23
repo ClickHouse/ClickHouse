@@ -113,8 +113,7 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         || (type == Field::Types::Tuple && value.safeGet<Tuple>().size() > min_elements_for_hashing))
     {
         SipHash hash;
-        /// Hash the resolved value so any nested NumberLiteral matches its concrete numeric value
-        /// (and stays identical across server versions), same as the non-hashed branch below.
+        /// The name is built from the resolved value, so it does not depend on the literal spelling.
         applyVisitor(FieldVisitorHash(hash), value.resolveNumberLiteral());
         UInt64 low = 0;
         UInt64 high = 0;
@@ -135,9 +134,6 @@ void ASTLiteral::appendColumnNameImpl(WriteBuffer & ostr) const
         }
         else
         {
-            /// Resolve any NumberLiteral to its concrete value so the column name matches the
-            /// resolved type (and stays identical across server versions in distributed queries),
-            /// instead of leaking the original literal text.
             String column_name = applyVisitor(FieldVisitorToString(), value.resolveNumberLiteral());
             writeString(column_name, ostr);
         }
@@ -155,8 +151,7 @@ void ASTLiteral::appendColumnNameImplLegacy(WriteBuffer & ostr) const
     if ((type == Field::Types::Array && value.safeGet<Array>().size() > min_elements_for_hashing))
     {
         SipHash hash;
-        /// Hash the resolved value so any nested NumberLiteral matches its concrete numeric value
-        /// (and stays identical across server versions), same as the non-hashed branch below.
+        /// The name is built from the resolved value, so it does not depend on the literal spelling.
         applyVisitor(FieldVisitorHash(hash), value.resolveNumberLiteral());
         UInt64 low = 0;
         UInt64 high = 0;

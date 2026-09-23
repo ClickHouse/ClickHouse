@@ -197,9 +197,8 @@ static bool parseParameterValueIntoString(IParser::Pos & pos, String & value, Ex
     return false;
 }
 
-/// A setting value is always used as a concrete typed value, never compared with a column, so a
-/// deferred number literal (`1e9`, `0.5`) is resolved here instead of reaching every consumer of
-/// `SettingsChanges` as a `NumberLiteral`.
+/// A setting value is never compared with a column, so a deferred number literal is resolved here
+/// rather than by every consumer of `SettingsChanges`.
 static Field settingValueFromLiteral(const ASTPtr & literal)
 {
     return literal->as<ASTLiteral &>().value.resolveNumberLiteral();

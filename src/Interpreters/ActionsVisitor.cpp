@@ -110,21 +110,6 @@ static NamesAndTypesList::iterator findColumn(const String & name, NamesAndTypes
 
 namespace
 {
-/// The right-hand side of `IN` is compared against the left-hand side type, so a number literal
-/// element (which resolves to `Float64` on its own) is parsed from its original text against that
-/// type instead. A `Tuple` or `Array` left-hand side matches its elements positionally.
-DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_arg_type)
-{
-    if (!left_arg_type)
-        return nullptr;
-
-    auto type = removeNullable(removeLowCardinality(left_arg_type));
-    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
-        return type;
-
-    return nullptr;
-}
-
 /// The `Field` an expression stands for, with its number literals still unresolved. A bracket or
 /// paren literal holds them directly; the `array`/`tuple`/`map` spellings hold them in their
 /// arguments. False when there is nothing to recover.
@@ -158,28 +143,7 @@ bool tryGetUnresolvedLiteralField(const ASTPtr & node, Field & out)
         collected.push_back(std::move(element));
     }
 
-    if (!any_unresolved)
-        return false;
-
-    if (function->name == "array")
-    {
-        out = std::move(collected);
-    }
-    else if (function->name == "tuple")
-    {
-        out = Tuple(collected.begin(), collected.end());
-    }
-    else
-    {
-        if (collected.size() % 2 != 0)
-            return false;
-        Map pairs;
-        pairs.reserve(collected.size() / 2);
-        for (size_t i = 0; i < collected.size(); i += 2)
-            pairs.push_back(Tuple{collected[i], collected[i + 1]});
-        out = std::move(pairs);
-    }
-    return true;
+    return any_unresolved && buildCompositeLiteralField(function->name, std::move(collected), out);
 }
 
 /// Build the column and type of a set element holding number literals, parsing them from their

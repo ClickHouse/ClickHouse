@@ -1214,21 +1214,6 @@ static QueryTreeNodePtr buildScalarInComparison(
     return raw_if;
 }
 
-/// The type a number literal on the right of IN is compared against. Number literals resolve to
-/// `Float64` on their own, so they are re-parsed from their original text into this type instead of
-/// being rounded. A `Tuple` or `Array` left-hand side is matched element-wise.
-static DataTypePtr getNumberLiteralReferenceTypeForIn(const DataTypePtr & left_type)
-{
-    if (!left_type)
-        return nullptr;
-
-    auto type = removeNullable(removeLowCardinality(left_type));
-    if (isNumber(*type) || isDecimal(*type) || isTuple(*type) || isArray(*type) || isMap(*type))
-        return type;
-
-    return nullptr;
-}
-
 /// The `Field` a constant was built from, with its number literals still unresolved. A bracket or
 /// paren literal keeps them in the original AST; the `array`/`tuple`/`map` spellings are folded, so
 /// they keep them in the arguments of the folded function. False when there is nothing to recover.
@@ -1276,28 +1261,7 @@ static bool tryGetUnresolvedConstantField(const QueryTreeNodePtr & node, Field &
         collected.push_back(std::move(element));
     }
 
-    if (!any_unresolved)
-        return false;
-
-    if (function_name == "array")
-    {
-        out = std::move(collected);
-    }
-    else if (function_name == "tuple")
-    {
-        out = Tuple(collected.begin(), collected.end());
-    }
-    else
-    {
-        if (collected.size() % 2 != 0)
-            return false;
-        Map pairs;
-        pairs.reserve(collected.size() / 2);
-        for (size_t i = 0; i < collected.size(); i += 2)
-            pairs.push_back(Tuple{collected[i], collected[i + 1]});
-        out = std::move(pairs);
-    }
-    return true;
+    return any_unresolved && buildCompositeLiteralField(function_name, std::move(collected), out);
 }
 
 /// Parse one set element against the type it is compared with. Null type keeps the default.
@@ -1481,16 +1445,10 @@ QueryTreeNodePtr QueryAnalyzer::castNodeToType(
     if (node->getResultType()->equals(*target_type))
         return node;
 
-    /// When a constant was originally a `NumberLiteral` (e.g. "3.14" parsed as Float64 or
-    /// "100000000000000000000000" parsed as UInt128), cast from the original text, but only for a
-    /// number or a `Decimal` target: there text parsing is exact, so it preserves precision that the
-    /// resolved value has already lost. Parsing "3.14" into Decimal64 is exact, whereas
-    /// Float64(3.14) into Decimal64 loses trailing digits.
-    ///
-    /// Every other target compares against the value the literal denotes and takes the resolved
-    /// value. A semantic type parses text by its own spelling rules, not as a number: `DateTime`
-    /// would read the original text of `0x1p4` as a date-time string, and `String` would stringify
-    /// `1e2` as '1e2' instead of '100'.
+    /// A number literal is cast to a numeric target from its original text, which is exact where the
+    /// resolved value may already be rounded (`3.14` into `Decimal64`). Any other target takes the
+    /// resolved value: `DateTime` would read `0x1p4` as a date-time string, and `String` would keep
+    /// `1e2` instead of `100`.
     if (const auto * constant_node = node->as<ConstantNode>())
     {
         const auto unwrapped_target = removeNullable(removeLowCardinality(target_type));
@@ -3133,7 +3091,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (const_node && const_node->hasNumberLiteralText())
                 continue;
             auto arg_type = removeLowCardinalityAndNullable(argument_types[i]);
-            if (arg_type && (isNumber(*arg_type) || isDecimal(*arg_type)))
+            if (isNumber(*arg_type) || isDecimal(*arg_type))
             {
                 reference_type = arg_type;
                 break;
