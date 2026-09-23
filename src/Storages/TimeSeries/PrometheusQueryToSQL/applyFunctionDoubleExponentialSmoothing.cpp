@@ -94,7 +94,7 @@ SQLQueryPiece applyDoubleExponentialSmoothing(
     /// double_exponential_smoothing drops the metric name in PromQL, like other transforming functions.
     return applyAggregateFunctionOverRange(
         function_node, "timeSeriesDoubleExponentialSmoothingToGrid", /* drop_metric_name = */ true,
-        std::move(arguments[0]), std::move(extra_params), context);
+        /* needs_cast_to_float64 = */ true, std::move(arguments[0]), std::move(extra_params), context);
 }
 
 }

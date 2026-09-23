@@ -16,11 +16,11 @@
 namespace DB
 {
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 {
+    using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
     using ValueType = ValueType_;
     using ResultType = ValueType_;
 
@@ -49,7 +49,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
     /// `double_exponential_smoothing` (Holt-Winters double exponential smoothing) per grid point.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
         Float64 smoothing_factor = 0;
         Float64 trend_factor = 0;
 
@@ -58,7 +58,7 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
         {
         }
 
-        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
@@ -68,19 +68,19 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
             add(std::move(summary), bucket_end_timestamp);
         }
 
-        void add(Summary summary, TimestampType bucket_end_timestamp)
+        void add(Summary summary, GridScaleTimestampType bucket_end_timestamp)
         {
             if (summary.samples.empty())
                 return;
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ValueType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
 
@@ -129,26 +129,28 @@ struct AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits
 /// Aggregate function that computes Prometheus `double_exponential_smoothing` (Holt-Winters double exponential
 /// smoothing) of time series values over a sliding window on a regular time grid. It takes two extra scalar
 /// parameters: the smoothing factor and the trend factor, both in the open interval (0, 1).
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType_, ValueType_>,
+        AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits<TimestampType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesDoubleExponentialSmoothingToGridTraits<TimestampType_, ValueType_>;
 
     using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
     using ValueType = typename Traits::ValueType;
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid, Traits>;
+    using GridScaleTimestampType = typename Base::GridScaleTimestampType;
+    using GridScaleIntervalType = typename Base::GridScaleIntervalType;
 
     explicit AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid(const DataTypes & argument_types_, const Array & parameters_,
-        TimestampType start_timestamp_, TimestampType end_timestamp_, IntervalType step_, IntervalType window_, UInt32 timestamp_scale_,
+        GridScaleTimestampType grid_start_, GridScaleTimestampType grid_end_, GridScaleIntervalType grid_step_, GridScaleIntervalType window_, UInt32 grid_scale_,
+        UInt32 column_timestamp_scale_,
         Float64 smoothing_factor_, Float64 trend_factor_)
-        : Base(argument_types_, parameters_, start_timestamp_, end_timestamp_, step_, window_, timestamp_scale_)
+        : Base(argument_types_, parameters_, grid_start_, grid_end_, grid_step_, window_, grid_scale_, column_timestamp_scale_)
         , smoothing_factor(smoothing_factor_)
         , trend_factor(trend_factor_)
     {

@@ -17,11 +17,11 @@
 namespace DB
 {
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesMadToGridTraits
 {
+    using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
     using ValueType = ValueType_;
     using ResultType = ValueType_;
 
@@ -67,9 +67,9 @@ struct AggregateFunctionTimeseriesMadToGridTraits
     /// deviation `median(|x - median(x)|)` per grid point.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
-        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType, ValueType value)
@@ -79,19 +79,19 @@ struct AggregateFunctionTimeseriesMadToGridTraits
             add(std::move(summary), bucket_end_timestamp);
         }
 
-        void add(Summary summary, TimestampType bucket_end_timestamp)
+        void add(Summary summary, GridScaleTimestampType bucket_end_timestamp)
         {
             if (summary.values.empty())
                 return;
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ValueType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (combined.values.empty())
@@ -129,14 +129,14 @@ struct AggregateFunctionTimeseriesMadToGridTraits
 
 /// Aggregate function that computes the median absolute deviation of time series values over a sliding window on
 /// a regular time grid (Prometheus `mad_over_time`).
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesMadToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesMadToGrid<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesMadToGridTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesMadToGrid<TimestampType_, ValueType_>,
+        AggregateFunctionTimeseriesMadToGridTraits<TimestampType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesMadToGridTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesMadToGridTraits<TimestampType_, ValueType_>;
 
     using Aggregator = typename Traits::Aggregator;
 

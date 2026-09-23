@@ -79,7 +79,7 @@ FROM
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
             assertTimeseriesParametersCount(name, parameters, 6, "start_timestamp, end_timestamp, step, window, smoothing_factor, trend_factor");
-            auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
                 const Float64 smoothing_factor = extractTimeseriesFloatParameter(name, "smoothing_factor", parameters[4]);
                 const Float64 trend_factor = extractTimeseriesFloatParameter(name, "trend_factor", parameters[5]);
@@ -89,7 +89,7 @@ FROM
                 if (!(trend_factor > 0 && trend_factor < 1))
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Invalid trend_factor parameter for aggregate function {}: expected a value in the open interval (0, 1), got {}", name, trend_factor);
-                return std::make_shared<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale, smoothing_factor, trend_factor);
+                return std::make_shared<AggregateFunctionTimeseriesDoubleExponentialSmoothingToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale, smoothing_factor, trend_factor);
             };
             return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
