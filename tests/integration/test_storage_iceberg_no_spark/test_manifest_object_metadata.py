@@ -19,15 +19,13 @@ def run_and_get_profile_events(instance, query, query_id, settings, events):
     result = instance.query(query, query_id=query_id, settings=settings)
     instance.query("SYSTEM FLUSH LOGS")
     selected = ", ".join(f"ProfileEvents['{event}']" for event in events)
-    row = instance.query(
-        f"""
+    row = instance.query(f"""
         SELECT {selected}
         FROM system.query_log
         WHERE query_id = '{query_id}' AND type = 'QueryFinish'
         ORDER BY event_time_microseconds DESC
         LIMIT 1
-        """
-    ).strip()
+        """).strip()
     return result, [int(value) for value in row.split("\t")]
 
 
@@ -43,7 +41,9 @@ def create_table_with_one_row_per_data_file(instance, cluster, table_name, num_f
             "min_insert_block_size_bytes": 1,
         },
     )
-    assert int(instance.query(f"SELECT uniqExact(_path) FROM {table_name}")) == num_files
+    assert (
+        int(instance.query(f"SELECT uniqExact(_path) FROM {table_name}")) == num_files
+    )
 
 
 @pytest.mark.parametrize("storage_type", ["s3"])
@@ -60,14 +60,23 @@ def test_manifest_object_metadata_avoids_head_request_per_data_file(
     read_query = f"SELECT sum(x) FROM {table_name}"
 
     # Cache warming execution
-    instance.query(read_query, settings={"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0})
+    instance.query(
+        read_query,
+        settings={
+            "use_iceberg_manifest_object_metadata": 1,
+            "s3_validate_etag_on_read": 0,
+        },
+    )
 
     profiled_events = ("S3HeadObject", "IcebergManifestObjectMetadataUsed")
     enabled_result, (enabled_heads, enabled_used) = run_and_get_profile_events(
         instance,
         read_query,
         query_id=f"{table_name}_enabled",
-        settings={"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0},
+        settings={
+            "use_iceberg_manifest_object_metadata": 1,
+            "s3_validate_etag_on_read": 0,
+        },
         events=profiled_events,
     )
     disabled_result, (disabled_heads, disabled_used) = run_and_get_profile_events(
@@ -91,7 +100,8 @@ def test_manifest_object_metadata_yields_to_etag_validation(
     started_cluster_iceberg_no_spark,
 ):
     """With `s3_validate_etag_on_read` on the shortcut must not fire: that setting needs an ETag the
-    manifest cannot supply, so the read costs exactly what it costs with the shortcut disabled."""
+    manifest cannot supply, so the read costs exactly what it costs with the shortcut disabled.
+    """
     instance = started_cluster_iceberg_no_spark.instances["node1"]
     table_name = "test_manifest_object_metadata_validated_" + get_uuid_str()
     create_table_with_one_row_per_data_file(
@@ -108,14 +118,20 @@ def test_manifest_object_metadata_yields_to_etag_validation(
         instance,
         read_query,
         query_id=f"{table_name}_validated",
-        settings={"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 1},
+        settings={
+            "use_iceberg_manifest_object_metadata": 1,
+            "s3_validate_etag_on_read": 1,
+        },
         events=profiled_events,
     )
     disabled_result, (disabled_heads, disabled_used) = run_and_get_profile_events(
         instance,
         read_query,
         query_id=f"{table_name}_disabled",
-        settings={"use_iceberg_manifest_object_metadata": 0, "s3_validate_etag_on_read": 1},
+        settings={
+            "use_iceberg_manifest_object_metadata": 0,
+            "s3_validate_etag_on_read": 1,
+        },
         events=profiled_events,
     )
 
@@ -137,7 +153,10 @@ def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
         instance, started_cluster_iceberg_no_spark, table_name, num_files
     )
 
-    shortcut_on = {"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0}
+    shortcut_on = {
+        "use_iceberg_manifest_object_metadata": 1,
+        "s3_validate_etag_on_read": 0,
+    }
     shortcut_off = {"use_iceberg_manifest_object_metadata": 0}
     used = ("IcebergManifestObjectMetadataUsed",)
 
@@ -169,7 +188,11 @@ def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
         f"SELECT count() FROM {table_name} WHERE _time > toDateTime('2000-01-01 00:00:00')",
     ):
         matched, (filtered_used,) = run_and_get_profile_events(
-            instance, filtered_query, f"{table_name}_{get_uuid_str()}", shortcut_on, used
+            instance,
+            filtered_query,
+            f"{table_name}_{get_uuid_str()}",
+            shortcut_on,
+            used,
         )
         assert filtered_used == 0, filtered_query
         assert int(matched) == num_files, filtered_query
@@ -179,28 +202,29 @@ def test_manifest_object_metadata_still_fetches_etag_and_time_when_requested(
 # so two tables sharing a relative path are told apart by the storage namespace alone. Each case
 # enables one cache, names the profile event proving the second bucket was read on its own terms,
 # and uses a query that consults that cache. The page cache is only used without a filesystem cache.
+# Every table written below spans several row groups and only the first holds values below 5, so
+# `x < 5` prunes at least one row group: the query condition cache only stores an entry when
+# something was pruned.
 CACHE_CASES = {
     "parquet_metadata": (
         {"use_parquet_metadata_cache": 1},
         "ParquetMetadataCacheMisses",
-        "SELECT x FROM {table}",
+        "SELECT x FROM {table} ORDER BY x LIMIT 1",
     ),
     "filesystem": (
         {"enable_filesystem_cache": 1, "filesystem_cache_name": "cache1"},
         "CachedReadBufferCacheWriteBytes",
-        "SELECT x FROM {table}",
+        "SELECT x FROM {table} ORDER BY x LIMIT 1",
     ),
     "page": (
         {"use_page_cache_for_object_storage": 1},
         "PageCacheMisses",
-        "SELECT x FROM {table}",
+        "SELECT x FROM {table} ORDER BY x LIMIT 1",
     ),
-    # Consulted only with a filter. `x > 0` matches in both tables and neither one's statistics prune
-    # it, so caching is the only thing that can differ.
     "query_condition": (
         {"use_query_condition_cache": 1},
         "QueryConditionCacheMisses",
-        "SELECT x FROM {table} WHERE x > 0",
+        "SELECT x FROM {table} WHERE x < 5",
     ),
 }
 
@@ -220,7 +244,7 @@ def _read_object(cluster, bucket, key):
 
 def _sole_data_file_key(instance, table_query, bucket):
     """The single data file behind `table_query`, as a key relative to its bucket."""
-    paths = instance.query(f"SELECT _path FROM {table_query}").split()
+    paths = instance.query(f"SELECT DISTINCT _path FROM {table_query}").split()
     assert len(paths) == 1, paths
     # `_path` is prefixed with the bucket, which is not part of the object key.
     assert paths[0].startswith(f"{bucket}/"), paths[0]
@@ -228,17 +252,28 @@ def _sole_data_file_key(instance, table_query, bucket):
 
 
 def _build_tables_colliding_across_buckets(cluster, instance, suffix):
-    """Two one-row Iceberg tables holding different rows at the same relative data file path: a
-    local table in `minio_bucket` and a table function over `minio_bucket_2`."""
+    """Two Iceberg tables holding different rows at the same relative data file path: a local table
+    in `minio_bucket` and a table function over `minio_bucket_2`."""
     table_name = "test_manifest_object_metadata_alias_" + suffix
     other_content_table = "test_manifest_object_metadata_other_" + suffix
 
+    # Uncompressed, so the two data files are the same size regardless of the value: the manifest
+    # copied alongside then keeps recording a truthful `file_size_in_bytes` for the swapped file.
+    # The table pins the output format settings in effect at `CREATE`, not at `INSERT`.
     for name, value in ((table_name, 1), (other_content_table, 2)):
-        create_iceberg_table("s3", instance, name, cluster, "(x Int32)")
-        instance.query(f"INSERT INTO {name} VALUES ({value})")
+        create_iceberg_table(
+            "s3",
+            instance,
+            name,
+            cluster,
+            "(x Int32)",
+            settings={
+                "output_format_parquet_compression_method": "none",
+                "output_format_parquet_row_group_size": 1,
+            },
+        )
+        instance.query(f"INSERT INTO {name} VALUES ({value}), (100)")
 
-    # Written by the same writer with the same schema and value width, so the two data files are the
-    # same size - the manifest copied alongside keeps recording a truthful `file_size_in_bytes`.
     data_file_key = _sole_data_file_key(instance, table_name, cluster.minio_bucket)
     other_content = _read_object(
         cluster,
@@ -272,7 +307,9 @@ def _build_tables_colliding_across_buckets(cluster, instance, suffix):
     return table_name, in_second_bucket
 
 
-@pytest.mark.parametrize("cache_name", sorted(CACHE_CASES))
+# The query condition cache also keys on the table UUID and stays off for a table function, whose
+# UUID is nil, so the second bucket cannot consult it here. Its key is covered by a unit test.
+@pytest.mark.parametrize("cache_name", sorted(set(CACHE_CASES) - {"query_condition"}))
 def test_manifest_object_metadata_does_not_alias_another_bucket(
     started_cluster_iceberg_no_spark, cache_name
 ):
@@ -287,7 +324,11 @@ def test_manifest_object_metadata_does_not_alias_another_bucket(
     table_name, in_second_bucket = _build_tables_colliding_across_buckets(
         cluster, instance, get_uuid_str()
     )
-    settings = {"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0, **cache_settings}
+    settings = {
+        "use_iceberg_manifest_object_metadata": 1,
+        "s3_validate_etag_on_read": 0,
+        **cache_settings,
+    }
 
     assert (
         instance.query(read_query.format(table=table_name), settings=settings).strip()
@@ -304,7 +345,9 @@ def test_manifest_object_metadata_does_not_alias_another_bucket(
         events=(miss_event,),
     )
     assert second_bucket_rows.strip() == "2"
-    assert misses > 0, f"{cache_name}: the second bucket was answered from the first bucket's entry"
+    assert (
+        misses > 0
+    ), f"{cache_name}: the second bucket was answered from the first bucket's entry"
 
     # And the reverse direction.
     assert (
@@ -330,10 +373,21 @@ def test_manifest_object_metadata_keeps_the_content_caches_usable(
     }[cache_name]
 
     table_name = "test_manifest_object_metadata_cacheable_" + get_uuid_str()
-    create_iceberg_table("s3", instance, table_name, cluster, "(x Int32)")
+    create_iceberg_table(
+        "s3",
+        instance,
+        table_name,
+        cluster,
+        "(x Int32)",
+        settings={"output_format_parquet_row_group_size": 4},
+    )
     instance.query(f"INSERT INTO {table_name} SELECT number + 1 FROM numbers(16)")
 
-    settings = {"use_iceberg_manifest_object_metadata": 1, "s3_validate_etag_on_read": 0, **cache_settings}
+    settings = {
+        "use_iceberg_manifest_object_metadata": 1,
+        "s3_validate_etag_on_read": 0,
+        **cache_settings,
+    }
     query = read_query.format(table=table_name)
 
     instance.query(query, settings=settings)
