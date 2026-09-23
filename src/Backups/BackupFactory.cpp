@@ -1,4 +1,3 @@
-#include <Access/Common/normalizeAccessURI.h>
 #include <Access/ContextAccess.h>
 #include <Backups/BackupFactory.h>
 #include <Interpreters/Context.h>
@@ -63,7 +62,7 @@ void BackupFactory::checkSourceAccess(const BackupInfo & backup_info, ContextPtr
 
     if (auto target = it->second.source_access(backup_info, context, open_mode))
         context->getAccess()->checkAccessWithFilter(
-            target->flags, AccessTypeObjects::toStringSource(target->source), normalizeAccessURI(target->uri));
+            target->flags, AccessTypeObjects::toStringSource(target->source), target->uri);
 }
 
 BackupMutablePtr BackupFactory::createBackup(const CreateParams & params) const

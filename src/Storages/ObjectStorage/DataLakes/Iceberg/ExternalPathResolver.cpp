@@ -1,7 +1,6 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Access/Common/AccessType.h>
-#include <Access/Common/normalizeAccessURI.h>
 #include <Access/ContextAccess.h>
 #include <Core/Settings.h>
 #include <Common/RemoteHostFilter.h>
@@ -444,10 +443,10 @@ static std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObj
         const std::string & uri_to_check = target_scheme_normalized == "file" ? target_decomposed.key : path;
         if (read_check)
             read_check->granted = context->getAccess()->isGrantedWithFilter(
-                DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), normalizeAccessURI(uri_to_check));
+                DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), uri_to_check);
         else
             context->getAccess()->checkAccessWithFilter(
-                DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), normalizeAccessURI(uri_to_check));
+                DB::AccessType::READ, AccessTypeObjects::toStringSource(*source), uri_to_check);
     };
 
     #if USE_AWS_S3

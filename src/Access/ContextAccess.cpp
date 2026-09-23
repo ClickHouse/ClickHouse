@@ -18,7 +18,9 @@
 #include <Common/re2.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
+#include <Poco/Exception.h>
 #include <Poco/Logger.h>
+#include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/range/algorithm/set_algorithm.hpp>
@@ -40,6 +42,23 @@ namespace ErrorCodes
 
 namespace
 {
+    String normalizeAccessURI(std::string_view uri)
+    {
+        if (uri.empty())
+            return {};
+
+        try
+        {
+            Poco::URI parsed{String{uri}};
+            parsed.normalize();
+            return parsed.toString();
+        }
+        catch (const Poco::Exception &)
+        {
+            return {};
+        }
+    }
+
     AccessRights mixAccessRightsFromUserAndRoles(const User & user, const EnabledRolesInfo & roles_info)
     {
         AccessRights res = user.access;
@@ -1152,13 +1171,14 @@ bool ContextAccess::isGrantedWithFilter(const ContextPtr & context, const Access
     if (isGranted(context, flags, parameter))
         return true;
 
-    if (!to_check_by_filter.empty())
+    const String normalized_uri = normalizeAccessURI(to_check_by_filter);
+    if (!normalized_uri.empty())
     {
         auto access_rights = getAccessRights();
         auto filters = access_rights->getFilters(parameter);
         for (const auto & filter : filters)
         {
-            if (re2::RE2::FullMatch(to_check_by_filter, filter.path) && filter.access_flags.contains(flags))
+            if (re2::RE2::FullMatch(normalized_uri, filter.path) && filter.access_flags.contains(flags))
                 return true;
         }
     }

@@ -1,4 +1,3 @@
-#include <Access/Common/normalizeAccessURI.h>
 #include <Access/ContextAccess.h>
 #include <TableFunctions/ITableFunction.h>
 #include <Storages/StorageFactory.h>
@@ -42,7 +41,7 @@ void ITableFunction::checkSourceAccess(ContextPtr context, bool is_insert_query)
         if (is_insert_query)
             type_to_check = AccessType::WRITE;
 
-        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURINormalized());
+        context->getAccess()->checkAccessWithFilter(type_to_check, toStringSource(*access_object), getFunctionURI());
     }
 }
 
@@ -96,11 +95,6 @@ StoragePtr ITableFunction::execute(const ASTPtr & ast_function, ContextPtr conte
     /// It will request actual table structure and create underlying storage lazily
     return std::make_shared<StorageTableFunctionProxy>(StorageID(getDatabaseName(), table_name), std::move(get_storage),
                                                        std::move(cached_columns), needStructureConversion());
-}
-
-String ITableFunction::getFunctionURINormalized() const
-{
-    return normalizeAccessURI(getFunctionURI());
 }
 
 }
