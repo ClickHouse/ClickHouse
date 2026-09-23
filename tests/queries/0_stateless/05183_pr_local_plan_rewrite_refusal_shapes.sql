@@ -1,5 +1,5 @@
--- `parallel_replicas_filter_pushdown` asks for the condition to be spliced into the query the
--- replicas run, and only a condition they have too may order the initiator's copy of the fragment.
+-- A condition pushed into the fragment is spliced into the query the replicas run, and only a
+-- condition they have too may order the initiator's copy of that fragment.
 -- The rewrite that does the splicing refuses some fragment shapes, so the two shapes named most often
 -- are pinned here: neither lets the initiator order a read the replicas read unordered.
 --
@@ -86,8 +86,7 @@ SET parallel_replicas_plan_based = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_read_in_order = 1;
--- The condition is asked to travel, and these two decide whether the rewrite that carries it runs.
-SET parallel_replicas_filter_pushdown = 1;
+-- These two decide whether the rewrite that carries the condition runs.
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
 

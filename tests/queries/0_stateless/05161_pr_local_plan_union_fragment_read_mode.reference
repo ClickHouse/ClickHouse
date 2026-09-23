@@ -8,9 +8,5 @@ and answers correctly
 5	205
 5	305
 5	405
-asking to ship the condition changes nothing: the rewrite refuses a union
-Read type: InOrder
-Read type: Default
-200
 a condition that prunes every branch away still answers
 0

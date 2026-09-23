@@ -1,6 +1,6 @@
 -- `ReadFromRemote::addFilters` splices the condition into an AST whose join tree has to hold a single
--- table expression, so a fragment that joins keeps the query the replicas were given whatever
--- `parallel_replicas_filter_pushdown` asks for. The condition still enters the initiator's copy and
+-- table expression, so a fragment that joins keeps the query the replicas were given. The condition
+-- still enters the initiator's copy and
 -- prunes it, and the read must stay unordered: ordering it off a condition only this replica has is
 -- what makes the initiator announce `WithOrder` against the replicas' `Default`.
 --
@@ -47,8 +47,7 @@ SET join_algorithm = 'hash';
 SET max_bytes_before_external_join = 0;
 SET max_bytes_ratio_before_external_join = 0;
 SET query_plan_join_swap_table = false;
--- The setting asks for the condition to be shipped; the join tree is what refuses it.
-SET parallel_replicas_filter_pushdown = 1;
+-- The condition is offered to the replicas like any other; the join tree is what refuses it.
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
 

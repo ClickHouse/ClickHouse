@@ -41,8 +41,6 @@ SET parallel_replicas_min_number_of_rows_per_replica = 0;
 SET parallel_replicas_plan_based = 0;
 -- What puts both branches' reads in one fragment.
 SET parallel_replicas_allow_view_over_mergetree = 1;
--- The condition must stay out of the replicas' query, which is what this setting would put it in.
-SET parallel_replicas_filter_pushdown = 0;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_read_in_order = 1;
@@ -61,17 +59,6 @@ WHERE explain LIKE '%Read type%';
 SELECT 'and answers correctly';
 SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 ORDER BY ts LIMIT 5;
-
-SELECT 'asking to ship the condition changes nothing: the rewrite refuses a union';
--- `ReadFromRemote::addFilters` splices into a query tree that has to be a `QueryNode`, and a fragment
--- expanding to `UNION ALL` is not one - so the replicas keep the query they were given however this
--- setting is set, and neither branch may order itself off the condition.
-SET parallel_replicas_filter_pushdown = 1;
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
-FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 LIMIT 5)
-WHERE explain LIKE '%Read type%';
-SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
-SET parallel_replicas_filter_pushdown = 0;
 
 SELECT 'a condition that prunes every branch away still answers';
 -- One branch of this fragment reads in order, and a coordinator serving an in-order stream used to
