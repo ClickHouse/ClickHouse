@@ -2538,7 +2538,11 @@ void StorageMergeTree::assertNoUnappliedMutationsForParts(const DataPartsVector 
     if (mutations.entries_by_version.empty())
         return;
 
-    auto context_for_reading = createContextForMutationRead(getContext()->getBackgroundContext());
+    /// Every context a mutation is analyzed in comes through `makeQueryContextForMutate`, which
+    /// normalizes settings that a profile of the server configuration leaves in the background one.
+    auto mutation_context = Context::createCopy(getContext()->getBackgroundContext());
+    mutation_context->makeQueryContextForMutate(*getSettings());
+    auto context_for_reading = createContextForMutationRead(mutation_context);
 
     UInt64 min_mutation_version = 0;
     const IMergeTreeDataPart * blocking_part = nullptr;
