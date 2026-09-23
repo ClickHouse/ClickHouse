@@ -95,23 +95,36 @@ bool isNameExpression(const ASTPtr & ast)
 /// rotated versions, exactly as `SystemLog::getCreateUnionTableQuery` builds it. With `context`, the arguments
 /// may be any constant expressions, which `TableFunctionMerge::parseArguments` evaluates the same way; they
 /// are left as written when the `merge` is nested into `clusterAllReplicas`, which evaluates it remotely.
+/// The single-argument form `merge('^query_log(_[0-9]+)?$')` reads from the current database, and keeps that
+/// form in its definition, so it is recognized only with `context`, which tells the current database.
 std::optional<StorageID> getSystemLogOfGeneratedMergeFunction(const ASTFunction & function, ContextPtr context)
 {
     if (function.name != "merge")
         return std::nullopt;
 
     const auto * arguments = function.arguments ? function.arguments->as<ASTExpressionList>() : nullptr;
-    if (!arguments || arguments->children.size() != 2)
+    if (!arguments || arguments->children.empty() || arguments->children.size() > 2)
         return std::nullopt;
 
-    ASTPtr database_ast = arguments->children[0];
-    ASTPtr regexp_ast = arguments->children[1];
-    if (context && isNameExpression(database_ast))
-        database_ast = evaluateConstantExpressionForDatabaseName(database_ast, context);
+    std::optional<String> database_name;
+    ASTPtr regexp_ast = arguments->children.back();
+    if (arguments->children.size() == 1)
+    {
+        if (!context)
+            return std::nullopt;
+        database_name = context->getCurrentDatabase();
+    }
+    else
+    {
+        ASTPtr database_ast = arguments->children[0];
+        if (context && isNameExpression(database_ast))
+            database_ast = evaluateConstantExpressionForDatabaseName(database_ast, context);
+        database_name = getNameArgument(database_ast.get());
+    }
+
     if (context && isNameExpression(regexp_ast))
         regexp_ast = evaluateConstantExpressionAsLiteral(regexp_ast, context);
 
-    auto database_name = getNameArgument(database_ast.get());
     auto regexp = getStringLiteral(regexp_ast.get());
     if (!database_name || database_name->empty() || !regexp)
         return std::nullopt;

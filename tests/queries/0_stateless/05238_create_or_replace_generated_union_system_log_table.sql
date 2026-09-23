@@ -21,8 +21,12 @@ SELECT count(), any(note) FROM all_query_log;
 SELECT engine FROM system.tables WHERE database = currentDatabase() AND name = 'all_query_log';
 
 -- The same definition in the other spellings the table functions accept - bare identifiers, an expression for
--- the database, the log table as one qualified name - is the same definition: the table function rewrites its
--- arguments into literals before the rule is applied.
+-- the database, the database left out to mean the current one, the log table as one qualified name - is the
+-- same definition: the table function rewrites its arguments into literals before the rule is applied.
+CREATE OR REPLACE TABLE all_query_log (dummy UInt8) AS merge('^query_log(_[0-9]+)?$')
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
+CREATE OR REPLACE TABLE all_query_log (event_date Date, query String) AS clusterAllReplicas(test_shard_localhost, merge('^query_log(_[0-9]+)?$'))
+    COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
 CREATE OR REPLACE TABLE all_query_log (dummy UInt8) AS merge({CLICKHOUSE_DATABASE:Identifier}, '^query_log(_[0-9]+)?$')
     COMMENT 'It is safe to drop this table at any time: it will be recreated automatically.'; -- { serverError TABLE_ALREADY_EXISTS }
 CREATE OR REPLACE TABLE all_query_log (dummy UInt8) AS merge(currentDatabase(), '^query_log(_[0-9]+)?$')
