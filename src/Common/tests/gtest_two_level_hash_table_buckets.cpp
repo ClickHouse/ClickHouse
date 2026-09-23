@@ -17,8 +17,7 @@
 
 
 /** Covers `TwoLevelHashTable` beyond its default shape.
-  * That includes a bucket count other than 256, a bucket hash that differs from the cell hash,
-  * and the table-wide cell numbering of `offsetInternal`.
+  * That includes a bucket count other than 256 and the table-wide cell numbering of `offsetInternal`.
   * The 256-bucket shape that aggregation uses is the same class with the default arguments.
   */
 
@@ -31,34 +30,10 @@ using MapWithBits = TwoLevelHashMap<UInt64, UInt64, DefaultHash<UInt64>, TwoLeve
 using OneBucketMap = MapWithBits<0>;
 using DefaultMap = MapWithBits<8>;
 
-/// A placement hash that is useless for bucket selection: sequential keys share their high bits.
-struct IdentityHash
-{
-    size_t operator()(UInt64 x) const { return x; }
-};
-
-struct MixingBucketHash
-{
-    size_t operator()(UInt64 x) const { return static_cast<UInt32>((x * 0x9E3779B97F4A7C15ULL) >> 32); }
-};
-
-using IdentityCell = HashMapCell<UInt64, UInt64, IdentityHash>;
-using IdentityImpl = HashMapTable<UInt64, IdentityCell, IdentityHash, TwoLevelHashTableGrower<>, HashTableAllocator>;
-using RoutedMap = TwoLevelHashTable<
-    UInt64,
-    IdentityCell,
-    IdentityHash,
-    TwoLevelHashTableGrower<>,
-    HashTableAllocator,
-    IdentityImpl,
-    /* BITS_FOR_BUCKET = */ 8,
-    MixingBucketHash>;
-
 static_assert(BucketPartitionedMap<OneBucketMap>);
 static_assert(BucketPartitionedMap<DefaultMap>);
-static_assert(BucketPartitionedMap<RoutedMap>);
 static_assert(BucketPartitionedMap<PartitionedFixedHashMap<UInt16, UInt64>>);
-static_assert(BucketPartitionedTable<PartitionedFixedHashSet<UInt16>>);
+static_assert(BucketPartitionedMap<PartitionedFixedHashSet<UInt16>>);
 
 template <typename Map>
 void insertKeyValue(Map & map, typename Map::key_type key, UInt64 value)
@@ -154,6 +129,8 @@ TEST(TwoLevelHashTableBuckets, InsertFindIterateAcrossBuckets)
     ASSERT_FALSE(map.empty());
     ASSERT_EQ(countNonEmptyBuckets(map), DefaultMap::NUM_BUCKETS);
     ASSERT_EQ(countByIteration(map), num_keys);
+    for (auto it = map.begin(); it != map.end(); ++it)
+        ASSERT_EQ(it.getBucket(), routedBucket<DefaultMap>(it->getKey())) << "key " << it->getKey();
 
     for (UInt64 key = 1; key <= num_keys; ++key)
     {
@@ -240,71 +217,9 @@ TEST(TwoLevelHashTableBuckets, BucketIsTakenFromTheHighEndOfTheLow32Bits)
 }
 
 
-TEST(TwoLevelHashTableBuckets, BucketHashRoutesInsertFindAndErase)
+TEST(TwoLevelHashTableBuckets, IsEmptyCellFindsTheBucketFromTheCellHash)
 {
-    constexpr UInt64 num_keys = 4096;
-
-    RoutedMap map;
-    for (UInt64 key = 1; key <= num_keys; ++key)
-        insertKeyValue(map, key, key * 7);
-    ASSERT_EQ(map.size(), num_keys);
-
-    /// Routing on the identity hash would put keys 1..4096 into a couple of buckets.
-    ASSERT_GT(countNonEmptyBuckets(map), 200u);
-
-    size_t keys_routed_away_from_cell_hash = 0;
-    for (UInt64 key = 1; key <= num_keys; ++key)
-    {
-        keys_routed_away_from_cell_hash += RoutedMap::getBucketFromHash(RoutedMap::hash(key)) != routedBucket<RoutedMap>(key);
-        auto * it = map.find(key);
-        ASSERT_NE(it, nullptr) << "key " << key;
-        ASSERT_EQ(it->getMapped(), key * 7);
-    }
-    ASSERT_GT(keys_routed_away_from_cell_hash, 2000u) << "the two hashes agreed too often to test routing";
-    ASSERT_EQ(map.find(num_keys + 1), nullptr);
-
-    for (UInt64 key = 1; key <= num_keys; ++key)
-    {
-        ASSERT_TRUE(map.erase(key)) << "erase looked in the wrong bucket for key " << key;
-        ASSERT_EQ(map.find(key), nullptr) << "key " << key;
-    }
-    ASSERT_EQ(map.size(), 0u);
-    ASSERT_FALSE(map.erase(1));
-}
-
-
-TEST(TwoLevelHashTableBuckets, ConvertingConstructorRoutesByBucketHash)
-{
-    constexpr UInt64 num_keys = 4096;
-
-    IdentityImpl single_level;
-    for (UInt64 key = 1; key <= num_keys; ++key)
-        insertKeyValue(single_level, key, key * 7);
-
-    RoutedMap map(single_level);
-    ASSERT_EQ(map.size(), num_keys);
-    ASSERT_GT(countNonEmptyBuckets(map), 200u);
-    for (UInt64 key = 1; key <= num_keys; ++key)
-    {
-        auto * it = map.find(key);
-        ASSERT_NE(it, nullptr) << "key " << key;
-        ASSERT_EQ(it->getMapped(), key * 7);
-    }
-}
-
-
-TEST(TwoLevelHashTableBuckets, HashOnlyQueriesStayConservativeUnderBucketHash)
-{
-    /// `isEmptyCell` answering true means "no match" without a lookup. A bucket hash makes the cell
-    /// hash insufficient to find the bucket, so the answer must then always be false.
-    auto routed = std::make_unique<RoutedMap>();
-    for (UInt64 key = 1; key <= 1000; ++key)
-        insertKeyValue(*routed, key, key);
-    for (UInt64 key = 1; key <= 1000; ++key)
-        ASSERT_FALSE(routed->isEmptyCell(RoutedMap::hash(key)));
-    ASSERT_FALSE(routed->isEmptyCell(RoutedMap::hash(123456789)));
-
-    /// Without a bucket hash the fast path stays: an empty table answers true, a present key false.
+    /// `isEmptyCell` answering true means "no match" without a lookup: an empty table answers true, a present key false.
     auto plain = std::make_unique<DefaultMap>();
     ASSERT_TRUE(plain->isEmptyCell(DefaultMap::hash(1)));
     for (UInt64 key = 1; key <= 1000; ++key)
@@ -317,13 +232,6 @@ TEST(TwoLevelHashTableBuckets, HashOnlyQueriesStayConservativeUnderBucketHash)
 TEST(TwoLevelHashTableBuckets, OffsetsAreUniqueAcrossBuckets)
 {
     constexpr UInt64 num_keys = 2000;
-
-    /// With a bucket hash the bucket of a cell comes from the key, not from the cell hash.
-    auto routed = std::make_unique<RoutedMap>();
-    for (UInt64 key = 1; key <= num_keys; ++key)
-        insertKeyValue(*routed, key, key);
-    routed->computeBucketPrefix();
-    assertOffsetsAreUnique(*routed, 1, num_keys);
 
     auto plain = std::make_unique<DefaultMap>();
     for (UInt64 key = 1; key <= num_keys; ++key)
@@ -413,7 +321,7 @@ TEST(TwoLevelHashTableBuckets, ForEachMappedVisitsEveryBucket)
 TEST(TwoLevelHashTableBuckets, WriteAndReadRoundTripEveryBucket)
 {
     using Map = MapWithBits<4>;
-    ASSERT_EQ(Map::serializedPartitionCount(), 16u);
+    ASSERT_EQ(Map::NUM_BUCKETS, 16u);
 
     Map source;
     for (UInt64 key = 1; key <= 3000; ++key)
