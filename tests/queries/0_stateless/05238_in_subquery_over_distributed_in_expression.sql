@@ -1,4 +1,4 @@
--- A standalone expression - a `CHECK` constraint, a row policy - is compiled by the machinery that
+-- A standalone expression - a `CHECK` constraint, a row policy, a `TTL` - is compiled by the machinery that
 -- preceded the analyzer, and an `IN` subquery in it used to have its plan built by the interpreter that
 -- preceded the analyzer as well. A `Distributed` table resolves its read through a query tree that
 -- interpreter never builds, so reading one from there dereferenced a null query tree.
@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS in_subquery_constraint;
 DROP TABLE IF EXISTS in_subquery_constraint_bare;
 DROP TABLE IF EXISTS in_subquery_child;
 DROP TABLE IF EXISTS in_subquery_merge;
+DROP TABLE IF EXISTS in_subquery_ttl;
 
 CREATE TABLE in_subquery_source (x UInt64) ENGINE = MergeTree ORDER BY x;
 INSERT INTO in_subquery_source VALUES (1), (2);
@@ -37,6 +38,17 @@ CREATE ROW POLICY OR REPLACE in_subquery_policy ON in_subquery_child USING x IN 
 CREATE TABLE in_subquery_merge (x UInt64) ENGINE = Merge(currentDatabase(), '^in_subquery_child$');
 SELECT x FROM in_subquery_merge ORDER BY x;
 DROP ROW POLICY in_subquery_policy ON in_subquery_child;
+
+-- The `IN` subquery of a `TTL ... WHERE` is executed while a merge applies the `TTL`.
+-- It is resolved outside of the current database, so the table is qualified.
+CREATE TABLE in_subquery_ttl (x UInt64, d DateTime)
+ENGINE = MergeTree ORDER BY x
+TTL d + INTERVAL 1 SECOND WHERE x IN (SELECT x FROM {CLICKHOUSE_DATABASE:Identifier}.in_subquery_dist);
+INSERT INTO in_subquery_ttl VALUES (1, now() - 100), (2, now() - 100), (3, now() - 100);
+OPTIMIZE TABLE in_subquery_ttl FINAL;
+SELECT x FROM in_subquery_ttl ORDER BY x;
+
+DROP TABLE in_subquery_ttl;
 
 DROP TABLE in_subquery_merge;
 DROP TABLE in_subquery_child;
