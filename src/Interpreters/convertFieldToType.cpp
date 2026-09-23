@@ -385,7 +385,9 @@ bool isNegativeDateTime64TicksSource(const Field & src)
 /// raises `VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE`, while both `saturate` and the default `ignore` clamp to the nearest end
 /// of the window, i.e. the extreme representable tick. A `NaN` has no side to saturate to and stays Null. The other
 /// `convert_inexact_floats` callers never get here: `FillingTransform` converts a `DateTime64` bound into a plain
-/// `Decimal64` and rejects `Time64`, and a `RANGE` window frame offset is not implemented for either type.
+/// `Decimal64` and rejects `Time64`, and a `RANGE` window frame offset is not implemented for either type (a
+/// `Nullable` key gets as far as converting the offset in the `WindowTransform` constructor, but the first compared
+/// row throws `NOT_IMPLEMENTED`, so the converted offset is never used).
 template <typename DecimalType>
 Field dateTime64OutOfWindow(
     const Field & src,

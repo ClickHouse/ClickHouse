@@ -1654,6 +1654,8 @@ Possible values:
 
 The accurate casts (`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`) do not depend on this setting: an unrepresentable value is always rejected, reported as `NULL` or replaced with the default value, respectively.
 
+The setting applies to conversions done by `CAST` and the conversion functions, including those an `INSERT ... VALUES` expression template or an `INSERT ... SELECT` performs. A constant expression that the `Values` format evaluates without a template (the fallback enabled by `input_format_values_interpret_expressions`) and the `values` table function follow it only for `DateTime64` and `Time64`: an out-of-range number put into a `Date`, `Date32`, `DateTime` or `Time` column there does not follow this setting. The `values` table function rejects it, and the `Values` format rejects it too, unless `input_format_null_as_default` is enabled, in which case it inserts the default value of the column.
+
 Default value: `ignore`.
 )", 0) \
     DECLARE(Bool, validate_experimental_and_suspicious_types_inside_nested_types, true, R"(
