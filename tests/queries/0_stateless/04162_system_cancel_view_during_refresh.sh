@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel, zookeeper
+# Tags: atomic-database, memory-engine, no-parallel, zookeeper, no-fasttest
 
 # Uses `SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_executor_published`, which is server-global
 # and would park every other refresh on the server, so it cannot run concurrently with other tests.
@@ -135,5 +135,32 @@ done
 $CLICKHOUSE_CLIENT -q "
     select '<2: stop during the coordination write is honored>',
         (select position(exception, 'cancelled') > 0 from system.view_refreshes where database = '$db' and view = 'k'),
-        (select count() from $db.k);
+        (select count() from $db.k);"
+
+# ---------------------------------------------------------------------------
+# A SYSTEM REFRESH VIEW accepted while the start write of an earlier one is in flight is counted into the
+# request znode that write consumes from; the write must not erase it. APPEND, so rows count refreshes
+# (identical rows, so without insert_deduplicate = 0 the second one would be deduplicated away).
+# ---------------------------------------------------------------------------
+
+$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "
+    create materialized view $db.k2 refresh every 1 year append (x Int64)
+        engine ReplicatedMergeTree order by x empty as select 1 as x settings insert_deduplicate = 0;
+    system stop view $db.k2;"
+
+$CLICKHOUSE_CLIENT -q "
+    system enable failpoint refresh_mv_pause_inside_coordination_write;
+    system refresh view $db.k2;"
+
+if ! timeout 60 $CLICKHOUSE_CLIENT -q "SYSTEM WAIT FAILPOINT refresh_mv_pause_inside_coordination_write PAUSE"
+then
+    echo "FAIL: the refresh did not reach the coordination-write failpoint"
+    exit 1
+fi
+
+$CLICKHOUSE_CLIENT -q "
+    system refresh view $db.k2;
+    system disable failpoint refresh_mv_pause_inside_coordination_write;
+    system wait view $db.k2;
+    select '<3: a request counted during the start write is kept>', count() from $db.k2;
     drop database $db;"

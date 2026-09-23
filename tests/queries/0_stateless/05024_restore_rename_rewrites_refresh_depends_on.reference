@@ -19,9 +19,9 @@ RESTORED
 7. control, table-level rename leaves a dependency that is not renamed:
 SRC.parent		SRC.parent
 BACKUP_CREATED
-8. held back while the restore is still running, a SYSTEM REFRESH VIEW included:
+8. held back while the restore is still running:
+Disabled
+9. the stop survives the finished restore, target untouched:
 Disabled	0
-9. the stop survives the finished restore; only the refresh requested during it ran:
-Disabled	1
-10. and it is enabled once actually started:
-1	1
+10. and it refreshes once actually started:
+1

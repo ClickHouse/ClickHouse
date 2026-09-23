@@ -1933,7 +1933,7 @@ SYSTEM STOP VIEWS
 
 ### SYSTEM START [REPLICATED] VIEW, START VIEWS {#start-view-start-views}
 
-Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered, other than one that became due meanwhile or a `SYSTEM REFRESH VIEW` request that the stop was holding back (e.g. `START REPLICATED VIEW` after `STOP REPLICATED VIEW`).
+Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
 
 If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
@@ -1970,7 +1970,7 @@ Trigger an immediate out-of-schedule refresh of a given view. It runs even if th
 If the view is in a Replicated or Shared database, the request is shared with all replicas: the refresh may run on another replica, e.g. if the current one is read-only.
 
 <Note>
-In Replicated or Shared databases, the refresh does not run while the view is stopped with `SYSTEM STOP REPLICATED VIEW`. It runs once `SYSTEM START REPLICATED VIEW` resumes it. A view still being restored from a backup holds the request until the restore finishes or `SYSTEM START REPLICATED VIEW` (`SYSTEM START VIEW` for a view with `all_replicas`).
+In Replicated or Shared databases, the refresh does not run while the view is stopped with `SYSTEM STOP REPLICATED VIEW`. It runs once `SYSTEM START REPLICATED VIEW` resumes it.
 </Note>
 
 ```sql
@@ -1979,11 +1979,11 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error, unless it was cancelled. On a replica where the view is disabled (stopped, paused, read-only or stopped cluster-wide), only a failed `SYSTEM REFRESH VIEW` is reported.
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error, unless it was cancelled.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 
-If the view is in a Replicated or Shared database, also waits for a refresh that is running or requested on any replica.
+If the view is in a Replicated or Shared database, also waits for a refresh that is running or requested on another replica.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name

@@ -337,6 +337,55 @@ def test_refresh_requested_on_read_only_node_runs_elsewhere(started_cluster, cle
     )
 
 
+def test_takeover_waits_for_recreated_request(started_cluster, cleanup):
+    for node in [node1, node2, reading_node]:
+        node.query(
+            f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"
+        )
+    # ~20 s per refresh: longer than the Keeper session timeout (15 s) a takeover waits for.
+    node1.query(
+        "create materialized view re.a refresh every 1 year append (x Int64) engine ReplicatedMergeTree order by x empty as "
+        "select number + sleepEachRow(1) as x from numbers(20) settings max_block_size = 1, insert_deduplicate = 0"
+    )
+    for node in [node2, reading_node]:
+        node.query("system sync database replica re")
+        wait_until_view_registered(node, "a")
+
+    def status(node):
+        return node.query("select status from system.view_refreshes where view = 'a'").strip()
+
+    def wait_status(node, predicate, timeout=60):
+        deadline = time.monotonic() + timeout
+        while not predicate(status(node)):
+            assert time.monotonic() < deadline, status(node)
+            time.sleep(0.1)
+
+    # The read-only replica cannot run its request, so a writable one takes it over after a Keeper session timeout. node2's
+    # first read of it fails and is retried 5 s later, so its takeover clock starts 5 s after node1's: node1 takes it over.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"system enable failpoint {fp}")
+    reading_node.query("system refresh view re.a")
+    time.sleep(2)
+    node2.query(f"system disable failpoint {fp}")
+    wait_status(node2, lambda s: s == "Scheduled")
+    # From here node2 misses the window in which that request is consumed and a new one is made under the same znode
+    # name: a new request, so node2's clock must start over once nothing is running, instead of taking it over at once.
+    node2.query(f"system enable failpoint {fp}")
+    try:
+        wait_status(node1, lambda s: s == "Running")
+        reading_node.query("system refresh view re.a")
+        time.sleep(1)
+    finally:
+        node2.query(f"system disable failpoint {fp}")
+    wait_status(node2, lambda s: s == "RunningOnAnotherReplica")
+    wait_status(node2, lambda s: s != "RunningOnAnotherReplica")
+    first_refresh_ended = time.monotonic()
+    wait_status(node2, lambda s: s in ("Running", "RunningOnAnotherReplica"))
+    assert time.monotonic() - first_refresh_ended >= 10
+    reading_node.query("system wait view re.a", timeout=180)
+    assert_eq_with_retry(node1, "select count() from re.a", "40\n")
+
+
 def test_refreshable_mv_in_read_only_node_no_ddl(started_cluster, cleanup):
     node1.query(
         f"create database re engine = Replicated('/test/re_{test_idx}', 'shard1', '{{replica}}');"

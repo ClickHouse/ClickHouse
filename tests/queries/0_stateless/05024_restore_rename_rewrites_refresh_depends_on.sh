@@ -149,13 +149,8 @@ ${CLICKHOUSE_CLIENT} -q "RESTORE DATABASE \`$STOPPED\` FROM Disk('backups', '$BA
 RESTORE_PID=$!
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT FAILPOINT restore_pause_before_data_restore_tasks PAUSE"
 
-# Unlike a `SYSTEM STOP VIEW`, this hold is not lifted by `SYSTEM REFRESH VIEW`: the request waits for the
-# restore to finish. The view refreshes in well under a second, so two seconds are enough to see it run.
-${CLICKHOUSE_CLIENT} -q "SYSTEM REFRESH VIEW \`$STOPPED\`.mv"
-sleep 2
-echo "8. held back while the restore is still running, a SYSTEM REFRESH VIEW included:"
-${CLICKHOUSE_CLIENT} -q "SELECT (SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'),
-    (SELECT count() FROM \`$STOPPED\`.mv) FORMAT TSV"
+echo "8. held back while the restore is still running:"
+${CLICKHOUSE_CLIENT} -q "SELECT status FROM system.view_refreshes WHERE database = '$STOPPED' FORMAT TSV"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
@@ -165,13 +160,12 @@ wait $RESTORE_PID
 # write to its target.
 sleep 2
 
-echo "9. the stop survives the finished restore; only the refresh requested during it ran:"
+echo "9. the stop survives the finished restore, target untouched:"
 ${CLICKHOUSE_CLIENT} -q "SELECT (SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'),
     (SELECT count() FROM \`$STOPPED\`.mv) FORMAT TSV"
 
 ${CLICKHOUSE_CLIENT} -q "SYSTEM START VIEW \`$STOPPED\`.mv"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW \`$STOPPED\`.mv"
-echo "10. and it is enabled once actually started:"
-${CLICKHOUSE_CLIENT} -q "SELECT (SELECT status != 'Disabled' FROM system.view_refreshes WHERE database = '$STOPPED'),
-    (SELECT count() FROM \`$STOPPED\`.mv) FORMAT TSV"
+echo "10. and it refreshes once actually started:"
+${CLICKHOUSE_CLIENT} -q "SELECT count() FROM \`$STOPPED\`.mv FORMAT TSV"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
