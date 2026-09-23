@@ -310,10 +310,7 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
     /// Header has format: 'Authorization: <scheme> <token>'.
     if (catalog_state.auth_header.has_value())
     {
-        /// Validate the `auth_header` setting before it is sent to the catalog.
-        DB::HTTPHeaderEntries header_entries{catalog_state.auth_header.value()};
-        getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
-        return header_entries;
+        return DB::HTTPHeaderEntries{catalog_state.auth_header.value()};
     }
 
     /// Option 2: user provided grant_type and client credentials for OAuthClientCredentialsRequest.

@@ -661,51 +661,28 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
     expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
-TEST(RestCatalog, AuthHeaderNameIsValidatedBeforeSending)
+TEST(RestCatalog, InvalidAuthHeaderNameIsRejected)
 {
-    /// getAuthHeaders is protected; expose it so the test can inspect what is actually sent.
-    struct ExposeAuthHeaders : public RestCatalog
-    {
-        using RestCatalog::RestCatalog;
-        using RestCatalog::getAuthHeaders;
-    };
-
     RestCatalogTestServer server(CatalogShape::Empty);
     auto context = DB::Context::createCopy(getContext().context);
     context->makeQueryContext();
 
-    /// A valid auth_header name is sent unchanged; names are no longer normalized.
-    ExposeAuthHeaders catalog(
-        "warehouse",
-        server.getUrl(),
-        /* catalog_credential */"",
-        /* auth_scope */"",
-        /* auth_header */"X-Custom: Bearer token",
-        /* oauth_server_uri */"",
-        /* oauth_server_use_request_body */false,
-        context);
-
-    const auto snapshot = catalog.getStateSnapshot();
-    ASSERT_TRUE(snapshot->auth_header.has_value());
-    const auto headers = catalog.getAuthHeaders(*snapshot, /* update_token */ false);
-    ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[0].name, "X-Custom");
-
-    /// A name that is not a valid token (here, containing a space) is rejected, not normalized.
-    ExposeAuthHeaders invalid_catalog(
-        "warehouse",
-        server.getUrl(),
-        /* catalog_credential */"",
-        /* auth_scope */"",
-        /* auth_header */"X-A B: Bearer token",
-        /* oauth_server_uri */"",
-        /* oauth_server_use_request_body */false,
-        context);
-
-    const auto invalid_snapshot = invalid_catalog.getStateSnapshot();
-    ASSERT_TRUE(invalid_snapshot->auth_header.has_value());
+    /// The `auth_header` setting is validated when the catalog is built, so a name that is not a
+    /// valid token (here, containing a space) is rejected rather than normalized.
     expectThrowsCode(
-        [&] { (void)invalid_catalog.getAuthHeaders(*invalid_snapshot, /* update_token */ false); },
+        [&]
+        {
+            RestCatalog(
+                "warehouse",
+                server.getUrl(),
+                /* catalog_credential */"",
+                /* auth_scope */"",
+                /* auth_header */"X-A B: Bearer token",
+                /* oauth_server_uri */"",
+                /* oauth_server_use_request_body */false,
+                /* flat_namespaces */false,
+                context);
+        },
         DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
