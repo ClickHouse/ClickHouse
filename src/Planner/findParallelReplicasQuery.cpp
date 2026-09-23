@@ -229,6 +229,25 @@ static QueryTreeNodePtr replaceTablesWithDummyTables(QueryTreeNodePtr query, con
     return query->cloneAndReplace(visitor.replacement_map);
 }
 
+/// Does the tree contain a `UNION` anywhere?
+static bool hasUnionNode(const IQueryTreeNode * query_tree_node)
+{
+    std::vector<const IQueryTreeNode *> stack{query_tree_node};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (node->getNodeType() == QueryTreeNodeType::UNION)
+            return true;
+
+        for (const auto & child : node->getChildren())
+            if (child)
+                stack.push_back(child.get());
+    }
+    return false;
+}
+
 bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_node, const ContextPtr & context)
 {
     /// The walk below reports the `QUERY` nodes it descended through, so a tree that is a bare table
@@ -266,7 +285,15 @@ bool canQueryPossiblyUseParallelReplicas(const QueryTreeNodePtr & query_tree_nod
     /// `parallel_replicas_allow_in_with_subquery = 0`, `additional_table_filters` without
     /// `serialize_query_plan`, a `STREAM` modifier - and each of those only costs a missed skip, never a
     /// wrong one.
-    return !getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty();
+    if (!getSupportingParallelReplicasQueries(query_tree_node.get(), context).empty())
+        return true;
+
+    /// The walk descends into the first branch of a `UNION` and stops there, so an empty result says
+    /// nothing about the other branches. The planner does read a later branch with replicas when the
+    /// first one is not readable: `SELECT a FROM log_table UNION ALL SELECT a FROM mt_table` plans a
+    /// `ReadFromRemoteParallelReplicas` under its second arm. Report such a query as possibly eligible
+    /// rather than skip a candidate plan that would have been used.
+    return hasUnionNode(query_tree_node.get());
 }
 
 #ifdef DUMP_PARALLEL_REPLICAS_QUERY_CANDIDATES
