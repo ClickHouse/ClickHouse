@@ -299,7 +299,14 @@ bool ParserTablesInSelectQueryElement::parseImpl(Pos & pos, ASTPtr & node, Expec
                 return false;
         }
 
-        if (ParserKeyword(Keyword::LATERAL).ignore(pos, expected))
+        /// `LATERAL` is only a keyword when it is followed by a parenthesized subquery, the only supported lateral shape.
+        /// Otherwise it is left to `ParserTableExpression`, so a table or view named `lateral` still parses.
+        Pos before_lateral = pos;
+        bool is_lateral = ParserKeyword(Keyword::LATERAL).ignore(pos, expected) && pos->type == TokenType::OpeningRoundBracket;
+        if (!is_lateral)
+            pos = before_lateral;
+
+        if (is_lateral)
         {
             table_join->lateral = true;
 
@@ -578,7 +585,8 @@ When [join_algorithm](/reference/settings/session-settings/join#join_algorithm) 
 ## LATERAL JOIN {#lateral-join}
 
 `JOIN LATERAL` lets the subquery on the right side of a join reference columns of the table
-expressions on its left side; the subquery is evaluated once per left row:
+expressions on its left side; the subquery is evaluated for each distinct combination of the left-side
+column values it references, and its result is joined to every left row with that combination:
 
 ```sql
 SELECT ...
