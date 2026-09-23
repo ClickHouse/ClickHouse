@@ -280,7 +280,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -419,8 +419,12 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        auto table_path_stat = fs::status(table_path);
-        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+        const bool is_existing_directory = existsOrFileNameTooLong([&]
+        {
+            const auto table_path_stat = fs::status(table_path);
+            return fs::exists(table_path_stat) && fs::is_directory(table_path_stat);
+        });
+        if (is_existing_directory)
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
 }
@@ -510,7 +514,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(pattern))
+        if (!existsOrFileNameTooLong([&] { return fs::is_directory(pattern); }))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
@@ -1761,7 +1765,7 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!fs::exists(archive))
+                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                         {
                             if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                 continue;
@@ -1808,7 +1812,7 @@ Chunk StorageFileSource::generate()
                                 if (archive.empty())
                                     return {};
 
-                                if (!fs::exists(archive))
+                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                                 {
                                     if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                         continue;
@@ -1870,7 +1874,7 @@ Chunk StorageFileSource::generate()
                     if (current_path.empty())
                         return {};
 
-                    if (!fs::exists(current_path))
+                    if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                             continue;
