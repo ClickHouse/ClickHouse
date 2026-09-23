@@ -88,6 +88,8 @@ struct MergeTreeIndexTextParams
 {
     size_t dictionary_block_size = 0;
     size_t dictionary_block_frontcoding_compression = 1;
+    /// Empty means the dictionary substream keeps the part's default codec.
+    String dictionary_compression_codec;
     size_t posting_list_block_size = 1024 * 1024;
     size_t positions = 0;
     UInt8 positions_codec = static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor);

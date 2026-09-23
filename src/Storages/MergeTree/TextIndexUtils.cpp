@@ -443,7 +443,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
         index_ptr->getFileName(),
         new_data_part->getDataPartStoragePtr(),
         new_data_part->default_codec,
-        getTextIndexDictionaryCodec(writer_settings.text_index_dictionary_compression_codec, new_data_part->default_codec),
+        getTextIndexDictionaryCodec(params.dictionary_compression_codec, new_data_part->default_codec),
         new_data_part->getMarksFileExtension(),
         writer_settings);
 

@@ -6309,6 +6309,27 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
+    /// A text index's `dictionary_compression_codec` argument names a codec, so it goes through the same gate
+    /// as the codec-valued settings checked earlier in this function.
+    /// Only a value this ALTER introduces is judged. `commands.apply` above produced the effective metadata,
+    /// so a command that installs nothing (`ADD INDEX IF NOT EXISTS` naming an index that already exists)
+    /// leaves nothing to check, and a codec the table already carries was gated when it was introduced.
+    if (!is_secondary_replay)
+    {
+        for (const auto & index : new_metadata.secondary_indices)
+        {
+            auto codec = getTextIndexDictionaryCodecArgument(index);
+            if (!codec || codec->empty())
+                continue;
+
+            const auto & old_indices = old_metadata.secondary_indices;
+            if (old_indices.has(index.name) && getTextIndexDictionaryCodecArgument(old_indices.getByName(index.name)) == codec)
+                continue;
+
+            CompressionCodecFactory::instance().validateCodecString(*codec, CodecValidationSettings(settings));
+        }
+    }
+
     /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
     /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
     /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.

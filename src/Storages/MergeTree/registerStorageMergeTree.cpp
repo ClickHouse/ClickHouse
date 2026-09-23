@@ -1070,6 +1070,22 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             }
         }
 
+        /// A text index's `dictionary_compression_codec` argument names a codec the same way the settings
+        /// validated above do, so it goes through the same gate. `textIndexValidator` cannot do it: it runs
+        /// from the table constructor and has no access to the query settings the gate reads.
+        /// The replay terms are the ones the statistics check above already applies, for the same reason:
+        /// a replica refusing a definition the initiator committed would retry its queue entry forever.
+        if (args.mode != LoadingStrictnessLevel::FORCE_RESTORE
+            && is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay)
+        {
+            for (const auto & index : metadata.secondary_indices)
+            {
+                auto codec = getTextIndexDictionaryCodecArgument(index);
+                if (codec && !codec->empty())
+                    CompressionCodecFactory::instance().validateCodecString(*codec, CodecValidationSettings(local_settings));
+            }
+        }
+
         /// Try to add "implicit" min-max indexes on all columns
         for (const auto & column : metadata.columns)
         {

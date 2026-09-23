@@ -8,6 +8,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
+#include <Compression/CompressionFactory.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/Logger.h>
@@ -84,6 +85,7 @@ namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsNonZeroUInt64 text_index_dictionary_block_size;
     extern const MergeTreeSettingsBool text_index_dictionary_block_frontcoding_compression;
+    extern const MergeTreeSettingsString text_index_dictionary_compression_codec;
     extern const MergeTreeSettingsNonZeroUInt64 text_index_posting_list_block_size;
     extern const MergeTreeSettingsTextIndexPostingListCodec text_index_posting_list_codec;
     extern const MergeTreeSettingsMergeTreeTextIndexSerializationVersion text_index_serialization_version;
@@ -2182,6 +2184,7 @@ static const String ARGUMENT_PREPROCESSOR = "preprocessor";
 static const String ARGUMENT_POSTPROCESSOR = "postprocessor";
 static const String ARGUMENT_DICTIONARY_BLOCK_SIZE = "dictionary_block_size";
 static const String ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION = "dictionary_block_frontcoding_compression";
+static const String ARGUMENT_DICTIONARY_COMPRESSION_CODEC = "dictionary_compression_codec";
 static const String ARGUMENT_POSTING_LIST_BLOCK_SIZE = "posting_list_block_size";
 static const String ARGUMENT_POSTING_LIST_CODEC = "posting_list_codec";
 static const String ARGUMENT_POSITIONS = "support_phrase_search";
@@ -2286,6 +2289,9 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     UInt64 dictionary_block_frontcoding_compression = extractFieldOption<UInt64>(options, ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION)
         .value_or(settings[MergeTreeSetting::text_index_dictionary_block_frontcoding_compression]);
 
+    String dictionary_compression_codec = extractFieldOption<String>(options, ARGUMENT_DICTIONARY_COMPRESSION_CODEC)
+        .value_or(settings[MergeTreeSetting::text_index_dictionary_compression_codec].toString());
+
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
 
@@ -2315,6 +2321,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     MergeTreeIndexTextParams index_params{
         dictionary_block_size,
         dictionary_block_frontcoding_compression,
+        std::move(dictionary_compression_codec),
         posting_list_block_size,
         positions,
         static_cast<UInt8>(TextIndexPositionCodec::Encoding::BlockedPfor), /// not user-configurable yet
@@ -2348,6 +2355,14 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
 
     if (dictionary_block_use_fc_compression > 1)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Text index argument '{}' must be 0 or 1, but got {}", ARGUMENT_DICTIONARY_BLOCK_FRONTCODING_COMPRESSION, dictionary_block_use_fc_compression);
+
+    String dictionary_compression_codec = extractFieldOption<String>(options, ARGUMENT_DICTIONARY_COMPRESSION_CODEC)
+        .value_or(settings[MergeTreeSetting::text_index_dictionary_compression_codec].toString());
+
+    /// Rejects an unknown codec name, and a lossy codec: the dictionary has no column data type, so the
+    /// codec is built with a null type, and `get` refuses a lossy codec in that context.
+    if (!dictionary_compression_codec.empty())
+        CompressionCodecFactory::instance().get(dictionary_compression_codec);
 
     UInt64 posting_list_block_size = extractFieldOption<UInt64>(options, ARGUMENT_POSTING_LIST_BLOCK_SIZE)
         .value_or(settings[MergeTreeSetting::text_index_posting_list_block_size]);
@@ -2426,6 +2441,25 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// Create the postprocessor for validation.
     /// This validates the token transformation expression (always String -> String).
     MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index);
+}
+
+std::optional<String> getTextIndexDictionaryCodecArgument(const IndexDescription & index)
+{
+    if (index.type != "text")
+        return {};
+
+    try
+    {
+        auto options = convertArgumentsToOptionsMap(index.arguments);
+        return extractFieldOption<String>(options, ARGUMENT_DICTIONARY_COMPRESSION_CODEC);
+    }
+    catch (const Exception &)
+    {
+        /// Arguments that do not parse are reported by `textIndexValidator`, which runs later and
+        /// produces the canonical message. Reporting them from here would attribute a malformed
+        /// definition to whichever caller happened to ask about this one argument.
+        return {};
+    }
 }
 
 }

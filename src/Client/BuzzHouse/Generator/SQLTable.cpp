@@ -2080,6 +2080,12 @@ void StatementGenerator::addTableIndex(RandomGenerator & rg, SQLTable & t, const
 
                 idef->add_params()->set_unescaped_sval("posting_list_codec = '" + rg.pickRandomly(post_codecs) + "'");
             }
+            if (rg.nextBool())
+            {
+                static const DB::Strings dict_codecs = {"LZ4", "LZ4HC", "ZSTD", "NONE"};
+
+                idef->add_params()->set_unescaped_sval("dictionary_compression_codec = '" + rg.pickRandomly(dict_codecs) + "'");
+            }
         }
         break;
         case IndexType::IDX_vector_similarity: {

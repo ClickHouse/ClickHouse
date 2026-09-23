@@ -173,9 +173,6 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(settings.marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     CompressionCodecPtr marks_compression_codec = CompressionCodecFactory::instance().get(ast, nullptr);
 
-    CompressionCodecPtr text_index_dictionary_codec
-        = getTextIndexDictionaryCodec(settings.text_index_dictionary_compression_codec, default_codec);
-
     PackedFilesWriter * packed_writer_for_streams
         = skip_indices_packed_writer ? skip_indices_packed_writer.get() : skip_indices_packed_writer_borrowed;
 
@@ -184,10 +181,17 @@ void MergeTreeDataPartWriterOnDisk::initSkipIndices()
         auto index_name = skip_index->getFileName();
         auto index_substreams = skip_index->getSubstreams();
 
+        const auto * text_index = dynamic_cast<const MergeTreeIndexText *>(skip_index.get());
+
         /// Full-text indices are not supported and never packed: their merge output goes
         /// through MergeTextIndexesTask which writes standalone files.
-        const bool packs_this_index = packing_enabled
-            && dynamic_cast<const MergeTreeIndexText *>(skip_index.get()) == nullptr;
+        const bool packs_this_index = packing_enabled && text_index == nullptr;
+
+        /// Each text index resolves its own dictionary codec, because the argument that selects it
+        /// belongs to the index definition.
+        CompressionCodecPtr text_index_dictionary_codec = text_index
+            ? getTextIndexDictionaryCodec(text_index->getParams().dictionary_compression_codec, default_codec)
+            : default_codec;
 
         auto & index_streams = skip_indices_streams.emplace_back();
 
