@@ -117,6 +117,11 @@ public:
         nested_func->insertResultInto(place, to, arena);
     }
 
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        nested_func->rollbackInsertResult(place, to);
+    }
+
     bool allocatesMemoryInArena() const override { return nested_func->allocatesMemoryInArena(); }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_func; }
