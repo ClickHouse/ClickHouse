@@ -8616,7 +8616,7 @@
     "source": "/jp/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ja/get-started/quickstarts/tutorial",
     "source": "/jp/getting-started/tutorial"
   },
   {
@@ -8664,7 +8664,7 @@
     "source": "/jp/getting_started/playground"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ja/get-started/quickstarts/tutorial",
     "source": "/jp/getting_started/tutorial"
   },
   {
@@ -15304,7 +15304,7 @@
     "source": "/jp/troubleshooting"
   },
   {
-    "destination": "/ja/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ja/get-started/quickstarts/tutorial",
     "source": "/jp/tutorial"
   },
   {
@@ -19380,7 +19380,7 @@
     "source": "/ko/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ko/get-started/quickstarts/tutorial",
     "source": "/ko/getting-started/tutorial"
   },
   {
@@ -19428,7 +19428,7 @@
     "source": "/ko/getting_started/playground"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ko/get-started/quickstarts/tutorial",
     "source": "/ko/getting_started/tutorial"
   },
   {
@@ -26064,7 +26064,7 @@
     "source": "/ko/troubleshooting"
   },
   {
-    "destination": "/ko/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ko/get-started/quickstarts/tutorial",
     "source": "/ko/tutorial"
   },
   {
@@ -31496,7 +31496,7 @@
     "source": "/ru/getting-started/quick-start/oss"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ru/get-started/quickstarts/tutorial",
     "source": "/ru/getting-started/tutorial"
   },
   {
@@ -31544,7 +31544,7 @@
     "source": "/ru/getting_started/playground"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ru/get-started/quickstarts/tutorial",
     "source": "/ru/getting_started/tutorial"
   },
   {
@@ -38180,7 +38180,7 @@
     "source": "/ru/troubleshooting"
   },
   {
-    "destination": "/ru/get-started/sample-datasets/nyc-taxi",
+    "destination": "/ru/get-started/quickstarts/tutorial",
     "source": "/ru/tutorial"
   },
   {
@@ -45068,7 +45068,7 @@
     "source": "/zh/getting-started/quick-start/oss"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/zh/get-started/quickstarts/tutorial",
     "source": "/zh/getting-started/tutorial"
   },
   {
@@ -45116,7 +45116,7 @@
     "source": "/zh/getting_started/playground"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/zh/get-started/quickstarts/tutorial",
     "source": "/zh/getting_started/tutorial"
   },
   {
@@ -51752,7 +51752,7 @@
     "source": "/zh/troubleshooting"
   },
   {
-    "destination": "/zh/get-started/sample-datasets/nyc-taxi",
+    "destination": "/zh/get-started/quickstarts/tutorial",
     "source": "/zh/tutorial"
   },
   {
