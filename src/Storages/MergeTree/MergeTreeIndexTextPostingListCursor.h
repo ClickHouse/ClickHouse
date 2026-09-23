@@ -18,28 +18,12 @@ class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
 
-/// Lower bound by galloping search: cheap when the answer is close to `first`, which is the common
-/// case for a cursor advancing over dense posting lists, and O(log n) otherwise.
-inline const uint32_t * gallopingLowerBound(const uint32_t * first, const uint32_t * last, uint32_t target)
-{
-    const size_t size = static_cast<size_t>(last - first);
-    if (size == 0 || *first >= target)
-        return first;
-
-    size_t bound = 1;
-    while (bound < size && first[bound] < target)
-        bound *= 2;
-
-    /// first[bound / 2] < target, so the answer is in (bound / 2, bound], clamped to the range.
-    return std::lower_bound(first + bound / 2 + 1, first + std::min(bound + 1, size), target);
-}
-
 /// Operation type for padding the column with the posting list.
 enum class PadOp { Or, And };
 
 /// Window of rows written by a linear scan (`linearOr` / `linearAnd`): a half-open range [begin, end) of absolute
 /// row ids that covers every byte the scan wrote. Empty when the posting list has no rows in the scanned window.
-struct PostingsCursorWindow
+struct PostingsApplyWindow
 {
     size_t begin = 0;
     size_t end = 0;
@@ -80,7 +64,6 @@ struct PostingsCursorWindow
 /// Two access patterns:
 ///   1. Iterator: `valid` / `value` / `next` / `advance` — for leapfrog intersection.
 ///   2. Linear scan: `linearOr` / `linearAnd` — for brute-force bitmap operations.
-
 class PostingListCursor
 {
 public:
@@ -95,25 +78,16 @@ public:
     /// Flushes batched ProfileEvents counters to the global counters.
     ~PostingListCursor();
 
-    /// Set bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
-    /// Returns the range of rows written; it is empty when the posting list has no doc_ids in the window.
-    PostingsCursorWindow linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
+    /// Sets bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
+    /// Returns the range of rows for which bytes were set.
+    PostingsApplyWindow linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
 
-    /// Increment counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
-    /// Returns the range of rows whose counters were incremented; it is empty when the posting list has no doc_ids
-    /// in the window. Regions of `data` that are already all-zero are skipped and never reported as written.
-    PostingsCursorWindow linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
+    /// Increments counters in `data` for all doc_ids in [row_offset, row_offset + num_rows).
+    /// Returns the range of rows for which counters were incremented.
+    PostingsApplyWindow linearAnd(UInt8 * data, size_t row_offset, size_t num_rows);
 
-    /// Move to the next doc_id. The common case, the next value being in the decoded block,
-    /// is resolved inline; block and segment transitions go through `nextSlow`.
-    ALWAYS_INLINE void next()
-    {
-        if (!is_valid)
-            return;
-        if (++index < decoded_count)
-            return;
-        nextSlow();
-    }
+    /// Move to the next doc_id.
+    void next();
 
     /// True if cursor points to a valid doc_id.
     bool valid() const { return is_valid; }
@@ -121,23 +95,8 @@ public:
     /// Current doc_id. Undefined when `valid` returns false.
     uint32_t value() const { return decoded_values_ptr[index]; }
 
-    /// Advance to the first doc_id >= target. The common case, the target lying within the decoded block,
-    /// is resolved inline; block and segment transitions go through `advanceSlow`.
-    ALWAYS_INLINE void advance(uint32_t target)
-    {
-        ++counters.advance_count;
-        if (!is_valid)
-            return;
-
-        if (index < decoded_count && target <= decoded_values_ptr[decoded_count - 1])
-        {
-            const auto * it = gallopingLowerBound(decoded_values_ptr + index, decoded_values_ptr + decoded_count, target);
-            index = static_cast<size_t>(it - decoded_values_ptr);
-            return;
-        }
-
-        advanceSlow(target);
-    }
+    /// Advance to the first doc_id >= target.
+    void advance(uint32_t target);
 
     /// Posting list density: cardinality / (max_doc_id - min_doc_id + 1).
     /// Used to choose between leapfrog and brute-force algorithms.
@@ -164,22 +123,16 @@ private:
     /// Decode the packed block at `block_idx` into `decoded_values`.
     void decodeBlock(size_t block_idx);
 
-    /// Slow path of `advance`: the target lies beyond the decoded values of the current block.
-    void advanceSlow(uint32_t target);
-
-    /// Slow path of `next`: `index` has run past the decoded values of the current block.
-    void nextSlow();
-
     /// Linear scan over an embedded (fully materialized) posting list.
     /// Returns the range of rows written.
     template <PadOp op>
-    PostingsCursorWindow linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
+    PostingsApplyWindow linearEmbedded(UInt8 * data, size_t row_offset, size_t num_rows);
 
     /// Linear scan over a compressed posting list: iterates segments and packed blocks, with
     /// segment- and block-level skips for regions already resolved by `op` (see `canSkipRegion`).
     /// Returns the range of rows written.
     template <PadOp op>
-    PostingsCursorWindow linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
+    PostingsApplyWindow linearSegments(UInt8 * data, size_t row_offset, size_t num_rows);
 
     MergeTreeReaderStream * stream = nullptr;
     const TokenPostingsInfo * info = nullptr;
@@ -210,13 +163,10 @@ private:
 
     size_t decoded_count = 0;    /// Number of valid entries reachable via `decoded_values_ptr`.
 
-    /// Read position within `decoded_values_ptr`. The linear scan of an embedded list leaves it at the first
-    /// doc_id past the window and resumes its search there: the windows come in ascending order.
+    /// Read position within `decoded_values_ptr`.
     size_t index = 0;
 
     /// Packed-block iteration state within the current segment.
-    /// The linear scan resumes its block search from `current_block`, the last block decoded, for the same reason.
-    /// Both resume positions are checked against the window first, so a call out of order only costs a search from the start.
     size_t current_block = 0;            /// Index of the packed block being iterated.
     UInt32 last_decoded_doc_id = 0;      /// Last doc_id decoded (delta base for next block).
 
@@ -265,21 +215,17 @@ void lazyUnionPostingLists(
 /// The caller is responsible for preparing the cursor vector (resolving search tokens
 /// to cursors and deduplicating if necessary).
 ///
-/// The two algorithms, selected by `algorithm` (`AUTO` compares densities, see `lazyIntersectPostingLists`).
-/// In both the cursors are sorted by ascending cardinality, so the sparsest posting list goes first:
-///   - Brute-force bitmap counting — the sparsest cursor sets bits, the remaining ones increment counters
-///     (skipping regions that are still all-zero), then a final pass keeps only the rows where the count is n.
-///     Every cursor after the first scans only the rows the previous cursors wrote, so the blocks outside
-///     that range are not even decoded, and the final pass covers that range alone.
-///     Stops early once a cursor has no rows in the window, because the intersection is then empty.
+/// The two algorithms, selected by `algorithm`.
+///   - Brute-force bitmap counting — the sparsest cursor sets bits,
+//      the remaining ones increment counters,
+///     then a final pass keeps only the rows where the count is n.
 ///   - Leapfrog — the sparsest cursor leads and the others advance forward, skipping whole blocks.
-/// n == 1 is a degenerate case handled by a direct linear scan, same as the union.
 void lazyIntersectPostingLists(
     IColumn & column,
     const std::vector<PostingListCursorPtr> & cursors,
     size_t column_offset,
     size_t row_offset,
     size_t num_rows,
-    TextIndexPostingsCursorIntersectionAlgorithm algorithm);
+    TextIndexPostingsIntersectionAlgorithm algorithm);
 
 }

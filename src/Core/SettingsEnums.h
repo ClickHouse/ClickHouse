@@ -236,14 +236,14 @@ enum class TextIndexPostingListApplyMode : uint8_t
 
 DECLARE_SETTING_ENUM(TextIndexPostingListApplyMode)
 
-enum class TextIndexPostingsCursorIntersectionAlgorithm : uint8_t
+enum class TextIndexPostingsIntersectionAlgorithm : uint8_t
 {
     BruteForce,
     Leapfrog,
     Auto,
 };
 
-DECLARE_SETTING_ENUM(TextIndexPostingsCursorIntersectionAlgorithm)
+DECLARE_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm)
 
 DECLARE_SETTING_ENUM(DistributedCacheLogMode)
 

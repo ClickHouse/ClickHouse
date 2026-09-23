@@ -40,7 +40,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
-    extern const SettingsTextIndexPostingsCursorIntersectionAlgorithm text_index_postings_cursor_intersection_algorithm;
+    extern const SettingsTextIndexPostingsIntersectionAlgorithm text_index_postings_intersection_algorithm;
     extern const SettingsFloat text_index_hint_max_selectivity;
 }
 
@@ -106,7 +106,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const auto apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
 
     lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::Lazy);
-    intersection_algorithm = ctx_settings[Setting::text_index_postings_cursor_intersection_algorithm].value;
+    intersection_algorithm = ctx_settings[Setting::text_index_postings_intersection_algorithm].value;
 
     if (index_granule_)
         setIndexGranule(std::move(index_granule_));

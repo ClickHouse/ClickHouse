@@ -56,7 +56,7 @@ SELECT 'all aall codd', count(), sum(id) FROM tab_bf_early_exit WHERE hasAllToke
 SELECT 'Lazy, brute-force intersection';
 SET use_skip_indexes = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
-SET text_index_postings_cursor_intersection_algorithm = 'bruteforce';
+SET text_index_postings_intersection_algorithm = 'bruteforce';
 
 -- `bgap` is empty in the 11 marks inside the gap: the intersection stops there in every one of them.
 SELECT 'all bgap codd', count(), sum(id) FROM tab_bf_early_exit WHERE hasAllTokens(s, ['bgap', 'codd'])

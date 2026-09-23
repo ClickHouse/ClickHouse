@@ -9200,7 +9200,7 @@ Controls how posting lists are applied during text index queries.
 'lazy' (default) uses cursor-based on-demand decoding (requires an index format with a serialized codec).
 'lazy' is applied only where it is supported: queries with patterns (such as `LIKE`) and parts with an index written by an older version fall back to 'materialize'.
 )", 0) \
-    DECLARE(TextIndexPostingsCursorIntersectionAlgorithm, text_index_postings_cursor_intersection_algorithm, TextIndexPostingsCursorIntersectionAlgorithm::Auto, R"(
+    DECLARE(TextIndexPostingsIntersectionAlgorithm, text_index_postings_intersection_algorithm, TextIndexPostingsIntersectionAlgorithm::Auto, R"(
 Selects the algorithm that intersects posting lists in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
 - `auto` (default): leapfrog is used only when the sparsest posting list can skip whole packed blocks of the densest one, and brute-force bitmap intersection otherwise.
 - `bruteforce`: always use the brute-force bitmap intersection.

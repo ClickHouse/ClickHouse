@@ -51,7 +51,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"query_plan_optimize_join_order_conflict_detector", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."},
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
-            {"text_index_postings_cursor_intersection_algorithm", "auto", "auto", "New setting superseding `text_index_lazy_intersection_density_threshold`: selects the posting list intersection algorithm in lazy posting list apply mode. `auto` keeps the previous default behavior, so `compatibility` must not change it."},
+            {"text_index_postings_intersection_algorithm", "auto", "auto", "New setting superseding `text_index_lazy_intersection_density_threshold`: selects the posting list intersection algorithm in lazy posting list apply mode. `auto` keeps the previous default behavior, so `compatibility` must not change it."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {

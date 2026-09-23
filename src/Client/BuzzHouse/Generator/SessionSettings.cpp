@@ -1810,7 +1810,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"text_index_like_min_pattern_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); }, {}, false)},
-    {"text_index_postings_cursor_intersection_algorithm",
+    {"text_index_postings_intersection_algorithm",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &)
          {

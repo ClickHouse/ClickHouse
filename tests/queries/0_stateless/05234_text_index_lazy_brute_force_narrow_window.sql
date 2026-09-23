@@ -63,7 +63,7 @@ SELECT 'all cburst dmid', count(), sum(id) FROM tab_bf_narrow WHERE hasAllTokens
 SELECT 'Lazy, brute-force intersection';
 SET use_skip_indexes = 1;
 SET text_index_posting_list_apply_mode = 'lazy';
-SET text_index_postings_cursor_intersection_algorithm = 'bruteforce';
+SET text_index_postings_intersection_algorithm = 'bruteforce';
 
 -- `cburst` sets 300 rows at the start of every mark: `bhalf` decodes the one or two blocks covering them.
 SELECT 'all bhalf cburst', count(), sum(id) FROM tab_bf_narrow WHERE hasAllTokens(s, ['bhalf', 'cburst'])

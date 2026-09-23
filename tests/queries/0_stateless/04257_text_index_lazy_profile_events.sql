@@ -105,14 +105,14 @@ SELECT count() FROM tab_lazy_pe WHERE hasAnyTokens(s, ['bnarrow', 'dwide'])
 --     pads its dense segments [0..255] and [256..511] and skips the all-zero ones from 512 on.
 --     Triggers: SegmentsSkippedDense (AND side), BruteForceIntersections.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'csubset'])
-    SETTINGS text_index_postings_cursor_intersection_algorithm = 'bruteforce',
+    SETTINGS text_index_postings_intersection_algorithm = 'bruteforce',
              log_comment = '04257_pe_and_seg_dense';
 
 -- Q6: brute-force AND ['csubset', 'eright'] - disjoint ranges of equal cardinality, so the
 --     cursor order is arbitrary: whichever goes first fills its range; the segments of the
 --     other are all-zero in the output. Triggers: SegmentsSkippedResolved (AND side).
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
-    SETTINGS text_index_postings_cursor_intersection_algorithm = 'bruteforce',
+    SETTINGS text_index_postings_intersection_algorithm = 'bruteforce',
              log_comment = '04257_pe_and_seg_zero';
 
 -- Q7: brute-force AND ['bnarrow', 'dwide'] - narrow c0 leaves block-level zeros in c1.
@@ -122,14 +122,14 @@ SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['csubset', 'eright'])
 --       - block 0 [0..127] not zero -> decode normally,
 --       - block 1 [128..383] all-zero in output -> BlocksSkippedResolved (AND side) fires.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['bnarrow', 'dwide'])
-    SETTINGS text_index_postings_cursor_intersection_algorithm = 'bruteforce',
+    SETTINGS text_index_postings_intersection_algorithm = 'bruteforce',
              log_comment = '04257_pe_and_block_zero';
 
 -- Q8: leapfrog AND ['adense', 'dwide'], forced by the `leapfrog` algorithm.
 --     intersectLeapfrog dispatches to intersectTwo, which calls advance() repeatedly.
 --     Triggers: LeapfrogIntersections, AdvanceCount.
 SELECT count() FROM tab_lazy_pe WHERE hasAllTokens(s, ['adense', 'dwide'])
-    SETTINGS text_index_postings_cursor_intersection_algorithm = 'leapfrog',
+    SETTINGS text_index_postings_intersection_algorithm = 'leapfrog',
              log_comment = '04257_pe_alg_leapfrog';
 
 -- ===========================================================================
