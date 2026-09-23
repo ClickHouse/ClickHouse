@@ -5,7 +5,6 @@
 #include <Compression/registerCompressionCodecs.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
-#include <Common/typeid_cast.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
