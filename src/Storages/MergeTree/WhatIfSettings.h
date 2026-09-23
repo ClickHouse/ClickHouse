@@ -10,7 +10,7 @@ namespace DB
 struct WhatIfSettings
 {
     bool empirical = true;
-    /// rows a projection estimate may read before it samples granules instead, 0 reads the parts whole
+    /// row budget for projection estimates, 0 means no limit
     UInt64 max_rows_to_scan = 10'000'000;
 
     static WhatIfSettings fromAST(const ASTPtr & settings_ast);
