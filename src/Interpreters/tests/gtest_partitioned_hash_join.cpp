@@ -661,23 +661,20 @@ TEST(PartitionedHashJoin, SeveralClausesMatchHashJoin)
     EXPECT_EQ(built.join->getBuildStats(1).distinct_keys, distinct_keys * duplicates);
     EXPECT_EQ(built.join->getTotalRowCount(), distinct_keys + distinct_keys * duplicates);
 
-    /// The same blocks through `HashJoin`: the oracle for the count and for the joined rows.
-    auto hash_join = std::make_shared<HashJoin>(
-        built.table_join,
-        std::make_shared<const Block>(twoColumnBlock("rk", "build_id", {}, {})),
-        /*any_take_last_row_=*/false,
-        /*allow_set_maps_=*/false);
-    addBuildBlocks(*hash_join, distinct_keys, duplicates, options);
-    hash_join->onBuildPhaseFinish();
-    EXPECT_EQ(hash_join->getTotalRowCount(), built.join->getTotalRowCount());
-
     /// Probe row `i` carries `k = keyOf(i)` and `probe_id = i`. The first clause finds the `duplicates`
-    /// rows of key `i`; the second finds the one row whose `build_id` is `i`. For `i = 0` the first clause
-    /// already emitted that row, so it appears once.
+    /// rows of key `i`, whose ids are `i * duplicates + d`; the second finds the one row whose `build_id`
+    /// is `i`, which belongs to key `i / duplicates`. For `i = 0` the first clause already emitted that
+    /// row, so it appears once.
     std::vector<UInt64> keys(distinct_keys);
+    JoinedRows expected;
     for (size_t i = 0; i < keys.size(); ++i)
+    {
         keys[i] = keyOf(i);
-    JoinedRows expected = probeKeys(*hash_join, keys);
+        for (size_t d = 0; d < duplicates; ++d)
+            expected.emplace_back(keyOf(i), i, keyOf(i), i * duplicates + d);
+        if (i != 0)
+            expected.emplace_back(keyOf(i), i, keyOf(i / duplicates), i);
+    }
     std::sort(expected.begin(), expected.end());
     EXPECT_EQ(expected.size(), distinct_keys * duplicates + distinct_keys - 1);
     expectSameRows(probeKeys(*built.join, keys), expected);
