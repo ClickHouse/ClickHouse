@@ -28,6 +28,7 @@ namespace Setting
 {
     extern const SettingsMap additional_table_filters;
     extern const SettingsBool optimize_correlated_scalar_aggregate_to_window;
+    extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
 }
 
 namespace
@@ -36,32 +37,33 @@ namespace
 struct TableExpressionInfo
 {
     QueryTreeNodePtr * slot = nullptr;
-    /// On the NULL-extended side of an outer join.
-    bool nullable = false;
+    /// On the NULL-extended side of an outer join or in a `PASTE JOIN`, which pairs rows by position.
+    bool excluded = false;
 };
 
 using TableExpressions = std::unordered_map<const IQueryTreeNode *, TableExpressionInfo>;
 
-void collectTableExpressions(QueryTreeNodePtr & node, bool nullable, TableExpressions & result)
+void collectTableExpressions(QueryTreeNodePtr & node, bool excluded, TableExpressions & result)
 {
     if (node->as<TableNode>())
     {
-        result[node.get()] = {&node, nullable};
+        result[node.get()] = {&node, excluded};
     }
     else if (auto * join = node->as<JoinNode>())
     {
         const auto kind = join->getKind();
-        collectTableExpressions(join->getLeftTableExpressionNode(), nullable || kind == JoinKind::Right || kind == JoinKind::Full, result);
-        collectTableExpressions(join->getRightTableExpressionNode(), nullable || kind == JoinKind::Left || kind == JoinKind::Full, result);
+        excluded |= kind == JoinKind::Paste;
+        collectTableExpressions(join->getLeftTableExpressionNode(), excluded || kind == JoinKind::Right || kind == JoinKind::Full, result);
+        collectTableExpressions(join->getRightTableExpressionNode(), excluded || kind == JoinKind::Left || kind == JoinKind::Full, result);
     }
     else if (auto * cross_join = node->as<CrossJoinNode>())
     {
         for (auto & table_expression : cross_join->getTableExpressions())
-            collectTableExpressions(table_expression, nullable, result);
+            collectTableExpressions(table_expression, excluded, result);
     }
     else if (auto * array_join = node->as<ArrayJoinNode>())
     {
-        collectTableExpressions(array_join->getTableExpressionNode(), nullable, result);
+        collectTableExpressions(array_join->getTableExpressionNode(), excluded, result);
     }
 }
 
@@ -402,7 +404,7 @@ private:
             target = key_target;
         }
 
-        if (tables.at(target).nullable)
+        if (tables.at(target).excluded)
             return {};
 
         /// Equal keys must be grouped as `=` compares them (not the case for floats).
@@ -412,11 +414,11 @@ private:
             auto column = target_table.getStorageSnapshot()->tryGetColumn(GetColumnsOptions(GetColumnsOptions::AllPhysical), key);
             if (!column || QueryPlanOptimizations::keyTypeBreaksHashSharding(*column->type))
                 return {};
-            /// A NULL inside a key (e.g. `Tuple(Nullable(Int32))`) makes `=` not true, but not the grouping.
-            bool has_nested_nullable = false;
-            removeNullable(removeLowCardinality(column->type))->forEachChild(
-                [&](const IDataType & child) { has_nested_nullable |= child.isNullable(); });
-            if (has_nested_nullable)
+            /// A NULL inside a key (e.g. `Tuple(Nullable(Int32))` or `Variant`) makes `=` not true, but not the grouping.
+            auto key_type = removeNullable(removeLowCardinality(column->type));
+            bool has_nested_null = isVariant(key_type);
+            key_type->forEachChild([&](const IDataType & child) { has_nested_null |= child.isNullable() || isVariant(child); });
+            if (has_nested_null)
                 return {};
             candidate.may_match_nothing |= isNullableOrLowCardinalityNullable(column->type);
         }
@@ -426,6 +428,10 @@ private:
         {
             if (!isNullableOrLowCardinalityNullable(subquery->getResultType()))
                 return {};
+            /// The expression is also evaluated for rows without a match, where it could throw, unless it is short-circuited.
+            if (!projection->as<FunctionNode>() || !projection->as<FunctionNode &>().isAggregateFunction())
+                if (getSettings()[Setting::short_circuit_function_evaluation] == ShortCircuitFunctionEvaluation::DISABLE)
+                    return {};
             for (const auto & aggregate_node : aggregates)
             {
                 const auto & aggregate = aggregate_node->as<FunctionNode &>();
@@ -673,7 +679,8 @@ private:
 
 void CorrelatedScalarAggregateToWindowPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
 {
-    if (!context->getSettingsRef()[Setting::optimize_correlated_scalar_aggregate_to_window])
+    /// A materialized view replaces the table by the inserted block after the passes, also in the derived table.
+    if (!context->getSettingsRef()[Setting::optimize_correlated_scalar_aggregate_to_window] || context->getViewSource())
         return;
 
     CorrelatedScalarAggregateToWindowVisitor visitor(std::move(context));

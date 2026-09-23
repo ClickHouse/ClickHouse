@@ -19,6 +19,8 @@ CREATE TABLE r (k Int32, v Float64) ENGINE = ReplacingMergeTree ORDER BY (k, v);
 CREATE TABLE fk (k Float64, v Int32) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE tn (k Tuple(Nullable(Int32)), v Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE tc (k Int32, __correlated_aggregate_0 Int32) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE vt (k Variant(Int32, String), v Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE tp (id Int32, k Int32, v Int32) ENGINE = MergeTree ORDER BY id;
 
 INSERT INTO t VALUES (1, 10), (1, 30), (2, 5), (2, 1e308), (3, -7);
 INSERT INTO u VALUES (1, 100), (1, 101), (2, 200), (4, 400);
@@ -30,6 +32,8 @@ INSERT INTO nk VALUES (1, 1), (2, 2), (NULL, 3);
 INSERT INTO r VALUES (1, 10), (1, 30), (2, 5);
 INSERT INTO tn VALUES (tuple(NULL), 1), (tuple(NULL), 2), (tuple(1), 3);
 INSERT INTO tc VALUES (1, 5), (1, 7), (2, 3);
+INSERT INTO vt VALUES (1, 10), (1, 20), ('a', 5), (NULL, 3), (NULL, 4);
+INSERT INTO tp VALUES (1, 2, 10), (2, 1, 20), (3, 2, 30), (4, 1, 40);
 INSERT INTO fk VALUES (0, 1), (-0, 2), (nan, 3), (nan, 4), (1.5, 5);
 "
 
@@ -114,3 +118,19 @@ check "count of a Nullable column" "SELECT nk.k AS k, nn.v AS v, (SELECT count(v
 check "outer key inside an expression argument" "SELECT u.k AS k, t.v AS v, (SELECT sum(intDiv(10, u.k)) FROM t AS s WHERE s.k = u.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 check "NULL inside a Tuple key" "SELECT toString(o.k) AS k, o.v AS v, (SELECT count() FROM tn AS s WHERE s.k = o.k) AS c FROM tn AS o WHERE toString(o.k) != '' ORDER BY v"
 check "column named like a window column" "SELECT o.k AS k, o.__correlated_aggregate_0 AS a, (SELECT max(__correlated_aggregate_0) FROM tc AS s WHERE s.k = o.k) AS c FROM tc AS o WHERE o.k > 0 ORDER BY k, a"
+check "NULL in a Variant key" "SELECT o.v AS v, (SELECT count() FROM vt AS s WHERE s.k = o.k) AS c FROM vt AS o WHERE toString(variantType(o.k)) != 'x' ORDER BY v"
+check "PASTE JOIN" "SELECT n.number AS n, o.id AS id, (SELECT sum(v) FROM tp AS s WHERE s.k = o.k) AS c FROM (SELECT number FROM numbers(4)) AS n PASTE JOIN tp AS o WHERE n.number >= 0 AND o.k < 5 ORDER BY n"
+check "expression over no matching rows without short-circuit" "SELECT u.k AS k, t.v AS v, (SELECT intDiv(10, count()) FROM t AS s WHERE s.k = u.k AND s.v > 100) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS short_circuit_function_evaluation = 'disable'"
+
+echo "--- materialized view reading its source table in the subquery ---"
+for setting in 0 1; do
+    $CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS mv_src; DROP TABLE IF EXISTS mv_dst; DROP VIEW IF EXISTS mv;
+    CREATE TABLE mv_src (k Int32, v Int32) ENGINE = MergeTree ORDER BY k;
+    CREATE TABLE mv_dst (k Int32, v Int32, c Nullable(Int64)) ENGINE = MergeTree ORDER BY k;
+    INSERT INTO mv_src VALUES (1, 100), (2, 200);
+    CREATE MATERIALIZED VIEW mv TO mv_dst AS SELECT o.k AS k, o.v AS v, (SELECT sum(v) FROM mv_src AS s WHERE s.k = o.k) AS c FROM mv_src AS o WHERE o.k < 3;
+    INSERT INTO mv_src SETTINGS optimize_correlated_scalar_aggregate_to_window = $setting VALUES (1, 1), (2, 2);
+    SELECT * FROM mv_dst ORDER BY k;
+    "
+done

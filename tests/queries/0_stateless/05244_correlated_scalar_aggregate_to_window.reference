@@ -301,3 +301,26 @@
 1	5	7
 1	7	7
 2	3	3
+=== NULL in a Variant key: rewritten 0 ===
+3	\N
+4	\N
+5	1
+10	2
+20	2
+=== PASTE JOIN: rewritten 0 ===
+0	1	40
+1	2	60
+2	3	40
+3	4	60
+=== expression over no matching rows without short-circuit: rewritten 0 ===
+1	10	\N
+1	10	\N
+1	30	\N
+1	30	\N
+2	5	10
+2	1e308	10
+--- materialized view reading its source table in the subquery ---
+1	1	101
+2	2	202
+1	1	101
+2	2	202
