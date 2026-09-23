@@ -381,6 +381,30 @@ public:
         }
     }
 
+    void addBatch( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t) const final
+    {
+        addBatchImpl<false>(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
+    void addBatchWithNonNullPlaces( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena,
+        ssize_t) const final
+    {
+        addBatchImpl<true>(row_begin, row_end, places, place_offset, columns, arena);
+    }
+
 #if USE_EMBEDDED_COMPILER
 
     bool isCompilable() const override
@@ -465,6 +489,75 @@ private:
         result_is_nullable,
         serialize_flag,
         AggregateFunctionIfNullVariadic<result_is_nullable, serialize_flag>>;
+
+    /// The grouped counterpart of `addBatchSinglePlace`: fold the condition and the null maps of the
+    /// arguments into one `UInt8` condition and pass the whole batch to the nested `-If`, which reads the
+    /// condition from its last argument. Without this, `IAggregateFunctionHelper` calls `add` row by row.
+    template <bool places_are_non_null>
+    void addBatchImpl(
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr * places,
+        size_t place_offset,
+        const IColumn ** columns,
+        Arena * arena) const
+    {
+        if (filter_is_only_null)
+            return;
+
+        const size_t filter_column_num = number_of_arguments - 1;
+
+        /// Only [row_begin, row_end) is filled, and nothing reads the rest.
+        auto condition_column = ColumnUInt8::create(row_end);
+        auto & condition = condition_column->getData();
+
+        if (is_nullable[filter_column_num])
+        {
+            const ColumnNullable & nullable_column = assert_cast<const ColumnNullable &>(*columns[filter_column_num]);
+            const UInt8 * filter_null_map = nullable_column.getNullMapData().data();
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(nullable_column.getNestedColumn()).getData().data();
+            for (size_t i = row_begin; i < row_end; ++i)
+                condition[i] = !filter_null_map[i] && filter_values[i];
+        }
+        else
+        {
+            const UInt8 * filter_values = assert_cast<const ColumnUInt8 &>(*columns[filter_column_num]).getData().data();
+            for (size_t i = row_begin; i < row_end; ++i)
+                condition[i] = filter_values[i] != 0;
+        }
+
+        absl::InlinedVector<const IColumn *, 5> nested_columns(number_of_arguments);
+        for (size_t arg = 0; arg < filter_column_num; ++arg)
+        {
+            if (is_nullable[arg])
+            {
+                const ColumnNullable & nullable_col = assert_cast<const ColumnNullable &>(*columns[arg]);
+                const UInt8 * col_null_map = nullable_col.getNullMapData().data();
+                for (size_t i = row_begin; i < row_end; ++i)
+                    condition[i] &= !col_null_map[i];
+                nested_columns[arg] = &nullable_col.getNestedColumn();
+            }
+            else
+                nested_columns[arg] = columns[arg];
+        }
+        nested_columns[filter_column_num] = condition_column.get();
+
+        /// `add` sets the flag only for a row that reaches the nested function.
+        if constexpr (result_is_nullable)
+        {
+            for (size_t i = row_begin; i < row_end; ++i)
+                if (condition[i] && (places_are_non_null || places[i]))
+                    this->setFlag(places[i] + place_offset);
+        }
+
+        /// `prefix_size` is 0 unless the result is nullable, matching `nestedPlace`.
+        if constexpr (places_are_non_null)
+            this->nested_function->addBatchWithNonNullPlaces(
+                row_begin, row_end, places, place_offset + this->prefix_size, nested_columns.data(), arena, -1);
+        else
+            this->nested_function->addBatch(
+                row_begin, row_end, places, place_offset + this->prefix_size, nested_columns.data(), arena, -1);
+    }
 
     static constexpr size_t MAX_ARGS = 8;
     size_t number_of_arguments = 0;

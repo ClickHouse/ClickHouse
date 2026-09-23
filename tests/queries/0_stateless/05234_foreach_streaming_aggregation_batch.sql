@@ -68,5 +68,52 @@ SELECT sumForEachIf(arr, 0) FROM test_foreach_if;
 SELECT sumForEachIf(arr, toNullable(cond)) FROM test_foreach_if;
 SELECT sumForEachIf(arr, if(grp = 2, NULL, cond)) FROM test_foreach_if;
 
+-- The same, grouped: `AggregateFunctionIfNullVariadic::addBatch` folds the condition into one column
+-- and passes the batch on. A group whose rows are all NULL-filtered keeps an empty state.
+SELECT grp, sumForEachIf(arr, toNullable(cond)) FROM test_foreach_if GROUP BY grp ORDER BY grp;
+SELECT grp, sumForEachIf(arr, if(grp = 2, NULL, cond)) FROM test_foreach_if GROUP BY grp ORDER BY grp;
+
+-- With `group_by_overflow_mode = 'any'` a key past the limit gets no place, so `Aggregator` calls
+-- `addBatch` (not `addBatchWithNonNullPlaces`) and both batch paths must skip the null places.
+SELECT grp, sumForEach(arr), sumForEachIf(arr, cond), sumForEachIf(arr, toNullable(cond))
+FROM test_foreach_if GROUP BY grp ORDER BY grp
+SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any', max_threads = 1;
+
 DROP TABLE test_foreach_if;
 DROP TABLE test_foreach_batch;
+
+-- `AggregateFunctionIfNullVariadic::addBatch` serves every multi-argument `-If` with a `Nullable` argument
+-- or condition, not only `-ForEach`. Each row is compared with the same aggregate over rows filtered in
+-- `WHERE`, which never reaches the `-If` combinator. The result is `Nullable` because `x` is, and the
+-- group `k = 3` has no row that passes, so it is NULL on both sides.
+SELECT k,
+    round(covarPopIf(x, y, c), 6) AS if_cond,
+    round(covarPopIf(x, y, nc), 6) AS if_nullable_cond,
+    corrIf(x, y, nc) IS NULL AS corr_is_null
+FROM
+(
+    SELECT number % 4 AS k,
+        if(number % 5 = 0, NULL, toFloat64(number)) AS x,
+        toFloat64(number * number % 17) AS y,
+        k != 3 AND number % 3 != 0 AS c,
+        if(number % 7 = 0, NULL, c) AS nc
+    FROM numbers(1000)
+)
+GROUP BY k ORDER BY k
+SETTINGS max_block_size = 97;
+
+SELECT k, round(covarPop(x, y), 6) AS reference_cond
+FROM
+(
+    SELECT number % 4 AS k, if(number % 5 = 0, NULL, toFloat64(number)) AS x, toFloat64(number * number % 17) AS y
+    FROM numbers(1000) WHERE k != 3 AND number % 3 != 0
+)
+GROUP BY k ORDER BY k;
+
+SELECT k, round(covarPop(x, y), 6) AS reference_nullable_cond
+FROM
+(
+    SELECT number % 4 AS k, if(number % 5 = 0, NULL, toFloat64(number)) AS x, toFloat64(number * number % 17) AS y
+    FROM numbers(1000) WHERE k != 3 AND number % 3 != 0 AND number % 7 != 0
+)
+GROUP BY k ORDER BY k;
