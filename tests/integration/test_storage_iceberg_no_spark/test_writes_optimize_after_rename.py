@@ -61,6 +61,9 @@ MULTI_FILE_INSERT_SETTINGS = {
     "min_insert_block_size_rows": 2,
     "max_insert_block_size": 2,
     "max_block_size": 2,
+    # One sink: each insert sink commits its own snapshot and its own manifest, so without
+    # this the rolled-over files land in several manifests instead of one.
+    "max_insert_threads": 1,
 }
 
 
@@ -120,6 +123,17 @@ def test_optimize_after_rename_column(started_cluster_iceberg_no_spark, storage_
             )
         )
         == 1
+    )
+
+    # The three data files must sit in ONE manifest, which is the case this test claims to
+    # cover. A file's snapshot_id is the snapshot that added it, and one sink commits one
+    # snapshot with one manifest, so a single distinct id over three files pins that shape.
+    assert (
+        instance.query(
+            f"SELECT uniqExact(snapshot_id), count() FROM system.iceberg_files "
+            f"WHERE table = '{TABLE_NAME}' AND content = 'DATA'"
+        )
+        == "1\t3\n"
     )
 
     instance.query(
