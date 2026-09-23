@@ -67,3 +67,23 @@ echo "rows after another mutation and reattach:"
 $CLICKHOUSE_CLIENT --query "SELECT k, v FROM join_mutation_error ORDER BY k"
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE join_mutation_error"
+
+# The same failure on a table with a single committed backup: the consolidated backup would be
+# installed under the number of that very backup, so it must not be overwritten before the commit.
+$CLICKHOUSE_CLIENT --query "
+    DROP TABLE IF EXISTS join_mutation_error_single;
+    CREATE TABLE join_mutation_error_single (k UInt64, v String) ENGINE = Join(ALL, LEFT, k) SETTINGS persistent = 1;
+    INSERT INTO join_mutation_error_single VALUES (1, 'one'), (1, 'uno'), (2, 'two');
+"
+$CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT storage_join_mutate_fail_after_moving_backup_aside"
+$CLICKHOUSE_CLIENT --query "ALTER TABLE join_mutation_error_single DELETE WHERE k = 2 SETTINGS mutations_sync = 2" 2>&1 | grep -o 'FAULT_INJECTED' | head -n 1
+$CLICKHOUSE_CLIENT --query "SYSTEM DISABLE FAILPOINT storage_join_mutate_fail_after_moving_backup_aside"
+echo "single backup, rows after the mutation that did not commit:"
+$CLICKHOUSE_CLIENT --query "SELECT k, v FROM join_mutation_error_single ORDER BY k, v"
+$CLICKHOUSE_CLIENT --query "
+    DETACH TABLE join_mutation_error_single;
+    ATTACH TABLE join_mutation_error_single;
+"
+echo "single backup, rows after reattach:"
+$CLICKHOUSE_CLIENT --query "SELECT k, v FROM join_mutation_error_single ORDER BY k, v"
+$CLICKHOUSE_CLIENT --query "DROP TABLE join_mutation_error_single"
