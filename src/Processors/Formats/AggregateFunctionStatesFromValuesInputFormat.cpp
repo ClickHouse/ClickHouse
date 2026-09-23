@@ -188,7 +188,7 @@ ColumnPtr buildStatesRecursively(
     {
         const auto & column_array = assert_cast<const ColumnArray &>(*column);
         const auto & parsed_type_array = assert_cast<const DataTypeArray &>(*parsed_type);
-        /// A missing row of an `Array` or a `Map` is an empty one, so it contributes no nested row to mask.
+        /// A missing row of an `Array` or a `Map` is an empty one, so it contributes no row to the nested column.
         return ColumnArray::create(
             buildStatesRecursively(
                 column_array.getDataPtr(), parsed_type_array.getNestedType(), type_array->getNestedType(), mode, nullptr),
