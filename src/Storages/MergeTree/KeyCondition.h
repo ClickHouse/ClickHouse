@@ -439,9 +439,13 @@ public:
     ///
     /// These atoms are relaxed when the associated constants undergo
     /// transformation by monotonic functions, as illustrated in the example
-    /// mentioned earlier, and a right-unbounded FUNCTION_IN_RANGE atom is also
-    /// relaxed when its key column can hold a NaN inside a Tuple (see
-    /// relaxRangeAtomsOverNaNHidingTupleColumns).
+    /// mentioned earlier. Two NaN rules relax them as well, each for the bound
+    /// its condition is evaluated against: a right-unbounded FUNCTION_IN_RANGE
+    /// atom over a key column that can hold a NaN inside a Tuple (see
+    /// relaxRangeAtomsOverNaNHidingTupleColumns), and, for a condition built
+    /// over a getExtremes-derived hyperrectangle, a range or single-element set
+    /// atom over any key column that can hide a NaN (see
+    /// relaxAtomsOverNaNHidingColumns).
     ///
     /// 3. Always relaxed: FUNCTION_UNKNOWN, FUNCTION_IN_SET (>1 elements),
     /// FUNCTION_NOT_IN_SET (>1 elements), FUNCTION_ARGS_IN_HYPERRECTANGLE
@@ -456,6 +460,20 @@ public:
     /// expression has a perfect or an exact prefix, e.g. "^abc.*" or "^abc$".
     bool isRelaxed() const;
 
+    /// Whether a value of this type can be a NaN that an aggregated `getExtremes` bound does not show, and
+    /// whose ordering comparisons are therefore all false rather than complementary. `Tuple` qualifies, per
+    /// element. An `Array`/`Map` bound hides a NaN too (opposite `nan_direction_hint` per bound in
+    /// `ColumnArray::getExtremes`), but their comparison orders it, so it can also make a predicate true.
+    static bool typeMayHideNaN(const DataTypePtr & type);
+
+    /// Weaken the atoms over a `typeMayHideNaN` key column. Only for a condition evaluated against a
+    /// `getExtremes`-derived hyperrectangle, and only before `alwaysUnknownOrTrue()`. A hidden NaN satisfies
+    /// no ordering comparison, so it makes an atom true only through an enclosing negation: `can_be_true`
+    /// without `can_be_false`, i.e. `relaxed`. Making one true directly needs `FUNCTION_UNKNOWN` instead.
+    void relaxAtomsOverNaNHidingColumns(const DataTypes & key_types);
+
+    /// The primary-key counterpart of the above, for a NaN hidden inside a `Tuple` key column rather than
+    /// behind a `getExtremes` bound. Weaker on purpose: it keeps the exact-range machinery intact.
     void relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types);
 
     bool isSinglePoint() const { return single_point; }

@@ -1587,9 +1587,9 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = intent == PartDirIntent::CreateFresh
-            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
-            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_storage = intent == PartDirIntent::OpenExisting
+            ? getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection)
+            : getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection);
     }
     if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
     {
