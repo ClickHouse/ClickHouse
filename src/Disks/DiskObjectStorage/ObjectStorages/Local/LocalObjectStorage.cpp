@@ -139,6 +139,14 @@ LocalObjectStorage::LocalObjectStorage(LocalObjectStorageSettings settings_)
 
 String resolvePathRelativelyToBase(const String & path, const String & base_path)
 {
+    /// A path with an embedded NUL cannot be validated: `std::string` and `fs::path` compare the whole
+    /// value, while every syscall the resolved path is later passed to (`open`, `mkdir`, `stat`) stops at
+    /// the NUL. A path shaped as `<target>\0/<traversal back into the base directory>` would therefore
+    /// pass the containment check below and still make the kernel operate on `<target>`, anywhere on the
+    /// filesystem. `listObjects` rejects such a path for its own reason - keep both checks.
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path contains an embedded NUL byte");
+
     auto configured_base = fs::path(base_path).lexically_normal();
 
     auto is_inside = [&](const String & candidate)
@@ -924,7 +932,7 @@ bool LocalObjectStorage::existsOrHasAnyChild(const std::string & path) const
     return exists(StoredObject(resolved_path));
 }
 
-String LocalObjectStorage::copyObject( // NOLINT
+void LocalObjectStorage::copyObject( // NOLINT
     const StoredObject & object_from,
     const StoredObject & object_to,
     const ReadSettings & read_settings,
@@ -936,8 +944,6 @@ String LocalObjectStorage::copyObject( // NOLINT
     auto out = writeObject(object_to, WriteMode::Rewrite, /* attributes= */ {}, /* buf_size= */ DBMS_DEFAULT_BUFFER_SIZE, write_settings);
     copyData(*in, *out);
     out->finalize();
-    /// The local file system names no generations.
-    return {};
 }
 
 void LocalObjectStorage::shutdown()
@@ -957,6 +963,11 @@ void LocalObjectStorage::throwIfReadonly() const
 ObjectStorageKeyGeneratorPtr LocalObjectStorage::createKeyGenerator() const
 {
     return createObjectStorageKeyGeneratorByPrefix(settings.key_prefix);
+}
+
+ObjectStoragePtr LocalObjectStorage::cloneImpl() const
+{
+    return std::make_shared<LocalObjectStorage>(settings);
 }
 
 }
