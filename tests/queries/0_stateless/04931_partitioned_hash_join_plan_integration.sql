@@ -33,13 +33,13 @@ SELECT '-- the partitioned algorithm survives the runtime-filter algorithm pruni
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k
     SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 1
-) WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+) WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT '-- listing both algorithms keeps hash when a filter is planted';
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k
     SETTINGS join_algorithm = 'hash,parallel_hash', enable_join_runtime_filters = 1
-) WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+) WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT 'inner results are unchanged by the runtime filter', pa, pa = pf FROM (SELECT
     (SELECT (count(), sum(cityHash64(p.p, b.v))) FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k SETTINGS join_algorithm = 'hash', enable_join_runtime_filters = 0) AS pa,
@@ -80,13 +80,13 @@ SELECT '-- with automatic external join the partitioned algorithm stays selected
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k
     SETTINGS join_algorithm = 'hash', max_bytes_before_external_join = 1000000, max_bytes_ratio_before_external_join = 0
-) WHERE explain LIKE '%Algorithm: SpillingHashJoin(PartitionedHashJoin)%';
+) WHERE explain LIKE '%Algorithm: SpillingHashJoin(HashJoin)%';
 
 SELECT '-- listing both algorithms keeps hash when spilling is configured';
 SELECT count() > 0 FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_phj_plan_probe AS p INNER JOIN t_phj_plan_build AS b ON p.k = b.k
     SETTINGS join_algorithm = 'hash,parallel_hash', max_bytes_before_external_join = 1000000, max_bytes_ratio_before_external_join = 0
-) WHERE explain LIKE '%SpillingHashJoin(PartitionedHashJoin)%';
+) WHERE explain LIKE '%SpillingHashJoin(HashJoin)%';
 
 DROP TABLE t_phj_plan_probe;
 DROP TABLE t_phj_plan_build;

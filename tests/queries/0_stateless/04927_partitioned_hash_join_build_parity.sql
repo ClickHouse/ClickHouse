@@ -64,7 +64,7 @@ SELECT count() > 0 FROM (
     EXPLAIN actions = 1
     SELECT count() FROM t_probe AS p INNER JOIN t_build AS b ON p.k64 = b.k64
     SETTINGS join_algorithm = 'hash'
-) WHERE explain LIKE '%Algorithm: PartitionedHashJoin%';
+) WHERE explain LIKE '%Algorithm: HashJoin%';
 
 SELECT 'uint64 inner', pa FROM (SELECT
     (SELECT (count(), sum(cityHash64(b.v, p.pv))) FROM t_probe AS p INNER JOIN t_build AS b ON p.k64 = b.k64 SETTINGS join_algorithm = 'hash') AS pa)

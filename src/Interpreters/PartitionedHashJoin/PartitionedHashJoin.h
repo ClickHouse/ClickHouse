@@ -142,7 +142,7 @@ public:
     /// algorithm loop of `tryCreateJoin` in `Planner/PlannerJoins.cpp`.
     static bool isSupported(const TableJoin & table_join);
 
-    std::string getName() const override { return "PartitionedHashJoin"; }
+    std::string getName() const override { return "HashJoin"; }
     const TableJoin & getTableJoin() const override;
 
     /// `worker_id` indexes the fill lanes; an id past the lane table takes the thread-keyed lane.

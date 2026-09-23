@@ -548,12 +548,7 @@ public:
     bool isUsed(size_t off) const;
     bool isUsed(UInt32 block_no, size_t row_idx) const;
 
-    void debugKeys() const;
-
     void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
-
-    void setMaxJoinedBlockRows(size_t value) { max_joined_block_rows = value; }
-    void setMaxJoinedBlockBytes(size_t value) { max_joined_block_bytes = value; }
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
@@ -568,7 +563,6 @@ public:
 
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
-    bool enableLazyColumnsReplication() const { return enable_lazy_columns_replication; }
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
 
     void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
