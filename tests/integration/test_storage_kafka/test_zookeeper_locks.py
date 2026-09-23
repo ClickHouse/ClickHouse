@@ -336,13 +336,21 @@ def test_inactive_replica_not_counted_with_shard_affinity(kafka_cluster):
         # would never own the whole lock set of its shard.
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
 
-        instance.query_with_retry(
+        first_count = int(instance.query_with_retry(
             "SELECT count() FROM test.view",
             check_callback=lambda res: int(res.strip()) > 0,
             retry_count=60,
             sleep_time=1,
-        )
+        ).strip())
 
-        # The lock set must stay complete across a refresh round as well.
+        # The lock set must stay complete across a refresh round as well. Wait until the second
+        # batch is actually consumed before re-checking the locks, otherwise `wait_for_locks`
+        # could just re-read the unchanged Keeper state without any new poll cycle.
         k.kafka_produce(kafka_cluster, topic_name, messages, retries=5)
+        instance.query_with_retry(
+            "SELECT count() FROM test.view",
+            check_callback=lambda res: int(res.strip()) > first_count,
+            retry_count=60,
+            sleep_time=1,
+        )
         wait_for_locks(kafka_cluster, base, expected_locks, "r1")
