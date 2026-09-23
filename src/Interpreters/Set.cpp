@@ -1021,25 +1021,46 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
         }
     }
 
-    /// Compare column element with FieldValue.
+    /// lhs < rhs return -1
+    /// lhs == rhs return 0
+    /// lhs > rhs return 1
     auto compare = [](const IColumn & lhs, const FieldValue & rhs, size_t row)
     {
         if (rhs.isNegativeInfinity())
             return +1;
         if (rhs.isPositiveInfinity())
-            return lhs.isNullAt(row) ? 0 : -1;
+            return lhs.isNullAt(row) ? 0 : -1; // +Inf == +Inf
         return lhs.compareAt(row, 0, *rhs.column, 1);
     };
+
+    /// Because ordered_set is sorted lexicographically, the elements we're looking for are
+    /// consecutive. Use binary search to find the range of indices.
+
+    /// The part about left_included/right_included is a little tricky. It was initially implemented
+    /// incorrectly:
+    ///   begin = lower_bound(..., left_point, tuple_less_unaware_of_includedness);
+    ///   if (!all(ranges[..].left_included) && equals(left_point, begin))
+    ///       begin += 1;
+    /// This breaks on the following example:
+    ///   key_ranges = [(0, +inf), (-inf, +inf)]  (the 0 is not included),
+    ///   ordered_set = [[0], [0]].
+    /// The incorrect implementation would output begin == 0 and conclude that the set element is
+    /// inside the range (it isn't). The `begin += 1` won't happen because (0, 0) != (0, -inf).
 
     auto indices = collections::range(0, size());
     size_t begin = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
         {
+            /// Return true if set[row] is below the key range.
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 int cmp = compare(*ordered_set[i], ranges[i].left, row);
 
                 if (cmp > 0)
                     return false;
+                /// Note: if some range has left_included == false then the left ends of all
+                /// subsequent ranges' don't matter. (Symmetrically for right.)
+                /// It's the only way to make sense of the notion of a range of tuples where the
+                /// included/excluded flags are given per element.
                 if (cmp < 0 || (cmp == 0 && !ranges[i].left_included))
                     return true;
             }
@@ -1047,6 +1068,7 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
         }) - indices.begin();
     size_t end = std::partition_point(indices.begin(), indices.end(), [&](size_t row)
         {
+            /// Return false if set[row] is above the key range.
             for (size_t i = 0; i < tuple_size; ++i)
             {
                 int cmp = compare(*ordered_set[i], ranges[i].right, row);
@@ -1061,8 +1083,10 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
 
     if (begin > end)
     {
-        if (hasMonotonicFunctionsChain())
-            return {true, true};
+        /// TODO: Remove the #ifndef and always throw after
+        ///       https://github.com/ClickHouse/ClickHouse/issues/90461 is fixed.
+        ///       (What happens here is: the applyMonotonicFunctionsChainToRange call in checkInRange
+        ///        applies nonmonotonic functions, and we end up with left > right.)
 #ifndef NDEBUG
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid binary search result in MergeTreeSetIndex");
 #else
@@ -1072,6 +1096,7 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
 
     bool can_be_true = begin < end;
 
+    /// A special case of 1-element KeyRange. It's useful for partition pruning.
     bool at_most_one_element_range = true;
     for (size_t i = 0; i < tuple_size; ++i)
     {
@@ -1095,7 +1120,12 @@ BoolMask MergeTreeSetIndex::checkInFieldValueRanges(const FieldValueRanges & ran
         }
     }
     if (at_most_one_element_range && has_all_keys)
+    {
+        /// Here we know that there is at most one element in range.
+        /// The main difference with the normal case is that we can definitely say that
+        /// condition in this range is always TRUE (can_be_false = 0) or always FALSE (can_be_true = 0).
         return {can_be_true, !can_be_true};
+    }
 
     return {can_be_true, true};
 }
