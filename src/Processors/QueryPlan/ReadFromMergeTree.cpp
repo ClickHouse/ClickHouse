@@ -132,8 +132,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
-/// Floats are excluded: -0.0 compares equal to 0.0 (and NaN payloads to each other) in the merge,
-/// so a condition over a float sorting key column can tell apart rows of one dedup group
+/// Floats are excluded: -0.0 and 0.0 merge as one key, but a condition can tell them apart
 NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 {
     NameSet names;

@@ -1,5 +1,4 @@
--- A row policy over a float sorting key column must be deferred after FINAL:
--- -0.0 and 0.0 land in one dedup group but toString tells them apart
+-- -0.0 and 0.0 merge as one key, so a policy on a float sorting key must be deferred after FINAL
 SET explain_query_plan_default = 'legacy';
 SET apply_row_policy_after_final = 1;
 
@@ -18,7 +17,7 @@ CREATE ROW POLICY pol_rp_float_key ON t_rp_float_key USING toString(f) = '0' TO 
 SELECT '= the policy is deferred after FINAL =';
 SELECT count() FROM (EXPLAIN actions=1 SELECT id FROM t_rp_float_key FINAL) WHERE explain LIKE '%Deferred row level filter%';
 
--- the winner is (1, -0.0, 2) and the policy hides it, the stale (1, 0.0, 1) must not reappear
+-- the policy hides the winner (1, -0.0, 2), the stale (1, 0.0, 1) must not reappear
 SELECT '= the stale version stays hidden =';
 SELECT id, f, v FROM t_rp_float_key FINAL;
 SELECT id, f, v FROM t_rp_float_key FINAL SETTINGS use_skip_indexes_if_final = 1;
