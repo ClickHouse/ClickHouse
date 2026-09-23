@@ -89,6 +89,10 @@ bool isAlwaysChangeableInReadonly(std::string_view name)
     /// HTTP routing / session.
     if (name == "database" || name == "default_format")
         return true;
+    /// Selects which of `output_format` / `default_format` the `X-ClickHouse-Format` header aliases;
+    /// both targets are changeable here, so the switch between them must be too.
+    if (name == "http_x_clickhouse_format_overrides_output_format")
+        return true;
     /// Output format selection and response compression.
     if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")
         return true;
