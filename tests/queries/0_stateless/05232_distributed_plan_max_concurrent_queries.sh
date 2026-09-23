@@ -14,6 +14,13 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # with a fixed --database repeats $CLICKHOUSE_DATABASE, so an id must be one no other run can send.
 run_id="${CLICKHOUSE_DATABASE}_${RANDOM}_$$"
 
+# A fail point is server-global, so one left armed by an early exit fires in a test running alongside.
+function cleanup()
+{
+    ${CLICKHOUSE_CLIENT} --query "SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas" 2>/dev/null
+}
+trap cleanup EXIT
+
 # A fragment of the plan, identified by the initiator it is rooted at, that has started reading.
 function wait_for_two_reading_fragments() {
     for _ in {1..600}; do
