@@ -131,8 +131,8 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
     )
 
     for node in (initiator, worker):
-        node.query("CREATE TABLE cluster_set_rp (k UInt64) ENGINE = Set")
-        node.query("INSERT INTO cluster_set_rp VALUES (1), (2)")
+        node.query("CREATE TABLE cluster_set_rp (k UInt64, v UInt64) ENGINE = Set")
+        node.query("INSERT INTO cluster_set_rp VALUES (1, 10), (2, 20)")
         node.query(
             "CREATE TABLE cluster_data_rp (k UInt64, v UInt64) "
             "ENGINE = MergeTree ORDER BY k "
@@ -151,21 +151,39 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
         "CREATE ROW POLICY cluster_set_rp_filter ON cluster_set_rp "
         "USING k = 1 TO cluster_mutator_role"
     )
+    initiator.query(
+        "GRANT SELECT(k) ON default.cluster_set_rp TO cluster_mutator_role"
+    )
+
+    analyzer_source_access_error = initiator.query_and_get_error(
+        "SELECT tuple(1, 10) IN cluster_set_rp",
+        user="cluster_mutator",
+    )
+    assert_privilege_error(
+        analyzer_source_access_error, "SELECT", "default.cluster_set_rp"
+    )
 
     source_access_error = initiator.query_and_get_error(
         "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
-        "DELETE WHERE k IN cluster_set_rp",
+        "DELETE WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
     )
     assert_privilege_error(source_access_error, "SELECT", "default.cluster_set_rp")
 
-    initiator.query("GRANT SELECT ON default.cluster_set_rp TO cluster_mutator_role")
+    initiator.query(
+        "GRANT SELECT(v) ON default.cluster_set_rp TO cluster_mutator_role"
+    )
+    analyzer_policy_error = initiator.query_and_get_error(
+        "SELECT tuple(1, 10) IN cluster_set_rp",
+        user="cluster_mutator",
+    )
+    assert_set_policy_error(analyzer_policy_error, "default.cluster_set_rp")
     initiator.query(
         "REVOKE ALTER DELETE ON default.cluster_data_rp FROM cluster_mutator_role"
     )
     target_access_error = initiator.query_and_get_error(
         "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
-        "DELETE WHERE k IN cluster_set_rp",
+        "DELETE WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
     )
     assert_privilege_error(
@@ -177,7 +195,8 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
 
     initiator.query("REVOKE CLUSTER ON *.* FROM cluster_mutator_role")
     cluster_access_error = initiator.query_and_get_error(
-        "DELETE FROM cluster_data_rp ON CLUSTER cluster WHERE k IN cluster_set_rp",
+        "DELETE FROM cluster_data_rp ON CLUSTER cluster "
+        "WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
     )
     assert_privilege_error(cluster_access_error, "CLUSTER")
@@ -185,17 +204,18 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
 
     alter_error = initiator.query_and_get_error(
         "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
-        "DELETE WHERE k IN cluster_set_rp",
+        "DELETE WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
     )
     update_error = initiator.query_and_get_error(
         "UPDATE cluster_data_rp ON CLUSTER cluster "
-        "SET v = v + 1 WHERE k IN cluster_set_rp",
+        "SET v = v + 1 WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
         settings={"enable_lightweight_update": 1},
     )
     delete_error = initiator.query_and_get_error(
-        "DELETE FROM cluster_data_rp ON CLUSTER cluster WHERE k IN cluster_set_rp",
+        "DELETE FROM cluster_data_rp ON CLUSTER cluster "
+        "WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
     )
 
@@ -217,7 +237,7 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
     )
     remote_delete_access_error = initiator.query_and_get_error(
         "UPDATE default.remote_cluster_data_rp ON CLUSTER worker_only "
-        "SET _row_exists = 0 WHERE k IN cluster_set_rp",
+        "SET _row_exists = 0 WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
         settings={"enable_lightweight_update": 1},
     )
@@ -232,12 +252,12 @@ def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
 
     remote_alter_error = initiator.query_and_get_error(
         "ALTER TABLE default.remote_cluster_data_rp ON CLUSTER worker_only "
-        "DELETE WHERE k IN cluster_set_rp",
+        "DELETE WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
     )
     remote_update_error = initiator.query_and_get_error(
         "UPDATE default.remote_cluster_data_rp ON CLUSTER worker_only "
-        "SET v = v + 1 WHERE k IN cluster_set_rp",
+        "SET v = v + 1 WHERE (k, v) IN cluster_set_rp",
         user="cluster_mutator",
         settings={"enable_lightweight_update": 1},
     )

@@ -82,9 +82,8 @@ public:
     /// Access the insides.
     SetPtr getSet() const;
 
-    /// A row policy on this table cannot be applied: `IN` consumes the prebuilt set as a whole, and
-    /// the engine has no read path that could filter it. Throws `ACCESS_DENIED` when the context has
-    /// such a policy, instead of returning the rows it hides.
+    /// `IN` consumes the prebuilt set as a whole, so require `SELECT` on every column before checking
+    /// its row policy. The engine has no read path that could apply a non-trivial policy.
     void checkNoRowPolicy(const ContextPtr & context) const;
 
     void truncate(const ASTPtr &, const StorageMetadataPtr & metadata_snapshot, ContextPtr, TableExclusiveLockHolder &) override;
