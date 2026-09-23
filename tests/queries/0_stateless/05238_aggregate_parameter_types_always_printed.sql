@@ -10,7 +10,9 @@ CREATE TABLE t_ap_05238
     control_bare  AggregateFunction(groupArrayInsertAt(7, 3), UInt64, UInt32),
     typed_decimal AggregateFunction(groupArrayInsertAt('1.5'::Decimal32(1), 3), Decimal32(1), UInt32),
     typed_uuid    AggregateFunction(groupArrayInsertAt('11111111-1111-1111-1111-111111111111'::UUID, 3), UUID, UInt32),
-    typed_array   AggregateFunction(1, sumMapFiltered(['1'::Decimal32(1)]), Array(Decimal32(1)), Array(UInt64))
+    typed_array   AggregateFunction(1, sumMapFiltered(['1'::Decimal32(1)]), Array(Decimal32(1)), Array(UInt64)),
+    typed_tuple   AggregateFunction(groupArrayInsertAt(('1.5'::Decimal32(1), 7), 3), Tuple(Decimal32(1), UInt64), UInt32),
+    typed_tuple1  AggregateFunction(groupArrayInsertAt(tuple('1.5'::Decimal32(1)), 3), Tuple(Decimal32(1)), UInt32)
 )
 ENGINE = MergeTree ORDER BY tuple();
 
@@ -24,19 +26,30 @@ FROM (SELECT toDecimal32(2.5, 1) AS x, toUInt32(0) AS i);
 SELECT toTypeName(sumMapFilteredState([toDecimal32(1, 1)])(k, v))
 FROM (SELECT [toDecimal32(1, 1)] AS k, [toUInt64(10)] AS v);
 
+SELECT toTypeName(groupArrayInsertAtState((toDecimal32(1.5, 1), toUInt64(7)), 3)(x, i))
+FROM (SELECT (toDecimal32(2.5, 1), toUInt64(8)) AS x, toUInt32(0) AS i);
+
+SELECT toTypeName(groupArrayInsertAtState(tuple(toDecimal32(1.5, 1)), 3)(x, i))
+FROM (SELECT tuple(toDecimal32(2.5, 1)) AS x, toUInt32(0) AS i);
+
 INSERT INTO t_ap_05238 VALUES (
     initializeAggregation('groupArrayInsertAtState(7, 3)', 5::UInt64, 0::UInt32),
     initializeAggregation('groupArrayInsertAtState(\'1.5\'::Decimal32(1), 3)', toDecimal32(2.5, 1), 0::UInt32),
     initializeAggregation('groupArrayInsertAtState(\'11111111-1111-1111-1111-111111111111\'::UUID, 3)',
                           toUUID('22222222-2222-2222-2222-222222222222'), 0::UInt32),
     initializeAggregation('sumMapFilteredState([\'1\'::Decimal32(1)])',
-                          [toDecimal32(1, 1)], [toUInt64(10)]));
+                          [toDecimal32(1, 1)], [toUInt64(10)]),
+    initializeAggregation('groupArrayInsertAtState((\'1.5\'::Decimal32(1), 7), 3)',
+                          (toDecimal32(2.5, 1), toUInt64(8)), 0::UInt32),
+    initializeAggregation('groupArrayInsertAtState(tuple(\'1.5\'::Decimal32(1)), 3)',
+                          tuple(toDecimal32(2.5, 1)), 0::UInt32));
 
 -- Re-reads and reparses the metadata, which is what the server does for every table on startup.
 DETACH TABLE t_ap_05238;
 ATTACH TABLE t_ap_05238;
 
 SELECT finalizeAggregation(control_bare), finalizeAggregation(typed_decimal),
-       finalizeAggregation(typed_uuid), finalizeAggregation(typed_array) FROM t_ap_05238;
+       finalizeAggregation(typed_uuid), finalizeAggregation(typed_array),
+       finalizeAggregation(typed_tuple), finalizeAggregation(typed_tuple1) FROM t_ap_05238;
 
 DROP TABLE t_ap_05238;
