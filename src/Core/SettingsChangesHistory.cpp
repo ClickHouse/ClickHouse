@@ -44,6 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.10",
         {
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
+            {"min_bytes_to_spill", 64_MiB, 64_MiB, "New experimental setting."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_api_calls_per_query", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
@@ -105,7 +106,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"join_runtime_filter_min_probe_rows", 1000, 1000, "The JOIN runtime filters became a Production tier feature."},
             {"enable_join_runtime_filters_index_analysis", false, false, "The JOIN runtime filters became a Production tier feature."},
             {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
-            {"min_bytes_to_spill", 64_MiB, 64_MiB, "New experimental setting."},
             {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_trino_dialect", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."},
             {"enable_join_key_only_hash_tables", false, true, "New setting to store the join keys alone, without a reference to a right row, in the hash tables of joins whose result can never contain a value taken from a right row (`LEFT ANTI`, and `LEFT SEMI` when no right column is selected)."},
