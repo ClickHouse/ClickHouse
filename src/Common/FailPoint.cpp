@@ -83,6 +83,7 @@ static struct InitFiu
     ONCE(rmt_lightweight_update_sleep_after_block_allocation) \
     ONCE(rmt_merge_task_sleep_in_prepare) \
     ONCE(merge_tree_refresh_parts_throw_once) \
+    REGULAR(patch_part_index_write_empty) \
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
@@ -209,6 +210,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(refresh_mv_pause_after_executor_published) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
+    REGULAR(refresh_mv_fail_znodes_read) \
     REGULAR(refresh_mv_skip_execution) \
     REGULAR(refresh_mv_incremental_fail_after_append) \
     ONCE(column_aggregate_function_ensureOwnership_exception) \
