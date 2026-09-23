@@ -1876,8 +1876,6 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         {{"optimize_move_to_prewhere", Field(false)}},
         {{"query_plan_remove_redundant_sorting", Field(false)}},
         {{"optimize_rewrite_sum_if_to_count_if", Field(false)}},
-        /// `enable_optimize_predicate_expression` is unconditionally `false` in
-        /// `makeOracleContext`, so toggling it here would be a no-op.
         {{"optimize_if_chain_to_multiif", Field(false)}},
         {{"optimize_if_transform_strings_to_enum", Field(false)}},
         {{"optimize_functions_to_subcolumns", Field(false)}},

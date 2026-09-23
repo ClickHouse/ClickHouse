@@ -20,9 +20,6 @@ std::span<const PinnedSetting> oraclePinnedSettings()
         /// The oracle's own wall-clock cap (throws, never truncates).
         p.push_back({"max_execution_time", Field(UInt64(10)), "oracle sub-query time cap"});
 
-        /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
-        p.push_back({"enable_optimize_predicate_expression", Field(false), "TLP predicate must not cross subquery/JOIN boundaries"});
-
         /// A seed's `SET aggregate_functions_null_for_empty = 1` would leak into oracle
         /// sub-queries and break NoREC: `count()` over zero input rows becomes NULL while
         /// `countIf` still aggregates every row and returns 0.
