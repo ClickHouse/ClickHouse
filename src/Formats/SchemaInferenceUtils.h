@@ -58,7 +58,6 @@ DataTypePtr tryInferDataTypeForSingleJSONField(std::string_view field, const For
 
 /// Try to parse Date or DateTime value from a string.
 DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings);
-DataTypePtr tryInferDateOrDateTimeFromString(std::string_view field, const FormatSettings & settings, const DateLUTImpl & time_zone);
 
 bool tryInferDateFromString(std::string_view field, DayNum & date);
 bool tryInferDateTimeFromString(std::string_view field, time_t & date_time, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone);

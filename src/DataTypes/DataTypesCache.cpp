@@ -9,6 +9,7 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool allow_simdjson;
     extern const SettingsTimezone session_timezone;
 }
 
@@ -160,8 +161,10 @@ void DataTypesCache::clearIfQueryContextChanged()
         = current_query_context ? &current_query_context->getSettingsRef()[Setting::session_timezone].value : nullptr;
     bool same_session_timezone
         = current_session_timezone ? *current_session_timezone == session_timezone : session_timezone.empty();
+    /// `JSON` parsing state follows this cache and depends on the parser choice.
+    bool current_allow_simdjson = !current_query_context || current_query_context->getSettingsRef()[Setting::allow_simdjson];
 
-    if (same_query_context && same_session_timezone)
+    if (same_query_context && same_session_timezone && current_allow_simdjson == allow_simdjson)
         return;
 
     /// The thread is now serving a different query, or `session_timezone` changed in place
@@ -170,6 +173,14 @@ void DataTypesCache::clearIfQueryContextChanged()
     cache.clear();
     query_context = current_query_context;
     session_timezone = current_session_timezone ? *current_session_timezone : String();
+    allow_simdjson = current_allow_simdjson;
+    ++query_context_version;
+}
+
+UInt64 DataTypesCache::getQueryContextVersion()
+{
+    clearIfQueryContextChanged();
+    return query_context_version;
 }
 
 const DataTypesCache::Element & DataTypesCache::getCacheElement(const String & type_name, const DataTypePtr * known_type)

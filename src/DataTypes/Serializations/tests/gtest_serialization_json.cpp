@@ -1,16 +1,11 @@
 #include <DataTypes/DataTypeCustom.h>
-#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Formats/FormatSettings.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
-#include <Common/CurrentThread.h>
-#include <Common/DateLUT.h>
-#include <Common/DateLUTImpl.h>
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 #include <Core/Defines.h>
@@ -43,21 +38,6 @@ public:
     bool supportsPooling() const override { return false; }
 };
 
-class CountingSerialization : public NonPoolableSerialization
-{
-public:
-    mutable size_t enumerations = 0;
-    mutable size_t subcolumn_enumerations = 0;
-
-    void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override
-    {
-        ++enumerations;
-        if (settings.subcolumn_name)
-            ++subcolumn_enumerations;
-        SerializationNumber<UInt64>::enumerateStreams(settings, callback, data);
-    }
-};
-
 ColumnPtr parseJSON(
     const DataTypePtr & type,
     const SerializationPtr & serialization,
@@ -70,33 +50,6 @@ ColumnPtr parseJSON(
     return column;
 }
 
-}
-
-TEST(SerializationJSON, SubcolumnLookupSkipsUnrelatedTypedPaths)
-{
-    auto child = std::make_shared<CountingType>();
-    auto serialization = std::make_shared<CountingSerialization>();
-    child->setCustomization(std::make_unique<DataTypeCustomDesc>(DataTypeCustomNamePtr{}, serialization));
-    auto object = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-        std::unordered_map<String, DataTypePtr>{{"a", child}, {"a.b", child}, {"unrelated", child}});
-
-    for (const auto & [type, prefix] : std::vector<std::pair<DataTypePtr, String>>{
-             {object, ""}, {std::make_shared<DataTypeArray>(object), ""},
-             {std::make_shared<DataTypeTuple>(DataTypes{object}, Names{"j"}), "j."}})
-    {
-        serialization->subcolumn_enumerations = 0;
-        EXPECT_NE(type->getSubcolumnType(prefix + "a.b"), nullptr);
-        /// Both `a` and `a.b` can match; only `unrelated` must be skipped.
-        EXPECT_EQ(serialization->subcolumn_enumerations, 2);
-
-        serialization->subcolumn_enumerations = 0;
-        EXPECT_NE(type->getSubcolumnType(prefix + "dynamic"), nullptr);
-        EXPECT_EQ(serialization->subcolumn_enumerations, 0);
-
-        serialization->enumerations = 0;
-        EXPECT_FALSE(type->getSubcolumnNames().empty());
-        EXPECT_EQ(serialization->enumerations, 3);
-    }
 }
 
 TEST(SerializationJSON, WarmConstructionAndBoundedLifetime)
@@ -219,61 +172,12 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
         worker.get();
 }
 
-TEST(SerializationJSON, ParsingUsesFormatSettingsTimezoneWithoutQueryScope)
-{
-    std::async(std::launch::async, []
-    {
-        ThreadStatus thread_status;
-        ASSERT_EQ(CurrentThread::tryGetQueryContext(), nullptr);
-
-        const auto & thread_timezone = DateLUT::instance();
-        const auto & format_timezone = DateLUT::instance(
-            thread_timezone.getTimeZone() == "Asia/Tokyo" ? "UTC" : "Asia/Tokyo");
-        ASSERT_NE(&thread_timezone, &format_timezone);
-
-        auto type = DataTypeFactory::instance().get(
-            "JSON(d DateTime, d64 DateTime64(3), t Time, t64 Time64(3), fixed DateTime('UTC'))");
-        auto serialization = type->getDefaultSerialization();
-        FormatSettings settings;
-        settings.json.session_timezone = &format_timezone;
-        for (bool allow_simdjson : {false, true})
-        {
-            settings.json.allow_simdjson = allow_simdjson;
-            auto column = parseJSON(
-                type,
-                serialization,
-                R"({"d":"2024-01-01 12:00:00","d64":"2024-01-01 12:00:00.123","t":"12:34:56","t64":"12:34:56.123","fixed":"2024-01-01 12:00:00"})",
-                settings);
-            EXPECT_EQ(type->getSubcolumn("d", column)->getUInt(0), format_timezone.makeDateTime(2024, 1, 1, 12, 0, 0));
-            EXPECT_EQ(type->getSubcolumn("d64", column)->getInt(0), format_timezone.makeDateTime(2024, 1, 1, 12, 0, 0) * 1000 + 123);
-            EXPECT_EQ(type->getSubcolumn("t", column)->getInt(0), format_timezone.makeTime(12, 34, 56));
-            EXPECT_EQ(type->getSubcolumn("t64", column)->getInt(0), format_timezone.makeTime(12, 34, 56) * 1000 + 123);
-            EXPECT_EQ(type->getSubcolumn("fixed", column)->getUInt(0), DateLUT::instance("UTC").makeDateTime(2024, 1, 1, 12, 0, 0));
-
-            WriteBufferFromOwnString output;
-            serialization->serializeTextJSON(*column, 0, output, settings);
-            EXPECT_NE(output.str().find(R"("d":"2024-01-01 12:00:00")"), String::npos);
-            EXPECT_NE(output.str().find(R"("d64":"2024-01-01 12:00:00.123")"), String::npos);
-            EXPECT_NE(output.str().find(R"("fixed":"2024-01-01 12:00:00")"), String::npos);
-
-            auto dynamic_type = DataTypeFactory::instance().get("JSON(max_dynamic_paths = 0)");
-            auto dynamic_serialization = dynamic_type->getDefaultSerialization();
-            auto dynamic_column = parseJSON(dynamic_type, dynamic_serialization, R"({"d":"2024-01-01 12:00:00"})", settings);
-            WriteBufferFromOwnString dynamic_output;
-            dynamic_serialization->serializeTextJSON(*dynamic_column, 0, dynamic_output, settings);
-            EXPECT_NE(dynamic_output.str().find(R"("d":"2024-01-01 12:00:00")"), String::npos);
-        }
-    }).get();
-}
-
 TEST(SerializationJSON, ParserCacheEvictsAfterMaximumSchemas)
 {
     std::async(std::launch::async, []
     {
         ThreadStatus thread_status;
         FormatSettings settings;
-        settings.json.allow_simdjson = false;
-        settings.json.session_timezone = &DateLUT::instance("UTC");
         auto child_type = DataTypeFactory::instance().get("UInt64");
         std::weak_ptr<const ISerialization> first_serialization;
 
@@ -300,8 +204,6 @@ TEST(SerializationJSON, ParserCacheReleasesOversizedObject)
     {
         ThreadStatus thread_status;
         FormatSettings settings;
-        settings.json.allow_simdjson = false;
-        settings.json.session_timezone = &DateLUT::instance("UTC");
         std::weak_ptr<const ISerialization> serialization_lifetime;
         {
             auto type = DataTypeFactory::instance().get("JSON(value String)");

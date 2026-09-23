@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <algorithm>
-#include <Common/DateLUT.h>
 #include <Formats/JSONExtractTree.h>
 #include <Formats/SchemaInferenceUtils.h>
 
@@ -68,16 +67,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-}
-
-namespace
-{
-
-const DateLUTImpl & getJSONSessionTimezone(const FormatSettings & format_settings)
-{
-    return format_settings.json.session_timezone ? *format_settings.json.session_timezone : DateLUT::instance();
-}
-
 }
 
 template <typename JSONParser>
@@ -725,12 +714,11 @@ public:
 };
 
 template <typename JSONParser>
-class DateTimeNode : public JSONExtractTreeNode<JSONParser>
+class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
     explicit DateTimeNode(const DataTypeDateTime & datetime_type)
-        : explicit_time_zone(datetime_type.hasExplicitTimeZone() ? &datetime_type.getTimeZone() : nullptr)
-        , utc_time_zone(DateLUT::instance("UTC"))
+        : TimezoneMixin(datetime_type), utc_time_zone(DateLUT::instance("UTC"))
     {
     }
 
@@ -750,13 +738,7 @@ public:
         time_t value = 0;
         if (element.isString())
         {
-            const auto & time_zone = explicit_time_zone ? *explicit_time_zone : getJSONSessionTimezone(format_settings);
-            if (!tryParse(
-                    value,
-                    element.getString(),
-                    format_settings.date_time_input_format,
-                    time_zone,
-                    !format_settings.throwOnDateTimeOverflow()))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, !format_settings.throwOnDateTimeOverflow()))
             {
                 error = fmt::format("cannot parse DateTime value here: {}", element.getString());
                 return false;
@@ -819,12 +801,7 @@ public:
         return true;
     }
 
-    bool tryParse(
-        time_t & value,
-        std::string_view data,
-        FormatSettings::DateTimeInputFormat date_time_input_format,
-        const DateLUTImpl & time_zone,
-        bool saturate_on_overflow) const
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format, bool saturate_on_overflow) const
     {
         const auto overflow = saturate_on_overflow ? DateTimeOverflow::Saturate : DateTimeOverflow::Report;
         ReadBufferFromMemory buf(data);
@@ -849,7 +826,6 @@ public:
 
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
     /// `DateTime` type does not build a UTC lookup table; see the note there.
-    const DateLUTImpl * explicit_time_zone;
     const DateLUTImpl & utc_time_zone;
 };
 
@@ -875,7 +851,7 @@ public:
         time_t value = 0;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), getJSONSessionTimezone(format_settings)))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
             {
                 error = fmt::format("cannot parse Time value here: {}", element.getString());
                 return false;
@@ -895,9 +871,10 @@ public:
         return true;
     }
 
-    bool tryParse(time_t & value, std::string_view data, const DateLUTImpl & date_lut) const
+    bool tryParse(time_t & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
         ReadBufferFromMemory buf(data);
+        const auto & date_lut = DateLUT::instance();
 
         if (tryReadTimeText(value, buf, date_lut) && buf.eof())
             return true;
@@ -982,13 +959,11 @@ private:
 
 
 template <typename JSONParser>
-class DateTime64Node : public JSONExtractTreeNode<JSONParser>
+class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMixin
 {
 public:
     explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
-        : explicit_time_zone(datetime64_type.hasExplicitTimeZone() ? &datetime64_type.getTimeZone() : nullptr)
-        , utc_time_zone(DateLUT::instance("UTC"))
-        , scale(datetime64_type.getScale())
+        : TimezoneMixin(datetime64_type), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
     {
     }
 
@@ -1008,8 +983,7 @@ public:
         DateTime64 value;
         if (element.isString())
         {
-            const auto & time_zone = explicit_time_zone ? *explicit_time_zone : getJSONSessionTimezone(format_settings);
-            if (!tryParse(value, element.getString(), format_settings.date_time_input_format, time_zone))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
             {
                 error = fmt::format("cannot parse DateTime64 value here: {}", element.getString());
                 return false;
@@ -1080,11 +1054,7 @@ public:
         return true;
     }
 
-    bool tryParse(
-        DateTime64 & value,
-        std::string_view data,
-        FormatSettings::DateTimeInputFormat date_time_input_format,
-        const DateLUTImpl & time_zone) const
+    bool tryParse(DateTime64 & value, std::string_view data, FormatSettings::DateTimeInputFormat date_time_input_format) const
     {
         ReadBufferFromMemory buf(data);
         switch (date_time_input_format)
@@ -1109,7 +1079,6 @@ public:
 private:
     /// Needed for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that merely naming a
     /// `DateTime64` type does not build a UTC lookup table; see the note there.
-    const DateLUTImpl * explicit_time_zone;
     const DateLUTImpl & utc_time_zone;
     UInt32 scale;
 };
@@ -1138,7 +1107,7 @@ public:
         Time64 value;
         if (element.isString())
         {
-            if (!tryParse(value, element.getString(), getJSONSessionTimezone(format_settings)))
+            if (!tryParse(value, element.getString(), format_settings.date_time_input_format))
             {
                 error = fmt::format("cannot parse Time64 value here: {}", element.getString());
                 return false;
@@ -1170,9 +1139,10 @@ public:
         return true;
     }
 
-    bool tryParse(Time64 & value, std::string_view data, const DateLUTImpl & date_lut) const
+    bool tryParse(Time64 & value, std::string_view data, FormatSettings::DateTimeInputFormat /*time_input_format*/) const
     {
         ReadBufferFromMemory buf(data);
+        const auto & date_lut = DateLUT::instance();
 
         if (tryReadTime64Text(value, scale, buf, date_lut) && buf.eof())
             return true;
@@ -1880,7 +1850,7 @@ private:
             {
                 auto data = element.getString();
 
-                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings, getJSONSessionTimezone(format_settings)))
+                if (auto type = tryInferDateOrDateTimeFromString(data, format_settings))
                     return type;
 
                 if (format_settings.json.try_infer_numbers_from_strings)
@@ -2405,8 +2375,7 @@ private:
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime"); it != variant_info.variant_name_to_discriminator.end())
                 {
                     time_t value = 0;
-                    if (tryInferDateTimeFromString(
-                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
+                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime, UInt32>(variant_info, variant_column, static_cast<UInt32>(value), "DateTime");
                         return true;
@@ -2416,8 +2385,7 @@ private:
                 if (auto it = variant_info.variant_name_to_discriminator.find("DateTime64(9)"); it != variant_info.variant_name_to_discriminator.end())
                 {
                     DateTime64 value;
-                    if (tryInferDateTime64FromString(
-                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
+                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         insertValueIntoNumericVariant<ColumnDateTime64, DateTime64>(variant_info, variant_column, value, "DateTime64(9)");
                         return true;
@@ -2494,8 +2462,7 @@ private:
                 if (format_settings.try_infer_datetimes && !format_settings.try_infer_datetimes_only_datetime64)
                 {
                     time_t value = 0;
-                    if (tryInferDateTimeFromString(
-                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
+                    if (tryInferDateTimeFromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime"), buf);
                         writeBinaryLittleEndian(static_cast<UInt32>(value), buf);
@@ -2506,8 +2473,7 @@ private:
                 if (format_settings.try_infer_datetimes)
                 {
                     DateTime64 value;
-                    if (tryInferDateTime64FromString(
-                            data, value, format_settings, getJSONSessionTimezone(format_settings), utc_time_zone_for_schema_inference))
+                    if (tryInferDateTime64FromString(data, value, format_settings, time_zone_for_schema_inference, utc_time_zone_for_schema_inference))
                     {
                         encodeDataType(getDataTypesCache().getType("DateTime64(9)"), buf);
                         writeBinaryLittleEndian(value, buf);
@@ -2585,6 +2551,7 @@ private:
     std::list<re2::RE2> path_regexps_to_skip;
     std::unique_ptr<DynamicNode<JSONParser>> dynamic_node;
     SerializationPtr dynamic_serialization;
+    const DateLUTImpl & time_zone_for_schema_inference = DateLUT::instance();
     const DateLUTImpl & utc_time_zone_for_schema_inference = DateLUT::instance("UTC");
 
     enum class JSONElementType
@@ -2617,91 +2584,78 @@ private:
 
 }
 
-namespace
-{
-
-/// Validation uses the same dispatch and recursion without allocating nodes or their caches.
-template <bool validate_only, typename Node, typename... Args>
-std::unique_ptr<Node> makeJSONExtractNode(Args &&... args)
-{
-    if constexpr (validate_only)
-        return nullptr;
-    else
-        return std::make_unique<Node>(std::forward<Args>(args)...);
-}
-
-template <typename JSONParser, bool validate_only>
-std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const DataTypePtr & type, const char * source_for_exception_message)
+template <typename JSONParser>
+std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message)
 {
     switch (type->getTypeId())
     {
         case TypeIndex::UInt8:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt8>>(!validate_only && isBool(type));
+            return std::make_unique<NumericNode<JSONParser, UInt8>>(isBool(type));
         case TypeIndex::UInt16:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt16>>();
+            return std::make_unique<NumericNode<JSONParser, UInt16>>();
         case TypeIndex::UInt32:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt32>>();
+            return std::make_unique<NumericNode<JSONParser, UInt32>>();
         case TypeIndex::UInt64:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt64>>();
+            return std::make_unique<NumericNode<JSONParser, UInt64>>();
         case TypeIndex::UInt128:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt128>>();
+            return std::make_unique<NumericNode<JSONParser, UInt128>>();
         case TypeIndex::UInt256:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, UInt256>>();
+            return std::make_unique<NumericNode<JSONParser, UInt256>>();
         case TypeIndex::Int8:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int8>>();
+            return std::make_unique<NumericNode<JSONParser, Int8>>();
         case TypeIndex::Int16:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int16>>();
+            return std::make_unique<NumericNode<JSONParser, Int16>>();
         case TypeIndex::Int32:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int32>>();
+            return std::make_unique<NumericNode<JSONParser, Int32>>();
         case TypeIndex::Int64:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int64>>();
+            return std::make_unique<NumericNode<JSONParser, Int64>>();
         case TypeIndex::Int128:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int128>>();
+            return std::make_unique<NumericNode<JSONParser, Int128>>();
         case TypeIndex::Int256:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Int256>>();
+            return std::make_unique<NumericNode<JSONParser, Int256>>();
         case TypeIndex::Float32:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Float32>>();
+            return std::make_unique<NumericNode<JSONParser, Float32>>();
         case TypeIndex::Float64:
-            return makeJSONExtractNode<validate_only, NumericNode<JSONParser, Float64>>();
+            return std::make_unique<NumericNode<JSONParser, Float64>>();
         case TypeIndex::String:
-            return makeJSONExtractNode<validate_only, StringNode<JSONParser>>();
+            return std::make_unique<StringNode<JSONParser>>();
         case TypeIndex::FixedString:
-            return makeJSONExtractNode<validate_only, FixedStringNode<JSONParser>>(assert_cast<const DataTypeFixedString &>(*type).getN());
+            return std::make_unique<FixedStringNode<JSONParser>>(assert_cast<const DataTypeFixedString &>(*type).getN());
         case TypeIndex::UUID:
-            return makeJSONExtractNode<validate_only, UUIDNode<JSONParser>>();
+            return std::make_unique<UUIDNode<JSONParser>>();
         case TypeIndex::IPv4:
-            return makeJSONExtractNode<validate_only, IPv4Node<JSONParser>>();
+            return std::make_unique<IPv4Node<JSONParser>>();
         case TypeIndex::IPv6:
-            return makeJSONExtractNode<validate_only, IPv6Node<JSONParser>>();
+            return std::make_unique<IPv6Node<JSONParser>>();
         case TypeIndex::Date:;
-            return makeJSONExtractNode<validate_only, DateNode<JSONParser, DayNum, UInt16>>();
+            return std::make_unique<DateNode<JSONParser, DayNum, UInt16>>();
         case TypeIndex::Date32:
-            return makeJSONExtractNode<validate_only, DateNode<JSONParser, ExtendedDayNum, Int32>>();
+            return std::make_unique<DateNode<JSONParser, ExtendedDayNum, Int32>>();
         case TypeIndex::DateTime:
-            return makeJSONExtractNode<validate_only, DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
+            return std::make_unique<DateTimeNode<JSONParser>>(assert_cast<const DataTypeDateTime &>(*type));
         case TypeIndex::DateTime64:
-            return makeJSONExtractNode<validate_only, DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
+            return std::make_unique<DateTime64Node<JSONParser>>(assert_cast<const DataTypeDateTime64 &>(*type));
         case TypeIndex::Time:
-            return makeJSONExtractNode<validate_only, TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
+            return std::make_unique<TimeNode<JSONParser>>(assert_cast<const DataTypeTime &>(*type));
         case TypeIndex::Time64:
-            return makeJSONExtractNode<validate_only, Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
+            return std::make_unique<Time64Node<JSONParser>>(assert_cast<const DataTypeTime64 &>(*type));
         case TypeIndex::Decimal32:
-            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal32>>(type);
+            return std::make_unique<DecimalNode<JSONParser, Decimal32>>(type);
         case TypeIndex::Decimal64:
-            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal64>>(type);
+            return std::make_unique<DecimalNode<JSONParser, Decimal64>>(type);
         case TypeIndex::Decimal128:
-            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal128>>(type);
+            return std::make_unique<DecimalNode<JSONParser, Decimal128>>(type);
         case TypeIndex::Decimal256:
-            return makeJSONExtractNode<validate_only, DecimalNode<JSONParser, Decimal256>>(type);
+            return std::make_unique<DecimalNode<JSONParser, Decimal256>>(type);
         case TypeIndex::Enum8:
         {
             const auto & enum_type = assert_cast<const DataTypeEnum8 &>(*type);
-            return makeJSONExtractNode<validate_only, EnumNode<JSONParser, Int8>>(enum_type.getValues(), enum_type.getDefaultValue());
+            return std::make_unique<EnumNode<JSONParser, Int8>>(enum_type.getValues(), enum_type.getDefaultValue());
         }
         case TypeIndex::Enum16:
         {
             const auto & enum_type = assert_cast<const DataTypeEnum16 &>(*type);
-            return makeJSONExtractNode<validate_only, EnumNode<JSONParser, Int16>>(enum_type.getValues(), enum_type.getDefaultValue());
+            return std::make_unique<EnumNode<JSONParser, Int16>>(enum_type.getValues(), enum_type.getDefaultValue());
         }
         case TypeIndex::LowCardinality:
         {
@@ -2713,55 +2667,48 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const 
             switch (dictionary_type->getTypeId())
             {
                 case TypeIndex::UInt8:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, !validate_only && isBool(type));
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt8>>(is_nullable, isBool(type));
                 case TypeIndex::UInt16:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt16>>(is_nullable);
                 case TypeIndex::UInt32:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt32>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt32>>(is_nullable);
                 case TypeIndex::UInt64:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, UInt64>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, UInt64>>(is_nullable);
                 case TypeIndex::Int8:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int8>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int8>>(is_nullable);
                 case TypeIndex::Int16:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int16>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int16>>(is_nullable);
                 case TypeIndex::Int32:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int32>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int32>>(is_nullable);
                 case TypeIndex::Int64:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Int64>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Int64>>(is_nullable);
                 case TypeIndex::Float32:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Float32>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Float32>>(is_nullable);
                 case TypeIndex::Float64:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNumericNode<JSONParser, Float64>>(is_nullable);
+                    return std::make_unique<LowCardinalityNumericNode<JSONParser, Float64>>(is_nullable);
                 case TypeIndex::String:
-                    return makeJSONExtractNode<validate_only, LowCardinalityStringNode<JSONParser>>(is_nullable);
+                    return std::make_unique<LowCardinalityStringNode<JSONParser>>(is_nullable);
                 case TypeIndex::FixedString:
-                    return makeJSONExtractNode<validate_only, LowCardinalityFixedStringNode<JSONParser>>(is_nullable, assert_cast<const DataTypeFixedString &>(*dictionary_type).getN());
+                    return std::make_unique<LowCardinalityFixedStringNode<JSONParser>>(is_nullable, assert_cast<const DataTypeFixedString &>(*dictionary_type).getN());
                 case TypeIndex::UUID:
-                    return makeJSONExtractNode<validate_only, LowCardinalityUUIDNode<JSONParser>>(is_nullable);
+                    return std::make_unique<LowCardinalityUUIDNode<JSONParser>>(is_nullable);
                 default:
-                    return makeJSONExtractNode<validate_only, LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTreeImpl<JSONParser, validate_only>(dictionary_type, source_for_exception_message));
+                    return std::make_unique<LowCardinalityNode<JSONParser>>(is_nullable, buildJSONExtractTree<JSONParser>(dictionary_type, source_for_exception_message));
             }
         }
         case TypeIndex::Nullable:
-            return makeJSONExtractNode<validate_only, NullableNode<JSONParser>>(buildJSONExtractTreeImpl<JSONParser, validate_only>(assert_cast<const DataTypeNullable &>(*type).getNestedType(), source_for_exception_message));
+            return std::make_unique<NullableNode<JSONParser>>(buildJSONExtractTree<JSONParser>(assert_cast<const DataTypeNullable &>(*type).getNestedType(), source_for_exception_message));
         case TypeIndex::Array:
-            return makeJSONExtractNode<validate_only, ArrayNode<JSONParser>>(buildJSONExtractTreeImpl<JSONParser, validate_only>(assert_cast<const DataTypeArray &>(*type).getNestedType(), source_for_exception_message));
+            return std::make_unique<ArrayNode<JSONParser>>(buildJSONExtractTree<JSONParser>(assert_cast<const DataTypeArray &>(*type).getNestedType(), source_for_exception_message));
         case TypeIndex::Tuple:
         {
             const auto & tuple = assert_cast<const DataTypeTuple &>(*type);
             const auto & tuple_elements = tuple.getElements();
             std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> elements;
-            if constexpr (!validate_only)
-                elements.reserve(tuple_elements.size());
+            elements.reserve(tuple_elements.size());
             for (const auto & tuple_element : tuple_elements)
-            {
-                auto node = buildJSONExtractTreeImpl<JSONParser, validate_only>(tuple_element, source_for_exception_message);
-                if constexpr (!validate_only)
-                    elements.emplace_back(std::move(node));
-            }
-            if constexpr (validate_only)
-                return nullptr;
-            return makeJSONExtractNode<validate_only, TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
+                elements.emplace_back(buildJSONExtractTree<JSONParser>(tuple_element, source_for_exception_message));
+            return std::make_unique<TupleNode<JSONParser>>(std::move(elements), tuple.hasExplicitNames() ? tuple.getElementNames() : Strings{});
         }
         case TypeIndex::Map:
         {
@@ -2775,47 +2722,33 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const 
                     type->getName());
 
             const auto & value_type = map_type.getValueType();
-            return makeJSONExtractNode<validate_only, MapNode<JSONParser>>(buildJSONExtractTreeImpl<JSONParser, validate_only>(value_type, source_for_exception_message));
+            return std::make_unique<MapNode<JSONParser>>(buildJSONExtractTree<JSONParser>(value_type, source_for_exception_message));
         }
         case TypeIndex::Variant:
         {
             const auto & variant_type = assert_cast<const DataTypeVariant &>(*type);
             const auto & variants = variant_type.getVariants();
             std::vector<std::unique_ptr<JSONExtractTreeNode<JSONParser>>> variant_nodes;
-            if constexpr (!validate_only)
-                variant_nodes.reserve(variants.size());
+            variant_nodes.reserve(variants.size());
             for (const auto & variant : variants)
-            {
-                auto node = buildJSONExtractTreeImpl<JSONParser, validate_only>(variant, source_for_exception_message);
-                if constexpr (!validate_only)
-                    variant_nodes.push_back(std::move(node));
-            }
-            if constexpr (validate_only)
-                return nullptr;
-            return makeJSONExtractNode<validate_only, VariantNode<JSONParser>>(std::move(variant_nodes), SerializationVariant::getVariantsDeserializeTextOrder(variants));
+                variant_nodes.push_back(buildJSONExtractTree<JSONParser>(variant, source_for_exception_message));
+            return std::make_unique<VariantNode<JSONParser>>(std::move(variant_nodes), SerializationVariant::getVariantsDeserializeTextOrder(variants));
         }
         case TypeIndex::Dynamic:
-            return makeJSONExtractNode<validate_only, DynamicNode<JSONParser>>();
+            return std::make_unique<DynamicNode<JSONParser>>();
         case TypeIndex::Object:
         {
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
             const auto & typed_paths = object_type.getTypedPaths();
             std::unordered_map<String, std::unique_ptr<JSONExtractTreeNode<JSONParser>>> typed_path_nodes;
-            if constexpr (!validate_only)
-                typed_path_nodes.reserve(typed_paths.size());
+            typed_path_nodes.reserve(typed_paths.size());
             for (const auto & [path, path_type] : typed_paths)
-            {
-                auto node = buildJSONExtractTreeImpl<JSONParser, validate_only>(path_type, source_for_exception_message);
-                if constexpr (!validate_only)
-                    typed_path_nodes[path] = std::move(node);
-            }
-            if constexpr (validate_only)
-                return nullptr;
+                typed_path_nodes[path] = buildJSONExtractTree<JSONParser>(path_type, source_for_exception_message);
 
             switch (object_type.getSchemaFormat())
             {
                 case DataTypeObject::SchemaFormat::JSON:
-                    return makeJSONExtractNode<validate_only, ObjectJSONNode<JSONParser>>(
+                    return std::make_unique<ObjectJSONNode<JSONParser>>(
                         typed_paths,
                         std::move(typed_path_nodes),
                         object_type.getPathsToSkip(),
@@ -2830,14 +2763,6 @@ std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTreeImpl(const 
                 source_for_exception_message,
                 type->getName());
     }
-}
-
-}
-
-template <typename JSONParser>
-std::unique_ptr<JSONExtractTreeNode<JSONParser>> buildJSONExtractTree(const DataTypePtr & type, const char * source_for_exception_message)
-{
-    return buildJSONExtractTreeImpl<JSONParser, false>(type, source_for_exception_message);
 }
 
 #if USE_SIMDJSON

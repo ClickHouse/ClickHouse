@@ -1,12 +1,9 @@
 #include <algorithm>
 #include <unordered_map>
 #include <Common/SipHash.h>
-#include <Common/CurrentThread.h>
-#include <Common/DateLUT.h>
-#include <Core/Settings.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypesCache.h>
 #include <Formats/JSONExtractTree.h>
-#include <Interpreters/Context.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
@@ -26,11 +23,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
-}
-
-namespace Setting
-{
-    extern const SettingsBool allow_simdjson;
 }
 
 SerializationJSON::SerializationJSON(
@@ -122,8 +114,10 @@ struct JSONParserState
 /// Parsers and extraction trees are mutable and expensive to build, so they stay out of the immutable,
 /// pooled serialization and are cached per thread instead. A thread-local cache needs no locking.
 ///
-/// Entries are released when the effective session timezone changes, a map reaches `MAX_ELEMENTS` schemas,
-/// or an object larger than `DBMS_DEFAULT_BUFFER_SIZE` is parsed.
+/// Extraction trees capture the query's `session_timezone` and the parser follows `allow_simdjson`,
+/// so the cache has the same lifetime as `DataTypesCache`: it is released when the thread starts serving
+/// another query context or `session_timezone` changes. Entries are also released when a map reaches
+/// `MAX_ELEMENTS` schemas or an object larger than `DBMS_DEFAULT_BUFFER_SIZE` is parsed.
 /// An idle thread keeps the state of its last query until then.
 class JSONParserStateCache
 {
@@ -151,16 +145,20 @@ public:
         JSONParserState<Parser> * last_state = nullptr;
     };
 
-    void clearIfTimezoneChanged(const DateLUTImpl * current_session_timezone)
+    /// Returns whether the current query allows `SimdJSON`.
+    bool clearIfQueryContextChanged()
     {
-        if (session_timezone == current_session_timezone)
-            return;
-
+        auto & data_types_cache = getDataTypesCache();
+        UInt64 current_version = data_types_cache.getQueryContextVersion();
+        if (query_context_version != current_version)
+        {
 #if USE_SIMDJSON
-        simdjson_pools.clear();
+            simdjson_pools.clear();
 #endif
-        fallback_pools.clear();
-        session_timezone = current_session_timezone;
+            fallback_pools.clear();
+            query_context_version = current_version;
+        }
+        return data_types_cache.allowSimdJSON();
     }
 
     template <typename Parser, typename Factory>
@@ -210,7 +208,7 @@ private:
         return *pools.last_state;
     }
 
-    const DateLUTImpl * session_timezone = nullptr;
+    UInt64 query_context_version = 0;
 };
 
 JSONParserStateCache & getJSONParserStateCache()
@@ -462,11 +460,9 @@ void SerializationJSON::serializeTextImpl(const IColumn & column, size_t row_num
 }
 
 template <typename Parser>
-NO_INLINE void SerializationJSON::deserializeObjectWithParser(
-    IColumn & column, std::string_view object, const FormatSettings & settings, const DateLUTImpl * session_timezone) const
+NO_INLINE void SerializationJSON::deserializeObjectWithParser(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
     auto & cache = getJSONParserStateCache();
-    cache.clearIfTimezoneChanged(session_timezone);
     auto & state = cache.get(cache.getPools<Parser>(), *this, [&]
     {
         /// The tree is rebuilt from the type instead of keeping a reference to it: a strong
@@ -498,28 +494,15 @@ NO_INLINE void SerializationJSON::deserializeObjectWithParser(
 
 void SerializationJSON::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
-    const DateLUTImpl * session_timezone = settings.json.session_timezone;
-    if (!session_timezone)
-        session_timezone = &DateLUT::instance();
-
+    [[maybe_unused]] bool allow_simdjson = getJSONParserStateCache().clearIfQueryContextChanged();
 #if USE_SIMDJSON
-    bool allow_simdjson = false;
-    if (settings.json.allow_simdjson)
-        allow_simdjson = *settings.json.allow_simdjson;
-    else
-    {
-        auto context = CurrentThread::tryGetQueryContext();
-        if (!context)
-            context = Context::getGlobalContextInstance();
-        allow_simdjson = !context || context->getSettingsRef()[Setting::allow_simdjson];
-    }
     if (allow_simdjson)
     {
-        deserializeObjectWithParser<SimdJSONParser>(column, object, settings, session_timezone);
+        deserializeObjectWithParser<SimdJSONParser>(column, object, settings);
         return;
     }
 #endif
-    deserializeObjectWithParser<FallbackJSONParser>(column, object, settings, session_timezone);
+    deserializeObjectWithParser<FallbackJSONParser>(column, object, settings);
 }
 
 void SerializationJSON::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

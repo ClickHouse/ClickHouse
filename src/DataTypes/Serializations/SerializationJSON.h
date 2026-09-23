@@ -54,8 +54,7 @@ public:
 
 private:
     template <typename Parser>
-    void deserializeObjectWithParser(
-        IColumn & column, std::string_view object, const FormatSettings & settings, const DateLUTImpl * session_timezone) const;
+    void deserializeObjectWithParser(IColumn & column, std::string_view object, const FormatSettings & settings) const;
 
     void serializeTextImpl(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings, bool pretty = false, size_t indent = 0) const;
 

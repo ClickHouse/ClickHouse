@@ -119,8 +119,7 @@ void SerializationDateTime::serializeText(const IColumn & column, size_t row_num
     switch (settings.date_time_output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-            writeDateTimeText(value, ostr,
-                !hasExplicitTimeZone() && settings.json.session_timezone ? *settings.json.session_timezone : time_zone);
+            writeDateTimeText(value, ostr, time_zone);
             return;
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeIntText(value, ostr);

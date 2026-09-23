@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include "config.h"
+
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
 #include <Common/DateLUTImpl.h>
@@ -226,6 +228,17 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
         for (bool simdjson : {false, true})
         {
             context->setSetting("allow_simdjson", simdjson);
+#if USE_SIMDJSON && USE_RAPIDJSON
+            /// `SimdJSON` rejects this nesting and `RapidJSON` accepts it.
+            auto skip_type = DataTypeFactory::instance().get("JSON(SKIP x)");
+            auto skip_column = skip_type->createColumn();
+            String nested = "{\"x\":" + String(1024, '[') + "0" + String(1024, ']') + "}";
+            ReadBufferFromString nested_input(nested);
+            if (simdjson)
+                EXPECT_THROW(skip_type->getDefaultSerialization()->deserializeWholeText(*skip_column, nested_input, settings), Exception);
+            else
+                EXPECT_NO_THROW(skip_type->getDefaultSerialization()->deserializeWholeText(*skip_column, nested_input, settings));
+#endif
             for (const auto & [session_timezone, expected_timestamp] : timezones)
             {
                 context->setSetting("session_timezone", String(session_timezone));

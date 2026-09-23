@@ -56,15 +56,11 @@ void SerializationDateTime64::serializeText(const IColumn & column, size_t row_n
     switch (settings.date_time_output_format)
     {
         case FormatSettings::DateTimeOutputFormat::Simple:
-        {
-            const auto & output_timezone = !hasExplicitTimeZone() && settings.json.session_timezone
-                ? *settings.json.session_timezone : time_zone;
             if (settings.date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands)
-                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, output_timezone);
+                writeDateTimeTextCutTrailingZerosAlignToGroupOfThousands(value, scale, ostr, time_zone);
             else
-                writeDateTimeText(value, scale, ostr, output_timezone);
+                writeDateTimeText(value, scale, ostr, time_zone);
             return;
-        }
         case FormatSettings::DateTimeOutputFormat::UnixTimestamp:
             writeDateTimeUnixTimestamp(value, scale, ostr);
             return;

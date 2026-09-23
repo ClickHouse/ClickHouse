@@ -73,9 +73,6 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// does this between queries of one session); otherwise a stale entry produces
 /// wrong results (e.g. DateTime values rendered in another query's timezone).
 ///
-/// `SerializationJSON` can be shared across queries when its child serializations support pooling.
-/// Its parsers and extraction trees are cached per thread in `SerializationJSON.cpp` and cleared
-/// on effective timezone changes, on reaching the schema limit, or after parsing a large object.
 class DataTypesCache
 {
 public:
@@ -86,6 +83,13 @@ public:
     /// constructed `type` instead of parsing `type_name` through DataTypeFactory.
     /// `type_name` must be equal to `type->getName()`.
     SerializationPtr getSerialization(const String & type_name, const DataTypePtr & type);
+
+    /// Returns a number that changes whenever the cache is invalidated, so other thread-local caches
+    /// that depend on the query context can follow the same lifetime.
+    UInt64 getQueryContextVersion();
+
+    /// The value of `allow_simdjson` for the current query context.
+    bool allowSimdJSON() const { return allow_simdjson; }
 
 private:
     /// Sized to cover a full set of Dynamic variants (up to 255) plus types from the
@@ -120,6 +124,9 @@ private:
     /// long-lived client context for the whole session and mutates the setting
     /// in place between queries (see `ClientBase::onTimezoneUpdate`).
     String session_timezone;
+
+    bool allow_simdjson = true;
+    UInt64 query_context_version = 0;
 };
 
 /// Return instance of a thread local cache.
