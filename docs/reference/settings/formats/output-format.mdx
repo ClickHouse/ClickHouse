@@ -859,6 +859,16 @@ Write column index and offset index (i.e. statistics about each data page, which
 
 Use ANSI escape sequences in Pretty formats. 0 - disabled, 1 - enabled, 'auto' - enabled if a terminal.
 
+## output_format_pretty_display_control_characters {#output_format_pretty_display_control_characters}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the `Vertical` and `Pretty*` output formats."}]}]}/>
+
+If enabled, non-printable control characters (NUL, SOH, CR, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␍, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. A tab advances to the next tab stop, a multi-line value keeps being broken across lines so that it stays easy to read and copy-paste, and the ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
+
 ## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />

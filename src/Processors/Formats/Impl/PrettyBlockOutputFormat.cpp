@@ -137,6 +137,12 @@ void PrettyBlockOutputFormat::calculateWidths(
                     serialized_value.resize(max_byte_size);
             }
 
+            /// The widths have to be calculated on the same text that `writeValueWithPadding` prints,
+            /// so the replacement happens here as well: a Control Picture takes one visible position,
+            /// while the raw control character takes none.
+            if (format_settings.pretty.display_control_characters)
+                serialized_value = replaceControlCharactersWithPictures(std::move(serialized_value));
+
             size_t start_from_offset = 0;
             size_t next_offset = 0;
             while (start_from_offset < serialized_value.size())
@@ -173,7 +179,14 @@ void PrettyBlockOutputFormat::calculateWidths(
 
         /// Also, calculate the widths for the names of columns.
         {
-            auto [name, width] = truncateName(elem.name,
+            /// A column name can also contain control characters (e.g. `SELECT 1 AS `a<TAB>b``), and
+            /// the header is a single line, so a line feed in a name is replaced as well.
+            String elem_name = elem.name;
+            if (format_settings.pretty.display_control_characters)
+                elem_name = replaceControlCharactersWithPictures(
+                    std::move(elem_name), /*highlight_trailing_whitespace=*/ false, /*replace_line_feeds=*/ true);
+
+            auto [name, width] = truncateName(elem_name,
                 format_settings.pretty.max_column_name_width_cut_to
                     ? std::max<UInt64>(max_padded_widths[i], format_settings.pretty.max_column_name_width_cut_to)
                     : 0,
@@ -695,6 +708,9 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
     bool is_continuation = start_from_offset > 0 && start_from_offset < serialized_value->size();
 
     String serialized_fragment;
+    /// Whether the width of the fragment has to be computed here, because it is one line of a
+    /// multi-line value rather than the whole value that `calculateWidths` measured.
+    bool fragment_is_one_line = false;
     if (start_from_offset == serialized_value->size())
     {
         /// Only padding, nothing remains.
@@ -706,8 +722,8 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         const char * next_nl = find_first_symbols<'\n'>(serialized_value->data() + start_from_offset, end);
         size_t fragment_end_offset = next_nl - serialized_value->data();
         serialized_fragment = serialized_value->substr(start_from_offset, fragment_end_offset - start_from_offset);
-        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
         start_from_offset = fragment_end_offset;
+        fragment_is_one_line = true;
     }
     else
     {
@@ -715,12 +731,25 @@ void PrettyBlockOutputFormat::writeValueWithPadding(
         start_from_offset = serialized_value->size();
     }
 
+    /// Make non-printable control characters visible instead of being silently swallowed by the
+    /// terminal. Trailing whitespace is highlighted in the same pass: it must be detected on the
+    /// pre-replacement bytes, because the replacement turns a trailing tab or carriage return into
+    /// a Control Picture that `highlightTrailingSpaces` would not recognize.
+    /// The line feed is never replaced, so splitting the value into lines and replacing the control
+    /// characters commute: the fragments are the same ones `calculateWidths` measured.
+    if (format_settings.pretty.display_control_characters)
+        serialized_fragment = replaceControlCharactersWithPictures(
+            std::move(serialized_fragment), color && format_settings.pretty.highlight_trailing_spaces);
+
+    if (fragment_is_one_line)
+        value_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(serialized_fragment.data()), serialized_fragment.size(), prefix);
+
     /// Highlight groups of thousands.
     if (color && is_number && format_settings.pretty.highlight_digit_groups)
         serialized_fragment = highlightDigitGroups(serialized_fragment);
 
-    /// Highlight trailing spaces.
-    if (color && format_settings.pretty.highlight_trailing_spaces)
+    /// Highlight trailing spaces (unless the replacement above already did it in one pass).
+    if (color && format_settings.pretty.highlight_trailing_spaces && !format_settings.pretty.display_control_characters)
         serialized_fragment = highlightTrailingSpaces(serialized_fragment);
 
     const char * ellipsis = format_settings.pretty.charset == FormatSettings::Pretty::Charset::UTF8 ? "⋯" : "~";
@@ -956,17 +985,30 @@ SELECT * FROM t_null
 └───┴──────┘
 ```
 
-Rows are not escaped in any of the `Pretty` formats. The following example is shown for the [`PrettyCompact`](/reference/formats/Pretty/PrettyCompact) format:
+Rows are not escaped in any of the `Pretty` formats. Instead, non-printable control characters (C0 controls `0x00`-`0x1F` and `DEL` `0x7F`) in the values and in the column names are displayed as the corresponding Unicode "Control Pictures" (`U+2400`-`U+2421`) by default, so that they stay visible and do not deform the table. For example, a NUL is shown as `␀`:
 
 ```sql title="Query"
-SELECT 'String with \'quotes\' and \t character' AS Escaping_test
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
 ```
 
 ```response title="Response"
-┌─Escaping_test────────────────────────┐
-│ String with 'quotes' and      character │
-└──────────────────────────────────────┘
+┌─Escaping_test─────────────────┐
+│ String with a NUL ␀ character │
+└───────────────────────────────┘
 ```
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them - a tab advances to the next tab stop, and an ANSI escape sequence is what lets the data carry a visualization. A line feed keeps breaking the line too: inside a table cell when [`output_format_pretty_multiline_fields`](/operations/settings/formats#output_format_pretty_multiline_fields) is enabled, and as is otherwise. A column name is the exception to that exception: the header and the footer are a single line, so a line feed in a name is replaced like any other control character.
+
+To print control characters verbatim instead, disable [`output_format_pretty_display_control_characters`](/operations/settings/formats#output_format_pretty_display_control_characters):
+
+```sql title="Query"
+SELECT 'String with a NUL \0 character' AS Escaping_test FORMAT PrettyCompact
+SETTINGS output_format_pretty_display_control_characters = 0
+```
+
+The response then contains the raw `NUL` byte instead. A terminal swallows it, so the character
+is invisible and the row is one position wider than the border that was measured for it - the
+deformed table that displaying the Control Picture avoids.
 
 To avoid dumping too much data to the terminal, only the first `10,000` rows are printed. 
 If the number of rows is greater than or equal to `10,000`, the message "Showed first 10 000" is printed.
