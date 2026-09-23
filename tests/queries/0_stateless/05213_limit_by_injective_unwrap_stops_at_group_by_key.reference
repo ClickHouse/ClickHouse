@@ -1,0 +1,120 @@
+2
+3
+1
+2
+0	10
+2	0
+3	0
+0	0
+2	0
+3	0
+2
+3
+QUERY id: 0
+  PROJECTION COLUMNS
+    s String
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: String
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Int64
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: c0, result_type: Int32, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.t_limit_by_injective
+  GROUP BY
+    LIST id: 9, nodes: 1
+      FUNCTION id: 10, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 11, nodes: 2
+            COLUMN id: 6, column_name: c0, result_type: Int32, source_id: 7
+            CONSTANT id: 12, constant_value: UInt64_1, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 13, nodes: 1
+      SORT id: 14, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION s
+          FUNCTION id: 15, function_name: toString, function_type: ordinary, result_type: String
+            ARGUMENTS
+              LIST id: 16, nodes: 1
+                FUNCTION id: 17, function_name: plus, function_type: ordinary, result_type: Int64
+                  ARGUMENTS
+                    LIST id: 18, nodes: 2
+                      COLUMN id: 6, column_name: c0, result_type: Int32, source_id: 7
+                      CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
+  LIMIT BY LIMIT
+    CONSTANT id: 20, constant_value: UInt64_1, constant_value_type: UInt64
+  LIMIT BY
+    LIST id: 21, nodes: 1
+      FUNCTION id: 17, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 18, nodes: 2
+            COLUMN id: 6, column_name: c0, result_type: Int32, source_id: 7
+            CONSTANT id: 19, constant_value: UInt64_1, constant_value_type: UInt8
+1	30
+2
+3
+2
+3
+2	10
+3	30
+1
+2
+\N
+2
+3
+\N
+2	\N
+3	\N
+\N	10
+1
+2
+\N
+2
+3
+\N
+QUERY id: 0, group_by_type: rollup
+  PROJECTION COLUMNS
+    s Nullable(String)
+  PROJECTION
+    LIST id: 1, nodes: 1
+      FUNCTION id: 2, function_name: toString, function_type: ordinary, result_type: Nullable(String)
+        ARGUMENTS
+          LIST id: 3, nodes: 1
+            FUNCTION id: 4, function_name: plus, function_type: ordinary, result_type: Nullable(Int64)
+              ARGUMENTS
+                LIST id: 5, nodes: 2
+                  COLUMN id: 6, column_name: c0, result_type: Int32, source_id: 7
+                  CONSTANT id: 8, constant_value: UInt64_1, constant_value_type: UInt8
+  JOIN TREE
+    TABLE id: 7, alias: __table1, table_name: default.t_limit_by_injective
+  GROUP BY
+    LIST id: 9, nodes: 1
+      FUNCTION id: 10, function_name: plus, function_type: ordinary, result_type: Int64
+        ARGUMENTS
+          LIST id: 11, nodes: 2
+            COLUMN id: 12, column_name: c0, result_type: Int32, source_id: 7
+            CONSTANT id: 13, constant_value: UInt64_1, constant_value_type: UInt8
+  ORDER BY
+    LIST id: 14, nodes: 1
+      SORT id: 15, sort_direction: ASCENDING, with_fill: 0
+        EXPRESSION s
+          FUNCTION id: 16, function_name: toString, function_type: ordinary, result_type: Nullable(String)
+            ARGUMENTS
+              LIST id: 17, nodes: 1
+                FUNCTION id: 18, function_name: plus, function_type: ordinary, result_type: Nullable(Int64)
+                  ARGUMENTS
+                    LIST id: 19, nodes: 2
+                      COLUMN id: 20, column_name: c0, result_type: Int32, source_id: 7
+                      CONSTANT id: 21, constant_value: UInt64_1, constant_value_type: UInt8
+  LIMIT BY LIMIT
+    CONSTANT id: 22, constant_value: UInt64_1, constant_value_type: UInt64
+  LIMIT BY
+    LIST id: 23, nodes: 1
+      FUNCTION id: 24, function_name: plus, function_type: ordinary, result_type: Nullable(Int64)
+        ARGUMENTS
+          LIST id: 25, nodes: 2
+            COLUMN id: 26, column_name: c0, result_type: Int32, source_id: 7
+            CONSTANT id: 27, constant_value: UInt64_1, constant_value_type: UInt8
