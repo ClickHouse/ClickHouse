@@ -19,7 +19,7 @@ Header: number UInt64
               __table1.e UInt64
               __table3.k UInt64
               __table3.k UInt64
-        Filter
+        Filter ((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: __table1.number UInt64
                 __table1.number UInt64
                 __table1.e UInt64
@@ -60,7 +60,7 @@ Header: number UInt64
               __table1.e UInt64
               __table3.k UInt64
               __table3.k UInt64
-        Filter
+        Filter ((Apply runtime join filter + (Change column names to column identifiers + (Project names + (Projection + Change column names to column identifiers)))))
         Header: __table1.number UInt64
                 __table1.number UInt64
                 __table1.e UInt64

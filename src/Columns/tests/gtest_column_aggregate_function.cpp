@@ -4,6 +4,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Columns/ColumnsNumber.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
@@ -67,4 +68,30 @@ TEST(ColumnAggregateFunction, EnsureOwnershipExceptionLeavesCorruptedState)
 
     /// Previously leads to a crash
     view_column->insertDefault();
+}
+
+/// The name inside a state `Field` is compared against the state type's name, so the two must spell
+/// a parameter the same way. A `Decimal` level is where the two printers can diverge: the type name
+/// suffixes it with `::Type`, and an unsuffixed copy reparses as a `String` the level check rejects.
+TEST(ColumnAggregateFunction, StateFieldNameMatchesStateTypeName)
+{
+    tryRegisterAggregateFunctions();
+
+    using namespace DB;
+
+    DataTypes argument_types = {std::make_shared<DataTypeFloat64>()};
+    Array params = {DecimalField<Decimal32>(5, 1)};
+    AggregateFunctionProperties properties;
+    auto aggregate_function
+        = AggregateFunctionFactory::instance().get("quantile", NullsAction::EMPTY, argument_types, params, properties);
+
+    auto column = ColumnAggregateFunction::create(aggregate_function);
+    column->insertDefault();
+
+    Field field;
+    column->get(0, field);
+
+    const auto state_type = std::make_shared<DataTypeAggregateFunction>(aggregate_function, argument_types, params);
+    ASSERT_EQ(field.safeGet<AggregateFunctionStateData>().name, state_type->getName());
+    ASSERT_EQ(state_type->getName(), "AggregateFunction(quantile('0.5'::Decimal32(1)), Float64)");
 }

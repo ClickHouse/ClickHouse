@@ -1,4 +1,5 @@
 #include <Common/SipHash.h>
+#include <Common/checkStackSize.h>
 #include <DataTypes/Serializations/SerializationDynamic.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -702,6 +703,10 @@ void SerializationDynamic::serializeBinary(const Field & field, WriteBuffer & os
 
 void SerializationDynamic::deserializeBinary(Field & field, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// The type of every nested value comes from the data, decoded here, so nothing but the size of
+    /// the input bounds the depth of the recursion.
+    checkStackSize();
+
     auto field_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(field_type))
     {
@@ -826,6 +831,9 @@ void SerializationDynamic::deserializeBinary(IColumn & column, ReadBuffer & istr
 
 void SerializationDynamic::deserializeBinary(ColumnDynamic & dynamic_column, ReadBuffer & istr, const FormatSettings & settings) const
 {
+    /// See the comment in the Field overload: this is the same recursion on the column-building path.
+    checkStackSize();
+
     auto variant_type = decodeDataType(istr, settings.binary.max_binary_type_complexity);
     if (isNothing(variant_type))
     {

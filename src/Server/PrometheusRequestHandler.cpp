@@ -53,9 +53,12 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
+    extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+    extern const int ZSTD_DECODER_FAILED;
 }
 
 /// Base implementation of a prometheus protocol.
@@ -329,8 +332,19 @@ public:
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
-            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            try
+            {
+                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            }
+            catch (const Exception & e)
+            {
+                /// A body this server cannot decode is the sender's to fix, and a sender resends a 5xx for ever.
+                /// The decoders' own codes also cover reading stored files, so only this request retags them.
+                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED || e.code() == ErrorCodes::ZSTD_DECODER_FAILED)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                throw;
+            }
         }
 
         protocol.write(write_request.timeseries(), write_request.metadata());
@@ -372,8 +386,17 @@ public:
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
                 std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()))};
 
-            if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+            try
+            {
+                if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                throw;
+            }
         }
 
         /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
@@ -604,10 +627,16 @@ public:
             /// before writing the error response.
             getOutputStream(response).rejectBufferedDataSave();
 
-            response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            /// A schema-version rejection (see TimeSeriesVersion.h) is a problem with the server or the table,
+            /// not with the query: report it as an internal error so that clients don't attribute it
+            /// to the PromQL expression.
+            bool server_side_error = (e.code() == ErrorCodes::INCOMPATIBLE_SCHEMA);
+            response.setStatusAndReason(
+                server_side_error ? Poco::Net::HTTPResponse::HTTP_INTERNAL_SERVER_ERROR : Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
             String error_str;
             WriteBufferFromString error_buf(error_str);
-            writeString(R"({"status":"error","errorType":"bad_data","error":)", error_buf);
+            writeString(server_side_error ? R"({"status":"error","errorType":"internal","error":)"
+                                          : R"({"status":"error","errorType":"bad_data","error":)", error_buf);
             writeJSONString(e.message(), error_buf, FormatSettings{});
             writeString("}", error_buf);
             error_buf.finalize();

@@ -7,11 +7,11 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/CommonParsers.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <IO/WriteHelpers.h>
 #include <base/EnumReflection.h>
 #include <Core/UUID.h>
 
-#include <algorithm>
 #include <unordered_set>
 
 
@@ -25,8 +25,11 @@ namespace ErrorCodes
 
 namespace
 {
-    Keyword getKeyword(ViewTarget::Kind kind)
+    Keyword getKeyword(ViewTarget::Kind kind, std::optional<UInt64> time_series_version = {})
     {
+        if ((kind == ViewTarget::MetricFamilies) && time_series_version && (*time_series_version < TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME))
+            return Keyword::METRICS;
+
         switch (kind)
         {
             case ViewTarget::To:      return Keyword::TO;      /// TO mydb.mysamples
@@ -34,7 +37,7 @@ namespace
             case ViewTarget::Samples: return Keyword::SAMPLES; /// SAMPLES mydb.mysamples
             case ViewTarget::RecentSamples: return Keyword::RECENT_SAMPLES; /// RECENT SAMPLES mydb.myrecentsamples
             case ViewTarget::Tags:    return Keyword::TAGS;    /// TAGS mydb.mytags
-            case ViewTarget::Metrics: return Keyword::METRICS; /// METRICS mydb.mymetrics
+            case ViewTarget::MetricFamilies: return Keyword::METRIC_FAMILIES; /// METRIC FAMILIES mydb.mymetricfamilies
         }
         UNREACHABLE();
     }
@@ -227,15 +230,7 @@ void ASTViewTargets::removeTarget(ViewTarget::Kind kind)
             /// Detach the target's ASTs from `children` before erasing the target.
             reset(it->inner_engine);
             reset(it->inner_columns);
-            /// TODO: `table_ast` is registered in `children` only on some paths (JSON deserialization, clone),
-            /// so it can't be `reset` here; make `setTableASTWithQueryParams` register it always.
-            if (it->table_ast)
-            {
-                auto child = std::find_if(children.begin(), children.end(),
-                    [&](const ASTPtr & child_) { return child_.get() == it->table_ast.get(); });
-                if (child != children.end())
-                    children.erase(child);
-            }
+            reset(it->table_ast);
             targets.erase(it);
             return;
         }
@@ -252,9 +247,6 @@ ASTPtr ASTViewTargets::clone() const
             res->set(target.inner_engine, target.inner_engine->clone());
         if (target.inner_columns)
             res->set(target.inner_columns, target.inner_columns->clone());
-        /// `table_ast` (a parameterized `TO {dst:Identifier}` target produced by JSON deserialization)
-        /// is also a registered child, so it must be cloned too; otherwise the clone's `table_ast`
-        /// dangles into the original's children.
         if (target.table_ast)
             res->set(target.table_ast, target.table_ast->clone());
     }
@@ -267,20 +259,20 @@ void ASTViewTargets::formatImpl(WriteBuffer & ostr, const FormatSettings & s, Fo
         formatTarget(target, ostr, s, state, frame);
 }
 
-void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const
+void ASTViewTargets::formatTarget(ViewTarget::Kind kind, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version) const
 {
     for (const auto & target : targets)
     {
         if (target.kind == kind)
-            formatTarget(target, ostr, s, state, frame);
+            formatTarget(target, ostr, s, state, frame, time_series_version);
     }
 }
 
-void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame)
+void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame, std::optional<UInt64> time_series_version)
 {
     if (target.table_id)
     {
-        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind)) << " "
+        ostr << s.nl_or_ws << toStringView(getKeyword(target.kind, time_series_version)) << " "
              << (!target.table_id.database_name.empty() ? backQuoteIfNeed(target.table_id.database_name) + "." : "")
              << backQuoteIfNeed(target.table_id.table_name);
     }
@@ -290,7 +282,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
         ostr << s.nl_or_ws;
         /// Skip the "kind" prefix for ViewTarget::Inner to avoid producing "INNER INNER UUID".
         if (target.kind != ViewTarget::Inner)
-            ostr << toStringView(getKeyword(target.kind)) << " ";
+            ostr << toStringView(getKeyword(target.kind, time_series_version)) << " ";
         ostr << "INNER UUID " << quoteString(toString(target.inner_uuid));
     }
 
@@ -298,7 +290,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
     {
         ostr << s.nl_or_ws;
         if (target.kind != ViewTarget::Inner)
-            ostr << toStringView(getKeyword(target.kind)) << " ";
+            ostr << toStringView(getKeyword(target.kind, time_series_version)) << " ";
         ostr << "INNER COLUMNS" << s.nl_or_ws << "(";
         auto inner_frame = frame;
         inner_frame.expression_list_always_start_on_new_line = true;
@@ -316,7 +308,7 @@ void ASTViewTargets::formatTarget(const ViewTarget & target, WriteBuffer & ostr,
             ostr << s.nl_or_ws;
             /// Skip the "kind" prefix for ViewTarget::Inner to avoid producing "INNER INNER ENGINE".
             if (target.kind != ViewTarget::Inner)
-                ostr << toStringView(getKeyword(target.kind)) << " ";
+                ostr << toStringView(getKeyword(target.kind, time_series_version)) << " ";
             ostr << "INNER";
         }
         target.inner_engine->format(ostr, s, state, frame);
@@ -333,18 +325,27 @@ void ASTViewTargets::forEachPointerToChild(std::function<void(IAST **, boost::in
     }
 }
 
-void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, const ASTPtr & table_)
+void ASTViewTargets::setTableASTWithQueryParams(ViewTarget::Kind kind, ASTPtr new_table_ast)
 {
     for (auto & target : targets)
     {
         if (target.kind == kind)
         {
-            target.table_ast = table_;
+            if (target.table_ast == new_table_ast)
+                return;
+            if (new_table_ast)
+                setOrReplace(target.table_ast, std::move(new_table_ast));
+            else
+                reset(target.table_ast);
             return;
         }
     }
-    if (table_)
-        targets.emplace_back(kind).table_ast = table_;
+
+    if (new_table_ast)
+    {
+        auto & new_target = targets.emplace_back(kind);
+        set(new_target.table_ast, std::move(new_table_ast));
+    }
 }
 
 bool ASTViewTargets::hasTableASTWithQueryParams(ViewTarget::Kind kind) const
@@ -361,13 +362,6 @@ ASTPtr ASTViewTargets::getTableASTWithQueryParams(ViewTarget::Kind kind)
         if (target.kind == kind)
             return target.table_ast;
     return nullptr;
-}
-
-void ASTViewTargets::resetTableASTWithQueryParams(ViewTarget::Kind kind)
-{
-    for (auto & target : targets)
-        if (target.kind == kind)
-            target.table_ast.reset();
 }
 
 void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
@@ -394,6 +388,9 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
         JSONObjectReader target_reader(*target_obj);
         String kind_str = target_reader.getString("kind");
         auto kind_opt = magic_enum::enum_cast<ViewTarget::Kind>(kind_str);
+        /// The old name of the `MetricFamilies` kind.
+        if (!kind_opt && (kind_str == "Metrics"))
+            kind_opt = ViewTarget::MetricFamilies;
         if (!kind_opt)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown ViewTarget kind '{}' at index {} in 'targets' array during AST JSON deserialization", kind_str, i);
         target.kind = *kind_opt;
@@ -466,6 +463,11 @@ void ASTViewTargets::readJSON(const Poco::JSON::Object & json)
 
 void ASTViewTargets::writeJSON(WriteBuffer & out) const
 {
+    writeJSON(out, /* time_series_version = */ {});
+}
+
+void ASTViewTargets::writeJSON(WriteBuffer & out, std::optional<UInt64> time_series_version) const
+{
     JSONObjectWriter w(out, "ViewTargets");
     if (!targets.empty())
     {
@@ -478,7 +480,12 @@ void ASTViewTargets::writeJSON(WriteBuffer & out) const
             const auto & target = targets[i];
             out << '{';
             out << "\"kind\":";
-            writeJSONString(toString(target.kind), out, w.getFormatSettings());
+            /// The "metric families" target keeps its old name "Metrics" in the older versions (see readJSON).
+            String kind_name = toString(target.kind);
+            if ((target.kind == ViewTarget::MetricFamilies) && time_series_version
+                && (*time_series_version < TimeSeriesVersion::MIN_WITH_METRIC_FAMILIES_TARGET_NAME))
+                kind_name = "Metrics";
+            writeJSONString(kind_name, out, w.getFormatSettings());
             if (!target.table_id.empty())
             {
                 /// Serialize the `StorageID` parts separately instead of `getFullTableName()`: the

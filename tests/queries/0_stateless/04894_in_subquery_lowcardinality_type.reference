@@ -1,0 +1,8 @@
+LowCardinality(UInt8)	LowCardinality(UInt8)
+LowCardinality(UInt8)
+('a',1)
+('b',0)
+['a']
+[]
+1
+1
