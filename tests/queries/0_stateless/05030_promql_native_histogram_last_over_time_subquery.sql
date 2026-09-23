@@ -29,8 +29,8 @@ CREATE TABLE ts_nh_lot ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 -- and t=120 (count 8, sum 21).
 INSERT INTO ts_nh_lot (metric_name, tags, histograms) VALUES
     ('nh', map('job', 'sub'), [
-        (toDateTime64(60, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.]),
-        (toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.])]);
+        (toDateTime64(60, 3), 0, -53, 0., 4., 10., 0., [(0, 2)], [1., 3.], [], [], [1., 2., 4.], 4, 0, [1, 3], []),
+        (toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], [])]);
 
 -- Float series f{job='sub'}: the subquery resample must work for the float arm as well (the bug
 -- threw for every series on a histogram-enabled storage, not just histogram-carrying ones).
@@ -40,7 +40,7 @@ INSERT INTO ts_nh_lot (metric_name, tags, samples) VALUES
 -- Series for the float-only filter: n{job='dup'} carries a histogram, g{job='dup'} is float-only,
 -- and f1/f2{job='multi'} are both float-only.
 INSERT INTO ts_nh_lot (metric_name, tags, histograms) VALUES
-    ('n', map('job', 'dup'), [(toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.])]);
+    ('n', map('job', 'dup'), [(toDateTime64(120, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], [])]);
 INSERT INTO ts_nh_lot (metric_name, tags, samples) VALUES
     ('g', map('job', 'dup'), [(toDateTime64(120, 3), 99)]),
     ('f1', map('job', 'multi'), [(toDateTime64(120, 3), 1)]),

@@ -20,7 +20,7 @@ CREATE TABLE ts_nh_qf ENGINE = TimeSeries SETTINGS store_native_histograms = 1;
 -- Native-histogram series nh{job='e2e'}: custom buckets [1,2,4] with counts [0,2,6]
 -- (buckets [-Inf,1]x0, [1,2]x2, [2,4]x6), count 8, sum 21.
 INSERT INTO ts_nh_qf (metric_name, tags, histograms) VALUES
-    ('nh', map('job', 'e2e'), [(toDateTime64(110, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.])]);
+    ('nh', map('job', 'e2e'), [(toDateTime64(110, 3), 0, -53, 0., 8., 21., 0., [(0, 3)], [0., 2., 6.], [], [], [1., 2., 4.], 8, 0, [0, 2, 6], [])]);
 
 -- Classic-bucket series cb_bucket{job='classic', le='0.5'/'1'/'+Inf'} with cumulative counts 1/3/4:
 -- the phi=0.5 quantile is rank 2 in the le=1 bucket -> 0.5 + (1-0.5)*(2-1)/(3-1) = 0.75.
