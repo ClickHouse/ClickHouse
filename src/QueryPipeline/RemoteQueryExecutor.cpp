@@ -636,12 +636,18 @@ void RemoteQueryExecutor::sendQueryUnlocked(ClientInfo::QueryKind query_kind, As
         stage = query_plan_fallback_stage;
     }
 
-    /// `BlocksMarshalling` is registered only from version 21, so an older peer would accept the plan
-    /// version and then fail on the step name. The planner puts the step on the plan of a secondary
-    /// query, which is exactly the plan a shard gets under `serialize_query_plan`, so send SQL instead
-    /// and let the shard add the step itself. A plan fragment for parallel replicas never reaches this:
-    /// a replica below `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS` is dropped
-    /// while the connections are established, and that fragment has no SQL to fall back to.
+    /// This guards the ordinary `serialize_query_plan` fan-out to shards, not parallel replicas.
+    /// `createLocalPlan(build_logical_plan = true)` keeps the marshalling step on the plan it ships
+    /// (see `DistributedCreateLocalPlan`), and the planner puts that step on the plan of a secondary
+    /// query - so a `Distributed`/`remote()` hop made from a shard produces a shipped plan carrying
+    /// `BlocksMarshalling`. The step is registered only from version 21, so an older shard would
+    /// accept the plan version and then fail on the step name, and serializing it into such a stream
+    /// throws (the step's introduction version). Send SQL instead and let the shard add the step itself.
+    ///
+    /// A parallel-replicas plan fragment never reaches this: a replica below
+    /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS` is dropped while the
+    /// connections are established. That is also why it must not reach it - the fragment has no SQL
+    /// to fall back to.
     if (query_plan
         && !connections->supportsQueryPlanSerializationVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCKS_MARSHALLING_STEP)
         && planMarshallsBlocks(*query_plan))
