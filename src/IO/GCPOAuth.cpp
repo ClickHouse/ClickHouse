@@ -154,7 +154,7 @@ GCPOAuthToken fetchGCPOAuthTokenWithJWTAssertion(
 
 GCPServiceAccountAssertion makeGCPServiceAccountAssertion(
     const std::string & service_account_key,
-    const std::string & scope,
+    [[maybe_unused]] const std::string & scope, /// Unused without SSL.
     const std::string & token_endpoint_override)
 {
     Poco::JSON::Object::Ptr key_object;
