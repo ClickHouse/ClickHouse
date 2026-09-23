@@ -27,6 +27,7 @@ short_timeout_node = cluster.add_instance(
 )
 
 MYSQL_PORT = 9001
+POSTGRESQL_PORT = 9005
 SHORT_RECEIVE_TIMEOUT = 1
 SHORT_NODE_HANDSHAKE_TIMEOUT = 9
 # `handshake_timeout_milliseconds` from the config, in seconds.
@@ -213,6 +214,23 @@ def test_receive_timeout_is_not_widened_by_the_deadline(started_cluster):
         )
     finally:
         sock.close()
+
+
+def test_silent_postgresql_client_is_disconnected(started_cluster):
+    """The PostgreSQL listener leaves the socket without a receive timeout, so the deadline is the
+    only thing that bounds a client which connects and then says nothing."""
+    seen = int(node.count_in_log(SOCKET_TIMEOUT_LINE))
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(DISCONNECT_DEADLINE)
+    try:
+        sock.connect((node.ip_address, POSTGRESQL_PORT))
+        # PostgreSQL has the client speak first, so sending nothing is the whole test.
+        elapsed = wait_for_disconnect(sock)
+        assert elapsed >= HANDSHAKE_TIMEOUT - 2, f"Disconnected after {elapsed} seconds, too early"
+    finally:
+        sock.close()
+
+    node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
 
 
 def test_server_healthy_after_disconnects(started_cluster):

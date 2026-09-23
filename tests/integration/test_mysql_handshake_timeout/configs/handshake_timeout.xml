@@ -1,4 +1,5 @@
 <clickhouse>
     <mysql_port>9001</mysql_port>
+    <postgresql_port>9005</postgresql_port>
     <handshake_timeout_milliseconds>3000</handshake_timeout_milliseconds>
 </clickhouse>
