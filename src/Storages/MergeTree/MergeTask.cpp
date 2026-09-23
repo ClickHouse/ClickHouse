@@ -3037,7 +3037,7 @@ private:
     const time_t time_of_merge{0};
 };
 
-/// Evaluates TTL delete expressions and adds a UInt8 filter column to the block.
+/// Evaluates TTL delete expressions and attaches the resulting mask to each chunk.
 /// Used in vertical merge to pass the TTL filter to the merging algorithm.
 class TTLDeleteFilterStep : public ITransformingStep
 {
@@ -3112,11 +3112,13 @@ public:
         const MergeTreeData::MutableDataPartPtr & data_part_,
         const NamesAndTypesList & expired_columns_,
         time_t current_time,
-        bool force_)
+        bool force_,
+        bool ttl_delete_applied_by_merge_)
         : ITransformingStep(input_header_, TTLTransform::addExpiredColumnsToBlock(input_header_, expired_columns_), getTraits())
     {
         transform = std::make_shared<TTLTransform>(
-            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_);
+            context_, input_header_, storage_, metadata_snapshot_, data_part_, expired_columns_, current_time, force_,
+            ttl_delete_applied_by_merge_);
 
         /// Build sets eagerly here rather than via addCreatingSetsStep.
         /// If they were built inside the merge pipeline, the subquery progress (rows read)
@@ -3500,11 +3502,18 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     /// For vertical merge with TTL delete, add a step that evaluates TTL expressions and attaches
     /// the resulting mask to every chunk. This must be before the merge step, so that the merging
     /// algorithm sees the mask of each input stream.
+    ContextPtr ttl_context = global_ctx->context;
     if (global_ctx->vertical_ttl_delete)
     {
+        /// The TTLDeleteFilterStep below and `TTLStep` after the merge both evaluate the TTL expressions. They
+        /// share one sets cache, so an expensive expression like `WHERE x IN (SELECT ...)` is built once, not twice.
+        auto context_with_sets_cache = Context::createCopy(global_ctx->context);
+        context_with_sets_cache->setPreparedSetsCache(std::make_shared<PreparedSetsCache>());
+        ttl_context = std::move(context_with_sets_cache);
+
         auto ttl_filter_step = std::make_unique<TTLDeleteFilterStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            global_ctx->context,
+            ttl_context,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part->ttl_infos,
             global_ctx->time_of_merge,
@@ -3614,13 +3623,14 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     {
         auto ttl_step = std::make_unique<TTLStep>(
             merge_parts_query_plan.getCurrentHeader(),
-            global_ctx->context,
+            ttl_context,
             *global_ctx->data,
             global_ctx->metadata_snapshot,
             global_ctx->new_data_part,
             global_ctx->merging_columns_expired_by_ttl,
             global_ctx->time_of_merge,
-            ctx->force_ttl);
+            ctx->force_ttl,
+            global_ctx->vertical_ttl_delete);
 
         ttl_step->setStepDescription("TTL step");
         merge_parts_query_plan.addStep(std::move(ttl_step));
