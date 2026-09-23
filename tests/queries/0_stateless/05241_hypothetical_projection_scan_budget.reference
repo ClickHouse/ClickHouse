@@ -1,0 +1,12 @@
+--- the whole part is read when it fits the budget, and the estimate is exact ---
+b < 100: sampled 0, real inside the span 1
+--- a key spread over the parent order, sampled ---
+b < 100: sampled 1, real inside the span 1
+b = 7: sampled 1, real inside the span 1
+--- a key that follows the parent order, sampled ---
+c >= 300 AND c < 310: sampled 1, real inside the span 1
+c = 42: sampled 1, real inside the span 1
+--- max_rows_to_read below the whole-part scan ---
+status: applicable
+source: empirical
+empirical_status: ok
