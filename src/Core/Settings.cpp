@@ -5174,6 +5174,13 @@ Possible values:
 - `alter_update` - run `ALTER UPDATE` query that creates a heavyweight mutation.
 - `lightweight_update` - run lightweight update if possible, run `ALTER UPDATE` otherwise.
 - `lightweight_update_force` - run lightweight update if possible, throw otherwise.
+
+For `DELETE FROM ... ON CLUSTER`, each executing host derives the mode from its own settings, so
+hosts whose profiles set different defaults can run the delete in different modes. A replicated
+shard executes on one replica, so there it is that replica's settings that decide. Setting it in
+the session of the initiating query overrides this, because the distributed DDL entry carries
+session changes at `distributed_ddl_entry_format_version` 2 and above, which the default satisfies.
+A host that constrains the setting clamps the value back.
 )", 0) \
     DECLARE(UInt64, lightweight_deletes_sync, 2, R"(
 The same as [`mutations_sync`](#mutations_sync), but controls only execution of lightweight deletes.
@@ -5710,7 +5717,37 @@ Defines how MySQL types are converted to corresponding ClickHouse types. A comma
 Optimize trivial 'INSERT INTO table SELECT ... FROM TABLES' query
 )", 0) \
     DECLARE(Bool, allow_non_metadata_alters, true, R"(
-Allow to execute alters which affects not only tables metadata, but also data on disk
+Allows `ALTER` statements that modify data on disk, not only table metadata.
+
+When disabled, an `ALTER` DDL statement on a `MergeTree`-family table is rejected with
+`ALTER_OF_COLUMN_IS_FORBIDDEN` if it would rewrite data on disk, either directly or by
+scheduling a mutation (see `system.mutations`). This covers:
+
+- `ALTER TABLE ... MODIFY COLUMN` with a type change that rewrites the column,
+  `ALTER TABLE ... DROP COLUMN` or `... CLEAR COLUMN` of a physical column,
+  `ALTER TABLE ... RENAME COLUMN` of any column including an `ALIAS`,
+  `ALTER TABLE ... DROP INDEX`, `... CLEAR INDEX`, `... DROP PROJECTION`,
+  `... CLEAR PROJECTION`, `... DROP STATISTICS`, `... CLEAR STATISTICS`, and
+  `ALTER TABLE ... MODIFY TTL` when `materialize_ttl_after_modify` is enabled.
+- `ALTER TABLE ... UPDATE` whenever it runs as a heavyweight mutation, which is the default
+  `alter_update_mode = 'heavy'` and every case the other modes fall back to,
+  `ALTER TABLE ... DELETE WHERE`, `ALTER TABLE ... MATERIALIZE INDEX`,
+  `... MATERIALIZE PROJECTION`, `... MATERIALIZE STATISTICS`, `... MATERIALIZE COLUMN`,
+  `... MATERIALIZE TTL` (unconditionally, unlike `MODIFY TTL` above),
+  `... APPLY DELETED MASK`, `... APPLY PATCHES` and `... REWRITE PARTS`.
+
+Other `ALTER` statements are allowed, including `ADD COLUMN`, `COMMENT COLUMN`,
+`MODIFY SETTING`, an `Enum` extension, and `DROP COLUMN` of an `ALIAS` column.
+
+The dedicated `DELETE FROM ...` and `UPDATE ... SET ...` statements are a different thing from
+the `ALTER TABLE ... DELETE WHERE` and `ALTER TABLE ... UPDATE` commands above, and this setting
+never refuses them, in any mode they support. It governs `ALTER` DDL only. Use `GRANT` and
+`REVOKE` of `ALTER DELETE` and `ALTER UPDATE` to restrict data modification as a whole; note that
+those privileges cover the dedicated statements and the `ALTER` commands together, so they cannot
+separate the two forms.
+
+The check applies only to `MergeTree`-family tables. Other engines, such as `Memory`,
+`Log`, `StripeLog`, `KeeperMap` and `EmbeddedRocksDB`, ignore this setting.
 )", 0) \
     DECLARE(Bool, enable_global_with_statement, true, R"(
 Propagate WITH statements to UNION queries and all subqueries
@@ -8454,7 +8491,8 @@ Build local plan for local replica
 )", 0) \
     DECLARE(Bool, parallel_replicas_plan_based, true, R"(
 Decide whether and where to use parallel replicas by analyzing the query plan, as opposed to the query-tree-based analysis. As a result, a plan fragment is sent to the remote replicas instead of a SQL query. Experimental.
-)", BETA) \
+Has no effect on a distributed `INSERT SELECT` ([parallel_distributed_insert_select](#parallel_distributed_insert_select) = 2), which ships the whole `INSERT` as a query to every replica: a replica executing that query reads with the query-tree-based implementation, so the initiator, taking part as one more replica, uses it too.
+)", EXPERIMENTAL) \
     DECLARE(Bool, parallel_replicas_allow_merge_tables, true, R"(
 Allow reading from a `Merge` table with parallel replicas. Effective only together with [parallel_replicas_plan_based](#parallel_replicas_plan_based): the read from the `Merge` table is expanded into a union of the reads from the underlying `MergeTree` tables, which is then distributed like any other union. A `Merge` table is left to a single replica when any of its underlying tables cannot be read that way (a non-`MergeTree` table, a `FINAL` read). Set it to `false` to read every `Merge` table on a single replica, as before the support was added. Experimental.
 )", BETA) \
@@ -8558,6 +8596,14 @@ This makes outer queries that reference such columns by their qualified names wo
 ```sql
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
+)", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_cte_redefinition, false, R"(
+Allow a Common Table Expression name to be defined more than once in a single `WITH` clause. A reference to such a name binds to the latest definition that is not being resolved at that moment: a redefinition can read the previous definition of the same name, and the query body reads the last one. This matches the query analysis that ClickHouse used before v24.3, where a later definition silently shadowed the earlier ones. One shape differs from that analysis: a CTE declared between two definitions of a name also binds to the last definition, where the old analysis bound it to the definition visible at its declaration point. By default a redefinition is rejected with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. A CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even when the setting is enabled.
+
+Possible values:
+
+- 0 - A CTE name can be defined only once in a `WITH` clause.
+- 1 - A later definition of a CTE name shadows the earlier ones.
 )", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
@@ -8689,7 +8735,7 @@ Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HA
 Populate constant comparison in AND chains to enhance filtering ability. Support operators `<`, `<=`, `>`, `>=`, `=` and mix of them. For example, `(a < b) AND (b < c) AND (c < 5)` would be `(a < b) AND (b < c) AND (c < 5) AND indexHint(b < 5) AND indexHint(a < 5)`. The derived comparisons are wrapped in `indexHint`: they participate in index analysis (primary key, partition key, skipping indexes) and prune the read set, but cost nothing per row and do not affect PREWHERE. A comparison derived through expressions of different tables stays executable (`(t1.a < t2.b) AND (t2.b < 5)` derives plain `t1.a < 5`): it is the only condition that can be pushed below the join, where it filters a join input the original chain cannot reach. Derived comparisons that contradict an existing condition are also added as plain conditions, so the `AND` folds to `false`.
 )", 0) \
     DECLARE(Bool, optimize_redundant_comparisons, true, R"(
-Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`.
+Detect conflicting and redundant comparison conditions on the same expression within AND chains. For example, `a < 1 AND a > 5` would be rewritten to `false`. A contradiction between two `equals` on the same expression (for example, `a = 1 AND a = 2`) is detected independently of this setting.
 )", 0) \
     DECLARE(UInt64, optimize_and_compare_chain_max_hash_work, 5'000'000, R"(
 Work budget for the `optimize_and_compare_chain` optimization during query analysis, measured in the number of query-tree nodes hashed by `getTreeHash` (the dominant cost of this optimization). Once a query has hashed more than this many nodes while applying the optimization, it stops applying it for the rest of the query. This bounds analysis time for queries with very many or very large `AND`-chains of comparisons, where the optimization can otherwise dominate analysis while folding nothing. Stopping early is always safe: it only forgoes an optimization and never changes results. Set to `0` to disable the budget (unlimited).
