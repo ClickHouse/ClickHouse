@@ -140,5 +140,17 @@ SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set_
 SELECT count() FROM t_null_set_all WHERE x NOT IN (0) SETTINGS use_lightweight_primary_key_index_analysis = 0;
 SELECT count() FROM t_null_set_all WHERE x NOT IN (0) SETTINGS optimize_use_implicit_projections = 0;
 
+-- The `global` spellings are separate entries of the key condition's atom table, so they take the
+-- exemption separately: these two arms are the same reads as above under `GLOBAL IN` and `GLOBAL NOT IN`.
+SELECT 'the global spelling of a set holding only NULL';
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set WHERE x GLOBAL IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))')))) WHERE explain ILIKE '%exact count optimization is applied%' SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set WHERE x GLOBAL IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))'))) SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set WHERE x GLOBAL IN (SELECT arrayJoin(CAST([NULL], 'Array(Nullable(UInt64))'))) SETTINGS optimize_use_implicit_projections = 0;
+
+SELECT 'and of its negation over a bare key';
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set_all WHERE x GLOBAL NOT IN (0)) WHERE explain ILIKE '%_exact_count_projection%' SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set_all WHERE x GLOBAL NOT IN (0) SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set_all WHERE x GLOBAL NOT IN (0) SETTINGS optimize_use_implicit_projections = 0;
+
 DROP TABLE t_null_set_all;
 DROP TABLE t_null_set;
