@@ -945,7 +945,7 @@ private:
             serialization = std::move(decoded.serialization);
             if (shared_plan)
             {
-                shared_plan->last_encoded_type.assign(value_data.data(), buffer.position() - value_data.data());
+                shared_plan->last_encoded_type.assign(value_data.begin(), buffer.position());
                 shared_plan->last_type_info = type_info_ptr;
                 shared_plan->last_serialization = serialization;
                 shared_plan->last_scalar_plan = nullptr;
