@@ -824,6 +824,75 @@ bool InsertDependenciesBuilder::dependentViewsDeduplicateBlocksOnInsert(const St
 }
 
 
+/// Whether every sink an insert into `storage` reaches is known to deduplicate blocks. Unlike
+/// `storageDeduplicatesBlocksOnInsert`, anything not cheaply known counts as not deduplicating.
+static bool storageCertainlyDeduplicatesBlocksOnInsert(const StoragePtr & storage, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return false;
+
+    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+    {
+        const auto merge_tree_settings = merge_tree->getSettings();
+        if (storage->supportsReplication())
+            return (*merge_tree_settings)[MergeTreeSetting::replicated_deduplication_window] != 0;
+        return (*merge_tree_settings)[MergeTreeSetting::non_replicated_deduplication_window] > 0;
+    }
+
+    if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(storage.get()))
+    {
+        auto target = materialized_view->tryGetTargetTable();
+        return target && storageCertainlyDeduplicatesBlocksOnInsert(target, depth + 1);
+    }
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(storage.get()))
+    {
+        auto target = alias->tryGetTargetTable();
+        return target && storageCertainlyDeduplicatesBlocksOnInsert(target, depth + 1);
+    }
+    if (const auto * proxy = dynamic_cast<const StorageProxy *>(storage.get()))
+        return storageCertainlyDeduplicatesBlocksOnInsert(proxy->getNested(), depth + 1);
+
+    /// `Distributed` and `Buffer` forward the write through a separate `INSERT` whose destination is
+    /// not cheaply known here, and the other engines never consult the deduplication block ids.
+    return false;
+}
+
+
+bool InsertDependenciesBuilder::dependentViewsCertainlyDeduplicateBlocksOnInsert(const StorageID & source_table_id, const ContextPtr & context, size_t depth)
+{
+    if (depth > max_insert_forwarding_depth)
+        return false;
+
+    const auto views = DatabaseCatalog::instance().getDependentViews(source_table_id);
+    /// A source without dependent views inserts nowhere, so nothing drops a repeated insert. Deeper in
+    /// the graph, a target without dependent views of its own adds no sink to check.
+    if (views.empty())
+        return depth > 0;
+
+    for (const auto & view_id : views)
+    {
+        auto view = DatabaseCatalog::instance().tryGetTable(view_id, context);
+        if (!view)
+            return false;
+
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(view.get());
+        if (!materialized_view)
+            return false;
+
+        auto target = materialized_view->tryGetTargetTable();
+        if (!target || !storageCertainlyDeduplicatesBlocksOnInsert(target, depth + 1))
+            return false;
+
+        if (forwardedInsertHidesDependentView(target, depth + 1))
+            return false;
+
+        if (!dependentViewsCertainlyDeduplicateBlocksOnInsert(target->getStorageID(), context, depth + 1))
+            return false;
+    }
+
+    return true;
+}
+
 bool InsertDependenciesBuilder::storageRebuildsDeduplicationIdsOnInsert(const StoragePtr & storage, size_t depth)
 {
     if (depth > max_insert_forwarding_depth)

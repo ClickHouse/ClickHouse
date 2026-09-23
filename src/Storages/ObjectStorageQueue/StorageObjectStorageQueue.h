@@ -208,10 +208,17 @@ private:
 
     /// Get number of dependent materialized views.
     size_t getDependencies() const;
+    /// The table setting `deduplication_v2` together with `deduplicate_blocks_in_dependent_materialized_views`.
+    bool deduplicationV2Requested(const ContextPtr & local_context) const;
     /// Whether the insert into the dependent materialized views deduplicates blocks: `deduplication_v2`
-    /// is set, the insert deduplicates in dependent views, and some dependent target actually
-    /// consults the block ids. Decides whether a partially processed file may be aborted and replayed.
+    /// is set, the insert deduplicates in dependent views, and some dependent target may consult the
+    /// block ids (fail-closed). Decides whether the insert runs in the deduplicating mode and whether
+    /// the per-chunk deduplication token is attached.
     bool dependentViewsDeduplicateBlocks(const ContextPtr & local_context) const;
+    /// Whether a partially processed file may be aborted and replayed from offset `0` (on shutdown or
+    /// on a mid-insert `SYSTEM STOP`): the insert deduplicates (`deduplicate_insert` is not `disable`)
+    /// and every dependent target is known to drop the rows that were inserted before the abort.
+    bool replayAfterAbortIsSafe(const ContextPtr & local_context) const;
     /// A background thread function,
     /// executing the whole process of reading from object storage
     /// and pushing result to dependent tables.

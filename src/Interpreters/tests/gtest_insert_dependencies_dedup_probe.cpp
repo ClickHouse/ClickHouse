@@ -95,6 +95,12 @@ bool dependentViewsDeduplicate(const std::string & source)
         StorageID(State::database_name, source), State::instance().context);
 }
 
+bool dependentViewsCertainlyDeduplicate(const std::string & source)
+{
+    return InsertDependenciesBuilder::dependentViewsCertainlyDeduplicateBlocksOnInsert(
+        StorageID(State::database_name, source), State::instance().context);
+}
+
 }
 
 /// `dependentViewsDeduplicateBlocksOnInsert` decides whether a source that streams into materialized
@@ -146,4 +152,38 @@ TEST(InsertDependenciesDeduplicationProbe, ViewsBehindTheFirstTargetAreFollowed)
 
     state.createMaterializedView("cascade_second_hop", "cascade_middle", "another_table_that_does_not_exist");
     EXPECT_TRUE(dependentViewsDeduplicate("cascade_source"));
+}
+
+/// `dependentViewsCertainlyDeduplicateBlocksOnInsert` decides whether a partially inserted batch may be
+/// replayed. That is only safe when the repeated rows are certainly dropped, so it fails the other way:
+/// whatever the probe cannot see through counts as not deduplicating.
+
+TEST(InsertDependenciesDeduplicationProbe, CertainProbeSourceWithoutDependentViews)
+{
+    const auto & state = State::instance();
+    state.createMemoryTable("certain_lonely_source");
+
+    EXPECT_FALSE(dependentViewsCertainlyDeduplicate("certain_lonely_source"));
+}
+
+TEST(InsertDependenciesDeduplicationProbe, CertainProbeViewIntoMemory)
+{
+    const auto & state = State::instance();
+    state.createMemoryTable("certain_memory_source");
+    state.createMemoryTable("certain_memory_target");
+    state.createMaterializedView("certain_view_into_memory", "certain_memory_source", "certain_memory_target");
+
+    EXPECT_FALSE(dependentViewsCertainlyDeduplicate("certain_memory_source"));
+}
+
+TEST(InsertDependenciesDeduplicationProbe, CertainProbeUnresolvableTargetDoesNotCount)
+{
+    /// The fail-closed probe keeps the deduplication token for such a source, but a replay must not
+    /// rely on a target that is not there.
+    const auto & state = State::instance();
+    state.createMemoryTable("certain_dangling_source");
+    state.createMaterializedView("certain_view_into_nothing", "certain_dangling_source", "certain_table_that_does_not_exist");
+
+    EXPECT_TRUE(dependentViewsDeduplicate("certain_dangling_source"));
+    EXPECT_FALSE(dependentViewsCertainlyDeduplicate("certain_dangling_source"));
 }

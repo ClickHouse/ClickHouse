@@ -1118,7 +1118,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     bool commit_once_processed_,
     bool is_direct_select_,
     bool add_deduplication_info_,
-    bool is_deduplication_v2_,
+    bool replay_after_abort_is_safe_,
     IStreamingStorage & streaming_storage_)
     : ISource(std::make_shared<const Block>(read_from_format_info_.source_header))
     , WithContext(context_)
@@ -1145,7 +1145,7 @@ ObjectStorageQueueSource::ObjectStorageQueueSource(
     , streaming_storage(streaming_storage_)
     , cancel_epoch(streaming_storage_.currentCancelEpoch())
     , add_deduplication_info(add_deduplication_info_)
-    , is_deduplication_v2(is_deduplication_v2_)
+    , replay_after_abort_is_safe(replay_after_abort_is_safe_)
     , log(log_)
 {
     if (commit_once_processed)
@@ -1244,9 +1244,9 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             auto started_file = processed_files.back().metadata;
             /// Aborting re-reads the file from offset 0 on next start, duplicating
-            /// any rows already inserted. Only safe when dedup will drop those rows,
-            /// or when the table is being dropped (no retry).
-            if (table_is_being_dropped || is_deduplication_v2)
+            /// any rows already inserted. Only safe when dedup will certainly drop those
+            /// rows, or when the table is being dropped (no retry).
+            if (table_is_being_dropped || replay_after_abort_is_safe)
             {
                 chassert(started_file->getFileStatus()->processed_rows > 0);
                 processed_files.back().state = FileState::Cancelled;

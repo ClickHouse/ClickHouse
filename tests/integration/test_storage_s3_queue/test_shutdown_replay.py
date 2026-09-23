@@ -1,5 +1,6 @@
-"""A partially processed file may be aborted on shutdown and replayed from offset 0 only when a
-dependent target deduplicates the rows that were already inserted."""
+"""A partially processed file may be aborted on shutdown and replayed from offset 0 only when the
+insert deduplicates and every dependent target drops the rows that were already inserted.
+"""
 
 import logging
 import time
@@ -24,6 +25,18 @@ def started_cluster():
             main_configs=["configs/zookeeper.xml", "configs/s3queue_log.xml"],
             stay_alive=True,
         )
+        cluster.add_instance(
+            "instance_deduplicate_insert_disabled",
+            user_configs=[
+                "configs/users.xml",
+                "configs/small_insert_blocks.xml",
+                "configs/deduplicate_insert_disable.xml",
+            ],
+            with_minio=True,
+            with_zookeeper=True,
+            main_configs=["configs/zookeeper.xml", "configs/s3queue_log.xml"],
+            stay_alive=True,
+        )
         logging.info("Starting cluster...")
         cluster.start()
         logging.info("Cluster started")
@@ -32,14 +45,31 @@ def started_cluster():
         cluster.shutdown()
 
 
-def test_shutdown_dedup_on_target_without_dedup_no_duplicates(started_cluster):
+@pytest.mark.parametrize(
+    "instance_name, dst_settings",
+    [
+        # The destination does not deduplicate: a plain `MergeTree` with the default
+        # `non_replicated_deduplication_window = 0`, so `MergeTreeSink` never consults block ids.
+        pytest.param("instance", "", id="target_without_dedup_window"),
+        # The destination has a deduplication window, but the insert does not deduplicate:
+        # `deduplicate_insert = disable` in the profile overrides the `async_insert_deduplicate`
+        # the queue sets for its insert.
+        pytest.param(
+            "instance_deduplicate_insert_disabled",
+            "SETTINGS non_replicated_deduplication_window = 100",
+            id="deduplicate_insert_disabled",
+        ),
+    ],
+)
+def test_shutdown_dedup_on_target_without_dedup_no_duplicates(
+    started_cluster, instance_name, dst_settings
+):
     """
-    `deduplication_v2 = 1`, but the destination does not deduplicate: a plain `MergeTree` with
-    the default `non_replicated_deduplication_window = 0`, so `MergeTreeSink` never consults
-    block ids.
+    `deduplication_v2 = 1`, but the insert into the destination does not deduplicate (see the
+    parameters).
 
     Aborting a partially processed file on shutdown and replaying its batch from scratch on
-    restart is only safe when some dependent target drops the rows that were already inserted
+    restart is only safe when every dependent target drops the rows that were already inserted
     before the abort. With this destination nothing would drop them, so the replay decision
     must follow what the dependent targets actually do, not the table setting alone: the
     source has to read the in-flight file to EOF before exiting, exactly as it does with
@@ -55,7 +85,7 @@ def test_shutdown_dedup_on_target_without_dedup_no_duplicates(started_cluster):
     those rows are counted twice. With the fix the parked file is drained, the batch commits,
     and the destination ends up with exactly `files * rows_per_file` rows.
     """
-    node = started_cluster.instances["instance"]
+    node = started_cluster.instances[instance_name]
     table_name = f"test_shutdown_replay_{generate_random_string()}"
     dst_table_name = f"{table_name}_dst"
     mv_table_name = f"{table_name}_mv"
@@ -102,22 +132,18 @@ def test_shutdown_dedup_on_target_without_dedup_no_duplicates(started_cluster):
 
     node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_sleep_in_generate")
     try:
-        # `create_mv` creates the destination as `MergeTree()` without a deduplication window.
+        node.query(
+            f"CREATE TABLE {dst_table_name} ({format}, _path String) "
+            f"ENGINE = MergeTree ORDER BY column1 {dst_settings}"
+        )
         create_mv(
             node,
             table_name,
             dst_table_name,
             mv_name=mv_table_name,
             format=format,
+            dst_table_exists=True,
         )
-        assert (
-            node.query(
-                f"SELECT count() FROM system.tables WHERE database = currentDatabase() "
-                f"AND name = '{dst_table_name}' AND engine = 'MergeTree' "
-                f"AND create_table_query NOT LIKE '%deduplication_window%'"
-            ).strip()
-            == "1"
-        ), "the destination must not deduplicate for this test to mean anything"
 
         # Wait for the failpoint to park a source mid-file (a file Processing with rows already
         # counted) and for rows to be committed in the destination, so the restart below lands

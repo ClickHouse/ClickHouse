@@ -141,6 +141,17 @@ public:
     /// when the graph is too deep.
     static bool dependentViewsDeduplicateBlocksOnInsert(const StorageID & source_table_id, const ContextPtr & context, size_t depth = 0);
 
+    /// The opposite-direction counterpart of `dependentViewsDeduplicateBlocksOnInsert`: whether an
+    /// `INSERT` into `source_table_id` is known to deduplicate in every sink it reaches through its
+    /// dependent materialized views. Every dependent view (transitively) must be a `MaterializedView`
+    /// whose target is a MergeTree-family table with an enabled deduplication window (possibly behind
+    /// `Alias` / proxies). Anything unresolved or not cheaply known (`Distributed`, `Buffer`, a target
+    /// hiding its dependent views behind a nested `INSERT`, a too deep graph) returns false, and so
+    /// does a source without dependent views. It is meant for decisions that are only safe when a
+    /// repeated insert of the same blocks is certainly dropped, such as replaying a partially
+    /// inserted batch.
+    static bool dependentViewsCertainlyDeduplicateBlocksOnInsert(const StorageID & source_table_id, const ContextPtr & context, size_t depth = 0);
+
     /// Whether writing into `storage` forwards the data through a nested `INSERT` that stamps the
     /// deduplication info from scratch (`Distributed`, `Buffer`, or a forwarding chain ending in one).
     /// Such nested inserts restart the source block numbering per sink branch even when this query
