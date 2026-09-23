@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/Context.h>
 #include <IO/WriteHelpers.h>
+#include <Common/maskURIPassword.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/HDFS/Configuration.h>
@@ -59,7 +60,9 @@ static void fillDataImpl(MutableColumns & res_columns, SchemaCache & schema_cach
     for (const auto & [key, schema_info] : s3_schema_cache_data)
     {
         res_columns[0]->insert(storage_name);
-        res_columns[1]->insert(key.source);
+        String source = key.source;
+        maskURICredentials(source);
+        res_columns[1]->insert(source);
         res_columns[2]->insert(key.format);
         res_columns[3]->insert(key.additional_format_info);
         res_columns[4]->insert(schema_info.registration_time);

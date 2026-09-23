@@ -99,4 +99,12 @@ ${CLICKHOUSE_CLIENT} --query "
            OR query LIKE '%' || 'tokprobe' || '5x9%' OR exception LIKE '%' || 'tokprobe' || '5x9%'
            OR query LIKE '%' || 'sigprobe' || '3q8%' OR exception LIKE '%' || 'sigprobe' || '3q8%')"
 
+# 5. Schema inference stores the source URL in system.schema_inference_cache; the credential in its
+#    userinfo must be masked there too. Inferring a schema from a credentialed /ping URL (which needs
+#    no auth and whose "Ok." body is inferrable as one column) populates the cache.
+SIC_SECRET="sicpwprobe${CLICKHOUSE_TEST_UNIQUE_NAME}"
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://leakuser:${SIC_SECRET}@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping', 'CSV')" >/dev/null 2>&1
+${CLICKHOUSE_CLIENT} --query "SELECT source FROM system.schema_inference_cache WHERE storage = 'URL'" \
+    | assert_shape "schema_inference_cache" "$SIC_SECRET" "[HIDDEN]@${CLICKHOUSE_HOST}"
+
 ${CLICKHOUSE_CLIENT} --query "DROP DICTIONARY IF EXISTS dict_uri_leak"
