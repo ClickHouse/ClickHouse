@@ -43,6 +43,7 @@
 #include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/StorageKeeperMap.h>
@@ -1520,7 +1521,11 @@ BlockIO DatabaseReplicated::tryEnqueueReplicatedDDL(const ASTPtr & query, Contex
     LOG_DEBUG(log, "Proposing query: {}", query->formatForLogging());
 
     DDLLogEntry entry;
-    entry.query = query->formatWithSecretsOneLine();
+    /// Parser-only settings have already served their purpose on the initiator. Keep them out of the
+    /// normalized query text so older replicas do not reject settings they do not know about.
+    auto query_to_enqueue = query->clone();
+    removeSettingsFromQuery(query_to_enqueue, getDDLQueryParserOnlySettingNames());
+    entry.query = query_to_enqueue->formatWithSecretsOneLine();
     entry.initiator = host_fqdn_id;
     entry.setSettingsIfRequired(query_context);
     entry.tracing_context = OpenTelemetry::CurrentContext();
