@@ -22,10 +22,12 @@ GRANT CREATE TABLE, CREATE VIEW ON $db.* TO $author;
 GRANT TABLE ENGINE ON MergeTree TO $author;
 "
 
+# Prints the error code the statement failed with, or `accepted` when it succeeded. Reporting the code
+# rather than matching one expected code keeps a broken setup from reading as a successful statement.
 run() {
-    echo -n "$1 "
-    ${CLICKHOUSE_CLIENT} --user "$author" --query "$2" 2>&1 \
-        | grep -o -m1 'ACCESS_DENIED' || echo 'accepted'
+    local err
+    err=$(${CLICKHOUSE_CLIENT} --user "$author" --query "$2" 2>&1 | grep -o -m1 -E '\([A-Z_]+\)' | tr -d '()')
+    echo "$1 ${err:-accepted}"
 }
 
 # The author is the definer of this view, so the SQL-security gate below never fires here and the

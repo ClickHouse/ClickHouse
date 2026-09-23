@@ -1,0 +1,13 @@
+-- a view puts the protected table one level further away, which must not lose the check
+plain view           ACCESS_DENIED
+plain view subquery  ACCESS_DENIED
+-- a materialized view cannot read a table function at all, at any depth
+param view           QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW
+param view subquery  QUERY_IS_NOT_SUPPORTED_IN_MATERIALIZED_VIEW
+-- a refreshable view does accept a table function, so the access check has to carry it
+refresh param        ACCESS_DENIED
+refresh param subq   ACCESS_DENIED
+refresh plain subq   ACCESS_DENIED
+-- a table the author can read stays accepted, at both depths
+own table            accepted
+own table subquery   accepted
