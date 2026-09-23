@@ -150,7 +150,8 @@ Field parseFieldFromCastedLiteral(const ASTPtr & ast)
     }
 
     throw Exception(ErrorCodes::BAD_ARGUMENTS,
-        "Expected a literal or a CAST of a literal, got '{}'", ast->formatForErrorMessage());
+        "Expected a literal, a CAST of a literal, or an array or tuple of those, got '{}'",
+        ast->formatForErrorMessage());
 }
 
 }

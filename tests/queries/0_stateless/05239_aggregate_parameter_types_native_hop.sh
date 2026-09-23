@@ -21,9 +21,19 @@ $CLICKHOUSE_CLIENT -q "SELECT type FROM system.columns
 
 $CLICKHOUSE_CLIENT -q "INSERT INTO dst_05239
     SELECT s FROM remote('${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 'src_05239')
-    SETTINGS prefer_localhost_replica = 0"
+    SETTINGS prefer_localhost_replica = 0, log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}'"
 
 $CLICKHOUSE_CLIENT -q "SELECT finalizeAggregation(s) FROM dst_05239"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
+
+# The two assertions above are identical whether the read was local or remote, so the hop itself is
+# asserted here: a local shortcut dispatches no secondary query. The name is the carrier only while
+# `output_format_native_encode_types_in_binary_format` is off, which is its default; with it on the
+# type travels binary-encoded and this test no longer covers the printed name.
+$CLICKHOUSE_CLIENT -q "SELECT count() > 0 FROM system.query_log
+    WHERE is_initial_query = 0 AND log_comment = '${CLICKHOUSE_TEST_UNIQUE_NAME}'
+      AND current_database IN ['default', currentDatabase()]"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE src_05239"
 $CLICKHOUSE_CLIENT -q "DROP TABLE dst_05239"
