@@ -220,7 +220,7 @@ The comparison is case-sensitive. An empty `prefix` matches every token, so the 
     },
     {
         "Custom tokenizer",
-        "SELECT hasTokenPrefix('key=value;flag', 'val', 'splitByString([\\'=\\', \\';\\'])')",
+        R"(SELECT hasTokenPrefix('key=value;flag', 'val', 'splitByString([\'=\', \';\'])'))",
         R"(
 ┌─hasTokenPrefix('key=value;flag', 'val', 'splitByString([\'=\', \';\'])')─┐
 │                                                                        1 │

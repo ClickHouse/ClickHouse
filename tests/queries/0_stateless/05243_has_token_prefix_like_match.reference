@@ -1,0 +1,58 @@
+-- hasTokenPrefix
+1
+0
+0
+1
+0
+1
+0
+0
+0
+1
+1
+0
+-- hasTokenLike
+1
+0
+1
+1
+0
+1
+0
+0
+1
+1
+0
+1
+0
+1
+-- hasTokenMatch
+1
+0
+1
+0
+1
+1
+0
+1
+1
+-- types
+1	Nullable(UInt8)
+\N
+\N
+1	LowCardinality(UInt8)
+1
+1
+0
+0
+1
+1
+-- tokenizers
+0
+1
+1
+1
+1
+-- same as arrayExists over tokens
+0	0	0	800
+-- errors

@@ -1,0 +1,68 @@
+-- results are the same as without the index and as arrayExists over tokens
+[0,1,2,3,4,5,6,7]
+[0,1,2,3,4,5,6,7]
+[0,1,2,3,4,5,6,7]
+[0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
+[0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
+[0,1,2,3,4,5,6,7,400,401,402,403,404,405,406,407,1016,1017,1018,1019,1020,1021,1022,1023]
+[400,401,402,403,404,405,406,407]
+[400,401,402,403,404,405,406,407]
+[400,401,402,403,404,405,406,407]
+500
+0
+24
+24
+16
+16
+500
+8
+-- granules are pruned
+Parts: 1 | Granules: 1
+Granules: 128/128
+Granules: 1/128
+Parts: 1 | Granules: 3
+Granules: 128/128
+Granules: 3/128
+Parts: 1 | Granules: 1
+Granules: 128/128
+Granules: 1/128
+-- direct read replaces the function
+hasTokenPrefix	1	0
+hasTokenLike	1	0
+hasTokenMatch	1	0
+-- a different tokenizer does not use the index
+0
+24
+Parts: 1 | Granules: 128
+Granules: 128/128
+8
+-- invalid patterns raise an exception with the index as well
+-- too many matching posting lists: the functions are evaluated on the column
+1000
+1000
+1
+-- Nullable column: the index prunes granules, NULL rows stay NULL
+5
+37
+37
+Parts: 1 | Granules: 1
+Granules: 8/8
+Granules: 1/8
+-- Array(String) column
+8
+Parts: 1 | Granules: 1
+Granules: 8/8
+Granules: 1/8
+-- the index with a preprocessor is not used
+8
+0
+Parts: 1 | Granules: 8
+Granules: 8/8
+-- the index with an array tokenizer is used with the tokenizer argument only
+8
+8
+Parts: 1 | Granules: 1
+Granules: 8/8
+Granules: 1/8
+Parts: 1 | Granules: 8
+Granules: 8/8
