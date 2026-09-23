@@ -20,7 +20,7 @@ settings enable_block_number_column=1, enable_block_offset_column=1, allow_commi
 insert into mt_materialize values (3, 30) (1, 10) (2, 20);
 insert into mt_materialize values (6, 60) (4, 40) (5, 50);
 
--- Level-0 parts: no projection
+-- Level-0 parts already have the projection (it is materialized on insert)
 select 'before materialize';
 select count() from system.projection_parts
     where database = currentDatabase() and table = 'mt_materialize' and active;

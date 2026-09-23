@@ -1,0 +1,74 @@
+level-0 data
+30	1	0
+10	1	1
+20	1	2
+60	2	0
+40	2	1
+50	2	2
+90	3	0
+70	3	1
+80	3	2
+
+level-0 primary index
+all_1_1_0	1	0
+all_1_1_0	1	1
+all_1_1_0	1	2
+all_1_1_0	1	2
+all_2_2_0	2	0
+all_2_2_0	2	1
+all_2_2_0	2	2
+all_2_2_0	2	2
+all_3_3_0	3	0
+all_3_3_0	3	1
+all_3_3_0	3	2
+all_3_3_0	3	2
+
+sorting key
+_block_number, _block_offset
+
+level-0 index lookup
+40
+
+level-0 index lookup explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.mtq_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [1, 1]), (_block_number in [2, 2]))
+        Parts: 1/3
+        Granules: 2/9
+        Search Algorithm: binary search
+      Ranges: 1
+
+after merge
+30	1	0
+10	1	1
+20	1	2
+60	2	0
+40	2	1
+50	2	2
+90	3	0
+70	3	1
+80	3	2
+
+after merge index lookup
+40
+
+after merge index lookup explain
+Expression ((Project names + Projection))
+  Expression ((WHERE + Change column names to column identifiers))
+    ReadFromMergeTree (default.mtq_basic)
+    Indexes:
+      PrimaryKey
+        Keys:
+          _block_number
+          _block_offset
+        Condition: and((_block_offset in [1, 1]), (_block_number in [2, 2]))
+        Parts: 1/1
+        Granules: 2/9
+        Search Algorithm: binary search
+      Ranges: 1

@@ -532,7 +532,10 @@ public:
 
     void removeFromVectorIndexCache(VectorSimilarityIndexCache * vector_similarity_index_cache) const;
 
-    void setIndex(Columns index_columns);
+    /// `metadata_snapshot` is the metadata the index was computed with (the projection's metadata for a
+    /// projection part). The current metadata of the table cannot be used here: a concurrent
+    /// `ALTER TABLE ... DROP PROJECTION` may have already removed the projection of the part being written.
+    void setIndex(Columns index_columns, const StorageInMemoryMetadata & metadata_snapshot);
     void unloadIndex();
     bool isIndexLoaded() const;
 
@@ -952,8 +955,13 @@ private:
     std::shared_ptr<Index> loadIndex() const;
 
     /// Optimize index. Drop useless columns from suffix of primary key.
-    template <typename Columns>
-    void optimizeIndexColumns(size_t marks_count, Columns & index_columns) const;
+    template <typename ColumnsT>
+    ColumnsT optimizeIndexColumns(size_t marks_count, ColumnsT index_columns) const;
+
+    /// For 0-level parts virtual columns in index may be incorrectly calculated during insert.
+    /// This method fixes some columns of primary key read from disk.
+    template <typename ColumnsT>
+    ColumnsT correctVirtualColumnsInIndex(size_t marks_count, ColumnsT index_columns, const StorageInMemoryMetadata & metadata_snapshot) const;
 
     /// Load rows count for this part from disk (for the newer storage format version).
     /// For the older format version calculates rows count from the size of a column with a fixed size.

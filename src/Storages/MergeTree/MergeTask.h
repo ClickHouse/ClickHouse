@@ -112,7 +112,8 @@ public:
         MergeTreeData * data_,
         MergeTreeDataMergerMutator * mutator_,
         PartitionActionBlocker * merges_blocker_,
-        ActionBlocker * ttl_merges_blocker_)
+        ActionBlocker * ttl_merges_blocker_,
+        std::optional<UInt64> temp_projection_block_number)
         {
             global_ctx = std::make_shared<GlobalRuntimeContext>();
 
@@ -140,6 +141,7 @@ public:
             global_ctx->txn = std::move(txn);
             global_ctx->suffix = std::move(suffix_);
             global_ctx->merging_params = std::move(merging_params_);
+            global_ctx->temp_projection_block_number = std::move(temp_projection_block_number);
 
             global_ctx->data_settings
                 = global_ctx->data->getSettings(global_ctx->projection ? &global_ctx->projection->settings_changes : nullptr);
@@ -245,8 +247,8 @@ private:
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
         NamesAndTypesList storage_columns{};
-        NamesAndTypesList virtual_columns{};
         NamesAndTypesList storage_columns_expired_by_ttl{};
+        NamesAndTypesList virtual_columns{};
         NamesAndTypesList minmax_idx_columns{};
 
         MergedBlockOutputStream::GatheredData gathered_data{};
@@ -294,6 +296,9 @@ private:
         MergeTreeTransactionPtr txn;
         String suffix;
         MergeTreeData::MergingParams merging_params{};
+
+        /// Block number {proj_name}_{block_number} for temporary projection parts built during projection merge tree.
+        std::optional<UInt64> temp_projection_block_number;
 
         scope_guard temporary_directory_lock;
 

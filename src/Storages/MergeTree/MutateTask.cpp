@@ -1809,7 +1809,7 @@ static void finalizeMutatedPart(
 
     /// It's important to set index after index granularity.
     if (!new_data_part->storage.getPrimaryIndexCache())
-        new_data_part->setIndex(*source_part->getIndex());
+        new_data_part->setIndex(*source_part->getIndex(), *metadata_snapshot);
 
     /// Load rest projections which are hardlinked
     bool noop = false;
@@ -2878,7 +2878,7 @@ private:
 
         auto out_mut = static_pointer_cast<MergedBlockOutputStream>(ctx->out);
         out_mut->finalizeIndexGranularity();
-        out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, nullptr);
+        out_mut->finalizePart(ctx->new_data_part, ctx->all_gathered_data, ctx->need_sync, /*init_index=*/true, /*total_columns_list=*/nullptr);
         ctx->out.reset();
     }
 
