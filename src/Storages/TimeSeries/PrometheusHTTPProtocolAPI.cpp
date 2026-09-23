@@ -33,6 +33,7 @@
 #include <Storages/TimeSeries/TimeSeriesNativeHistograms.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPromQLResultTimestampType.h>
 #include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -79,13 +80,13 @@ namespace
 {
 constexpr UInt32 LOOKBACK_DELTA_SCALE = 9;
 
-Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 timestamp_scale)
+Decimal64 parsePrometheusLookbackDelta(const String & value, UInt32 time_scale)
 {
     const auto high_precision_value = parseTimeSeriesDuration(value, LOOKBACK_DELTA_SCALE);
-    if (high_precision_value <= 0 || timestamp_scale >= LOOKBACK_DELTA_SCALE)
+    if (high_precision_value <= 0 || time_scale >= LOOKBACK_DELTA_SCALE)
         return high_precision_value;
 
-    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(LOOKBACK_DELTA_SCALE - timestamp_scale);
+    const auto divisor = DecimalUtils::scaleMultiplier<Decimal64>(LOOKBACK_DELTA_SCALE - time_scale);
     auto timestamp_ticks = high_precision_value.value / divisor;
     if (high_precision_value.value % divisor)
         ++timestamp_ticks;
@@ -209,20 +210,21 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     evaluation_settings.time_series_version = time_series_storage->getVersion();
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(evaluation_settings.time_series_version);
-    std::tie(evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type)
-        = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type);
+    evaluation_settings.table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
     evaluation_settings.storage_has_native_histograms = time_series_storage->hasTarget(ViewTarget::Histograms);
-    UInt32 timestamp_scale = tryGetDecimalScale(*evaluation_settings.timestamp_data_type).value_or(0);
+    evaluation_settings.time_scale = getPromQLResultTimestampScale(evaluation_settings.table_timestamp_type);
+    evaluation_settings.time_zone = getPromQLResultTimeZone(evaluation_settings.table_timestamp_type);
+    const UInt32 time_scale = evaluation_settings.time_scale;
 
     if (!params.lookback_delta_param.empty())
     {
-        const auto lookback_delta = parsePrometheusLookbackDelta(params.lookback_delta_param, timestamp_scale);
+        const auto lookback_delta = parsePrometheusLookbackDelta(params.lookback_delta_param, time_scale);
         if (lookback_delta > 0)
             evaluation_settings.instant_selector_window = lookback_delta;
     }
 
     auto query_tree = std::make_shared<PrometheusQueryTree>();
-    query_tree->parse(params.promql_query, timestamp_scale);
+    query_tree->parse(params.promql_query, time_scale);
     LOG_TRACE(log, "Parsed PromQL query: {}. Result type: {}", params.promql_query, query_tree->getResultType());
 
     if (params.type == Type::Instant)
@@ -234,7 +236,7 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         }
         else
         {
-            evaluation_settings.start_time = parseTimeSeriesTimestamp(params.time_param, timestamp_scale);
+            evaluation_settings.start_time = parseTimeSeriesTimestamp(params.time_param, time_scale);
             evaluation_settings.end_time = evaluation_settings.start_time;
             evaluation_settings.step = 0;
         }
@@ -242,9 +244,9 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     else if (params.type == Type::Range)
     {
         evaluation_settings.mode = PrometheusQueryEvaluationMode::QUERY_RANGE;
-        evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, timestamp_scale);
-        evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, timestamp_scale);
-        evaluation_settings.step = parseTimeSeriesDuration(params.step_param, timestamp_scale);
+        evaluation_settings.start_time = parseTimeSeriesTimestamp(params.start_param, time_scale);
+        evaluation_settings.end_time = parseTimeSeriesTimestamp(params.end_param, time_scale);
+        evaluation_settings.step = parseTimeSeriesDuration(params.step_param, time_scale);
     }
 
     PrometheusQueryToSQL::Converter converter{query_tree, evaluation_settings};
@@ -259,8 +261,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
         query_context->setSetting("enable_materialized_cte", true);
 
-    /// `AS MATERIALIZED` is honored by the analyzer only, so the generated SQL always runs the analyzer.
-    query_context->setSetting("allow_experimental_analyzer", true);
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
@@ -931,16 +931,19 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
 {
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(getContext(), false);
     const auto * samples_column_name = TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion());
-    auto timestamp_data_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    auto table_timestamp_type = splitTimeSeriesType(time_series_metadata->columns.get(samples_column_name).type).first;
+    auto tags_table = time_series_storage->getTargetTable(ViewTarget::Tags, getContext());
+    auto tags_table_metadata = tags_table->getInMemoryMetadataPtr(getContext(), false);
+    auto table_id_type = tags_table_metadata->columns.get(TimeSeriesColumnNames::ID).type;
+    const UInt32 time_scale = getPromQLResultTimestampScale(table_timestamp_type);
 
     /// The optional `start` and `end` parameters are parsed the same way as on the query endpoints.
     std::optional<DateTime64> min_time;
     std::optional<DateTime64> max_time;
     if (!start_param.empty())
-        min_time = parseTimeSeriesTimestamp(start_param, timestamp_scale);
+        min_time = parseTimeSeriesTimestamp(start_param, time_scale);
     if (!end_param.empty())
-        max_time = parseTimeSeriesTimestamp(end_param, timestamp_scale);
+        max_time = parseTimeSeriesTimestamp(end_param, time_scale);
     if (min_time && max_time && (*max_time < *min_time))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "'start' must not be greater than 'end'");
 
@@ -953,7 +956,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
         max_time.reset();
     }
 
-    auto tags_table_id = time_series_storage->getTargetTableID(ViewTarget::Tags, getContext());
+    auto tags_table_id = tags_table->getStorageID();
 
     /// Each `match[]` value must be an instant selector; the result is the union of the series matched by each selector.
     auto union_query = make_intrusive<ASTSelectWithUnionQuery>();
@@ -964,7 +967,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
     {
         PrometheusQueryTree selector;
         String error_message;
-        if (!selector.tryParse(match_param, timestamp_scale, &error_message))
+        if (!selector.tryParse(match_param, time_scale, &error_message))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the value {} of the 'match[]' parameter: {}",
                             quoteString(match_param), error_message);
 
@@ -979,7 +982,7 @@ ASTPtr PrometheusHTTPProtocolAPI::makeSeriesIDsQuery(
                             quoteString(match_param));
 
         auto select_ids_query = StorageTimeSeriesSelector::makeSelectIDsQuery(
-            tags_table_id, matchers, *time_series_settings, min_time, max_time, timestamp_data_type);
+            tags_table_id, *time_series_settings, table_timestamp_type, table_id_type, matchers, min_time, max_time, time_scale);
         const auto & select_ids = typeid_cast<const ASTSelectWithUnionQuery &>(*select_ids_query);
         list_of_selects->children.push_back(select_ids.list_of_selects->children.at(0));
     }
@@ -1018,9 +1021,6 @@ void PrometheusHTTPProtocolAPI::getSeries(
     auto sql_query = makeSelectFromSubquery({std::move(tags_expression)}, std::move(series_ids_query), /* distinct = */ true, sql_limit);
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
-
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 
@@ -1099,6 +1099,8 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 {
     const auto time_series_storage_id = time_series_storage->getStorageID();
 
+    const char * metric_family_column_name = TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage->getVersion());
+
     /// The metric families target table may declare its columns as String, LowCardinality(String) or Nullable(String),
     /// so normalize them to plain strings with NULL meaning an empty string.
     auto normalize_column = [](const char * column_name)
@@ -1122,13 +1124,15 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     if (limit_per_metric > 0)
         group_uniq_array = addParametersToAggregateFunction(std::move(group_uniq_array), make_intrusive<ASTLiteral>(limit_per_metric));
 
-    auto metric_family = normalize_column(TimeSeriesColumnNames::MetricFamilyName);
-    metric_family->setAlias("metric_family");
+    /// The alias must differ from the names of the columns of the metric families target table, otherwise the GROUP BY key
+    /// below would refer to the alias instead of the column.
+    auto metric_family = normalize_column(metric_family_column_name);
+    metric_family->setAlias("__metric_family");
     auto metadata_entries = makeASTFunction("arraySort", std::move(group_uniq_array));
     metadata_entries->setAlias("metadata");
 
-    /// SELECT ifNull(toString(metric_family_name), '') AS metric_family, arraySort(groupUniqArray(...)) AS metadata
-    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family_name = metric]
+    /// SELECT ifNull(toString(metric_family), '') AS __metric_family, arraySort(groupUniqArray(...)) AS metadata
+    /// FROM timeSeriesMetricFamilies(database, table) [WHERE metric_family = metric]
     /// GROUP BY ... ORDER BY ... [LIMIT limit]
     PrometheusQueryToSQL::SelectQueryBuilder builder;
     builder.select_list.push_back(std::move(metric_family));
@@ -1142,11 +1146,11 @@ void PrometheusHTTPProtocolAPI::getMetadata(
     if (!metric_param.empty())
         builder.where = makeASTFunction(
             "equals",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTIdentifier>(metric_family_column_name),
             make_intrusive<ASTLiteral>(metric_param));
 
-    builder.group_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
-    builder.order_by.push_back(normalize_column(TimeSeriesColumnNames::MetricFamilyName));
+    builder.group_by.push_back(normalize_column(metric_family_column_name));
+    builder.order_by.push_back(normalize_column(metric_family_column_name));
     builder.order_direction = 1;
 
     /// LIMIT 0 returns an empty result, matching how Prometheus handles `limit=0`.
@@ -1181,7 +1185,7 @@ void PrometheusHTTPProtocolAPI::getMetadata(
 
         auto write_block = [&](const Block & result_block)
         {
-            const auto & metric_family_column = *result_block.getByName("metric_family").column;
+            const auto & metric_family_column = *result_block.getByName("__metric_family").column;
             const auto & metadata_column = typeid_cast<const ColumnArray &>(*result_block.getByName("metadata").column);
             const auto & offsets = metadata_column.getOffsets();
             const auto & entry_column = typeid_cast<const ColumnTuple &>(metadata_column.getData());
@@ -1334,9 +1338,6 @@ void PrometheusHTTPProtocolAPI::getLabelsOrLabelValues(
     auto sql_query = makeSelectFromSubquery({std::move(array_expression)}, std::move(series_ids_query), /* distinct = */ false, {});
 
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
-
-    /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
 

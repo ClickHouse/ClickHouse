@@ -192,10 +192,10 @@ SQLQueryPiece applyFunctionQuantileOverTime(
     aggregate_function_arguments.push_back(std::move(quantile_level.ast));
     ASTPtr result_values = addParametersToAggregateFunction(
         makeASTFunction("timeSeriesQuantileToGrid", std::move(aggregate_function_arguments)),
-        timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
+        timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+        timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+        timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+        timeSeriesDurationToAST(window, context.result_timestamp_type));
 
     if (fixed_at_node)
         result_values = repeatFixedAtResultOverGrid(

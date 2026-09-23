@@ -176,7 +176,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
                             "if",
                             makeASTFunction("isNull", make_intrusive<ASTIdentifier>("k")),
                             make_intrusive<ASTLiteral>(Field{}),
-                            timeSeriesScalarToAST(1, context.scalar_data_type))),
+                            timeSeriesScalarToAST(1))),
                     make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds)));
                 builder.select_list.back()->setAlias(ColumnNames::Values);
 
@@ -220,7 +220,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             "arrayResize",
             make_intrusive<ASTLiteral>(Array{}),
             make_intrusive<ASTLiteral>(num_steps),
-            timeSeriesScalarToAST(1, context.scalar_data_type)));
+            timeSeriesScalarToAST(1)));
         builder.select_list.back()->setAlias(ColumnNames::Values);
         res.select_query = builder.getSelectQuery();
         return res;
@@ -231,7 +231,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
     /// when the synthetic series must be produced, so a neutral row is added to the input: an array of NULLs with one
     /// element per step. It doesn't change any count but guarantees that the aggregation always has an input row.
     ///
-    /// SELECT arrayResize(CAST([], 'Array(Nullable(<scalar_data_type>))'), <num_steps>, NULL) AS values
+    /// SELECT arrayResize(CAST([], 'Array(Nullable(Float64))'), <num_steps>, NULL) AS values
     String neutral_row_subquery;
     {
         SelectQueryBuilder builder;
@@ -240,7 +240,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             makeASTFunction(
                 "CAST",
                 make_intrusive<ASTLiteral>(Array{}),
-                make_intrusive<ASTLiteral>(fmt::format("Array(Nullable({}))", context.scalar_data_type->getName()))),
+                make_intrusive<ASTLiteral>("Array(Nullable(Float64))")),
             make_intrusive<ASTLiteral>(num_steps),
             make_intrusive<ASTLiteral>(Field{})));
         builder.select_list.back()->setAlias(ColumnNames::Values);
@@ -275,7 +275,7 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
             makeASTFunction(
                 "if",
                 makeASTFunction("equals", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTLiteral>(0u)),
-                timeSeriesScalarToAST(1, context.scalar_data_type),
+                timeSeriesScalarToAST(1),
                 make_intrusive<ASTLiteral>(Field{}))),
         makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values))));
     builder.select_list.back()->setAlias(ColumnNames::Values);
