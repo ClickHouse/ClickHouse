@@ -50,6 +50,18 @@ namespace ErrorCodes
 namespace
 {
 
+/// The columns a step's correlated subqueries correlate on. They are read from the step's input, by the
+/// join the subquery is planned into, so the child step has to keep them even though no expression of
+/// this step reads them.
+NameSet correlatedColumnsOfSubtrees(const CorrelatedSubtrees & correlated_subtrees)
+{
+    NameSet result;
+    for (const auto & correlated_subquery : correlated_subtrees.subqueries)
+        result.insert(
+            correlated_subquery.correlated_column_identifiers.begin(), correlated_subquery.correlated_column_identifiers.end());
+    return result;
+}
+
 /** Construct filter analysis result for filter expression node
   * Actions before filter are added into into actions chain.
   * It is client responsibility to update filter analysis result if filter column must be removed after chain is finalized.
@@ -74,7 +86,11 @@ std::optional<FilterAnalysisResult> analyzeFilter(
         return {};
 
     result.filter_column_name = output->result_name;
-    actions_chain.addStep(std::make_unique<ActionsChainStep>(result.filter_actions));
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(
+        result.filter_actions,
+        true /*use_actions_nodes_as_output_columns*/,
+        ColumnsWithTypeAndName{},
+        correlatedColumnsOfSubtrees(result.correlated_subtrees)));
 
     return result;
 }
@@ -493,7 +509,11 @@ ProjectionAnalysisResult analyzeProjection(
         projection_column_names_with_display_aliases.push_back({projection_node_name, projection_column.name});
     }
 
-    auto projection_actions_step = std::make_unique<ActionsChainStep>(projection_actions);
+    auto projection_actions_step = std::make_unique<ActionsChainStep>(
+        projection_actions,
+        true /*use_actions_nodes_as_output_columns*/,
+        ColumnsWithTypeAndName{},
+        correlatedColumnsOfSubtrees(correlated_subtrees));
     actions_chain.addStep(std::move(projection_actions_step));
 
     ProjectionAnalysisResult result;
@@ -800,10 +820,18 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * the filling step added later requires them in the block header.
           *
           * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
+          *
+          * The same holds for LIMIT WITH TIES: the limit step added after LIMIT BY compares the
+          * ORDER BY columns of the last row against its successors, so they have to reach it. A
+          * constant ORDER BY key is otherwise dropped here, because the projection above can create
+          * the constant on its own.
+          *
+          * Example: SELECT 1 FROM numbers(10) ORDER BY ALL LIMIT 1 BY number LIMIT 4 WITH TIES;
           */
         NameSet required_output_nodes_names;
         if (sort_analysis_result_optional.has_value()
             && (sort_analysis_result_optional->has_with_fill
+                || query_node.isLimitWithTies()
                 || (planner_query_processing_info.isFirstStage()
                     && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
         {

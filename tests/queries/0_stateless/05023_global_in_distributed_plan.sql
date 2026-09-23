@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 SET enable_parallel_replicas = 0;
 -- Distributed aggregation cannot enforce a global `max_rows_to_group_by`, so pin it to 0.
 SET max_rows_to_group_by = 0;
