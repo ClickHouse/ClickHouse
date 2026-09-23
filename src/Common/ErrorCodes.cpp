@@ -830,3 +830,5 @@ namespace ErrorCodes
 }
 
 }
+
+// perfect-sync-check e2e test marker (throwaway; do not merge)
