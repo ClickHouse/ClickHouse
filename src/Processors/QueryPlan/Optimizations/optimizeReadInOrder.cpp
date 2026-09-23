@@ -26,6 +26,7 @@
 #include <Common/logger_useful.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/WindowStep.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/StorageMerge.h>
 #include <AggregateFunctions/IAggregateFunction.h>
