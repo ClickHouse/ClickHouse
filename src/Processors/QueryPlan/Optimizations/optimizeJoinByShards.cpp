@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -140,6 +142,16 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
+        /// The layer split compares key values as `greater(tuple(pk), tuple(border))`, and an IEEE
+        /// comparison answers false for `NaN` against anything, so a row with a `NaN` key fails the
+        /// filter of every layer - including the last one, which only has a lower bound - and is
+        /// dropped at read time. `Null` and a `NaN` nested in a container compare inconsistently there
+        /// for the same reason, which is why every other consumer of
+        /// `splitIntersectingPartsRangesIntoLayers` gates on this predicate. Only the prefix the split
+        /// actually reads has to be safe, so an unsafe column just ends the prefix here.
+        if (!isSafePrimaryDataKeyType(*lhs_pk.data_types[pos]) || !isSafePrimaryDataKeyType(*rhs_pk.data_types[pos]))
+            break;
+
         bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;
         bool rdesc = (pos < rhs_pk.reverse_flags.size()) ? rhs_pk.reverse_flags[pos] : false;
         if (ldesc != rdesc)
@@ -241,6 +253,8 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
     /// Here we take all the parts from all the sources.
     /// Update part index to restore back the set of parts.
     RangesInDataParts all_parts;
+    /// The `part_index_in_query` a part had in its source, by its position in `all_parts`.
+    std::vector<size_t> original_part_indexes;
     std::vector<ReadFromMergeTree::AnalysisResultPtr> analysis_results;
     for (auto & source : data.sources)
     {
@@ -250,12 +264,15 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
 
         size_t added_parts = all_parts.size();
         /// Renumber part_index_in_query to be contiguous starting from added_parts.
-        /// filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
+        /// Index analysis and filterPartsByQueryConditionCache may drop parts from selectRangesToRead(),
         /// leaving non-contiguous part_index_in_query values. The distribution logic
         /// below assumes contiguous indices to assign parts back to their sources.
+        /// The original index is remembered: the read step keys its per-part state
+        /// (the ranges read by the skip indexes, the `_part_index` virtual column) by it.
         for (size_t local_idx = 0; local_idx < analysis_result->parts_with_ranges.size(); ++local_idx)
         {
             all_parts.push_back(analysis_result->parts_with_ranges[local_idx]);
+            original_part_indexes.push_back(all_parts.back().part_index_in_query);
             all_parts.back().part_index_in_query = added_parts + local_idx;
         }
 
@@ -293,7 +310,7 @@ static void apply(struct JoinsAndSourcesWithCommonPrimaryKeyPrefix & data)
             while (next_part < layer.size() && layer[next_part].part_index_in_query < sum_parts + num_parts_in_source)
             {
                 auto & new_part_range = new_layer.emplace_back(layer[next_part]);
-                new_part_range.part_index_in_query -= sum_parts;
+                new_part_range.part_index_in_query = original_part_indexes[new_part_range.part_index_in_query];
                 ++next_part;
             }
             sum_parts += num_parts_in_source;
@@ -481,38 +498,6 @@ void optimizeJoinByShards(QueryPlan::Node & root)
         apply(result->joins);
 }
 
-/// The shard is picked by the hash of the key's byte representation (`ScatterByPartitionTransform` ->
-/// `IColumn::computeHashInto`), while `FullSortingMergeJoin` and `WindowTransform` match keys with
-/// `compareAt`. For some types the two disagree - values that compare equal can hash differently - so
-/// hash sharding would scatter such values into different shards: a per-shard merge join would lose the
-/// match, and a per-bucket window would split one logical partition. Known cases:
-///   - Floating-point: `-0.0` / `+0.0` (and NaNs) compare equal but have different bit patterns.
-///   - `Object('json')` / `JSON` and `Dynamic`: `compareAt` compares the logical value, the hash depends on
-///     the physical layout (typed/dynamic subcolumn vs `shared_data`, typed vs shared variant), and that
-///     layout can differ between blocks. `Dynamic` keys are rejected earlier by
-///     `TableJoin::inferJoinKeyCommonType` unless `allow_dynamic_type_in_join_keys` is enabled.
-/// Detected at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`/`Variant`.
-bool keyTypeBreaksHashSharding(const IDataType & type);
-bool keyTypeBreaksHashSharding(const IDataType & type)
-{
-    auto breaks_sharding = [](const IDataType & t)
-    {
-        WhichDataType which(t);
-        return which.isFloat() || which.isObject() || which.isDynamic();
-    };
-
-    if (breaks_sharding(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (breaks_sharding(child))
-            result = true;
-    });
-    return result;
-}
-
 /// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the
 /// join keys.
 ///
@@ -521,8 +506,8 @@ bool keyTypeBreaksHashSharding(const IDataType & type)
 /// `SortingStep` is switched to scatter the rows by the hash of the join keys into independent partitions
 /// and sort each partition (one sorted stream per shard), and the join is executed shard-by-shard
 /// (`JoinStep::enableJoinByLayers` -> `joinPipelinesYShapedByShards`). Because the partitioning depends only
-/// on the join-key values (and the key types match - `FullSortingMergeJoin` requires it), equal keys land
-/// in the same shard on both sides. The join output is unordered.
+/// on the join-key values (and equal values hash equally through `LowCardinality`/`Nullable` wrappers, per
+/// `IColumn::computeHashInto`), equal keys land in the same shard on both sides. The join output is unordered.
 void optimizeParallelFullSortingMergeJoin(QueryPlan::Node & root, size_t num_shards)
 {
     /// Need at least two shards to gain anything; with one shard this is a plain single merge join.

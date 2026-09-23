@@ -20,6 +20,11 @@ public:
 
     String getName() const override { return "GatherExchange"; }
 
+    QueryPlanStepPtr clone() const override
+    {
+        return std::make_unique<GatherExchangeStep>(input_headers.front(), source_bucket_count, maintain_sort_description);
+    }
+
     void transformPipeline(QueryPipelineBuilder & /*pipeline*/, const BuildQueryPipelineSettings &) override
     {
         /// Doesn't change the pipeline if executed directly

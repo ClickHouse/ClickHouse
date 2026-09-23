@@ -13,6 +13,8 @@ namespace DB
 struct Settings;
 class QueryStatus;
 using QueryStatusPtr = std::shared_ptr<QueryStatus>;
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
 struct ITemporaryFileLookup;
 using TemporaryFileLookupPtr = std::shared_ptr<ITemporaryFileLookup>;
 using BlockMarshallingCallback = std::function<Block(const Block & block)>;
@@ -26,9 +28,11 @@ struct BuildQueryPipelineSettings
     explicit BuildQueryPipelineSettings(ContextPtr from);
 
     bool enable_multiple_filters_transforms_for_and_chain;
+    bool allow_preliminary_distinct_abandoning;
 
     ExpressionActionsSettings actions_settings;
     QueryStatusPtr process_list_element;
+    TemporaryDataOnDiskScopePtr temp_data_on_disk;
     ProgressCallback progress_callback;
     TemporaryFileLookupPtr temporary_file_lookup;
     BlockMarshallingCallback block_marshalling_callback;

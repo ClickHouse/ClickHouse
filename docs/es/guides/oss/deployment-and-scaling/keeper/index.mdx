@@ -218,9 +218,20 @@ zk_ephemerals_count     0
 zk_approximate_data_size        723
 zk_open_file_descriptor_count   310
 zk_max_file_descriptor_count    10240
+zk_leader_uptime        1234
+zk_sum_leader_unavailable_time 1234
+zk_cnt_leader_unavailable_time 1
+zk_sum_election_time 1234
+zk_cnt_election_time 1
 zk_followers    0
 zk_synced_followers     0
 ```
+
+`zk_sum_leader_unavailable_time`, `zk_cnt_leader_unavailable_time`, `zk_sum_election_time` y `zk_cnt_election_time` son métricas acumulativas exclusivas del líder. Son observaciones por servidor, no mediciones de disponibilidad de todo el clúster: el seguimiento comienza cuando ese servidor deja de observar un líder activo. Durante una partición de red, esto puede incluir el tiempo durante el cual un líder anterior sigue activo en otra partición. Las métricas de elección registran únicamente una elección exitosa posterior a una ventana sin líder observada localmente; una transferencia de liderazgo que no expone un estado sin líder muestreado no se cuenta intencionadamente.
+
+Keeper toma una muestra de su estado de líder local de NuRaft una vez por cada `heart_beat_interval_ms`, pero nunca con una frecuencia superior a una vez cada 100 milisegundos. Cada límite puede diferir de esa transición de estado local hasta en el intervalo efectivo, y pueden omitirse ventanas más cortas que ese intervalo. Keeper registra la finalización de la elección local en `BecomeLeader` de NuRaft. `srst` restablece los cuatro valores.
+
+La duración de la ventana observada localmente más reciente de cada tipo también se exporta a `system.asynchronous_metrics` como `KeeperLastLeaderElectionTime` y `KeeperLastLeaderUnavailableTime`, en milisegundos. `KeeperLastLeaderElectionTime` sigue la misma definición de ventana sin líder que `zk_sum_election_time`. Ambos también son exclusivos del líder: un nodo que no es el líder activo o que aún no ha completado una ventana informa `0`. `srst` los restablece junto con los contadores acumulativos.
 
 * `srvr`: Muestra todos los detalles del servidor.
 
@@ -253,13 +264,13 @@ Mode: leader
 Node count: 4
 ```
 
-* `srst`: Reinicia las estadísticas del servidor. El comando afectará el resultado de `srvr`, `mntr` y `stat`.
+* `srst`: Reinicia las estadísticas del servidor. El comando afectará al resultado de `srvr`, `mntr` y `stat`.
 
 ```response
 Server stats reset.
 ```
 
-* `conf`: Muestra detalles sobre la configuración del servicio.
+* `conf`: Imprime detalles de la configuración del servicio.
 
 ```response
 server_id=1
@@ -372,7 +383,7 @@ Sessions with Ephemerals (1):
 100
 ```
 
-* `lgif`: Información del log de Keeper. `first_log_idx` : mi primer índice de log en el almacén de logs; `first_log_term` : mi primer término de log; `last_log_idx` : mi último índice de log en el almacén de logs; `last_log_term` : mi último término de log; `last_committed_log_idx` : mi último índice de log confirmado en la máquina de estados; `leader_committed_log_idx` : índice de log confirmado del líder desde mi perspectiva; `target_committed_log_idx` : índice de log de destino que debe confirmarse; `last_snapshot_idx` : el índice de log confirmado más alto de la última snapshot.
+* `lgif`: Información del log de Keeper. `first_log_idx` : mi primer índice de log en el almacén de logs; `first_log_term` : mi primer término de log; `last_log_idx` : mi último índice de log en el almacén de logs; `last_log_term` : mi último término de log; `last_committed_log_idx` : mi último índice de log confirmado en la máquina de estados; `leader_committed_log_idx` : índice de log confirmado del líder desde mi perspectiva; `target_committed_log_idx` : índice de log de destino que debe confirmarse; `last_snapshot_idx` : el índice de log confirmado más alto de la última instantánea.
 
 ```response
 first_log_idx   1
@@ -385,13 +396,13 @@ target_committed_log_idx    101
 last_snapshot_idx   50
 ```
 
-* `rqld`: Solicita convertirse en el nuevo líder. Devuelve `Sent leadership request to leader.` si la solicitud se envía, o `Failed to send leadership request to leader.` si no se envía. Si el nodo ya es el líder, el resultado es el mismo que si la solicitud se hubiera enviado.
+* `rqld`: Solicitud para convertirse en el nuevo líder. Devuelve `Sent leadership request to leader.` si se envía la solicitud o `Failed to send leadership request to leader.` si no se envía. Si el nodo ya es el líder, el resultado es el mismo que si se hubiera enviado la solicitud.
 
 ```response
 Sent leadership request to leader.
 ```
 
-* `ftfl`: Enumera todas las banderas de funcionalidad y si están habilitadas en la instancia de Keeper.
+* `ftfl`: Enumera todos las banderas de funcionalidad e indica si están enabled en la instancia de Keeper.
 
 ```response
 filtered_list   1
@@ -399,13 +410,13 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`: Solicitud para ceder el liderazgo y pasar a ser seguidor. Si el servidor que recibe la solicitud es el líder, primero pausará las operaciones de escritura, esperará a que el sucesor (el líder actual nunca puede ser el sucesor) termine de ponerse al día con el registro más reciente y, a continuación, dejará el cargo. El sucesor se elegirá automáticamente. Devuelve `Sent yield leadership request to leader.` si la solicitud se envió o `Failed to send yield leadership request to leader.` si no se envió. Si el nodo ya es seguidor, el resultado es el mismo que si la solicitud se hubiera enviado.
+* `ydld`: Solicita ceder el liderazgo y convertirse en seguidor. Si el servidor que recibe la solicitud es el líder, primero pausará las operaciones de escritura, esperará a que el sucesor (el líder actual nunca puede ser el sucesor) termine de ponerse al día con el último log y, a continuación, renunciará. El sucesor se elegirá automáticamente. Devuelve `Sent yield leadership request to leader.` si se envía la solicitud o `Failed to send yield leadership request to leader.` si no se envía. Si el nodo ya es seguidor, el resultado es el mismo que si se envía la solicitud.
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`: Devuelve los valores de todos los eventos recopilados. Para cada evento, devuelve su nombre, su valor y su descripción.
+* `pfev`: Devuelve los valores de todos los eventos recopilados. Para cada evento, devuelve su nombre, valor y descripción.
 
 ```response
 FileOpen        62      Number of files opened.

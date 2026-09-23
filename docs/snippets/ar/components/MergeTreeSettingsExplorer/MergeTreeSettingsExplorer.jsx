@@ -431,9 +431,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "merge_*",
-      count: 2,
+      count: 3,
       settings: [
         { name: "merge_total_max_bytes_to_prewarm_cache", path: "/merge#merge_total_max_bytes_to_prewarm_cache", default: "16106127360" },
+        { name: "merge_use_batch_sorting_queue", path: "/merge#merge_use_batch_sorting_queue", default: "0" },
         { name: "merge_workload", path: "/merge#merge_workload", default: '""' }
       ],
       children: []
@@ -725,9 +726,10 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "shared_merge_*",
-      count: 51,
+      count: 53,
       settings: [
         { name: "shared_merge_tree_activate_coordinated_merges_tasks", path: "/shared-merge#shared_merge_tree_activate_coordinated_merges_tasks", default: "0" },
+        { name: "shared_merge_tree_blobs_list_inline_file_max_bytes", path: "/shared-merge#shared_merge_tree_blobs_list_inline_file_max_bytes", default: "0" },
         { name: "shared_merge_tree_create_per_replica_metadata_nodes", path: "/shared-merge#shared_merge_tree_create_per_replica_metadata_nodes", default: "0" },
         { name: "shared_merge_tree_disable_merges_and_mutations_assignment", path: "/shared-merge#shared_merge_tree_disable_merges_and_mutations_assignment", default: "0" },
         { name: "shared_merge_tree_empty_partition_lifetime", path: "/shared-merge#shared_merge_tree_empty_partition_lifetime", default: "86400" },
@@ -784,6 +786,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
           default: "0"
         },
         { name: "shared_merge_tree_update_replica_flags_delay_ms", path: "/shared-merge#shared_merge_tree_update_replica_flags_delay_ms", default: "30000" },
+        { name: "shared_merge_tree_use_blobs_list_for_parts", path: "/shared-merge#shared_merge_tree_use_blobs_list_for_parts", default: "0" },
         { name: "shared_merge_tree_use_metadata_hints_cache", path: "/shared-merge#shared_merge_tree_use_metadata_hints_cache", default: "1" },
         { name: "shared_merge_tree_use_outdated_parts_compact_format", path: "/shared-merge#shared_merge_tree_use_outdated_parts_compact_format", default: "1" },
         { name: "shared_merge_tree_use_too_many_parts_count_from_virtual_parts", path: "/shared-merge#shared_merge_tree_use_too_many_parts_count_from_virtual_parts", default: "0" },
@@ -813,14 +816,15 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "text_index_*",
-      count: 6,
+      count: 7,
       settings: [
         { name: "text_index_dictionary_block_frontcoding_compression", path: "/text-index#text_index_dictionary_block_frontcoding_compression", default: "1" },
         { name: "text_index_dictionary_block_size", path: "/text-index#text_index_dictionary_block_size", default: "512" },
         { name: "text_index_max_memory_usage_before_flush", path: "/text-index#text_index_max_memory_usage_before_flush", default: "1073741824" },
         { name: "text_index_max_processed_tokens_before_flush", path: "/text-index#text_index_max_processed_tokens_before_flush", default: "100000000" },
         { name: "text_index_posting_list_block_size", path: "/text-index#text_index_posting_list_block_size", default: "1048576" },
-        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" }
+        { name: "text_index_posting_list_codec", path: "/text-index#text_index_posting_list_codec", default: "none" },
+        { name: "text_index_serialization_version", path: "/text-index#text_index_serialization_version", default: "v2_with_positions" }
       ],
       children: []
     },
@@ -891,7 +895,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "أخرى",
-      count: 51,
+      count: 52,
       settings: [
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
         { name: "add_implicit_sign_column_constraint_for_collapsing_engine", path: "/other#add_implicit_sign_column_constraint_for_collapsing_engine", default: "0" },
@@ -928,6 +932,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "optimize_row_order", path: "/other#optimize_row_order", default: "0" },
         { name: "packed_skip_index_max_bytes", path: "/other#packed_skip_index_max_bytes", default: "1048576" },
         { name: "part_minmax_index_columns", path: "/other#part_minmax_index_columns", default: "partition_key_only" },
+        { name: "patch_parts_version", path: "/other#patch_parts_version", default: "v2" },
         { name: "propagate_types_serialization_versions_to_nested_types", path: "/other#propagate_types_serialization_versions_to_nested_types", default: "1" },
         { name: "ratio_of_defaults_for_sparse_serialization", path: "/other#ratio_of_defaults_for_sparse_serialization", default: "0.9375" },
         { name: "reduce_blocking_parts_sleep_ms", path: "/other#reduce_blocking_parts_sleep_ms", default: "5000" },

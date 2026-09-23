@@ -68,13 +68,13 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+<Note>
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantile`](/reference/functions/aggregate-functions/quantile).
-:::
+</Note>
 
-:::note
+<Note>
 If no values are passed to the function (when using `quantileTimingIf`), [NaN](/reference/data-types/float#nan-and-inf) is returned. The purpose of this is to differentiate these cases from cases that result in zero. See [ORDER BY clause](/reference/statements/select/order-by) for notes on sorting `NaN` values.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 quantileTimingWeighted(level)(expr, weight)
@@ -125,9 +125,9 @@ The calculation is accurate if:
 
 Otherwise, the result of the calculation is rounded to the nearest multiple of 16 ms.
 
-:::note
+<Note>
 For calculating page loading time quantiles, this function is more effective and accurate than [`quantiles`](/reference/functions/aggregate-functions/quantiles).
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax_quantiles = R"(
 quantilesTimingWeighted(level1, level2, ...)(expr, weight)
@@ -144,11 +144,14 @@ quantilesTimingWeighted(level1, level2, ...)(expr, weight)
     {
         "Computing multiple weighted timing quantiles",
         R"(
+CREATE TABLE t (response_time UInt32, weight UInt32) ENGINE = Memory;
+INSERT INTO t VALUES (68, 1), (104, 2), (112, 3), (126, 2), (138, 1), (162, 1);
+
 SELECT quantilesTimingWeighted(0.5, 0.99)(response_time, weight) FROM t;
         )",
         R"(
 ┌─quantilesTimingWeighted(0.5, 0.99)(response_time, weight)─┐
-│ [112, 162]                                                │
+│ [112,162]                                                 │
 └───────────────────────────────────────────────────────────┘
         )"
     }

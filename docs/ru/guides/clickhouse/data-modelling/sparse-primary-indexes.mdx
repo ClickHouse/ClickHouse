@@ -400,7 +400,7 @@ ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-c
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  возвращает `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` на тестовой машине.
+  возвращает `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` на тестовой машине.
 
   **Шаг 2: Получите user&#95;files&#95;path**
 
@@ -408,12 +408,12 @@ ClickHouse — это <a href="/ru/get-started/about/distinctive-features#true-c
 
   и в Linux вы можете проверить, не было ли оно изменено: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  На тестовой машине этот путь — `/Users/tomschreiber/Clickhouse/user_files/`
+  На тестовой машине этот путь — `/Users/tomschreiber/ClickHouse/user_files/`
 
   **Шаг 3: Скопируйте файл первичного индекса в user&#95;files&#95;path**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   Теперь мы можем проверить содержимое первичного индекса через SQL:

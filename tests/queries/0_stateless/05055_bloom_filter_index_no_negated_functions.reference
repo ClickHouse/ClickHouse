@@ -1,0 +1,28 @@
+-- notEquals does not use the index
+-- NOT IN does not use the index
+-- a negated condition next to a positive one still prunes
+1
+8
+-- equals and IN still use the index
+0
+0
+-- array conditions still use the index
+8
+8
+-- a disjunction over two columns still uses both indexes
+16
+16
+-- a negated atom in a disjunction leaves only that index unused
+64
+64
+64
+-- a positive disjunction still prunes by combining both indexes
+8
+-- a doubly negated condition folds back to a positive atom and still uses the index
+0
+0
+-- results are unchanged
+64
+64
+64
+64

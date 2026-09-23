@@ -7,7 +7,50 @@
       "icon": "/images/menu-icon-lightning.svg",
       "pages": [
         "ru/get-started/index",
-        "ru/get-started/quickstarts/home",
+        {
+          "expandable": true,
+          "expanded": false,
+          "group": "Быстрый старт",
+          "pages": [
+            "ru/get-started/quickstarts/home",
+            {
+              "expanded": false,
+              "group": "Все сценарии использования",
+              "pages": [
+                "ru/get-started/setup/cloud",
+                "ru/get-started/quickstarts/obtain-your-cloud-connection-details",
+                "ru/get-started/quickstarts/insert-data-using-clickhouse-client",
+                "ru/get-started/quickstarts/creating-tables",
+                "ru/get-started/quickstarts/writing-queries",
+                "ru/get-started/quickstarts/create-your-first-mergetree-table"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Аналитика в реальном времени",
+              "pages": [
+                "ru/get-started/quickstarts/create-your-first-materialized-view",
+                "ru/get-started/quickstarts/create-your-first-projection",
+                "ru/get-started/quickstarts/tutorial"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Хранилище данных",
+              "pages": [
+                "ru/get-started/quickstarts/connect-your-iceberg-catalog",
+                "ru/get-started/quickstarts/mutations"
+              ]
+            },
+            {
+              "expanded": false,
+              "group": "Обсервабилити",
+              "pages": [
+                "ru/get-started/quickstarts/working-with-the-map-type"
+              ]
+            }
+          ]
+        },
         {
           "expandable": true,
           "expanded": true,

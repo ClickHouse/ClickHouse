@@ -82,9 +82,17 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Когда вы добавляете разрешения на доступ к данным в пользовательскую роль, ClickHouse Cloud создает соответствующую роль в каждом выбранном сервисе с префиксом `cloud:`. Например, пользовательская роль с именем `readonly` отображается в базе данных как `cloud:readonly`. Участники пользовательской роли получают эти разрешения базы данных при подключении к сервису через беспарольную аутентификацию в SQL Console.
 
-<Info>
-  Роли, вручную назначенные в базе данных с использованием [соглашения об именовании `sql-console-role:<email>`](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles), имеют приоритет над ролями, назначенными через консоль.
-</Info>
+<Tip>
+  Роли баз данных, управляемые Cloud, заменяют вручную назначенные роли [`sql-console-role:<email>`](/ru/products/cloud/guides/security/cloud-access-management/manage-database-users#sql-console-users-and-roles), которые несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
+
+<div id="manage-database-roles-prerequisites">
+  ### Предварительные требования
+</div>
+
+Пользовательские роли базы данных в сервисе зависят от [JWT-аутентификации](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) и не применяются, пока она отключена. Прежде чем добавлять разрешения на доступ к данным в роль, перейдите к сервису, откройте `Settings` и найдите карточку `JWT authentication` в разделе `Security`. Убедитесь, что переключатель `SQL Console` включен.
+
+<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="Карточка JWT-аутентификации с включенным переключателем SQL Console" size="lg" force />
 
 <Steps>
   <Step title="Добавьте разрешения на доступ к данным в роль" id="add-data-permissions">
@@ -92,17 +100,17 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   </Step>
 
   <Step title="Выберите сервис" id="select-data-permissions-service">
-    Выберите сервис, к которому применяются разрешения. Чтобы применить разрешения к нескольким сервисам, добавьте другие сервисы.
+    Выберите сервис, к которому применяются разрешения. Чтобы применить одинаковые разрешения `Read-only` или `Admin` к нескольким сервисам, добавьте другие сервисы.
   </Step>
 
   <Step title="Выберите уровень доступа" id="choose-data-access-level">
-    Выберите уровень доступа `Read-only`, `Admin` или `Custom`. При выборе `Custom` задайте конкретные разрешения на доступ к данным с помощью команд ClickHouse [`GRANT`](/ru/reference/statements/grant).
+    Выберите уровень доступа `Read-only`, `Admin` или `Custom`. При выборе `Custom` задайте конкретные разрешения на доступ к данным с помощью команд ClickHouse [`GRANT`](/ru/reference/statements/grant). Доступ `Custom` можно выбрать только для одного сервиса; чтобы задать пользовательские разрешения для нескольких сервисов, добавьте отдельное разрешение `Data` для каждого сервиса.
 
     <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="Диалог создания новой роли с разрешениями на доступ к данным, заданными пользовательскими командами GRANT" size="md" />
   </Step>
 
   <Step title="Создайте роль" id="create-role-with-data-permissions">
-    Нажмите `Create role`. Роли базы данных будут созданы в выбранных сервисах.
+    Нажмите `Create role`. Роли базы данных будут созданы в выбранных сервисах. Распространение ролей на сервис может занять до 10 минут, но пользователи, которым назначена эта роль, получают ее разрешения сразу при выполнении запросов к сервису.
   </Step>
 </Steps>
 
@@ -110,7 +118,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   ### Проверка ролей базы данных
 </div>
 
-Роли, управляемые через консоль, создаются в базе данных с префиксом `cloud:` и типом хранения `cloud`. Чтобы получить их список, выполните запрос к таблице `system.roles` в сервисе:
+Роли, управляемые через консоль, создаются в базе данных с префиксом `cloud:` и типом хранения `cloud` и могут появиться в течение 10 минут после создания. Чтобы получить их список, выполните запрос к таблице `system.roles` в сервисе:
 
 ```sql
 SELECT * FROM system.roles;
