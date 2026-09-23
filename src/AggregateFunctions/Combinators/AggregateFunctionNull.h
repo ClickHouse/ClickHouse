@@ -254,10 +254,25 @@ public:
             if (getFlag(place))
             {
                 if constexpr (merge)
+                {
                     nested_function->insertMergeResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
+                    to_concrete.getNullMapData().push_back(false);
+                }
                 else
+                {
                     nested_function->insertResultInto(nestedPlace(place), to_concrete.getNestedColumn(), arena);
-                to_concrete.getNullMapData().push_back(false);
+
+                    /// A nested call that threw has already restored the nested column itself.
+                    try
+                    {
+                        to_concrete.getNullMapData().push_back(false);
+                    }
+                    catch (...)
+                    {
+                        nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+                        throw;
+                    }
+                }
             }
             else
             {
@@ -281,6 +296,28 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
+    {
+        if constexpr (result_is_nullable)
+        {
+            ColumnNullable & to_concrete = assert_cast<ColumnNullable &>(to);
+            if (getFlag(place))
+            {
+                to_concrete.getNullMapData().pop_back();
+                nested_function->rollbackInsertResult(nestedPlace(place), to_concrete.getNestedColumn());
+            }
+            else
+            {
+                /// insertResultInto appended a state the column itself owns, so this pop must destroy it.
+                to_concrete.popBack(1);
+            }
+        }
+        else
+        {
+            nested_function->rollbackInsertResult(nestedPlace(place), to);
+        }
     }
 
     bool allocatesMemoryInArena() const override
