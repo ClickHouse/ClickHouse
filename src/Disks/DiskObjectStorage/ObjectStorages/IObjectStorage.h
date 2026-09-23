@@ -295,6 +295,13 @@ public:
         bool with_tags,
         const std::optional<std::string> & start_after) const;
 
+    /// Whether `iterate` treats its argument as an arbitrary key prefix rather than as a directory path,
+    /// and honours `start_after`. A true object storage has no directories, so listing `pref` also returns
+    /// `prefix/a/b`; `LocalObjectStorage` instead walks a real directory tree and returns nothing unless
+    /// the argument names an existing directory, and `AzureObjectStorage` ignores `start_after`. Both are
+    /// silent, so a caller that splits one listing into several by key range must check this first.
+    virtual bool supportsPrefixListing() const { return false; }
+
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
     virtual ObjectMetadata getObjectMetadata(const RelativePathWithMetadata & object, bool with_tags) const

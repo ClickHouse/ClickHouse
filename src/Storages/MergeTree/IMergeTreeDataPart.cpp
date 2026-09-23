@@ -1587,9 +1587,9 @@ MergeTreeDataPartBuilder IMergeTreeDataPart::getProjectionPartBuilder(
     MutableDataPartStoragePtr projection_storage;
     {
         ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
-        projection_storage = intent == PartDirIntent::CreateFresh
-            ? getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection)
-            : getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection);
+        projection_storage = intent == PartDirIntent::OpenExisting
+            ? getDataPartStorage().getProjection(projection_name + projection_extension, !is_temp_projection)
+            : getDataPartStorage().getProjectionNoInitialize(projection_name + projection_extension, !is_temp_projection);
     }
     if (intent == PartDirIntent::CreateFresh && projection_storage->exists())
     {
@@ -2873,6 +2873,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
+    /// Volume merge flags can change during selection; check them for each part.
+    if (!storage_policy->hasAnyVolumeWithDisabledMerges())
+        return true;
+
     auto disk_name = getDataPartStorage().getDiskName();
     return !storage_policy->getVolumeByDiskName(disk_name)->areMergesAvoided();
 }
