@@ -216,6 +216,11 @@ bool IdentifierResolveScope::canCacheIdentifier(
     if (expressions_in_resolve_process_stack.hasExpressionWithAlias(lookup.identifier.front()))
         return false;
 
+    /// Cannot use cache for a hidden lambda argument: outside of the hiding window the same name
+    /// resolves to the argument, inside it resolves to whatever the enclosing scopes provide.
+    if (!hidden_expression_arguments.empty() && hidden_expression_arguments.contains(lookup.identifier.front()))
+        return false;
+
     return true;
 }
 
