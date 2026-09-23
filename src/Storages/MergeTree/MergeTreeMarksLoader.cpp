@@ -302,6 +302,15 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     return res;
 }
 
+/// Keyed by the part's NAME, as every insertion and eviction site is (`getRelativePathOfActivePart()` =
+/// `getFullRootPath()/<name>/`); the directory a part occupies may differ from it (`<name>.proj`).
+MarkCache::Key MergeTreeMarksLoader::getCacheKey() const
+{
+    auto data_part_storage = data_part_reader->getDataPartStorage();
+    auto path = fs::path(data_part_storage->getFullRootPath()) / data_part_reader->getPartName() / mrk_path;
+    return MarkCache::hash(data_part_storage->getDiskName() + ":" + path.string());
+}
+
 MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 {
     fiu_do_on(FailPoints::merge_tree_marks_load_sync_sleep, { sleepForMilliseconds(100); });
@@ -312,7 +321,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksSync()
 
     if (mark_cache)
     {
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
+        auto key = getCacheKey();
 
         if (save_marks_in_cache)
         {
@@ -345,9 +354,7 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
     /// Avoid queueing jobs into thread pool if marks are in cache
     if (mark_cache)
     {
-        auto data_part_storage = data_part_reader->getDataPartStorage();
-        auto key = MarkCache::hash(data_part_storage->getDiskName() + ":" + (fs::path(data_part_storage->getFullPath()) / mrk_path).string());
-        if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(key))
+        if (MarkCache::MappedPtr loaded_marks = mark_cache->getForAsyncLoading(getCacheKey()))
         {
             ProfileEvents::increment(ProfileEvents::MarksTasksFromCache);
             auto promise = std::promise<MarkCache::MappedPtr>();

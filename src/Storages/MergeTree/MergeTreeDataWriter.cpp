@@ -470,12 +470,25 @@ void MergeTreeTemporaryPart::prewarmCaches()
 {
     auto prewarm_caches = part->storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
+    /// `streams` also holds the streams written for this part's projections, and a mark-cache key names
+    /// the part that owns the marks.
+    auto streamOwner = [this](const Stream & stream) -> const IMergeTreeDataPart *
+    {
+        if (stream.projection_name.empty())
+            return part.get();
+
+        const auto & projections = part->getProjectionParts();
+        auto it = projections.find(stream.projection_name);
+        return it == projections.end() ? nullptr : it->second.get();
+    };
+
     if (prewarm_caches.mark_cache)
     {
         for (const auto & stream : streams)
         {
             auto marks = stream.stream->releaseCachedMarks();
-            addMarksToCache(*part, marks, prewarm_caches.mark_cache.get());
+            if (const auto * owner = streamOwner(stream))
+                addMarksToCache(*owner, marks, prewarm_caches.mark_cache.get());
         }
     }
 
@@ -484,7 +497,8 @@ void MergeTreeTemporaryPart::prewarmCaches()
         for (const auto & stream : streams)
         {
             auto index_marks = stream.stream->releaseCachedIndexMarks();
-            addMarksToCache(*part, index_marks, prewarm_caches.index_mark_cache.get());
+            if (const auto * owner = streamOwner(stream))
+                addMarksToCache(*owner, index_marks, prewarm_caches.index_mark_cache.get());
         }
     }
 
@@ -1166,7 +1180,10 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                 else
                 {
                     for (auto & stream : proj_temp_part->streams)
+                    {
+                        stream.projection_name = projection.name;
                         temp_part->streams.emplace_back(std::move(stream));
+                    }
                 }
             }
         }

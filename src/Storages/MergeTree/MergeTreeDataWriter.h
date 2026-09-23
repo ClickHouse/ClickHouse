@@ -43,6 +43,8 @@ struct MergeTreeTemporaryPart
     {
         std::unique_ptr<MergedBlockOutputStream> stream;
         MergedBlockOutputStream::Finalizer finalizer;
+        /// Projection whose part this stream wrote; empty when it wrote `part` itself.
+        String projection_name = {};
     };
 
     std::vector<Stream> streams;
