@@ -32,6 +32,7 @@ public:
     bool operator() (IPv6 &) const;
     bool operator() (AggregateFunctionStateData &) const;
     bool operator() (CustomType &) const;
+    bool operator() (NumberLiteral &) const;
     bool operator() (bool &) const;
 
     template <typename T>
