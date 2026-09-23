@@ -12,6 +12,9 @@ d < 300: sampled 1, real inside the span 1
 status: applicable
 source: empirical
 empirical_status: ok
+--- max_rows_to_read below the smallest sample ---
+empirical_status: unsupported
+over max_rows_to_read
 --- an offset filter on a sampled estimate ---
 status: applicable
 empirical_status: unsupported

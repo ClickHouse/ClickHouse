@@ -645,6 +645,24 @@ bool tryEstimateProjection(
         return false;
     }
 
+    /// the granule floor and one granule per part can outgrow the budget, so check the read limit before reading
+    std::vector<MarkRanges> ranges_to_scan;
+    ranges_to_scan.reserve(baseline_parts.size());
+    UInt64 rows_planned = 0;
+    for (const auto & part_with_ranges : baseline_parts)
+    {
+        ranges_to_scan.push_back(marksToScan(part_with_ranges.data_part, sample_step));
+        rows_planned += part_with_ranges.data_part->index_granularity->getRowsCountInRanges(ranges_to_scan.back());
+    }
+    if (const UInt64 read_limit = query_settings[Setting::max_rows_to_read]; read_limit != 0 && rows_planned > read_limit)
+    {
+        result.empirical_unsupported_reason = fmt::format(
+            "The estimate would read {} rows, over max_rows_to_read = {} (a sample keeps at least ~30 granules and one per part)",
+            rows_planned,
+            read_limit);
+        return false;
+    }
+
     Stopwatch watch;
     auto log = getLogger("WhatIfProjectionEstimator");
 
@@ -656,8 +674,9 @@ bool tryEstimateProjection(
     UInt64 marks_high = 0;
     UInt64 uneven_width_parts = 0;
 
-    for (const auto & part_with_ranges : baseline_parts)
+    for (size_t part_idx = 0; part_idx < baseline_parts.size(); ++part_idx)
     {
+        const auto & part_with_ranges = baseline_parts[part_idx];
         const auto & part = part_with_ranges.data_part;
         const size_t part_marks = part->index_granularity->getMarksCountWithoutFinal();
         if (part_marks == 0)
@@ -667,7 +686,7 @@ bool tryEstimateProjection(
         const bool adaptive = part->index_granularity_info.mark_type.adaptive
             && mt_settings[MergeTreeSetting::index_granularity_bytes] != 0;
 
-        const MarkRanges ranges = marksToScan(part, sample_step);
+        const MarkRanges & ranges = ranges_to_scan[part_idx];
         ProjectionPartData part_data;
         if (!buildProjectionPart(
                 part_data, projection, part, ranges, read_step, read_limits, adaptive, total_rows_read, total_bytes_read, context))

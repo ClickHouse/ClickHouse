@@ -1230,7 +1230,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **Settings**
 
-- `max_rows_to_scan` — how many rows a projection estimate may read before it switches to a sample of granules. Default: `10000000`. `0` means no limit; `max_rows_to_read` can lower it.
+- `max_rows_to_scan` — how many rows a projection estimate may read before it switches to a sample of granules. Default: `10000000`. `0` means no limit; `max_rows_to_read` can lower it. A sample reads at least about 30 granules and one per part, and when `max_rows_to_read` does not allow that the estimate is `unsupported`.
 - `empirical` — `1` (default) runs the index over the baseline-pruned granules in memory to measure the skip ratio (an upper bound). `0` skips that path. Either way, if empirical doesn't produce a result (disabled, or the index can't be evaluated in memory) the estimator falls back to column [statistics](/reference/engines/table-engines/mergetree-family/mergetree#column-statistics), and finally to an applicability-only summary if neither is available.
 
 **Output**

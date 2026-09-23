@@ -66,6 +66,13 @@ $CLICKHOUSE_CLIENT -q "
     EXPLAIN WHATIF SELECT count() FROM t_scan WHERE a < 1000 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 30000;
 " | grep -E '^\s+(status|source|empirical_status):' | awk '{$1=$1; print}'
 
+# a limit too low for ~30 granules leaves the estimate unsupported before anything is read
+echo "--- max_rows_to_read below the smallest sample ---"
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_b ON t_scan (SELECT a, b, c, d ORDER BY b);
+    EXPLAIN WHATIF SELECT count() FROM t_scan WHERE a < 500 AND b < 100 SETTINGS ${PIN}, max_rows_to_read = 1000;
+" | grep -oE 'empirical_status: +[a-z]+|over max_rows_to_read' | awk '{$1=$1; print}'
+
 # a sample's row offsets are not the part's, so an offset filter leaves the estimate unsupported
 echo "--- an offset filter on a sampled estimate ---"
 $CLICKHOUSE_CLIENT -q "

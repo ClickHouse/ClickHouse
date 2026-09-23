@@ -59,16 +59,16 @@ SYNTAX_ERROR
 status: applicable
 source: applicability_only
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 status: applicable
 source: applicability_only
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 --- the base read exceeding the limit does not produce a verdict either ---
 marks: 5
 rows: 500
 empirical_status: unsupported
-empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_reason: The estimate would read 1000 rows, over max_rows_to_read = 300 (a sample keeps at least ~30 granules and one per part)
 --- estimating needs SELECT on the projection columns ---
 ACCESS_DENIED
 status: applicable
