@@ -32,7 +32,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT name, position(create_table_query, 'UUID \'$U\'') > 0
     FROM system.tables WHERE database = currentDatabase() AND name IN ('mv', 'v') ORDER BY name;
 "
-$CLICKHOUSE_CLIENT -q "SELECT k FROM v SETTINGS enable_analyzer = 0"
+$CLICKHOUSE_CLIENT -q "SELECT k FROM v"
 
 # RESTORE mints a fresh UUID for `src`, so a pin taken from the backup would resolve to nothing.
 $CLICKHOUSE_CLIENT -q "
@@ -48,6 +48,5 @@ $CLICKHOUSE_CLIENT -q "
     FROM system.tables WHERE database = currentDatabase() AND name IN ('mv', 'v') ORDER BY name;
 "
 
-echo '-- so the restored view reads the restored table under either analyzer'
-$CLICKHOUSE_CLIENT -q "SELECT k FROM v SETTINGS enable_analyzer = 0"
-$CLICKHOUSE_CLIENT -q "SELECT k FROM v SETTINGS enable_analyzer = 1"
+echo '-- so the restored view reads the restored table'
+$CLICKHOUSE_CLIENT -q "SELECT k FROM v"

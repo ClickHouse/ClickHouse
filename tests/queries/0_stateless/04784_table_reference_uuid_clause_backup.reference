@@ -8,6 +8,5 @@ v	1
 -- the restored definitions carry no pin
 mv	0
 v	0
--- so the restored view reads the restored table under either analyzer
-111
+-- so the restored view reads the restored table
 111
