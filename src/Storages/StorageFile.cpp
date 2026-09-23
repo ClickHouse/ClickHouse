@@ -200,6 +200,20 @@ bool patternHasGlobstarSegment(const std::string & pattern)
     return false;
 }
 
+/// Classifies a filesystem query that failed while a glob was being expanded, at a place that
+/// reacts by skipping the path. The codes below mean nothing listable is there; any other error
+/// means matching files may exist but could not be read, which must not become missing rows.
+void skipUnresolvableOrThrow(const std::error_code & ec, const std::string & path)
+{
+    if (ec == std::errc::too_many_symbolic_link_levels
+        || ec == std::errc::no_such_file_or_directory
+        || ec == std::errc::not_a_directory
+        || ec == std::errc::filename_too_long)
+        return;
+
+    throw fs::filesystem_error("Cannot expand the glob", path, ec);
+}
+
 /// One entry of the traversal-pruning set: the lexical directory path that first claimed this
 /// (canonical directory, remaining pattern) frame, and how many matches that frame's subtree
 /// emitted. A later frame pruned against it would have emitted exactly the same ones, so both
@@ -366,12 +380,15 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    /// Use the `std::error_code` overload: a path that fails to resolve (`ELOOP`,
-    /// dangling symlink, permission denied, a component over `NAME_MAX`) is silently skipped instead of surfacing
-    /// the raw `filesystem_error` exception. This matches the existing skip semantics
-    /// of `it.increment(ec)` below for individual entries.
+    /// Use the `std::error_code` overload: a path that fails to resolve (`ELOOP`, dangling
+    /// symlink, a component over `NAME_MAX`) is skipped instead of surfacing the raw
+    /// `filesystem_error` exception. This matches the existing skip semantics of
+    /// `it.increment(ec)` below for individual entries.
     std::error_code prefix_exists_ec;
-    if (!fs::exists(prefix_without_globs, prefix_exists_ec) || prefix_exists_ec)
+    const bool prefix_exists = fs::exists(prefix_without_globs, prefix_exists_ec);
+    if (prefix_exists_ec)
+        skipUnresolvableOrThrow(prefix_exists_ec, prefix_without_globs);
+    if (!prefix_exists)
         return;
 
     /// The frame key below and every entry the loop emits name this same directory, so one
@@ -386,7 +403,9 @@ void listFilesWithRegexpMatchingImpl(
             dir_canonical_attempted = true;
             std::error_code canon_ec;
             auto canonical_path = fs::canonical(prefix_without_globs, canon_ec);
-            if (!canon_ec)
+            if (canon_ec)
+                skipUnresolvableOrThrow(canon_ec, prefix_without_globs);
+            else
                 dir_canonical = std::move(canonical_path);
         }
         return dir_canonical ? &*dir_canonical : nullptr;
@@ -497,14 +516,16 @@ void listFilesWithRegexpMatchingImpl(
 
         /// Use the `std::error_code` overload of `is_directory`: a directory entry that
         /// fails to resolve (`ELOOP` on a mutual symlink cycle `a -> b, b -> a`, dangling
-        /// symlink, permission denied) is silently skipped instead of surfacing the raw
-        /// `filesystem_error` exception. The throwing overload would otherwise abort the
-        /// entire glob expansion before the canonical-stack guard above could prune
-        /// the entry.
+        /// symlink) is skipped instead of surfacing the raw `filesystem_error` exception.
+        /// The throwing overload would otherwise abort the entire glob expansion before the
+        /// canonical-stack guard above could prune the entry.
         std::error_code is_dir_ec;
         const bool is_directory = it->is_directory(is_dir_ec);
         if (is_dir_ec)
+        {
+            skipUnresolvableOrThrow(is_dir_ec, full_path);
             continue;
+        }
 
         /// Condition is_directory means what kind of path is it in current iteration of ls
         if (!is_directory && !looking_for_directory)
