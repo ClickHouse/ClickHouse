@@ -647,13 +647,6 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
     query_info.query = query_ptr->clone();
 
-    /// `count_distinct_optimization` is applied only by the analyzer's `CountDistinctPass`. The legacy AST-level
-    /// `RewriteCountDistinctFunctionMatcher` used to be invoked here, but it never fired (its `table_expr->size() != 1`
-    /// guard uses the recursive `IAST::size`, which is always >= 2 for a real table expression) and it lacked the
-    /// safety guards `CountDistinctPass` has: running before type resolution it cannot skip `Nullable` /
-    /// `LowCardinality(Nullable)` arguments (rewriting `uniqExact(x)` to `count()` over `GROUP BY x` would count the
-    /// `NULL` group and over-count), and it also did not reject `WHERE` / `GROUP BY` / `HAVING` / `ORDER BY` / `LIMIT`,
-    /// `JOIN`, or remote storages. It was therefore removed rather than resurrected into the deprecated legacy analyzer.
     if (settings[Setting::optimize_uniq_to_count])
     {
         RewriteUniqToCountMatcher::Data data_rewrite_uniq_count;
