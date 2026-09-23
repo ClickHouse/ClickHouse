@@ -1,6 +1,5 @@
 #include <Columns/ColumnString.h>
 
-#include <cstring>
 #include <Columns/Collator.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <Columns/ColumnsCommon.h>
@@ -57,22 +56,16 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const size_t src_offset = src_concrete.offsets[position - 1];
+    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
     const size_t src_buf_size
         = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
-
-    const size_t old_rows = offsets.size();
-    const size_t new_rows = old_rows + length;
-    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
-    offsets.reserve(new_rows);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + src_buf_size * length;
     chars.resize(new_size);
 
-    const UInt8 * src_buf = &src_concrete.chars[src_offset];
-
-    offsets.resize_assume_reserved(new_rows);
+    const size_t old_rows = offsets.size();
+    offsets.resize(old_rows + length);
 
     for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
         memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
@@ -389,6 +382,13 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     in.ignore(serialize_string_with_zero_byte);
 
     offsets.push_back(new_size);
+}
+
+void ColumnString::skipSerializedInArena(ReadBuffer & in) const
+{
+    size_t string_size = 0;
+    readBinaryLittleEndian<size_t>(string_size, in);
+    in.ignore(string_size);
 }
 
 ColumnPtr ColumnString::index(const IColumn & indexes, size_t limit) const
@@ -893,55 +893,6 @@ ColumnPtr ColumnString::createSizeSubcolumn() const
     }
 
     return column_sizes;
-}
-
-bool ColumnString::hasOnlyTypeDefaults() const
-{
-    return chars.empty();
-}
-
-/// Byte-comparable encoding: 0x00 → [0x00, 0x01]; terminated with [0x00, 0x00].
-/// Uses memchr+append fast path: no-NUL strings are copied in one append call.
-void ColumnString::serializeAsComparable(size_t n, String & out) const
-{
-    const size_t string_size = sizeAt(n);
-    const auto string_offset = offsetAt(n);
-    const char * src = reinterpret_cast<const char *>(&chars[string_offset]);
-    const char * const end = src + string_size;
-
-    out.reserve(out.size() + string_size + 2);
-
-    const char * p = static_cast<const char *>(std::memchr(src, '\0', string_size));
-    if (p == nullptr)
-    {
-        out.append(src, string_size);
-    }
-    else
-    {
-        const char * cursor = src;
-        do
-        {
-            out.append(cursor, p - cursor);
-            out.append("\0\x01", 2);
-            cursor = p + 1;
-            p = static_cast<const char *>(std::memchr(cursor, '\0', end - cursor));
-        }
-        while (p != nullptr);
-        out.append(cursor, end - cursor);
-    }
-
-    out.append("\0\x00", 2);
-}
-
-void ColumnString::batchSerializeAsComparable(
-    size_t num_rows,
-    VectorWithMemoryTracking<String> & out,
-    const IColumn::Permutation * permutation,
-    const UInt8 * null_map) const
-{
-    batchSerializeAsComparableImpl(
-        num_rows, out, permutation, null_map,
-        [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
 }

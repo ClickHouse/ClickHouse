@@ -7,7 +7,6 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
-#include <Columns/ColumnIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
@@ -239,99 +238,6 @@ struct ConstSource : public Base
 
 #pragma clang diagnostic pop
 
-
-/// ReplicatedSource<Base> makes the pair (nested array column, replication indexes) look like a flat source of logical rows.
-/// Base is an array source: NumericArraySource, GenericArraySource, or NullableArraySource
-///
-/// nested_row: the unreplicated data, a block of 3 array have 3 nested_rows (0, 1, 2)
-/// logical_row: a row_index into the column as consumers see it:
-///
-/// i.e.
-///     nested column (3 rows):     A      B  C
-///     replication_indexes:        [0, 0, 1, 2, 2, 2]
-///     logical view (6 rows):      A  A  B  C  C  C
-template <typename Base>
-struct ReplicatedSource : public Base
-{
-    using Slice = typename Base::Slice;
-    using SinkType = typename Base::SinkType;
-    using Base::row_num;
-    using Base::prev_offset;
-    using Base::offsets;
-
-    const ColumnIndex & replication_indexes;
-    size_t total_rows;
-    size_t logical_row = 0;
-
-    template <typename ColumnType>
-    ReplicatedSource(const ColumnType & col_, const ColumnIndex & replication_indexes_)
-        : Base(col_)
-        , replication_indexes(replication_indexes_)
-        , total_rows(replication_indexes_.size())
-    {
-        positionAtCurrentRow();
-    }
-
-    template <typename ColumnType>
-    ReplicatedSource(const ColumnType & col_, const NullMap & null_map_, const ColumnIndex & replication_indexes_)
-        : Base(col_, null_map_)
-        , replication_indexes(replication_indexes_)
-        , total_rows(replication_indexes_.size())
-    {
-        positionAtCurrentRow();
-    }
-
-    void accept(ArraySourceVisitor & visitor) override
-    {
-        visitor.visit(*this);
-    }
-
-    void next()
-    {
-        ++logical_row;
-        positionAtCurrentRow();
-    }
-
-    bool isEnd() const
-    {
-        return logical_row == total_rows;
-    }
-
-    size_t rowNum() const
-    {
-        return logical_row;
-    }
-
-    size_t getSizeForReserve() const override
-    {
-        /// A proportional estimate: the exact size would need an extra pass over the indexes.
-        size_t nested_rows = offsets.size();
-        return nested_rows == 0 ? 0 : Base::getSizeForReserve() / nested_rows * total_rows;
-    }
-
-    size_t getColumnSize() const override
-    {
-        return total_rows;
-    }
-
-    bool isReplicated() const override
-    {
-        return true;
-    }
-
-private:
-    /// Point the base source at the nested row of the current logical row.
-    void positionAtCurrentRow()
-    {
-        if (logical_row == total_rows)
-            return;
-        ssize_t nested_row = replication_indexes.getIndexAt(logical_row);
-        row_num = nested_row;
-        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
-        prev_offset = offsets[nested_row - 1];
-    }
-};
-
 struct StringSource
 {
     using Slice = NumericArraySlice<UInt8>;
@@ -514,6 +420,15 @@ struct EnumSource
 
 
 /// Differs to StringSource by having 'offset' and 'length' in code points instead of bytes in getSlice* methods.
+/** NOTE: The behaviour of substring and substringUTF8 is inconsistent when negative offset is greater than string size:
+  * substring:
+  *      hello
+  * ^-----^ - offset -10, length 7, result: "he"
+  * substringUTF8:
+  *      hello
+  *      ^-----^ - offset -10, length 7, result: "hello"
+  * This may be subject for change.
+  */
 struct UTF8StringSource : public StringSource
 {
     using StringSource::StringSource;
@@ -525,18 +440,15 @@ struct UTF8StringSource : public StringSource
         return pos;
     }
 
-    static const ColumnString::Char * skipCodePointsBackward(
-        const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin, size_t * skipped = nullptr)
+    static const ColumnString::Char * skipCodePointsBackward(const ColumnString::Char * pos, size_t size, const ColumnString::Char * begin)
     {
-        size_t i = 0;
-        for (; i < size && pos > begin; ++i)
+        for (size_t i = 0; i < size && pos > begin; ++i)
         {
             --pos;
-            if (pos != begin)
-                UTF8::syncBackward(pos, begin);
+            if (pos == begin)
+                break;
+            UTF8::syncBackward(pos, begin);
         }
-        if (skipped)
-            *skipped = i;
         return pos;
     }
 
@@ -587,17 +499,7 @@ struct UTF8StringSource : public StringSource
     {
         const auto * begin = &elements[prev_offset];
         const auto * end = elements.data() + offsets[row_num];
-        size_t skipped = 0;
-        const auto * res_begin = skipCodePointsBackward(end, offset, begin, &skipped);
-
-        if (skipped < offset)
-        {
-            size_t clipped_prefix = offset - skipped;
-            if (length <= clipped_prefix)
-                return {begin, 0};
-            length -= clipped_prefix;
-        }
-
+        const auto * res_begin = skipCodePointsBackward(end, offset, begin);
         const auto * res_end = skipCodePointsForward(res_begin, length, end);
 
         if (res_end >= end)

@@ -88,8 +88,6 @@ namespace ErrorCodes
 namespace S3
 {
 
-static constexpr size_t MAX_CACHES_BY_ENDPOINT_AND_BUCKET = 10000;
-
 Client::RetryStrategy::RetryStrategy(const PocoHTTPClientConfiguration::RetryStrategy & config_)
     : config(config_)
     , log(getLogger("S3ClientRetryStrategy"))
@@ -160,10 +158,10 @@ void Client::RetryStrategy::RequestBookkeeping(const Aws::Client::HttpResponseOu
         if (error.ShouldRetry())
             LOG_TRACE(
                 log,
-                "Attempt {}/{} failed with a retryable error, HTTP response code: {}, error: {}",
+                "Attempt {}/{} failed with retryable error: {}, {}",
                 httpResponseOutcome.GetRetryCount() + 1,
                 GetMaxAttempts(),
-                error.GetResponseCode(),
+                static_cast<size_t>(error.GetResponseCode()),
                 error.GetMessage());
     }
 }
@@ -174,11 +172,11 @@ void Client::RetryStrategy::RequestBookkeeping(
     if (httpResponseOutcome.IsSuccess())
         LOG_TRACE(
             log,
-            "Attempt {}/{} succeeded with HTTP response code: {}; the previous attempt failed with HTTP response code: {}, error: {}",
+            "Attempt {}/{} succeeded with response code {}, last error: {}, {}",
             httpResponseOutcome.GetRetryCount() + 1,
             GetMaxAttempts(),
-            httpResponseOutcome.GetResult()->GetResponseCode(),
-            lastError.GetResponseCode(),
+            static_cast<size_t>(httpResponseOutcome.GetResult()->GetResponseCode()),
+            static_cast<size_t>(lastError.GetResponseCode()),
             lastError.GetMessage());
     RequestBookkeeping(httpResponseOutcome);
 }
@@ -388,7 +386,7 @@ bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3
 void Client::insertRegionOverride(const std::string & bucket, const std::string & region) const
 {
     std::lock_guard lock(cache->region_cache_mutex);
-    auto [it, inserted] = cache->region_for_bucket_cache.insert_or_assign(bucket, region);
+    auto [it, inserted] = cache->region_for_bucket_cache.emplace(bucket, region);
     if (inserted)
         LOG_INFO(log, "Detected different region ('{}') for bucket {} than the one defined ('{}')", region, bucket, explicit_region);
 }
@@ -556,12 +554,7 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// For a conditional completion mere existence proves nothing: the object may be the one the
-    /// condition was meant to reject. Leave the error for the caller, which can verify authorship.
-    const bool is_conditional = request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
-
     if (!outcome.IsSuccess()
-        && !is_conditional
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
     {
         auto check_request = HeadObjectRequest()
@@ -680,8 +673,11 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
+    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
     if (client_settings.is_s3express_bucket)
         request.setIsS3ExpressBucket();
+    else if (client_settings.disable_checksum)
+        request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {
@@ -830,8 +826,8 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
 
                 // update ClickHouse-specific attempt number in the request
                 // to help choose the right timeouts on the HTTP client which depends on retry attempt number
-                auto clickhouse_request_attempt = getClickHouseAttemptNumber(request_);
-                setClickHouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
+                auto clickhouse_request_attempt = getClickhouseAttemptNumber(request_);
+                setClickhouseAttemptNumber(request_, clickhouse_request_attempt + attempt_no);
             }
 
             /// Slowing down due to a previously encountered retryable error, possibly from another thread.
@@ -905,7 +901,7 @@ void Client::updateNextTimeToRetryAfterRetryableError(Aws::Client::AWSError<Aws:
     {
         if (next_time_to_retry_after_retryable_error.compare_exchange_weak(stored_next_time, next_time_ms))
         {
-            LOG_TRACE(log, "Updated next retry time to {} ms forward after a retryable error, HTTP response code: {}", sleep_ms, error.GetResponseCode());
+            LOG_TRACE(log, "Updated next retry time to {} ms forward after retryable error with code {}", sleep_ms, error.GetResponseCode());
             break;
         }
     }
@@ -976,7 +972,12 @@ void Client::BuildHttpRequest(const Aws::AmazonWebServiceRequest& request,
     Aws::S3::S3Client::BuildHttpRequest(request, httpRequest);
 
     if (api_mode == ApiMode::GCS)
-        translateHeadersToGCS(*httpRequest);
+    {
+        /// some GCS requests don't like S3 specific headers that the client sets
+        /// all "x-amz-*" headers have to be either converted or deleted
+        /// note that "amz-sdk-invocation-id" and "amz-sdk-request" are preserved
+        httpRequest->DeleteHeader("x-amz-api-version");
+    }
 }
 
 std::string Client::getGCSOAuthToken() const
@@ -1130,12 +1131,6 @@ void ClientCache::clearCache()
     }
 }
 
-ClientCacheRegistry & ClientCacheRegistry::instance()
-{
-    static ClientCacheRegistry registry;
-    return registry;
-}
-
 void ClientCacheRegistry::registerClient(const std::shared_ptr<ClientCache> & client_cache)
 {
     std::lock_guard lock(clients_mutex);
@@ -1167,10 +1162,9 @@ size_t ClientCacheRegistry::getClientRefcountForTesting(ClientCache * client)
     return it->second.second;
 }
 
-void ClientCacheRegistry::pruneUnusedCachesLocked()
+void ClientCacheRegistry::pruneExpiredCachesLocked()
 {
-    /// The registry itself is the only owner left, so no client can observe the cache disappearing.
-    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.use_count() == 1; });
+    std::erase_if(cache_by_endpoint_bucket, [](const auto & pair) { return pair.second.expired(); });
 }
 
 std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const std::string & endpoint, const std::string & bucket)
@@ -1182,15 +1176,16 @@ std::shared_ptr<ClientCache> ClientCacheRegistry::getOrCreateCacheForKey(const s
     UInt128 key = hash.get128();
 
     std::lock_guard lock(cache_by_key_mutex);
-
-    if (cache_by_endpoint_bucket.size() >= MAX_CACHES_BY_ENDPOINT_AND_BUCKET)
-        pruneUnusedCachesLocked();
-
     if (auto it = cache_by_endpoint_bucket.find(key); it != cache_by_endpoint_bucket.end())
-        return it->second;
-
+    {
+        if (auto cached = it->second.lock(); cached)
+            return cached;
+        cache_by_endpoint_bucket.erase(it);
+    }
     auto cache = std::make_shared<ClientCache>();
-    cache_by_endpoint_bucket.emplace(key, cache);
+    cache_by_endpoint_bucket[key] = cache;
+
+    pruneExpiredCachesLocked();
 
     return cache;
 }
@@ -1217,9 +1212,7 @@ void ClientCacheRegistry::clearCacheForAll()
 
     {
         std::lock_guard lock(cache_by_key_mutex);
-        pruneUnusedCachesLocked();
-        for (const auto & [_, cache] : cache_by_endpoint_bucket)
-            cache->clearCache();
+        pruneExpiredCachesLocked();
     }
 }
 
@@ -1290,7 +1283,6 @@ std::unique_ptr<S3::Client> ClientFactory::create( // NOLINT
     }
 
     // These will be added after request signing
-    normalizeHeaderNames(headers);
     client_configuration.extra_headers = std::move(headers);
 
     Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key, session_token);

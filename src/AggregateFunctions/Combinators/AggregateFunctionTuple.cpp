@@ -11,8 +11,6 @@
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
 
-#include <algorithm>
-
 
 namespace DB
 {
@@ -187,7 +185,7 @@ void AggregateFunctionTuple::add(AggregateDataPtr __restrict place, const IColum
     }
 }
 
-template <bool has_null_map, bool all_places_are_non_null, typename GetPlace>
+template <bool has_null_map, typename GetPlace>
 void AggregateFunctionTuple::addBatchImpl(
     size_t row_begin,
     size_t row_end,
@@ -303,9 +301,7 @@ void AggregateFunctionTuple::addBatchImpl(
                 if (null_map[i])
                     continue;
             }
-            if constexpr (all_places_are_non_null)
-                add_row(get_place(i), i);
-            else if (AggregateDataPtr place = get_place(i))
+            if (AggregateDataPtr place = get_place(i))
                 add_row(place, i);
         }
     }
@@ -318,9 +314,7 @@ void AggregateFunctionTuple::addBatchImpl(
                 if (null_map[i])
                     continue;
             }
-            if constexpr (all_places_are_non_null)
-                add_row(get_place(i), i);
-            else if (AggregateDataPtr place = get_place(i))
+            if (AggregateDataPtr place = get_place(i))
                 add_row(place, i);
         }
     }
@@ -335,21 +329,8 @@ void AggregateFunctionTuple::addBatch( /// NOLINT
     Arena * arena,
     ssize_t if_argument_pos) const
 {
-    addBatchImpl<false, false>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
+    addBatchImpl<false>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
         [&](size_t i) { return places[i] ? places[i] + place_offset : nullptr; });
-}
-
-void AggregateFunctionTuple::addBatchWithNonNullPlaces( /// NOLINT
-    size_t row_begin,
-    size_t row_end,
-    AggregateDataPtr * places,
-    size_t place_offset,
-    const IColumn ** columns,
-    Arena * arena,
-    ssize_t if_argument_pos) const
-{
-    addBatchImpl<false, true>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
-        [&](size_t i) { return places[i] + place_offset; });
 }
 
 void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
@@ -360,7 +341,7 @@ void AggregateFunctionTuple::addBatchSinglePlace( /// NOLINT
     Arena * arena,
     ssize_t if_argument_pos) const
 {
-    addBatchImpl<false, true>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
+    addBatchImpl<false>(row_begin, row_end, columns, nullptr, if_argument_pos, arena,
         [&](size_t) { return place; });
 }
 
@@ -375,7 +356,7 @@ void AggregateFunctionTuple::addBatchSinglePlaceNotNull( /// NOLINT
 {
     /// Reached from `AggregateFunctionNullUnary` for `Nullable(Tuple(...))` inputs: rows whose tuple
     /// is NULL are skipped via the null map.
-    addBatchImpl<true, true>(row_begin, row_end, columns, null_map, if_argument_pos, arena,
+    addBatchImpl<true>(row_begin, row_end, columns, null_map, if_argument_pos, arena,
         [&](size_t) { return place; });
 }
 
@@ -582,15 +563,6 @@ DataTypePtr AggregateFunctionTuple::getNormalizedStateType() const
     auto normalized_function = std::make_shared<AggregateFunctionTuple>(
         normalized_nested_name, std::move(normalized_nested_functions), argument_types, Array{});
     return std::make_shared<DataTypeAggregateFunction>(std::move(normalized_function), nested_normalized_state_types, Array{});
-}
-
-bool AggregateFunctionTuple::shouldPrintParametersWithTypes() const
-{
-    /// The elements share one printed parameter list, so a single element that needs typed
-    /// parameters decides the spelling for all of them. The base implementation delegates through
-    /// the singular `getNestedFunction()`, which this combinator has no single answer for.
-    return std::ranges::any_of(
-        nested_functions, [](const auto & nested) { return nested->shouldPrintParametersWithTypes(); });
 }
 
 AggregateFunctionStateVariant AggregateFunctionTuple::getStateVariant() const

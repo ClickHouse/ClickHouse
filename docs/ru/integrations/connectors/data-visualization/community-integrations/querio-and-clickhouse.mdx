@@ -10,7 +10,7 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -21,7 +21,9 @@ Querio — это рабочее пространство для аналити�
 </div>
 
 <Steps>
-  <Step title="Создайте отдельного пользователя" id="create-dedicated-user">
+  <Step>
+    ### Создайте отдельного пользователя
+
     В соответствии с рекомендациями по безопасности создайте для Querio отдельную учетную запись пользователя с минимально необходимыми привилегиями:
 
     ```sql
@@ -33,7 +35,9 @@ Querio — это рабочее пространство для аналити�
     </Tip>
   </Step>
 
-  <Step title="Предоставьте доступ к базе данных только для чтения" id="grant-read-only-access">
+  <Step>
+    ### Предоставьте доступ к базе данных только для чтения
+
     Ограничьте разрешения Querio только теми базами данных и таблицами, которые нужны ему для выполнения запросов:
 
     ```sql
@@ -49,7 +53,9 @@ Querio — это рабочее пространство для аналити�
     Повторите этот процесс для каждой базы данных, к которой Querio нужен доступ.
   </Step>
 
-  <Step title="Соберите сведения о подключении" id="gather-connection-details">
+  <Step>
+    ### Соберите сведения о подключении
+
     Чтобы подключить Querio к ClickHouse, вам понадобятся следующие сведения о подключении:
 
     | Параметр   | Описание                                                                                  |
@@ -92,5 +98,5 @@ Querio — это рабочее пространство для аналити�
   ## Дополнительные ресурсы
 </div>
 
-* [Документация Querio](https://docs.querio.ai/)
+* [Документация Querio](https://docs.querio.ai/integrations/clickhouse)
 * [Руководства и учебные материалы Querio для начала работы](https://www.querio.ai)

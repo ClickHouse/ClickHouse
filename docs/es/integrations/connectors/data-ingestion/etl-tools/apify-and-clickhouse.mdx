@@ -11,7 +11,7 @@ integration:
   - website: 'https://apify.com/'
 ---
 
-import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
@@ -35,11 +35,15 @@ Carga en ClickHouse los datos extraídos o procesados para análisis, monitoreo 
 </div>
 
 <Steps>
-  <Step title="Recopila los detalles de conexión de ClickHouse" id="1-gather-your-connection-details">
+  <Step>
+    ### Recopila los detalles de conexión de ClickHouse
+
     <ConnectionDetails />
   </Step>
 
-  <Step title="Requisitos previos de Apify" id="2-apify-prerequisites">
+  <Step>
+    ### Requisitos previos de Apify
+
     También necesitarás lo siguiente:
 
     * Una [cuenta de Apify](https://console.apify.com/sign-up) (hay un nivel gratuito disponible).
@@ -47,7 +51,9 @@ Carga en ClickHouse los datos extraídos o procesados para análisis, monitoreo 
     * Node.js 18+ instalado localmente (para los ejemplos en JavaScript).
   </Step>
 
-  <Step title="Instala las dependencias" id="3-install-dependencies">
+  <Step>
+    ### Instala las dependencias
+
     Instala el cliente de JavaScript de Apify y el cliente de JavaScript de ClickHouse:
 
     ```bash
@@ -59,7 +65,9 @@ Carga en ClickHouse los datos extraídos o procesados para análisis, monitoreo 
     </Note>
   </Step>
 
-  <Step title="Crea una tabla de destino en ClickHouse" id="4-create-a-target-table">
+  <Step>
+    ### Crea una tabla de destino en ClickHouse
+
     Crea una tabla para almacenar los datos extraídos. El esquema depende del Actor que uses. Este ejemplo usa [MergeTree](/es/reference/engines/table-engines/mergetree-family/mergetree) para un Actor de scraping de productos:
 
     ```sql
@@ -76,7 +84,9 @@ Carga en ClickHouse los datos extraídos o procesados para análisis, monitoreo 
     ```
   </Step>
 
-  <Step title="Obtén el dataset de Apify y cárgalo en ClickHouse" id="5-fetch-and-load">
+  <Step>
+    ### Obtén el dataset de Apify y cárgalo en ClickHouse
+
     El siguiente script obtiene los resultados de una ejecución de un Actor de Apify y los inserta en ClickHouse:
 
     ```javascript
@@ -114,7 +124,9 @@ Carga en ClickHouse los datos extraídos o procesados para análisis, monitoreo 
     </Tip>
   </Step>
 
-  <Step title="Automatiza con webhooks" id="6-automate-with-webhooks">
+  <Step>
+    ### Automatiza con webhooks
+
     En lugar de ejecutar el script manualmente, automatiza el pipeline para que los datos se carguen en ClickHouse cada vez que termine un Actor:
 
     1. En la [Apify Console](https://console.apify.com/), ve a tu Actor y abre la pestaña **Integrations**.
@@ -151,7 +163,7 @@ Haz que el esquema de la tabla de ClickHouse coincida con los campos de salida d
   ### Rendimiento
 </div>
 
-Para inserciones de alto rendimiento desde el cliente de JavaScript, siga los [Consejos para optimizar el rendimiento](/es/integrations/language-clients/js/index#tips-for-performance-optimizations). Agrupe las filas en lotes de inserción más grandes en lugar de insertarlas una por una, y considere las [inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts) cuando la agrupación en lotes del lado del cliente no sea viable.
+Para inserciones de alto rendimiento desde el cliente de JavaScript, siga los [Consejos para optimizar el rendimiento](/es/integrations/language-clients/js#tips-for-performance-optimizations). Agrupe las filas en lotes de inserción más grandes en lugar de insertarlas una por una, y considere las [inserciones asíncronas](/es/concepts/features/operations/insert/asyncinserts) cuando la agrupación en lotes del lado del cliente no sea viable.
 
 <div id="security">
   ### Seguridad
@@ -169,4 +181,4 @@ Los ejemplos de esta página usan el usuario y la base de datos `default` para s
 * [Cliente de Python de Apify](https://docs.apify.com/api/client/python)
 * [Apify Store (Actors listos para usar)](https://apify.com/store)
 * [Descripción general de las integraciones de Apify](https://docs.apify.com/platform/integrations)
-* [Cliente de JavaScript de ClickHouse](/es/integrations/language-clients/js/index)
+* [Cliente de JavaScript de ClickHouse](/es/integrations/language-clients/js)

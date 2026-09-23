@@ -1,0 +1,524 @@
+---
+title: 'DataStore 클래스 참고'
+sidebarTitle: '클래스 참고'
+slug: /chdb/datastore/class-reference
+description: 'DataStore, ColumnExpr, LazyGroupBy, LazySeries 클래스에 대한 전체 API 참조'
+keywords: ['chdb', 'datastore', 'class', 'reference', 'api', 'columnexpr', 'lazygroupby']
+doc_type: 'reference'
+---
+
+이 참고 문서에서는 DataStore API의 핵심 클래스를 다룹니다.
+
+<div id="datastore">
+  ## DataStore
+</div>
+
+데이터를 다루기 위한 대표적인 DataFrame 유사 클래스입니다.
+
+```python
+from chdb.datastore import DataStore
+```
+
+<div id="datastore-constructor">
+  ### 생성자
+</div>
+
+```python
+DataStore(data=None, columns=None, index=None, dtype=None, copy=None)
+```
+
+**매개변수:**
+
+| 매개변수      | 유형                            | 설명        |
+| --------- | ----------------------------- | --------- |
+| `data`    | dict/list/DataFrame/DataStore | 입력 데이터    |
+| `columns` | list                          | 컬럼 이름     |
+| `index`   | Index                         | 행 인덱스     |
+| `dtype`   | dict                          | 컬럼 데이터 타입 |
+| `copy`    | bool                          | 데이터 복사 여부 |
+
+**예시:**
+
+```python
+# 딕셔너리에서 생성
+ds = DataStore({'a': [1, 2, 3], 'b': ['x', 'y', 'z']})
+
+# pandas DataFrame에서 생성
+import pandas as pd
+ds = DataStore(pd.DataFrame({'a': [1, 2, 3]}))
+
+# 빈 DataStore
+ds = DataStore()
+```
+
+<div id="datastore-properties">
+  ### 속성
+</div>
+
+| Property  | Type      | Description           |
+| --------- | --------- | --------------------- |
+| `columns` | Index     | 컬럼 이름                 |
+| `dtypes`  | Series    | 컬럼 데이터 타입             |
+| `shape`   | tuple     | (행, 컬럼)               |
+| `size`    | int       | 전체 요소 수               |
+| `ndim`    | int       | 차원 수(2)               |
+| `empty`   | bool      | DataFrame이 비어 있는지 여부  |
+| `values`  | ndarray   | 기본 데이터를 NumPy 배열로 나타냄 |
+| `index`   | Index     | 행 인덱스                 |
+| `T`       | DataStore | 전치                    |
+| `axes`    | list      | 축 목록                  |
+
+<div id="datastore-factory">
+  ### 팩터리 메서드
+</div>
+
+| 메서드                       | 설명                        |
+| ------------------------- | ------------------------- |
+| `uri(uri)`                | URI로부터 생성하는 범용 팩터리        |
+| `from_file(path, ...)`    | 파일에서 생성                   |
+| `from_df(df)`             | pandas DataFrame에서 생성     |
+| `from_s3(url, ...)`       | S3에서 생성                   |
+| `from_gcs(url, ...)`      | Google Cloud Storage에서 생성 |
+| `from_azure(url, ...)`    | Azure Blob에서 생성           |
+| `from_mysql(...)`         | MySQL에서 생성                |
+| `from_postgresql(...)`    | PostgreSQL에서 생성           |
+| `from_clickhouse(...)`    | ClickHouse에서 생성           |
+| `from_mongodb(...)`       | MongoDB에서 생성              |
+| `from_sqlite(...)`        | SQLite에서 생성               |
+| `from_iceberg(path)`      | Iceberg 테이블에서 생성          |
+| `from_delta(path)`        | Delta Lake에서 생성           |
+| `from_numbers(n)`         | 순차적인 숫자로 생성               |
+| `from_random(rows, cols)` | 무작위 데이터로 생성               |
+| `run_sql(query)`          | SQL 쿼리에서 생성               |
+
+자세한 내용은 [팩터리 메서드](/ko/products/chdb/datastore/factory-methods)를 참조하십시오.
+
+<div id="datastore-query">
+  ### 쿼리 메서드
+</div>
+
+| 메서드                           | 반환값         | 설명           |
+| ----------------------------- | ----------- | ------------ |
+| `select(*cols)`               | DataStore   | 컬럼 선택        |
+| `filter(condition)`           | DataStore   | 행 필터링        |
+| `where(condition)`            | DataStore   | `filter`의 별칭 |
+| `sort(*cols, ascending=True)` | DataStore   | 행 정렬         |
+| `orderby(*cols)`              | DataStore   | `sort`의 별칭   |
+| `limit(n)`                    | DataStore   | 행 수 제한       |
+| `offset(n)`                   | DataStore   | 행 건너뛰기       |
+| `distinct(subset=None)`       | DataStore   | 중복 제거        |
+| `groupby(*cols)`              | LazyGroupBy | 행 그룹화        |
+| `having(condition)`           | DataStore   | 그룹 필터링       |
+| `join(right, ...)`            | DataStore   | DataStore 조인 |
+| `union(other, all=False)`     | DataStore   | DataStore 결합 |
+| `when(cond, val)`             | CaseWhen    | CASE WHEN    |
+
+자세한 내용은 [쿼리 작성](/ko/products/chdb/datastore/query-building)을 참조하십시오.
+
+<div id="datastore-pandas">
+  ### Pandas 호환 메서드
+</div>
+
+전체 209개 메서드 목록은 [Pandas Compatibility](/ko/products/chdb/datastore/pandas-compat)에서 확인할 수 있습니다.
+
+**인덱싱:**
+`head()`, `tail()`, `sample()`, `loc`, `iloc`, `at`, `iat`, `query()`, `isin()`, `where()`, `mask()`, `get()`, `xs()`, `pop()`
+
+**집계:**
+`sum()`, `mean()`, `std()`, `var()`, `min()`, `max()`, `median()`, `count()`, `nunique()`, `quantile()`, `describe()`, `corr()`, `cov()`, `skew()`, `kurt()`
+
+**조작:**
+`drop()`, `drop_duplicates()`, `dropna()`, `fillna()`, `replace()`, `rename()`, `assign()`, `astype()`, `copy()`
+
+**정렬:**
+`sort_values()`, `sort_index()`, `nlargest()`, `nsmallest()`, `rank()`
+
+**재구성:**
+`pivot()`, `pivot_table()`, `melt()`, `stack()`, `unstack()`, `transpose()`, `explode()`, `squeeze()`
+
+**결합:**
+`merge()`, `join()`, `concat()`, `append()`, `combine()`, `update()`, `compare()`
+
+**적용/변환:**
+`apply()`, `applymap()`, `map()`, `agg()`, `transform()`, `pipe()`, `groupby()`
+
+**시계열:**
+`rolling()`, `expanding()`, `ewm()`, `shift()`, `diff()`, `pct_change()`, `resample()`
+
+<div id="datastore-io">
+  ### I/O 메서드
+</div>
+
+| 메서드                     | 설명                    |
+| ----------------------- | --------------------- |
+| `to_csv(path, ...)`     | CSV로 내보내기             |
+| `to_parquet(path, ...)` | Parquet로 내보내기         |
+| `to_json(path, ...)`    | JSON으로 내보내기           |
+| `to_excel(path, ...)`   | Excel로 내보내기           |
+| `to_df()`               | pandas DataFrame으로 변환 |
+| `to_pandas()`           | `to_df()`의 별칭         |
+| `to_arrow()`            | Arrow 테이블로 변환         |
+| `to_dict(orient)`       | 딕셔너리로 변환              |
+| `to_records()`          | 레코드 형식으로 변환           |
+| `to_numpy()`            | NumPy 배열로 변환          |
+| `to_sql()`              | SQL 문자열 생성            |
+| `to_string()`           | 문자열 표현                |
+| `to_markdown()`         | Markdown 테이블          |
+| `to_html()`             | HTML 테이블              |
+
+자세한 내용은 [I/O 연산](/ko/products/chdb/datastore/io)을 참조하십시오.
+
+<div id="datastore-debug">
+  ### 디버깅 메서드
+</div>
+
+| 메서드                      | 설명        |
+| ------------------------ | --------- |
+| `explain(verbose=False)` | 실행 계획 표시  |
+| `clear_cache()`          | 캐시된 결과 삭제 |
+
+자세한 내용은 [디버깅](/ko/products/chdb/debugging/index)을 참조하십시오.
+
+<div id="datastore-magic">
+  ### 매직 메서드
+</div>
+
+| 메서드                       | 설명                                             |            |
+| ------------------------- | ---------------------------------------------- | ---------- |
+| `__getitem__(key)`        | `ds['col']`, `ds[['a', 'b']]`, `ds[condition]` |            |
+| `__setitem__(key, value)` | `ds['col'] = value`                            |            |
+| `__delitem__(key)`        | `del ds['col']`                                |            |
+| `__len__()`               | `len(ds)`                                      |            |
+| `__iter__()`              | `for col in ds`                                |            |
+| `__contains__(key)`       | `'col' in ds`                                  |            |
+| `__repr__()`              | `repr(ds)`                                     |            |
+| `__str__()`               | `str(ds)`                                      |            |
+| `__eq__(other)`           | `ds == other`                                  |            |
+| `__ne__(other)`           | `ds != other`                                  |            |
+| `__lt__(other)`           | `ds < other`                                   |            |
+| `__le__(other)`           | `ds <= other`                                  |            |
+| `__gt__(other)`           | `ds > other`                                   |            |
+| `__ge__(other)`           | `ds >= other`                                  |            |
+| `__add__(other)`          | `ds + other`                                   |            |
+| `__sub__(other)`          | `ds - other`                                   |            |
+| `__mul__(other)`          | `ds * other`                                   |            |
+| `__truediv__(other)`      | `ds / other`                                   |            |
+| `__floordiv__(other)`     | `ds // other`                                  |            |
+| `__mod__(other)`          | `ds % other`                                   |            |
+| `__pow__(other)`          | `ds ** other`                                  |            |
+| `__and__(other)`          | `ds & other`                                   |            |
+| `__or__(other)`           | &#96;ds                                        | other&#96; |
+| `__invert__()`            | `~ds`                                          |            |
+| `__neg__()`               | `-ds`                                          |            |
+| `__pos__()`               | `+ds`                                          |            |
+| `__abs__()`               | `abs(ds)`                                      |            |
+
+***
+
+<div id="columnexpr">
+  ## ColumnExpr
+</div>
+
+지연 평가용 컬럼 표현식을 나타냅니다. 컬럼에 액세스할 때 반환됩니다.
+
+```python
+# ColumnExpr는 자동으로 반환됩니다
+col = ds['name']  # ColumnExpr 반환
+```
+
+<div id="datastore-properties">
+  ### 속성
+</div>
+
+| 속성      | 유형    | 설명     |
+| ------- | ----- | ------ |
+| `name`  | str   | 컬럼 이름  |
+| `dtype` | dtype | 데이터 타입 |
+
+<div id="columnexpr-accessors">
+  ### Accessor
+</div>
+
+| Accessor | 설명          | 메서드         |
+| -------- | ----------- | ----------- |
+| `.str`   | String 연산   | 56개 메서드     |
+| `.dt`    | DateTime 연산 | 42개 이상의 메서드 |
+| `.arr`   | 배열 연산       | 37개 메서드     |
+| `.json`  | JSON 파싱     | 13개 메서드     |
+| `.url`   | URL 파싱      | 15개 메서드     |
+| `.ip`    | IP 주소 연산    | 9개 메서드      |
+| `.geo`   | Geo/거리 연산   | 14개 메서드     |
+
+전체 문서는 [Accessor](/ko/products/chdb/datastore/accessors)에서 확인하십시오.
+
+<div id="columnexpr-arithmetic">
+  ### 산술 연산
+</div>
+
+```python
+ds['total'] = ds['price'] * ds['quantity']
+ds['profit'] = ds['revenue'] - ds['cost']
+ds['ratio'] = ds['a'] / ds['b']
+ds['squared'] = ds['value'] ** 2
+ds['remainder'] = ds['value'] % 10
+```
+
+<div id="columnexpr-comparison">
+  ### 비교 연산
+</div>
+
+```python
+ds[ds['age'] > 25]           # 초과
+ds[ds['age'] >= 25]          # 이상
+ds[ds['age'] < 25]           # 미만
+ds[ds['age'] <= 25]          # 이하
+ds[ds['name'] == 'Alice']    # 같음
+ds[ds['name'] != 'Bob']      # 같지 않음
+```
+
+<div id="columnexpr-logical">
+  ### 논리 연산
+</div>
+
+```python
+ds[(ds['age'] > 25) & (ds['city'] == 'NYC')]    # AND
+ds[(ds['age'] > 25) | (ds['city'] == 'NYC')]    # OR
+ds[~(ds['status'] == 'inactive')]               # NOT
+```
+
+<div id="columnexpr-methods">
+  ### 메서드
+</div>
+
+| 메서드                          | 설명           |
+| ---------------------------- | ------------ |
+| `as_(alias)`                 | 별칭 이름 설정     |
+| `cast(dtype)`                | 지정한 유형으로 변환  |
+| `astype(dtype)`              | cast의 별칭     |
+| `isnull()`                   | NULL인지 여부    |
+| `notnull()`                  | NULL이 아닌지 여부 |
+| `isna()`                     | isnull의 별칭   |
+| `notna()`                    | notnull의 별칭  |
+| `isin(values)`               | 값 목록에 포함     |
+| `between(low, high)`         | 두 값 사이       |
+| `fillna(value)`              | NULL 값 채우기   |
+| `replace(to_replace, value)` | 값 대체         |
+| `clip(lower, upper)`         | 값 범위 제한      |
+| `abs()`                      | 절대값          |
+| `round(decimals)`            | 값 반올림        |
+| `floor()`                    | 버림           |
+| `ceil()`                     | 올림           |
+| `apply(func)`                | 함수 적용        |
+| `map(mapper)`                | 값 매핑         |
+
+<div id="columnexpr-aggregation">
+  ### 집계 메서드
+</div>
+
+| 메서드           | 설명             |
+| ------------- | -------------- |
+| `sum()`       | 합계             |
+| `mean()`      | 평균             |
+| `avg()`       | `mean()`의 별칭   |
+| `min()`       | 최솟값            |
+| `max()`       | 최댓값            |
+| `count()`     | NULL이 아닌 값의 개수 |
+| `nunique()`   | 고유값 개수         |
+| `std()`       | 표준 편차          |
+| `var()`       | 분산             |
+| `median()`    | 중앙값            |
+| `quantile(q)` | 분위수            |
+| `first()`     | 첫 번째 값         |
+| `last()`      | 마지막 값          |
+| `any()`       | 하나라도 true      |
+| `all()`       | 모두 true        |
+
+***
+
+<div id="lazygroupby">
+  ## LazyGroupBy
+</div>
+
+집계 작업에 사용되는 그룹화된 DataStore를 나타냅니다.
+
+```python
+# LazyGroupBy는 자동으로 반환됩니다
+grouped = ds.groupby('category')  # LazyGroupBy 반환
+```
+
+<div id="columnexpr-methods">
+  ### 메서드
+</div>
+
+| 메서드               | 반환값       | 설명         |
+| ----------------- | --------- | ---------- |
+| `agg(spec)`       | DataStore | 집계         |
+| `aggregate(spec)` | DataStore | `agg`의 별칭  |
+| `sum()`           | DataStore | 그룹별 합계     |
+| `mean()`          | DataStore | 그룹별 평균     |
+| `count()`         | DataStore | 그룹별 개수     |
+| `min()`           | DataStore | 그룹별 최솟값    |
+| `max()`           | DataStore | 그룹별 최댓값    |
+| `std()`           | DataStore | 그룹별 표준편차   |
+| `var()`           | DataStore | 그룹별 분산     |
+| `median()`        | DataStore | 그룹별 중앙값    |
+| `nunique()`       | DataStore | 그룹별 고유값 개수 |
+| `first()`         | DataStore | 그룹별 첫 번째 값 |
+| `last()`          | DataStore | 그룹별 마지막 값  |
+| `nth(n)`          | DataStore | 그룹별 n번째 값  |
+| `head(n)`         | DataStore | 그룹별 처음 n개  |
+| `tail(n)`         | DataStore | 그룹별 마지막 n개 |
+| `apply(func)`     | DataStore | 그룹별 함수 적용  |
+| `transform(func)` | DataStore | 그룹별 변환     |
+| `filter(func)`    | DataStore | 그룹 필터링     |
+
+<div id="lazygroupby-columns">
+  ### 컬럼 선택
+</div>
+
+```python
+# groupby 이후 컬럼 선택
+grouped['amount'].sum()     # DataStore 반환
+grouped[['a', 'b']].sum()   # DataStore 반환
+```
+
+<div id="lazygroupby-agg">
+  ### 집계 사양
+</div>
+
+```python
+# 단일 집계
+grouped.agg({'amount': 'sum'})
+
+# 컬럼별 다중 집계
+grouped.agg({'amount': ['sum', 'mean', 'count']})
+
+# 이름 있는 집계
+grouped.agg(
+    total=('amount', 'sum'),
+    average=('amount', 'mean'),
+    count=('id', 'count')
+)
+```
+
+***
+
+<div id="lazyseries">
+  ## LazySeries
+</div>
+
+지연 평가되는 Series(단일 컬럼)를 나타냅니다.
+
+<div id="datastore-properties">
+  ### 속성
+</div>
+
+| 속성      | 유형    | 설명     |
+| ------- | ----- | ------ |
+| `name`  | str   | Series 이름 |
+| `dtype` | dtype | 데이터 타입 |
+
+<div id="columnexpr-methods">
+  ### 메서드
+</div>
+
+대부분의 메서드는 `ColumnExpr`에서 상속됩니다. 주요 메서드는 다음과 같습니다:
+
+| 메서드              | 설명            |
+| ---------------- | ------------- |
+| `value_counts()` | 값별 빈도         |
+| `unique()`       | 고유 값          |
+| `nunique()`      | 고유 값 개수       |
+| `mode()`         | 최빈값           |
+| `to_list()`      | 목록으로 변환       |
+| `to_numpy()`     | 배열로 변환        |
+| `to_frame()`     | DataStore로 변환 |
+
+***
+
+<div id="related">
+  ## 관련 클래스
+</div>
+
+<div id="f-class">
+  ### F (함수)
+</div>
+
+ClickHouse 함수 네임스페이스입니다.
+
+```python
+from chdb.datastore import F, Field
+
+# 집계
+F.sum(Field('amount'))
+F.avg(Field('price'))
+F.count(Field('id'))
+F.quantile(Field('value'), 0.95)
+
+# 조건부
+F.sum_if(Field('amount'), Field('status') == 'completed')
+F.count_if(Field('active'))
+
+# 윈도우
+F.row_number().over(order_by='date')
+F.lag('price', 1).over(partition_by='product', order_by='date')
+```
+
+자세한 내용은 [집계](/ko/products/chdb/datastore/aggregation#f-namespace)를 확인하십시오.
+
+<div id="field-class">
+  ### 필드
+</div>
+
+컬럼을 이름으로 참조합니다.
+
+```python
+from chdb.datastore import Field
+
+# 필드 참조 생성
+amount = Field('amount')
+price = Field('price')
+
+# 표현식에서 사용
+F.sum(Field('amount'))
+F.avg(Field('price'))
+```
+
+<div id="casewhen-class">
+  ### CaseWhen
+</div>
+
+CASE WHEN 표현식을 생성하는 빌더입니다.
+
+```python
+# case-when 표현식 생성
+result = (ds
+    .when(ds['score'] >= 90, 'A')
+    .when(ds['score'] >= 80, 'B')
+    .when(ds['score'] >= 70, 'C')
+    .otherwise('F')
+)
+
+# 컬럼에 할당
+ds['grade'] = result
+```
+
+<div id="window-class">
+  ### 윈도우
+</div>
+
+윈도우 함수의 윈도우 사양입니다.
+
+```python
+from chdb.datastore import F
+
+# 윈도우 생성
+window = F.window(
+    partition_by='category',
+    order_by='date',
+    rows_between=(-7, 0)
+)
+
+# 집계에 사용
+ds['rolling_avg'] = F.avg('price').over(window)
+```

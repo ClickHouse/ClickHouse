@@ -258,9 +258,9 @@ fmt.Printf("row: col1=%v, col2=%v, col3=%v\n", col1, col2, col3)
   ### Nested
 </div>
 
-يعادل الحقل Nested قيمة Array من Tuples مسماة. ويعتمد الاستخدام على ما إذا كان المستخدم قد عيّن [flatten&#95;nested](/ar/reference/settings/session-settings/other#flatten_nested) إلى 1 أو 0.
+يعادل الحقل Nested قيمة Array من Tuples مسماة. ويعتمد الاستخدام على ما إذا كان المستخدم قد عيّن [flatten&#95;nested](/ar/reference/settings/session-settings#flatten_nested) إلى 1 أو 0.
 
-عند تعيين flatten&#95;nested إلى 0، تبقى أعمدة Nested على هيئة Array واحدة من Tuples. يتيح لك ذلك استخدام شرائح من maps في الإدراج والاسترجاع، بالإضافة إلى مستويات تعشيق اعتباطية. يجب أن يساوي مفتاح الـ map اسم العمود، كما هو موضح في المثال أدناه.
+عند تعيين flatten&#95;nested إلى 0، تبقى أعمدة Nested على هيئة مصفوفة واحدة من تركيبات. يتيح لك ذلك استخدام شرائح من maps في الإدراج والاسترجاع، بالإضافة إلى مستويات تعشيق اعتباطية. يجب أن يساوي مفتاح الـ map اسم العمود، كما هو موضح في المثال أدناه.
 
 ملاحظة: بما أن الـ maps تمثل تركيبة، فيجب أن تكون من النوع `map[string]interface{}`. والقيم حاليًا ليست محددة الأنواع بشكل صارم.
 
@@ -367,7 +367,7 @@ rows.Close()
 
 [مثال كامل - `flatten_tested=0`](https://github.com/ClickHouse/clickhouse-go/blob/main/examples/clickhouse_api/nested.go#L28-L118)
 
-إذا استُخدمت القيمة الافتراضية 1 لـ `flatten_nested`، فستُسطَّح الأعمدة من النوع Nested إلى Arrays منفصلة. ويتطلب ذلك استخدام شرائح متداخلة عند الإدراج والاسترجاع. ورغم أن مستويات تداخل عشوائية قد تنجح، فإن ذلك غير مدعوم رسميًا.
+إذا استُخدمت القيمة الافتراضية 1 لـ `flatten_nested`، فستُسطَّح الأعمدة من النوع Nested إلى مصفوفات منفصلة. ويتطلب ذلك استخدام شرائح متداخلة عند الإدراج والاسترجاع. ورغم أن مستويات تداخل عشوائية قد تنجح، فإن ذلك غير مدعوم رسميًا.
 
 ```go
 conn, err := GetNativeConnection(nil, nil, nil)
