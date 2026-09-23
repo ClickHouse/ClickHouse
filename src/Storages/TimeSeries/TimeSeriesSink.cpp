@@ -568,7 +568,7 @@ namespace
 
     /// Builds a block for the "metrics" table from the columns `metric_family`, `type`, `unit`, `help` of the input block,
     /// skipping the rows with an empty metric family. Returns nothing if there are no rows to insert.
-    std::optional<Block> makeMetricsBlock(const Block & block)
+    std::optional<Block> makeMetricsBlock(const Block & block, UInt64 time_series_version)
     {
         const auto & metric_family_col = block.getByName(TimeSeriesColumnNames::MetricFamily);
         const auto & type_col = block.getByName(TimeSeriesColumnNames::Type);
@@ -603,7 +603,10 @@ namespace
             return {};
 
         Block metrics_block;
-        metrics_block.insert(ColumnWithTypeAndName{std::move(out_metric_family_column), metric_family_col.type, TimeSeriesColumnNames::MetricFamilyName});
+        metrics_block.insert(ColumnWithTypeAndName{
+            std::move(out_metric_family_column),
+            metric_family_col.type,
+            TimeSeriesColumnNames::getInnerMetricFamily(time_series_version)});
         metrics_block.insert(ColumnWithTypeAndName{std::move(out_type_column), type_col.type, TimeSeriesColumnNames::Type});
         metrics_block.insert(ColumnWithTypeAndName{std::move(out_unit_column), unit_col.type, TimeSeriesColumnNames::Unit});
         metrics_block.insert(ColumnWithTypeAndName{std::move(out_help_column), help_col.type, TimeSeriesColumnNames::Help});
@@ -959,7 +962,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
     const bool has_bucketed_samples = time_series_storage.getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES;
     if (has_bucketed_samples)
     {
-        /// A version 6 row contains the samples of one series within one time bucket.
+        /// A bucketed row contains the samples of one series within one time bucket.
         samples_header.insert(ColumnWithTypeAndName{makeSamplesArrayDataType(timestamp_type, value_type), TimeSeriesColumnNames::Samples});
         samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::Bucket});
         samples_header.insert(ColumnWithTypeAndName{timestamp_type, TimeSeriesColumnNames::MinTime});
@@ -985,7 +988,7 @@ void TimeSeriesSink::initTagsAndSamplesPipelines()
         }
     }
 
-    /// The recent samples table (if any) receives every sample too. Version 6 can use another bucket step.
+    /// The recent samples table (if any) receives every sample too. A bucketed table can use another bucket step.
     if (time_series_storage.hasTarget(ViewTarget::RecentSamples))
         recent_samples_pipeline = createTargetPipeline(ViewTarget::RecentSamples, samples_header);
 }
@@ -1086,7 +1089,8 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
 
     Block metric_families_header;
     metric_families_header.insert(ColumnWithTypeAndName{
-        header.getByName(TimeSeriesColumnNames::MetricFamily).type, TimeSeriesColumnNames::MetricFamilyName});
+        header.getByName(TimeSeriesColumnNames::MetricFamily).type,
+        TimeSeriesColumnNames::getInnerMetricFamily(time_series_storage.getVersion())});
 
     metric_families_header.insert(ColumnWithTypeAndName{
         header.getByName(TimeSeriesColumnNames::Type).type, TimeSeriesColumnNames::Type});
@@ -1103,7 +1107,7 @@ void TimeSeriesSink::initMetricFamiliesPipeline()
 
 void TimeSeriesSink::consumeMetricFamilies(const Block & block)
 {
-    if (auto metrics_block = makeMetricsBlock(block))
+    if (auto metrics_block = makeMetricsBlock(block, time_series_storage.getVersion()))
         metric_families_pipeline->push(std::move(*metrics_block));
 }
 

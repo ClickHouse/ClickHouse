@@ -27,7 +27,10 @@ class StorageTimeSeries;
 ///       `.inner_id.metricfamilies.<uuid>` instead of `.inner_id.metrics.<uuid>`, the same name is used in backups,
 ///       and the definition is written with the keyword `METRIC FAMILIES` instead of `METRICS`.
 ///   5 - New inner tags tables with a `MergeTree` family engine get a `keyValuePairs` text index by default.
-///   6 - The samples tables store buckets of samples: a row of the "samples" (and "recent samples") table keeps
+///   6 - The column `metric_family_name` of the "metric families" target table was renamed to `metric_family`, the name of
+///       the corresponding outer column. Tables of earlier versions keep the old name of the column
+///       (see `TimeSeriesColumnNames::getInnerMetricFamily`).
+///   7 - The samples tables store buckets of samples: a row of the "samples" (and "recent samples") table keeps
 ///       the samples of one series within one time bucket as a sorted array `samples` with the columns `bucket`,
 ///       `min_time`, `max_time`, and the table engine is `AggregatingMergeTree`. Tables of the older versions
 ///       stored one sample per row (columns `timestamp`, `value`).
@@ -37,7 +40,7 @@ namespace TimeSeriesVersion
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 6;
+    constexpr UInt64 LATEST = 7;
 
     /// The first version recording the `id_type` setting (see the version history above).
     /// A table of an earlier version must not have the setting: an older server wouldn't understand it.
@@ -49,8 +52,12 @@ namespace TimeSeriesVersion
     /// The first version creating a text index on the `tags` map by default.
     constexpr UInt64 MIN_WITH_TAGS_TEXT_INDEX = 5;
 
+    /// The first version naming the column of the "metric families" target table with the name of a metric family
+    /// `metric_family` instead of `metric_family_name` (see the version history above).
+    constexpr UInt64 MIN_WITH_METRIC_FAMILY_INNER_COLUMN = 6;
+
     /// The first version storing buckets of samples in the samples tables.
-    constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = 6;
+    constexpr UInt64 MIN_WITH_BUCKETED_SAMPLES = 7;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -74,6 +81,7 @@ namespace TimeSeriesVersion
     static_assert(MIN_WITH_ID_TYPE_SETTING <= LATEST);
     static_assert(MIN_WITH_SAMPLES_OUTER_COLUMN <= LATEST);
     static_assert(MIN_WITH_TAGS_TEXT_INDEX <= LATEST);
+    static_assert(MIN_WITH_METRIC_FAMILY_INNER_COLUMN <= LATEST);
     static_assert(MIN_WITH_BUCKETED_SAMPLES <= LATEST);
     static_assert(MIN_WRITABLE <= LATEST);
     static_assert(MIN_SUPPORTED <= MIN_SUPPORTED_BY_PROMQL);

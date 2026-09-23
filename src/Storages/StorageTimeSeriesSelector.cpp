@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -82,6 +83,93 @@ String getStringConstArgument(const ASTPtr & arg, const ContextPtr & context, st
     if (value.isNull())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument '{}' must be a literal with type String, got NULL", arg_name);
     return String(value.getDataAt());
+}
+
+/// Keep at least millisecond precision for fractional selector bounds even when the table stores coarser timestamps.
+constexpr UInt32 MIN_TIME_SCALE = 3;
+
+UInt32 getTimeScale(UInt32 table_timestamp_scale, const DataTypePtr & min_time_type, const DataTypePtr & max_time_type)
+{
+    UInt32 time_scale = std::max(table_timestamp_scale, MIN_TIME_SCALE);
+    for (const auto & type : {min_time_type, max_time_type})
+        time_scale = std::max(time_scale, tryGetDecimalScale(*removeNullable(type)).value_or(0));
+    return time_scale;
+}
+
+DateTime64 convertToScale(DateTime64 timestamp, UInt32 timestamp_scale, UInt32 target_scale, bool round_up)
+{
+    chassert(timestamp_scale >= target_scale);
+    if (timestamp_scale == target_scale)
+        return timestamp;
+
+    const Int64 divisor = DecimalUtils::scaleMultiplier<Int64>(timestamp_scale - target_scale);
+    Int64 quotient = timestamp.value / divisor;
+    const Int64 remainder = timestamp.value % divisor;
+    if (round_up && (remainder > 0))
+        ++quotient;
+    else if (!round_up && (remainder < 0))
+        --quotient;
+    return DateTime64{quotient};
+}
+
+bool isWithinRecentSamplesTTL(UInt64 recent_samples_ttl_seconds, Int64 now_seconds, DateTime64 timestamp, UInt32 timestamp_scale)
+{
+    static constexpr Int64 safety_margin_seconds = 60;
+    const Int64 timestamp_seconds = convertToScale(timestamp, timestamp_scale, 0, false).value;
+    return timestamp_seconds >= now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds;
+}
+
+DateTime64 minRepresentableTime(const DataTypePtr & table_timestamp_type)
+{
+    if (isDateTime64(table_timestamp_type))
+        return DateTime64{std::numeric_limits<Int64>::min()};
+    chassert(isDateTime(table_timestamp_type) || isUInt32(table_timestamp_type));
+    return DateTime64{0};
+}
+
+DateTime64 maxRepresentableTime(const DataTypePtr & table_timestamp_type)
+{
+    if (isDateTime64(table_timestamp_type))
+        return DateTime64{std::numeric_limits<Int64>::max()};
+    chassert(isDateTime(table_timestamp_type) || isUInt32(table_timestamp_type));
+    return DateTime64{std::numeric_limits<UInt32>::max()};
+}
+
+struct TableTimeRange
+{
+    std::optional<DateTime64> min_time;
+    std::optional<DateTime64> max_time;
+
+    bool empty() const { return min_time && max_time && (*min_time > *max_time); }
+};
+
+TableTimeRange makeTableTimeRange(
+    const DataTypePtr & table_timestamp_type,
+    const std::optional<DateTime64> & min_time,
+    const std::optional<DateTime64> & max_time,
+    UInt32 time_scale)
+{
+    const UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
+    const DateTime64 min_representable_time = minRepresentableTime(table_timestamp_type);
+    const DateTime64 max_representable_time = maxRepresentableTime(table_timestamp_type);
+    const TableTimeRange empty_range{max_representable_time, min_representable_time};
+
+    TableTimeRange range;
+    if (min_time)
+    {
+        const DateTime64 table_min_time = convertToScale(*min_time, time_scale, table_timestamp_scale, true);
+        if (table_min_time > max_representable_time)
+            return empty_range;
+        range.min_time = std::max(table_min_time, min_representable_time);
+    }
+    if (max_time)
+    {
+        const DateTime64 table_max_time = convertToScale(*max_time, time_scale, table_timestamp_scale, false);
+        if (table_max_time < min_representable_time)
+            return empty_range;
+        range.max_time = std::min(table_max_time, max_representable_time);
+    }
+    return range;
 }
 
 ASTPtr makeOrderByIDAndBucket()
@@ -173,31 +261,32 @@ StorageTimeSeriesSelector::Configuration StorageTimeSeriesSelector::getConfigura
     auto time_series_storage = storagePtrToTimeSeries(DatabaseCatalog::instance().getTable(time_series_storage_id, context));
     checkTimeSeriesVersionSupportedByPromQL(*time_series_storage);
     auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
-    auto [timestamp_data_type, scalar_data_type] = splitTimeSeriesType(
+    auto [table_timestamp_type, table_value_type] = splitTimeSeriesType(
         time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())).type);
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     auto tags_target_metadata = tags_target->getInMemoryMetadataPtr(context, false);
-    DataTypePtr id_data_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
-
-    UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
+    DataTypePtr table_id_type = tags_target_metadata->columns.get(TimeSeriesColumnNames::ID).type;
 
     PrometheusQueryTree selector{getStringConstArgument(args[argument_index++], context, "selector")};
 
     auto [min_time_field, min_time_type] = evaluateConstantExpression(args[argument_index++], context);
     auto [max_time_field, max_time_type] = evaluateConstantExpression(args[argument_index++], context);
 
-    auto min_time = parseTimeSeriesTimestamp(min_time_field, min_time_type, timestamp_scale);
-    auto max_time = parseTimeSeriesTimestamp(max_time_field, max_time_type, timestamp_scale);
+    UInt32 table_timestamp_scale = tryGetDecimalScale(*table_timestamp_type).value_or(0);
+    UInt32 parameters_scale = getTimeScale(table_timestamp_scale, min_time_type, max_time_type);
+    auto min_time = parseTimeSeriesTimestamp(min_time_field, min_time_type, parameters_scale);
+    auto max_time = parseTimeSeriesTimestamp(max_time_field, max_time_type, parameters_scale);
 
     chassert(argument_index == args.size());
 
     Configuration config;
     config.time_series_storage_id = std::move(time_series_storage_id);
     config.time_series_version = time_series_storage->getVersion();
-    config.id_data_type = std::move(id_data_type);
-    config.timestamp_data_type = std::move(timestamp_data_type);
-    config.scalar_data_type = std::move(scalar_data_type);
+    config.table_id_type = std::move(table_id_type);
+    config.table_timestamp_type = std::move(table_timestamp_type);
+    config.table_value_type = std::move(table_value_type);
     config.selector = std::move(selector);
+    config.time_scale = parameters_scale;
     config.min_time = min_time;
     config.max_time = max_time;
     return config;
@@ -214,7 +303,7 @@ StorageTimeSeriesSelector::StorageTimeSeriesSelector(
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "{} is not an instant selector", quoteString(config.selector.toString()));
 
     if (config.min_time > config.max_time)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Max time {} is less than min time {}", Field{config.min_time}, Field{config.max_time});
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Max time {} is less than min time {}", Field{config.max_time}, Field{config.min_time});
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns_);
@@ -322,6 +411,38 @@ ASTPtr makeWhereFilterForTagsTable(
     return makeASTForLogicalAnd(std::move(asts));
 }
 
+ASTPtr wrapIntoSelectWithUnionQuery(ASTPtr select_query)
+{
+    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+    select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
+    auto list_of_selects = make_intrusive<ASTExpressionList>();
+    list_of_selects->children.push_back(std::move(select_query));
+    select_with_union_query->children.push_back(std::move(list_of_selects));
+    select_with_union_query->list_of_selects = select_with_union_query->children.back();
+    return select_with_union_query;
+}
+
+ASTPtr makeSelectNoIDsQuery(const DataTypePtr & table_id_type)
+{
+    auto select_query = make_intrusive<ASTSelectQuery>();
+
+    auto select_list_exp = make_intrusive<ASTExpressionList>();
+    select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+    select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
+
+    auto table_exp = make_intrusive<ASTTableExpression>();
+    table_exp->table_function = makeASTFunction(
+        "null", make_intrusive<ASTLiteral>(fmt::format("{} {}", TimeSeriesColumnNames::ID, table_id_type->getName())));
+    table_exp->children.emplace_back(table_exp->table_function);
+    auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+    table->table_expression = table_exp;
+    auto tables = make_intrusive<ASTTablesInSelectQuery>();
+    tables->children.push_back(table);
+    select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+
+    return wrapIntoSelectWithUnionQuery(select_query);
+}
+
 ASTPtr makeSelectQueryFromTagsTable(
     const StorageID & tags_table_id,
     const PrometheusQueryTree::MatcherList & matchers,
@@ -374,17 +495,7 @@ ASTPtr makeSelectQueryFromTagsTable(
         select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
     }
 
-    /// Wrap the select query into ASTSelectWithUnionQuery.
-    auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-    {
-        select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-        auto list_of_selects = make_intrusive<ASTExpressionList>();
-        list_of_selects->children.push_back(std::move(select_query));
-        select_with_union_query->children.push_back(std::move(list_of_selects));
-        select_with_union_query->list_of_selects = select_with_union_query->children.back();
-    }
-
-    return select_with_union_query;
+    return wrapIntoSelectWithUnionQuery(select_query);
 }
 
 ASTPtr makeWhereFilterForRowSamplesTable(
@@ -1110,14 +1221,24 @@ ASTs tryMakeWholeMetricIDRangeConditions(
 
 ASTPtr StorageTimeSeriesSelector::makeSelectIDsQuery(
     const StorageID & tags_table_id,
-    const PrometheusQueryTree::MatcherList & matchers,
     const TimeSeriesSettings & time_series_settings,
+    const DataTypePtr & table_timestamp_type,
+    const DataTypePtr & table_id_type,
+    const PrometheusQueryTree::MatcherList & matchers,
     const std::optional<DateTime64> & min_time,
     const std::optional<DateTime64> & max_time,
-    const DataTypePtr & timestamp_data_type)
+    UInt32 time_scale)
 {
-    auto select_query = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, makeColumnNameByTagNameMap(time_series_settings), min_time, max_time, timestamp_data_type);
+    const auto table_time_range = makeTableTimeRange(table_timestamp_type, min_time, max_time, time_scale);
+    auto select_query = table_time_range.empty()
+        ? makeSelectNoIDsQuery(table_id_type)
+        : makeSelectQueryFromTagsTable(
+            tags_table_id,
+            matchers,
+            makeColumnNameByTagNameMap(time_series_settings),
+            table_time_range.min_time,
+            table_time_range.max_time,
+            table_timestamp_type);
 
     /// Alias the returned expression (`timeSeriesStoreTags(...)`, which returns `id`) so callers can reference the column by a fixed name.
     const auto & select_with_union = typeid_cast<const ASTSelectWithUnionQuery &>(*select_query);
@@ -1181,23 +1302,17 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     auto time_series_settings = time_series_storage->getStorageSettings();
     const bool has_bucketed_samples = time_series_storage->getVersion() >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES;
 
-    DateTime64 min_time = config.min_time;
-    DateTime64 max_time = config.max_time;
-    if (!isDateTime64(config.timestamp_data_type))
+    const auto table_time_range
+        = makeTableTimeRange(config.table_timestamp_type, config.min_time, config.max_time, config.time_scale);
+    if (table_time_range.empty())
     {
-        /// `DateTime` and `UInt32` timestamps can't be outside of the range of `UInt32`: a bound outside of it (e.g. a lookback
-        /// crossing 1970) would wrap when converted to the timestamp type in the generated query, so the bounds are clamped.
-        constexpr Int64 max_timestamp = std::numeric_limits<UInt32>::max();
-        if ((max_time.value < 0) || (min_time.value > max_timestamp))
-        {
-            /// A time range entirely outside of that range can't contain samples, so the result is empty.
-            auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
-            query_plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(std::move(header)))));
-            return true;
-        }
-        min_time.value = std::clamp<Int64>(min_time.value, 0, max_timestamp);
-        max_time.value = std::clamp<Int64>(max_time.value, 0, max_timestamp);
+        auto header = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
+        query_plan.addStep(std::make_unique<ReadFromPreparedSource>(Pipe(std::make_shared<NullSource>(std::move(header)))));
+        return true;
     }
+    chassert(table_time_range.min_time && table_time_range.max_time);
+    const DateTime64 min_time = *table_time_range.min_time;
+    const DateTime64 max_time = *table_time_range.max_time;
 
     const auto & matchers = typeid_cast<const PrometheusQueryTree::InstantSelector &>(*config.selector.getRoot()).matchers;
 
@@ -1207,14 +1322,9 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     const auto recent_samples_ttl_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_ttl_seconds].value;
     if (recent_samples_ttl_seconds && context->getSettingsRef()[Setting::time_series_prefer_recent_samples_table])
     {
-        /// `ttl_only_drop_parts` keeps samples >= now() - TTL present; the margin covers TTL asynchrony and its whole-second precision.
-        static constexpr Int64 safety_margin_seconds = 60;
-        UInt32 timestamp_scale = tryGetDecimalScale(*config.timestamp_data_type).value_or(0);
-        Int64 now_seconds = std::time(nullptr);
-        DateTime64 min_guaranteed_time{
-            (now_seconds - static_cast<Int64>(recent_samples_ttl_seconds) + safety_margin_seconds)
-            * DecimalUtils::scaleMultiplier<Int64>(timestamp_scale)};
-        if ((min_time >= min_guaranteed_time) && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
+        const UInt32 table_timestamp_scale = tryGetDecimalScale(*config.table_timestamp_type).value_or(0);
+        if (isWithinRecentSamplesTTL(recent_samples_ttl_seconds, std::time(nullptr), min_time, table_timestamp_scale)
+            && time_series_storage->tryGetTargetTable(ViewTarget::RecentSamples, context))
         {
             samples_table_kind = ViewTarget::RecentSamples;
             bucket_step_seconds = (*time_series_settings)[TimeSeriesSetting::recent_samples_bucket_step_seconds];
@@ -1242,7 +1352,7 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
     }
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
-        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
+        tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.table_timestamp_type);
 
     auto samples_table = time_series_storage->getTargetTable(samples_table_kind, context);
     auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
@@ -1302,8 +1412,8 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
             tags_table_metadata->getColumns(),
             *time_series_settings,
             config.time_series_storage_id,
-            config.id_data_type,
-            config.timestamp_data_type,
+            config.table_id_type,
+            config.table_timestamp_type,
             min_time_to_filter_ids,
             max_time_to_filter_ids,
             context,
@@ -1348,10 +1458,10 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
             std::move(select_query_from_tags_table),
             min_time,
             max_time,
-            config.timestamp_data_type,
+            config.table_timestamp_type,
             std::move(whole_metric_id_range_conditions));
         ASTPtr select_query = makeSelectQueryForRowSamples(
-            std::move(select_query_from_samples_table), config.id_data_type, config.timestamp_data_type, config.scalar_data_type);
+            std::move(select_query_from_samples_table), config.table_id_type, config.table_timestamp_type, config.table_value_type);
 
         LOG_DEBUG(log, "Building row-layout SQL for selector: {}", config.selector.toString());
         LOG_DEBUG(log, "Will execute query:\n{}", select_query->formatForLogging());
@@ -1373,7 +1483,7 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
         select_query_from_tags_table,
         min_time,
         max_time,
-        config.timestamp_data_type,
+        config.table_timestamp_type,
         bucket_step_seconds,
         samples_table_can_use_prewhere,
         samples_read_order,
@@ -1383,9 +1493,9 @@ bool StorageTimeSeriesSelector::buildQueryPlan(
 
     ASTPtr select_query = makeSelectQuery(
         std::move(select_query_from_samples_table),
-        config.id_data_type,
-        config.timestamp_data_type,
-        config.scalar_data_type,
+        config.table_id_type,
+        config.table_timestamp_type,
+        config.table_value_type,
         samples_read_order == SamplesReadOrder::IdBucket,
         samples_read_mode);
 

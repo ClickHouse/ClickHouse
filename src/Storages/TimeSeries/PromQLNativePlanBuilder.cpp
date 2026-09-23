@@ -8,12 +8,14 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ContextTimeSeriesTagsCollector.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Set.h>
+#include <Interpreters/convertFieldToType.h>
 #include <Parsers/NullsAction.h>
 #include <Parsers/Prometheus/PrometheusQueryClassifier.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -31,6 +33,8 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
+#include <Storages/TimeSeries/getPromQLResultTimestampType.h>
+#include <Storages/TimeSeries/splitTimeSeriesType.h>
 #include <Common/re2.h>
 
 #include <fmt/format.h>
@@ -63,7 +67,7 @@ constexpr auto nonempty_filter_column = "__promql_native_nonempty";
 bool hasCompatibleEvaluationSettings(const PrometheusQueryEvaluationSettings & evaluation_settings)
 {
     return !evaluation_settings.use_current_time && evaluation_settings.start_time && evaluation_settings.end_time
-        && evaluation_settings.step && evaluation_settings.step->value > 0 && isDateTime64(evaluation_settings.timestamp_data_type);
+        && evaluation_settings.step && evaluation_settings.step->value > 0 && evaluation_settings.table_timestamp_type;
 }
 
 StorageTimeSeriesSelector::Configuration makeRangeSelectorConfiguration(
@@ -79,6 +83,9 @@ StorageTimeSeriesSelector::Configuration makeRangeSelectorConfiguration(
 
     auto tags_target = time_series_storage->getTargetTable(ViewTarget::Tags, context);
     auto tags_metadata = tags_target->getInMemoryMetadataPtr(context, false);
+    auto time_series_metadata = time_series_storage->getInMemoryMetadataPtr(context, false);
+    auto [table_timestamp_type, table_value_type] = splitTimeSeriesType(
+        time_series_metadata->columns.get(TimeSeriesColumnNames::getOuterSamples(time_series_storage->getVersion())).type);
 
     auto selector_node = std::make_unique<PrometheusQueryTree::InstantSelector>();
     selector_node->matchers = matchers;
@@ -86,10 +93,11 @@ StorageTimeSeriesSelector::Configuration makeRangeSelectorConfiguration(
     StorageTimeSeriesSelector::Configuration selector_config;
     selector_config.time_series_storage_id = evaluation_settings.time_series_storage_id;
     selector_config.time_series_version = time_series_storage->getVersion();
-    selector_config.id_data_type = tags_metadata->columns.get(TimeSeriesColumnNames::ID).type;
-    selector_config.timestamp_data_type = evaluation_settings.timestamp_data_type;
-    selector_config.scalar_data_type = evaluation_settings.scalar_data_type;
-    selector_config.selector = PrometheusQueryTree(std::move(selector_node), promql_query.getTimestampScale());
+    selector_config.table_id_type = tags_metadata->columns.get(TimeSeriesColumnNames::ID).type;
+    selector_config.table_timestamp_type = std::move(table_timestamp_type);
+    selector_config.table_value_type = std::move(table_value_type);
+    selector_config.selector = PrometheusQueryTree(std::move(selector_node), promql_query.getTimeScale());
+    selector_config.time_scale = evaluation_settings.time_scale;
     selector_config.min_time = *evaluation_settings.start_time - window + 1;
     selector_config.max_time = *evaluation_settings.end_time;
     return selector_config;
@@ -99,10 +107,10 @@ std::shared_ptr<StorageTimeSeriesSelector> makeRangeSelectorStorage(
     const StorageTimeSeriesSelector::Configuration & selector_config, StorageTimeSeriesSelector::SamplesReadMode samples_read_mode)
 {
     auto time_series_data_type = std::make_shared<DataTypeArray>(
-        std::make_shared<DataTypeTuple>(DataTypes{selector_config.timestamp_data_type, selector_config.scalar_data_type}));
+        std::make_shared<DataTypeTuple>(DataTypes{selector_config.table_timestamp_type, selector_config.table_value_type}));
     ColumnsDescription selector_columns({
-        {TimeSeriesColumnNames::ID, selector_config.id_data_type},
-        {TimeSeriesColumnNames::Bucket, selector_config.timestamp_data_type},
+        {TimeSeriesColumnNames::ID, selector_config.table_id_type},
+        {TimeSeriesColumnNames::Bucket, selector_config.table_timestamp_type},
         {samples_read_mode == StorageTimeSeriesSelector::SamplesReadMode::Raw ? TimeSeriesColumnNames::Samples
                                                                               : TimeSeriesColumnNames::TimeSeries,
          time_series_data_type},
@@ -208,9 +216,12 @@ bool hasUniqueIdentifiersPerFullTagSet(const ContextPtr & context)
 }
 
 AggregateFunctionPtr makeRangeRateFunction(
-    const PrometheusQueryEvaluationSettings & evaluation_settings, PrometheusQueryTree::DurationType window, bool reads_raw_samples = false)
+    const PrometheusQueryEvaluationSettings & evaluation_settings,
+    PrometheusQueryTree::DurationType window,
+    const Block & input_header,
+    bool reads_raw_samples = false)
 {
-    const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
+    const UInt32 timestamp_scale = evaluation_settings.time_scale;
     Array rate_parameters{
         DecimalField<DateTime64>(*evaluation_settings.start_time, timestamp_scale),
         DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale),
@@ -221,12 +232,20 @@ AggregateFunctionPtr makeRangeRateFunction(
     AggregateFunctionProperties rate_properties;
     DataTypes rate_arguments;
     if (reads_raw_samples)
-        rate_arguments = DataTypes{evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type};
-    else
     {
-        rate_arguments = DataTypes{std::make_shared<DataTypeArray>(
-            std::make_shared<DataTypeTuple>(DataTypes{evaluation_settings.timestamp_data_type, evaluation_settings.scalar_data_type}))};
+        const auto & samples_type = input_header.getByName(TimeSeriesColumnNames::Samples).type;
+        const auto * array_type = typeid_cast<const DataTypeArray *>(samples_type.get());
+        const auto * tuple_type = array_type ? typeid_cast<const DataTypeTuple *>(array_type->getNestedType().get()) : nullptr;
+        if (!tuple_type || tuple_type->getElements().size() != 2)
+            throw Exception(
+                ErrorCodes::LOGICAL_ERROR,
+                "Expected {} to be Array(Tuple(timestamp, value)), got {}",
+                TimeSeriesColumnNames::Samples,
+                samples_type->getName());
+        rate_arguments = tuple_type->getElements();
     }
+    else
+        rate_arguments = DataTypes{input_header.getByName(TimeSeriesColumnNames::TimeSeries).type};
     return AggregateFunctionFactory::instance().get(
         "timeSeriesRateToGrid", NullsAction::EMPTY, rate_arguments, rate_parameters, rate_properties);
 }
@@ -275,7 +294,8 @@ bool tryBuildPromQLRangeSumByPlan(
     if (!materializeIdentifierSet(native_plan, selector_context, prepared_identifier_sets) || !hasUniqueIdentifiersPerFullTagSet(context))
         return false;
 
-    auto rate_function = makeRangeRateFunction(evaluation_settings, range_sum_query.window);
+    auto rate_function = makeRangeRateFunction(
+        evaluation_settings, range_sum_query.window, *native_plan.getCurrentHeader());
 
     AggregateFunctionProperties sum_properties;
     auto sum_function = AggregateFunctionFactory::instance().get(
@@ -342,16 +362,26 @@ bool tryBuildPromQLRangeRatePlan(
     std::optional<Field> raw_max_time;
     if (reads_raw_samples)
     {
-        const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
-        raw_min_time = DecimalField<DateTime64>(*evaluation_settings.start_time - range_rate_query.window + 1, timestamp_scale);
-        raw_max_time = DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale);
+        auto result_timestamp_type = getPromQLResultTimestampType(evaluation_settings.time_scale, evaluation_settings.time_zone);
+        const auto & table_timestamp_type = native_plan.getCurrentHeader()->getByName(TimeSeriesColumnNames::Samples).type;
+        const auto & tuple_type = typeid_cast<const DataTypeTuple &>(
+            *typeid_cast<const DataTypeArray &>(*table_timestamp_type).getNestedType());
+        raw_min_time = convertFieldToType(
+            DecimalField<DateTime64>(*evaluation_settings.start_time - range_rate_query.window + 1, evaluation_settings.time_scale),
+            *tuple_type.getElement(0),
+            result_timestamp_type.get());
+        raw_max_time = convertFieldToType(
+            DecimalField<DateTime64>(*evaluation_settings.end_time, evaluation_settings.time_scale),
+            *tuple_type.getElement(0),
+            result_timestamp_type.get());
     }
 
     native_plan.addStep(
         std::make_unique<PromQLRangeRateStep>(
             native_plan.getCurrentHeader(),
             context->getQueryContext()->getTimeSeriesTagsCollector(),
-            makeRangeRateFunction(evaluation_settings, range_rate_query.window, reads_raw_samples),
+            makeRangeRateFunction(
+                evaluation_settings, range_rate_query.window, *native_plan.getCurrentHeader(), reads_raw_samples),
             max_samples_per_series,
             max_block_size,
             context->getSettingsRef()[Setting::enable_promql_native_parallel_processing],
@@ -405,16 +435,26 @@ bool tryBuildPromQLTwoRangeRatesPlan(
     std::optional<Field> raw_max_time;
     if (reads_raw_samples)
     {
-        const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
-        raw_min_time = DecimalField<DateTime64>(*evaluation_settings.start_time - two_rates_query.rates[0].window + 1, timestamp_scale);
-        raw_max_time = DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale);
+        auto result_timestamp_type = getPromQLResultTimestampType(evaluation_settings.time_scale, evaluation_settings.time_zone);
+        const auto & table_timestamp_type = native_plan.getCurrentHeader()->getByName(TimeSeriesColumnNames::Samples).type;
+        const auto & tuple_type = typeid_cast<const DataTypeTuple &>(
+            *typeid_cast<const DataTypeArray &>(*table_timestamp_type).getNestedType());
+        raw_min_time = convertFieldToType(
+            DecimalField<DateTime64>(*evaluation_settings.start_time - two_rates_query.rates[0].window + 1, evaluation_settings.time_scale),
+            *tuple_type.getElement(0),
+            result_timestamp_type.get());
+        raw_max_time = convertFieldToType(
+            DecimalField<DateTime64>(*evaluation_settings.end_time, evaluation_settings.time_scale),
+            *tuple_type.getElement(0),
+            result_timestamp_type.get());
     }
 
     native_plan.addStep(
         std::make_unique<PromQLTwoRangeRatesStep>(
             native_plan.getCurrentHeader(),
             context->getQueryContext()->getTimeSeriesTagsCollector(),
-            makeRangeRateFunction(evaluation_settings, two_rates_query.rates[0].window, reads_raw_samples),
+            makeRangeRateFunction(
+                evaluation_settings, two_rates_query.rates[0].window, *native_plan.getCurrentHeader(), reads_raw_samples),
             two_rates_query.rates[0].metric_name,
             two_rates_query.rates[1].metric_name,
             max_samples_per_series,
@@ -429,11 +469,10 @@ bool tryBuildPromQLTwoRangeRatesPlan(
     return true;
 }
 
-const ActionsDAG::Node &
-addNullableValues(ActionsDAG & dag, const PrometheusQueryEvaluationSettings & evaluation_settings, ContextPtr context)
+const ActionsDAG::Node & addNullableValues(ActionsDAG & dag, ContextPtr context)
 {
     const auto & values = dag.findInOutputs(TimeSeriesColumnNames::Values);
-    const auto nullable_scalar_type = makeNullable(evaluation_settings.scalar_data_type);
+    const auto nullable_scalar_type = makeNullable(std::make_shared<DataTypeFloat64>());
     const auto nullable_values_type = std::make_shared<DataTypeArray>(nullable_scalar_type);
     return dag.addCast(values, nullable_values_type, "__promql_native_nullable_values", context);
 }
@@ -623,21 +662,22 @@ bool tryBuildPromQLNativePlan(
             std::make_unique<PromQLRangeTopKByStep>(
                 native_plan.getCurrentHeader(), topk_query->k, topk_query->bottomk, max_block_size));
 
-    const UInt32 timestamp_scale = getDecimalScale(*evaluation_settings.timestamp_data_type);
+    const UInt32 timestamp_scale = evaluation_settings.time_scale;
+    auto result_timestamp_type = getPromQLResultTimestampType(evaluation_settings.time_scale, evaluation_settings.time_zone);
     ActionsDAG finalize_dag(native_plan.getCurrentHeader()->getColumnsWithTypeAndName());
     const auto & group = finalize_dag.findInOutputs(TimeSeriesColumnNames::Group);
-    const auto & nullable_values = addNullableValues(finalize_dag, evaluation_settings, context);
+    const auto & nullable_values = addNullableValues(finalize_dag, context);
     const auto & tags = finalize_dag.addFunction(
         FunctionFactory::instance().get("timeSeriesGroupToTags", context), {&group}, TimeSeriesColumnNames::Tags);
     const auto & start = finalize_dag.addColumn(
-        evaluation_settings.timestamp_data_type->createColumnConst(
+        result_timestamp_type->createColumnConst(
             0, DecimalField<DateTime64>(*evaluation_settings.start_time, timestamp_scale)),
-        evaluation_settings.timestamp_data_type,
+        result_timestamp_type,
         "__promql_native_start");
     const auto & end = finalize_dag.addColumn(
-        evaluation_settings.timestamp_data_type->createColumnConst(
+        result_timestamp_type->createColumnConst(
             0, DecimalField<DateTime64>(*evaluation_settings.end_time, timestamp_scale)),
-        evaluation_settings.timestamp_data_type,
+        result_timestamp_type,
         "__promql_native_end");
     auto duration_type = std::make_shared<DataTypeDecimal<Decimal64>>(DataTypeDecimal<Decimal64>::maxPrecision(), timestamp_scale);
     const auto & step = finalize_dag.addColumn(
@@ -748,7 +788,7 @@ bool tryBuildPromQLNativeVectorGridPlan(
 
     ActionsDAG output_dag(native_plan.getCurrentHeader()->getColumnsWithTypeAndName());
     const auto & group = output_dag.findInOutputs(TimeSeriesColumnNames::Group);
-    const auto & nullable_values = addNullableValues(output_dag, evaluation_settings, context);
+    const auto & nullable_values = addNullableValues(output_dag, context);
     const auto & output_values = output_dag.addAlias(nullable_values, TimeSeriesColumnNames::Values);
     output_dag.getOutputs() = {&group, &output_values};
     native_plan.addStep(std::make_unique<ExpressionStep>(native_plan.getCurrentHeader(), std::move(output_dag)));

@@ -26,25 +26,34 @@ enum class StoreMethod
     /// Can be used only with type ResultType::STRING.
     CONST_STRING,
 
-    /// A single scalar is stored in one row and one column named `value` (floating-point).
+    /// A single scalar is stored in one row and one column named `value` (Float64).
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     SINGLE_SCALAR,
 
-    /// Data are stored in one row and one column named `values` (array of floating-point values).
+    /// Data are stored in one row and one column named `values` (Array(Float64)).
     /// The values are aligned to the time grid.
     /// SCALAR_GRID is produced by functions returning a scalar, for example scalar().
     /// Can be used with types ResultType::SCALAR, ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     SCALAR_GRID,
 
-    /// Data are stored in two columns `group` (UInt64), `values` (array of nullable floating-point values).
+    /// Data are stored in two columns:
+    /// - `group` (UInt64),
+    /// - `values` (Array(Nullable(Float64))).
     /// Values of each row are aligned to the time grid. Each value of `group` can appear only once in the output.
     /// VECTOR_GRID is produced by functions like last_over_time() or rate() in a prometheus query.
     /// Can be used with types ResultType::INSTANT_VECTOR, ResultType::RANGE_VECTOR.
     VECTOR_GRID,
 
     /// For a bucketed TimeSeries table data are stored in two columns `group` (UInt64),
-    /// `time_series` (Array(Tuple(timestamp_data_type, scalar_data_type))). For older row-layout tables they are
-    /// stored in three columns `group`, `timestamp`, and `value`. A `group` can appear in multiple rows.
+    /// `time_series` (Array(Tuple(table_timestamp_type, table_value_type))). For older row-layout tables data are stored
+    /// in three columns:
+    /// - `group` (UInt64),
+    /// - `timestamp` (the type of the timestamps in the TimeSeries table,
+    ///   or `ConverterContext::result_timestamp_type` after applying an offset),
+    /// - `value` (Float64 or Float32, the type of the values in the table).
+    /// The columns keep the types they have in the table because raw data can be big: the aggregate functions accept
+    /// any of these types, and the result is converted to `ConverterContext::result_timestamp_type` and Float64 later.
+    /// A `group` can appear in multiple rows in both layouts.
     /// RAW_DATA is produced by selectors in a prometheus query.
     /// Can be used only with type ResultType::RANGE_VECTOR.
     RAW_DATA,
@@ -69,6 +78,7 @@ struct SQLQueryPiece
 
     /// `start_time`, `end_time`, `step` are used only if `store_method` is one of
     /// [CONST_SCALAR, CONST_STRING, SCALAR_GRID, VECTOR_GRID].
+    /// They use the scale `ConverterContext::result_timestamp_scale`.
     /// If `store_method` is CONST_STRING then `start_time` is always equal to `end_time`.
     /// If `store_method` is RAW_DATA then these fields are not used.
     TimestampType start_time = {};
@@ -82,9 +92,9 @@ struct SQLQueryPiece
     String string_value;
 
     /// `select_query` is used only if `store_method` is one of [SINGLE_SCALAR, SCALAR_GRID, VECTOR_GRID, RAW_DATA].
-    /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (scalar_data_type) with a single row.
-    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(scalar_data_type)) with a single row.
-    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(scalar_data_type))).
+    /// If `store_method` is SINGLE_SCALAR then the SELECT query outputs one column `value` (Float64) with a single row.
+    /// If `store_method` is SCALAR_GRID then the SELECT query outputs one column `values` (Array(Float64)) with a single row.
+    /// If `store_method` is VECTOR_GRID then the SELECT query outputs two columns `group` (UInt64), `values` (Array(Nullable(Float64))).
     /// If `store_method` is RAW_DATA then the SELECT query uses the version-dependent layout described above.
     /// If `store_method` is CONST_SCALAR or CONST_STRING then the SELECT query is not used.
     ASTPtr select_query;

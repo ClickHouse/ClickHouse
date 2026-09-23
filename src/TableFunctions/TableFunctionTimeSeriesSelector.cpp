@@ -33,16 +33,17 @@ ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(Cont
     if (config.time_series_version < TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
     {
         return ColumnsDescription({
-            {TimeSeriesColumnNames::ID, config.id_data_type},
-            {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},
-            {TimeSeriesColumnNames::Value, config.scalar_data_type}
+            {TimeSeriesColumnNames::ID, config.table_id_type},
+            {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type},
+            {TimeSeriesColumnNames::Value, config.table_value_type}
         });
     }
 
-    DataTypePtr time_series_data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{config.timestamp_data_type, config.scalar_data_type}));
+    DataTypePtr time_series_data_type
+        = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{config.table_timestamp_type, config.table_value_type}));
 
     return ColumnsDescription({
-        {TimeSeriesColumnNames::ID, config.id_data_type},
+        {TimeSeriesColumnNames::ID, config.table_id_type},
         {TimeSeriesColumnNames::TimeSeries, time_series_data_type}
     });
 }

@@ -156,20 +156,21 @@ std::shared_ptr<Collector> makeCollector(
 AggregateFunctionPtr makeRateFunction(const DataTypePtr & samples_type)
 {
     Array parameters{UInt64{0}, UInt64{20}, UInt64{10}, UInt64{20}};
-    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Int32, Float64>>(
-        DataTypes{samples_type}, parameters, UInt32{0}, UInt32{20}, Int32{10}, Int32{20}, 0);
+    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Float64>>(
+        DataTypes{samples_type}, parameters, UInt32{0}, UInt32{20}, Int32{10}, Int32{20}, 0, 0);
 }
 
 AggregateFunctionPtr makeRawRateFunction()
 {
     Array parameters{UInt64{0}, UInt64{20}, UInt64{10}, UInt64{20}};
-    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Int32, Float64>>(
+    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Float64>>(
         DataTypes{std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeFloat64>()},
         parameters,
         UInt32{0},
         UInt32{20},
         Int32{10},
         Int32{20},
+        0,
         0);
 }
 
@@ -1312,13 +1313,14 @@ TEST(PromQLRangeRateTransform, CancellationReleasesAnActiveSeriesState)
 TEST(PromQLRangeRateStep, StreamingRawKernelDeduplicatesOutOfOrderBatchesBeforeCompaction)
 {
     Array parameters{UInt64{10}, UInt64{10}, UInt64{0}, UInt64{10}};
-    auto rate_function = std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Int32, Float64>>(
+    auto rate_function = std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Float64>>(
         DataTypes{std::make_shared<DataTypeUInt32>(), std::make_shared<DataTypeFloat64>()},
         parameters,
         UInt32{10},
         UInt32{10},
         Int32{0},
         Int32{10},
+        0,
         0);
     const auto * streaming = dynamic_cast<const ITimeSeriesRateToGridStreaming *>(rate_function.get());
     ASSERT_NE(streaming, nullptr);

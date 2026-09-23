@@ -152,8 +152,8 @@ std::shared_ptr<Collector> makeCollector(
 AggregateFunctionPtr makeRateFunction(const DataTypePtr & samples_type)
 {
     Array parameters{UInt64{0}, UInt64{20}, UInt64{10}, UInt64{20}};
-    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Int32, Float64>>(
-        DataTypes{samples_type}, parameters, UInt32{0}, UInt32{20}, Int32{10}, Int32{20}, 0);
+    return std::make_shared<AggregateFunctionTimeseriesRateToGrid<UInt32, Float64>>(
+        DataTypes{samples_type}, parameters, UInt32{0}, UInt32{20}, Int32{10}, Int32{20}, 0, 0);
 }
 
 QueryPipeline makePipeline(

@@ -11,7 +11,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
-#include <Storages/TimeSeries/TimeSeriesVersion.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -53,6 +52,10 @@ namespace
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
+
+        /// The aggregate function returns a sample's value (can be Float32), a sample's timestamp (a DateTime type) or a count (UInt64)
+        /// instead of Float64, so the result must be cast.
+        bool needs_cast_to_float64 = false;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -94,36 +97,42 @@ namespace
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"max_over_time",
              {
                  "timeSeriesMaxToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"min_over_time",
              {
                  "timeSeriesMinToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"ts_of_max_over_time",
              {
                  "timeSeriesTimestampOfMaxToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"ts_of_min_over_time",
              {
                  "timeSeriesTimestampOfMinToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"present_over_time",
              {
                  "timeSeriesPresentToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"deriv",
@@ -136,12 +145,14 @@ namespace
              {
                  "timeSeriesChangesToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"resets",
              {
                  "timeSeriesResetsToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"sum_over_time",
@@ -160,6 +171,7 @@ namespace
              {
                  "timeSeriesCountToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             /// TODO:
@@ -219,126 +231,35 @@ SQLQueryPiece applyFunctionOverRange(
     if (argument.store_method == StoreMethod::EMPTY)
         return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
 
+    ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
+
     const auto * fixed_at_node = getFixedAtModifier(argument);
     const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
 
-    bool has_group = false;
-    ASTPtr timestamps;
-    ASTPtr values;
+    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
+    /// range vector holds series, and a scalar grid if it was made from a scalar.
+    const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
 
-    /// Whether the aggregate function gets `timestamps` and `values` as two arguments; otherwise `values` contains
-    /// both timestamps and values as an array of tuples (timestamp, value) and is passed as the single argument.
-    bool timestamps_in_separate_argument = false;
-
-    switch (argument.store_method)
-    {
-        case StoreMethod::EMPTY:
-        {
-            return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        }
-
-        case StoreMethod::CONST_SCALAR:
-        case StoreMethod::SINGLE_SCALAR:
-        {
-            /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
-            ///                             arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
-            /// FROM <subquery>
-            ASTPtr value = (argument.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
-                : make_intrusive<ASTIdentifier>(ColumnNames::Value);
-
-            /// arrayResize([], <count_of_time_steps>, <scalar_value>)
-            values = makeASTFunction(
-                "arrayResize",
-                make_intrusive<ASTLiteral>(Array{}),
-                make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
-                value);
-
-            timestamps_in_separate_argument = true;
-            break;
-        }
-
-        case StoreMethod::SCALAR_GRID:
-        {
-            /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
-            ///                             values)) AS values
-            /// FROM <scalar_grid>
-            values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
-            timestamps_in_separate_argument = true;
-            break;
-        }
-
-        case StoreMethod::VECTOR_GRID:
-        {
-            /// SELECT group,
-            ///        <aggregate_function>(timeSeriesFromGrid(<start_time>, <end_time>, <step>, values)) AS values
-            /// FROM <vector_grid>
-            /// GROUP BY group
-            has_group = true;
-
-            values = makeASTFunction(
-                "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
-                make_intrusive<ASTIdentifier>(ColumnNames::Values));
-            break;
-        }
-
-        case StoreMethod::RAW_DATA:
-        {
-            has_group = true;
-
-            if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
-            {
-                /// Bucketed tables expose each input row as an array of `(timestamp, value)` samples.
-                values = make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries);
-            }
-            else
-            {
-                /// Older tables preserve the row layout used by the historical SQL translation.
-                timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
-                values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
-                timestamps_in_separate_argument = true;
-            }
-
-            break;
-        }
-
-        case StoreMethod::CONST_STRING:
-        {
-            /// Can't get in here because the store method CONST_STRING is incompatible with the allowed
-            /// argument types (see checkArgumentTypes()).
-            throwUnexpectedStoreMethod(argument, context);
-        }
-    }
-
-    chassert(values);
-
-    if (timestamps_in_separate_argument && !timestamps)
-    {
-        /// timeSeriesRange(<start_time>, <end_time>, <step>)
-        timestamps = makeASTFunction(
-            "timeSeriesRange",
-            timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(argument.step, context.timestamp_data_type));
-    }
     SelectQueryBuilder builder;
 
     if (has_group)
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
-    /// <aggregate_function>(<timestamps>, <values>) AS values, or <aggregate_function>(<samples>) AS values
-    auto aggregate_function = timestamps_in_separate_argument
-        ? makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values))
-        : makeASTFunction(impl_info->ch_function_name, std::move(values));
+    /// <aggregate_function>(<timestamps>, <values>) AS values
     ASTPtr aggregate_values = addParametersToAggregateFunction(
-        std::move(aggregate_function),
-        timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
-        timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
-        timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
-        timeSeriesDurationToAST(window, context.timestamp_data_type));
+        makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
+        timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+        timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+        timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+        timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    if (impl_info->needs_cast_to_float64)
+    {
+        /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
+        /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
+        /// for Float64 and is cheap anyway: the aggregated grid is much smaller than the raw data.
+        aggregate_values = makeASTFunction("CAST", std::move(aggregate_values), make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
+    }
 
     if (fixed_at_node)
         aggregate_values = repeatFixedAtResultOverGrid(

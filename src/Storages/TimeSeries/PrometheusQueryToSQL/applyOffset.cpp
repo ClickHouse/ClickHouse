@@ -1,6 +1,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOffset.h>
 
 #include <Core/DecimalFunctions.h>
+#include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -9,11 +10,12 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/TimeSeriesVersion.h>
-#include <Storages/TimeSeries/timeSeriesTypesToAST.h>
+#include <base/arithmeticOverflow.h>
 
 
 namespace DB::ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
 }
 
@@ -56,30 +58,36 @@ namespace
 
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
+                /// The interval functions don't accept Decimal arguments, so we choose the unit (milliseconds, microseconds
+                /// or nanoseconds) which is not longer than the tick of `result_timestamp_scale`, and pass an integer number of the units.
+                UInt32 result_scale = context.result_timestamp_scale;
+                chassert(result_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
+                UInt32 interval_scale = (result_scale + 2) / 3 * 3;
+                Int64 offset_in_interval_units = 0;
+                if (common::mulOverflow(offset_value.value, DecimalUtils::scaleMultiplier<Int64>(interval_scale - result_scale), offset_in_interval_units))
+                {
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Offset {} is too big in expression {}",
+                                    toString(offset_value, result_scale), getPromQLText(expression, context));
+                }
+
+                static const std::string_view to_interval_functions[] = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
+                std::string_view to_interval_function = to_interval_functions[interval_scale / 3];
+
+                /// The column `timestamp` is converted to `result_timestamp_type` before adding the interval because it can have
+                /// a type which doesn't support intervals (UInt32). Adding an interval can change the scale
+                /// (for example, DateTime64(4) + INTERVAL 1 MICROSECOND is DateTime64(6)), so we cast the sum back.
+                /// Both casts do nothing if the types already match.
+                const String result_timestamp_type_name = context.result_timestamp_type->getName();
                 auto add_offset = [&](ASTPtr timestamp)
                 {
-                    ASTPtr result;
-                    if (isDateTime64(context.timestamp_data_type))
-                    {
-                        chassert(context.timestamp_scale <= 9); /// Maximum scale for DateTime64 is 9 (nanoseconds).
-                        UInt32 scale = std::min<UInt32>((context.timestamp_scale + 2) / 3 * 3, 9);
-                        Int64 scaled_offset_value
-                            = DecimalUtils::convertTo<Decimal64>(scale, offset_value, context.timestamp_scale).value;
-
-                        static const std::string_view to_interval_functions[]
-                            = {"toIntervalSecond", "toIntervalMillisecond", "toIntervalMicrosecond", "toIntervalNanosecond"};
-                        result = makeASTFunction(
+                    return makeASTFunction(
+                        "CAST",
+                        makeASTFunction(
                             "plus",
-                            std::move(timestamp),
-                            makeASTFunction(to_interval_functions[scale / 3], make_intrusive<ASTLiteral>(scaled_offset_value)));
-                    }
-                    else
-                    {
-                        result = makeASTFunction(
-                            "plus", std::move(timestamp), timeSeriesDurationToAST(offset_value, context.timestamp_data_type));
-                    }
-
-                    return timeSeriesTimestampASTCast(std::move(result), context.timestamp_data_type);
+                            makeASTFunction(
+                                "CAST", std::move(timestamp), make_intrusive<ASTLiteral>(result_timestamp_type_name)),
+                            makeASTFunction(to_interval_function, make_intrusive<ASTLiteral>(offset_in_interval_units))),
+                        make_intrusive<ASTLiteral>(result_timestamp_type_name));
                 };
 
                 if (context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
@@ -102,7 +110,7 @@ namespace
                 }
                 else
                 {
-                    /// SELECT group, timestamp + INTERVAL X AS timestamp, value
+                    /// SELECT group, CAST(CAST(timestamp, 'result_timestamp_type') + INTERVAL <x> <unit>, 'result_timestamp_type') AS timestamp, value
                     auto new_timestamp = add_offset(make_intrusive<ASTIdentifier>(ColumnNames::Timestamp));
                     new_timestamp->setAlias(ColumnNames::Timestamp);
                     builder.select_list.push_back(std::move(new_timestamp));
@@ -205,7 +213,7 @@ namespace
 
             case StoreMethod::RAW_DATA:
             {
-                /// Can't get in here because RAW_DATA is used only with range vectors, which are handled above.
+                /// Can't get in here because RAW_DATA is used only for range vectors, and they are returned above as is.
                 throwUnexpectedStoreMethod(expression, context);
             }
         }
