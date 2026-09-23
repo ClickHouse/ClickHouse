@@ -249,8 +249,8 @@ struct JSONBloomFilterTokens
 
     static UInt32 intern(std::string_view value, HashMap<std::string_view, UInt32> & ids, std::vector<std::string_view> & values, Arena & arena)
     {
-        HashMap<std::string_view, UInt32>::LookupResult it;
-        bool inserted;
+        HashMap<std::string_view, UInt32>::LookupResult it = nullptr;
+        bool inserted = false;
         ids.emplace(ArenaKeyHolder{value, arena}, it, inserted);
         if (inserted)
         {
