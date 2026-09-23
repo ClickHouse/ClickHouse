@@ -10156,9 +10156,16 @@ function applyConnectionFromHost(data) {
 /// `window.opener` relationship with the connection-bearing `/play` page. The relay receives its
 /// immutable connection tuple from that opener, then forwards it only after the iframe at the
 /// configured origin says hello.
+///
+/// A relay window is NOT a playground: it never receives the opener's live tab state, so running the
+/// normal startup (`openDb` + `reconcileStartup`) in it would write its own stale view of the shared
+/// `clickhouse-play` workspace back to `IndexedDB` and rewrite its URL, rolling back edits the real
+/// `/play` tab has not flushed yet. `is_docs_relay` short-circuits that startup below, and the relay
+/// replaces the whole page body - with the docs iframe, or with nothing when the target is rejected.
+const is_docs_relay = new URLSearchParams(window.location.search).has('docs_relay');
 {
     const docs_relay_target = new URLSearchParams(window.location.search).get('docs_relay');
-    if (docs_relay_target) {
+    if (is_docs_relay) {
         /// The relay target arrives in the URL of this window, and this window can be opened by a
         /// foreign page (`window.open('/play?docs_relay=...')`), so it is not trusted input. It is
         /// held to the same rule the launcher applies before it opens a relay at all: a real HTTP(S)
@@ -10209,6 +10216,8 @@ function applyConnectionFromHost(data) {
 
             document.body.replaceChildren(docs_frame);
             relay_opener.postMessage({type: 'clickhouse-docs-relay-ready'}, window.location.origin);
+        } else {
+            document.body.replaceChildren();
         }
     }
 }
@@ -20001,8 +20010,12 @@ if (wasmAvailable()) loadLexer().catch(() => { /* the first tokenization retries
 /// in the wrong (bootstrap) tab, and, for a bare `?tab=<blank>&run=1` reload, early enough to
 /// overwrite the `history.state` that `stale_blank_reload` relies on and resurrect the blank tab.
 
-dbReady = openDb();
-reconcileStartup();
+/// A docs relay window keeps `dbReady` at `null` (persistence unavailable, so `persist` is a no-op)
+/// and never reconciles: see `is_docs_relay`.
+if (!is_docs_relay) {
+    dbReady = openDb();
+    reconcileStartup();
+}
 
 document.getElementById('toggle-light').onclick = function() {
     setColorTheme('light', true);
@@ -20405,6 +20418,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     }
     probeTerminal();
     url_elem.addEventListener('input', probeTerminal);
+    user_elem.addEventListener('input', updateTerminalHref);
 
     function sendCredentialsToTerminal() {
         if (terminalIframe && terminalIframe.contentWindow && terminalOrigin) {
@@ -20501,6 +20515,10 @@ document.getElementById('download-button').addEventListener('click', async funct
     terminalIcon.addEventListener('pointerdown', updateTerminalHref);
 
     terminalIcon.addEventListener('click', function(e) {
+        /// Refresh the `href` first: keyboard activation (tab to the icon, then Enter) fires no
+        /// pointer event, and an autofilled login does not always fire `input`, so both the native
+        /// new-tab navigation below and the modified-click path would otherwise follow a stale URL.
+        updateTerminalHref();
         /// For a modified click, fall through to the anchor's native handling (a new tab or
         /// window, or the macOS Ctrl+click context menu) instead of toggling the terminal.
         if (wantsNewTab(e)) return;

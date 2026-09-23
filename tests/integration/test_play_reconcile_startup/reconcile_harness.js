@@ -1756,6 +1756,16 @@ async function main() {
             opened.length === 1 && opened[0].href === href && opened[0].target === '_blank'
                 && embedded().length === 0 && !terminal_panel.classList.contains('active'),
             { opened, embedded: embedded() });
+        /// A login typed (or autofilled) without an `input` event, then keyboard activation of the
+        /// icon: no pointer event fires, so the click itself must refresh the `href` the anchor follows.
+        vm.runInContext("user_elem.value = 'alice';", r.sandbox);
+        const keyboard_click = plain_click();
+        const keyboard_href = terminal_icon.getAttribute('href');
+        check('cross-origin-terminal', 'a click without a pointer event follows the current login',
+            !keyboard_click.defaultPrevented && typeof keyboard_href === 'string'
+                && keyboard_href.startsWith('https://b.example/webterminal') && keyboard_href.includes('user=alice'),
+            keyboard_href);
+        vm.runInContext("user_elem.value = '';", r.sandbox);
 
         /// The terminal of the server this page came from accepts the handover, and is embedded.
         await point_at('https://a.example/');
@@ -1773,6 +1783,41 @@ async function main() {
             reopen.defaultPrevented && terminal_panel.classList.contains('active')
                 && embedded().length === 1 && opened.length === 1,
             { defaultPrevented: reopen.defaultPrevented, embedded: embedded(), opened });
+    }
+
+    /// Contract: a docs relay window (`/play?docs_relay=...`, opened by the Documentation button) is not
+    /// a playground. It shares the `clickhouse-play` `IndexedDB` with the real `/play` tab but never sees
+    /// that tab's live state, so it must neither open the workspace database nor persist into it, and
+    /// must not rewrite its own URL - otherwise just opening the docs rolls the saved workspace back to
+    /// an older snapshot. A relay with a rejected target stays equally inert, and shows nothing.
+    for (const [name, target, frames] of [
+        ['docs-relay-no-playground', 'https://clickhouse.com/docs', 1],
+        ['docs-relay-rejected-no-playground', 'javascript:alert(1)', 0],
+    ]) {
+        const href = 'https://a.example/play?docs_relay=' + encodeURIComponent(target);
+        const { sandbox, stores, stats } = makeContext({
+            href,
+            historyState: null,
+            seedTabs: [{ id: 't1', title: 'saved', query: 'SELECT 1', params: {}, result: null }],
+            seedMeta: { key: 'state', activeTabId: 't1', order: ['t1'] },
+        });
+        const posted = [];
+        sandbox.opener = { postMessage: (data, origin) => posted.push({ data, origin }) };
+        vm.runInContext(js, sandbox, { filename: 'play.html.js' });
+        /// Longer than the debounced `scheduleSave` (400 ms) a reconciled startup would end with.
+        await sleep(800);
+        check(name, 'the relay never opens the workspace database', !stats.openFired, stats.openFired);
+        check(name, 'the relay never persists a workspace', stats.persistCount === 0, stats.persistCount);
+        check(name, 'the saved workspace is untouched',
+            stores.get('tabs').data.size === 1 && stores.get('tabs').data.get('t1').query === 'SELECT 1',
+            [...stores.get('tabs').data.values()]);
+        check(name, 'the relay keeps its own URL', sandbox.location.href === href, sandbox.location.href);
+        const children = sandbox.document.body.children;
+        check(name, 'the page body holds only the relay frame',
+            children.length === frames && children.every(c => c.tagName === 'IFRAME'),
+            children.map(c => c.tagName));
+        check(name, 'the relay announces itself only for an accepted target',
+            posted.filter(p => p.data && p.data.type === 'clickhouse-docs-relay-ready').length === frames, posted);
     }
 
     if (failures) {

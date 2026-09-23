@@ -98,6 +98,8 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "shape-not-stamped-before-run",
         "proxied-endpoint",
         "cross-origin-terminal",
+        "docs-relay-no-playground",
+        "docs-relay-rejected-no-playground",
     ):
         assert "PASS [{}]".format(scenario) in out, "scenario {} did not run:\n{}".format(
             scenario, out
