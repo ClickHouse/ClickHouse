@@ -135,17 +135,19 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     /// - Pattern queries (LIKE): fallback when dictionary scan is abandoned.
     /// - Phrase queries (hasPhrase with Exact mode): fallback when estimated cardinality is too high
     ///   and reading position data would be slower than evaluating directly.
-    bool has_fallback_candidates = condition_text.hasSearchPatterns()
-        || std::ranges::any_of(
-            columns_to_read,
-            [&](const auto & column)
-            {
-                const auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
-                return search_query && search_query->getSearchMode() == TextSearchMode::Phrase
-                    && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
-            });
+    /// Only exact direct read needs it: a hint keeps the original predicate, so it can just be always true.
+    auto needs_fallback_for_query = [](const auto & search_query)
+    {
+        if (!search_query || search_query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
+            return false;
 
-    if (!has_fallback_candidates)
+        return !search_query->getPatterns().empty() || search_query->getSearchMode() == TextSearchMode::Phrase;
+    };
+
+    auto column_needs_fallback
+        = [&](const auto & column) { return needs_fallback_for_query(condition_text.getSearchQueryForVirtualColumn(column.name)); };
+
+    if (std::ranges::none_of(columns_to_read, column_needs_fallback))
         return;
 
     /// Build a fallback evaluation path. Compile each virtual column's default expression
@@ -167,13 +169,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     NameSet fallback_columns_set;
     for (const auto & column : columns_to_read)
     {
-        auto search_query = condition_text.getSearchQueryForVirtualColumn(column.name);
-        if (!search_query)
-            continue;
-
-        bool needs_fallback = !search_query->getPatterns().empty()
-            || (search_query->getSearchMode() == TextSearchMode::Phrase && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact);
-        if (!needs_fallback)
+        if (!needs_fallback_for_query(condition_text.getSearchQueryForVirtualColumn(column.name)))
             continue;
 
         /// Compile the virtual column's default expression (the original search predicate).

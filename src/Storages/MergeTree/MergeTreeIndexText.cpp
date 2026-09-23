@@ -774,8 +774,8 @@ bool MergeTreeIndexGranuleText::hasAnyTokensImpl(const TextSearchQuery & query) 
     if (query_builder.is_failed)
         return false;
 
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
+    /// An incomplete scan may have missed matching tokens, so nothing can be pruned.
+    if (query_builder.is_analysis_incomplete)
         return true;
 
     if (!current_range.has_value())
@@ -819,8 +819,8 @@ bool MergeTreeIndexGranuleText::hasAllQueryTokensOrEmpty(const TextSearchQuery &
     if (query_builder.is_failed)
         return false;
 
-    /// Pattern bypass means analysis is incomplete, so conservatively return true.
-    if (query_builder.is_bypassed && !query.getPatterns().empty())
+    /// An incomplete scan may have missed matching tokens, so nothing can be pruned.
+    if (query_builder.is_analysis_incomplete)
         return true;
 
     if (!current_range.has_value())
