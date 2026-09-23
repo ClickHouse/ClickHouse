@@ -27,6 +27,8 @@ ${CLICKHOUSE_CLIENT} \
     --polyglot_dialect=mysql \
     --enable_json_ast_dialect=1 \
     --enable_trino_dialect=1 \
+    --implicit_select=1 \
+    --allow_settings_after_format_in_insert=1 \
     --promql_database=promql_database_from_context \
     --promql_table=promql_table_from_context \
     --promql_evaluation_time=42 \
@@ -43,6 +45,8 @@ ${CLICKHOUSE_CLIENT} \
             polyglot_dialect = 'mysql',
             enable_json_ast_dialect = 1,
             enable_trino_dialect = 1,
+            implicit_select = 1,
+            allow_settings_after_format_in_insert = 1,
             promql_database = 'promql_database_from_query',
             promql_table = 'promql_table_from_query',
             evaluation_time = 43,
@@ -59,6 +63,8 @@ ${CLICKHOUSE_CLIENT} --query "
             'polyglot_dialect',
             'enable_json_ast_dialect',
             'enable_trino_dialect',
+            'implicit_select',
+            'allow_settings_after_format_in_insert',
             'promql_database',
             'promql_table',
             'promql_evaluation_time',
