@@ -237,6 +237,11 @@ target_compile_options(clang_rt_builtins PRIVATE
     -fvisibility=hidden
     -fomit-frame-pointer
     -nostdinc++
+    # Never instrument the builtins: they are called from arbitrary contexts,
+    # including libc startup and sanitizer-runtime internals. Also marks the
+    # target for the top-level FUZZER loop, which skips targets carrying
+    # -fno-sanitize=all instead of appending -fsanitize=fuzzer-no-link.
+    -fno-sanitize=all
     # Suppress all warnings — these are external sources we don't audit.
     -w
 )
@@ -313,6 +318,13 @@ set(SANITIZER_COMMON_FLAGS
     -funwind-tables
     -fno-stack-protector
     -fvisibility=hidden
+    # A sanitizer runtime must never itself be instrumented: it would recurse
+    # into itself, and its early-init code runs before instrumentation runtimes
+    # exist. This also marks the target for the top-level FUZZER loop, which
+    # skips targets carrying -fno-sanitize=all instead of appending
+    # -fsanitize=fuzzer-no-link (that would override this flag and re-enable
+    # SanitizerCoverage).
+    -fno-sanitize=all
     # Suppress all warnings — these are external sources we don't audit.
     -w
 )
