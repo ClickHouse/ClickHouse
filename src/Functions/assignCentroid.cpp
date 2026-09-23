@@ -356,13 +356,11 @@ public:
                 "Second argument of {} must be a constant array of float arrays (the centroids) "
                 "or a constant String (a dictionary name)", name);
 
-        /// The dictionary is read only when the first block arrives (see `executeImpl`), so its use is recorded here,
-        /// while the query is analyzed: the `make_distributed_plan` fallback decision needs to know before the plan
-        /// ships. Qualifying the name records without loading anything.
+        /// Needs recorded use here, while the query is analyzed. Qualifying the name records without loading anything.
         if (const auto * dict_name_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
         {
             const auto & context = dict_helper.getContext();
-            context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dict_name_col->getValue<String>(), context);
+            [[maybe_unused]] const auto qualified_table_name = context->getExternalDictionariesLoader().qualifyDictionaryNameWithDatabase(dict_name_col->getValue<String>(), context);
         }
 
         return std::make_shared<DataTypeUInt32>();
