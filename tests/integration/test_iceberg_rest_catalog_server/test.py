@@ -15,12 +15,15 @@ node = cluster.add_instance(
     "node",
     main_configs=["configs/iceberg_rest_catalog.xml"],
     user_configs=["configs/users.xml"],
+    with_zookeeper=True,
     stay_alive=True,
 )
 
 DEFAULT_AUTH = ("default", "")
 
 CATALOG_PORT = 8182
+KEEPER_ROOT = "/clickhouse/iceberg_rest_catalog/my_warehouse"
+FORMAT_MARKER = b"IcebergRESTCatalog\nformat_version: 1"
 
 
 def wait_catalog_ready(timeout=60):
@@ -46,6 +49,15 @@ def started_cluster():
 
 def catalog_url(path):
     return f"http://{node.ip_address}:{CATALOG_PORT}{path}"
+
+
+def get_keeper():
+    return cluster.get_kazoo_client("zoo1")
+
+
+def restart_node():
+    node.restart_clickhouse()
+    wait_catalog_ready()
 
 
 def catalog_request(
@@ -361,3 +373,41 @@ def test_clickhouse_rest_catalog_client(started_cluster):
         SETTINGS catalog_type = 'rest', warehouse = 'my_warehouse'
         """)
     node.query("DROP DATABASE IF EXISTS rest_client_db")
+
+
+def test_keeper_layout(started_cluster):
+    ns = f"layout {uuid.uuid4().hex[:8]}"
+    create_namespace([ns, "eu.west"], properties={"owner": "asya"})
+
+    zk = get_keeper()
+    assert zk.get(KEEPER_ROOT)[0] == FORMAT_MARKER
+
+    # Levels are escaped like file names, so the tree stays walkable with a Keeper client.
+    escaped = ns.replace(" ", "%20")
+    parent_path = f"{KEEPER_ROOT}/namespaces/{escaped}"
+    child_path = f"{parent_path}/namespaces/eu%2Ewest"
+    assert sorted(zk.get_children(parent_path)) == ["namespaces", "tables"]
+    assert sorted(zk.get_children(child_path)) == ["namespaces", "tables"]
+    assert zk.get(parent_path)[0] == b"{}"
+    assert zk.get(child_path)[0] == b'{"owner":"asya"}'
+
+    assert list_namespaces(parent=ns) == [[ns, "eu.west"]]
+
+
+def test_unsupported_format_is_refused(started_cluster):
+    zk = get_keeper()
+    zk.set(KEEPER_ROOT, b"IcebergRESTCatalog\nformat_version: 999")
+    try:
+        # The marker is checked when a new Keeper session is opened.
+        restart_node()
+        for _ in range(2):
+            response = catalog_request(
+                "GET", "/v1/my_warehouse/namespaces", expected_code=500
+            )
+            assert_error_shape(response, "InternalServerError")
+        assert node.contains_in_log("has an unsupported format")
+    finally:
+        zk.set(KEEPER_ROOT, FORMAT_MARKER)
+        restart_node()
+
+    list_namespaces()

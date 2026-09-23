@@ -15,6 +15,7 @@
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
+#include <Server/IcebergRESTCatalog/KeeperIcebergRESTCatalogStore.h>
 
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Parser.h>
@@ -41,6 +42,8 @@ namespace ErrorCodes
     extern const int AUTHENTICATION_FAILED;
     extern const int QUERY_IS_PROHIBITED;
     extern const int READONLY;
+    extern const int KEEPER_EXCEPTION;
+    extern const int NO_ZOOKEEPER;
     extern const int REQUIRED_PASSWORD;
 }
 
@@ -48,6 +51,10 @@ namespace
 {
 
 constexpr size_t MAX_NAMESPACE_CREATE_BODY_SIZE = 1_MiB;
+/// Keeper limits path depth and node data size. Reject oversized requests here with 400 instead of a Keeper error.
+constexpr size_t MAX_NAMESPACE_LEVELS = 16;
+constexpr size_t MAX_NAMESPACE_LEVEL_LENGTH = 256;
+constexpr size_t MAX_NAMESPACE_PROPERTIES_SIZE = 64_KiB;
 constexpr char NAMESPACE_LEVEL_SEPARATOR = '\x1F';
 
 IcebergNamespaceName splitNamespace(const String & value)
@@ -82,11 +89,10 @@ std::optional<String> getQueryParameter(const Poco::URI & uri, const String & na
 
 }
 
-IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, String warehouse_, IcebergRESTCatalogStorePtr store_)
+IcebergRESTCatalogHandler::IcebergRESTCatalogHandler(IServer & server_, IcebergRESTCatalogWarehousesPtr warehouses_)
     : log(getLogger("IcebergRESTCatalogHandler"))
     , server(server_)
-    , warehouse(std::move(warehouse_))
-    , store(std::move(store_))
+    , warehouses(std::move(warehouses_))
 {
 }
 
@@ -199,32 +205,35 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             return;
         }
 
-        if (auto prefix = match->path_params.find("prefix"); prefix != match->path_params.end())
+        /// `GET /v1/config` has no prefix. It gets the warehouse from the query string instead.
+        if (match->route->operation == IcebergRESTOperation::GetConfig)
         {
-            if (prefix->second != warehouse)
-            {
-                sendError(
-                    response,
-                    Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
-                    "NotFoundException",
-                    fmt::format("Unknown prefix: {}", prefix->second));
-                return;
-            }
+            handleGetConfig(uri, response);
+            return;
+        }
+
+        const auto & prefix = match->path_params.at("prefix");
+        const auto warehouse = warehouses->tryGet(prefix);
+        if (!warehouse)
+        {
+            sendError(
+                response,
+                Poco::Net::HTTPResponse::HTTP_NOT_FOUND,
+                "NotFoundException",
+                fmt::format("Unknown prefix: {}", prefix));
+            return;
         }
 
         switch (match->route->operation)
         {
-            case IcebergRESTOperation::GetConfig:
-                handleGetConfig(uri, response);
-                return;
             case IcebergRESTOperation::ListNamespaces:
-                handleListNamespaces(uri, response);
+                handleListNamespaces(*warehouse, uri, response);
                 return;
             case IcebergRESTOperation::CreateNamespace:
-                handleCreateNamespace(request, response, *context);
+                handleCreateNamespace(*warehouse, request, response, *context);
                 return;
             case IcebergRESTOperation::NamespaceExists:
-                handleNamespaceExists(*match, response);
+                handleNamespaceExists(*warehouse, *match, response);
                 return;
             default:
                 sendError(
@@ -255,6 +264,13 @@ void IcebergRESTCatalogHandler::handleRequest(HTTPServerRequest & request, HTTPS
             type = "ForbiddenException";
             message = getCurrentExceptionMessage(false);
         }
+        /// The store handles expected Keeper errors. Anything else means the store is unavailable.
+        else if (code == ErrorCodes::KEEPER_EXCEPTION || code == ErrorCodes::NO_ZOOKEEPER)
+        {
+            status = Poco::Net::HTTPResponse::HTTP_SERVICE_UNAVAILABLE;
+            type = "ServiceUnavailableException";
+            message = "Catalog storage is unavailable";
+        }
 
         tryLogCurrentException(log, "Failed to process Iceberg REST catalog request");
         try
@@ -283,7 +299,8 @@ void IcebergRESTCatalogHandler::handleGetConfig(const Poco::URI & uri, HTTPServe
         return;
     }
 
-    if (*requested_warehouse != warehouse)
+    const auto warehouse = warehouses->tryGet(*requested_warehouse);
+    if (!warehouse)
     {
         sendError(
             response,
@@ -298,7 +315,7 @@ void IcebergRESTCatalogHandler::handleGetConfig(const Poco::URI & uri, HTTPServe
     Poco::JSON::Array endpoints;
 
 
-    overrides.set("prefix", warehouse);
+    overrides.set("prefix", warehouse->name);
     for (const auto & route : getIcebergRESTRoutes())
     {
         if (!route.implemented)
@@ -313,13 +330,13 @@ void IcebergRESTCatalogHandler::handleGetConfig(const Poco::URI & uri, HTTPServe
     sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
-void IcebergRESTCatalogHandler::handleListNamespaces(const Poco::URI & uri, HTTPServerResponse & response) const
+void IcebergRESTCatalogHandler::handleListNamespaces(const IcebergRESTCatalogWarehouse & warehouse, const Poco::URI & uri, HTTPServerResponse & response) const
 {
     IcebergNamespaceName parent;
     if (auto parent_param = getQueryParameter(uri, "parent"); parent_param && !parent_param->empty())
     {
         parent = splitNamespace(*parent_param);
-        if (!store->namespaceExists(parent))
+        if (!warehouse.store->namespaceExists(parent))
         {
             sendError(
                 response,
@@ -331,7 +348,7 @@ void IcebergRESTCatalogHandler::handleListNamespaces(const Poco::URI & uri, HTTP
     }
 
     Poco::JSON::Array namespaces;
-    for (const auto & name : store->listNamespaces(parent))
+    for (const auto & name : warehouse.store->listNamespaces(parent))
         namespaces.add(namespaceToJSON(name));
 
     Poco::JSON::Object result;
@@ -339,10 +356,10 @@ void IcebergRESTCatalogHandler::handleListNamespaces(const Poco::URI & uri, HTTP
     sendJSON(response, result, Poco::Net::HTTPResponse::HTTP_OK);
 }
 
-void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const
+void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTCatalogWarehouse & warehouse, const IcebergRESTRouteMatch & match, HTTPServerResponse & response) const
 {
     const auto name = splitNamespace(match.path_params.at("namespace"));
-    if (!store->namespaceExists(name))
+    if (!warehouse.store->namespaceExists(name))
     {
         sendError(
             response,
@@ -357,7 +374,7 @@ void IcebergRESTCatalogHandler::handleNamespaceExists(const IcebergRESTRouteMatc
     response.send();
 }
 
-void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const
+void IcebergRESTCatalogHandler::handleCreateNamespace(const IcebergRESTCatalogWarehouse & warehouse, HTTPServerRequest & request, HTTPServerResponse & response, const Context & context) const
 {
     /// V1 has no privilege model, so mirror the settings that `ContextAccess` enforces for SQL DDL.
     const auto & settings = context.getSettingsRef();
@@ -380,12 +397,17 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & reques
         const auto namespace_array = json->getArray("namespace");
         if (!namespace_array || namespace_array->size() == 0)
             throw Poco::Exception("'namespace' must be a non-empty array");
+        if (namespace_array->size() > MAX_NAMESPACE_LEVELS)
+            throw Poco::Exception(fmt::format("'namespace' must have at most {} levels", MAX_NAMESPACE_LEVELS));
 
         for (const auto & level : *namespace_array)
         {
-            if (level.extract<String>().empty())
+            auto level_string = level.extract<String>();
+            if (level_string.empty())
                 throw Poco::Exception("namespace levels must be non-empty strings");
-            name.push_back(level.extract<String>());
+            if (level_string.size() > MAX_NAMESPACE_LEVEL_LENGTH)
+                throw Poco::Exception(fmt::format("namespace levels must be at most {} bytes", MAX_NAMESPACE_LEVEL_LENGTH));
+            name.push_back(std::move(level_string));
         }
 
         if (json->has("properties"))
@@ -393,8 +415,15 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & reques
             const auto properties_object = json->getObject("properties");
             if (!properties_object)
                 throw Poco::Exception("'properties' must be an object");
+            size_t properties_size = 0;
             for (const auto & [key, value] : *properties_object)
-                properties[key] = value.extract<String>();
+            {
+                auto value_string = value.extract<String>();
+                properties_size += key.size() + value_string.size();
+                if (properties_size > MAX_NAMESPACE_PROPERTIES_SIZE)
+                    throw Poco::Exception(fmt::format("'properties' must be at most {} bytes in total", MAX_NAMESPACE_PROPERTIES_SIZE));
+                properties[key] = std::move(value_string);
+            }
         }
     }
     catch (const Poco::Exception & e)
@@ -407,7 +436,7 @@ void IcebergRESTCatalogHandler::handleCreateNamespace(HTTPServerRequest & reques
         return;
     }
 
-    if (!store->createNamespace(name, properties))
+    if (!warehouse.store->createNamespace(name, properties))
     {
         sendError(
             response,
