@@ -311,6 +311,8 @@ static struct InitFiu
     ONCE(mt_alter_throw_after_mutation_registered) \
     ONCE(mt_throw_after_mutation_commit) \
     ONCE(mt_alter_throw_in_durable_rollback) \
+    ONCE(alter_settings_throw_before_metadata_write) \
+    PAUSEABLE_ONCE(alter_settings_pause_before_metadata_write) \
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
