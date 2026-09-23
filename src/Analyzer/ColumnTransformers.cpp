@@ -49,8 +49,9 @@ const char * toString(ApplyColumnTransformerType type)
     }
 }
 
-ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_)
+ApplyColumnTransformerNode::ApplyColumnTransformerNode(QueryTreeNodePtr expression_node_, String column_name_prefix_)
     : IColumnTransformerNode(children_size)
+    , column_name_prefix(std::move(column_name_prefix_))
 {
     if (expression_node_->getNodeType() == QueryTreeNodeType::LAMBDA)
         apply_transformer_type = ApplyColumnTransformerType::LAMBDA;
@@ -78,18 +79,20 @@ void ApplyColumnTransformerNode::dumpTreeImpl(WriteBuffer & buffer, FormatState 
 bool ApplyColumnTransformerNode::isEqualImpl(const IQueryTreeNode & rhs, CompareOptions) const
 {
     const auto & rhs_typed = assert_cast<const ApplyColumnTransformerNode &>(rhs);
-    return apply_transformer_type == rhs_typed.apply_transformer_type;
+    return apply_transformer_type == rhs_typed.apply_transformer_type && column_name_prefix == rhs_typed.column_name_prefix;
 }
 
 void ApplyColumnTransformerNode::updateTreeHashImpl(IQueryTreeNode::HashState & hash_state, CompareOptions) const
 {
     hash_state.update(static_cast<size_t>(getTransformerType()));
     hash_state.update(static_cast<size_t>(getApplyTransformerType()));
+    hash_state.update(column_name_prefix.size());
+    hash_state.update(column_name_prefix);
 }
 
 QueryTreeNodePtr ApplyColumnTransformerNode::cloneImpl() const
 {
-    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode());
+    return std::make_shared<ApplyColumnTransformerNode>(getExpressionNode(), column_name_prefix);
 }
 
 ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options) const
@@ -110,6 +113,8 @@ ASTPtr ApplyColumnTransformerNode::toASTImpl(const ConvertToASTOptions & options
             ast_apply_transformer->lambda_arg = lambda_expression.getArguments().getNames()[0];
         ast_apply_transformer->lambda = lambda_expression.toAST(options);
     }
+
+    ast_apply_transformer->column_name_prefix = column_name_prefix;
 
     return ast_apply_transformer;
 }

@@ -100,7 +100,7 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
 
     if (!create_function_query)
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "The function '{}' is not a SQL defined function and is not supported when 'enable_analyzer' is set to false", function.formatForErrorMessage());
+            "The function '{}' is not a SQL defined function", function.formatForErrorMessage());
 
     /// The call is committed to this SQL user defined function, so the grant is required here and
     /// not in `UserDefinedSQLFunctionFactory`, which `system.functions` reads without invoking anything.
