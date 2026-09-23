@@ -98,6 +98,11 @@ namespace CurrentMetrics
 
 namespace DB
 {
+namespace FailPoints
+{
+extern const char object_storage_source_pause_before_virtual_columns[];
+}
+
 namespace ErrorCodes
 {
     extern const int CANNOT_COMPILE_REGEXP;
@@ -239,7 +244,7 @@ static bool hasAttachedDeletes(const ObjectInfo & object_info)
 #if USE_AVRO
     if (const auto * iceberg_object = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
     {
-        if (!iceberg_object->info.position_deletes_objects.empty() || !iceberg_object->info.equality_deletes_objects.empty())
+        if (iceberg_object->info.hasPositionDeletes() || !iceberg_object->info.equality_deletes_objects.empty())
             return true;
     }
 #endif
@@ -830,6 +835,8 @@ Chunk StorageObjectStorageSource::generate()
                 object_size = object_info->fileSizeInArchive();
             else if (object_metadata->is_size_known)
                 object_size = object_metadata->size_bytes;
+
+            FailPointInjection::pauseFailPoint(FailPoints::object_storage_source_pause_before_virtual_columns);
 
             VirtualColumnUtils::addRequestedFileLikeStorageVirtualsToChunk(
                 chunk,

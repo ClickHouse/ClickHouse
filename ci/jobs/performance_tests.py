@@ -8,7 +8,9 @@ import subprocess
 import tempfile
 import time
 import traceback
+import urllib.error
 import urllib.parse
+import urllib.request
 from datetime import datetime
 from pathlib import Path
 from threading import Thread
@@ -18,7 +20,11 @@ import yaml
 from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.dataset_download import download_and_extract_datasets
+from ci.jobs.scripts.dataset_download import (
+    ICEBERG_DATASETS,
+    download_and_extract_datasets,
+    iceberg_database_ddl_commands,
+)
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -55,7 +61,7 @@ GET_HISTORICAL_TRESHOLDS_QUERY = """\
 SELECT test, query_index,
     quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
     quantileExactIf(0.99)(stat_threshold, abs(diff) < stat_threshold) * 1.5 AS max_stat_threshold,
-    any(query_display_name) AS query_display_name
+    query_display_name
 FROM query_metrics_v2
 -- We use results at least one week in the past, so that the current
 -- changes do not immediately influence the statistics, and we have
@@ -63,7 +69,8 @@ FROM query_metrics_v2
 WHERE event_date BETWEEN today() - INTERVAL 1 MONTH - INTERVAL 1 WEEK AND today() - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
-GROUP BY test, query_index
+-- The display name is part of the key: compare.sh joins this file on all three.
+GROUP BY test, query_index, query_display_name
 HAVING count() > 100"""
 
 INSERT_HISTORICAL_DATA = """\
@@ -123,6 +130,10 @@ FROM input(
      unstable_threshold Float64'
 ) FORMAT TSV"""
 
+# Praktika expands exactly this sub-result into per-test-case CIDB rows: it is the
+# `result_name_for_cidb` of both performance jobs (ci/defs/job_configs.py).
+CIDB_TEST_CASES_RESULT_NAME = "Tests"
+
 RAW_QUERY_METRICS_TABLE = "query_metric_runs_v1"
 
 # --- Aggregate report tables on the play cluster --------------------------
@@ -138,6 +149,26 @@ SKIPPED_TESTS_TABLE = "perf_skipped_tests_v1"
 RUN_ERRORS_TABLE = "perf_run_errors_v1"
 METRIC_CHANGES_TABLE = "perf_metric_changes_v1"
 FLAMEGRAPH_STACKS_TABLE = "perf_flamegraph_stacks_v1"
+
+# --- Performance dashboard gate -------------------------------------------
+# The dashboard reads the tables this job uploads in the REPORT stage and
+# classifies every changed query of a run with a confidence tier that combines
+# the raw per-run samples of both sides, the quantile shift, and the recent
+# master history of the same query. In `master_head` mode that tier, not the
+# per-shard "N slower" count, decides the Praktika status: see
+# `perf_dashboard_gate`.
+PERF_DASHBOARD_URL = "https://performance.ci.clickhouse.com"
+PERF_DASHBOARD_API_URL = f"{PERF_DASHBOARD_URL}/api/v1"
+# The metric the gate looks at; compare.sh classifies queries by the same one.
+DASHBOARD_GATE_METRIC = "client_time"
+# Confidence tiers of a slowdown that fail the check. `likely_regression` and
+# `noise` rows are reported in the dashboard but do not block.
+DASHBOARD_BLOCKING_TIERS = frozenset({"confirmed_regression"})
+# How long to wait for the dashboard to serve this shard's rows. The dashboard
+# computes a run from the tables this job uploads in the REPORT stage, which
+# usually takes well under a minute to become visible.
+DASHBOARD_INGEST_TIMEOUT_SEC = 600
+DASHBOARD_POLL_INTERVAL_SEC = 15
 
 ch_uploads_dir = f"{perf_wd}/analyze/ch-uploads"
 flamegraph_upload_path = f"{ch_uploads_dir}/flamegraph-stacks.tsv"
@@ -1238,7 +1269,7 @@ class CHServer:
                 --port {cls.LEFT_SERVER_PORT} {cls.RIGHT_SERVER_PORT} \
                 --binary {perf_left}/clickhouse {perf_right}/clickhouse \
                 --http-port {cls.LEFT_SERVER_HTTP_PORT} {cls.RIGHT_SERVER_HTTP_PORT} \
-                {runs_arg} --max-queries {max_queries} \
+                {runs_arg} --max-queries {max_queries} --soft-max-queries \
                 --profile-seconds 10 \
                 --pr-number {pr_number} \
                 {test_file}",
@@ -1315,10 +1346,81 @@ def find_master_build(commits, build_type):
     return None
 
 
-def find_prev_build(info, build_type):
-    return find_master_build(
-        info.get_kv_data("master_track_commits_sha") or [], build_type
+def local_master_track_commits(local_master_commits_to_check_for_build):
+    """Master shas below the merge base for a local run, which has no `master_track_commits_sha` kv data."""
+    # Prefer an explicit upstream master ref, then fall back to origin.
+    master_ref = next(
+        (
+            ref
+            for ref in ("upstream/master", "upstream/main", "origin/master", "origin/main")
+            if Shell.check(f"git rev-parse --verify --quiet {ref} > /dev/null")
+        ),
+        None,
     )
+    if master_ref is None:
+        print(
+            "WARNING: no upstream/origin master ref found; "
+            "skipping local master-track commits"
+        )
+        return []
+    # Resolve merge-base first so failures cannot make git log walk HEAD.
+    merge_base = Shell.get_output(f"git merge-base HEAD {master_ref}").strip()
+    if not merge_base:
+        print(
+            "WARNING: could not resolve merge-base with upstream master; "
+            "skipping local master-track commits"
+        )
+        return []
+    # Anchor on the newest master first-parent commit reachable from the merge-base.
+    # `above` is the oldest newer commit; its first parent is the anchor.
+    above = Shell.get_output(
+        f"git rev-list --first-parent {master_ref} ^{merge_base} | tail -1"
+    ).strip()
+    anchor = Shell.get_output(f"git rev-parse {above}^").strip() if above else merge_base
+    if not anchor:
+        print(
+            "WARNING: no master-side ancestor below the merge-base; "
+            "skipping local master-track commits"
+        )
+        return []
+    commits = Shell.get_output(
+        f"git log --first-parent --format=%H -n {local_master_commits_to_check_for_build} "
+        f"{anchor}"
+    ).split()
+    # Drop HEAD to avoid comparing a build with itself.
+    head = Shell.get_output("git rev-parse HEAD").strip()
+    if commits and commits[0] == head:
+        commits.pop(0)
+    return commits
+
+
+LATEST_MASTER_BUILD_PREFIX = (
+    "https://clickhouse-builds.s3.us-east-1.amazonaws.com/master/"
+)
+LOCAL_REFERENCE_FALLBACK_WARNING = (
+    "No ancestor baseline build found. Comparing against the latest available master build. "
+    "Results may include changes merged into master since this branch diverged."
+)
+
+
+def find_prev_build(info, build_type):
+    commits = info.get_kv_data("master_track_commits_sha") or []
+    if not commits and info.is_local_run:
+        # for a local run let's check 50 commits
+        commits = local_master_track_commits(50)
+    link = find_master_build(commits, build_type)
+    if link or not info.is_local_run:
+        return link
+
+    # `build_master_head_hook` publishes these release binaries even when the
+    # master tip has no build yet. No local history or GitHub credentials are needed.
+    arch = {"build_arm_release": "aarch64", "build_amd_release": "amd64"}[build_type]
+    link = f"{LATEST_MASTER_BUILD_PREFIX}{arch}/clickhouse"
+    if Shell.check(f"curl --connect-timeout 5 --max-time 15 -sfI {link} > /dev/null"):
+        print(f"WARNING: {LOCAL_REFERENCE_FALLBACK_WARNING} Reference: {link}")
+        return link
+    print(f"WARNING: latest master reference build is also unavailable: {link}")
+    return None
 
 
 def find_base_release_build(info, build_type):
@@ -1328,17 +1430,16 @@ def find_base_release_build(info, build_type):
 
 
 # The number of distinct "slower" queries that fails the whole performance
-# check in the commit-to-commit (`master_head`) mode. This is the gate that
-# actually decides the Praktika `Check Results` status: `report.py` embeds a
-# status into `report.html`, but `main` below discards it ("always green mode")
-# and recomputes the final status by reparsing the "N slower" message, so the
-# effective gate lives here. The value must stay synchronized with the
-# slower-queries threshold in `ci/jobs/scripts/perf/report.py`. It is
-# intentionally high: a handful of "slower" queries is dominated by CI noise (a
-# single bad shard run, frequency scaling, or code-layout artifacts can push
-# several unrelated micro benchmarks over their per-query thresholds at once),
-# while a genuine regression shows up as a small cluster of related queries
-# with large magnitudes that the per-query thresholds catch on their own.
+# check when the cumulative `release_base` mode has no previous master run to
+# compute a delta against. `report.py` embeds a status into `report.html`, but
+# `main` below discards it ("always green mode") and recomputes the final
+# status: in `master_head` mode from the performance dashboard's verdict (see
+# `perf_dashboard_gate`), in `release_base` mode from the slower counts below.
+# The value must stay synchronized with the slower-queries threshold in
+# `ci/jobs/scripts/perf/report.py`. It is intentionally high: a handful of
+# "slower" queries is dominated by CI noise (a single bad shard run, frequency
+# scaling, or code-layout artifacts can push several unrelated micro benchmarks
+# over their per-query thresholds at once).
 SLOWER_QUERIES_FAIL_THRESHOLD = 10
 
 # The gate for the cumulative `release_base` mode. That comparison accumulates
@@ -1405,6 +1506,182 @@ def parse_release_base(message):
 
 def too_many_slow(message):
     return parse_slower_count(message) > SLOWER_QUERIES_FAIL_THRESHOLD
+
+
+class PerfDashboardError(Exception):
+    """The performance dashboard could not deliver a verdict for this shard."""
+
+
+def dashboard_api_get(path, params=None, timeout_sec=60):
+    """GET `path` from the dashboard API and return the decoded JSON body.
+
+    Every failure, transport or HTTP, is raised as `PerfDashboardError` so the
+    caller can retry the whole step or fail the check with the reason."""
+    url = f"{PERF_DASHBOARD_API_URL}{path}"
+    if params:
+        url = f"{url}?{urllib.parse.urlencode(params)}"
+    try:
+        with urllib.request.urlopen(url, timeout=timeout_sec) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace").strip()[:300]
+        raise PerfDashboardError(f"HTTP {e.code} for [{url}]: {body}") from e
+    except (urllib.error.URLError, TimeoutError, ValueError) as e:
+        raise PerfDashboardError(f"request to [{url}] failed: {e}") from e
+
+
+def dashboard_run_id(info):
+    """The dashboard's identifier of the comparison run this job belongs to.
+
+    PR runs are keyed by PR number and head sha. Master runs carry a
+    timestamp suffix that only the dashboard knows, so they are looked up by
+    sha; the newest run for the sha is the one this job uploads into."""
+    if info.pr_number:
+        return f"pr-{info.pr_number}-{info.sha}"
+    data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]})
+    identities = [
+        item.get("identity") or {}
+        for item in data.get("items", [])
+        if (item.get("identity") or {}).get("newSha") == info.sha
+    ]
+    if not identities:
+        raise PerfDashboardError(f"no master run for sha {info.sha} yet")
+    identities.sort(
+        key=lambda identity: identity.get("runTime", ""), reverse=True
+    )
+    return identities[0]["runId"]
+
+
+def read_shard_queries(metrics_tsv_path):
+    """Tests and (test, query_index) pairs measured by this shard, from
+    `report/all-query-metrics.tsv` (columns: metric, left, right, diff,
+    times_change, stat_threshold, test, query_index, ...)."""
+    tests = []
+    queries = set()
+    with open(metrics_tsv_path, "r", encoding="utf-8", newline="") as f:
+        for row in csv.reader(f, delimiter="\t", quoting=csv.QUOTE_NONE):
+            if len(row) < 8 or row[0] != DASHBOARD_GATE_METRIC:
+                continue
+            test, query_index = row[6], int(row[7])
+            if test not in tests:
+                tests.append(test)
+            queries.add((test, query_index))
+    return tests, queries
+
+
+def dashboard_has_shard(run_id, arch, test):
+    """True once the dashboard serves this arch's data for `test`, i.e. the
+    tables uploaded by this job in the REPORT stage are visible."""
+    data = dashboard_api_get(
+        f"/runs/{urllib.parse.quote(run_id)}/tests/{urllib.parse.quote(test)}"
+    )
+    return any(
+        f" {arch} " in (table.get("title") or "")
+        for table in data.get("testTimes") or []
+    )
+
+
+def dashboard_query_link(run_id, test, query_index):
+    return (
+        f"{PERF_DASHBOARD_URL}/runs/{urllib.parse.quote(run_id)}"
+        f"/tests/{urllib.parse.quote(test)}/queries/{query_index}"
+    )
+
+
+def fetch_dashboard_slowdowns(run_id, arch, shard_queries):
+    """Slowdown rows of this shard with the dashboard's confidence tier."""
+    data = dashboard_api_get(
+        f"/runs/{urllib.parse.quote(run_id)}/confidence",
+        {"metrics": DASHBOARD_GATE_METRIC},
+    )
+    rows = []
+    for row in data.get("slowdowns") or []:
+        if row.get("arch") != arch:
+            continue
+        if row.get("metric") != DASHBOARD_GATE_METRIC:
+            continue
+        if (row.get("test"), row.get("queryIndex")) not in shard_queries:
+            continue
+        confidence = row.get("confidence") or {}
+        rows.append(
+            {
+                "test": row.get("test"),
+                "query_index": row.get("queryIndex"),
+                "old": row.get("oldValue"),
+                "new": row.get("newValue"),
+                "diff_percent": row.get("diffPercent"),
+                "tier": confidence.get("tier") or "unknown",
+                "reason": confidence.get("reason") or "",
+                "link": dashboard_query_link(
+                    run_id, row.get("test"), row.get("queryIndex")
+                ),
+            }
+        )
+    return rows
+
+
+def perf_dashboard_gate(info, arch, metrics_tsv_path):
+    """Ask the performance dashboard for its verdict on this shard.
+
+    Waits until the dashboard serves this shard's data, then returns the
+    slowdown rows of this shard and arch whose confidence tier is in
+    `DASHBOARD_BLOCKING_TIERS`. Raises `PerfDashboardError` when no verdict
+    could be obtained; the caller fails the check in that case rather than
+    passing a run nobody has judged."""
+    tests, shard_queries = read_shard_queries(metrics_tsv_path)
+    if not shard_queries:
+        raise PerfDashboardError(
+            f"no {DASHBOARD_GATE_METRIC} rows in [{metrics_tsv_path}]"
+        )
+
+    deadline = time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC
+    run_id = None
+    while True:
+        try:
+            if run_id is None:
+                run_id = dashboard_run_id(info)
+            if dashboard_has_shard(run_id, arch, tests[0]):
+                break
+            reason = f"run [{run_id}] has no {arch} data for test [{tests[0]}] yet"
+        except PerfDashboardError as e:
+            reason = str(e)
+        if time.monotonic() >= deadline:
+            raise PerfDashboardError(
+                "dashboard did not serve this shard within "
+                f"{DASHBOARD_INGEST_TIMEOUT_SEC}s: {reason}"
+            )
+        print(f"Waiting for the performance dashboard: {reason}")
+        time.sleep(DASHBOARD_POLL_INTERVAL_SEC)
+
+    rows = fetch_dashboard_slowdowns(run_id, arch, shard_queries)
+    for row in rows:
+        print(
+            f"Dashboard slowdown: {row['test']} #{row['query_index']} "
+            f"{row['old']} -> {row['new']} ({row['diff_percent'] * 100:+.1f}%), "
+            f"tier [{row['tier']}]: {row['reason']}"
+        )
+    return [row for row in rows if row["tier"] in DASHBOARD_BLOCKING_TIERS]
+
+
+def build_dashboard_results_children(regressions):
+    """One failed row per confirmed regression, linking the dashboard's query page."""
+    children = []
+    for row in regressions:
+        sub = Result(
+            name=f"{row['test']} #{row['query_index']}",
+            status=Result.Status.FAIL,
+            info=(
+                f"{DASHBOARD_GATE_METRIC} {row['old']} -> {row['new']} "
+                f"({row['diff_percent'] * 100:+.1f}%), {row['tier']}: {row['reason']}"
+            ),
+        )
+        sub.set_label(
+            "dashboard",
+            link=row["link"],
+            hint="This query on the performance dashboard (samples, history)",
+        )
+        children.append(sub)
+    return children
 
 
 # Outcomes of fetching one previous result artifact from S3.
@@ -1646,14 +1923,14 @@ def read_ci_checks_results(path):
     return results, malformed, True
 
 
-def import_ci_checks_results(path, results):
-    """Import `ci-checks.tsv` rows into the previous subtask's results.
+def import_ci_checks_results(path, results, target_name=CIDB_TEST_CASES_RESULT_NAME):
+    """Import `ci-checks.tsv` rows into the `target_name` sub-result.
 
     Returns True when the file was importable. A file with no data row at all -
     empty, or only the header lines - is reported and left unimported. That
-    distinction is a diagnostic one, not a data-preserving one: every subtask
-    `main()` appends before this call is built without a `results=` argument, so
-    the assignment target's row list is empty either way and there is nothing an
+    distinction is a diagnostic one, not a data-preserving one: the target
+    is built by `Result.from_commands_run`, which takes no `results=`
+    argument, so its row list is empty either way and there is nothing an
     empty assignment could destroy. A file that lost individual rows still
     imports the intact ones and reports how many it skipped, because degrading
     beats dying. An absent file is the atomic publish's own failure signal -
@@ -1671,8 +1948,11 @@ def import_ci_checks_results(path, results):
         return False
     if malformed:
         print(f"WARNING: ci-checks.tsv had {malformed} malformed row(s) - skipped")
-    # results[-2] is a previuos subtask
-    results[-2].results = test_results
+    target = next((r for r in results if r.name == target_name), None)
+    if target is None:
+        print(f"WARNING: no [{target_name}] sub-result to import ci-checks.tsv into")
+        return False
+    target.results = test_results
     return True
 
 
@@ -1722,6 +2002,9 @@ def rebuild_table(port, source, destination):
 
 
 POPULATE_DONE_MARKER = "test._populate_done"
+
+# Derived, not hand-maintained: adding a dataset to ICEBERG_DATASETS is enough to protect it from the between-tests user_files wipe.
+PERSISTENT_USER_FILES = {directory for directory, _ in ICEBERG_DATASETS.values()}
 
 
 def populate_data(port):
@@ -1813,6 +2096,12 @@ def main():
     else:
         Utils.raise_with_error("Unknown processor architecture")
 
+    reference_warning = (
+        LOCAL_REFERENCE_FALLBACK_WARNING
+        if info.is_local_run and link_for_ref_ch.startswith(LATEST_MASTER_BUILD_PREFIX)
+        else ""
+    )
+
     if compare_against_release:
         print("It's a comparison against latest release baseline")
         print(
@@ -1859,6 +2148,14 @@ def main():
 
     res = True
     results = []
+    if reference_warning:
+        results.append(
+            Result(
+                name="Reference baseline",
+                status=Result.Status.OK,
+                info=f"{reference_warning} Reference: {link_for_ref_ch}",
+            )
+        )
 
     # Fix the check start time once, for the whole job: the system log export,
     # `compare.sh` and the report uploads must all stamp the same run identity,
@@ -1913,10 +2210,19 @@ def main():
     reference_sha = ""
     if res and JobStages.INSTALL_CLICKHOUSE_REFERENCE in stages:
         print("Install Reference")
-        if not Path(f"{perf_left}/.done").is_file():
+        reference_source = Path(f"{perf_left}/reference-source.txt")
+        # The latest-master URL is mutable: refresh it when entering the install
+        # stage. Also invalidate a cached binary when the selected baseline changes.
+        if (
+            reference_warning
+            or not Path(f"{perf_left}/.done").is_file()
+            or not reference_source.is_file()
+            or reference_source.read_text() != link_for_ref_ch
+        ):
             commands = [
                 f"mkdir -p {perf_left_config}",
-                f"wget -nv -P {perf_left}/ {link_for_ref_ch}",
+                f"wget -nv -O {perf_left}/clickhouse.download {link_for_ref_ch}",
+                f"mv {perf_left}/clickhouse.download {perf_left}/clickhouse",
                 f"chmod +x {perf_left}/clickhouse",
                 f"cp -r ./tests/performance {perf_left}/",
                 f"ln -sf {perf_left}/clickhouse {perf_left}/clickhouse-local",
@@ -1929,11 +2235,14 @@ def main():
                     name="Install Reference ClickHouse", command=commands
                 )
             )
+            res = results[-1].is_ok()
+            if res:
+                reference_source.write_text(link_for_ref_ch)
+                Shell.check(f"touch {perf_left}/.done")
+        if res:
             reference_sha = Shell.get_output(
                 f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
             )
-            res = results[-1].is_ok()
-            Shell.check(f"touch {perf_left}/.done")
 
     if res and not info.is_local_run:
 
@@ -1987,6 +2296,7 @@ def main():
                 "hits1": "https://clickhouse-datasets.s3.amazonaws.com/hits/partitions/hits_v1.tar",
                 "values": "https://clickhouse-datasets.s3.amazonaws.com/values_with_expressions/partitions/test_values.tar",
                 "tpch10": "https://clickhouse-datasets.s3.amazonaws.com/h/10/tpch_sf10.tar",
+                "tpch_ice10": "https://clickhouse-datasets.s3.amazonaws.com/h-ice/10/tpch_ice_sf10.tar",
                 "tpcds1": "https://clickhouse-datasets.s3.amazonaws.com/ds/scale_1/tpcds.tar",
             }
             stop_watch = Utils.Stopwatch()
@@ -2046,6 +2356,9 @@ def main():
             # Same: the CI Logs cluster must be in the config of both servers.
             create_log_export_configs,
         ]
+        # Attach the Iceberg datasets as databases, so tests read tpch_ice10.<table> with no create_query of their own.
+        commands += iceberg_database_ddl_commands(perf_left)
+        commands += iceberg_database_ddl_commands(perf_right)
         results.append(Result.from_commands_run(name="Configure", command=commands))
         res = results[-1].is_ok()
 
@@ -2140,6 +2453,9 @@ def main():
                 if not user_files.is_dir():
                     continue
                 for entry in user_files.iterdir():
+                    # Dataset directories must outlive the tests; they are real directories, so the is_symlink() check below does not cover them.
+                    if entry.name in PERSISTENT_USER_FILES:
+                        continue
                     if entry.is_symlink():
                         continue
                     if entry.is_dir():
@@ -2148,13 +2464,10 @@ def main():
                         entry.unlink()
 
         def run_tests():
-            # Run 10 random queries per test by default, but all queries for benchmarks
-            benchmarks = {"clickbench.xml", "tpch.xml", "tpcds.xml"}
             for test in test_files:
-                max_queries = 0 if test in benchmarks else 10
                 CHServer.run_test(
                     "./tests/performance/" + test,
-                    max_queries=max_queries,
+                    max_queries=10,
                     pr_number=info.pr_number,
                     results_path=perf_wd,
                 )
@@ -2164,7 +2477,9 @@ def main():
         commands = [
             run_tests,
         ]
-        results.append(Result.from_commands_run(name="Tests", command=commands))
+        results.append(
+            Result.from_commands_run(name=CIDB_TEST_CASES_RESULT_NAME, command=commands)
+        )
         res = results[-1].is_ok()
 
     if JobStages.EXPORT_LOGS in stages and not info.is_local_run:
@@ -2191,6 +2506,15 @@ def main():
         )
 
         Shell.check(f"{perf_left}/clickhouse --version  > {perf_wd}/left-commit.txt")
+        if reference_warning:
+            # Read the actual binary's identity, including when resuming at `report`.
+            reference_sha = Shell.get_output(
+                f"{perf_left}/clickhouse -q \"SELECT value FROM system.build_options WHERE name='GIT_HASH'\""
+            )
+            with open(f"{perf_wd}/left-commit.txt", "a", encoding="utf-8") as reference:
+                reference.write(
+                    f"\nWARNING: {reference_warning}\nReference commit: {reference_sha}\n"
+                )
         Shell.check(f"git log -1 HEAD > {perf_wd}/right-commit.txt")
         os.environ["CLICKHOUSE_PERFORMANCE_COMPARISON_CHECK_NAME_PREFIX"] = (
             Utils.normalize_string(info.job_name)
@@ -2395,6 +2719,7 @@ def main():
         # Try to fetch status from the report.
         sw = Utils.Stopwatch()
         status = ""
+        dashboard_regressions = []
         try:
             with open(f"{perf_wd}/report.html", "r", encoding="utf-8") as report_fd:
                 report_text = report_fd.read()
@@ -2443,8 +2768,33 @@ def main():
                     )
                     if delta > SLOWER_QUERIES_DELTA_FAIL_THRESHOLD:
                         status = Result.Status.FAIL
-            elif too_many_slow(message.lower()):
-                status = Result.Status.FAIL
+            elif info.is_local_run:
+                print("Local run: skipping the performance dashboard gate")
+            else:
+                # `master_head` mode: the performance dashboard's verdict is the
+                # gate. It judges every changed query on its raw samples and
+                # master history, while a slower-count gate can only see how
+                # many queries crossed their per-shard threshold: a single
+                # 20x regression used to pass as "1 slower".
+                try:
+                    dashboard_regressions = perf_dashboard_gate(
+                        info,
+                        get_perf_arch(),
+                        f"{perf_wd}/report/all-query-metrics.tsv",
+                    )
+                except PerfDashboardError as e:
+                    print(f"ERROR: {e}")
+                    status = Result.Status.FAIL
+                    message += (
+                        f"; performance dashboard verdict unavailable: {e}"
+                    )
+                else:
+                    if dashboard_regressions:
+                        status = Result.Status.FAIL
+                        message += (
+                            f"; {len(dashboard_regressions)} confirmed regression(s) "
+                            "on the performance dashboard"
+                        )
             # TODO: Remove until here
         except Exception:
             traceback.print_exc()
@@ -2459,11 +2809,11 @@ def main():
             message = "No message in report."
         # Copy slower/unstable queries into Check Results so that Praktika
         # attaches per-query CIDB history links in the report.
-        check_sub_results = []
+        check_sub_results = build_dashboard_results_children(dashboard_regressions)
         # Find the "Tests" sub-result that holds per-query results
         tests_result = None
         for r in results:
-            if r.name == "Tests" and r.results:
+            if r.name == CIDB_TEST_CASES_RESULT_NAME and r.results:
                 tests_result = r
                 break
         if tests_result:
@@ -2471,9 +2821,14 @@ def main():
             # the stable baseline.  The CIDB check_name looks like
             # "Performance Comparison (arm_release, master_head, 1/6)".
             arch = get_perf_arch()
-            check_sub_results = build_check_results_children(
-                tests_result, f"%Performance%{arch}%master_head%"
-            )
+            dashboard_names = {sub.name for sub in check_sub_results}
+            check_sub_results += [
+                sub
+                for sub in build_check_results_children(
+                    tests_result, f"%Performance%{arch}%master_head%"
+                )
+                if sub.name not in dashboard_names
+            ]
 
         results.append(
             Result(
@@ -2508,12 +2863,10 @@ def main():
         info=message,
     )
     if info.pr_number:
-        dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?q={info.pr_number}"
-        )
+        dashboard_link = f"{PERF_DASHBOARD_URL}/runs?q={info.pr_number}"
     else:
         dashboard_link = (
-            f"https://performance.ci.clickhouse.com/runs?scope=master&q={(info.sha or '')[:12]}"
+            f"{PERF_DASHBOARD_URL}/runs?scope=master&q={(info.sha or '')[:12]}"
         )
     result.set_label(
         "Performance dashboard",

@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/TimezoneMixin.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
@@ -60,7 +61,12 @@ public:
 
         DataTypePtr timestamp_type;
         if (timestamp_scale > 0)
-            timestamp_type = std::make_shared<DataTypeDateTime64>(timestamp_scale);
+        {
+            if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(start_timestamp_type.get()))
+                timestamp_type = std::make_shared<DataTypeDateTime64>(timestamp_scale, *timezone);
+            else
+                timestamp_type = std::make_shared<DataTypeDateTime64>(timestamp_scale);
+        }
         else
             timestamp_type = start_timestamp_type;
 
