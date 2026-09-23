@@ -11,7 +11,7 @@ namespace DB
 class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
-    explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_);
+    ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_, bool replicas_get_pushed_conditions_);
 
     String getName() const override { return "ReadFromLocalReplica"; }
 
@@ -27,6 +27,13 @@ public:
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }
 
+    /// Whether a condition pushed into this fragment also reaches the replicas running it. It does when
+    /// they were given a query to run and the rewrite that splices the condition into that query accepts
+    /// it (`canSpliceFiltersIntoRemoteQuery`); it does not when they were given a plan, which is built
+    /// and shipped whole. Answered where the fragment is shipped, and carried here rather than guessed
+    /// at from the shape of the local copy.
+    bool replicasGetPushedConditions() const { return replicas_get_pushed_conditions; }
+
     void addFilter(FilterDAGInfo filter);
 
     /// Take the snapshot of what this fragment fixes on its own - what the replicas will fix too -
@@ -34,20 +41,10 @@ public:
     /// per read: a fragment can hold several coordinated reads, and they do not fix the same columns.
     void restrictFixedColumnsToOwnFilters();
 
-    /// Whether the rewrite that splices a condition into the replicas' query refuses this fragment
-    /// whatever the settings say, leaving them with the query as it was.
-    ///
-    /// `ReadFromRemote::addFilters` wants a single-table query: it returns on a query tree that is not
-    /// a `QueryNode` - a `UNION ALL` fragment - and on a join tree holding more than one table
-    /// expression. `PredicateRewriteVisitorData::rewriteSubquery` then refuses a `LIMIT BY`, a
-    /// `WITH FILL`, and a window function in the `SELECT` list. Each of those is a step here, and none
-    /// of them is a step the optimizer invents: a `LimitByStep` in the fragment means the shipped query
-    /// has `LIMIT BY`, so this answers for the shipped query rather than guessing about it.
-    bool remoteRewriteRefusesThisShape() const;
-
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
+    bool replicas_get_pushed_conditions;
 };
 
 }

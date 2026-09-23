@@ -1,8 +1,9 @@
 -- A fragment can hold more than one coordinated read: `parallel_replicas_allow_view_over_mergetree`
 -- ships the outer query of a view, and a view that expands to `UNION ALL` puts every branch's read in
 -- the one fragment, each answering to the coordinator. A condition arriving from outside that fragment
--- is pushed into it whole, and the branches must not derive ordering from it - the replicas execute the
--- same fragment without it.
+-- is pushed into it whole, so every branch may derive ordering from it - but only where the replicas
+-- run the fragment with that condition too. Where they do not, a branch that fixes nothing of its own
+-- must not order its read.
 --
 -- The branches name their columns alike, which is the point: holding them to one set of column names
 -- taken at the fragment root would let a column fixed in the first branch pass for the same-named
@@ -49,9 +50,10 @@ SET optimize_read_in_order = 1;
 -- for the coordinator to check the mode of.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
-SELECT 'the fragment reads both branches, only the one with its own filter in order';
--- `InOrder` for the branch that fixes `tenant` itself, `Default` for the branch that does not: the
--- pushed `tenant = 5` prunes both and orders neither.
+SELECT 'the condition reaches the replicas, so both branches read in order';
+-- The shipped query is a single-table `SELECT ... FROM v_pr_union_mode`, which the rewrite accepts: it
+-- travels with `HAVING tenant = 5`, the replicas push it into both branches as the initiator does, and
+-- both sides fix `tenant` in both reads.
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 LIMIT 5)
 WHERE explain LIKE '%Read type%';
@@ -59,6 +61,23 @@ WHERE explain LIKE '%Read type%';
 SELECT 'and answers correctly';
 SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 ORDER BY ts LIMIT 5;
+
+SELECT 'where it does not reach them, only the branch with its own filter reads in order';
+-- With the rewrite turned off the replicas run the fragment as it was written, and the pushed
+-- `tenant = 5` is the initiator's alone: `InOrder` for the branch that fixes `tenant` itself, `Default`
+-- for the branch that does not. Each read is held to the filters on its own branch - one set of column
+-- names taken at the fragment root would fix `tenant` for both.
+SET allow_push_predicate_ast_for_distributed_subqueries = 0;
+
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+
+SELECT 'and answers correctly';
+SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
+SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 ORDER BY ts LIMIT 5;
+
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 
 SELECT 'a condition that prunes every branch away still answers';
 -- One branch of this fragment reads in order, and a coordinator serving an in-order stream used to

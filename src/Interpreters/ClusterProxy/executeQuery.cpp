@@ -1104,7 +1104,14 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(std::move(local_plan), std::move(local_context));
+        /// A condition pushed into the local copy of the fragment reaches the replicas as well when they
+        /// are given a query to run and the splice accepts it. Asked here, where both are known, and on
+        /// the same context the splice will answer to; the local plan is then optimized knowing it.
+        const bool replicas_get_pushed_conditions = !remote_query_plan
+            && canSpliceFiltersIntoRemoteQuery(forwarded_query_ast, query_tree, planner_context, local_context);
+
+        auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
+            std::move(local_plan), local_context, replicas_get_pushed_conditions);
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
@@ -1120,6 +1127,10 @@ void executeQueryWithParallelReplicas(
             header,
             processed_stage,
             new_context,
+            /// Same context the local copy of the fragment is optimized with, so that the decision to
+            /// splice the pushed-down condition into the replicas' query and the decision to order the
+            /// local read off that condition are taken on one set of settings.
+            std::move(local_context),
             getThrottler(new_context),
             std::move(scalars),
             std::move(external_tables),
@@ -1159,6 +1170,9 @@ void executeQueryWithParallelReplicas(
             std::move(coordinator),
             header,
             processed_stage,
+            new_context,
+            /// No local copy of the fragment here, so there is nothing to agree with: the remote step's
+            /// own context decides.
             new_context,
             getThrottler(new_context),
             std::move(scalars),

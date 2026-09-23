@@ -3,12 +3,6 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinStep.h>
-#include <Processors/QueryPlan/JoinStepLogical.h>
-#include <Processors/QueryPlan/UnionStep.h>
-#include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/FillingStep.h>
-#include <Processors/QueryPlan/WindowStep.h>
 
 namespace DB
 {
@@ -18,10 +12,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr subquery_context_)
+ReadFromLocalParallelReplicaStep::ReadFromLocalParallelReplicaStep(
+    QueryPlanPtr query_plan_, ContextPtr subquery_context_, bool replicas_get_pushed_conditions_)
     : ISourceStep(query_plan_->getCurrentHeader())
     , query_plan(std::move(query_plan_))
     , context(std::move(subquery_context_))
+    , replicas_get_pushed_conditions(replicas_get_pushed_conditions_)
 {
 }
 
@@ -72,28 +68,6 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
         for (size_t i = 0; i < node->children.size(); ++i)
             stack.push_back({node->children[i], i == 0 ? chain_root : node->children[i]});
     }
-}
-
-bool ReadFromLocalParallelReplicaStep::remoteRewriteRefusesThisShape() const
-{
-    if (!query_plan || !query_plan->isInitialized())
-        return false;
-
-    std::vector<const QueryPlan::Node *> stack{query_plan->getRootNode()};
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        const auto * step = node->step.get();
-        if (typeid_cast<const JoinStep *>(step) || typeid_cast<const JoinStepLogical *>(step)
-            || typeid_cast<const FilledJoinStep *>(step) || typeid_cast<const UnionStep *>(step)
-            || typeid_cast<const LimitByStep *>(step) || typeid_cast<const FillingStep *>(step)
-            || typeid_cast<const WindowStep *>(step))
-            return true;
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-    return false;
 }
 
 void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)

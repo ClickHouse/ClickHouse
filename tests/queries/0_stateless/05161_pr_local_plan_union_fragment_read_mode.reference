@@ -1,4 +1,14 @@
-the fragment reads both branches, only the one with its own filter in order
+the condition reaches the replicas, so both branches read in order
+Read type: InOrder
+Read type: InOrder
+and answers correctly
+200
+5	5
+5	105
+5	205
+5	305
+5	405
+where it does not reach them, only the branch with its own filter reads in order
 Read type: InOrder
 Read type: Default
 and answers correctly

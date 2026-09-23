@@ -13,6 +13,13 @@ class ASTSelectIntersectExceptQuery;
 class ASTSelectQuery;
 class ASTSelectWithUnionQuery;
 
+/// The subquery shapes `PredicateRewriteVisitorData::rewriteSubquery` refuses to add a predicate to -
+/// the ones where a predicate in `HAVING` would not mean what it means outside. Asked on its own by a
+/// caller that has to know in advance whether the rewrite will happen, so that there is one statement
+/// of this and not two.
+bool subqueryAcceptsPushedPredicate(
+    const ASTSelectQuery & subquery, bool optimize_final, bool optimize_with, ContextPtr context);
+
 class PredicateRewriteVisitorData : WithContext
 {
 public:

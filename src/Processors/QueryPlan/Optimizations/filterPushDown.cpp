@@ -44,12 +44,6 @@ namespace DB::ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-namespace DB::Setting
-{
-    extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
-    extern const SettingsBool serialize_query_plan;
-}
-
 namespace DB::QueryPlanOptimizations
 {
 
@@ -1462,20 +1456,11 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// fragment, because where it does not only this replica has the condition, and only this
         /// replica would order its read by it.
         ///
-        /// Ask the settings the fragment carries, not the query being optimized: the fragment is what
-        /// travels, `SETTINGS` and all, and the rewrite answers to those. It writes into an AST, so it
-        /// never runs without `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes
-        /// is not what the replicas execute when the plan is shipped instead, under
-        /// `serialize_query_plan`. It also refuses outright a fragment that is not a single-table query
-        /// - one that unions, one that joins - and then the replicas keep the query they were given.
-        const auto & fragment_settings = parallel_replicas_local_plan->getContext()->getSettingsRef();
-        const bool replicas_get_the_condition
-            = fragment_settings[Setting::allow_push_predicate_ast_for_distributed_subqueries]
-            && !fragment_settings[Setting::serialize_query_plan]
-            && !parallel_replicas_local_plan->remoteRewriteRefusesThisShape();
-
+        /// Whether it reaches them is not decided here: it is decided where the fragment is shipped,
+        /// by the rewrite that splices the condition into their query, and the answer is carried on
+        /// this step.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        if (!replicas_get_the_condition && condition && mayFixColumn(condition))
+        if (!parallel_replicas_local_plan->replicasGetPushedConditions() && condition && mayFixColumn(condition))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized
