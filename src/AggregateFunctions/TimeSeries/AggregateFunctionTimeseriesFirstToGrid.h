@@ -11,11 +11,11 @@
 namespace DB
 {
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 struct AggregateFunctionTimeseriesFirstToGridTraits
 {
+    using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
     using ValueType = ValueType_;
     using ResultType = ValueType_;
 
@@ -51,9 +51,9 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
     /// Sliding aggregator: keeps the window's earliest sample in a `SlidingSum` and returns its value per grid point.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
-        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
@@ -68,19 +68,19 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
             add(std::move(summary), bucket_end_timestamp);
         }
 
-        void add(Summary summary, TimestampType bucket_end_timestamp)
+        void add(Summary summary, GridScaleTimestampType bucket_end_timestamp)
         {
             if (!summary.has_value)
                 return;
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (!combined.has_value)
@@ -98,14 +98,14 @@ struct AggregateFunctionTimeseriesFirstToGridTraits
 
 /// Aggregate function that returns the earliest (smallest timestamp) value of a time series within a sliding
 /// window on a regular time grid (Prometheus `first_over_time`).
-template <typename TimestampType_, typename IntervalType_, typename ValueType_>
+template <typename TimestampType_, typename ValueType_>
 class AggregateFunctionTimeseriesFirstToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesFirstToGrid<TimestampType_, IntervalType_, ValueType_>,
-        AggregateFunctionTimeseriesFirstToGridTraits<TimestampType_, IntervalType_, ValueType_>>
+        AggregateFunctionTimeseriesFirstToGrid<TimestampType_, ValueType_>,
+        AggregateFunctionTimeseriesFirstToGridTraits<TimestampType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesFirstToGridTraits<TimestampType_, IntervalType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesFirstToGridTraits<TimestampType_, ValueType_>;
 
     using Aggregator = typename Traits::Aggregator;
 

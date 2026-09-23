@@ -90,9 +90,9 @@ FROM
                 {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
                 {
                     assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-                    auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+                    auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
                     {
-                        return std::make_shared<AggregateFunctionTimeseriesTsOfFirstToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                        return std::make_shared<AggregateFunctionTimeseriesTsOfFirstToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
                     };
                     return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
                 },
@@ -102,9 +102,9 @@ FROM
                 {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
                 {
                     assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-                    auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+                    auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
                     {
-                        return std::make_shared<AggregateFunctionTimeseriesTsOfLastToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                        return std::make_shared<AggregateFunctionTimeseriesTsOfLastToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
                     };
                     return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
                 },
@@ -114,9 +114,9 @@ FROM
                 {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
                 {
                     assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-                    auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+                    auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
                     {
-                        return std::make_shared<AggregateFunctionTimeseriesTsOfMinToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                        return std::make_shared<AggregateFunctionTimeseriesTsOfMinToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
                     };
                     return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
                 },
@@ -126,9 +126,9 @@ FROM
                 {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
                 {
                     assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
-                    auto make_function = [&]<typename TimestampType, typename IntervalType, typename ValueType>(TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+                    auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
                     {
-                        return std::make_shared<AggregateFunctionTimeseriesTsOfMaxToGrid<TimestampType, IntervalType, ValueType>>(argument_types, parameters, start, end, step, window, scale);
+                        return std::make_shared<AggregateFunctionTimeseriesTsOfMaxToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
                     };
                     return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
                 },

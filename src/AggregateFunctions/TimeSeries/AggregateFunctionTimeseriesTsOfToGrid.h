@@ -21,13 +21,13 @@ enum class TimeseriesTsOfKind
     Max,    /// timestamp of the maximum-value sample (latest one on ties)     -> ts_of_max_over_time
 };
 
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, TimeseriesTsOfKind kind_>
+template <typename TimestampType_, typename ValueType_, TimeseriesTsOfKind kind_>
 struct AggregateFunctionTimeseriesTsOfToGridTraits
 {
     static constexpr TimeseriesTsOfKind kind = kind_;
 
+    using GridScaleTimestampType = DateTime64;
     using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
     using ValueType = ValueType_;
     /// A Unix-seconds timestamp does not fit Float32 exactly (e.g. 1699999940 rounds to 1700000000),
     /// so the result is always Float64 regardless of the sample value type.
@@ -114,18 +114,18 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
     };
 
     /// Sliding aggregator: keeps the window's selected sample in a `SlidingSum` and returns its timestamp
-    /// (converted to Unix seconds, i.e. divided by the timestamp scale multiplier) per grid point.
+    /// (converted to Unix seconds, i.e. divided by the number of ticks per second of the input timestamps) per grid point.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
-        TimestampType timestamp_scale_multiplier;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
+        Int64 column_ticks_per_second;
 
-        explicit Aggregator(TimestampType timestamp_scale_multiplier_)
-            : timestamp_scale_multiplier(timestamp_scale_multiplier_)
+        explicit Aggregator(Int64 column_ticks_per_second_)
+            : column_ticks_per_second(column_ticks_per_second_)
         {
         }
 
-        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
@@ -139,24 +139,24 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
             add(std::move(summary), bucket_end_timestamp);
         }
 
-        void add(Summary summary, TimestampType bucket_end_timestamp)
+        void add(Summary summary, GridScaleTimestampType bucket_end_timestamp)
         {
             if (!summary.has_value)
                 return;
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-        std::optional<Float64> getResult(TimestampType /*grid_timestamp*/) const
+        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
             if (!combined.has_value)
                 return std::nullopt;
-            return static_cast<Float64>(combined.timestamp) / static_cast<Float64>(timestamp_scale_multiplier);
+            return static_cast<Float64>(static_cast<Int64>(combined.timestamp)) / static_cast<Float64>(column_ticks_per_second);
         }
     };
 
@@ -169,14 +169,14 @@ struct AggregateFunctionTimeseriesTsOfToGridTraits
 
 /// Aggregate function that returns the timestamp (in Unix seconds) of a selected sample of a time series within a
 /// sliding window on a regular time grid (Prometheus `ts_of_first/last/min/max_over_time`).
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, TimeseriesTsOfKind kind_>
+template <typename TimestampType_, typename ValueType_, TimeseriesTsOfKind kind_>
 class AggregateFunctionTimeseriesTsOfToGrid final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesTsOfToGrid<TimestampType_, IntervalType_, ValueType_, kind_>,
-        AggregateFunctionTimeseriesTsOfToGridTraits<TimestampType_, IntervalType_, ValueType_, kind_>>
+        AggregateFunctionTimeseriesTsOfToGrid<TimestampType_, ValueType_, kind_>,
+        AggregateFunctionTimeseriesTsOfToGridTraits<TimestampType_, ValueType_, kind_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesTsOfToGridTraits<TimestampType_, IntervalType_, ValueType_, kind_>;
+    using Traits = AggregateFunctionTimeseriesTsOfToGridTraits<TimestampType_, ValueType_, kind_>;
 
     using Aggregator = typename Traits::Aggregator;
 
@@ -185,23 +185,23 @@ public:
 
     Aggregator createAggregator(size_t /* num_populated_buckets */) const
     {
-        return Aggregator{Base::timestamp_scale_multiplier};
+        return Aggregator{Base::column_ticks_per_second};
     }
 
     static constexpr bool DateTime64Supported = true;
 };
 
-/// Each SQL function as a 3-argument template with its `kind` baked in, so registration names the function directly.
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesTsOfFirstToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, IntervalType, ValueType, TimeseriesTsOfKind::First>;
+/// Each SQL function as a 2-argument template with its `kind` baked in, so registration names the function directly.
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesTsOfFirstToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, ValueType, TimeseriesTsOfKind::First>;
 
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesTsOfLastToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, IntervalType, ValueType, TimeseriesTsOfKind::Last>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesTsOfLastToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, ValueType, TimeseriesTsOfKind::Last>;
 
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesTsOfMinToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, IntervalType, ValueType, TimeseriesTsOfKind::Min>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesTsOfMinToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, ValueType, TimeseriesTsOfKind::Min>;
 
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesTsOfMaxToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, IntervalType, ValueType, TimeseriesTsOfKind::Max>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesTsOfMaxToGrid = AggregateFunctionTimeseriesTsOfToGrid<TimestampType, ValueType, TimeseriesTsOfKind::Max>;
 
 }
