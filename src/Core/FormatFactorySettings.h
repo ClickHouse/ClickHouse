@@ -904,7 +904,7 @@ Write values of [JSON](/reference/data-types/newjson) data type as JSON [String]
     \
     DECLARE(Bool, output_format_json_quote_64bit_integers, false, R"(
 Controls quoting of 64-bit or bigger [integers](/reference/data-types/int-uint) (like `UInt64` or `Int128`) when they are output in a [JSON](/reference/formats/JSON/JSON) format.
-Such integers are enclosed in quotes by default. This behavior is compatible with most JavaScript implementations.
+Such integers are output without quotes by default. Enabling this setting encloses them in quotes, which is compatible with most JavaScript implementations.
 
 Possible values:
 
