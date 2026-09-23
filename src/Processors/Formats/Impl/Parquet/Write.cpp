@@ -1275,6 +1275,19 @@ void writeColumnImpl(
                     next_def_offset, def_count, data_count, [&](size_t) { return converter.fixedStringSize(); });
             }
 
+            if (!use_dictionary && next_def_offset > def_offset)
+            {
+                size_t batch_encoded_bytes = batch_byte_size;
+                if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+                    batch_encoded_bytes += data_count * sizeof(uint32_t);
+
+                if (static_cast<size_t>(encoder->EstimatedDataEncodedSize()) + batch_encoded_bytes > max_record_bytes)
+                {
+                    flush_page(next_def_offset - def_offset, next_data_offset - data_offset);
+                    break;
+                }
+            }
+
             if (options.write_page_statistics || options.write_column_chunk_statistics)
 /// Workaround for clang bug: https://github.com/llvm/llvm-project/issues/63630
 #ifdef MEMORY_SANITIZER
