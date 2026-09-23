@@ -104,6 +104,8 @@ public:
     bool supportsChmod() const override { return delegate->supportsChmod(); }
     void chmod(const String & path, mode_t mode) override { delegate->chmod(path, mode); }
 
+    DiskPtr getDelegateDiskIfExists() const override { return delegate; }
+
     bool isReadOnly() const override { return true; }
     std::unique_ptr<WriteBufferFromFileBase> writeFile(const String &, size_t, WriteMode, const WriteSettings &) override { throwNotAllowed(); }
     void moveFile(const String &, const String &) override { throwNotAllowed(); }

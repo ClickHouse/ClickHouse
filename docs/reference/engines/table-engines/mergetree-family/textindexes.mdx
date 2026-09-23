@@ -999,6 +999,7 @@ The `mapKeys` and `mapValues` indexes described below cannot answer such a query
 
 A pair is stored as the token `key ‖ value ‖ length(key)`.
 The trailing length keeps the boundary between the key and the value unambiguous, so both may contain arbitrary bytes: unlike joining them with a separator such as `key=value`, a key or a value that contains the separator cannot produce a false match.
+The table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) returns the decoded parts of each token in the columns `token_key` and `token_value`.
 
 The following restrictions apply:
 

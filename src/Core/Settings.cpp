@@ -4410,27 +4410,6 @@ Send server text logs with specified minimum level to client. Valid values: 'tes
     DECLARE(String, send_logs_source_regexp, "", R"(
 Send server text logs with specified regexp to match log source name. Empty means all sources.
 )", 0) \
-    DECLARE(Bool, enable_optimize_predicate_expression, true, R"(
-Turns on predicate pushdown in `SELECT` queries.
-
-Predicate pushdown may significantly reduce network traffic for distributed queries.
-
-Possible values:
-
-- 0 — Disabled.
-- 1 — Enabled.
-
-Usage
-
-Consider the following queries:
-
-1.  `SELECT count() FROM test_table WHERE date = '2018-10-10'`
-2.  `SELECT count() FROM (SELECT * FROM test_table) WHERE date = '2018-10-10'`
-
-If `enable_optimize_predicate_expression = 1`, then the execution time of these queries is equal because ClickHouse applies `WHERE` to the subquery when processing it.
-
-If `enable_optimize_predicate_expression = 0`, then the execution time of the second query is much longer because the `WHERE` clause applies to all the data after the subquery finishes.
-)", 0) \
     DECLARE(Bool, enable_optimize_predicate_expression_to_final_subquery, true, R"(
 Allow push predicate to final subquery.
 )", 0) \
@@ -4711,6 +4690,11 @@ Possible values:
     \
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
 Allow execute multiIf function columnar
+)", 0) \
+    DECLARE(Bool, allow_executable_tables, true, R"(
+Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
+
+Disabling this refuses reads only: creating, attaching, dropping and describing such tables still works. `ExecutablePool` processes that have already started are left running rather than terminated, but each read is still refused until the setting is enabled again.
 )", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
@@ -5775,13 +5759,15 @@ With `aggregate_functions_null_for_empty = 1` the result would be:
 ```
 )", 0) \
     DECLARE(AggregateFunctionInputFormat, aggregate_function_input_format, "state", R"(
-Format for AggregateFunction input during INSERT operations.
+How the input formats read columns of the `AggregateFunction` type.
 
 Possible values:
 
-- `state` — Binary string with the serialized state (the default). This is the default behavior where AggregateFunction values are expected as binary data.
-- `value` — The format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them. They will be deserialized using the corresponding IDataType or DataTypeTuple and then aggregated to form the state.
-- `array` — The format expects an Array of values, as described in the `value` option above. All elements of the array will be aggregated to form the state.
+- `state` — the serialized state of the aggregate function, as the output formats write it (the default).
+- `value` — a value of the argument of the aggregate function, or a tuple of the arguments if there are several of them. The value is aggregated to form the state.
+- `array` — an array of values, as described in the `value` option above. All elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes the format reads the column as if it had the type of the values: `T` for `AggregateFunction(f, T)`, `Tuple(T1, T2)` for `AggregateFunction(f, T1, T2)`, or `Array` of it in the `array` mode. The values are written in the representation the format uses for that type: a number or a string in a text format, a JSON array in the JSON formats, the binary encoding of the type in `RowBinary` or `Native`, a column of that type in `Parquet`, and so on. This applies to every input format, and also to `AggregateFunction` nested in `Array`, `Tuple` or `Map`.
 
 **Examples**
 
@@ -5793,18 +5779,26 @@ CREATE TABLE example (
 );
 ```
 
-
 With `aggregate_function_input_format = 'value'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,456
 ```
 
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
 
 With `aggregate_function_input_format = 'array'`:
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
+```
+
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
 ```
 
 Note: The `value` and `array` formats are slower than the default `state` format as they require creating and aggregating values during insertion.
@@ -8272,6 +8266,8 @@ Only has an effect in ClickHouse Cloud. Exclude new data parts from SELECT queri
 )", 0) \
     DECLARE(Bool, short_circuit_function_evaluation_for_nulls, true, R"(
 Optimizes evaluation of functions that return NULL when any argument is NULL. When the percentage of NULL values in the function's arguments exceeds the short_circuit_function_evaluation_for_nulls_threshold, the system skips evaluating the function row-by-row. Instead, it immediately returns NULL for all rows, avoiding unnecessary computation.
+
+This setting controls an optimization only. Functions that cannot be executed on the default value of their arguments - such as `parseDateTime`, `IPv4StringToNum` or `intDiv` - always skip the rows containing a NULL regardless of this setting, because the value stored behind a NULL is the default value of the argument type and executing on it would throw on otherwise valid data.
 )", 0) \
     DECLARE(Double, short_circuit_function_evaluation_for_nulls_threshold, 1.0, R"(
 Ratio threshold of NULL values to execute functions with Nullable arguments only on rows with non-NULL values in all arguments. Applies when setting short_circuit_function_evaluation_for_nulls is enabled.
@@ -8473,9 +8469,6 @@ Index analysis done only on replica-coordinator and skipped on other replicas. E
     DECLARE(Bool, parallel_replicas_support_projection, true, R"(
 Optimization of projections can be applied in parallel replicas. Effective only with enabled parallel_replicas_local_plan and aggregation_in_order is inactive.
 )", 0) \
-    DECLARE(Bool, parallel_replicas_only_with_analyzer, true, R"(
-The analyzer should be enabled to use parallel replicas. With disabled analyzer query execution fallbacks to local execution, even if parallel reading from replicas is enabled. Using parallel replicas without the analyzer enabled is not supported
-)", 0) \
     DECLARE(Bool, parallel_replicas_insert_select_local_pipeline, true, R"(
 Use local pipeline during distributed INSERT SELECT with parallel replicas
 )", 0) \
@@ -8532,7 +8525,7 @@ Cloud default value: `1`.
     DECLARE_WITH_ALIAS(Bool, allow_experimental_analyzer, true, R"(
 Obsolete since v26.9: the analyzer cannot be disabled anymore.
 
-The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 the old query analysis was deprecated and this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
+The analyzer is the query analysis and planning infrastructure that has been the default since v24.3. In v26.9 this setting was frozen at its only supported value, `1`: an attempt to set it to `0` is rejected, and the `compatibility` setting no longer reverts it. In v26.10 the query analysis it used to switch to was removed. Remove `enable_analyzer = 0` from queries, session settings, settings profiles and client configurations. To compare the behaviour or the performance of a query with the old query analysis, use a ClickHouse version older than v26.9.
 )", IMPORTANT | SettingsTierType::OBSOLETE, enable_analyzer) \
     DECLARE(Bool, analyzer_compatibility_join_using_top_level_identifier, false, R"(
 Force to resolve identifier in JOIN USING from projection (for example, in `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` join will be performed by `t1.a + 1 = t2.b`, rather then `t1.b = t2.b`). Aliases defined on subexpressions inside the SELECT list are also considered (for example, in `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` the join is performed by `t1.a + 1 = t2.b`). When the matching alias is defined on a subexpression inside the SELECT list rather than as a top-level alias, parallel replicas are disabled for the query. For queries sent to remote servers (`Distributed` tables, the `remote` table function), such a query is rejected with an exception only when the identifier cannot be resolved on the remote server at all; if the alias shadows a real column of the left table, the remote server joins by that column instead, so the results may differ from local execution.
@@ -8541,7 +8534,7 @@ Force to resolve identifier in JOIN USING from projection (for example, in `SELE
 Allow to add compound identifiers to nested. This is a compatibility setting because it changes the query result. When disabled, `SELECT a.b.c FROM table ARRAY JOIN a` does not work, and `SELECT a FROM table` does not include `a.b.c` column into `Nested a` result.
     )", 0) \
     DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
-When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the query analysis that ClickHouse used before v24.3. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
+When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the query analysis that ClickHouse used before v24.3. Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the behaviour of that older analysis. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
 )", 0) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
@@ -8566,6 +8559,14 @@ This makes outer queries that reference such columns by their qualified names wo
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 )", 0) \
+    DECLARE(Bool, analyzer_compatibility_allow_cte_redefinition, false, R"(
+Allow a Common Table Expression name to be defined more than once in a single `WITH` clause. A reference to such a name binds to the latest definition that is not being resolved at that moment: a redefinition can read the previous definition of the same name, and the query body reads the last one. This matches the query analysis that ClickHouse used before v24.3, where a later definition silently shadowed the earlier ones. One shape differs from that analysis: a CTE declared between two definitions of a name also binds to the last definition, where the old analysis bound it to the definition visible at its declaration point. By default a redefinition is rejected with `MULTIPLE_EXPRESSIONS_FOR_ALIAS`. A CTE declared as `MATERIALIZED` and a CTE in a `WITH RECURSIVE` clause cannot be redefined even when the setting is enabled.
+
+Possible values:
+
+- 0 - A CTE name can be defined only once in a `WITH` clause.
+- 1 - A later definition of a CTE name shadows the earlier ones.
+)", 0) \
     DECLARE(Bool, enable_identifier_resolve_cache, true, R"(
 Enable the identifier resolution cache in the query analyzer. The cache shares resolved alias nodes to prevent AST explosion when the same alias is referenced multiple times. Set to false to disable caching if incorrect results are suspected.
 )", 0) \
@@ -8581,6 +8582,9 @@ You can use functions `timeZone()` and `serverTimeZone()` to get the session tim
 Possible values:
 
 -    Any time zone name from `system.time_zones`, e.g. `Europe/Berlin`, `UTC` or `Zulu`
+-    A fixed offset from UTC, spelled `Fixed/UTC±HH:MM:SS`, e.g. `Fixed/UTC+05:30:00`. The offset has to be a whole number of quarters of an hour and no further from UTC than 14 hours, which covers every offset a real time zone has.
+
+Only these names are accepted. A name that only the operating system's time zone database has is not, because ClickHouse ships its own copy of the time zone database so that results do not depend on the host.
 
 Examples:
 
@@ -9017,21 +9021,21 @@ Initial delay in milliseconds before the first retry of a failed AI function API
     DECLARE(Bool, ai_function_throw_on_error, true, R"(
 If true (default), an AI function call that fails permanently after exhausting all retries aborts the query with an exception. If false, the failed row receives the default value for the column type (empty string for String) and processing continues.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 1000000, R"(
-Maximum total input (prompt) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_input_tokens_per_query, 0, R"(
+Maximum total input (prompt) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of input tokens per in-flight request, since a call's input tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). Providers that omit token usage (notably HuggingFace TEI) cause the counter to stay at 0 — use `ai_function_max_api_calls_per_query` instead to bound such calls.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 500000, R"(
-Maximum total output (completion) tokens across all AI function API calls in a single query. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_output_tokens_per_query, 0, R"(
+Maximum total output (completion) tokens across all AI function API calls in a single query. 0 (default) disables the limit. Tracked cumulatively from provider responses. Note that this limit may be exceeded by up to one call's worth of output tokens per in-flight request, since a call's output tokens are not known until its response arrives. Like the other AI quotas, it is enforced per server / query fragment, not summed across a distributed query, and must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 
 This limit is only enforced for providers that report a `usage` object in their response (OpenAI, Anthropic, vLLM). It does not apply to the embedding functions (`aiEmbed`, `aiSimilarity`), which never produce output tokens.
 )", BETA) \
-    DECLARE(UInt64, ai_function_max_api_calls_per_query, 1000, R"(
-Maximum number of HTTP requests that AI functions may dispatch per query. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored. Set to 0 to disable.
+    DECLARE(UInt64, ai_function_max_api_calls_per_query, 0, R"(
+Maximum number of HTTP requests that AI functions may dispatch per query. 0 (default) disables the limit. Enforced independently by each server and query fragment: within one execution context it is an exact cap shared by every AI function, block, and thread there, but a distributed query (across shards or parallel-replica fragments) may dispatch up to this many requests per shard/fragment. It must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(Bool, ai_function_throw_on_quota_exceeded, true, R"(
-If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
+If true (default), exceeding an AI function quota limit (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query`, or `ai_function_max_api_calls_per_query`) aborts the query with an exception. All three limits are disabled by default, so this has no effect until one of them is set. If false, remaining rows receive the default value for the column type (empty string for String). Like the quota limits, this must be set in the top-level query - a sub-query `SETTINGS` override is ignored.
 )", BETA) \
     DECLARE(NonZeroUInt64, ai_function_embedding_max_batch_size, 100, R"(
 Maximum number of texts to include in a single HTTP request made by the embedding functions (`aiEmbed`, `aiSimilarity`). Texts are grouped into batches of this size to reduce API call overhead. For example, 500 unique texts with a batch size of 100 result in 5 HTTP requests.
@@ -9120,6 +9124,8 @@ The maximum number of rows in the right table to determine whether to rerange th
 )", EXPERIMENTAL) \
     DECLARE_WITH_ALIAS(Bool, allow_join_right_table_sorting, false, R"(
 If it is set to true, and the conditions of `join_to_sort_minimum_perkey_rows` and `join_to_sort_maximum_table_rows` are met, rerange the right table by key to improve the performance in left or inner hash join.
+This setting is experimental and currently does not work together with all other join optimizations.
+In particular, when the right table is reranged, the per-key split controlled by `joined_block_split_single_row` is disabled, so neither `max_joined_block_size_rows` nor `max_joined_block_size_bytes` bounds the number of rows produced for a single left row.
 )", EXPERIMENTAL, allow_experimental_join_right_table_sorting) \
     DECLARE(Bool, allow_metadata_only_named_tuple_alter, false, R"(
 If true, ALTER MODIFY COLUMN on a named Tuple that only adds new subfields is metadata-only (no data mutation).
@@ -9539,6 +9545,8 @@ Enable experimental table function `eval`.
 
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
+    MAKE_OBSOLETE(M, Bool, enable_optimize_predicate_expression, true) \
+    MAKE_OBSOLETE(M, Bool, parallel_replicas_only_with_analyzer, true) \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
     MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
