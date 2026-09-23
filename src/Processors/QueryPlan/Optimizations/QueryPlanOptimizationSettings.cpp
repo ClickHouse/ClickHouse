@@ -225,12 +225,10 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     query_plan_optimize_join_order_randomize = from[Setting::query_plan_optimize_join_order_randomize];
     if (query_plan_optimize_join_order_randomize == 1)
     {
-        /// One query must get one seed, but this constructor runs once per plan construction and one query builds
-        /// several plans, including one per replica. `initial_query_id` is stable for the query and reaches remote
-        /// replicas in `ClientInfo`, so deriving the seed from it keeps those plans consistent.
-        /// The value is forced above 1 so it can never read back as the sentinel (1) or as disabled (0).
+        /// This constructor runs once per plan construction and one query builds several plans, one per replica
+        /// among them, so the seed has to come from a value that is stable across them. 0 and 1 are sentinels.
         if (initial_query_id_.empty())
-            query_plan_optimize_join_order_randomize = randomSeed(); /// No query to be consistent with (internal or background plan).
+            query_plan_optimize_join_order_randomize = randomSeed(); /// Internal or background plan: no query to follow.
         else
             query_plan_optimize_join_order_randomize = sipHash64(initial_query_id_);
         if (query_plan_optimize_join_order_randomize <= 1)
