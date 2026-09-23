@@ -2873,6 +2873,10 @@ bool IMergeTreeDataPart::assertHasValidVersionMetadata() const
 
 bool IMergeTreeDataPart::shallParticipateInMerges(const StoragePolicyPtr & storage_policy) const
 {
+    /// Volume merge flags can change during selection; check them for each part.
+    if (!storage_policy->hasAnyVolumeWithDisabledMerges())
+        return true;
+
     auto disk_name = getDataPartStorage().getDiskName();
     return !storage_policy->getVolumeByDiskName(disk_name)->areMergesAvoided();
 }
