@@ -3,6 +3,8 @@ import socket
 import struct
 import time
 
+import psycopg2
+
 import pytest
 from helpers.cluster import ClickHouseCluster
 
@@ -16,6 +18,7 @@ node = cluster.add_instance(
         "configs/server.key",
         "configs/dhparam.pem",
     ],
+    user_configs=["configs/pg_user.xml"],
 )
 
 # A node whose `receive_timeout` is well below the handshake budget: the phase must obey the
@@ -273,6 +276,31 @@ def test_silent_postgresql_client_is_disconnected(started_cluster):
         sock.close()
 
     node.wait_for_log_line(SOCKET_TIMEOUT_LINE, repetitions=seen + 1)
+
+
+def test_postgresql_session_outlives_the_handshake_budget(started_cluster):
+    """Clearing the deadline has to restore what the socket had before it, not the clamp.
+
+    The PostgreSQL listener leaves the socket without a receive timeout. The TLS upgrade replaces the
+    buffer while the socket is clamped, so a baseline read off that socket would outlive the handshake
+    and start cutting idle sessions.
+    """
+    connection = psycopg2.connect(
+        host=node.ip_address,
+        port=POSTGRESQL_PORT,
+        user="pg_user",
+        password="123",
+        database="default",
+        sslmode="require",
+    )
+    try:
+        # Idle well past the budget, then prove the session still works.
+        time.sleep(2 * HANDSHAKE_TIMEOUT)
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            assert cursor.fetchall() == [(1,)]
+    finally:
+        connection.close()
 
 
 def test_server_healthy_after_disconnects(started_cluster):

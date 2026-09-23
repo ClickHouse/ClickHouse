@@ -194,11 +194,10 @@ void ReadBufferFromPocoSocketBase::adoptHandshakeDeadlineFrom(const ReadBufferFr
 
     handshake_timeout_milliseconds = other.handshake_timeout_milliseconds;
     handshake_stopwatch = other.handshake_stopwatch;
-
-    if (!receive_timeout_before_handshake)
-        receive_timeout_before_handshake = socket.getReceiveTimeout();
-    if (!send_timeout_before_handshake)
-        send_timeout_before_handshake = socket.getSendTimeout();
+    /// Take the baselines too: this socket is already clamped, so reading them here would record the
+    /// handshake window as the timeout to restore once the phase ends.
+    receive_timeout_before_handshake = other.receive_timeout_before_handshake;
+    send_timeout_before_handshake = other.send_timeout_before_handshake;
 }
 
 void ReadBufferFromPocoSocketBase::applyHandshakeDeadlineToSocket()
