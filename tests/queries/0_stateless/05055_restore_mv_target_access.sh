@@ -35,8 +35,8 @@ CREATE DATABASE $db_ext ENGINE = Filesystem;
 CREATE TABLE $db.src (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.own (k UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE $db.dst (k UInt64) ENGINE = MergeTree ORDER BY k;
-CREATE TABLE $db.metrics (metric_family_name String, type String, unit String, help String)
-    ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
+CREATE TABLE $db.metrics (metric_family String, type String, unit String, help String)
+    ENGINE = ReplacingMergeTree ORDER BY metric_family;
 CREATE MATERIALIZED VIEW $db.mv_own TO $db.own AS SELECT k FROM $db.src;
 CREATE MATERIALIZED VIEW $db.mv_inner ENGINE = MergeTree ORDER BY k AS SELECT k FROM $db.src;
 CREATE USER $user;
