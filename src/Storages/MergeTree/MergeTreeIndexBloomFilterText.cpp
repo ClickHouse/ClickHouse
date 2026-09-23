@@ -163,6 +163,7 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     TokenizerPtr token_extactor_,
     NameSet columns_shadowing_map_subcolumns_)
     : index_columns(index_sample_block.getNames())
+    , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)

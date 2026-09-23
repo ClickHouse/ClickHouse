@@ -148,6 +148,7 @@ private:
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
     Names index_columns;
+    DataTypes index_data_types;
     BloomFilterParameters params;
 
     std::unique_ptr<ITokenizer> owned_tokenizer;
