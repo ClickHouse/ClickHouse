@@ -9,8 +9,11 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
@@ -108,6 +111,27 @@ public:
 
 using HasInTableExpressionsVisitor = InDepthNodeVisitor<HasInTableExpressionsMatcher, true>;
 
+class HasWildcardMatcher
+{
+public:
+    struct Data
+    {
+        bool has_wildcard = false;
+    };
+
+    static bool needChildVisit(const ASTPtr &, const ASTPtr &) { return true; }
+
+    static void visit(const ASTPtr & ast, Data & data)
+    {
+        if (ast->as<ASTAsterisk>() || ast->as<ASTQualifiedAsterisk>() || ast->as<ASTColumnsRegexpMatcher>()
+            || ast->as<ASTColumnsListMatcher>() || ast->as<ASTQualifiedColumnsRegexpMatcher>()
+            || ast->as<ASTQualifiedColumnsListMatcher>())
+            data.has_wildcard = true;
+    }
+};
+
+using HasWildcardVisitor = InDepthNodeVisitor<HasWildcardMatcher, true>;
+
 ASTPtr normalizeASTForQueryPlanCache(const ASTPtr & ast)
 {
     ASTPtr normalized_ast = ast->clone();
@@ -122,7 +146,11 @@ String formatKeyExpression(const ASTPtr & ast)
 }
 
 std::optional<QueryPlanCacheStorageDependency> buildStorageDependency(
-    const String & table_name, const StoragePtr & storage, const StorageMetadataPtr & metadata, const Names & column_names)
+    const String & table_name,
+    const StoragePtr & storage,
+    const StorageMetadataPtr & metadata,
+    const Names & column_names,
+    bool include_table_columns)
 {
     QueryPlanCacheStorageDependency dependency;
     dependency.table_name = table_name;
@@ -132,6 +160,12 @@ std::optional<QueryPlanCacheStorageDependency> buildStorageDependency(
     dependency.primary_key = formatKeyExpression(metadata->primary_key.expression_list_ast);
     dependency.sampling_key = formatKeyExpression(metadata->sampling_key.expression_list_ast);
     dependency.sorting_key_reverse_flags = metadata->sorting_key.reverse_flags;
+
+    if (include_table_columns)
+    {
+        for (const auto & column : metadata->columns)
+            dependency.table_columns.emplace_back(column.name, column.default_desc.kind);
+    }
 
     std::set<String> unique_names(column_names.begin(), column_names.end());
     dependency.columns.reserve(unique_names.size());
@@ -226,9 +260,13 @@ tryBuildPreAnalysisQueryPlanCacheLookup(const ASTPtr & ast, const ContextPtr & c
     key.current_database = context->getCurrentDatabase();
     key.semantic_settings_hash = semantic_settings_hash;
 
+    HasWildcardMatcher::Data wildcard_data;
+    HasWildcardVisitor(wildcard_data).visit(normalized_ast);
+
     QueryPlanCacheLookupContext lookup_context;
     lookup_context.key = std::move(key);
     lookup_context.storage_id = std::move(storage_id);
+    lookup_context.has_wildcard = wildcard_data.has_wildcard;
     return lookup_context;
 }
 
@@ -245,27 +283,22 @@ Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner
     return table_expression_data.begin()->second.getSelectedColumnsNames();
 }
 
-Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan)
+Names getReadColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context)
 {
-    if (!plan.isInitialized())
+    if (!planner_context)
         return {};
 
-    std::set<String> read_columns;
-    std::stack<const QueryPlan::Node *> stack;
-    stack.push(plan.getRootNode());
-    while (!stack.empty())
-    {
-        const auto * node = stack.top();
-        stack.pop();
-        for (const auto * child : node->children)
-            stack.push(child);
+    const auto & table_expression_data = planner_context->getTableExpressionNodeToData();
+    if (table_expression_data.size() != 1)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR, "Query plan cache: expected exactly one table expression, got {}", table_expression_data.size());
 
-        if (typeid_cast<const ReadFromTableStep *>(node->step.get()))
-        {
-            for (const auto & column : node->step->getOutputHeader()->getNames())
-                read_columns.insert(column);
-        }
-    }
+    /// The planner's physical read-column set, the same one the miss path logs to `system.query_log`.
+    /// Unlike the output header of `ReadFromTableStep`, it keeps the columns that are read only to
+    /// evaluate a filter (e.g. `PREWHERE a > 0`) and removed from the header afterwards.
+    std::set<String> read_columns;
+    for (const auto & column : table_expression_data.begin()->second.getColumnNames())
+        read_columns.insert(column);
 
     return Names(read_columns.begin(), read_columns.end());
 }
@@ -274,7 +307,8 @@ std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     const QueryPlanCacheLookupContext & lookup_context,
     const QueryPlan & plan,
     const PlannerContextPtr & planner_context,
-    const Names & selected_columns)
+    const Names & selected_columns,
+    const Names & read_columns)
 {
     if (!plan.isInitialized())
         return {};
@@ -322,8 +356,9 @@ std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
 
     auto & dependency_columns = columns_by_table.begin()->second;
     dependency_columns.insert(selected_columns.begin(), selected_columns.end());
+    dependency_columns.insert(read_columns.begin(), read_columns.end());
     Names names(dependency_columns.begin(), dependency_columns.end());
-    auto dependency = buildStorageDependency(expected_table_name, storage, storage_snapshot->metadata, names);
+    auto dependency = buildStorageDependency(expected_table_name, storage, storage_snapshot->metadata, names, lookup_context.has_wildcard);
     if (!dependency)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot capture all dependencies for table {}", expected_table_name);
 
@@ -360,7 +395,8 @@ std::optional<ValidatedQueryPlanCacheEntry> validateQueryPlanCacheEntryAndBuildS
     for (const auto & column : cached_dependency.columns)
         dependency_columns.push_back(column.name);
 
-    auto current_dependency = buildStorageDependency(cached_dependency.table_name, storage, metadata_snapshot, dependency_columns);
+    auto current_dependency = buildStorageDependency(
+        cached_dependency.table_name, storage, metadata_snapshot, dependency_columns, lookup_context.has_wildcard);
     if (!current_dependency || *current_dependency != cached_dependency)
         return {};
 

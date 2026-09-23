@@ -32,6 +32,7 @@
 #include <Storages/StorageMerge.h>
 #include <Common/MemoryTrackerUtils.h>
 
+#include <algorithm>
 #include <stack>
 
 namespace DB
@@ -171,6 +172,20 @@ static QueryPlanResourceHolder replaceReadingFromTable(
         select_query_info.prewhere_info = reading_from_table->getPrewhereInfo();
         select_query_info.row_level_filter = reading_from_table->getRowLevelFilter();
         select_query_info.node_name_to_input_node_column = reading_from_table->getNodeNameToInputNodeColumn();
+
+        /// The output header of the step no longer has the columns that were read only to evaluate
+        /// `PREWHERE` or the row-level filter (they are removed after filtering), but the rebuilt read
+        /// still has to read them, as the original `ReadFromMergeTree` did.
+        auto add_required_columns = [&](const ActionsDAG & actions)
+        {
+            for (const auto & name : actions.getRequiredColumnsNames())
+                if (std::find(column_names.begin(), column_names.end(), name) == column_names.end())
+                    column_names.push_back(name);
+        };
+        if (select_query_info.prewhere_info)
+            add_required_columns(select_query_info.prewhere_info->prewhere_actions);
+        if (select_query_info.row_level_filter)
+            add_required_columns(select_query_info.row_level_filter->actions);
     }
     else
     {

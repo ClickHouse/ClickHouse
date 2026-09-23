@@ -3275,9 +3275,9 @@ static BlockIO executeQueryImpl(
                             entry.serialized_plan = serialized_plan.str();
                             const auto planner_context = interpreter_with_analyzer->getPlanner().getPlannerContext();
                             entry.selected_columns = getSelectedColumnsForQueryPlanCacheEntry(planner_context);
-                            entry.read_columns = getReadColumnsForQueryPlanCacheEntry(plan_copy);
+                            entry.read_columns = getReadColumnsForQueryPlanCacheEntry(planner_context);
                             entry.dependencies = buildQueryPlanCacheDependencies(
-                                *query_plan_cache_lookup_context, plan_copy, planner_context, entry.selected_columns);
+                                *query_plan_cache_lookup_context, plan_copy, planner_context, entry.selected_columns, entry.read_columns);
                             query_plan_cache->set(query_plan_cache_lookup_context->key, std::move(entry));
                         }
                         catch (const Exception & e)

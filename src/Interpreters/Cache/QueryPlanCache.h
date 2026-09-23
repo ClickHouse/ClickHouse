@@ -44,6 +44,10 @@ struct QueryPlanCacheLookupContext
 {
     QueryPlanCacheKey key;
     StorageID storage_id = StorageID::createEmpty();
+
+    /// The query contains a wildcard (`*`, `t.*`, `COLUMNS(...)`) that the analyzer expands into the
+    /// table columns existing at planning time. Such an entry depends on the full list of table columns.
+    bool has_wildcard = false;
 };
 
 /// The part of a column definition that can affect a cached read plan. Comments, codecs,
@@ -65,6 +69,11 @@ struct QueryPlanCacheStorageDependency
     String table_name;
     String engine_name;
     std::vector<QueryPlanCacheColumnDependency> columns;
+    /// Names and kinds of all table columns in declaration order, captured only for queries with a
+    /// wildcard (see `QueryPlanCacheLookupContext::has_wildcard`). The wildcard is expanded into a subset
+    /// of them at planning time, so an added, dropped, renamed or reordered column (or a changed column
+    /// kind) invalidates the entry.
+    std::vector<std::pair<String, ColumnDefaultKind>> table_columns;
     String sorting_key;
     String partition_key;
     String primary_key;
@@ -83,8 +92,9 @@ struct QueryPlanCacheEntry
     /// Columns selected by query semantics. This can be empty for queries such as `SELECT count()`.
     Names selected_columns;
 
-    /// Physical columns read by the cached plan. They are used for dependency validation and
-    /// query-access logging, but not as an additional privilege requirement.
+    /// Physical columns read by the cached plan, including the ones used only by filters such as
+    /// `PREWHERE`. They are used for dependency validation and query-access logging, but not as an
+    /// additional privilege requirement.
     Names read_columns;
 
     /// Planner/storage dependencies captured from universalized read leaves.
@@ -118,6 +128,8 @@ struct QueryPlanCacheEntryWeight
             weight += dependency.primary_key.size();
             weight += dependency.sampling_key.size();
             weight += dependency.sorting_key_reverse_flags.size();
+            for (const auto & [name, _] : dependency.table_columns)
+                weight += name.size();
             for (const auto & column : dependency.columns)
             {
                 weight += column.name.size();

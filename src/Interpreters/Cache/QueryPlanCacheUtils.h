@@ -20,13 +20,14 @@ bool astContainsInTableExpressionForQueryPlanCache(ASTPtr ast);
 
 Names getSelectedColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 
-Names getReadColumnsForQueryPlanCacheEntry(const QueryPlan & plan);
+Names getReadColumnsForQueryPlanCacheEntry(const PlannerContextPtr & planner_context);
 
 std::vector<QueryPlanCacheStorageDependency> buildQueryPlanCacheDependencies(
     const QueryPlanCacheLookupContext & lookup_context,
     const QueryPlan & plan,
     const PlannerContextPtr & planner_context,
-    const Names & selected_columns);
+    const Names & selected_columns,
+    const Names & read_columns);
 
 struct ValidatedQueryPlanCacheEntry
 {
