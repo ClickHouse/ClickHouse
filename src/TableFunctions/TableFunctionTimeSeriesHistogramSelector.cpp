@@ -28,8 +28,8 @@ void TableFunctionTimeSeriesHistogramSelector::parseArguments(const ASTPtr & ast
 ColumnsDescription TableFunctionTimeSeriesHistogramSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
     ColumnsDescription columns({
-        {TimeSeriesColumnNames::ID, config.id_data_type},
-        {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type}
+        {TimeSeriesColumnNames::ID, config.table_id_type},
+        {TimeSeriesColumnNames::Timestamp, config.table_timestamp_type}
     });
     for (const auto & [column_name, column_type] : config.data_columns)
         columns.add(ColumnDescription{column_name, column_type});

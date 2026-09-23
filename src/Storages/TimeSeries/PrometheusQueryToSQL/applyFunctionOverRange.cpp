@@ -53,6 +53,11 @@ namespace
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
+
+        /// The aggregate function returns a sample's value (can be Float32), a sample's timestamp (a DateTime type) or a count (UInt64)
+        /// instead of Float64, so the result must be cast.
+        bool needs_cast_to_float64 = false;
+
         /// The histogram sibling of ch_function_name (empty for functions without one): computes the same PromQL function
         /// over native-histogram samples. `histogram_instant` selects the instant (irate/idelta) kind detection for `sample_kinds`.
         std::string_view ch_histogram_function_name = {};
@@ -68,6 +73,7 @@ namespace
              {
                  "timeSeriesRateToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
                  "timeSeriesHistogramRateToGrid",
              }},
 
@@ -75,6 +81,7 @@ namespace
              {
                  "timeSeriesIncreaseToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
                  "timeSeriesHistogramIncreaseToGrid",
              }},
 
@@ -82,6 +89,7 @@ namespace
              {
                  "timeSeriesInstantRateToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
                  "timeSeriesHistogramInstantRateToGrid",
                  /* histogram_instant = */ true,
              }},
@@ -90,6 +98,7 @@ namespace
              {
                  "timeSeriesDeltaToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
                  "timeSeriesHistogramDeltaToGrid",
              }},
 
@@ -97,44 +106,72 @@ namespace
              {
                  "timeSeriesInstantDeltaToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
                  "timeSeriesHistogramInstantDeltaToGrid",
                  /* histogram_instant = */ true,
+             }},
+
+            {"first_over_time",
+             {
+                 "timeSeriesFirstToGrid",
+                 /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTimestampOfFirstToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTimestampOfLastToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"max_over_time",
              {
                  "timeSeriesMaxToGrid",
                  /* drop_metric_name = */ true,
-             }},
-
-            {"min_over_time",
-             {
-                 "timeSeriesMinToGrid",
-                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"ts_of_max_over_time",
              {
                  "timeSeriesTimestampOfMaxToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"min_over_time",
+             {
+                 "timeSeriesMinToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"ts_of_min_over_time",
              {
                  "timeSeriesTimestampOfMinToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"present_over_time",
              {
                  "timeSeriesPresentToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"deriv",
@@ -147,12 +184,14 @@ namespace
              {
                  "timeSeriesChangesToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"resets",
              {
                  "timeSeriesResetsToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             {"sum_over_time",
@@ -171,15 +210,13 @@ namespace
              {
                  "timeSeriesCountToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
              }},
 
             /// TODO:
-            /// stddev_over_time"
+            /// stddev_over_time
             /// stdvar_over_time
             /// mad_over_time
-            /// ts_of_last_over_time
-            /// first_over_time
-            /// ts_of_first_over_time
         };
 
         auto it = impl_map.find(function_name);
@@ -390,7 +427,7 @@ SQLQueryPiece applyFunctionOverRange(
             /// SELECT <aggregate_function>(timeSeriesRange(...), arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
             /// FROM <subquery>
             ASTPtr value = (argument.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(argument.scalar_value)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             /// arrayResize([], <count_of_time_steps>, <scalar_value>)
@@ -422,9 +459,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS samples).1
             ASTPtr ts = makeASTFunction(
                 "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
             ts->setAlias(ColumnNames::Samples);
             timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
@@ -566,9 +603,9 @@ SQLQueryPiece applyFunctionOverRange(
                 /// (timeSeriesFromGrid(<inner>, arrayMap((v, k) -> if(k = 0, v, NULL), values, sample_kinds)) AS time_series).1
                 ASTPtr float_series = makeASTFunction(
                     "timeSeriesFromGrid",
-                    timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                    timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                    timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                    timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                    timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                    timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                     makeKindMask(ColumnNames::Values, 0));
                 float_series->setAlias(ColumnNames::TimeSeries);
                 timestamps = makeASTFunction("tupleElement", std::move(float_series), make_intrusive<ASTLiteral>(1));
@@ -581,9 +618,9 @@ SQLQueryPiece applyFunctionOverRange(
                 /// the arrays and drives the per-element scalar add; shared `timeSeriesFromGrid` offsets satisfy its alignment requirement.
                 ASTPtr histogram_series = makeASTFunction(
                     "timeSeriesFromGrid",
-                    timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                    timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                    timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                    timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                    timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                    timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                     makeKindMask(ColumnNames::HistogramValues, 1));
                 histogram_series->setAlias(ColumnNames::HistogramTimeSeries);
                 histogram_values = makeASTFunction(
@@ -594,9 +631,9 @@ SQLQueryPiece applyFunctionOverRange(
                 /// (timeSeriesFromGrid(<inner>, sample_kinds) AS sample_kinds_time_series).1/.2
                 ASTPtr kinds_series = makeASTFunction(
                     "timeSeriesFromGrid",
-                    timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                    timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                    timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                    timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                    timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                    timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                     make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
                 kinds_series->setAlias(ColumnNames::SampleKindsTimeSeries);
                 /// The aliased series node is embedded into the first helper's arguments; later
@@ -628,9 +665,9 @@ SQLQueryPiece applyFunctionOverRange(
                     {
                         ASTPtr series = makeASTFunction(
                             "timeSeriesFromGrid",
-                            timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                            timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                            timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                            timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                            timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                            timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                             makeKindMask(ColumnNames::SampleKinds, kind));
                         series->setAlias(alias);
                         return makeASTFunction(
@@ -653,9 +690,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// (timeSeriesFromGrid(<inner>, values) AS time_series).1
             ASTPtr float_series = makeASTFunction(
                 "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::Values));
             float_series->setAlias(ColumnNames::TimeSeries);
             timestamps = makeASTFunction("tupleElement", std::move(float_series), make_intrusive<ASTLiteral>(1));
@@ -668,9 +705,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// and drives the scalar add per element; the shared `timeSeriesFromGrid` offsets satisfy the alignment requirement.
             ASTPtr histogram_series = makeASTFunction(
                 "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::HistogramValues));
             histogram_series->setAlias(ColumnNames::HistogramTimeSeries);
             histogram_values = makeASTFunction(
@@ -681,9 +718,9 @@ SQLQueryPiece applyFunctionOverRange(
             /// timeSeriesLastToGrid((timeSeriesFromGrid(<inner>, sample_kinds) AS sample_kinds_time_series).1, sample_kinds_time_series.2)
             ASTPtr kinds_series = makeASTFunction(
                 "timeSeriesFromGrid",
-                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+                timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+                timeSeriesDurationToAST(argument.step, context.result_timestamp_type),
                 make_intrusive<ASTIdentifier>(ColumnNames::SampleKinds));
             kinds_series->setAlias(ColumnNames::SampleKindsTimeSeries);
             sample_kinds = makeASTFunction(
@@ -709,9 +746,9 @@ SQLQueryPiece applyFunctionOverRange(
         /// timeSeriesRange(<start_time>, <end_time>, <step>)
         timestamps = makeASTFunction(
             "timeSeriesRange",
-            timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(argument.step, context.timestamp_data_type));
+            timeSeriesTimestampToAST(argument.start_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(argument.end_time, context.result_timestamp_type),
+            timeSeriesDurationToAST(argument.step, context.result_timestamp_type));
     }
 
     SelectQueryBuilder builder;
@@ -734,14 +771,22 @@ SQLQueryPiece applyFunctionOverRange(
 
     /// Adds the grid parameters (start, end, step, window) to an aggregate function; for a fixed @ modifier the result
     /// is evaluated once (Prometheus semantics), so it is repeated across the outer grid via `arrayResize` instead of sliding.
-    auto add_grid_parameters = [&](boost::intrusive_ptr<ASTFunction> aggregate) -> ASTPtr
+    auto add_grid_parameters = [&](boost::intrusive_ptr<ASTFunction> aggregate, bool cast_to_float64 = false) -> ASTPtr
     {
         ASTPtr with_parameters = addParametersToAggregateFunction(
             std::move(aggregate),
-            timeSeriesTimestampToAST(aggregation_range.start_time, context.timestamp_data_type),
-            timeSeriesTimestampToAST(aggregation_range.end_time, context.timestamp_data_type),
-            timeSeriesDurationToAST(aggregation_range.step, context.timestamp_data_type),
-            timeSeriesDurationToAST(window, context.timestamp_data_type));
+            timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
+            timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
+            timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
+            timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+        if (cast_to_float64)
+        {
+            /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
+            /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
+            /// for Float64 and is cheap anyway: the aggregated grid is much smaller than the raw data.
+            with_parameters = makeASTFunction("CAST", std::move(with_parameters), make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
+        }
 
         if (fixed_at_node)
             with_parameters = repeatFixedAtResultOverGrid(std::move(with_parameters), aggregation_range, result_grid_size);
@@ -750,7 +795,7 @@ SQLQueryPiece applyFunctionOverRange(
     };
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    builder.select_list.push_back(add_grid_parameters(std::move(float_aggregate)));
+    builder.select_list.push_back(add_grid_parameters(std::move(float_aggregate), impl_info->needs_cast_to_float64));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (histogram_values)
