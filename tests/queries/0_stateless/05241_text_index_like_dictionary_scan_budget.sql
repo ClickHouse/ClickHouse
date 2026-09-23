@@ -2,7 +2,8 @@
 -- no-parallel-replicas: the assertions below read ProfileEvents of the initiator query.
 
 -- A LIKE/ILIKE pattern search over a text index has to match every token of the dictionary of every part
--- it reads. This test covers the per-part limit on how many of those tokens it may match,
+-- it reads, unless the needle starts with a literal prefix that narrows the search to part of it.
+-- This test covers the per-part limit on how many of those tokens it may match,
 -- text_index_like_max_dictionary_tokens_to_scan: a part that reaches the limit stops using the index for
 -- the pattern and evaluates the pattern on its own rows instead. Every query must therefore return the
 -- same rows whether the limit is reached or not, and the same rows as the query without the index.
@@ -46,7 +47,8 @@ SELECT 'infix, no limit', arraySort(groupArray(id)) FROM tab WHERE message LIKE 
 SELECT 'infix, limit equal to the dictionary', arraySort(groupArray(id)) FROM tab WHERE message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 4096, log_comment = 'scan_limit_infix_exact';
 SELECT 'infix, without the index', arraySort(groupArray(id)) FROM tab WHERE message LIKE '%aw999%' SETTINGS use_skip_indexes = 0;
 
--- An anchored needle is narrowed to the blocks that can hold it, so the limit has to be smaller here.
+-- A needle with a literal prefix is narrowed to the blocks that can hold it, so the limit has to be
+-- smaller here; a needle anchored only at the end is not narrowed.
 SELECT 'prefix, limit reached', arraySort(groupArray(id)) FROM tab WHERE message LIKE 'aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 10, log_comment = 'scan_limit_prefix_limited';
 SELECT 'prefix, no limit', arraySort(groupArray(id)) FROM tab WHERE message LIKE 'aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 0, log_comment = 'scan_limit_prefix_unlimited';
 SELECT 'prefix, without the index', arraySort(groupArray(id)) FROM tab WHERE message LIKE 'aw999%' SETTINGS use_skip_indexes = 0;
