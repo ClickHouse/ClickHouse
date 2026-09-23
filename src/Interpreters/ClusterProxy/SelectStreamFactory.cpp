@@ -34,7 +34,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool fallback_to_stale_replicas_for_distributed_queries;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsBool prefer_localhost_replica;
@@ -55,56 +54,6 @@ namespace FailPoints
 
 namespace ClusterProxy
 {
-
-/// select query has database, table and table function names as AST pointers
-/// Creates a copy of query, changes database, table and table function names.
-ASTPtr rewriteSelectQuery(
-    ContextPtr context,
-    const ASTPtr & query,
-    const std::string & remote_database,
-    const std::string & remote_table,
-    ASTPtr table_function_ptr)
-{
-    auto modified_query_ast = query->clone();
-
-    ASTSelectQuery & select_query = modified_query_ast->as<ASTSelectQuery &>();
-
-    // Get rid of the settings clause so we don't send them to remote. Thus newly non-important
-    // settings won't break any remote parser. It's also more reasonable since the query settings
-    // are written into the query context and will be sent by the query pipeline.
-    select_query.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
-
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        if (table_function_ptr)
-            select_query.addTableFunction(table_function_ptr);
-        else
-            select_query.replaceDatabaseAndTable(remote_database, remote_table);
-
-        /// Restore long column names (cause our short names are ambiguous).
-        /// TODO: aliased table functions & CREATE TABLE AS table function cases
-        if (!table_function_ptr)
-        {
-            RestoreQualifiedNamesVisitor::Data data;
-            data.distributed_table = DatabaseAndTableWithAlias(*getTableExpression(query->as<ASTSelectQuery &>(), 0));
-            data.remote_table.database = remote_database;
-            data.remote_table.table = remote_table;
-            RestoreQualifiedNamesVisitor(data).visit(modified_query_ast);
-        }
-    }
-
-    /// To make local JOIN works, default database should be added to table names.
-    /// But only for JOIN section, since the following should work using default_database:
-    /// - SELECT * FROM d WHERE value IN (SELECT l.value FROM l) ORDER BY value
-    ///   (see 01487_distributed_in_not_default_db)
-    AddDefaultDatabaseVisitor visitor(context, context->getCurrentDatabase(),
-        /* only_replace_current_database_function_= */false,
-        /* only_replace_in_join_= */true);
-    visitor.visit(modified_query_ast);
-
-    return modified_query_ast;
-}
-
 
 SelectStreamFactory::SelectStreamFactory(
     SharedHeader header_,
@@ -184,7 +133,7 @@ void SelectStreamFactory::createForShardImpl(
 
         /// Disable for distributed_group_by_no_merge now, because distributed-over-distributed only works up to FetchColumns,
         /// But distributed_group_by_no_merge requires Complete.
-        if (settings[Setting::allow_experimental_analyzer] && settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
+        if (settings[Setting::serialize_query_plan] && !settings[Setting::distributed_group_by_no_merge])
         {
             query_plan = createLocalPlan(
                 forwarded_query, *header, context, processed_stage, shard_info.shard_num, shard_count, true, shard_info.default_database);
@@ -193,10 +142,7 @@ void SelectStreamFactory::createForShardImpl(
         }
         else
         {
-            if (settings[Setting::allow_experimental_analyzer])
-                std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
-            else
-                shard_header = header;
+            std::tie(shard_header, planner_context) = InterpreterSelectQueryAnalyzer::getSampleBlockAndPlannerContext(query_tree, context, SelectQueryOptions(processed_stage).analyze());
         }
 
         remote_shards.emplace_back(Shard{

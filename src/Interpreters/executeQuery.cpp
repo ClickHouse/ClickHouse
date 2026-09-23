@@ -1131,19 +1131,16 @@ void logExceptionBeforeStart(
     }
 }
 
-void validateAnalyzerSettings(ASTPtr ast, bool context_value)
+void validateAnalyzerSettings(ASTPtr ast)
 {
     if (ast->as<ASTSetQuery>())
         return;
-
-    bool top_level = context_value;
 
     auto field_to_bool = [](const Field & f) -> bool
     {
         if (f.getType() == Field::Types::String)
             return stringToBool(f.safeGet<String>());
-        else
-            return f.safeGet<bool>();
+        return f.safeGet<bool>();
     };
 
     std::vector<ASTPtr> nodes_to_process{ ast };
@@ -1154,16 +1151,14 @@ void validateAnalyzerSettings(ASTPtr ast, bool context_value)
 
         if (auto * set_query = node->as<ASTSetQuery>())
         {
-            if (auto * value = set_query->changes.tryGet("allow_experimental_analyzer"))
+            for (const auto * name : {"allow_experimental_analyzer", "enable_analyzer"})
             {
-                if (top_level != field_to_bool(*value))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'allow_experimental_analyzer' is changed in the subquery. Top level value: {}", top_level);
-            }
-
-            if (auto * value = set_query->changes.tryGet("enable_analyzer"))
-            {
-                if (top_level != field_to_bool(*value))
-                    throw Exception(ErrorCodes::INCORRECT_QUERY, "Setting 'enable_analyzer' is changed in the subquery. Top level value: {}", top_level);
+                const auto * value = set_query->changes.tryGet(name);
+                if (value && !field_to_bool(*value))
+                    throw Exception(
+                        ErrorCodes::INCORRECT_QUERY,
+                        "Setting '{}' is obsolete and cannot be disabled: the analyzer is the only supported query analysis",
+                        name);
             }
         }
 
@@ -2299,30 +2294,13 @@ static BlockIO executeQueryImpl(
     chassert(internal || CurrentThread::get().tryGetQueryContext());
     chassert(internal || CurrentThread::get().tryGetQueryContext()->getCurrentQueryId() == CurrentThread::getQueryId());
 
-    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9: the
-    /// analyzer is mandatory and the old query analysis is no longer supported. A change that would
-    /// disable it is refused where the settings constraints are consulted, but a settings profile from
-    /// the server configuration is applied without them, and so is a setting given to
-    /// `clickhouse-local` on the command line, so a value from before the deprecation can still reach
-    /// a query. Ignore it here, the way the value of an obsolete setting is ignored, rather than
-    /// quietly analyzing the query the retired way; `system.warnings` reports the changed obsolete
-    /// setting, pointing at the configuration that still carries it.
-    ///
-    /// A query that another server sent to this one keeps the value it was sent with: a few internal
-    /// code paths still turn the analyzer off for a whole query on the initiator (`EXPLAIN AST`, a
-    /// view read by the old interpreter, a materialized view over a `Distributed` table), and the
-    /// servers of a cluster have to agree on how one query is analyzed.
-    ///
-    /// Such a query is identified by the query kind, which the initiator sends, so a client that
-    /// declares its own query to be a secondary one (`clickhouse-client --query_kind secondary_query`)
-    /// keeps the value as well. There is nothing more trustworthy to key this on - a secondary query
-    /// is exactly a query another server says it is sending - and forcing the analyzer on instead
-    /// would make an initiator that turned it off disagree with its own replicas about the result.
-    /// `clickhouse-local` is not a server another one can send a query to, so the declaration carries
-    /// no meaning there and does not keep the old query analysis alive.
-    const bool sent_by_another_server = client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY
-        && client_info.interface != ClientInfo::Interface::LOCAL;
-    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer] && !sent_by_another_server)
+    /// `enable_analyzer` (canonically `allow_experimental_analyzer`) is obsolete since v26.9 and the old
+    /// query analysis is gone, so nothing reads the value anymore. A change that would disable it is
+    /// refused where the settings constraints are consulted, but a settings profile from the server
+    /// configuration is applied without them, so is a setting given to `clickhouse-local` on the command
+    /// line, and so is a secondary query another server sent. Normalize it here, so that `getSetting`,
+    /// `system.query_log` and a query this server sends on report the analysis that actually ran.
+    if (!context->getSettingsRef()[Setting::allow_experimental_analyzer])
         context->setSetting("allow_experimental_analyzer", true);
 
     const Settings & settings = context->getSettingsRef();
@@ -2419,10 +2397,8 @@ static BlockIO executeQueryImpl(
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
             /// Settings that align the query semantics with Trino: outer joins
-            /// produce NULLs (not type defaults), set operations use the numeric
-            /// supertype (not `Variant`), and the analyzer is required - the
-            /// column alias lists (`AS t (x, y)`) and the type resolution the
-            /// translation relies on do not work without it.
+            /// produce NULLs (not type defaults) and set operations use the numeric
+            /// supertype (not `Variant`).
             /// They are applied to the context rather than injected into the
             /// query text, so that they also hold for a query that carries its
             /// own `SETTINGS` clause and for wrappers such as `INSERT ... SELECT`
@@ -2432,7 +2408,6 @@ static BlockIO executeQueryImpl(
             {
                 context->setSetting("join_use_nulls", true);
                 context->setSetting("use_variant_as_common_type", false);
-                context->setSetting("enable_analyzer", true);
             }
         }
         else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
@@ -2862,7 +2837,7 @@ static BlockIO executeQueryImpl(
                 visitor.visit(out_ast);
             }
 
-            validateAnalyzerSettings(out_ast, settings[Setting::allow_experimental_analyzer]);
+            validateAnalyzerSettings(out_ast);
 
             if (settings[Setting::enforce_strict_identifier_format])
             {
@@ -3308,7 +3283,10 @@ static BlockIO executeQueryImpl(
             plan.resolveStorages(context);
 
             /// `optimize` and `buildQueryPipeline`, or the latter would still try to convert the
-            /// plan to a distributed one.
+            /// plan to a distributed one. A deserialized plan has no planner-registered contexts, and its
+            /// steps captured this query context at deserialization, so it is the object the decision
+            /// must write on fallback (set building reads `make_distributed_plan` live from it).
+            plan.addDistributedPlanDecisionContext(context);
             QueryPlanOptimizationSettings optimization_settings(context);
             plan.applyDistributedPlanFallbackToLocal(optimization_settings);
             plan.optimize(optimization_settings);
@@ -3640,6 +3618,10 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             /// the shared `Context::mutex`), and it also has the surprising side effect of
             /// silently clearing the user's active transaction on the caller session.
             fuzz_session_context->setCurrentTransaction(NO_TRANSACTION_PTR);
+
+            /// Detach the seed query's ProcessList entry: a fuzzed query failing before registering
+            /// its own entry would log `ExceptionBeforeStart` with the seed query's ProfileEvents.
+            fuzz_session_context->setProcessListElement(nullptr);
 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();

@@ -302,7 +302,7 @@ RemoteQueryExecutor::RemoteQueryExecutor(
         const Settings & current_settings = context->getSettingsRef();
         auto timeouts = ConnectionTimeouts::getTCPTimeoutsWithFailover(current_settings);
 
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) || defined(OS_DARWIN)
         if (current_settings[Setting::use_hedged_requests])
         {
             std::shared_ptr<QualifiedTableName> table_to_check = nullptr;
