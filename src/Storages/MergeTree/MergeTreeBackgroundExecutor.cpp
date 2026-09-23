@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <optional>
 
+#include <base/scope_guard.h>
 #include <Common/ThreadPool.h>
 #include <Common/setThreadName.h>
 #include <Common/Exception.h>
@@ -109,7 +110,31 @@ template <class Queue>
 void MergeTreeBackgroundExecutor<Queue>::wait()
 {
     requestShutdown();
+
+    /// `threadFunction` breaks before popping once `shutdown` is set, so a task that `routine`
+    /// re-pushed keeps what it owns alive forever. Draining after `pool->wait()` is what makes it
+    /// complete: no worker can push to `pending` past that point. Also runs if `wait()` rethrows.
+    SCOPE_EXIT({ drainPendingTasks(); });
+
     pool->wait();
+}
+
+template <class Queue>
+void MergeTreeBackgroundExecutor<Queue>::drainPendingTasks()
+{
+    std::vector<TaskRuntimeDataPtr> tasks_to_cancel;
+    {
+        LockGuardWithStopWatch lock(mutex, log, __PRETTY_FUNCTION__);
+        while (!pending.empty())
+            tasks_to_cancel.push_back(pending.pop());
+    }
+
+    /// Cancelling and destroying a task can be slow, so do it outside the lock.
+    for (auto & item : tasks_to_cancel)
+    {
+        item->cancel();
+        item.reset();
+    }
 }
 
 template <class Queue>

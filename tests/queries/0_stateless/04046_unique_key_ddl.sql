@@ -117,6 +117,82 @@ ENGINE = MergeTree
 UNIQUE KEY (_part)
 ORDER BY (id); -- { serverError BAD_ARGUMENTS }
 
+-- 7h. A subcolumn of a user column is rejected. Written without backticks it is an
+-- expression and 7a already rejects it; backticked it is a single identifier that
+-- names no stored column, so it used to pass DDL and fail every INSERT.
+CREATE TABLE uk_t (id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- A `Dynamic` subcolumn resolves through a separate fallback in
+-- `ColumnsDescription::hasSubcolumn`, not the static subcolumn index above.
+CREATE TABLE uk_t (id UInt64, c Dynamic)
+ENGINE = MergeTree
+UNIQUE KEY (`c.String`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- The tuple-list spelling reaches the check from the other AST branch.
+CREATE TABLE uk_t (id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (id, `c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- 7h-1. A stored column may be named after another column's subcolumn: `c.null`
+-- below is a column of its own, not the Nullable column's null map, so it stays
+-- accepted and writable.
+DROP TABLE IF EXISTS uk_t_coincide;
+CREATE TABLE uk_t_coincide (id UInt64, c Nullable(String), `c.null` UInt8)
+ENGINE = MergeTree
+UNIQUE KEY (`c.null`)
+ORDER BY (id);
+INSERT INTO uk_t_coincide VALUES (1, 'a', 7);
+SELECT count() FROM uk_t_coincide;
+
+-- 7h-2. A full-definition ATTACH carries user-written DDL, so it is rejected too.
+-- The UUID is derived from the issue number to avoid collisions.
+DROP TABLE IF EXISTS uk_t_attach_sub SYNC;
+ATTACH TABLE uk_t_attach_sub UUID '00000000-0000-0000-0000-000000114470'
+(id UInt64, c Nullable(String))
+ENGINE = MergeTree
+UNIQUE KEY (`c.null`)
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- 7i. A subcolumn of a virtual column is rejected too. It is in neither index 7h
+-- consults: the virtual lookup is exact-name, and the subcolumn index holds only
+-- subcolumns of declared columns. `_partition_value` is the only virtual with a
+-- composite type, so it is the only one exposing subcolumns.
+CREATE TABLE uk_t (id UInt64, p UInt64)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1`)
+PARTITION BY p
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- The tuple element can itself have a subcolumn, so every dot position is tried.
+CREATE TABLE uk_t (id UInt64, p String)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1.size`)
+PARTITION BY p
+ORDER BY (id); -- { serverError BAD_ARGUMENTS }
+
+-- 7i-1. A stored column may be named after a virtual column's subcolumn, so it
+-- stays accepted and writable.
+DROP TABLE IF EXISTS uk_t_vcoincide;
+CREATE TABLE uk_t_vcoincide (id UInt64, p UInt64, `_partition_value.1` String)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1`)
+PARTITION BY p
+ORDER BY (id);
+INSERT INTO uk_t_vcoincide VALUES (1, 2, 'x');
+SELECT count() FROM uk_t_vcoincide;
+
+-- 7i-2. Without a PARTITION BY there is no `_partition_value` virtual, so the same
+-- name reaches `getKeyFromAST` and is rejected for matching no column at all.
+CREATE TABLE uk_t (id UInt64)
+ENGINE = MergeTree
+UNIQUE KEY (`_partition_value.1`)
+ORDER BY (id); -- { serverError UNKNOWN_IDENTIFIER }
+
 -- 8. ALTER DROP COLUMN on a unique-key column -> error (via ORDER BY key guard).
 CREATE TABLE uk_t (id UInt64, user_id UInt32, v String)
 ENGINE = MergeTree
@@ -331,3 +407,5 @@ DROP TABLE plain_dst_from_uk;
 DROP TABLE IF EXISTS uk_ttl_inline_pk;
 DROP TABLE IF EXISTS uk_ttl_storage_pk;
 DROP TABLE IF EXISTS uk_ttl_full;
+DROP TABLE IF EXISTS uk_t_coincide;
+DROP TABLE IF EXISTS uk_t_vcoincide;

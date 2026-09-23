@@ -30,7 +30,7 @@ CREATE TABLE samples_table
 
 CREATE TABLE prometheus ENGINE = TimeSeries SAMPLES samples_table TAGS tags_table;
 
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('stale_counter', map('test_case', 'stale'), [(toDateTime64(70, 3), 1), (toDateTime64(100, 3), 2)]);
 
 -- `0x7ff0000000000002` is Prometheus's staleness NaN bit pattern; it can only be written directly

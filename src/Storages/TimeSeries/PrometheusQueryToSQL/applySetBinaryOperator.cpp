@@ -6,7 +6,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/dropStaleMarkers.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/transformGroupASTForBinaryOperator.h>
 #include <Common/Exception.h>
@@ -165,10 +164,7 @@ String prepareSide(
     builder.select_list.push_back(std::move(join_group));
     builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
 
-    /// For set matching a stale marker means the series is absent at that step, so it must not be seen
-    /// as present by the presence mask, nor by the non-empty row predicates. Normalize it to NULL up front.
-    builder.select_list.push_back(dropStaleMarkers(make_intrusive<ASTIdentifier>(ColumnNames::Values)));
-    builder.select_list.back()->setAlias(ColumnNames::Values);
+    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
 
     /// A side read twice (by the presence-counting step and by the final join or union) is added
     /// as a materialized CTE to be evaluated once.
