@@ -879,6 +879,33 @@ SinkToStoragePtr StorageObjectStorage::createSink(
 
     auto paths = configuration->getPaths();
 
+    /// The key this insert starts with, and whether it is already a part of the table. With
+    /// `*_create_new_file_on_insert`, the insert steps aside from an existing object into a new key -
+    /// which is registered in the table only after the object has been written and committed, see below.
+    String first_key = paths.front().path;
+    bool first_key_is_published = true;
+    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
+    /// The numbering is derived per insert from the key of the object this insert starts with: the next objects
+    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
+    /// had to step aside from an existing object into a numbered key.
+    const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
+    size_t sequence_number = numbered_keys.start_sequence_number;
+    /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
+    /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
+    /// for the readers only after its object has been committed, and until then the object storage does not have
+    /// it either, so nothing else would tell the two inserts apart and one of them would overwrite the data of the other.
+    ///
+    /// This is done before a truncating insert deletes anything: it fails when a concurrent insert is writing the
+    /// same starting key, see `checkAndGetNewFileOnInsertIfNeeded`. A truncating insert keeps the starting key, so
+    /// the cleanup below does not change it.
+    auto reservations = std::make_shared<WrittenPathReservations>(configuration);
+    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
+            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
+    {
+        first_key = *new_key;
+        first_key_is_published = false;
+    }
+
     /// A truncating insert overwrites the table: it starts from the base key, the split objects
     /// of the previous inserts are forgotten, and the numbering starts over, overwriting them one by one.
     /// It does not matter whether the current insert is split by size: a rewrite with
@@ -922,29 +949,6 @@ SinkToStoragePtr StorageObjectStorage::createSink(
         }
 
         paths.resize(1);
-    }
-
-    /// The key this insert starts with, and whether it is already a part of the table. With
-    /// `*_create_new_file_on_insert`, the insert steps aside from an existing object into a new key -
-    /// which is registered in the table only after the object has been written and committed, see below.
-    String first_key = paths.front().path;
-    bool first_key_is_published = true;
-    /// When the data is split by size, the objects after the first one are named as `data.1.parquet`, `data.2.parquet`, ...
-    /// The numbering is derived per insert from the key of the object this insert starts with: the next objects
-    /// continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...), also when the insert
-    /// had to step aside from an existing object into a numbered key.
-    const NumberedFileNames numbered_keys = getNumberedFileNames(first_key);
-    size_t sequence_number = numbered_keys.start_sequence_number;
-    /// Every key this insert writes - the one it starts with, and every generated one - is reserved until the
-    /// insert is over, so that a concurrent insert into the same table picks a different one: a key is published
-    /// for the readers only after its object has been committed, and until then the object storage does not have
-    /// it either, so nothing else would tell the two inserts apart and one of them would overwrite the data of the other.
-    auto reservations = std::make_shared<WrittenPathReservations>(configuration);
-    if (auto new_key = checkAndGetNewFileOnInsertIfNeeded(
-            *object_storage, *configuration, settings, first_key, numbered_keys, sequence_number, *reservations))
-    {
-        first_key = *new_key;
-        first_key_is_published = false;
     }
 
     /// The new objects are registered in the configuration, so that they are visible for reading from the same table.

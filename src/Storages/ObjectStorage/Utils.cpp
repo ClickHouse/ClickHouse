@@ -51,10 +51,18 @@ std::optional<String> checkAndGetNewFileOnInsertIfNeeded(
 {
     if (settings.truncate_on_insert)
     {
-        /// A truncating insert overwrites the starting key by its very contract, also when another truncating
-        /// insert is writing it right now. It still reserves the key when it can, so that a concurrent insert
-        /// with `*_create_new_file_on_insert` steps aside from it while the object is not there yet.
-        reservations.tryReserveStartingPath(key);
+        /// A truncating insert overwrites the starting key by its very contract, but not while another insert into
+        /// this table is writing it: both would keep the starting key, and once they roll over into the numbered keys,
+        /// which are reserved one by one, they would get disjoint tails. The insert that is committed last would win
+        /// only the starting object, and the table would read the numbered objects of both - a mix of two rewrites
+        /// rather than one of them. The reservation also makes a concurrent insert with `*_create_new_file_on_insert`
+        /// step aside from the key while the object is not there yet. The caller does it before deleting anything.
+        if (!reservations.tryReserveStartingPath(key))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Object in bucket {} with key {} is being written by a concurrent insert into the table, "
+                "and cannot be overwritten with {}_truncate_on_insert until that insert is over",
+                configuration.getNamespace(), key, configuration.getTypeName());
         return std::nullopt;
     }
 
