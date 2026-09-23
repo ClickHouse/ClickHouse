@@ -30,7 +30,7 @@ LATEST=$(ls "${TABLE_PATH}metadata"/v*.metadata.json | sort -V | tail -1)
 sed -i 's/"truncate\[3\]"/"bucket[xyz]"/' "${LATEST}"
 
 # Reading the table must raise BAD_ARGUMENTS, not kill the server.
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${TABLE_PATH}', 'Parquet')" 2>&1 | grep -c BAD_ARGUMENTS
+${CLICKHOUSE_CLIENT} --query "SELECT * FROM icebergLocal('${TABLE_PATH}', 'Parquet')" 2>&1 | grep -m1 -c BAD_ARGUMENTS
 
 # The server must still be alive.
 ${CLICKHOUSE_CLIENT} --query "SELECT 1"
