@@ -19,9 +19,8 @@ SELF=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SOURCE_TEST="$SELF/test.py"
 REPO_ROOT=$(git -C "$SELF" rev-parse --show-toplevel)
 WORK=${WIDE_ROWS_WORK_DIR:-$REPO_ROOT/tmp/wide-rows-matrix}
-# `input_format_parquet_use_native_reader_v3` is obsolete on master but still selects
-# the reader on the releases this script checks out, which is the only place the Arrow
-# and v3 peaks can still be compared.
+# `input_format_parquet_use_native_reader_v3` selects Arrow or v3 only on releases that
+# still declare it; where it is obsolete there is one reader, and it runs once.
 READERS=(
     "arrow:input_format_parquet_use_native_reader_v3=0"
     "v3:input_format_parquet_use_native_reader_v3=1"
@@ -105,7 +104,13 @@ for entry in "${VERSIONS[@]}"; do
 
     root_abs=$(cd "$root" && pwd -P)
 
-    for reader in "${READERS[@]}"; do
+    readers=("${READERS[@]}")
+    if git -C "$root" show HEAD:src/Core/FormatFactorySettings.h \
+        | grep -q 'MAKE_OBSOLETE(M, Bool, input_format_parquet_use_native_reader_v3'; then
+        readers=("v3:")
+    fi
+
+    for reader in "${readers[@]}"; do
         name=${reader%%:*}
         setting=${reader#*:}
         label="$version/$name"
@@ -116,7 +121,8 @@ for entry in "${VERSIONS[@]}"; do
         # run picks up edits to the tests instead of keeping the copy it was first given.
         git -C "$root" checkout -- tests/integration/test_storage_s3/test.py
         printf '\n\n%s' "$BLOCK" >> "$target"
-        python3 - "$target" "$setting" <<'SETTINGS'
+        if [ -n "$setting" ]; then
+            python3 - "$target" "$setting" <<'SETTINGS'
 import sys
 path, setting = sys.argv[1], sys.argv[2]
 s = open(path).read()
@@ -125,6 +131,7 @@ if old not in s:
     raise SystemExit(f"{old} not found in {path}")
 open(path, "w").write(s.replace(old, f'WIDE_ROWS_EXTRA_SETTINGS = ", {setting}"'))
 SETTINGS
+        fi
 
         # Only the praktika containers bound to this checkout. An unrelated job of
         # another worktree or another user shares the name prefix and must survive.
@@ -144,9 +151,10 @@ SETTINGS
             echo -e "$label\t(server did not start)\t-" >> "$RESULTS"
         else
             report "$label" "$root" "$started_at" >> "$RESULTS"
-            # A non-zero runner status with no result rows means the run itself broke, which
-            # is not the same as a test failing and must not be reported as a pass.
-            if [ "$run_status" -ne 0 ] && ! grep -q "^$label	" "$RESULTS"; then
+            # A non-zero runner status with no test rows means the run itself broke, which
+            # is not the same as a test failing and must not be reported as a pass. Rows in
+            # parentheses are the script's own notes, not test results.
+            if [ "$run_status" -ne 0 ] && ! grep -q "^$label	[^(]" "$RESULTS"; then
                 echo -e "$label\t(runner exited $run_status, see $log)\t-" >> "$RESULTS"
             fi
         fi
