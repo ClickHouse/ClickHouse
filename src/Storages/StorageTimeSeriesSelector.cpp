@@ -714,16 +714,10 @@ namespace
             substituteMetricNameInPlace(child, metric_name_value);
     }
 
-    /// Remembers, per tags table and probe shape, that the probe of condition 4 below already found
-    /// a counterexample.
-    ///
-    /// Only that verdict is remembered, never its opposite: reusing it makes the caller return an
-    /// empty condition list, which adds no primary-key range and so can neither exclude a granule
-    /// nor reject a row. A remembered verdict therefore needs no invalidation, and a key collision
-    /// costs at most a missed optimization.
-    ///
-    /// An entry is retired after a fixed number of uses, so a selector that becomes whole-metric
-    /// again is re-probed on the next query of its shape once the entry is exhausted.
+    /// Remembers that the probe of condition 4 below found a counterexample. Only that verdict is
+    /// stored, never its opposite: reusing it makes the caller return an empty condition list, which
+    /// adds no primary-key range and so can neither exclude a granule nor reject a row. So a stored
+    /// verdict needs no invalidation, and a key collision costs at most a missed optimization.
     class WholeMetricProbeNegativeMemo
     {
     public:
