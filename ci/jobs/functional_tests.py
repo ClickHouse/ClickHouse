@@ -405,8 +405,8 @@ def checkpoint_collected_results(
 
     Updates the existing result instead of building a fresh one, because
     `Result.create_from` takes no `ext` and would drop the `run_url`. Published by
-    rename because `Result.dump` truncates in place, and `Result.from_fs` refuses
-    to parse the truncation that a kill mid-write would leave.
+    `dump_atomically` because `Result.dump` truncates in place, and `Result.from_fs`
+    refuses to parse the truncation that a kill mid-write would leave.
 
     Skipped on a local run, which has no runner to publish anything.
 
@@ -418,11 +418,7 @@ def checkpoint_collected_results(
     try:
         result = Result.from_fs(job_name)
         result.results = list(collected_results)
-        path = Path(result.file_name())
-        tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
-        with open(tmp_path, "w", encoding="utf8") as f:
-            json.dump(Result.to_dict(result), f, indent=4)
-        os.replace(tmp_path, path)
+        result.dump_atomically()
     except Exception as e:
         # No temp-file cleanup here: a cleanup that itself raises would defeat the
         # guard. A leftover is named `*.tmp`, never the published name.

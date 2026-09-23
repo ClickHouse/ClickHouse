@@ -381,6 +381,19 @@ class Result(MetaClasses.Serializable):
     def file_name_static(cls, name):
         return f"{Settings.TEMP_DIR}/result_{Utils.normalize_string(name)}.json"
 
+    def dump_atomically(self):
+        """Like `dump`, but publishes by rename, so a reader never sees a truncated file.
+
+        `dump` truncates in place, and a job killed mid-write would leave an unparseable
+        result file for the runner. With a rename the previous content stands instead.
+        """
+        path = Path(self.file_name())
+        tmp_path = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+        with open(tmp_path, "w", encoding="utf8") as f:
+            json.dump(self.to_dict(self), f, indent=4)
+        os.replace(tmp_path, path)
+        return self
+
     @classmethod
     def from_dict(cls, obj: Dict[str, Any]) -> "Result":
         sub_results = []
@@ -1002,7 +1015,9 @@ class Result(MetaClasses.Serializable):
                 self.files.sort(key=lambda f: Path(str(f)).name.lower())
             except Exception as e:
                 print(f"WARNING: Failed to sort attached files: {e}")
-        self.dump()
+        # The job may be killed by its timeout during this final publish, and the
+        # result file may already hold the rows checkpointed by the job itself.
+        self.dump_atomically()
         print(self.to_stdout_formatted())
         if not self.is_ok():
             sys.exit(1)
