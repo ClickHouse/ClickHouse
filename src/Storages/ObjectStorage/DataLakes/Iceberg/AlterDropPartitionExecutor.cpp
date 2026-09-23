@@ -684,6 +684,12 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
 void AlterDropPartitionExecutor::run()
 {
+    /// Refuse up front: the default `updateMetadata` throws, and by the time the commit reaches it the
+    /// manifests and the metadata file have already been written.
+    if (catalog && !catalog->supportsMetadataUpdate())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED, "DROP PARTITION is not supported for this catalog: it cannot commit a new metadata location");
+
     /// A catalog-backed table always carries `iceberg_metadata_file_path`: the catalog database fills it
     /// with the pointer the catalog returned, so `changed` says nothing about user intent here. The read
     /// path re-resolves that pointer from the catalog for the same reason. Only outside a catalog does the
