@@ -18,7 +18,6 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/OptimizeShardingKeyRewriteInVisitor.h>
 #include <Interpreters/ProcessList.h>
@@ -66,7 +65,6 @@ namespace DB
 namespace Setting
 {
     extern const SettingsMap additional_table_filters;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
@@ -110,6 +108,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
+    extern const SettingsBool run_query_in_background;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -283,7 +282,7 @@ void stripInitiatorOnlySettings(Settings & settings)
         settings[Setting::implicit_table_at_top_level].changed = false;
     }
 
-    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
+    /// `database` is an initiator-only setting as well: the query sent to a shard may leave the remote
     /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
     /// the shard must resolve it against its own default database.
     stripDatabaseSetting(settings);
@@ -411,6 +410,8 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
     /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
     /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
     stripInitiatorOnlySettings(new_settings);
+
+    new_settings[Setting::run_query_in_background] = false;
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
@@ -587,84 +588,41 @@ void executeQuery(
         }
     }
 
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
     {
-        for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
+        const auto & shard_info = cluster->getShardsInfo()[i];
+
+        auto query_for_shard = query_info.query_tree->clone();
+        if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
+            /// TODO: support composite sharding key
+            sharding_key_expr->getRequiredColumns().size() == 1)
         {
-            const auto & shard_info = cluster->getShardsInfo()[i];
-
-            auto query_for_shard = query_info.query_tree->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
-            {
-                OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
-                    sharding_key_expr,
-                    sharding_key_column_name,
-                    shard_info,
-                    not_optimized_cluster->getSlotToShard(),
-                };
-                optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
-            }
-
-            // decide for each shard if parallel reading from replicas should be enabled
-            // according to settings and number of replicas declared per shard
-            const auto & addresses = cluster->getShardsAddresses().at(i);
-            const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
-
-            stream_factory.createForShard(
+            OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
+                sharding_key_expr,
+                sharding_key_column_name,
                 shard_info,
-                query_for_shard,
-                main_table,
-                table_func_ptr,
-                new_context,
-                plans,
-                remote_shards,
-                static_cast<UInt32>(shards),
-                parallel_replicas_enabled,
-                shard_filter_generator,
-                unavailable_shard_tracker);
+                not_optimized_cluster->getSlotToShard(),
+            };
+            optimizeShardingKeyRewriteIn(query_for_shard, std::move(visitor_data), new_context);
         }
-    }
-    else
-    {
-        for (size_t i = 0, s = cluster->getShardsInfo().size(); i < s; ++i)
-        {
-            const auto & shard_info = cluster->getShardsInfo()[i];
 
-            ASTPtr query_ast_for_shard = query_info.query->clone();
-            if (sharding_key_expr && query_info.optimized_cluster && settings[Setting::optimize_skip_unused_shards_rewrite_in] && shards > 1 &&
-                /// TODO: support composite sharding key
-                sharding_key_expr->getRequiredColumns().size() == 1)
-            {
-                OptimizeShardingKeyRewriteInVisitor::Data visitor_data{
-                    sharding_key_expr,
-                    sharding_key_column_name,
-                    shard_info,
-                    not_optimized_cluster->getSlotToShard(),
-                };
-                OptimizeShardingKeyRewriteInVisitor visitor(visitor_data);
-                visitor.visit(query_ast_for_shard);
-            }
+        // decide for each shard if parallel reading from replicas should be enabled
+        // according to settings and number of replicas declared per shard
+        const auto & addresses = cluster->getShardsAddresses().at(i);
+        const bool parallel_replicas_enabled = addresses.size() > 1 && new_context->canUseTaskBasedParallelReplicas();
 
-            // decide for each shard if parallel reading from replicas should be enabled
-            // according to settings and number of replicas declared per shard
-            const auto & addresses = cluster->getShardsAddresses().at(i);
-            bool parallel_replicas_enabled = addresses.size() > 1 && context->canUseTaskBasedParallelReplicas();
-
-            stream_factory.createForShard(
-                shard_info,
-                query_ast_for_shard,
-                main_table,
-                table_func_ptr,
-                new_context,
-                plans,
-                remote_shards,
-                static_cast<UInt32>(shards),
-                parallel_replicas_enabled,
-                shard_filter_generator,
-                unavailable_shard_tracker);
-        }
+        stream_factory.createForShard(
+            shard_info,
+            query_for_shard,
+            main_table,
+            table_func_ptr,
+            new_context,
+            plans,
+            remote_shards,
+            static_cast<UInt32>(shards),
+            parallel_replicas_enabled,
+            shard_filter_generator,
+            unavailable_shard_tracker);
     }
 
     if (!remote_shards.empty())
@@ -743,6 +701,32 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
             logger,
             "Disabling 'parallel_replicas_support_projection'. Currently, it's not supported for queries with parallel replicas over distributed tables");
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
+    }
+
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        context_mutable->setSetting("max_execution_time", static_cast<Field>(settings[Setting::max_execution_time_leaf]));
+        context_mutable->setSetting("timeout_overflow_mode", static_cast<Field>(settings[Setting::timeout_overflow_mode_leaf]));
+
+        /// The substitution above only affects remote replicas: each of them builds its own 'QueryStatus'
+        /// from the settings shipped with the sub-query, so 'max_execution_time_leaf' is enforced there.
+        /// The local replica, however, executes inside the initiator's pipeline and shares the initiator's
+        /// 'QueryStatus', whose limits come from the original (outer) query and are not bounded by the leaf
+        /// timeout. As a result, with a local plan the leaf reading would not use the leaf timeout contract.
+        /// Disable the local plan when that contract is stricter than, or differs from, the initiator's timeout
+        /// contract so that all leaf reading happens on remote replicas where it is honored (see
+        /// 'leafTimeoutRequiresRemoteOnlyLeafReading').
+        if (settings[Setting::parallel_replicas_local_plan] && leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        {
+            LOG_TRACE(
+                logger,
+                "Disabling 'parallel_replicas_local_plan' because the leaf timeout contract differs from the "
+                "initiator's: the local replica shares the initiator's query status and cannot use the leaf "
+                "timeout separately");
+            context_mutable->setSetting("parallel_replicas_local_plan", Field{false});
+        }
     }
 
     /// Strip the initiator-only settings (the query-shaping and result-serialisation settings, and
@@ -1263,22 +1247,6 @@ void executeQueryWithParallelReplicas(
         std::move(analyzed_read_from_merge_tree));
 }
 
-void executeQueryWithParallelReplicas(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context,
-    std::shared_ptr<const StorageLimitsList> storage_limits)
-{
-    auto modified_query_ast = ClusterProxy::rewriteSelectQuery(
-        context, query_ast, storage_id.database_name, storage_id.table_name, /*remote_table_function_ptr*/ nullptr);
-    auto header = InterpreterSelectQuery(modified_query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-
-    executeQueryWithParallelReplicas(
-        query_plan, storage_id, header, processed_stage, modified_query_ast, nullptr, nullptr, context, storage_limits, nullptr);
-}
-
 void executeQueryWithParallelReplicasCustomKey(
     QueryPlan & query_plan,
     const StorageID & storage_id,
@@ -1291,16 +1259,7 @@ void executeQueryWithParallelReplicasCustomKey(
 {
     /// Return directly (with correct header) if no shard to query.
     if (query_info.getCluster()->getShardsInfo().empty())
-    {
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-            return;
-
-        Pipe pipe(std::make_shared<NullSource>(header));
-        auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
-        read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
-        query_plan.addStep(std::move(read_from_pipe));
         return;
-    }
 
     ClusterProxy::SelectStreamFactory select_stream_factory
         = ClusterProxy::SelectStreamFactory(header, snapshot, processed_stage);
@@ -1356,20 +1315,20 @@ void executeQueryWithParallelReplicasCustomKey(
         query_plan, storage_id, modified_query_info, columns, snapshot, processed_stage, header, context);
 }
 
-void executeQueryWithParallelReplicasCustomKey(
-    QueryPlan & query_plan,
-    const StorageID & storage_id,
-    SelectQueryInfo query_info,
-    const ColumnsDescription & columns,
-    const StorageSnapshotPtr & snapshot,
-    QueryProcessingStage::Enum processed_stage,
-    const ASTPtr & query_ast,
-    ContextPtr context)
+bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings)
 {
-    auto header = InterpreterSelectQuery(query_ast, context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
-    query_info.query = ClusterProxy::rewriteSelectQuery(
-        context, query_info.query, storage_id.getDatabaseName(), storage_id.getTableName(), /*table_function_ptr=*/nullptr);
-    executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
+    const auto leaf_timeout = settings[Setting::max_execution_time_leaf].totalMicroseconds();
+    if (leaf_timeout == 0)
+        return false;
+
+    /// The initiator's own 'max_execution_time' bounds the shared 'QueryStatus' and with it the local reading.
+    /// Only a leaf timeout stricter than that needs the local reading to be moved to remote replicas. When the
+    /// timeouts are equal, the overflow modes must also be equal: the shared query status uses the initiator's
+    /// `timeout_overflow_mode`, while remote replicas use `timeout_overflow_mode_leaf`.
+    const auto initiator_timeout = settings[Setting::max_execution_time].totalMicroseconds();
+    return initiator_timeout == 0 || leaf_timeout < initiator_timeout
+        || (leaf_timeout == initiator_timeout
+            && settings[Setting::timeout_overflow_mode] != settings[Setting::timeout_overflow_mode_leaf]);
 }
 
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
@@ -1417,9 +1376,7 @@ bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context)
 {
     const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::allow_experimental_analyzer]
-        || !settings[Setting::parallel_replicas_local_plan]
-        || !settings[Setting::parallel_replicas_prefer_local_replica])
+    if (!settings[Setting::parallel_replicas_local_plan] || !settings[Setting::parallel_replicas_prefer_local_replica])
         return false;
 
     /// Inside a Distributed sub-query the initiator can't use local plan (see comment in
@@ -1448,6 +1405,10 @@ bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const 
     InterpreterSelectQueryAnalyzer interpreter(select, context, select_query_options);
     auto & plan = interpreter.getQueryPlan();
 
+    /// Only the query-based step is looked for. The caller pins `parallel_replicas_plan_based` off
+    /// (`InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas`), and what is decided here is
+    /// whether the followers - which never run the plan-based implementation - can read this SELECT in a
+    /// coordinated way, so `ReadFromParallelReplicasStep` is not the right thing to look for either.
     auto is_reading_with_parallel_replicas = [](const QueryPlan::Node * node) -> bool
     {
         struct Frame
@@ -1550,6 +1511,28 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
     return {};
 }
 
+/// Remove only 'max_execution_time' and 'timeout_overflow_mode' from the top-level query-text SETTINGS clauses of
+/// a query that is about to be sent to a remote replica. 'updateContextForParallelReplicas' substitutes
+/// 'max_execution_time_leaf' / 'timeout_overflow_mode_leaf' into 'max_execution_time' / 'timeout_overflow_mode' in
+/// the context that travels with the sub-query; a query text carrying the original (outer) values in its top-level
+/// SETTINGS would re-apply them on top of the context on the remote replica and defeat the leaf timeout. Every
+/// other query-level setting is intentionally left in the query text: the remote replica relies on them
+/// (e.g. 'max_block_size'), and - unlike the SELECT path, which strips the whole clause - the
+/// INSERT SELECT sub-query does not re-ship every setting via the context, so stripping the whole clause would
+/// drop such settings on the remote replica.
+/// Only the top-level carriers are stripped ('removeSettingsFromQueryTopLevel'): a SETTINGS clause the user wrote
+/// inside a nested subquery (the documented leaf-node pattern 'view(SELECT ... SETTINGS max_execution_time = 10)')
+/// does not override the shipped context and must keep its user-authored timeout on the remote replica.
+/// Every occurrence is removed (not just the first), and a SETTINGS clause that becomes empty is detached, so the
+/// query text never re-serializes to a bare 'SETTINGS' keyword that fails to re-parse.
+/// The caller gates this on 'max_execution_time_leaf > 0' - without a leaf timeout the context carries the
+/// original values and the query text must stay untouched.
+static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
+{
+    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
+    removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
+}
+
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
@@ -1622,6 +1605,15 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
         /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
         /// (both `changes` and `default_settings`) from it too.
         stripInitiatorOnlySettingsFromQuery(new_query_ast);
+
+        /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
+        /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf
+        /// values shipped with 'new_context' are authoritative on the remote replica; otherwise the original outer
+        /// values in the query text would override them. Other settings, SETTINGS clauses in nested subqueries,
+        /// and the whole query text when no leaf timeout is set are left intact so the remote replica still
+        /// receives them (see 'removeLeafOverriddenTimeoutSettings').
+        if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+            removeLeafOverriddenTimeoutSettings(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(

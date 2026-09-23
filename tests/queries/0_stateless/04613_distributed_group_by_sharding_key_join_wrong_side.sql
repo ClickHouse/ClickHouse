@@ -96,9 +96,8 @@ SELECT
 
 -- RIGHT/FULL pad the left side only when unmatched rows are emitted. SEMI keeps only matched rows, so
 -- RIGHT SEMI JOIN emits no default-padded l.k and GROUP BY the sharding key is still shard-local: the
--- shortcut must keep firing (shard-local result has more rows than the merged one). Checked for both
--- the analyzer (allow_experimental_analyzer = 1) and the old AST path (allow_experimental_analyzer = 0).
-SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (analyzer)';
+-- shortcut must keep firing (shard-local result has more rows than the merged one).
+SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k';
 SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
@@ -106,18 +105,9 @@ SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
 SETTINGS allow_experimental_analyzer = 1;
-
-SELECT 'optimization still fires for RIGHT SEMI JOIN GROUP BY l.k (old analyzer)';
-SELECT
-    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
-        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
-    >
-    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l RIGHT SEMI JOIN bug_dr AS r ON l.k = r.k
-        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
-SETTINGS allow_experimental_analyzer = 0;
 
 -- LEFT SEMI keeps only matched left rows, no padding either, so the shortcut also still fires.
-SELECT 'optimization still fires for LEFT SEMI JOIN GROUP BY l.k (analyzer)';
+SELECT 'optimization still fires for LEFT SEMI JOIN GROUP BY l.k';
 SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
@@ -125,20 +115,11 @@ SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
 SETTINGS allow_experimental_analyzer = 1;
-
-SELECT 'optimization still fires for LEFT SEMI JOIN GROUP BY l.k (old analyzer)';
-SELECT
-    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
-        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
-    >
-    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l LEFT SEMI JOIN bug_dr AS r ON l.k = r.k
-        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
-SETTINGS allow_experimental_analyzer = 0;
 
 -- ANTI is the opposite of SEMI: RIGHT ANTI keeps the right rows with no left match, so l.k is defaulted
 -- to 0 on every shard exactly like a plain RIGHT JOIN. The shortcut must stay disabled (only Semi is
--- excluded from the padded-side guard, not Anti). Checked for both analyzer paths.
-SELECT 'RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (analyzer)';
+-- excluded from the padded-side guard, not Anti).
+SELECT 'RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0';
 SELECT groupArray((k, c)) = (
         SELECT groupArray((k, c)) FROM (
             SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
@@ -148,23 +129,12 @@ FROM (
     GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1)
 SETTINGS allow_experimental_analyzer = 1;
 
-SELECT 'RIGHT ANTI JOIN GROUP BY l.k (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)';
-SELECT groupArray((k, c)) = (
-        SELECT groupArray((k, c)) FROM (
-            SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
-            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0))
-FROM (
-    SELECT l.k AS k, count() AS c FROM bug_dl AS l RIGHT ANTI JOIN bug_dr AS r ON l.k = r.k AND l.k > 1000
-    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1)
-SETTINGS allow_experimental_analyzer = 0;
-
--- The join-sensitive shortcut is shared by DISTINCT and LIMIT BY, not just GROUP BY: the analyzer path
--- reaches the same guard from the projection (DISTINCT) and LIMIT BY nodes, and the old AST path from
--- select.select() and select.limitBy(). So the padded-side wrong result must be blocked for those too.
--- DISTINCT over the padded side's own sharding key (bug_dl on the RIGHT JOIN padded left) takes the
--- shortcut on every shard, defaulting l.k to 0 per shard, so without the guard it returns each key
--- twice instead of once. Checked for both analyzer paths.
-SELECT 'DISTINCT l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (analyzer)';
+-- The join-sensitive shortcut is shared by DISTINCT and LIMIT BY, not just GROUP BY: the same guard is
+-- reached from the projection (DISTINCT) and LIMIT BY nodes. So the padded-side wrong result must be
+-- blocked for those too. DISTINCT over the padded side's own sharding key (bug_dl on the RIGHT JOIN
+-- padded left) takes the shortcut on every shard, defaulting l.k to 0 per shard, so without the guard
+-- it returns each key twice instead of once.
+SELECT 'DISTINCT l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0';
 SELECT groupArray(k) = (
         SELECT groupArray(k) FROM (
             SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
@@ -173,20 +143,10 @@ FROM (
     SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
     ORDER BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1)
 SETTINGS allow_experimental_analyzer = 1;
-
-SELECT 'DISTINCT l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)';
-SELECT groupArray(k) = (
-        SELECT groupArray(k) FROM (
-            SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
-            ORDER BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
-FROM (
-    SELECT DISTINCT l.k AS k FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
-    ORDER BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1)
-SETTINGS allow_experimental_analyzer = 0;
 
 -- LIMIT BY l.k over the same padded side keeps one row per key. Without the guard the shortcut runs it
--- per shard, so each key survives on every shard and appears twice. Checked for both analyzer paths.
-SELECT 'LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (analyzer)';
+-- per shard, so each key survives on every shard and appears twice.
+SELECT 'LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0';
 SELECT groupArray((k, g)) = (
         SELECT groupArray((k, g)) FROM (
             SELECT l.k AS k, l.g AS g FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
@@ -195,23 +155,11 @@ FROM (
     SELECT l.k AS k, l.g AS g FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
     ORDER BY l.k, l.g LIMIT 1 BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1)
 SETTINGS allow_experimental_analyzer = 1;
-
-SELECT 'LIMIT 1 BY l.k over RIGHT JOIN (bug_dl padded), optimize=1 equals optimize=0 (old analyzer)';
-SELECT groupArray((k, g)) = (
-        SELECT groupArray((k, g)) FROM (
-            SELECT l.k AS k, l.g AS g FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
-            ORDER BY l.k, l.g LIMIT 1 BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0))
-FROM (
-    SELECT l.k AS k, l.g AS g FROM bug_dl AS l RIGHT JOIN bug_dr AS r ON l.k = r.k AND r.k > 29
-    ORDER BY l.k, l.g LIMIT 1 BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1)
-SETTINGS allow_experimental_analyzer = 0;
 
 -- DISTINCT over the foreign-column-name shape: r.k is the RIGHT side of a LEFT JOIN and merely shares
 -- the sharding key name. Unmatched left rows pad r.k = 0 on every shard, so the shortcut is unsound and
--- DISTINCT would keep the duplicated 0 group. In the old AST path r.k is a qualified identifier that
--- does not match the sharding key name, so that path never took the shortcut here; only the analyzer
--- path (which resolves r.k to the sharding-key expression) needs the guard, so this case is analyzer-only.
-SELECT 'DISTINCT r.k over LEFT JOIN (foreign column name), optimize=1 equals optimize=0 (analyzer)';
+-- DISTINCT would keep the duplicated 0 group.
+SELECT 'DISTINCT r.k over LEFT JOIN (foreign column name), optimize=1 equals optimize=0';
 SELECT groupArray(k) = (
         SELECT groupArray(k) FROM (
             SELECT DISTINCT r.k AS k FROM bug_dl AS l LEFT JOIN bug_dr AS r ON l.k = r.k AND l.k > 29

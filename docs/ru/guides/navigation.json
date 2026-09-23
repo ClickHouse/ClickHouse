@@ -54,7 +54,16 @@
         {
           "group": "Performance & monitoring",
           "pages": [
-            "ru/guides/clickhouse/performance-and-monitoring/query-optimization",
+            {
+              "group": "Query optimization",
+              "pages": [
+                "ru/guides/clickhouse/performance-and-monitoring/query-optimization",
+                "ru/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries",
+                "ru/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks",
+                "ru/guides/clickhouse/performance-and-monitoring/optimization-approaches",
+                "ru/guides/clickhouse/performance-and-monitoring/query-optimization-example"
+              ]
+            },
             "ru/guides/clickhouse/performance-and-monitoring/analyzer",
             "ru/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer",
             "ru/guides/clickhouse/performance-and-monitoring/dynamic-column-selection"
@@ -206,7 +215,9 @@
                 "ru/guides/use-cases/data-warehousing/nessie-catalog",
                 "ru/guides/use-cases/data-warehousing/onelake-catalog",
                 "ru/guides/use-cases/data-warehousing/polaris-catalog",
+                "ru/guides/use-cases/data-warehousing/horizon-catalog",
                 "ru/guides/use-cases/data-warehousing/rest-catalog",
+                "ru/guides/use-cases/data-warehousing/seaweedfs-catalog",
                 "ru/guides/use-cases/data-warehousing/unity-catalog",
                 "ru/guides/use-cases/data-warehousing/biglake-catalog"
               ]
@@ -241,21 +252,21 @@
                   "group": "AI agent libraries",
                   "pages": [
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/index",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/agno",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/chainlit",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/claude-agent-sdk",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/copilotkit",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/crewai",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/dspy",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/langchain",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/llamaindex",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/mcp-agent",
                     "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/microsoft-agent-framework",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic",
-                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents"
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/openai-agents",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/pydantic-ai",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/slackbot",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/streamlit",
+                    "ru/guides/use-cases/ai-ml/MCP/ai-agent-libraries/upsonic"
                   ]
                 }
               ]
