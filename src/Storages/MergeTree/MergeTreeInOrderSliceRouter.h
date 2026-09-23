@@ -100,7 +100,8 @@ private:
     std::vector<size_t> boundary_position;
     size_t num_finished_lanes = 0;
     bool initialized = false;
-    /// Set once a slice ended with most rows filtered out; from then on untouched lanes are read ahead.
+    /// Slices that ended with most rows filtered out. Once there are two, untouched lanes are read ahead.
+    size_t misses = 0;
     bool speculation_open = false;
 };
 

@@ -80,6 +80,8 @@ public:
 
     /// Cuts the next slice from the segment bound to the source; getTask of that source returns it.
     SliceDescription assignSlice(size_t source);
+    /// True between assignSlice and the getTask call that takes the slice.
+    bool hasPendingSlice(size_t source) const;
 
 private:
     struct Lane
@@ -87,6 +89,9 @@ private:
         MarkRanges unread;
         /// Slices of a lane start small and grow, so the first rows of a part arrive quickly.
         size_t slices_cut = 0;
+        /// End of the furthest slice cut so far; marks below it that are still unread came back from a
+        /// segment taken away from an idle source.
+        size_t max_cut_mark = 0;
     };
 
     struct Segment

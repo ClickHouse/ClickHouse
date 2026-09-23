@@ -104,8 +104,14 @@ void MergeTreeInOrderSliceRouter::consumeInput(size_t source)
         return;
     }
 
+    /// The source asked the pool before this slice was assigned and found nothing: the report is stale,
+    /// the source stays needed to pick the slice up.
+    if (slice_ended && pool->hasPendingSlice(source))
+        return;
+
     auto & lane = lanes[assignment->lane];
     auto & slice = lane.slices.at(assignment->first_mark);
+
 
     if (!slice_ended)
     {
@@ -120,9 +126,12 @@ void MergeTreeInOrderSliceRouter::consumeInput(size_t source)
     input.setNotNeeded();
 
     /// Most rows of the slice were filtered out: the lane is bound by reading, not by merging.
-    if (assignment->rows_read * 2 < assignment->rows_in_marks)
+    /// One miss on the first, tiny slice of a lane is weak evidence, so looking into other lanes
+    /// starts with the second miss.
+    if (assignment->rows_read * 4 < assignment->rows_in_marks)
     {
-        speculation_open = true;
+        ++misses;
+        speculation_open = misses >= 2;
         if (lane.activated)
             lane.max_segments = std::min(lane.max_segments * 2, assignments.size());
     }
@@ -210,7 +219,11 @@ size_t MergeTreeInOrderSliceRouter::deliverableRows(size_t lane) const
 
 bool MergeTreeInOrderSliceRouter::headWantsMore(size_t lane) const
 {
-    return lanes[lane].activated && !lanes[lane].finished && deliverableRows(lane) < buffer_budget_rows;
+    /// Read ahead only while the consumer accepts rows, like a plain source that cannot read its next
+    /// block before the previous one was pulled. With buffering downstream this still reads ahead one
+    /// buffer per lane; without it, a lane the merge is not asking for is left alone.
+    return lanes[lane].activated && !lanes[lane].finished && lane_outputs[lane]->canPush()
+        && deliverableRows(lane) < buffer_budget_rows;
 }
 
 bool MergeTreeInOrderSliceRouter::laneWantsMore(size_t lane) const

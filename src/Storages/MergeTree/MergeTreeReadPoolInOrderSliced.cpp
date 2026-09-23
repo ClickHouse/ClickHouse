@@ -18,13 +18,19 @@ namespace
 /// A segment is long enough to amortize one range request on remote storage over several slices.
 constexpr size_t slices_per_segment = 8;
 
-/// Takes up to max_marks marks from the front of the ranges.
-MarkRanges cutMarks(MarkRanges & from, size_t max_marks)
+/// Takes up to max_marks marks from the front of the ranges. Does not continue across a gap that ends
+/// below no_gaps_below: such a gap holds marks that were cut into slices earlier (they came back to the
+/// lane from a segment taken away from an idle source), and a slice spanning it would deliver its rows
+/// before those slices although it is ordered by its first mark.
+MarkRanges cutMarks(MarkRanges & from, size_t max_marks, size_t no_gaps_below)
 {
     MarkRanges result;
     while (max_marks > 0 && !from.empty())
     {
         auto & range = from.front();
+        if (!result.empty() && range.begin != result.back().end && result.back().end < no_gaps_below)
+            break;
+
         const size_t marks = std::min(range.end - range.begin, max_marks);
         result.emplace_back(range.begin, range.begin + marks);
         range.begin += marks;
@@ -176,6 +182,12 @@ bool MergeTreeReadPoolInOrderSliced::segmentHasUnreadMarks(size_t source) const
     return segments[source] && !segments[source]->unread.empty();
 }
 
+bool MergeTreeReadPoolInOrderSliced::hasPendingSlice(size_t source) const
+{
+    std::lock_guard lock(mutex);
+    return pending[source].has_value();
+}
+
 size_t MergeTreeReadPoolInOrderSliced::segmentFirstUnreadMark(size_t source) const
 {
     std::lock_guard lock(mutex);
@@ -216,7 +228,8 @@ void MergeTreeReadPoolInOrderSliced::openSegment(size_t source, size_t lane)
     if (lane_state.unread.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Lane {} has no marks left for a new segment", lane);
 
-    MarkRanges extent = cutMarks(lane_state.unread, segment_marks);
+    /// A segment may span marks read by other segments; its slices may not (see assignSlice).
+    MarkRanges extent = cutMarks(lane_state.unread, segment_marks, /*no_gaps_below=*/ 0);
     segments[source] = Segment{.lane = lane, .extent = extent, .unread = extent, .has_readers = false};
 }
 
@@ -232,8 +245,9 @@ MergeTreeReadPoolInOrderSliced::SliceDescription MergeTreeReadPoolInOrderSliced:
 
     auto & lane_state = lanes[segment->lane];
     const size_t ramp_marks = size_t(1) << std::min<size_t>(lane_state.slices_cut, 16);
-    MarkRanges ranges = cutMarks(segment->unread, std::min(max_slice_marks, ramp_marks));
+    MarkRanges ranges = cutMarks(segment->unread, std::min(max_slice_marks, ramp_marks), lane_state.max_cut_mark);
     ++lane_state.slices_cut;
+    lane_state.max_cut_mark = std::max(lane_state.max_cut_mark, ranges.back().end);
 
     SliceDescription description{
         .first_mark = ranges.front().begin,
