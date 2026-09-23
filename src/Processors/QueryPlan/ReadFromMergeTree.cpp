@@ -132,9 +132,8 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
     return countPartitions(parts_with_ranges, get_partition_id);
 }
 
-/// Sorting key columns whose values are identical within a dedup group. Floats are excluded:
-/// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition over
-/// them can tell apart rows that FINAL will merge (see 05098_defer_partition_pruning_final_float)
+/// Floats are excluded: -0.0 compares equal to 0.0 (and NaN payloads to each other) in the merge,
+/// so a condition over a float sorting key column can tell apart rows of one dedup group
 NameSet sortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 {
     NameSet names;

@@ -1,6 +1,5 @@
--- A row policy over a float sorting key column must be deferred after FINAL: -0.0 compares equal
--- to 0.0 inside a dedup group while toString tells them apart, so pre-merge filtering (or index
--- analysis fed with the deferred policy's atoms) can drop the group's winner
+-- A row policy over a float sorting key column must be deferred after FINAL:
+-- -0.0 and 0.0 land in one dedup group but toString tells them apart
 SET explain_query_plan_default = 'legacy';
 SET apply_row_policy_after_final = 1;
 
