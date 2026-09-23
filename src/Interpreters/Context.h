@@ -395,8 +395,8 @@ protected:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> settings_constraints_and_current_profiles;
     mutable std::shared_ptr<const ContextAccess> access;
     mutable bool need_recalculate_access = true;
-    String current_database;
-    bool current_database_has_table_prefix = false;
+    /// the full name selected by USE and its frozen database / namespace split
+    CurrentDatabaseInfo current_database;
     /// The SQL-defined HTTP handler name and the HTTP request URL are stored in `client_info` (see
     /// `ClientInfo::http_handler_name` / `http_request_url`) so that they are serialized on distributed
     /// fan-out and remain visible to `currentHandler()` / `currentRequestURL()` on remote shards.
@@ -1216,9 +1216,8 @@ public:
     void addViewSource(const StoragePtr & storage);
     StoragePtr getViewSource() const;
 
-    String getCurrentDatabase() const;
-    /// current database together with the namespace prefix selected by `USE db.namespace`
-    CurrentDatabaseInfo getCurrentDatabaseInfo() const;
+    /// The current database: full name plus the frozen split, see CurrentDatabaseInfo
+    CurrentDatabaseInfo getCurrentDatabase() const;
     String getCurrentQueryId() const { return client_info.current_query_id; }
 
     /// The name of the SQL-defined HTTP handler that invoked the query, if any (see `currentHandler`).
@@ -2142,7 +2141,7 @@ private:
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setCurrentDatabaseWithLock(const String & name, bool has_table_prefix, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentDatabaseWithLock(const CurrentDatabaseInfo & database_info, const std::lock_guard<ContextSharedMutex> & lock);
 
     /// Keep the `database` setting in sync with an out-of-band change of the current database.
     /// Must be called with the context mutex held.
