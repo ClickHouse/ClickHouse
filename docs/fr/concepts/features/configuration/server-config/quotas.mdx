@@ -44,6 +44,7 @@ Examinons la section du fichier &#39;users.xml&#39; qui définit les quotas.
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 Par défaut, le quota suit la consommation des ressources heure par heure, sans limiter l’utilisation.
@@ -153,6 +154,7 @@ Les quotas peuvent utiliser la fonctionnalité de « clé de quota » pour sui
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 Vous pouvez également définir les quotas en fonction du hash de la requête normalisée, afin que chaque modèle de requête distinct dispose de son propre quota indépendant. Dans la configuration XML, cela s&#39;écrit `<keyed_by_normalized_query_hash />`:
