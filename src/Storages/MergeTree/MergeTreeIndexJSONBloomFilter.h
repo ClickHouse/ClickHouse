@@ -20,14 +20,7 @@ struct JSONBloomFilterProbe
     auto operator<=>(const JSONBloomFilterProbe &) const = default;
 };
 
-struct JSONBloomFilterTokens
-{
-    HashSet<UInt64, TrivialHash> values;
-    HashSet<UInt64, TrivialHash> presence;
-    std::map<UInt64, std::set<String>> dynamic_types;
-};
-
-using JSONBloomFilterPaths = std::unordered_map<String, JSONBloomFilterTokens>;
+struct JSONBloomFilterTokens;
 
 struct MergeTreeIndexJSONBloomFilterPartMetadata final : IMergeTreeIndexPartMetadata
 {
@@ -56,8 +49,9 @@ public:
     MergeTreeIndexGranuleJSONBloomFilter(
         size_t bits_per_row_,
         size_t hash_functions_,
-        const JSONBloomFilterPaths & paths_,
+        const JSONBloomFilterTokens & tokens,
         std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
+    ~MergeTreeIndexGranuleJSONBloomFilter() override;
 
     void serializeBinary(WriteBuffer & ostr) const override;
     void deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version) override;
@@ -69,8 +63,15 @@ public:
     bool matches(const String & path, const JSONBloomFilterProbe & probe, bool pending_matches) const;
     void prepareDynamicProbe(const String & path, const JSONBloomFilterProbe & probe, const FormatSettings & format_settings);
     const JSONBloomPathMatcher & getPathMatcher() const { return *path_matcher; }
+    /// Converts a granule built by the aggregator into the form used for evaluation. Granules read from disk are already in it.
+    void materialize();
+    bool isBuilt() const { return built != nullptr; }
 
 private:
+    /// Paths collected by the aggregator. They stay flat until serialization to avoid per-path allocations.
+    struct BuiltPaths;
+    std::unique_ptr<BuiltPaths> built;
+
     struct PathFilter
     {
         bool matches(const JSONBloomFilterProbe & probe, bool pending_matches) const;
@@ -100,6 +101,7 @@ public:
         DataTypePtr column_type_,
         std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
 
+    ~MergeTreeIndexAggregatorJSONBloomFilter() override;
     bool empty() const override { return total_rows == 0; }
     MergeTreeIndexGranulePtr getGranuleAndReset() override;
     void update(const Block & block, size_t * pos, size_t limit) override;
@@ -110,7 +112,7 @@ private:
     String column_name;
     DataTypePtr column_type;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
-    JSONBloomFilterPaths paths;
+    std::unique_ptr<JSONBloomFilterTokens> tokens;
     size_t total_rows = 0;
 };
 

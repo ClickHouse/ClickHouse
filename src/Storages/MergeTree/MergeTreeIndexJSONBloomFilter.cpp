@@ -47,11 +47,15 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/re2.h>
+#include <Common/Arena.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/transformEndianness.h>
 
 #include <array>
 #include <iterator>
 #include <list>
+#include <numeric>
 #include <ranges>
 #include <xxhash.h>
 
@@ -218,6 +222,38 @@ bool JSONBloomPathMatcher::shouldVisit(std::string_view path) const
     return !hasIncludeFilter() || matchesAnyPathOrSubtree(path, include_paths) || matchesAnyAncestor(path, include_paths)
         || !include_regexps.empty();
 }
+
+/// Tokens of one index granule. Each token is keyed by its path id, so one table deduplicates the tokens of all paths
+/// and a path costs only an id and its interned name. JSON with many distinct paths per granule would otherwise pay
+/// for separate hash tables per path on every granule.
+struct JSONBloomFilterTokens
+{
+    /// Token hash in the low half, `path id << 1 | is presence token` in the high half.
+    HashSet<UInt128, UInt128TrivialHash> tokens;
+    HashMap<std::string_view, UInt32> path_ids;
+    Arena arena;
+    std::vector<std::string_view> paths;
+    /// (path id, runtime type scope, encoded runtime type), deduplicated when the granule is built.
+    std::vector<std::tuple<UInt32, UInt64, String>> dynamic_types;
+
+    UInt32 getPathId(std::string_view path)
+    {
+        HashMap<std::string_view, UInt32>::LookupResult it;
+        bool inserted;
+        path_ids.emplace(ArenaKeyHolder{path, arena}, it, inserted);
+        if (inserted)
+        {
+            it->getMapped() = static_cast<UInt32>(paths.size());
+            paths.push_back(it->getKey());
+        }
+        return it->getMapped();
+    }
+
+    void add(UInt32 path_id, UInt64 hash, bool presence)
+    {
+        tokens.insert(UInt128(hash) | (UInt128((UInt64(path_id) << 1) | presence) << 64));
+    }
+};
 
 namespace
 {
@@ -548,8 +584,8 @@ String appendMapKey(std::string_view path, const DataTypePtr & key_type, const I
 class JSONBloomExtractor
 {
 public:
-    JSONBloomExtractor(JSONBloomFilterPaths & paths_, const JSONBloomPathMatcher & path_matcher_)
-        : path_filters(paths_)
+    JSONBloomExtractor(JSONBloomFilterTokens & tokens_, const JSONBloomPathMatcher & path_matcher_)
+        : tokens(tokens_)
         , path_matcher(path_matcher_)
     {
     }
@@ -562,7 +598,7 @@ public:
 private:
     struct ScalarPlan
     {
-        JSONBloomFilterTokens * tokens = nullptr;
+        std::optional<UInt32> path_id;
         UInt64 seed = 0;
         bool has_dynamic_presence = false;
     };
@@ -877,7 +913,7 @@ private:
             auto * plan = should_index ? &prepareScalar(hash_path, logical_path, role, true, type_info, keyed_plan) : nullptr;
             const auto hash = hashSharedScalar(plan ? plan->seed : 0, *type, buffer, format_settings);
             if (plan)
-                plan->tokens->values.insert(hash);
+                tokens.add(*plan->path_id, hash, false);
             return;
         }
 
@@ -977,7 +1013,7 @@ private:
     {
         if (is_dynamic)
         {
-            path_filters[String(logical_path)].presence.insert(unsupportedDynamicTypeHash(hash_path, role));
+            addPresence(logical_path, unsupportedDynamicTypeHash(hash_path, role));
             return;
         }
 
@@ -999,7 +1035,7 @@ private:
 
         if (should_index && isString(removeLowCardinality(value_type)))
         {
-            auto & tokens = path_filters[String(logical_path)];
+            const UInt32 path_id = tokens.getPathId(logical_path);
             const auto * lc_keys = map_type.getKeyType()->lowCardinality() && isString(key_type)
                 ? &assert_cast<const ColumnLowCardinality &>(keys) : nullptr;
             const auto full_keys = lc_keys ? lc_keys->getDictionary().getNestedColumn() : keys.convertToFullColumnIfLowCardinality();
@@ -1015,9 +1051,12 @@ private:
                         hash_path, *key_serialization, key_type_name, *full_keys, key_index, encoded_key, key_path, format_settings);
                     seed = hashToken(path, JSONBloomRole::MapValue, JSONBloomDomain::Typed, value_type_info.name, {});
                 }
-                tokens.values.insert(hashTypedValue(
-                    *seed, *value_type_info.serialization, value_type_info.which, value_type_info.raw_value,
-                    values, element, value_buffer, format_settings));
+                tokens.add(
+                    path_id,
+                    hashTypedValue(
+                        *seed, *value_type_info.serialization, value_type_info.which, value_type_info.raw_value,
+                        values, element, value_buffer, format_settings),
+                    false);
             }
             return;
         }
@@ -1085,7 +1124,7 @@ private:
         {
             const auto * nullable = typeid_cast<const ColumnNullable *>(&column);
             const auto & values = nullable ? nullable->getNestedColumn() : column;
-            auto & tokens = path_filters[String(logical_path)];
+            const UInt32 path_id = tokens.getPathId(logical_path);
             const UInt64 seed = hashToken(hash_path, role, JSONBloomDomain::Typed, info.name, {});
             bool has_value = false;
             for (size_t row = begin; row != end; ++row)
@@ -1093,13 +1132,15 @@ private:
                 if (nullable && nullable->isNullAt(row))
                     continue;
                 has_value = true;
-                tokens.values.insert(hashTypedValue(
-                    seed, *info.serialization, info.which, info.raw_value, values, row, value_buffer, format_settings));
+                tokens.add(
+                    path_id,
+                    hashTypedValue(seed, *info.serialization, info.which, info.raw_value, values, row, value_buffer, format_settings),
+                    false);
             }
             if (is_dynamic && has_value)
             {
-                tokens.presence.insert(dynamicTypePresenceHash(hash_path, role, info.name));
-                tokens.dynamic_types[unsupportedDynamicTypeHash(hash_path, role)].insert(info.encoded_type);
+                tokens.add(path_id, dynamicTypePresenceHash(hash_path, role, info.name), true);
+                tokens.dynamic_types.emplace_back(path_id, unsupportedDynamicTypeHash(hash_path, role), info.encoded_type);
             }
             return;
         }
@@ -1107,7 +1148,7 @@ private:
         {
             const auto & array = assert_cast<const ColumnArray &>(column);
             if (index_path && is_dynamic)
-                path_filters[String(logical_path)].presence.insert(dynamicComplexPresenceHash(hash_path, role));
+                addPresence(logical_path, dynamicComplexPresenceHash(hash_path, role));
             const auto & nested_type = array_type->getNestedType();
             const auto & nested_info = getTypeInfo(removeJSONBloomWrappers(nested_type));
             emitRange(hash_path, logical_path, JSONBloomRole::ArrayElement, nested_type, array.getData(),
@@ -1120,7 +1161,7 @@ private:
             if (is_dynamic && !index_path)
                 return;
             if (is_dynamic)
-                path_filters[String(logical_path)].presence.insert(dynamicComplexPresenceHash(hash_path, role));
+                addPresence(logical_path, dynamicComplexPresenceHash(hash_path, role));
             emitMapRange(hash_path, logical_path, role, *map_type, assert_cast<const ColumnMap &>(column),
                 begin, end, is_dynamic, index_path);
             return;
@@ -1146,15 +1187,15 @@ private:
                 plan_it = type_info.scalar_plans.try_emplace(String(path)).first;
             plan = &plan_it->second[static_cast<size_t>(role) - 1];
         }
-        if (!plan->tokens)
+        if (!plan->path_id)
         {
-            plan->tokens = &path_filters[String(logical_path)];
+            plan->path_id = tokens.getPathId(logical_path);
             plan->seed = hashToken(path, role, JSONBloomDomain::Typed, type_info.name, {});
         }
         if (is_dynamic && !plan->has_dynamic_presence)
         {
-            plan->tokens->presence.insert(dynamicTypePresenceHash(path, role, type_info.name));
-            plan->tokens->dynamic_types[unsupportedDynamicTypeHash(path, role)].insert(type_info.encoded_type);
+            tokens.add(*plan->path_id, dynamicTypePresenceHash(path, role, type_info.name), true);
+            tokens.dynamic_types.emplace_back(*plan->path_id, unsupportedDynamicTypeHash(path, role), type_info.encoded_type);
             plan->has_dynamic_presence = true;
         }
 
@@ -1172,9 +1213,10 @@ private:
     {
         ScalarPlan keyed_plan;
         auto & plan = prepareScalar(path, logical_path, role, is_dynamic, type_info, keyed_plan);
-        plan.tokens->values.insert(hashTypedValue(
-            plan.seed,
-            *type_info.serialization, type_info.which, type_info.raw_value, column, row, value_buffer, format_settings));
+        tokens.add(
+            *plan.path_id,
+            hashTypedValue(plan.seed, *type_info.serialization, type_info.which, type_info.raw_value, column, row, value_buffer, format_settings),
+            false);
     }
 
     void emitValue(
@@ -1206,7 +1248,7 @@ private:
             return;
 
         if (index_path && is_dynamic && type_info.is_dynamic_complex)
-            path_filters[String(logical_path)].presence.insert(dynamicComplexPresenceHash(hash_path, role));
+            addPresence(logical_path, dynamicComplexPresenceHash(hash_path, role));
 
         if (const auto * object_type = typeid_cast<const DataTypeObject *>(type.get()))
         {
@@ -1241,14 +1283,16 @@ private:
             return;
         if (type_info.which.isVariant() || type_info.has_dynamic_structure)
         {
-            path_filters[String(logical_path)].presence.insert(unsupportedDynamicTypeHash(hash_path, role));
+            addPresence(logical_path, unsupportedDynamicTypeHash(hash_path, role));
             return;
         }
 
         emitScalar(hash_path, logical_path, role, column, row, is_dynamic, type_info);
     }
 
-    JSONBloomFilterPaths & path_filters;
+    void addPresence(std::string_view logical_path, UInt64 hash) { tokens.add(tokens.getPathId(logical_path), hash, true); }
+
+    JSONBloomFilterTokens & tokens;
     const JSONBloomPathMatcher & path_matcher;
     UnorderedMapWithMemoryTracking<String, SerializationPtr> serializations_cache;
     UnorderedMapWithMemoryTracking<String, VectorWithMemoryTracking<MutableColumnPtr>> shared_columns_cache;
@@ -1928,6 +1972,28 @@ void MergeTreeIndexGranuleJSONBloomFilter::prepareDynamicProbe(
     prepared.erase(std::unique(prepared.begin(), prepared.end()), prepared.end());
 }
 
+struct MergeTreeIndexGranuleJSONBloomFilter::BuiltPaths
+{
+    /// A path with at least one token. The ranges index `values`, `presence`, and `dynamic_types`.
+    struct Path
+    {
+        size_t name_end;
+        size_t values_begin;
+        size_t values_end;
+        size_t presence_begin;
+        size_t presence_end;
+        size_t dynamic_types_begin;
+        size_t dynamic_types_end;
+    };
+
+    String names;
+    std::vector<Path> paths;
+    std::vector<UInt64> values;
+    std::vector<UInt64> presence;
+    /// (runtime type scope, encoded runtime type), sorted within each path.
+    std::vector<std::pair<UInt64, String>> dynamic_types;
+};
+
 MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
     size_t bits_per_row_, size_t hash_functions_, std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : bits_per_row(bits_per_row_)
@@ -1936,34 +2002,108 @@ MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
 {
 }
 
+
 MergeTreeIndexGranuleJSONBloomFilter::MergeTreeIndexGranuleJSONBloomFilter(
     size_t bits_per_row_,
     size_t hash_functions_,
-    const JSONBloomFilterPaths & paths_,
+    const JSONBloomFilterTokens & tokens,
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher_)
     : MergeTreeIndexGranuleJSONBloomFilter(bits_per_row_, hash_functions_, std::move(path_matcher_))
 {
     has_rows = true;
-    for (const auto & [path, tokens] : paths_)
+    const size_t num_paths = tokens.paths.size();
+
+    /// Group the tokens by path with a counting sort: two linear passes without per-path allocations.
+    std::vector<size_t> value_offsets(num_paths + 1);
+    std::vector<size_t> presence_offsets(num_paths + 1);
+    for (const auto & cell : tokens.tokens)
     {
-        if (tokens.values.empty() && tokens.presence.empty())
-            continue;
-        auto & filter = paths[path];
-        for (const auto & [scope, types] : tokens.dynamic_types)
-            filter.dynamic_types.emplace_back(scope, std::vector<String>(types.begin(), types.end()));
-        for (const auto & hash : tokens.presence)
-            filter.presence.push_back(hash.getKey());
-        std::ranges::sort(filter.presence);
-        if (!tokens.values.empty())
+        const auto tag = static_cast<UInt64>(cell.getKey() >> 64);
+        ++((tag & 1) ? presence_offsets : value_offsets)[(tag >> 1) + 1];
+    }
+    std::partial_sum(value_offsets.begin(), value_offsets.end(), value_offsets.begin());
+    std::partial_sum(presence_offsets.begin(), presence_offsets.end(), presence_offsets.begin());
+
+    built = std::make_unique<BuiltPaths>();
+    built->values.resize(value_offsets.back());
+    built->presence.resize(presence_offsets.back());
+    auto value_positions = value_offsets;
+    auto presence_positions = presence_offsets;
+    for (const auto & cell : tokens.tokens)
+    {
+        const auto hash = static_cast<UInt64>(cell.getKey());
+        const auto tag = static_cast<UInt64>(cell.getKey() >> 64);
+        if (tag & 1)
+            built->presence[presence_positions[tag >> 1]++] = hash;
+        else
+            built->values[value_positions[tag >> 1]++] = hash;
+    }
+
+    auto dynamic_types = tokens.dynamic_types;
+    std::ranges::sort(dynamic_types);
+    dynamic_types.erase(std::unique(dynamic_types.begin(), dynamic_types.end()), dynamic_types.end());
+
+    size_t dynamic_type_position = 0;
+    for (size_t path_id = 0; path_id != num_paths; ++path_id)
+    {
+        const bool has_tokens = value_offsets[path_id] != value_offsets[path_id + 1]
+            || presence_offsets[path_id] != presence_offsets[path_id + 1];
+        const size_t dynamic_types_begin = built->dynamic_types.size();
+        for (; dynamic_type_position != dynamic_types.size() && std::get<0>(dynamic_types[dynamic_type_position]) == path_id;
+             ++dynamic_type_position)
         {
-            filter.values = std::make_shared<BloomFilter>((bits_per_row * tokens.values.size() + 7) / 8, hash_functions, 0);
+            if (has_tokens)
+                built->dynamic_types.emplace_back(
+                    std::get<1>(dynamic_types[dynamic_type_position]), std::move(std::get<2>(dynamic_types[dynamic_type_position])));
+        }
+        if (!has_tokens)
+            continue;
+
+        std::sort(built->presence.begin() + presence_offsets[path_id], built->presence.begin() + presence_offsets[path_id + 1]);
+        built->names.append(tokens.paths[path_id]);
+        built->paths.push_back(
+            {built->names.size(),
+             value_offsets[path_id],
+             value_offsets[path_id + 1],
+             presence_offsets[path_id],
+             presence_offsets[path_id + 1],
+             dynamic_types_begin,
+             built->dynamic_types.size()});
+    }
+}
+
+MergeTreeIndexGranuleJSONBloomFilter::~MergeTreeIndexGranuleJSONBloomFilter() = default;
+
+void MergeTreeIndexGranuleJSONBloomFilter::materialize()
+{
+    if (!built)
+        return;
+
+    size_t name_begin = 0;
+    for (const auto & path : built->paths)
+    {
+        auto & filter = paths[built->names.substr(name_begin, path.name_end - name_begin)];
+        name_begin = path.name_end;
+        filter.presence.assign(built->presence.begin() + path.presence_begin, built->presence.begin() + path.presence_end);
+        for (size_t i = path.dynamic_types_begin; i != path.dynamic_types_end; ++i)
+        {
+            const auto & [scope, type] = built->dynamic_types[i];
+            if (filter.dynamic_types.empty() || filter.dynamic_types.back().first != scope)
+                filter.dynamic_types.emplace_back(scope, std::vector<String>{});
+            filter.dynamic_types.back().second.push_back(type);
+        }
+        if (path.values_begin != path.values_end)
+        {
+            const size_t num_values = path.values_end - path.values_begin;
+            filter.values = std::make_shared<BloomFilter>((bits_per_row * num_values + 7) / 8, hash_functions, 0);
             std::vector<BloomFilterHashPair> pairs;
-            pairs.reserve(tokens.values.size());
-            for (const auto & hash : tokens.values)
-                pairs.push_back(jsonBloomHashPair(hash.getKey()));
+            pairs.reserve(num_values);
+            for (size_t i = path.values_begin; i != path.values_end; ++i)
+                pairs.push_back(jsonBloomHashPair(built->values[i]));
             filter.values->addHashPairs(pairs.data(), pairs.size());
         }
     }
+    built.reset();
 }
 
 void MergeTreeIndexGranuleJSONBloomFilter::serializeBinary(WriteBuffer &) const
@@ -1979,6 +2119,14 @@ void MergeTreeIndexGranuleJSONBloomFilter::deserializeBinary(ReadBuffer &, Merge
 size_t MergeTreeIndexGranuleJSONBloomFilter::memoryUsageBytes() const
 {
     size_t bytes = 0;
+    if (built)
+    {
+        bytes += built->names.capacity() + built->paths.capacity() * sizeof(BuiltPaths::Path)
+            + (built->values.capacity() + built->presence.capacity()) * sizeof(UInt64)
+            + built->dynamic_types.capacity() * sizeof(decltype(built->dynamic_types)::value_type);
+        for (const auto & [scope, type] : built->dynamic_types)
+            bytes += type.capacity();
+    }
     for (const auto & [path, filter] : paths)
     {
         bytes += path.capacity() + filter.presence.capacity() * sizeof(UInt64) + (filter.values ? filter.values->memoryUsageBytes() : 0);
@@ -2017,47 +2165,77 @@ bool MergeTreeIndexGranuleJSONBloomFilter::matches(const String & path, const JS
 
 void MergeTreeIndexGranuleJSONBloomFilter::serializeBinaryWithMultipleStreams(MergeTreeIndexOutputStreams & streams) const
 {
+    if (!built)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "`jsonbf_v1` can serialize only granules built by its aggregator");
+
     auto & directory = streams.at(MergeTreeIndexSubstream::Type::Regular)->compressed_hashing;
     auto & values_stream = *streams.at(MergeTreeIndexSubstream::Type::JSONBloomFilterValues);
     WriteBufferFromOwnString types_buffer;
-    writeVarUInt(paths.size(), directory);
-    for (const auto & [path, filter] : paths)
+    /// One filter is reused for all paths, so building a granule allocates no filter per path.
+    std::optional<BloomFilter> filter;
+    std::vector<BloomFilterHashPair> pairs;
+    writeVarUInt(built->paths.size(), directory);
+    size_t name_begin = 0;
+    for (const auto & path : built->paths)
     {
-        writeStringBinary(path, directory);
-        writeVarUInt(filter.presence.size(), directory);
-        for (UInt64 hash : filter.presence)
-            writeBinaryLittleEndian(hash, directory);
+        writeStringBinary(std::string_view(built->names).substr(name_begin, path.name_end - name_begin), directory);
+        name_begin = path.name_end;
+        writeVarUInt(path.presence_end - path.presence_begin, directory);
+        for (size_t i = path.presence_begin; i != path.presence_end; ++i)
+            writeBinaryLittleEndian(built->presence[i], directory);
+
         types_buffer.restart();
-        writeVarUInt(filter.dynamic_types.size(), types_buffer);
-        for (const auto & [scope, types] : filter.dynamic_types)
+        size_t num_scopes = 0;
+        for (size_t i = path.dynamic_types_begin; i != path.dynamic_types_end; ++i)
+            num_scopes += i == path.dynamic_types_begin || built->dynamic_types[i].first != built->dynamic_types[i - 1].first;
+        writeVarUInt(num_scopes, types_buffer);
+        for (size_t i = path.dynamic_types_begin; i != path.dynamic_types_end;)
         {
+            const UInt64 scope = built->dynamic_types[i].first;
+            size_t scope_end = i;
+            while (scope_end != path.dynamic_types_end && built->dynamic_types[scope_end].first == scope)
+                ++scope_end;
             writeBinaryLittleEndian(scope, types_buffer);
-            writeVarUInt(types.size(), types_buffer);
-            for (const auto & type : types)
-                writeStringBinary(type, types_buffer);
+            writeVarUInt(scope_end - i, types_buffer);
+            for (; i != scope_end; ++i)
+                writeStringBinary(built->dynamic_types[i].second, types_buffer);
         }
         writeStringBinary(types_buffer.stringView(), directory);
-        size_t size = filter.values ? filter.values->getFilterSizeBytes() : 0;
+
+        const size_t num_values = path.values_end - path.values_begin;
+        const size_t size = num_values ? (bits_per_row * num_values + 7) / 8 : 0;
         writeVarUInt(size, directory);
-        if (size)
+        if (!size)
+            continue;
+
+        if (filter)
         {
-            WriteBuffer * out = &directory;
-            if (size > MAX_INLINE_JSON_BLOOM_FILTER_BYTES)
-            {
-                /// Each large filter starts a compressed block; small filters share the directory's block.
-                values_stream.compressed_hashing.next();
-                auto mark = values_stream.getCurrentMark();
-                writeVarUInt(mark.offset_in_compressed_file, directory);
-                writeVarUInt(mark.offset_in_decompressed_block, directory);
-                out = &values_stream.compressed_hashing;
-            }
-            const auto & words = filter.values->getFilter();
-            if constexpr (std::endian::native == std::endian::little)
-                out->write(reinterpret_cast<const char *>(words.data()), size);
-            else
-                for (size_t i = 0; i < size; ++i)
-                    writeBinary(static_cast<UInt8>(words[i / 8] >> (8 * (i % 8))), *out);
+            filter->resize(size);
+            std::fill(filter->getFilter().begin(), filter->getFilter().end(), 0);
         }
+        else
+            filter.emplace(size, hash_functions, 0);
+        pairs.clear();
+        for (size_t i = path.values_begin; i != path.values_end; ++i)
+            pairs.push_back(jsonBloomHashPair(built->values[i]));
+        filter->addHashPairs(pairs.data(), pairs.size());
+
+        WriteBuffer * out = &directory;
+        if (size > MAX_INLINE_JSON_BLOOM_FILTER_BYTES)
+        {
+            /// Each large filter starts a compressed block; small filters share the directory's block.
+            values_stream.compressed_hashing.next();
+            auto mark = values_stream.getCurrentMark();
+            writeVarUInt(mark.offset_in_compressed_file, directory);
+            writeVarUInt(mark.offset_in_decompressed_block, directory);
+            out = &values_stream.compressed_hashing;
+        }
+        const auto & words = filter->getFilter();
+        if constexpr (std::endian::native == std::endian::little)
+            out->write(reinterpret_cast<const char *>(words.data()), size);
+        else
+            for (size_t i = 0; i < size; ++i)
+                writeBinary(static_cast<UInt8>(words[i / 8] >> (8 * (i % 8))), *out);
     }
     values_stream.compressed_hashing.next();
 }
@@ -2231,25 +2409,16 @@ MergeTreeIndexAggregatorJSONBloomFilter::MergeTreeIndexAggregatorJSONBloomFilter
     , column_name(std::move(column_name_))
     , column_type(std::move(column_type_))
     , path_matcher(std::move(path_matcher_))
+    , tokens(std::make_unique<JSONBloomFilterTokens>())
 {
 }
 
+MergeTreeIndexAggregatorJSONBloomFilter::~MergeTreeIndexAggregatorJSONBloomFilter() = default;
+
 MergeTreeIndexGranulePtr MergeTreeIndexAggregatorJSONBloomFilter::getGranuleAndReset()
 {
-    auto granule = std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, paths, path_matcher);
-    /// Reuse hash tables across granules, releasing absent paths and tables whose cardinality has dropped.
-    std::erase_if(paths, [](const auto & entry) { return entry.second.values.empty() && entry.second.presence.empty(); });
-    for (auto & [path, tokens] : paths)
-    {
-        tokens.dynamic_types.clear();
-        for (auto * hashes : {&tokens.values, &tokens.presence})
-        {
-            if (hashes->size() < hashes->getBufferSizeInCells() / 4)
-                *hashes = {};
-            else
-                hashes->clear();
-        }
-    }
+    auto granule = std::make_shared<MergeTreeIndexGranuleJSONBloomFilter>(bits_per_row, hash_functions, *tokens, path_matcher);
+    tokens = std::make_unique<JSONBloomFilterTokens>();
     total_rows = 0;
     return granule;
 }
@@ -2270,7 +2439,7 @@ void MergeTreeIndexAggregatorJSONBloomFilter::update(const Block & block, size_t
     if (!object_type || !object_column)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`jsonbf_v1` expected a `JSON` column");
 
-    JSONBloomExtractor extractor(paths, *path_matcher);
+    JSONBloomExtractor extractor(*tokens, *path_matcher);
     extractor.emitObject(*object_column, *object_type, *pos, rows);
 
     *pos += rows;
@@ -2317,9 +2486,16 @@ bool MergeTreeIndexConditionJSONBloomFilter::alwaysUnknownOrTrue() const
 bool MergeTreeIndexConditionJSONBloomFilter::mayBeTrueOnGranule(
     MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
 {
-    const auto * bloom_granule = typeid_cast<const MergeTreeIndexGranuleJSONBloomFilter *>(granule.get());
+    auto * bloom_granule = typeid_cast<MergeTreeIndexGranuleJSONBloomFilter *>(granule.get());
     if (!bloom_granule)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "`jsonbf_v1` received an incompatible granule");
+    /// Granules built in memory, such as those evaluated by `EXPLAIN WHATIF`, have not been through deserialization.
+    if (bloom_granule->isBuilt())
+    {
+        bloom_granule->materialize();
+        if (has_dynamic_probes)
+            prepareDynamicProbes(*bloom_granule);
+    }
 
     return evaluateGranule(*bloom_granule, update_partial_result_disjunction_fn, true);
 }
