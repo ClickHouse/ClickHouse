@@ -19,7 +19,7 @@ SET query_plan_max_limit_for_top_k_optimization = 1000;
 DROP TABLE IF EXISTS t_top_k_collation;
 
 CREATE TABLE t_top_k_collation (s String) ENGINE = MergeTree ORDER BY s
-SETTINGS index_granularity = 4, index_granularity_bytes = 0;
+SETTINGS index_granularity = 4, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
 INSERT INTO t_top_k_collation SELECT 'b' FROM numbers(4);
 INSERT INTO t_top_k_collation VALUES ('c'), ('c'), ('c'), ('ä');
