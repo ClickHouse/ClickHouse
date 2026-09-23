@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesDecimal.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
 #include <Interpreters/Context.h>
@@ -37,7 +36,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -165,7 +163,7 @@ namespace
 
         /// The second column contains tuples (timestamp, value).
         /// These tuples are already sorted by timestamp.
-        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
+        /// The type of the second column is Array(Tuple(timestamp_data_type, value_data_type)).
         const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Samples).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
         const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
@@ -236,18 +234,8 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
 
     auto context = getContext();
-    BlockIO io;
-    std::optional<InterpreterSelectQuery> interpreter_holder;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-    {
-        InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
-        io = interpreter.execute();
-    }
-    else
-    {
-        interpreter_holder.emplace(select_query, context, SelectQueryOptions{});
-        io = interpreter_holder->execute();
-    }
+    InterpreterSelectQueryAnalyzer interpreter(select_query, context, SelectQueryOptions{});
+    BlockIO io = interpreter.execute();
     PullingPipelineExecutor executor(io.pipeline);
 
     Block block;

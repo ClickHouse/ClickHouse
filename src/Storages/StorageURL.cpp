@@ -1672,7 +1672,7 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     {
         Settings settings = args.getContext()->getSettingsCopy();
 
-        // Apply changes from SETTINGS clause, with validation.
+        // Applying the changes validates the values, not the names.
         settings.applyChanges(args.storage_def->settings->changes);
 
         format_settings = getFormatSettings(args.getContext(), settings);
@@ -2597,6 +2597,8 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
+            checkStorageSettingNames(args);
+
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
             if (auto dispatched = tryDispatchURLEngineByScheme(args))
                 return dispatched;
@@ -2749,7 +2751,7 @@ You can limit the maximum number of HTTP GET redirect hops using the [max_http_g
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
-When [allow_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
+When [allow_url_wildcard_from_index_pages](/reference/settings/session-settings/allow#allow_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
 This is the same mechanism as the [`url`](/reference/functions/table-functions/url#wildcards-with-http-index-pages) table function.
 
 Expansion is limited by [max_http_index_page_size](/reference/settings/server-settings/settings/max#max_http_index_page_size) for each fetched index page and by [url_wildcard_max_directories_to_read](/reference/settings/session-settings/url#url_wildcard_max_directories_to_read) for recursive directory traversal.

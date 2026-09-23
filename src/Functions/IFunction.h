@@ -121,18 +121,30 @@ protected:
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * *Not* useful when executing on Nullable columns. The value behind a NULL is
-      * not necessarily default. E.g.:
+      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
+      * behind a NULL untouched, so a function that declines this contract is not executed on them
+      * either - they are filtered out first, and their result is masked out as NULL anyway. This
+      * means the nested value under a NULL is not observable for such a function, e.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
+      * still holds for `plus` (which accepts the contract), while a declining function such as
+      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+
+    /** The default implementations above may execute the function over a representation that stores
+      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
+      * result back onto the logical rows, which is sound only if the result is determined by the
+      * argument values. A function answering `false` is executed over materialized rows instead.
+      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
