@@ -125,6 +125,8 @@ TEST(TwoLevelHashTableBuckets, InsertFindIterateAcrossBuckets)
     ASSERT_FALSE(map.empty());
     ASSERT_EQ(countNonEmptyBuckets(map), DefaultMap::NUM_BUCKETS);
     ASSERT_EQ(countByIteration(map), num_keys);
+    for (auto it = map.begin(); it != map.end(); ++it)
+        ASSERT_EQ(it.getBucket(), routedBucket<DefaultMap>(it->getKey())) << "key " << it->getKey();
 
     for (UInt64 key = 1; key <= num_keys; ++key)
     {

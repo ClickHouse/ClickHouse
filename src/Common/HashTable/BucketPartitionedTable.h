@@ -37,6 +37,7 @@ concept BucketPartitionedTable = requires(
     { map.find(key, hash_value) } -> std::same_as<typename Map::LookupResult>;
     { const_map.has(key) } -> std::same_as<bool>;
 
+    map.computeBucketPrefix();
     { const_map.offsetInternal(const_lookup) } -> std::convertible_to<size_t>;
     { const_map.offsetInternalAtBucket(const_lookup, size_t{}) } -> std::convertible_to<size_t>;
 
@@ -49,6 +50,8 @@ concept BucketPartitionedTable = requires(
     { map.end() } -> std::same_as<typename Map::iterator>;
     { const_map.begin() } -> std::same_as<typename Map::const_iterator>;
     { const_map.end() } -> std::same_as<typename Map::const_iterator>;
+    { map.begin().getBucket() } -> std::convertible_to<size_t>;
+    { const_map.begin().getBucket() } -> std::convertible_to<size_t>;
 };
 
 template <typename Map>
