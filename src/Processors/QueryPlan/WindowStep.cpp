@@ -345,8 +345,8 @@ void WindowStep::serialize(Serialization & ctx) const
     /// the same qualified column names as the descriptions below.
     ctx.writeColumnName(window_description.window_name);
 
-    serializeSortDescription(window_description.partition_by, ctx.out, ctx.for_cache_key, ctx.input_header);
-    serializeSortDescription(window_description.order_by, ctx.out, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.version, ctx.for_cache_key, ctx.input_header);
 
     serializeWindowFrame(window_description.frame, ctx.out);
 
@@ -372,8 +372,8 @@ QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
     WindowDescription window_description;
     readStringBinary(window_description.window_name, ctx.in);
 
-    deserializeSortDescription(window_description.partition_by, ctx.in);
-    deserializeSortDescription(window_description.order_by, ctx.in);
+    deserializeSortDescription(window_description.partition_by, ctx.in, ctx.version, ctx.max_type_complexity);
+    deserializeSortDescription(window_description.order_by, ctx.in, ctx.version, ctx.max_type_complexity);
 
     window_description.frame = deserializeWindowFrame(ctx.in);
 

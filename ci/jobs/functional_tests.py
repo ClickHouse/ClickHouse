@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import traceback
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
@@ -198,7 +199,6 @@ def run_tests(
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
-    "old analyzer": "--analyzer",
     "s3 storage": "--s3-storage",
     "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -262,9 +262,11 @@ def filter_selected_tests_by_flavor(tests, keep_sequential):
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
 
-    A plain (non-sanitizer) binary job runs the whole suite, where every worker
-    picks a different test and most tests are light, so oversubscribing the
-    runner shortens the job without making any single test noticeably slower.
+    A plain (non-sanitizer) binary or release job runs the whole suite, where every
+    worker picks a different test and most tests are light, so oversubscribing the
+    runner shortens the job without making any single test noticeably slower. The
+    `release` full suite may be batched (`amd_release, parallel, 1/2`), which adds a
+    third `N/M` option, so allow up to three options for these lanes.
 
     A flaky/targeted check is the opposite case: every worker runs the *same*
     changed test, so `--jobs N` multiplies that one test's resource use by `N`.
@@ -277,7 +279,7 @@ def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_ch
     """
     if is_flaky_check or is_targeted_check:
         return False
-    return "binary" in options and len(test_options) < 3
+    return ("binary" in options or "release" in options) and len(test_options) <= 3
 
 
 def invert_bugfix_validation_status(test_result: Result) -> bool:
@@ -884,7 +886,7 @@ def main():
             # the check so the selection service problem is visible and retried.
             Result.create_from(
                 status=Result.Status.ERROR,
-                info=f"Failed to select tests: {e}",
+                info=f"Failed to select tests: {e}\n{traceback.format_exc()}",
             ).complete_job()
 
     if is_selected_tests_run:
@@ -914,6 +916,7 @@ def main():
         is_db_replicated=is_database_replicated,
         is_shared_catalog=is_shared_catalog,
         is_per_test_coverage=is_per_test_coverage,
+        is_llvm_coverage=is_llvm_coverage,
     )
     # `run_tests` runs `clickhouse-test` without changing directory, so clients
     # it spawns inherit the repository root and dump their cores there.
@@ -1059,6 +1062,10 @@ def main():
                         build_types[0] if is_bugfix_validation else args.options
                     ),
                     step_timeout=stateful_prep_step_timeout(info),
+                    # Of the lanes this job runs, only the flaky check arms
+                    # `ThreadFuzzer`, and the stateful fixture load is setup, not a
+                    # test: no assertion depends on how its statements interleave.
+                    stop_thread_fuzzer=is_flaky_check,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -1246,6 +1253,10 @@ def main():
                         CH.set_memory_ratio(0.7)
                     else:
                         CH.reset_memory_ratio()
+                    # The configs `install.sh` selects by build flavour must follow
+                    # the binary for the same reason: decided for `build_types[0]`,
+                    # one of them makes the swapped-in server reject its own settings.
+                    CH.install_build_type_configs()
                     # Fail closed if the server cannot come back up after the
                     # binary swap: running tests against a dead server would
                     # produce `Server died` FAILs that the bugfix inverter

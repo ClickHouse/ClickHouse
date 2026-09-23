@@ -1,0 +1,27 @@
+-- has(), which is the expected answer for every arm below --
+1	0
+2	1
+-- hasAll and hasAny without the index --
+1	0	0
+2	1	1
+-- matching ids, index off --
+2
+2
+-- matching ids, index on, reading through the index --
+2
+2
+1
+1	1
+-- matching ids, index on, pruning only --
+2
+2
+1	0
+1	0	1
+-- plan-shape negative control, index off --
+0	0	0
+0	0	0	0
+-- control: a needle that is genuinely present in both rows --
+1
+2
+1
+2

@@ -1,0 +1,18 @@
+42	Dynamic
+\N	Dynamic
+42
+\N
+42
+\N
+\N	Dynamic
+42	Nullable(UInt32)
+\N	Nullable(UInt32)
+[1,NULL]	Array(Dynamic)
+\N
+dorki
+\N
+\N
+0	[3,4]	Array(UInt32)
+1	[]	Array(UInt32)
+0	{'k':'v'}	Map(String, String)
+1	{}	Map(String, String)
