@@ -248,6 +248,9 @@ class Result(MetaClasses.Serializable):
         or `copy_result_to_s3`) are kept up-to-date, while sub-results (tasks) never
         create their own files — avoiding `OSError: File name too long` when a result
         name is derived from a long error message.
+
+        The file may hold checkpointed test results, so it is rewritten with
+        `dump_atomically`: a job killed mid-write keeps the previous content.
         """
         try:
             exists = Path(self.file_name()).is_file()
@@ -256,7 +259,7 @@ class Result(MetaClasses.Serializable):
                 return self
             raise
         if exists:
-            self.dump()
+            self.dump_atomically()
         return self
 
     def set_status(self, status) -> "Result":
