@@ -29,6 +29,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsUInt64 processing_threads_num;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 failed_files_ttl_sec;
 
 }
 
@@ -78,6 +79,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
     , loading_retries(engine_settings[ObjectStorageQueueSetting::loading_retries])
     , tracked_files_limit(engine_settings[ObjectStorageQueueSetting::tracked_files_limit])
     , tracked_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::tracked_file_ttl_sec])
+    , failed_files_ttl_sec(engine_settings[ObjectStorageQueueSetting::failed_files_ttl_sec])
     , buckets(engine_settings[ObjectStorageQueueSetting::buckets])
 {
     processing_threads_num_changed = engine_settings[ObjectStorageQueueSetting::processing_threads_num].changed;
@@ -85,6 +87,8 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(
         processing_threads_num = std::max<uint32_t>(getNumberOfCPUCoresToUse(), 16);
     else
         processing_threads_num = engine_settings[ObjectStorageQueueSetting::processing_threads_num];
+
+    failed_files_ttl_sec_changed = engine_settings[ObjectStorageQueueSetting::failed_files_ttl_sec].changed;
 
     // Validate regex partitioning configuration
     if (partitioning_mode == "regex")
@@ -111,6 +115,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("mode", mode);
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
+    json.set("failed_files_ttl_sec", failed_files_ttl_sec.load());
     json.set("processing_threads_num", processing_threads_num.load());
     json.set("buckets", buckets.load());
     json.set("format_name", format_name);
@@ -214,6 +219,16 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     , buckets(getOrDefault(json, "buckets", "", 0ULL))
 {
     validateMode(mode);
+
+    /// Metadata written before `failed_files_ttl_sec` existed has no such key, and those tables had
+    /// their `/failed` set trimmed by `tracked_file_ttl_sec`. Inheriting that value keeps their
+    /// behaviour across an upgrade without the user having to set the new setting.
+    ///
+    /// Computed here rather than in the initialiser list on purpose: reading `tracked_files_ttl_sec`
+    /// while initialising `failed_files_ttl_sec` is only safe because of the order the two happen to
+    /// be declared in, and reordering the declarations would silently read an uninitialised atomic.
+    /// In the body both are already initialised, whatever that order is.
+    failed_files_ttl_sec = getOrDefault(json, "failed_files_ttl_sec", "", tracked_files_ttl_sec.load());
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
@@ -238,6 +253,19 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
             LOG_TRACE(log, "{}", message);
 
         processing_threads_num = from_zk.processing_threads_num.load();
+    }
+
+    if (failed_files_ttl_sec != from_zk.failed_files_ttl_sec)
+    {
+        if (!failed_files_ttl_sec_changed)
+        {
+            /// Legacy table: local value was never explicitly set, inherit from Keeper
+            auto log = getLogger("ObjectStorageQueueTableMetadata");
+            LOG_TRACE(log, "Using `failed_files_ttl_sec` from keeper: {} (local: {})",
+                from_zk.failed_files_ttl_sec.load(), failed_files_ttl_sec.load());
+            failed_files_ttl_sec = from_zk.failed_files_ttl_sec.load();
+        }
+        /// else: user explicitly set it locally, let checkImmutableFieldsEquals throw METADATA_MISMATCH
     }
 }
 
@@ -296,21 +324,32 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
             from_zk.partition_component,
             partition_component);
 
-    if (tracked_files_limit != from_zk.tracked_files_limit)
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
-            "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_limit.load(),
-            tracked_files_limit.load());
+    if (modeFromString(mode) == ObjectStorageQueueMode::UNORDERED)
+    {
+        if (tracked_files_limit != from_zk.tracked_files_limit)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.tracked_files_limit.load(),
+                tracked_files_limit.load());
 
-    if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
-        throw Exception(
-            ErrorCodes::METADATA_MISMATCH,
-            "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
-            "Stored in ZooKeeper: {}, local: {}",
-            from_zk.tracked_files_ttl_sec.load(),
-            tracked_files_ttl_sec.load());
+        if (tracked_files_ttl_sec != from_zk.tracked_files_ttl_sec)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `tracked_files_ttl_sec`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.tracked_files_ttl_sec.load(),
+                tracked_files_ttl_sec.load());
+
+        if (failed_files_ttl_sec != from_zk.failed_files_ttl_sec)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `failed_files_ttl_sec`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.failed_files_ttl_sec.load(),
+                failed_files_ttl_sec.load());
+    }
 
     if (format_name != from_zk.format_name)
         throw Exception(
@@ -347,6 +386,19 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 "Stored in ZooKeeper: {}, local: {}",
                 from_zk.getBucketsNum(), getBucketsNum());
         }
+
+        /// `tracked_files_limit` also gates `/failed` cleanup in ordered mode (see
+        /// sweep_failed_by_limit in ObjectStorageQueueMetadata.cpp, which applies to
+        /// any non-exclusive mode), so - like in unordered mode above - replicas must
+        /// agree on it: otherwise failed-node eviction timing would depend on which
+        /// replica happens to win the cleanup lock race, not on shared Keeper metadata.
+        if (tracked_files_limit != from_zk.tracked_files_limit)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.tracked_files_limit.load(),
+                tracked_files_limit.load());
     }
 
     /// Different versions serialize the same columns to a different text: the redundant parentheses
