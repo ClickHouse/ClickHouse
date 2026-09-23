@@ -1,13 +1,13 @@
 #pragma once
 
 #include <Columns/ColumnNullable.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/DuplicateSpans.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/DenseHyperLogLog.h>
+#include <Interpreters/HashJoin/DuplicateSpans.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Common/Arena.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
@@ -25,10 +25,10 @@
 namespace DB
 {
 
-class PartitionedHashJoin;
+class HashJoin;
 class TableJoin;
 
-/** Hash table of one ON clause of `PartitionedHashJoin`, and the build that fills it.
+/** Hash table of one ON clause of `HashJoin`, and the build that fills it.
   * That build covers routing, the barrier plan, histogram, scatter, insert, drain, growth,
   * and the counters of one build.
   *
@@ -173,7 +173,7 @@ public:
     /// freed route bytes go back into `accumulated_bytes_`. `max_bytes_before_external_join_` is the memory
     /// budget of the post-build gate and the grow budget; zero disables both.
     HashJoinClause(
-        PartitionedHashJoin & hash_join_,
+        HashJoin & hash_join_,
         const TableJoin & table_join_,
         size_t clause_idx_,
         bool any_take_last_row_,
@@ -428,7 +428,7 @@ private:
 
     /// The join: map type, key sizes, kind and strictness, and the block store the inserted
     /// references point into.
-    PartitionedHashJoin & hash_join;
+    HashJoin & hash_join;
     const TableJoin & table_join;
     /// This clause's index in `table_join.getClauses()`, `hash_join.key_sizes` and `FillBlock::clauses`.
     const size_t clause_idx;

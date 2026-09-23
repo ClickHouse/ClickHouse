@@ -265,7 +265,7 @@ struct HashJoinTypes
         /// Additional data - strings for string keys and continuation elements of single-linked lists of references to rows.
         Arena pool;
 
-        /// Atomics because `PartitionedHashJoin` stores its blocks here from several threads.
+        /// Atomics because `HashJoin` stores its blocks here from several threads.
         std::atomic<size_t> allocated_size = 0;
         std::atomic<size_t> nullmaps_allocated_size = 0;
 

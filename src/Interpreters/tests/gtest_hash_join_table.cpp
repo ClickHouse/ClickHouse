@@ -12,11 +12,11 @@
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
-#include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
-#include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/AmacRing.h>
+#include <Interpreters/HashJoin/DenseHyperLogLog.h>
+#include <Interpreters/HashJoin/JoinRouteHashing.h>
+#include <Interpreters/HashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 #include <base/getPageSize.h>

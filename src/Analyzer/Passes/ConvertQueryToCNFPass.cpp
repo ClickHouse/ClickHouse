@@ -731,7 +731,7 @@ void optimizeNode(QueryTreeNodePtr & node, const TableExpressionNodes & table_ex
     /// every group it ends up in. When an atom holds a correlated subquery (e.g. `exists((SELECT ...))`
     /// referencing an outer column), this produces several independent copies of the subquery that
     /// share one action name. Decorrelation then adds the same synthetic column (e.g. `exists(__table2)`)
-    /// on both sides of the generated join, and `PartitionedHashJoin::getNonJoinedBlocks` fails the column-count
+    /// on both sides of the generated join, and `HashJoin::getNonJoinedBlocks` fails the column-count
     /// check. A correlated subquery must be evaluated exactly once, so skip the conversion for such a
     /// filter and keep the original expression - it executes correctly without CNF conversion.
     if (containsCorrelatedSubquery(node))

@@ -16,9 +16,9 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/HashJoinClause.h>
+#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/CurrentMemoryTracker.h>
 #include <Common/CurrentThread.h>
@@ -227,8 +227,8 @@ std::shared_ptr<TableJoin> makeTableJoin(const Block & left_header, const Block 
 struct BuiltJoin
 {
     std::shared_ptr<TableJoin> table_join;
-    std::shared_ptr<PartitionedHashJoin> join;
-    PartitionedHashJoin::PostBuildPlan post_build_plan = PartitionedHashJoin::PostBuildPlan::Fits;
+    std::shared_ptr<HashJoin> join;
+    HashJoin::PostBuildPlan post_build_plan = HashJoin::PostBuildPlan::Fits;
 };
 
 /// Empty join with test hooks from `options` applied.
@@ -239,7 +239,7 @@ BuiltJoin makeJoin(
 {
     BuiltJoin result;
     result.table_join = makeTableJoin(probe_header, build_header, options);
-    result.join = std::make_shared<PartitionedHashJoin>(
+    result.join = std::make_shared<HashJoin>(
         result.table_join,
         std::make_shared<const Block>(build_header),
         options.num_threads,
@@ -333,7 +333,7 @@ void addBuildBlocks(IJoin & join, size_t distinct_keys, size_t duplicates, const
         });
 }
 
-void addBlock(PartitionedHashJoin & join, const std::vector<UInt64> & keys, UInt64 & next_id)
+void addBlock(HashJoin & join, const std::vector<UInt64> & keys, UInt64 & next_id)
 {
     std::vector<UInt64> ids(keys.size());
     for (UInt64 & id : ids)
@@ -362,7 +362,7 @@ BuiltJoin buildJoin(size_t distinct_keys, size_t duplicates, const BuildOptions 
 }
 
 /// The memory verdict for this build under `budget`, without running the post-build phase.
-PartitionedHashJoin::PostBuildPlan planUnderBudget(size_t distinct_keys, size_t duplicates, BuildOptions options, size_t budget)
+HashJoin::PostBuildPlan planUnderBudget(size_t distinct_keys, size_t duplicates, BuildOptions options, size_t budget)
 {
     options.max_bytes_before_external_join = budget;
     BuiltJoin built = makeJoin(options);
@@ -380,7 +380,7 @@ size_t smallestBudgetNotSpilling(size_t distinct_keys, size_t duplicates, const 
     while (high - low > (1uz << 20))
     {
         const size_t mid = low + (high - low) / 2;
-        if (planUnderBudget(distinct_keys, duplicates, options, mid) == PartitionedHashJoin::PostBuildPlan::MustSpill)
+        if (planUnderBudget(distinct_keys, duplicates, options, mid) == HashJoin::PostBuildPlan::MustSpill)
             low = mid;
         else
             high = mid;
@@ -407,7 +407,7 @@ JoinedRows probeKeys(IJoin & join, const std::vector<UInt64> & keys, bool rotate
             Block block = twoColumnBlock("k", "probe_id", block_keys, ids);
             while (block.rows() > 0)
             {
-                auto result = rotate_lanes ? assert_cast<PartitionedHashJoin &>(join).joinBlock(std::move(block), block_index++ % 9)
+                auto result = rotate_lanes ? assert_cast<HashJoin &>(join).joinBlock(std::move(block), block_index++ % 9)
                                            : join.joinBlock(std::move(block));
                 block = drainResult(*result, rows);
             }
@@ -447,7 +447,7 @@ void probeAndCheck(BuiltJoin & built, size_t distinct_keys, size_t duplicates, s
 }
 
 /// The invariants every build must publish: one table, its rows conserved, its distinct count exact.
-void expectTableInvariants(const PartitionedHashJoin::BuildStats & stats, size_t distinct_keys, size_t rows)
+void expectTableInvariants(const HashJoin::BuildStats & stats, size_t distinct_keys, size_t rows)
 {
     EXPECT_EQ(stats.table_cells, 1uz << stats.table_size_degree);
     if (stats.load_factor_grow_skipped == 0)
@@ -460,7 +460,7 @@ void expectTableInvariants(const PartitionedHashJoin::BuildStats & stats, size_t
     EXPECT_LE(stats.bits, stats.table_size_degree);
 }
 
-SpanWriter::Stats totalDuplicates(const PartitionedHashJoin::BuildStats & stats)
+SpanWriter::Stats totalDuplicates(const HashJoin::BuildStats & stats)
 {
     SpanWriter::Stats total = stats.owner_duplicates;
     total += stats.drain_duplicates;
@@ -502,7 +502,7 @@ std::vector<std::vector<size_t>> buildBlockLayout(size_t distinct_keys, size_t d
 size_t expectedHeadersFromGroups(
     size_t distinct,
     const std::vector<std::vector<size_t>> & blocks,
-    const std::vector<PartitionedHashJoin::BuildStats::BlockRange> & groups)
+    const std::vector<HashJoin::BuildStats::BlockRange> & groups)
 {
     std::vector<size_t> cumulative(distinct, 0);
     size_t headers = 0;
@@ -747,7 +747,7 @@ TEST(PartitionedHashJoin, RowsFloorDeclinedUnderBudget)
 
     options.max_bytes_before_external_join = resident_bytes + (1uz << 20);
     auto built = buildJoin(distinct_keys, duplicates, options);
-    EXPECT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Fits) << "the budget must cover the single-partition build";
+    EXPECT_EQ(built.post_build_plan, HashJoin::PostBuildPlan::Fits) << "the budget must cover the single-partition build";
     const auto stats = built.join->getBuildStats();
     EXPECT_EQ(stats.partitions, 1u) << "one partition per worker must not blow the spill budget";
     expectTableInvariants(stats, distinct_keys, rows);
@@ -778,7 +778,7 @@ TEST(PartitionedHashJoin, UndersizedTableGrows)
         options.reserve_safety_for_tests = 0.25;
         options.grow_budget_for_tests = 0;
         auto built = buildJoin(distinct_keys, duplicates, options);
-        ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
+        ASSERT_EQ(built.post_build_plan, HashJoin::PostBuildPlan::Grouped);
         const auto stats = built.join->getBuildStats();
         EXPECT_GE(stats.table_resizes, 1u);
         EXPECT_GT(stats.scatter_groups, 1u);
@@ -933,7 +933,7 @@ TEST(PartitionedHashJoin, GroupedScatterExactSpans)
         options.max_bytes_before_external_join = budget;
         options.disable_amac = amac.has_value() && !*amac;
         auto built = buildJoin(distinct_keys, duplicates, options);
-        ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped)
+        ASSERT_EQ(built.post_build_plan, HashJoin::PostBuildPlan::Grouped)
             << "test setup: the budget must fall between the grouped floor and the ungrouped peak";
 
         const auto stats = built.join->getBuildStats();
@@ -1135,7 +1135,7 @@ TEST(PartitionedHashJoin, HeadRowOfChainIsFirstInserted)
         options.duplicate_major = true;
         options.max_bytes_before_external_join = smallestBudgetNotSpilling(distinct_keys, duplicates, options);
         auto built = buildJoin(distinct_keys, duplicates, options);
-        ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped) << "test setup: the budget must group the scatter";
+        ASSERT_EQ(built.post_build_plan, HashJoin::PostBuildPlan::Grouped) << "test setup: the budget must group the scatter";
         const auto stats = built.join->getBuildStats();
         ASSERT_GT(stats.scatter_groups, 1u);
         ASSERT_GT(totalDuplicates(stats).headers, 0u) << "an ungrouped scatter never writes a chain";
@@ -1195,7 +1195,7 @@ TEST(PartitionedHashJoin, FirstGroupOfSkippedRowsOnly)
             EXPECT_TRUE(addBuildBlock(*built.join, nullable_block(keysOf(key_indexes), ids, /*is_null=*/false)));
         });
     finishBuild(built, options);
-    ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
+    ASSERT_EQ(built.post_build_plan, HashJoin::PostBuildPlan::Grouped);
     const auto stats = built.join->getBuildStats();
     EXPECT_GT(stats.scatter_groups, 1u);
     expectTableInvariants(stats, distinct_keys, distinct_keys * duplicates);
@@ -1287,7 +1287,7 @@ TEST(PartitionedHashJoin, GroupSizedAfterGrowth)
     options.max_bytes_before_external_join = budget;
     options.reserve_safety_for_tests = 0.25;
     auto built = buildJoin(distinct_keys, duplicates, options);
-    ASSERT_EQ(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Grouped);
+    ASSERT_EQ(built.post_build_plan, HashJoin::PostBuildPlan::Grouped);
     const auto stats = built.join->getBuildStats();
     ASSERT_GE(stats.scatter_group_ranges.size(), 2u);
     EXPECT_GE(stats.table_resizes, 1u);
@@ -1441,7 +1441,7 @@ TEST(PartitionedHashJoin, DrainCreatedKeyAppendedByLaterGroup)
         addBlock(*built.join, keys, next_id);
     addBlock(*built.join, {key_a, key_a, key_b, key_b}, next_id);
     finishBuild(built, options);
-    ASSERT_NE(built.post_build_plan, PartitionedHashJoin::PostBuildPlan::Fits)
+    ASSERT_NE(built.post_build_plan, HashJoin::PostBuildPlan::Fits)
         << "test setup: the budget must split the unique padding across groups";
 
     const auto stats = built.join->getBuildStats();
@@ -1522,7 +1522,7 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
     const Block probe_header = uint64Block({{"k", {}}, {"probe_ts", {}}});
     const Block build_header = uint64Block({{"rk", {}}, {"ts", {}}});
     auto table_join = makeTableJoin(probe_header, build_header, options);
-    PartitionedHashJoin schema(
+    HashJoin schema(
         table_join,
         std::make_shared<const Block>(build_header),
         /*num_threads_=*/1);

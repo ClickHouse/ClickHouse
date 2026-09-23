@@ -109,11 +109,11 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 ///       `TAG_BATCH` a `Batch` node (the standard `HashJoin` insert path, see below);
 ///       `TAG_RUN`   a headerless block of `count` contiguous refs, `count` exact in [2, MAX_RANGE_REFS];
 ///       `TAG_CHAIN` a newest-first chain of ranges; the pointer is the newest range's 16-byte header.
-///       `TAG_COUNT`, `TAG_FILL`, `TAG_FILL_H` are build-time words `PartitionedHashJoin` never publishes.
+///       `TAG_COUNT`, `TAG_FILL`, `TAG_FILL_H` are build-time words `HashJoin` never publishes.
 /// Every layout shares the reader contract (`rows`, `firstWord`, `ForwardIterator`).
 /// `LazyOutput`, the used flags and the non-joined fillers never care which build produced the word.
 /// A `Batch` is allocated only on the first duplicate. ALL-join cells stay as small as ANY-join cells,
-/// and unique keys never touch the arena. `PartitionedHashJoin` writes run and chain (`SpanWriter`):
+/// and unique keys never touch the arena. `HashJoin` writes run and chain (`SpanWriter`):
 /// 8 bytes per row, and a 16-byte header on every range after the key's first.
 struct RowRefList
 {

@@ -2185,7 +2185,7 @@ private:
         /// conjunct. When an operand holds a correlated subquery (e.g. `x < exists((SELECT ...))`),
         /// cloning produces several copies of the subquery that share one action name. Decorrelation
         /// then adds the same synthetic column on both sides of the generated join and
-        /// `PartitionedHashJoin::getNonJoinedBlocks` fails the column-count check with `Unexpected number of
+        /// `HashJoin::getNonJoinedBlocks` fails the column-count check with `Unexpected number of
         /// columns in result sample block`. A correlated subquery must be evaluated exactly once, so
         /// skip the optimization for such a chain and keep the original expression - it executes
         /// correctly without the transitive conjuncts. The check is memoized so that visiting every

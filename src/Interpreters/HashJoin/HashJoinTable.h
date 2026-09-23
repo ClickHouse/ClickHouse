@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Interpreters/HashJoin/HashJoinTypes.h>
-#include <Interpreters/PartitionedHashJoin/RangeCommittedBuffer.h>
+#include <Interpreters/HashJoin/RangeCommittedBuffer.h>
 #include <Common/HashTable/FixedHashMap.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/HashTable/HashMap.h>

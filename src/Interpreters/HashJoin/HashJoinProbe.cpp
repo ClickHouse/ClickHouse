@@ -1,5 +1,4 @@
 #include <Interpreters/HashJoin/HashJoin.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 
 namespace DB
 {
@@ -16,10 +15,10 @@ extern const int LOGICAL_ERROR;
   * also set for a mixed ON condition, whose residual filter has to see every right row of a key
   * before it can decide: those joins run on `RowRefList` maps whatever their strictness.
   *
-  * Bodies live in `PartitionedHashJoinProbeImpl.h`, instantiated per kind so no one translation
+  * Bodies live in `HashJoinProbeImpl.h`, instantiated per kind so no one translation
   * unit compiles them all.
   */
-JoinResultPtr PartitionedHashJoin::probeDispatch(Block block, size_t lane)
+JoinResultPtr HashJoin::probeDispatch(Block block, size_t lane)
 {
     const bool prefer_use_maps_all = preferUseMapsAll();
 

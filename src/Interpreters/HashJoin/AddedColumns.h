@@ -57,7 +57,7 @@ struct JoinOnKeyColumns
     /// index selectors visit a subset of the source block); the rest of `buffer` stays
     /// uninitialized and must not be read.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, size_t range_begin, size_t range_size) const;
-    /// `PartitionedHashJoin::joinRightColumns` calls this overload when its selector holds
+    /// `HashJoin::joinRightColumns` calls this overload when its selector holds
     /// row indexes rather than one continuous range.
     const UInt8 * buildRowSkipData(IColumn::Filter & buffer, const ScatteredBlock::Indexes & indexes) const;
 };

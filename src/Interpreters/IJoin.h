@@ -125,7 +125,7 @@ public:
     /// `worker_id` is the number of the thread that fills the join. A join that keeps state per
     /// filler thread uses that id. Concurrent fillers pass distinct ids from
     /// `[0, getMaxBuildThreads())`. A single filler passes 0. A wrapper join forwards the id it
-    /// received. `PartitionedHashJoin` keeps unsynchronized per-worker fill state behind it.
+    /// received. `HashJoin` keeps unsynchronized per-worker fill state behind it.
     /// `check_limits` makes the join check `max_rows_in_join` and `max_bytes_in_join` after the
     /// insert. Callers that check the limits themselves pass false. `JoinSwitcher` is such a caller.
     /// @returns false, if some limit was exceeded and you should not insert more data.

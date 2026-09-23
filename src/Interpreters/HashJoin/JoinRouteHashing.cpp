@@ -1,8 +1,8 @@
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
+#include <Interpreters/HashJoin/JoinRouteHashing.h>
 
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
-#include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
+#include <Interpreters/HashJoin/DenseHyperLogLog.h>
+#include <Interpreters/HashJoin/HashJoinTable.h>
 #include <Common/Arena.h>
 
 #include <algorithm>

@@ -7,8 +7,8 @@
 #include <Interpreters/HashJoin/KeyGetter.h>
 #include <Interpreters/HashJoin/MatchedRowsStats.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/AmacRing.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/RowRefs.h>
 #include <Interpreters/TableJoin.h>
 #include <base/scope_guard.h>
@@ -250,7 +250,7 @@ struct SharedAmacFindPolicy
   * map) holding identical cells.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
-size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
+size_t HashJoin::joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
     /// One clause addresses its flags per cell; the mixed ON condition of a RIGHT or FULL join, which
@@ -865,7 +865,7 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
   * clauses.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
-size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block)
+size_t HashJoin::joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block)
 {
     constexpr JoinFeatures<KIND, STRICTNESS, MapsShape> join_features;
     if constexpr (join_features.is_asof_join)
@@ -991,7 +991,7 @@ size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & ta
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape>
-JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Block * join_get_columns)
+JoinResultPtr HashJoin::probeImpl(Block block, size_t lane, const Block * join_get_columns)
 {
     auto & join = *this;
     const bool is_join_get = join_get_columns != nullptr;

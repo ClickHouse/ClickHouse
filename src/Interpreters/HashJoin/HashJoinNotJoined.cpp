@@ -5,7 +5,7 @@
 #include <Interpreters/HashJoin/fillRowStoreOutputColumns.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/JoinUtils.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/RowDataStore.h>
 #include <Interpreters/TableJoin.h>
 #include <Common/assert_cast.h>
@@ -37,7 +37,7 @@ extern const int LOGICAL_ERROR;
 class NotJoinedPartitioned final : public NotJoinedBlocks::RightColumnsFiller
 {
 public:
-    NotJoinedPartitioned(const PartitionedHashJoin & parent_, UInt64 max_block_size_, size_t stream_idx_, size_t num_streams_)
+    NotJoinedPartitioned(const HashJoin & parent_, UInt64 max_block_size_, size_t stream_idx_, size_t num_streams_)
         : parent(parent_)
         , max_block_size(max_block_size_)
         , stream_idx(stream_idx_)
@@ -95,7 +95,7 @@ public:
     }
 
 private:
-    const PartitionedHashJoin & parent;
+    const HashJoin & parent;
     const UInt64 max_block_size;
     const size_t stream_idx;
     const size_t num_streams;
@@ -320,7 +320,7 @@ private:
     }
 };
 
-bool PartitionedHashJoin::supportParallelNonJoinedBlocksProcessing() const
+bool HashJoin::supportParallelNonJoinedBlocksProcessing() const
 {
     /// Without equi keys nothing reaches a table, so no right row is ever marked used and the scan cannot
     /// be split (`HashJoin::anyClauseHasRightKeys`).
@@ -331,12 +331,12 @@ bool PartitionedHashJoin::supportParallelNonJoinedBlocksProcessing() const
 }
 
 IBlocksStreamPtr
-PartitionedHashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
+HashJoin::getNonJoinedBlocks(const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const
 {
     return getNonJoinedBlocks(left_sample_block, result_sample_block, max_block_size, /*stream_idx=*/0, /*num_streams=*/1);
 }
 
-IBlocksStreamPtr PartitionedHashJoin::getNonJoinedBlocks(
+IBlocksStreamPtr HashJoin::getNonJoinedBlocks(
     const Block & left_sample_block,
     const Block & result_sample_block,
     UInt64 max_block_size,

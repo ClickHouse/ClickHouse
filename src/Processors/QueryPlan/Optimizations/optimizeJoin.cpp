@@ -11,7 +11,7 @@
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinUtils.h>
@@ -202,7 +202,7 @@ bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, co
     const auto & table_join = join->getTableJoin();
 
     /// Algorithms other than the hash join may not support all JOIN kinds, so changing from LEFT to RIGHT is not always possible
-    const auto * hash_join = typeid_cast<const PartitionedHashJoin *>(join.get());
+    const auto * hash_join = typeid_cast<const HashJoin *>(join.get());
     if (table_join.kind() != JoinKind::Inner && !hash_join)
         return true;
 

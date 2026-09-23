@@ -16,12 +16,12 @@
 namespace DB
 {
 class TableJoin;
-class PartitionedHashJoin;
+class HashJoin;
 class MatchedRowsStats;
 
 /**
  * Efficient and highly parallel implementation of external memory JOIN based on an in-memory hash join
- * (a `PartitionedHashJoin`).
+ * (a `HashJoin`).
  * Supports most of the JOIN modes, except CROSS and ASOF.
  *
  * The joining algorithm consists of three stages:
@@ -50,7 +50,7 @@ class GraceHashJoin final : public IJoin
     class DelayedBlocks;
 
     /// The join of one bucket.
-    using InMemoryJoinPtr = std::shared_ptr<PartitionedHashJoin>;
+    using InMemoryJoinPtr = std::shared_ptr<HashJoin>;
 
     struct GraceHashJoinStats
     {
@@ -131,8 +131,8 @@ private:
 
     /// The partitioned join builds its table in its post-build phase, so that phase runs here for every
     /// bucket.
-    static void finishInMemoryBuild(PartitionedHashJoin & join);
-    void foldInMemoryJoin(GraceHashJoinStats & into, const PartitionedHashJoin & join) const;
+    static void finishInMemoryBuild(HashJoin & join);
+    void foldInMemoryJoin(GraceHashJoinStats & into, const HashJoin & join) const;
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block, size_t worker_id);

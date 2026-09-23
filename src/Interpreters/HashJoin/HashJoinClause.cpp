@@ -1,13 +1,13 @@
-#include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
+#include <Interpreters/HashJoin/HashJoinClause.h>
 
 #include <Columns/ColumnsScatter.h>
 #include <DataTypes/NullableUtils.h>
 #include <Interpreters/HashJoin/HashJoinMethodsImpl.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/PartitionedHashJoin/AmacRing.h>
-#include <Interpreters/PartitionedHashJoin/JoinRouteHashing.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/AmacRing.h>
+#include <Interpreters/HashJoin/JoinRouteHashing.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/joinDispatch.h>
 #include <base/getL1CacheSize.h>
@@ -174,7 +174,7 @@ struct InsertTarget
     /// ASOF: the inequality column of the stored block being inserted, and its number.
     const IColumn * asof_column = nullptr;
     UInt32 asof_block_no = 0;
-    const PartitionedHashJoin * join = nullptr;
+    const HashJoin * join = nullptr;
 
     HashJoinClause * owner = nullptr;
     /// Distinct keys claimed so far, per partition. `foldClaimed` adds this target's new claims to
@@ -537,7 +537,7 @@ void insertSectionShared(
 template <typename KeyGetter, typename Table>
 void insertSectionFixed(
     Table & table,
-    const PartitionedHashJoin & join,
+    const HashJoin & join,
     const ColumnRawPtrs & key_columns,
     const Sizes & key_sizes,
     size_t first_row,
@@ -941,7 +941,7 @@ struct HashJoinClause::PostBuildContext
 };
 
 HashJoinClause::HashJoinClause(
-    PartitionedHashJoin & hash_join_,
+    HashJoin & hash_join_,
     const TableJoin & table_join_,
     size_t clause_idx_,
     bool any_take_last_row_,

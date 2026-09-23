@@ -3,7 +3,7 @@
 #include <Storages/StorageSet.h>
 #include <Storages/TableLockHolder.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
-#include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
+#include <Interpreters/HashJoin/HashJoin.h>
 #include <Common/HashTable/HashTable.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -67,10 +67,10 @@ namespace
 
 /// The Join table engine's mode of the partitioned hash join: filled one block at a time under the
 /// storage's write lock, then shared unchanged with the queries.
-PartitionedHashJoinPtr makeStorageJoinTable(std::shared_ptr<TableJoin> table_join, Block right_sample_block, bool overwrite)
+HashJoinPtr makeStorageJoinTable(std::shared_ptr<TableJoin> table_join, Block right_sample_block, bool overwrite)
 {
-    return std::make_shared<PartitionedHashJoin>(
-        PartitionedHashJoin::JoinTableTag{},
+    return std::make_shared<HashJoin>(
+        HashJoin::JoinTableTag{},
         std::move(table_join),
         std::make_shared<const Block>(std::move(right_sample_block)),
         overwrite);
@@ -329,7 +329,7 @@ JoinPtr StorageJoin::getJoinLocked(std::shared_ptr<TableJoin> analyzed_join, Str
     Block right_sample_block;
     for (const auto & name : required_columns_names)
         right_sample_block.insert(getRightSampleBlock().getByName(name));
-    PartitionedHashJoinPtr join_clone = makeStorageJoinTable(analyzed_join, std::move(right_sample_block), /*overwrite=*/false);
+    HashJoinPtr join_clone = makeStorageJoinTable(analyzed_join, std::move(right_sample_block), /*overwrite=*/false);
 
     RWLockImpl::LockHolder holder = tryLockTimed(rwlock, RWLockImpl::Read, query_id, Poco::Timespan(acquire_timeout.count() * 1000));
     join_clone->setLock(holder);
@@ -827,7 +827,7 @@ std::vector<size_t> packedKeyOrder(const Sizes & clause_sizes, const std::option
 class JoinSource final : public ISource
 {
 public:
-    JoinSource(PartitionedHashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
+    JoinSource(HashJoinPtr join_, TableLockHolder lock_holder_, UInt64 max_block_size_, SharedHeader sample_block_)
         : ISource(sample_block_)
         , join(join_)
         , lock_holder(lock_holder_)
@@ -840,7 +840,7 @@ public:
 
         column_indices.resize(sample_block->columns());
 
-        const PartitionedHashJoin & inner = *join;
+        const HashJoin & inner = *join;
         const auto & saved_block = inner.getJoinedData()->sample_block;
         std::unordered_map<String, size_t> key_output_positions;
 
@@ -893,7 +893,7 @@ protected:
             return {};
 
         /// The join's own maps stay empty; their variant only names the shape the table mirrors.
-        const PartitionedHashJoin & inner = *join;
+        const HashJoin & inner = *join;
         Chunk chunk;
         if (!joinDispatch(
                 inner.kind,
@@ -915,7 +915,7 @@ protected:
     }
 
 private:
-    PartitionedHashJoinPtr join;
+    HashJoinPtr join;
     TableLockHolder lock_holder;
 
     UInt64 max_block_size;

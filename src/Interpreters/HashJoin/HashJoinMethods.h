@@ -1,6 +1,6 @@
 #pragma once
 #include <Interpreters/HashJoin/AddedColumns.h>
-#include <Interpreters/HashJoin/HashJoin.h>
+#include <Interpreters/HashJoin/HashJoinTypes.h>
 #include <Interpreters/HashJoin/JoinFeatures.h>
 #include <Interpreters/HashJoin/JoinUsedFlags.h>
 #include <Interpreters/HashJoin/KeyGetter.h>
@@ -26,7 +26,7 @@ class HashJoinMethods
 {
 public:
     /// First to collect all matched rows refs by join keys, then filter out rows which are not true in additional filter expression.
-    /// Public because `PartitionedHashJoin` runs it over its shared table, which answers the same
+    /// Public because `HashJoin` runs it over its shared table, which answers the same
     /// `findKey` and `prefetch` calls as a standard map.
     template <typename KeyGetter, typename Map, typename AddedColumns>
     static size_t joinRightColumnsWithAdditionalFilter(
