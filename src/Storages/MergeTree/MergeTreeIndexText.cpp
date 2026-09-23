@@ -117,6 +117,16 @@ static_assert(static_cast<UInt64>(IPostingListCodec::Type::PFor) == 2);
 /// within one index.
 static constexpr bool DEFAULT_POSITIONS = false;
 
+static String formatTokensForLogs(const ITokenizer & tokenizer, const std::vector<String> & tokens)
+{
+    Strings formatted;
+    formatted.reserve(tokens.size());
+    for (const auto & token : tokens)
+        formatted.push_back(tokenizer.formatTokenForLogs(token));
+
+    return fmt::format("[{}]", fmt::join(formatted, ", "));
+}
+
 DictionaryBlock::DictionaryBlock(ColumnPtr tokens_, std::vector<TokenPostingsInfo> token_infos_, UInt64 tokens_format_)
     : tokens(std::move(tokens_))
     , token_infos(std::move(token_infos_))
@@ -625,7 +635,8 @@ void MergeTreeIndexGranuleText::analyzeDictionaryForTokens(
     const bool use_negative_tokens_cache = condition_text.getContext()->getSettingsRef()[Setting::use_text_index_negative_tokens_cache];
     cardinalities_cache->sortTokens(tokens_to_read);
 
-    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}", toString(tokens_to_read), state.part_info.getDataPartStorage()->getFullPath());
+    LOG_TEST(getLogger("MergeTreeIndexGranuleText"), "Reading tokens {} from part {}",
+        formatTokensForLogs(*condition_text.getTokenizer(), tokens_to_read), state.part_info.getDataPartStorage()->getFullPath());
 
     /// Collect blocks ids in the same order as tokens are sorted by cardinality.
     std::vector<size_t> blocks_ids_to_read;
@@ -2129,7 +2140,7 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
     /// addToken hashes through StringHashTable, which reads past both ends of the key, so the scratch
     /// buffer must be padded: PaddedPODArray is, std::string is not.
     PaddedPODArray<UInt8> token;
-    /// Keys already seen in this row; drives `is_rest`. See ITokenizer.h.
+    /// Keys already seen in this row; drives `is_duplicate`. See ITokenizer.h.
     absl::flat_hash_set<std::string_view> keys_in_row;
 
     for (size_t i = start_row; i < start_row + rows_read; ++i)
@@ -2141,9 +2152,9 @@ void MergeTreeIndexAggregatorText::addDocumentsFromMap(ColumnPtr column, size_t 
         for (size_t element_idx = column_offsets[i - 1]; element_idx < column_offsets[i]; ++element_idx)
         {
             const std::string_view key = keys.getDataAt(element_idx);
-            const bool is_rest = !keys_in_row.insert(key).second;
+            const bool is_duplicate = !keys_in_row.insert(key).second;
 
-            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_rest, token);
+            KeyValuePairsTokenizer::encodeToken(key, values.getDataAt(element_idx), is_duplicate, token);
             granule_builder.addToken({reinterpret_cast<const char *>(token.data()), token.size()}, token_position++, context);
         }
 
