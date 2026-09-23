@@ -36,7 +36,7 @@ void SetVariantsTemplate<Variant>::init(Type type_)
 }
 
 template <typename Variant>
-size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t num_rows) const
+size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const
     requires std::is_same_v<Variant, NonClearableSet>
 {
     chassert(type != Type::EMPTY);
@@ -49,7 +49,7 @@ size_t SetVariantsTemplate<Variant>::estimateGrowthMemory(const ColumnRawPtrs & 
         if (type == Type::key_string)
         {
             const auto & offsets = assert_cast<const ColumnString &>(*key_columns.front()).getOffsets();
-            key_bytes = num_rows == 0 ? 0 : offsets[num_rows - 1];
+            key_bytes = num_rows == 0 ? 0 : offsets[start_row + num_rows - 1] - offsets[static_cast<ssize_t>(start_row) - 1];
         }
         else
             key_bytes = num_rows * assert_cast<const ColumnFixedString &>(*key_columns.front()).getN();

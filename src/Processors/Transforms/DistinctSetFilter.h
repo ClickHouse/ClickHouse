@@ -6,6 +6,8 @@
 #include <Processors/Chunk.h>
 #include <QueryPipeline/SizeLimits.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -173,11 +175,29 @@ public:
     /// Requires `hasKeyColumns` to be true.
     Chunk filter(Chunk chunk);
 
+    struct FilterResult
+    {
+        Chunk chunk;
+        size_t processed_rows;
+    };
+
+    /// Called before inserting a new key, with its estimated table and arena growth in bytes.
+    using InsertionCheck = std::function<bool(size_t)>;
+
+    /// Checks membership before insertion and stops before the first new key rejected by the check.
+    /// Returns the filtered prefix and its input row count; the rejected row is not inserted. Size
+    /// limits apply to the accepted prefix with the same semantics as `filter`. Method
+    /// preparation still covers the whole chunk and must fit the caller's workspace budget. Dictionary
+    /// masks are bypassed so an unprocessed suffix does not mark its indices as seen.
+    /// Requires columns normalized by `prepareForInsert` and `skip_null_keys_ = false`.
+    FilterResult filterWithInsertionCheck(Chunk chunk, const InsertionCheck & can_insert);
+
     /// Whether a size limit with the 'break' overflow mode was reached: no new key can be added to the
     /// set, so the caller should stop reading and return the partial result.
     bool isLimitReached() const { return limit_reached; }
 
 private:
+    FilterResult filterImpl(Chunk chunk, const InsertionCheck * can_insert);
     ColumnRawPtrs getKeyColumns(const Columns & columns) const;
     void initialize(const ColumnRawPtrs & key_columns);
 

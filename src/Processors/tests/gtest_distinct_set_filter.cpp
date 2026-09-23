@@ -1110,3 +1110,126 @@ TEST(DistinctSetFilterWorkspace, PreparedKeysMatchActualAllocation)
         }
     }
 }
+
+TEST(DistinctSetFilterInsertion, CheckedPrefixPreservesKeysAndPayloads)
+{
+    const auto u8 = std::make_shared<DataTypeUInt8>();
+    const auto u16 = std::make_shared<DataTypeUInt16>();
+    const auto u32 = std::make_shared<DataTypeUInt32>();
+    const auto u64 = std::make_shared<DataTypeUInt64>();
+    const std::vector<DataTypes> key_types{
+        {u8}, {u16}, {u32}, {u64}, {u8, u16}, {u8, u32}, {u8, u64}, {u64, u64, u64},
+        {std::make_shared<DataTypeNullable>(u64)}, {std::make_shared<DataTypeNullable>(u64), u64},
+        {std::make_shared<DataTypeString>()},
+        {std::make_shared<DataTypeFixedString>(64)}, {std::make_shared<DataTypeLowCardinality>(u64)},
+        {std::make_shared<DataTypeArray>(u64)}};
+
+    for (const auto & types : key_types)
+    {
+        for (const size_t allowed_keys : {0, 2, 3})
+        {
+            Block header;
+            Columns columns;
+            Names keys;
+            for (size_t pos = 0; pos < types.size(); ++pos)
+            {
+                const auto & type = types[pos];
+                keys.push_back("k" + std::to_string(pos));
+                header.insert(ColumnWithTypeAndName(type, keys.back()));
+                auto column = type->createColumn();
+                for (const UInt64 value : {1, 1, 2, 2, 3, 3})
+                {
+                    if (isString(type) || isFixedString(type))
+                        column->insert(Field(std::to_string(value)));
+                    else if (isArray(type))
+                        column->insert(Field(Array{Field(value)}));
+                    else if (type->isNullable() && value == 1)
+                        column->insertDefault();
+                    else
+                        column->insert(Field(value));
+                }
+                columns.emplace_back(std::move(column));
+            }
+            header.insert(ColumnWithTypeAndName(u64, "payload"));
+            auto payload = ColumnUInt64::create(6);
+            iota(payload->getData().data(), 6, UInt64{0});
+            columns.emplace_back(std::move(payload));
+            Chunk input(std::move(columns), 6);
+            DistinctSetFilter filter(header, keys, SizeLimits{});
+            filter.prepareForInsert(input);
+            SCOPED_TRACE(::testing::Message() << input.dumpStructure() << ", allowed_keys=" << allowed_keys);
+            size_t checks = 0;
+            auto result = filter.filterWithInsertionCheck(input.clone(), [&](size_t) { return checks++ < allowed_keys; });
+            EXPECT_EQ(result.processed_rows, allowed_keys * 2);
+            ASSERT_EQ(result.chunk.getNumRows(), allowed_keys);
+            for (size_t row = 0; row < allowed_keys; ++row)
+                EXPECT_EQ((*result.chunk.getColumns().back())[row], Field(UInt64(row * 2)));
+
+            /// The rejected suffix must still be eligible for insertion, including dictionary indices
+            /// that were not consumed by checked insertion.
+            if (result.processed_rows < input.getNumRows())
+            {
+                Columns suffix;
+                for (const auto & column : input.getColumns())
+                    suffix.push_back(column->cut(result.processed_rows, 6 - result.processed_rows));
+                auto tail = filter.filter(Chunk(std::move(suffix), 6 - result.processed_rows));
+                ASSERT_EQ(tail.getNumRows(), 3 - allowed_keys);
+                for (size_t row = 0; row < tail.getNumRows(); ++row)
+                    EXPECT_EQ((*tail.getColumns().back())[row], Field(UInt64((row + allowed_keys) * 2)));
+            }
+
+            auto duplicates = filter.filterWithInsertionCheck(input.clone(), [&](size_t)
+            {
+                ADD_FAILURE() << "Existing keys must not request insertion memory";
+                return false;
+            });
+            EXPECT_EQ(duplicates.processed_rows, 6);
+            EXPECT_EQ(duplicates.chunk.getNumRows(), 0);
+        }
+    }
+}
+
+TEST(DistinctSetFilterInsertion, CheckedStringGrowthUsesCurrentRow)
+{
+    const auto type = std::make_shared<DataTypeString>();
+    Block header{ColumnWithTypeAndName(type, "k")};
+    auto column = ColumnString::create();
+    column->insert(Field(String(4 << 20, 'x')));
+    column->insert(Field("y"));
+    Chunk input(Columns{std::move(column)}, 2);
+    DistinctSetFilter filter(header, Names{}, SizeLimits{});
+    filter.prepareForInsert(input);
+    std::vector<size_t> estimates;
+    auto result = filter.filterWithInsertionCheck(std::move(input), [&](size_t growth)
+    {
+        estimates.push_back(growth);
+        return true;
+    });
+    ASSERT_EQ(estimates.size(), 2);
+    EXPECT_GE(estimates[0], 4 << 20);
+    EXPECT_LT(estimates[1], 1 << 20);
+    EXPECT_EQ(result.processed_rows, 2);
+    EXPECT_EQ(result.chunk.getNumRows(), 2);
+}
+
+TEST(DistinctSetFilterInsertion, CheckedPrefixRespectsSizeLimits)
+{
+    const Block header{ColumnWithTypeAndName(std::make_shared<DataTypeUInt64>(), "k")};
+    for (const auto mode : {OverflowMode::THROW, OverflowMode::BREAK})
+    {
+        DistinctSetFilter filter(header, {}, SizeLimits(/*max_rows=*/ 2, /*max_bytes=*/ 0, mode));
+        Chunk input({makeColumn({1, 2, 3, 4})}, 4);
+        filter.prepareForInsert(input);
+        size_t checks = 0;
+        const auto can_insert = [&](size_t) { return checks++ < 3; };
+        if (mode == OverflowMode::THROW)
+            EXPECT_THROW(filter.filterWithInsertionCheck(std::move(input), can_insert), Exception);
+        else
+        {
+            auto result = filter.filterWithInsertionCheck(std::move(input), can_insert);
+            EXPECT_EQ(result.processed_rows, 3);
+            EXPECT_EQ(result.chunk.getNumRows(), 3);
+            EXPECT_TRUE(filter.isLimitReached());
+        }
+    }
+}
