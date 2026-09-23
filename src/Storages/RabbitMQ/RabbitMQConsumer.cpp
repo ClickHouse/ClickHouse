@@ -41,39 +41,10 @@ void RabbitMQConsumer::stop()
     cv.notify_one();
 }
 
-void RabbitMQConsumer::wakeUp()
-{
-    std::lock_guard lock(mutex);
-    cv.notify_all();
-}
-
 void RabbitMQConsumer::closeConnections()
 {
-    if (!consumer_channel)
-        return;
-
-    auto closing = std::make_shared<ChannelCloseState>();
-    close_state = closing;
-
-    consumer_channel->close()
-    .onSuccess([this, closing]()
-    {
-        if (closing->abandoned)
-            return;
-        LOG_TRACE(log, "Consumer channel {} is closed", channel_id);
-        closing->completed = true;
-        event_handler.stopBlockingLoop();
-    })
-    .onError([this, closing](const char * message)
-    {
-        if (closing->abandoned)
-            return;
-        LOG_ERROR(log, "Failed to close consumer channel {}: {}", channel_id, message);
-        /// An error also completes the wait: a channel that could not be closed is not going to
-        /// keep holding the queue, and treating it as outstanding would burn the whole timeout.
-        closing->completed = true;
-        event_handler.stopBlockingLoop();
-    });
+    if (consumer_channel)
+        consumer_channel->close();
 }
 
 void RabbitMQConsumer::subscribe()
@@ -174,57 +145,35 @@ bool RabbitMQConsumer::ackMessages(const CommitInfo & commit_info)
     return false;
 }
 
-bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info, bool requeue)
+bool RabbitMQConsumer::nackMessages(const CommitInfo & commit_info)
 {
-    const int flags = requeue ? (AMQP::multiple | AMQP::requeue) : AMQP::multiple;
-    const char * verb = requeue ? "requeue" : "nack";
-
     if (state != State::OK)
     {
-        LOG_TEST(log, "State is {}, will not {} messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)), verb);
+        LOG_TEST(log, "State is {}, will not nack messages", magic_enum::enum_name(state.load(std::memory_order_relaxed)));
         return false;
     }
 
-    if (commit_info.channel_id != channel_id)
-    {
-        LOG_TEST(log, "Channel ID changed {} -> {}, will not {} messages", commit_info.channel_id, channel_id, verb);
-        return false;
-    }
-
-    const int failed_flags = requeue ? AMQP::requeue : 0;
-    for (const auto & delivery_tag : commit_info.failed_delivery_tags)
-    {
-        if (consumer_channel->reject(delivery_tag, failed_flags))
-            LOG_TRACE(
-                log, "Consumer did {} message with deliveryTag {} on channel {}",
-                verb, delivery_tag, channel_id);
-        else
-            LOG_WARNING(
-                log, "Failed to {} message with deliveryTag {} on channel {}",
-                verb, delivery_tag, channel_id);
-    }
-
-    /// Nothing to reject.
+    /// Nothing to nack.
     if (!commit_info.delivery_tag || commit_info.delivery_tag <= last_commited_delivery_tag)
     {
-        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, will not {} messages",
-                 commit_info.delivery_tag, last_commited_delivery_tag, verb);
+        LOG_TEST(log, "Delivery tag is {}, last committed delivery tag: {}, Will not nack messages",
+                 commit_info.delivery_tag, last_commited_delivery_tag);
         return false;
     }
 
-    if (consumer_channel->reject(commit_info.delivery_tag, flags))
+    if (consumer_channel->reject(commit_info.delivery_tag, AMQP::multiple))
     {
         LOG_TRACE(
-            log, "Consumer did {} messages with deliveryTags from {} to {} on channel {}",
-            verb, last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
+            log, "Consumer rejected messages with deliveryTags from {} to {} on channel {}",
+            last_commited_delivery_tag, commit_info.delivery_tag, channel_id);
 
         return true;
     }
 
     LOG_ERROR(
         log,
-        "Failed to {} messages for {}:{}, (current commit point {}:{})",
-        verb, commit_info.channel_id, commit_info.delivery_tag,
+        "Failed to reject messages for {}:{}, (current commit point {}:{})",
+        commit_info.channel_id, commit_info.delivery_tag,
         channel_id, last_commited_delivery_tag);
 
     return false;

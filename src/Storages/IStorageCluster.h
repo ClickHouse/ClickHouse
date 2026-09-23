@@ -3,7 +3,6 @@
 #include <Storages/IStorage.h>
 #include <Interpreters/ActionsDAG.h>
 #include <QueryPipeline/RemoteQueryExecutor.h>
-#include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 namespace DB
 {
@@ -52,8 +51,6 @@ public:
     bool supportsOptimizationToSubcolumns() const override { return false; }
     bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
 
-    const String & getClusterName() const { return cluster_name; }
-
     /// Prepare the `SELECT ... FROM f(...)` query (`f` is a table function) for the other nodes of the cluster: add the
     /// structure and format arguments so that the nodes do not infer the schema again, and turn a plain table
     /// function (`url`, `s3`, ...) that `parallel_replicas_for_cluster_engines` converted into this cluster
@@ -72,50 +69,5 @@ private:
     String cluster_name;
 };
 
-
-class ReadFromCluster : public SourceStepWithFilter
-{
-public:
-    std::string getName() const override { return "ReadFromCluster"; }
-    void initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
-    void applyFilters(ActionDAGNodes added_filter_nodes) override;
-
-    ReadFromCluster(
-        const Names & column_names_,
-        const SelectQueryInfo & query_info_,
-        const StorageSnapshotPtr & storage_snapshot_,
-        const ContextPtr & context_,
-        SharedHeader sample_block,
-        std::shared_ptr<IStorageCluster> storage_,
-        ASTPtr query_to_send_,
-        QueryProcessingStage::Enum processed_stage_,
-        ClusterPtr cluster_,
-        LoggerPtr log_)
-        : SourceStepWithFilter(
-            std::move(sample_block),
-            column_names_,
-            query_info_,
-            storage_snapshot_,
-            context_)
-        , storage(std::move(storage_))
-        , query_to_send(std::move(query_to_send_))
-        , processed_stage(processed_stage_)
-        , cluster(std::move(cluster_))
-        , log(log_)
-    {
-    }
-
-private:
-    std::shared_ptr<IStorageCluster> storage;
-    ASTPtr query_to_send;
-    QueryProcessingStage::Enum processed_stage;
-    ClusterPtr cluster;
-    LoggerPtr log;
-
-    std::optional<RemoteQueryExecutor::Extension> extension;
-
-    void createExtension(const ActionsDAG::Node * predicate);
-    ContextPtr updateSettings(const Settings & settings);
-};
 
 }

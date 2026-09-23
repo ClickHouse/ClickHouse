@@ -1,12 +1,10 @@
 #include <Access/Common/AccessFlags.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/RocksDB/StorageEmbeddedRocksDB.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 
 #include <Storages/AlterCommands.h>
@@ -14,7 +12,6 @@
 #include <Storages/RocksDB/RocksDBSettings.h>
 #include <Storages/StorageFactory.h>
 
-#include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTCreateQuery.h>
 
 #include <Processors/ISource.h>
@@ -31,28 +28,11 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/Sources/NullSource.h>
-#include <Processors/QueryPlan/QueryPlanFormat.h>
-
-#include <Backups/BackupEntriesCollector.h>
-#include <Backups/BackupEntryFromAppendOnlyFile.h>
-#include <Backups/BackupEntryFromMemory.h>
-#include <Backups/BackupEntryReference.h>
-#include <Backups/IBackup.h>
-#include <Backups/IBackupCoordination.h>
-#include <Backups/IBackupEntriesLazyBatch.h>
-#include <Backups/IRestoreCoordination.h>
-#include <Backups/RestorerFromBackup.h>
-#include <Compression/CompressedReadBufferFromFile.h>
-#include <Interpreters/TemporaryDataOnDisk.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
-#include <IO/Operators.h>
 
 #include <Core/Settings.h>
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
-#include <Common/SharedLockGuard.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
@@ -76,14 +56,11 @@
 #include <memory>
 #include <utility>
 
-#include <fmt/ranges.h>
-
 namespace DB
 {
 namespace Setting
 {
 extern const SettingsBool optimize_trivial_approximate_count_query;
-extern const SettingsUInt64 max_compress_block_size;
 }
 
 namespace RocksDBSetting
@@ -94,13 +71,10 @@ extern const RocksDBSettingsBool optimize_for_bulk_insert;
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
-extern const int CANNOT_RESTORE_TABLE;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
 extern const int NOT_IMPLEMENTED;
-extern const int TABLE_IS_DROPPED;
-extern const int TYPE_MISMATCH;
 }
 
 using FieldVectorPtr = std::shared_ptr<FieldVector>;
@@ -122,12 +96,11 @@ static RocksDBOptions getOptionsFromConfig(const Poco::Util::AbstractConfigurati
     return options;
 }
 
-class EmbeddedRocksDBSource final : public ISource
+class EmbeddedRocksDBSource : public ISource
 {
 public:
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
         SharedHeader header,
         FieldVectorPtr keys_,
         FieldVector::const_iterator begin_,
@@ -135,8 +108,6 @@ public:
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , storage_snapshot(storage_snapshot_)
-        , physical_header(storage_snapshot_->metadata->getSampleBlock())
         , keys(keys_)
         , begin(begin_)
         , end(end_)
@@ -147,16 +118,11 @@ public:
 
     EmbeddedRocksDBSource(
         const StorageEmbeddedRocksDB & storage_,
-        const StorageSnapshotPtr & storage_snapshot_,
         SharedHeader header,
-        std::shared_ptr<rocksdb::DB> rocksdb_ptr_,
         std::unique_ptr<rocksdb::Iterator> iterator_,
         const size_t max_block_size_)
         : ISource(header)
         , storage(storage_)
-        , storage_snapshot(storage_snapshot_)
-        , physical_header(storage_snapshot_->metadata->getSampleBlock())
-        , rocksdb_ptr(std::move(rocksdb_ptr_))
         , iterator(std::move(iterator_))
         , max_block_size(max_block_size_)
     {
@@ -166,27 +132,12 @@ public:
 
     Chunk generate() override
     {
-        Block block;
         if (keys)
-            block = generateWithKeys();
-        else
-            block = generateFullScan();
-
-        if (block.empty())
-            return {};
-
-        fillVirtualColumns(block);
-        return Chunk(block.getColumns(), block.rows());
+            return generateWithKeys();
+        return generateFullScan();
     }
 
-    void fillVirtualColumns([[maybe_unused]] Block & block) const
-    {
-        auto virtual_columns = storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
-        if (!virtual_columns.empty())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unsupported virtual columns {}", virtual_columns.getNames());
-    }
-
-    Block generateWithKeys()
+    Chunk generateWithKeys()
     {
         if (it >= end)
         {
@@ -194,19 +145,21 @@ public:
             return {};
         }
         auto raw_keys = serializeKeysToRawString(it, end, storage.getPrimaryKeyTypes(), max_block_size);
-        return storage.getBySerializedKeys(raw_keys, nullptr, physical_header);
+        return storage.getBySerializedKeys(raw_keys, nullptr);
     }
 
-    Block generateFullScan()
+    Chunk generateFullScan()
     {
         if (!iterator->Valid())
             return {};
 
-        MutableColumns columns = physical_header.cloneEmptyColumns();
+        const auto & sample_block = getPort().getHeader();
+        MutableColumns columns = sample_block.cloneEmptyColumns();
+
         for (size_t rows = 0; iterator->Valid() && rows < max_block_size; ++rows, iterator->Next())
         {
-            fillColumns(iterator->key(), storage.getPrimaryKeyPos(), physical_header, columns);
-            fillColumns(iterator->value(), storage.getValueColumnPos(), physical_header, columns);
+            fillColumns(iterator->key(), storage.getPrimaryKeyPos(), getPort().getHeader(), columns);
+            fillColumns(iterator->value(), storage.getValueColumnPos(), getPort().getHeader(), columns);
         }
 
         if (!iterator->status().ok())
@@ -217,14 +170,12 @@ public:
                 getName(),
                 iterator->status().ToString());
         }
-
-        return physical_header.cloneWithColumns(std::move(columns));
+        Block block = sample_block.cloneWithColumns(std::move(columns));
+        return Chunk(block.getColumns(), block.rows());
     }
 
 private:
     const StorageEmbeddedRocksDB & storage;
-    StorageSnapshotPtr storage_snapshot;
-    Block physical_header;
 
     /// For key scan
     FieldVectorPtr keys = nullptr;
@@ -232,21 +183,12 @@ private:
     FieldVector::const_iterator end;
     FieldVector::const_iterator it;
 
-    /// For full scan. The handle is declared before the iterator it was taken from: members are
-    /// destroyed in reverse declaration order, and RocksDB requires the iterator to go first.
-    std::shared_ptr<rocksdb::DB> rocksdb_ptr;
+    /// For full scan
     std::unique_ptr<rocksdb::Iterator> iterator = nullptr;
 
     const size_t max_block_size;
 };
 
-VirtualColumnsDescription StorageEmbeddedRocksDB::createVirtuals()
-{
-    VirtualColumnsDescription desc;
-    desc.addEphemeral("_table", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    desc.addEphemeral("_database", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "", VirtualsMaterializationPlace::Plan);
-    return desc;
-}
 
 StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     const StorageID & table_id_,
@@ -259,7 +201,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     Int32 ttl_,
     String rocksdb_dir_,
     bool read_only_)
-    : StorageWithCommonVirtualColumns(table_id_)
+    : IStorage(table_id_)
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
     , primary_keys{std::move(primary_keys_)}
@@ -267,7 +209,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     , ttl(ttl_)
     , read_only(read_only_)
 {
-    setInMemoryMetadata(metadata_.withVirtuals(createVirtuals()));
+    setInMemoryMetadata(metadata_);
     setSettings(std::move(settings_));
 
     if (rocksdb_dir.empty())
@@ -292,8 +234,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
         fs::create_directories(rocksdb_dir);
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
-    const auto sample_block = metadata_snapshot->getSampleBlock();
+    const auto sample_block = getInMemoryMetadataPtr()->getSampleBlock();
     primary_key_pos.reserve(primary_keys.size());
     primary_key_types.reserve(primary_keys.size());
     std::vector<bool> is_pk(sample_block.columns());
@@ -319,13 +260,8 @@ StorageEmbeddedRocksDB::~StorageEmbeddedRocksDB() = default;
 void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr, TableExclusiveLockHolder &)
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    /// rocksdb_ptr may already be null if a previous truncate() emptied the directory and
-    /// the following initDB() threw (e.g. a read_only table whose data was wiped).
-    if (rocksdb_ptr)
-    {
-        rocksdb_ptr->Close();
-        rocksdb_ptr = nullptr;
-    }
+    rocksdb_ptr->Close();
+    rocksdb_ptr = nullptr;
 
     (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
@@ -352,8 +288,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 
     chassert(commands.size() == 1);
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(context_, false);
-    auto physical_columns = metadata_snapshot->getColumns().getNamesOfPhysical();
+    auto metadata_snapshot = getInMemoryMetadataPtr();
     auto storage = getStorageID();
     auto storage_ptr = DatabaseCatalog::instance().getTable(storage, context_);
 
@@ -363,7 +298,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         mutation_settings.return_all_columns = true;
         mutation_settings.return_mutated_rows = true;
 
-        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, mutation_settings);
+        auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, mutation_settings);
 
         auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
         PullingPipelineExecutor executor(pipeline);
@@ -372,8 +307,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
         Block block;
         while (executor.pull(block))
         {
-            Columns columns;
-            DataTypes types;
+            std::vector<ColumnPtr> columns;
+            std::vector<DataTypePtr> types;
             columns.reserve(primary_key_pos.size());
             types.reserve(primary_key_pos.size());
             for (const auto pos : primary_key_pos)
@@ -399,25 +334,18 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
                     throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
             }
 
-            {
-                SharedLockGuard lock(rocksdb_ptr_mx);
-                if (!rocksdb_ptr)
-                    throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
-                auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
-                if (!status.ok())
-                    throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
-            }
+            auto status = rocksdb_ptr->Write(rocksdb::WriteOptions(), &batch);
+            if (!status.ok())
+                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
         }
 
         return;
     }
 
     chassert(commands.front().type == MutationCommand::Type::UPDATE);
-    auto alter = commands.front().ast();
-    const auto column_to_update = getColumnToUpdateExpression(*alter);
     for (const auto & key_name : primary_keys)
     {
-        if (column_to_update.contains(key_name))
+        if (commands.front().column_to_update_expression.contains(key_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Primary key cannot be updated (cannot update column {})", key_name);
     }
 
@@ -425,7 +353,7 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
     mutation_settings.return_all_columns = true;
     mutation_settings.return_mutated_rows = true;
 
-    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, physical_columns, context_, mutation_settings);
+    auto interpreter = std::make_unique<MutationsInterpreter>(storage_ptr, metadata_snapshot, commands, context_, mutation_settings);
 
     auto pipeline = QueryPipelineBuilder::getPipeline(interpreter->execute());
     PullingPipelineExecutor executor(pipeline);
@@ -443,13 +371,8 @@ void StorageEmbeddedRocksDB::mutate(const MutationCommands & commands, ContextPt
 void StorageEmbeddedRocksDB::drop()
 {
     std::lock_guard lock(rocksdb_ptr_mx);
-    /// rocksdb_ptr may be null if the handle was never opened or was released by a failed
-    /// truncate(); dropping such a table must not dereference it.
-    if (rocksdb_ptr)
-    {
-        rocksdb_ptr->Close();
-        rocksdb_ptr = nullptr;
-    }
+    rocksdb_ptr->Close();
+    rocksdb_ptr = nullptr;
 }
 
 bool StorageEmbeddedRocksDB::optimize(
@@ -474,410 +397,12 @@ bool StorageEmbeddedRocksDB::optimize(
     if (cleanup)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "CLEANUP cannot be specified when optimizing table of type EmbeddedRocksDB");
 
-    SharedLockGuard lock(rocksdb_ptr_mx);
-    if (!rocksdb_ptr)
-        return true;
+    std::shared_lock lock(rocksdb_ptr_mx);
     rocksdb::CompactRangeOptions compact_options;
     auto status = rocksdb_ptr->CompactRange(compact_options, nullptr, nullptr);
     if (!status.ok())
         throw Exception(ErrorCodes::ROCKSDB_ERROR, "Compaction failed: {}", status.ToString());
     return true;
-}
-
-/// Single file holding all key-value pairs of the table as (raw key, raw value) length-prefixed
-/// binary records. RocksDB already stores keys/values as raw serialized strings, so no
-/// (de)serialization is required - we copy the bytes verbatim.
-///
-/// The scan and the restore write both go through GetRootDB(): for a ttl > 0 table rocksdb_ptr is
-/// a DBWithTTL whose iterator strips the trailing 4-byte creation timestamp and whose Write()
-/// appends a fresh one, which would reset every row's expiration on restore. GetRootDB() gives the
-/// underlying DB, so the timestamp suffix is copied verbatim in both directions and the original
-/// expiration state is preserved. For a non-ttl table GetRootDB() is the DB itself, so the bytes
-/// are identical to a plain scan/write.
-static constexpr std::string_view rocksdb_backup_data_filename = "data.bin";
-
-/// Small companion file recording the source table's ttl argument. The backed-up value bytes are
-/// ttl-format-dependent (a ttl > 0 table is a DBWithTTL whose values carry a trailing 4-byte creation
-/// timestamp; a ttl = 0 table has none), and even between two ttl > 0 tables the ttl sets each row's
-/// expiration window. Restore compares this against the target table's ttl and rejects a mismatch, so the
-/// RESTORE ... AS <writable_table> / allow_different_table_def path (which skips RestorerFromBackup's
-/// create-query compatibility check) cannot silently replay incompatible bytes or shift every row's expiry.
-static constexpr std::string_view rocksdb_backup_ttl_filename = "ttl.txt";
-
-/// Flush the restore WriteBatch once it reaches this many bytes so a large backup does not require a
-/// full in-RAM copy of the table (EmbeddedRocksDB is an on-disk engine).
-static constexpr size_t rocksdb_restore_batch_flush_bytes = 64 * 1024 * 1024;
-
-/// Lazily dumps all key-value pairs of a RocksDB table into a single compressed backup entry.
-class EmbeddedRocksDBBackup : public IBackupEntriesLazyBatch, boost::noncopyable
-{
-public:
-    EmbeddedRocksDBBackup(
-        std::shared_ptr<const StorageEmbeddedRocksDB> storage_,
-        const String & data_path_in_backup,
-        TemporaryDataOnDiskScopePtr tmp_data_)
-        : storage(std::move(storage_))
-        , tmp_data(std::move(tmp_data_))
-    {
-        file_path = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
-    }
-
-private:
-    size_t getSize() const override { return 1; }
-
-    const String & getName(size_t i) const override
-    {
-        chassert(i == 0);
-        return file_path;
-    }
-
-    BackupEntries generate() override
-    {
-        auto data_out = std::make_unique<TemporaryDataBuffer>(tmp_data);
-
-        {
-            /// A shared lock keeps the rocksdb handle alive for the whole scan without blocking
-            /// concurrent inserts (they take a shared lock too); it only excludes drop/truncate.
-            /// The iterator reads from an implicit snapshot, so the dump is consistent.
-            SharedLockGuard lock(storage->rocksdb_ptr_mx);
-            if (!storage->rocksdb_ptr)
-                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
-
-            /// GetRootDB() bypasses the DBWithTTL wrapper so raw values keep their TTL timestamp suffix.
-            std::unique_ptr<rocksdb::Iterator> iterator(storage->rocksdb_ptr->GetRootDB()->NewIterator(rocksdb::ReadOptions()));
-            for (iterator->SeekToFirst(); iterator->Valid(); iterator->Next())
-            {
-                writeStringBinary(iterator->key().ToStringView(), *data_out);
-                writeStringBinary(iterator->value().ToStringView(), *data_out);
-            }
-
-            if (!iterator->status().ok())
-                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB iterator error: {}", iterator->status().ToString());
-        }
-
-        data_out->finishWriting();
-        return {{file_path, std::make_shared<BackupEntryFromAppendOnlyFile>(std::move(data_out))}};
-    }
-
-    std::shared_ptr<const StorageEmbeddedRocksDB> storage;
-    TemporaryDataOnDiskScopePtr tmp_data;
-    String file_path;
-};
-
-/// Election id used to pick a single owner among tables sharing one rocksdb_dir. A writable table (there
-/// is at most one, enforced by RocksDB's LOCK) always sorts above every read_only table (the leading
-/// "1_rw"/"0_ro" tag dominates the comparison), so it is elected when present. Its handle also sees the
-/// freshest data (including the unflushed memtable), which is what the backup must capture. The
-/// fully-qualified table name keeps ids unique across distinct tables: unlike the storage uuid it is never
-/// Nil for Ordinary-database tables (InterpreterCreateQuery clears the uuid there), so two unrelated
-/// EmbeddedRocksDB tables never collide on one election znode.
-String StorageEmbeddedRocksDB::backupElectionId() const
-{
-    return fmt::format("{}_{}", read_only ? "0_ro" : "1_rw", getStorageID().getFullTableName());
-}
-
-/// Canonical fingerprint of the on-disk byte layout. restoreDataImpl() replays raw serialized (key, value)
-/// bytes verbatim, and fillColumns() later decodes them with the TARGET table's metadata: the key bytes are
-/// the primary-key columns serialized in primary-key order, the value bytes are the remaining physical columns
-/// serialized in physical order. So the bytes are only interpretable by a table with the same physical column
-/// types in the same order and the same primary-key column set/order. A same-ttl target that differs in
-/// PK/value column types or ordering would decode the bytes into a wrong (unreadable or silently incorrect)
-/// table, and the RESTORE ... AS <writable_table> / allow_different_table_def workaround skips
-/// RestorerFromBackup's create-query compatibility check, so this fingerprint is what catches it. Table name and
-/// the read_only flag are intentionally excluded: neither affects the byte layout, and RESTORE ... AS restores
-/// into a differently-named (and writable) table on purpose.
-String StorageEmbeddedRocksDB::backupSchemaFingerprint() const
-{
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    const auto sample_block = metadata_snapshot->getSampleBlock();
-
-    WriteBufferFromOwnString out;
-    out << "key:";
-    for (size_t i = 0; i < primary_key_pos.size(); ++i)
-    {
-        const auto & col = sample_block.getByPosition(primary_key_pos[i]);
-        if (i)
-            out << ',';
-        out << col.name << ' ' << col.type->getName();
-    }
-    out << "\nvalue:";
-    for (size_t i = 0; i < value_column_pos.size(); ++i)
-    {
-        const auto & col = sample_block.getByPosition(value_column_pos[i]);
-        if (i)
-            out << ',';
-        out << col.name << ' ' << col.type->getName();
-    }
-    return out.str();
-}
-
-/// Companion file recording backupSchemaFingerprint(). Restore compares it against the target table's own
-/// fingerprint and rejects a mismatch before replaying any bytes, so a same-ttl but structurally-different
-/// target cannot silently decode the raw bytes into wrong data.
-static constexpr std::string_view rocksdb_backup_schema_filename = "schema.txt";
-
-/// The single-owner optimization (siblings reference the owner's data instead of dumping their own) is safe
-/// only when the elected owner is the writable table: its live handle sees the freshest shared data, so its
-/// one dump represents every sibling. An all-read_only group has no such common live view (each read_only
-/// handle is an independent snapshot that may diverge), so those tables must not collapse onto one dump.
-/// election_id encodes writability in its leading tag, so a writable owner's id starts with "1_rw_".
-static bool isWritableElectionId(const String & election_id)
-{
-    return election_id.starts_with("1_rw_");
-}
-
-void StorageEmbeddedRocksDB::backupData(BackupEntriesCollector & backup_entries_collector, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
-{
-    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. Register
-    /// this table so a writable owner backs up the shared RocksDB once and its read_only siblings only
-    /// reference it. This avoids dumping the same directory multiple times from independent snapshots on
-    /// different handles, whose contents could diverge if writes race between the dumps.
-    auto coordination = backup_entries_collector.getBackupCoordination();
-    coordination->addRocksDBTable(rocksdb_dir, backupElectionId(), data_path_in_backup);
-
-    /// Runs after all tables have registered, so getRocksDBDataPath()/getRocksDBDataOwnerElectionId() see
-    /// the whole group.
-    auto post_collecting_task = [coordination, &backup_entries_collector, my_data_path_in_backup = data_path_in_backup, this]
-    {
-        /// Record this table's ttl and schema fingerprint so restore can reject an incompatible target: the
-        /// value bytes are ttl-format-dependent, and the raw key/value bytes are only decodable by a table with
-        /// the same physical-column layout. Both are per-table constants, so every table writes its own tiny
-        /// ttl.txt / schema.txt even when it references a sibling's data.bin.
-        backup_entries_collector.addBackupEntries(
-            {{fs::path(my_data_path_in_backup) / rocksdb_backup_ttl_filename,
-              std::make_shared<BackupEntryFromMemory>(toString(ttl))},
-             {fs::path(my_data_path_in_backup) / rocksdb_backup_schema_filename,
-              std::make_shared<BackupEntryFromMemory>(backupSchemaFingerprint())}});
-
-        auto owner_election_id = coordination->getRocksDBDataOwnerElectionId(rocksdb_dir);
-        auto owner_data_path = coordination->getRocksDBDataPath(rocksdb_dir);
-
-        /// Reference the owner's data.bin instead of dumping again ONLY when the owner is the writable table
-        /// (its live handle holds the freshest shared data). In an all-read_only group there is no common live
-        /// view, so every table dumps its own snapshot rather than collapsing onto one that may not match.
-        if (isWritableElectionId(owner_election_id) && owner_data_path != my_data_path_in_backup)
-        {
-            String source_path = fs::path(my_data_path_in_backup) / rocksdb_backup_data_filename;
-            String target_path = fs::path(owner_data_path) / rocksdb_backup_data_filename;
-            backup_entries_collector.addBackupEntries({{source_path, std::make_shared<BackupEntryReference>(std::move(target_path))}});
-            return;
-        }
-
-        TemporaryDataOnDiskSettings tmp_data_settings;
-        auto max_compress_block_size = backup_entries_collector.getContext()->getSettingsRef()[Setting::max_compress_block_size];
-        tmp_data_settings.buffer_size = max_compress_block_size ? max_compress_block_size : DBMS_DEFAULT_BUFFER_SIZE;
-        auto tmp_data = std::make_shared<TemporaryDataOnDiskScope>(backup_entries_collector.getContext()->getTempDataOnDisk(), tmp_data_settings);
-
-        backup_entries_collector.addBackupEntries(
-            std::make_shared<EmbeddedRocksDBBackup>(
-                std::static_pointer_cast<const StorageEmbeddedRocksDB>(shared_from_this()), my_data_path_in_backup, std::move(tmp_data))
-                ->getBackupEntries());
-    };
-
-    backup_entries_collector.addPostTask(post_collecting_task);
-}
-
-/// backupData() always writes data.bin (holding zero records for an empty table). Peeking at the
-/// first record tells whether the backup actually carries any rows.
-static bool backupHasRows(const BackupPtr & backup, const String & data_file)
-{
-    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
-    return !compressed_in.eof();
-}
-
-void StorageEmbeddedRocksDB::restoreDataFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup, const std::optional<ASTs> & /*partitions*/)
-{
-    auto backup = restorer.getBackup();
-
-    /// backupData() always writes data.bin, even for an empty table, so a data restore reaching here with
-    /// no data.bin cannot be an "empty table" case. It means one of: (a) the backup was made with
-    /// structure_only = true (metadata only, no data) and should be restored the same way, with
-    /// SETTINGS structure_only = true; (b) the backup predates EmbeddedRocksDB backing up its data
-    /// (see https://github.com/ClickHouse/ClickHouse/issues/109213); or (c) the backup is corrupted.
-    /// Restoring it as data would silently recreate an empty table, so fail closed instead.
-    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
-    if (!backup->fileExists(data_file))
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Backup of table {} has no RocksDB data file {}. If this backup was created with structure_only = true, "
-            "restore it with SETTINGS structure_only = true. Otherwise it predates EmbeddedRocksDB backing up its data "
-            "(see https://github.com/ClickHouse/ClickHouse/issues/109213) or is corrupted; restoring its data would "
-            "silently produce an empty table",
-            getStorageID().getNameForLogs(), data_file);
-
-    /// The backed-up value bytes are ttl-format-dependent: a ttl > 0 source is a DBWithTTL whose values
-    /// carry a trailing 4-byte creation timestamp (backed up verbatim) while a ttl = 0 source has none, and
-    /// two ttl > 0 tables interpret those timestamps against their own ttl window. Restoring across a ttl
-    /// mismatch would replay incompatible bytes or silently shift every row's expiration. Enforce it here
-    /// because the RESTORE ... AS <writable_table> / allow_different_table_def workaround for read_only
-    /// tables skips RestorerFromBackup's create-query compatibility check, so nothing else catches it.
-    String ttl_file = fs::path(data_path_in_backup) / rocksdb_backup_ttl_filename;
-    if (backup->fileExists(ttl_file))
-    {
-        String backup_ttl_str;
-        readStringUntilEOF(backup_ttl_str, *backup->readFile(ttl_file));
-        Int32 backup_ttl = parse<Int32>(backup_ttl_str);
-        if (backup_ttl != ttl)
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot restore EmbeddedRocksDB table {}: backup was taken from a table with ttl = {} but the "
-                "target table has ttl = {}. The stored value bytes are ttl-format-dependent, so restore requires "
-                "a matching ttl. Create the target table with ttl = {} and restore again",
-                getStorageID().getNameForLogs(), backup_ttl, ttl, backup_ttl);
-    }
-
-    /// The raw key/value bytes are only decodable by a table with the same physical-column layout (key = PK
-    /// columns in PK order, value = the remaining physical columns in physical order). A same-ttl target that
-    /// differs in column types or ordering would silently decode the bytes into wrong data. Reject a mismatch
-    /// before replaying anything; this is what guards the RESTORE ... AS <writable_table> /
-    /// allow_different_table_def path, which skips RestorerFromBackup's create-query compatibility check.
-    String schema_file = fs::path(data_path_in_backup) / rocksdb_backup_schema_filename;
-    if (backup->fileExists(schema_file))
-    {
-        String backup_schema;
-        readStringUntilEOF(backup_schema, *backup->readFile(schema_file));
-        String target_schema = backupSchemaFingerprint();
-        if (backup_schema != target_schema)
-            throw Exception(
-                ErrorCodes::CANNOT_RESTORE_TABLE,
-                "Cannot restore EmbeddedRocksDB table {}: the backup's column layout does not match the target "
-                "table. The stored bytes are decoded with the target table's schema, so restore requires an "
-                "identical physical-column layout and primary key. Backup layout [{}] but target layout [{}]. "
-                "Create the target table with a matching schema and restore again",
-                getStorageID().getNameForLogs(), backup_schema, target_schema);
-    }
-
-    /// Several tables (one writable plus any number of read_only) may share a single rocksdb_dir. When a
-    /// writable table shares the directory it is the single owner that replays the shared RocksDB (a read_only
-    /// handle rejects Write()), so a {rw, ro} pair restores through the writable table and the read_only
-    /// sibling contributes no data restore. An all-read_only group has no writable owner and no common live
-    /// view, so each read_only table restores its own backup independently.
-    auto restore_coordination = restorer.getRestoreCoordination();
-    restore_coordination->addRocksDBTable(rocksdb_dir, backupElectionId());
-
-    /// The ownership decision and all writes run inside the data restore task, which executes after every
-    /// table has registered (insertDataToTables() waits for all restoreDataFromBackup() calls before the
-    /// data restore tasks run), so getRocksDBDataOwnerElectionId() sees the full set of siblings.
-    restorer.addDataRestoreTask(
-        [storage = std::static_pointer_cast<StorageEmbeddedRocksDB>(shared_from_this()),
-         backup,
-         data_path_in_backup,
-         restore_coordination,
-         my_election_id = backupElectionId(),
-         allow_non_empty_tables = restorer.isNonEmptyTableAllowed()]
-        {
-            auto owner_election_id = restore_coordination->getRocksDBDataOwnerElectionId(storage->rocksdb_dir);
-            /// Skip only when a writable owner (which will replay for the whole group) is some other table.
-            /// If the owner is not writable (all-read_only group) every table replays its own backup, so a
-            /// non-empty read_only backup still hits the read_only rejection in restoreDataOwner().
-            if (isWritableElectionId(owner_election_id) && owner_election_id != my_election_id)
-                return;
-            storage->restoreDataOwner(backup, data_path_in_backup, allow_non_empty_tables);
-        });
-}
-
-void StorageEmbeddedRocksDB::finalizeRestoreFromBackup()
-{
-    /// A read_only handle serves the snapshot its directory had when it was opened, and a read_only
-    /// sibling sharing a rocksdb_dir was opened before the writable owner replayed the rows, so it
-    /// still serves pre-restore data. The owner wrote through its own live handle and needs no reopen.
-    if (!read_only)
-        return;
-
-    std::lock_guard lock(rocksdb_ptr_mx);
-    /// Released, not closed: finalizeTables() holds only a shared table lock, unlike truncate() and
-    /// drop(), so a full scan may be iterating this handle right now and closing it under an iterator
-    /// aborts inside RocksDB. The last reference, possibly that scan, closes it by destroying it.
-    rocksdb_ptr.reset();
-    initDB();
-}
-
-void StorageEmbeddedRocksDB::restoreDataOwner(const BackupPtr & backup, const String & data_path_in_backup, bool allow_non_empty_tables)
-{
-    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
-
-    /// A read_only table opens its handle with OpenForReadOnly()/DBWithTTL::Open(..., read_only) over an
-    /// externally-managed directory and rejects the Write() a data restore issues. If this read_only table
-    /// is the elected owner (no writable sibling exists) and the backup carries rows, reject up front with a
-    /// clear error instead of failing later with an opaque RocksDB write error. An empty backup writes
-    /// nothing, so it is still allowed (subject to the non-empty-table guard below).
-    bool backup_has_rows = backupHasRows(backup, data_file);
-    if (read_only && backup_has_rows)
-        throw Exception(
-            ErrorCodes::CANNOT_RESTORE_TABLE,
-            "Cannot restore data into read_only EmbeddedRocksDB table {}. To restore the data, create a writable "
-            "EmbeddedRocksDB table with the same schema and ttl, then run RESTORE ... AS <writable_table> "
-            "SETTINGS allow_different_table_def = 1",
-            getStorageID().getNameForLogs());
-
-    /// Unless allow_non_empty_tables is set, restoring into a table that already holds rows is rejected.
-    /// This guard applies to read_only tables too: an empty backup must not silently "succeed" and leave
-    /// the stale rows of a pre-populated external directory in place.
-    if (!allow_non_empty_tables)
-    {
-        bool empty = false;
-        {
-            SharedLockGuard lock(rocksdb_ptr_mx);
-            if (!rocksdb_ptr)
-                throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
-            std::unique_ptr<rocksdb::Iterator> iterator(rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
-            iterator->SeekToFirst();
-            empty = !iterator->Valid();
-            if (!iterator->status().ok())
-                throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB iterator error: {}", iterator->status().ToString());
-        }
-        if (!empty)
-            RestorerFromBackup::throwTableIsNotEmpty(getStorageID());
-    }
-
-    /// An empty backup has no rows to write; the metadata restore that recreated the table is all that
-    /// is needed (this is also what makes an empty read_only backup restorable).
-    if (!backup_has_rows)
-        return;
-
-    restoreDataImpl(backup, data_path_in_backup);
-}
-
-void StorageEmbeddedRocksDB::restoreDataImpl(const BackupPtr & backup, const String & data_path_in_backup)
-{
-    String data_file = fs::path(data_path_in_backup) / rocksdb_backup_data_filename;
-    if (!backup->fileExists(data_file))
-        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE, "File {} in backup is required to restore table", data_file);
-
-    CompressedReadBufferFromFile compressed_in{backup->readFile(data_file)};
-
-    rocksdb::WriteBatch batch;
-
-    /// GetRootDB() bypasses the DBWithTTL wrapper so the raw TTL timestamp suffix is written verbatim.
-    const auto flush_batch = [&]
-    {
-        SharedLockGuard lock(rocksdb_ptr_mx);
-        if (!rocksdb_ptr)
-            throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table is dropped");
-        auto status = rocksdb_ptr->GetRootDB()->Write(rocksdb::WriteOptions(), &batch);
-        if (!status.ok())
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
-        batch.Clear();
-    };
-
-    String key;
-    String value;
-    while (!compressed_in.eof())
-    {
-        readStringBinary(key, compressed_in);
-        readStringBinary(value, compressed_in);
-
-        auto status = batch.Put(key, value);
-        if (!status.ok())
-            throw Exception(ErrorCodes::ROCKSDB_ERROR, "RocksDB write error: {}", status.ToString());
-
-        /// Flush periodically so restoring a large table does not buffer the whole batch in RAM.
-        if (batch.GetDataSize() >= rocksdb_restore_batch_flush_bytes)
-            flush_batch();
-    }
-
-    if (batch.Count() > 0)
-        flush_batch();
 }
 
 static_assert(rocksdb::DEBUG_LEVEL == 0);
@@ -916,14 +441,14 @@ public:
         {
             va_list backup_ap;
             va_copy(backup_ap, ap);
-            std::array<char, 1024> stack; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - written by `vsnprintf` before read
+            std::array<char, 1024> stack;
             if (vsnprintf(stack.data(), stack.size(), format, backup_ap) < static_cast<int>(stack.size()))
             {
-                va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
+                va_end(backup_ap);
                 LOG_IMPL(log, level.first, level.second, "{}", stack.data());
                 return;
             }
-            va_end(backup_ap); // NOLINT(clang-analyzer-security.VAList)
+            va_end(backup_ap);
         }
 
         /// let's try with a bigger dynamic buffer (but not too huge, since
@@ -1068,7 +593,7 @@ void StorageEmbeddedRocksDB::initDB()
 
     if (ttl > 0)
     {
-        rocksdb::DBWithTTL * db = nullptr;
+        rocksdb::DBWithTTL * db;
         status = rocksdb::DBWithTTL::Open(merged, rocksdb_dir, &db, ttl, read_only);
         if (!status.ok())
         {
@@ -1078,7 +603,7 @@ void StorageEmbeddedRocksDB::initDB()
     }
     else
     {
-        rocksdb::DB * db = nullptr;
+        rocksdb::DB * db;
         if (read_only)
             status = rocksdb::DB::OpenForReadOnly(merged, rocksdb_dir, &db);
         else
@@ -1126,7 +651,7 @@ private:
     bool all_scan = true;
 };
 
-void StorageEmbeddedRocksDB::readImpl(
+void StorageEmbeddedRocksDB::read(
     QueryPlan & query_plan,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
@@ -1137,7 +662,7 @@ void StorageEmbeddedRocksDB::readImpl(
     size_t num_streams)
 {
     storage_snapshot->check(column_names);
-    Block sample_block = storage_snapshot->metadata->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader);
+    Block sample_block = storage_snapshot->metadata->getSampleBlock();
 
     auto reading = std::make_unique<ReadFromEmbeddedRocksDB>(
         column_names,
@@ -1157,21 +682,9 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
     const auto & sample_block = getOutputHeader();
     if (all_scan)
     {
-        std::shared_ptr<rocksdb::DB> rocksdb_ptr;
-        std::unique_ptr<rocksdb::Iterator> iterator;
-        {
-            SharedLockGuard lock(storage.rocksdb_ptr_mx);
-            if (!storage.rocksdb_ptr)
-            {
-                pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
-                return;
-            }
-            rocksdb_ptr = storage.rocksdb_ptr;
-            iterator.reset(rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
-        }
+        auto iterator = std::unique_ptr<rocksdb::Iterator>(storage.rocksdb_ptr->NewIterator(rocksdb::ReadOptions()));
         iterator->SeekToFirst();
-        auto source = std::make_shared<EmbeddedRocksDBSource>(
-            storage, storage_snapshot, sample_block, std::move(rocksdb_ptr), std::move(iterator), max_block_size);
+        auto source = std::make_shared<EmbeddedRocksDBSource>(storage, sample_block, std::move(iterator), max_block_size);
         source->setStorageLimits(query_info.storage_limits);
         pipeline.init(Pipe(std::move(source)));
         return;
@@ -1200,7 +713,7 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
         size_t end = num_keys * (thread_idx + 1) / num_threads;
 
         auto source = std::make_shared<EmbeddedRocksDBSource>(
-            storage, storage_snapshot, sample_block, keys, keys->begin() + begin, keys->begin() + end, max_block_size);
+            storage, sample_block, keys, keys->begin() + begin, keys->begin() + end, max_block_size);
         source->setStorageLimits(query_info.storage_limits);
         pipes.emplace_back(std::move(source));
     }
@@ -1312,7 +825,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     if (!args.storage_def->primary_key)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "StorageEmbeddedRocksDB requires at least one column in primary key");
 
-    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, {}, args.getContext());
+    metadata.primary_key = KeyDescription::getKeyFromAST(args.storage_def->primary_key->ptr(), metadata.columns, args.getContext());
     auto primary_key_names = metadata.getColumnsRequiredForPrimaryKey();
     for (const auto & primary_key_name : primary_key_names)
     {
@@ -1349,7 +862,7 @@ static StoragePtr create(const StorageFactory::Arguments & args)
 
 std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistics() const
 {
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return nullptr;
     return rocksdb_ptr->GetOptions().statistics;
@@ -1358,7 +871,7 @@ std::shared_ptr<rocksdb::Statistics> StorageEmbeddedRocksDB::getRocksDBStatistic
 std::vector<rocksdb::Status>
 StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys, std::vector<String> & values) const
 {
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
@@ -1382,7 +895,7 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
 
         if (!key_type->equals(*primary_key_type))
             throw DB::Exception(
-                ErrorCodes::TYPE_MISMATCH,
+                ErrorCodes::LOGICAL_ERROR,
                 "Primary key type mismatch, expected {}, got {}.",
                 primary_key_types[i]->getName(),
                 keys[i].type->getName());
@@ -1398,34 +911,32 @@ Chunk StorageEmbeddedRocksDB::getByKeys(
     {
         std::string & serialized_key = raw_keys.emplace_back();
         WriteBufferFromString wb(serialized_key);
-        for (size_t pk_idx = 0; pk_idx < keys.size(); ++pk_idx)
+        for (const auto & key : keys)
         {
             Field field;
-            keys[pk_idx].column->get(i, field);
+            key.column->get(i, field);
             if (field.isNull())
             {
                 null_map[i] = 0;
                 break;
             }
-            primary_key_types[pk_idx]->getDefaultSerialization()->serializeBinary(field, wb, {});
+            key.type->getDefaultSerialization()->serializeBinary(field, wb, {});
         }
         wb.finalize();
     }
 
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    auto block = getBySerializedKeys(raw_keys, &null_map, metadata_snapshot->getSampleBlock());
-    return Chunk(block.getColumns(), block.rows());
+    return getBySerializedKeys(raw_keys, &null_map);
 }
 
 Block StorageEmbeddedRocksDB::getSampleBlock(const Names &) const
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
-    return metadata_snapshot->getSampleBlock();
+    return getInMemoryMetadataPtr()->getSampleBlock();
 }
 
-Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map, const Block & sample_block) const
+Chunk StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string> & keys, PaddedPODArray<UInt8> * in_out_null_map) const
 {
     std::vector<String> values;
+    Block sample_block = getInMemoryMetadataPtr()->getSampleBlock();
 
     MutableColumns columns = sample_block.cloneEmptyColumns();
 
@@ -1471,17 +982,18 @@ Block StorageEmbeddedRocksDB::getBySerializedKeys(const std::vector<std::string>
         }
     }
 
-    return sample_block.cloneWithColumns(std::move(columns));
+    size_t num_rows = columns.at(0)->size();
+    return Chunk(std::move(columns), num_rows);
 }
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context) const
 {
     if (!query_context->getSettingsRef()[Setting::optimize_trivial_approximate_count_query])
         return {};
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_rows = 0;
+    UInt64 estimated_rows;
     if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
         return {};
     return estimated_rows;
@@ -1489,19 +1001,19 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
 
 std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 {
-    SharedLockGuard lock(rocksdb_ptr_mx);
+    std::shared_lock lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
         return {};
-    UInt64 estimated_bytes = 0;
+    UInt64 estimated_bytes;
     if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};
     return estimated_bytes;
 }
 
-void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder, DDLGuardPtr & ddl_guard)
+void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr query_context, AlterLockHolder & holder)
 {
-    IStorage::alter(params, query_context, holder, ddl_guard);
-    auto new_metadata = getInMemoryMetadataPtr(query_context, false);
+    IStorage::alter(params, query_context, holder);
+    auto new_metadata = getInMemoryMetadataPtr();
     if (new_metadata->settings_changes)
     {
         const auto & settings_changes = new_metadata->settings_changes->as<const ASTSetQuery &>();
@@ -1511,7 +1023,6 @@ void StorageEmbeddedRocksDB::alter(const AlterCommands & params, ContextPtr quer
     }
 }
 
-void registerStorageEmbeddedRocksDB(StorageFactory & factory);
 void registerStorageEmbeddedRocksDB(StorageFactory & factory)
 {
     StorageFactory::StorageFeatures features{
@@ -1522,248 +1033,14 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
     };
 
-    factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
-        .description = R"DOCS_MD(
-import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
-
-# EmbeddedRocksDB table engine
-
-<CloudNotSupportedBadge />
-
-This engine allows integrating ClickHouse with [RocksDB](http://rocksdb.org/).
-
-## Creating a table {#creating-a-table}
-
-```sql
-CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
-(
-    name1 [type1] [DEFAULT|MATERIALIZED|ALIAS expr1],
-    name2 [type2] [DEFAULT|MATERIALIZED|ALIAS expr2],
-    ...
-) ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(primary_key_name)
-[ SETTINGS name=value, ... ]
-```
-
-Engine parameters:
-
-- `ttl` - time to live for values. TTL is accepted in seconds. If TTL is 0, regular RocksDB instance is used (without TTL).
-- `rocksdb_dir` - path to the directory of an existed RocksDB or the destination path of the created RocksDB. Open the table with the specified `rocksdb_dir`.
-- `read_only` - when `read_only` is set to true, read-only mode is used. For storage with TTL, compaction will not be triggered (neither manual nor automatic), so no expired entries are removed.
-- `primary_key_name` – any column name in the column list.
-- `primary key` must be specified, it supports only one column in the primary key. The primary key will be serialized in binary as a `rocksdb key`.
-- columns other than the primary key will be serialized in binary as `rocksdb` value in corresponding order.
-- queries with key `equals` or `in` filtering will be optimized to multi keys lookup from `rocksdb`.
-
-Engine settings:
-
-- `optimize_for_bulk_insert` – Table is optimized for bulk insertions (insert pipeline will create SST files and import to rocksdb database instead of writing to memtables); default value: `1`.
-- `bulk_insert_block_size` - Minimum size of SST files (in term of rows) created by bulk insertion; default value: `1048449`.
-
-Example:
-
-```sql
-CREATE TABLE test
-(
-    `key` String,
-    `v1` UInt32,
-    `v2` String,
-    `v3` Float32
-)
-ENGINE = EmbeddedRocksDB
-PRIMARY KEY key
-```
-
-## Metrics {#metrics}
-
-There is also `system.rocksdb` table, that expose rocksdb statistics:
-
-```sql
-SELECT
-    name,
-    value
-FROM system.rocksdb
-
-┌─name──────────────────────┬─value─┐
-│ no.file.opens             │     1 │
-│ number.block.decompressed │     1 │
-└───────────────────────────┴───────┘
-```
-
-## Configuration {#configuration}
-
-You can also change any [rocksdb options](https://github.com/facebook/rocksdb/wiki/Option-String-and-Option-Map) using config:
-
-```xml
-<rocksdb>
-    <options>
-        <max_background_jobs>8</max_background_jobs>
-    </options>
-    <column_family_options>
-        <num_levels>2</num_levels>
-    </column_family_options>
-    <tables>
-        <table>
-            <name>TABLE</name>
-            <options>
-                <max_background_jobs>8</max_background_jobs>
-            </options>
-            <column_family_options>
-                <num_levels>2</num_levels>
-            </column_family_options>
-        </table>
-    </tables>
-</rocksdb>
-```
-
-By default trivial approximate count optimization is turned off, which might affect the performance `count()` queries. To enable this
-optimization set up `optimize_trivial_approximate_count_query = 1`. Also, this setting affects `system.tables` for EmbeddedRocksDB engine,
-turn on the settings to see approximate values for `total_rows` and `total_bytes`.
-
-## Supported operations {#supported-operations}
-
-### Inserts {#inserts}
-
-When new rows are inserted into `EmbeddedRocksDB`, if the key already exists, the value will be updated, otherwise a new key is created.
-
-Example:
-
-```sql
-INSERT INTO test VALUES ('some key', 1, 'value', 3.2);
-```
-
-### Deletes {#deletes}
-
-Rows can be deleted using `DELETE` query or `TRUNCATE`.
-
-```sql
-DELETE FROM test WHERE key LIKE 'some%' AND v1 > 1;
-```
-
-```sql
-ALTER TABLE test DELETE WHERE key LIKE 'some%' AND v1 > 1;
-```
-
-```sql
-TRUNCATE TABLE test;
-```
-
-### Updates {#updates}
-
-Values can be updated using the `ALTER TABLE` query. The primary key cannot be updated.
-
-```sql
-ALTER TABLE test UPDATE v1 = v1 * 10 + 2 WHERE key LIKE 'some%' AND v3 > 3.1;
-```
-
-### Joins {#joins}
-
-A special `direct` join with EmbeddedRocksDB tables is supported.
-This direct join avoids forming a hash table in memory and accesses
-the data directly from the EmbeddedRocksDB.
-
-With large joins you may see much lower memory usage with direct joins
-because the hash table is not created.
-
-To enable direct joins:
-```sql
-SET join_algorithm = 'direct, hash'
-```
-
-<Tip>
-When the `join_algorithm` is set to `direct, hash`, direct joins will be used
-when possible, and hash otherwise.
-</Tip>
-
-#### Example {#example}
-
-##### Create and populate an EmbeddedRocksDB table {#create-and-populate-an-embeddedrocksdb-table}
-```sql
-CREATE TABLE rdb
-(
-    `key` UInt32,
-    `value` Array(UInt32),
-    `value2` String
-)
-ENGINE = EmbeddedRocksDB
-PRIMARY KEY key
-```
-
-```sql
-INSERT INTO rdb
-    SELECT
-        toUInt32(sipHash64(number) % 10) AS key,
-        [key, key+1] AS value,
-        ('val2' || toString(key)) AS value2
-    FROM numbers_mt(10);
-```
-
-##### Create and populate a table to join with table `rdb` {#create-and-populate-a-table-to-join-with-table-rdb}
-
-```sql
-CREATE TABLE t2
-(
-    `k` UInt16
-)
-ENGINE = TinyLog
-```
-
-```sql
-INSERT INTO t2 SELECT number AS k
-FROM numbers_mt(10)
-```
-
-##### Set the join algorithm to `direct`{#set-the-join-algorithm-to-direct}
-
-```sql
-SET join_algorithm = 'direct'
-```
-
-##### An INNER JOIN {#an-inner-join}
-```sql
-SELECT *
-FROM
-(
-    SELECT k AS key
-    FROM t2
-) AS t2
-INNER JOIN rdb ON rdb.key = t2.key
-ORDER BY key ASC
-```
-```response
-┌─key─┬─rdb.key─┬─value──┬─value2─┐
-│   0 │       0 │ [0,1]  │ val20  │
-│   2 │       2 │ [2,3]  │ val22  │
-│   3 │       3 │ [3,4]  │ val23  │
-│   6 │       6 │ [6,7]  │ val26  │
-│   7 │       7 │ [7,8]  │ val27  │
-│   8 │       8 │ [8,9]  │ val28  │
-│   9 │       9 │ [9,10] │ val29  │
-└─────┴─────────┴────────┴────────┘
-```
-
-### More information on Joins {#more-information-on-joins}
-- [`join_algorithm` setting](/reference/settings/session-settings/join#join_algorithm)
-- [JOIN clause](/reference/statements/select/join)
-)DOCS_MD",
-        .syntax = "ENGINE = EmbeddedRocksDB([ttl, rocksdb_dir, read_only]) PRIMARY KEY(key)",
-        .related = {"Redis"}});
+    factory.registerStorage("EmbeddedRocksDB", create, features);
 }
 
 void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands, ContextPtr /* context */) const
 {
     for (const auto & command : commands)
-    {
         if (!command.isCommentAlter() && !command.isSettingsAlter())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Alter of type '{}' is not supported by storage {}", command.type, getName());
-
-        /// Validate setting values before `IStorage::alter` persists the metadata file,
-        /// otherwise an invalid value blocks attach on the next restart. See issue #88443.
-        if (command.type == AlterCommand::MODIFY_SETTING)
-        {
-            for (const auto & change : command.settings_changes)
-                RocksDBSettings::checkCanSet(change.name, change.value);
-        }
-    }
 }
 
 }
