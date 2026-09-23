@@ -283,14 +283,18 @@ SYSTEM FLUSH LOGS query_log;
 -- `FilterStep` stays authoritative. So a run whose configuration does not reach the two-level bucket
 -- conversion skips nothing and is still correct - 1 of 50 runs of the private
 -- `amd_asan_ubsan, flaky check, s3 storage, meta in keeper` job reported 0 for every cell below, while
--- the `EXPLAIN` cells above still carried the annotation. A skipped count is therefore accepted as 0 or
--- as the exact number of groups the operator rejects, and never as anything else: a wrong operator, a
--- mirrored bound mapped to the wrong operator, or a count read from the wrong aggregate's offset skips
--- a different, non-zero number of groups. The setting-off cells must skip nothing.
+-- the `EXPLAIN` cells above still carried the annotation. A skipped count is therefore the exact number
+-- of groups the operator rejects, or 0 only when the query never built a two-level hash table: a wrong
+-- operator, a mirrored bound mapped to the wrong operator, or a count read from the wrong aggregate's
+-- offset skips a different, non-zero number of groups, and a two-level conversion that stopped honoring
+-- the annotation skips none while still going two-level. The setting-off cells must skip nothing.
 SELECT log_comment,
-       ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] IN (0, map(
+       ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] = map(
            '05218hp_ge_simple_on', 4000, '05218hp_lt_simple_on', 2000, '05218hp_le_general_on', 2000,
-           '05218hp_eq_general_on', 4000, '05218hp_ge_mirrored_on', 4000)[log_comment]) AS groups_skipped_ok
+           '05218hp_eq_general_on', 4000, '05218hp_ge_mirrored_on', 4000)[log_comment]
+       OR (ProfileEvents['AggregationHavingPrefilterGroupsSkipped'] = 0
+           AND ProfileEvents['AggregationHashTablesInitializedAsTwoLevel'] = 0
+           AND ProfileEvents['AggregationConvertedToTwoLevel'] = 0) AS groups_skipped_ok
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND startsWith(log_comment, '05218hp_')
