@@ -57,7 +57,8 @@ TTLTransform::TTLTransform(
     const MergeTreeData::MutableDataPartPtr & data_part_,
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
-    bool force_)
+    bool force_,
+    bool force_rows_where_ttl_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
     , data_part(data_part_)
     , expired_columns(expired_columns_)
@@ -83,7 +84,7 @@ TTLTransform::TTLTransform(
     for (const auto & where_ttl : metadata_snapshot_->getRowsWhereTTLs())
         algorithms.emplace_back(std::make_unique<TTLDeleteAlgorithm>(
             getExpressions(where_ttl, subqueries_for_sets, context), where_ttl,
-            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_));
+            old_ttl_infos.rows_where_ttl[where_ttl.result_column], current_time_, force_ || force_rows_where_ttl_));
 
     for (const auto & group_by_ttl : metadata_snapshot_->getGroupByTTLs())
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
