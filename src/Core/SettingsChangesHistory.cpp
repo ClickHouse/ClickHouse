@@ -43,6 +43,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"use_query_condition_cache_for_time_conditions", false, true, "New setting to let the query condition cache serve conditions that involve the current time (e.g. `WHERE time >= now() - INTERVAL 10 DAY`) by deriving a deterministic condition with the time constant rounded onto a grid; enabled by default. previous_value=false so `compatibility` with an earlier version keeps such conditions uncached, as before."},
+            {"query_condition_cache_time_condition_grid_factor", 1., 1., "New setting: the grid step used when deriving deterministic conditions from conditions involving the current time for the query condition cache, as a fraction of the distance between the time constant and the current time."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},

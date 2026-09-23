@@ -27,6 +27,8 @@ namespace Setting
     extern const SettingsFloat max_streams_to_max_threads_ratio;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool use_query_condition_cache_for_time_conditions;
+    extern const SettingsFloat query_condition_cache_time_condition_grid_factor;
     extern const SettingsBool load_marks_asynchronously;
     extern const SettingsBool use_streaming_marks_compression;
     extern const SettingsBool merge_tree_use_deserialization_prefixes_cache;
@@ -134,6 +136,8 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createFromContext(const Context
     /// interchangeable. The setting is a debugging aid, so such queries skip the cache instead of
     /// getting a key space of their own. Mirrored on the read side in MergeTreeDataSelectExecutor.
     result.use_query_condition_cache = settings[Setting::use_query_condition_cache] && settings[Setting::apply_deleted_mask];
+    result.use_query_condition_cache_for_time_conditions = settings[Setting::use_query_condition_cache_for_time_conditions];
+    result.query_condition_cache_time_condition_grid_factor = static_cast<double>(settings[Setting::query_condition_cache_time_condition_grid_factor]);
     result.query_condition_cache_settings_salt = queryConditionCacheSettingsSalt(settings);
     result.use_deserialization_prefixes_cache = settings[Setting::merge_tree_use_deserialization_prefixes_cache];
     result.use_prefixes_deserialization_thread_pool = settings[Setting::merge_tree_use_prefixes_deserialization_thread_pool];
