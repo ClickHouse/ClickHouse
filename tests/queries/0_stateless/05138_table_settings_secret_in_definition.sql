@@ -15,7 +15,9 @@ CREATE TABLE with_secrets (a String) ENGINE = URL('http://localhost:1/', CSV)
              format_avro_schema_registry_url = 'http://user:hunter2@registry/';
 
 SELECT '-- the credential is hidden, and the row says so';
--- Only the credential: the host is kept, which is what makes the masked value still useful.
+-- The whole userinfo, the user name with the password: a masker that kept the name would have to
+-- find where the name ends, and the bound differs between the consumers of these values. The host is
+-- kept, which is what makes the masked value still useful.
 SELECT name, value, is_masked FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'with_secrets' ORDER BY name;
 

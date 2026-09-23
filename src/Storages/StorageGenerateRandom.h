@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/GenerateRandomSettings.h>
 #include <optional>
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <base/types.h>
@@ -40,7 +41,8 @@ public:
         const ColumnsDescription & columns_,
         const String & comment,
         const GenerateRandomOptions & options_,
-        const std::optional<UInt64> & random_seed);
+        const std::optional<UInt64> & random_seed,
+        const GenerateRandomSettings & settings_ = {});
 
     std::string getName() const override { return "GenerateRandom"; }
 
@@ -61,9 +63,15 @@ public:
 
     /// `JSON`, `Dynamic` and every type containing them are generated as well.
     bool supportsColumnsWithDynamicStructure() const override { return true; }
+
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
+
 private:
     GenerateRandomOptions options;
     UInt64 random_seed = 0;
+    /// The settings the table was created with. `options` holds what the engine reads from them; this is
+    /// what it reports, so a setting states its own value rather than the one it was folded into.
+    GenerateRandomSettings settings;
 };
 
 }

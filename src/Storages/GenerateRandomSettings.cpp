@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -21,7 +22,7 @@ namespace ErrorCodes
     DECLARE(UInt64, max_json_keys_per_object, 8, "Maximum number of generated keys on one level of a `JSON` object; the root object gets at least half of it. 0 means only typed paths are generated. Must be at most 1000.", 0) \
 
 DECLARE_SETTINGS_TRAITS(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GENERATE_RANDOM_SETTINGS_SUPPORTED_TYPES)
-IMPLEMENT_SETTINGS_TRAITS(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GenerateRandomSettings, GenerateRandomSetting)
+IMPLEMENT_SETTINGS_TRAITS_WITH_RECORDED_ORIGIN(GenerateRandomSettingsTraits, GENERATE_RANDOM_SETTINGS, GenerateRandomSettings, GenerateRandomSetting)
 
 GenerateRandomSettings::GenerateRandomSettings() : impl(std::make_unique<GenerateRandomSettingsImpl>())
 {
@@ -46,7 +47,7 @@ void GenerateRandomSettings::loadFromQuery(ASTStorage & storage_def)
     {
         try
         {
-            impl->applyChanges(storage_def.settings->changes);
+            impl->applyChangesWithOrigin(storage_def.settings->changes, SettingOrigin::Definition);
         }
         catch (Exception & e)
         {
@@ -86,4 +87,7 @@ bool GenerateRandomSettings::hasBuiltin(std::string_view name)
 {
     return GenerateRandomSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(GenerateRandomSettings)
+
 }

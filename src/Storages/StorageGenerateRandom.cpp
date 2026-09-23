@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageGenerateRandom.h>
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/GenerateRandomSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/checkAndGetLiteralArgument.h>
@@ -1930,8 +1931,9 @@ StorageGenerateRandom::StorageGenerateRandom(
     const ColumnsDescription & columns_,
     const String & comment,
     const GenerateRandomOptions & options_,
-    const std::optional<UInt64> & random_seed_)
-    : StorageWithCommonVirtualColumns(table_id_), options(options_)
+    const std::optional<UInt64> & random_seed_,
+    const GenerateRandomSettings & settings_)
+    : StorageWithCommonVirtualColumns(table_id_), options(options_), settings(settings_)
 {
     static constexpr size_t MAX_ARRAY_SIZE = 1 << 30;
     static constexpr size_t MAX_STRING_SIZE = 1 << 30;
@@ -1959,6 +1961,11 @@ VirtualColumnsDescription StorageGenerateRandom::createVirtuals()
     return desc;
 }
 
+
+SettingDescriptions StorageGenerateRandom::getTableSettings(ContextPtr /* query_context */) const
+{
+    return settings.enumerateSettings();
+}
 
 void registerStorageGenerateRandom(StorageFactory & factory);
 void registerStorageGenerateRandom(StorageFactory & factory)
@@ -2001,11 +2008,12 @@ void registerStorageGenerateRandom(StorageFactory & factory)
         options.max_json_depth = settings[GenerateRandomSetting::max_json_depth];
         options.max_json_keys_per_object = settings[GenerateRandomSetting::max_json_keys_per_object];
 
-        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, options, random_seed);
+        return std::make_shared<StorageGenerateRandom>(args.table_id, args.columns, args.comment, options, random_seed, settings);
     },
     {
         .supports_settings = true,
         .has_builtin_setting_fn = GenerateRandomSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = enumerateCompiledDefaults<GenerateRandomSettings>,
     },
     Documentation{
         .description = R"DOCS_MD(
