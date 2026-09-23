@@ -186,6 +186,7 @@ StorageKafka2::StorageKafka2(
     , active_node_identifier(toString(ServerUUID::get()))
 {
     auto component_guard = Coordination::setCurrentComponent("StorageKafka2::StorageKafka2");
+    StorageKafkaUtils::checkBrokerList(brokers, context_);
     kafka_settings->sanityCheck(getContext());
     parsePartitionAffinitySettings();
 

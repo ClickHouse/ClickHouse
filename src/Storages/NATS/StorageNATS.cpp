@@ -29,6 +29,7 @@
 #include <Storages/NATS/NATSSettings.h>
 #include <Storages/NATS/NATSSource.h>
 #include <Storages/NATS/StorageNATS.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageMaterializedView.h>
@@ -37,6 +38,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
 #include <Common/Macros.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/parseAddress.h>
 #include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
@@ -88,6 +91,28 @@ extern const NATSSettingsString nats_username;
 static const uint32_t QUEUE_SIZE = 100000;
 static const auto RESCHEDULE_MS = 500;
 static const auto MAX_THREAD_WORK_DURATION_MS = 60000;
+
+namespace
+{
+
+/// Checks the NATS address against the remote host filter and throws `UNACCEPTABLE_URL` for a host it does not allow.
+/// libnats takes URLs of the form `[nats://|tls://][user[:password]@]host[:port]` and connects to port 4222 when
+/// none is given, so the filter has to see the same host and port the client will dial.
+void checkNATSAddress(const String & address, const RemoteHostFilter & remote_host_filter)
+{
+    String host_and_port = address;
+
+    if (const auto scheme_end = host_and_port.find("://"); scheme_end != String::npos)
+        host_and_port = host_and_port.substr(scheme_end + 3);
+
+    if (const auto credentials_end = host_and_port.rfind('@'); credentials_end != String::npos)
+        host_and_port = host_and_port.substr(credentials_end + 1);
+
+    const auto parsed_address = parseAddress(host_and_port, 4222);
+    remote_host_filter.checkHostAndPort(parsed_address.first, toString(parsed_address.second));
+}
+
+}
 
 namespace ErrorCodes
 {
@@ -166,6 +191,13 @@ StorageNATS::StorageNATS(
            .max_connect_tries = static_cast<UInt64>((*nats_settings)[NATSSetting::nats_startup_connect_tries].value),
            .reconnect_wait = static_cast<int>((*nats_settings)[NATSSetting::nats_reconnect_wait].value),
            .secure = (*nats_settings)[NATSSetting::nats_secure].value};
+
+    const auto & remote_host_filter = context_->getRemoteHostFilter();
+    if (!configuration.url.empty())
+        checkNATSAddress(configuration.url, remote_host_filter);
+    for (const auto & server : configuration.servers)
+        if (!server.empty())
+            checkNATSAddress(server, remote_host_filter);
 
     if (configuration.client_cert_file.empty() != configuration.client_key_file.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings nats_client_cert_file and nats_client_key_file must be specified together");
