@@ -390,12 +390,20 @@ public:
             return upperBound();
 
         /// The buffered addresses are not pruned yet, and how many of them survive is unknown until the
-        /// pipeline runs. Every stream asks for an address as soon as it starts, and a stream started for
-        /// an address the filter then rejects would ask the generator past the limit while another
-        /// stream already reads the one survivor. One stream reads exactly what a ready filter would
-        /// have selected; it prunes the batch on its first `next`.
+        /// pipeline runs. When the whole pattern fits into the limit, a stream that finds nothing left
+        /// simply finishes, so the streams are sized from the pattern as if there were no filter.
+        /// Otherwise every stream asks for an address as soon as it starts, and a stream started for an
+        /// address the filter then rejects would ask the generator past the limit while another stream
+        /// already reads the one survivor. One stream reads exactly what a ready filter would have
+        /// selected; it prunes the batch on its first `next`.
         if (filter_deferred)
+        {
+            /// Not exhausted, so there is a generator: a single URI is exhausted at once.
+            const auto total = generator->totalCount();
+            if (total && *total <= max_addresses_upper_bound)
+                return upperBound();
             return 1;
+        }
 
         while (batch.size() - batch_index < requested && !exhausted && generated < max_addresses_upper_bound)
             fillBatch();
