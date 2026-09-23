@@ -44,6 +44,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.10",
         {
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
+            {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
+            {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
+            {"ai_function_max_api_calls_per_query", 1000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"iceberg_tolerate_conflicting_manifest_schemas", false, true, "New setting: when an Iceberg manifest file header carries a schema that conflicts with the schema registered for the same schema-id from metadata.json, prefer the metadata.json schema and log a warning instead of failing the query, matching the behavior of other query engines. `compatibility` below 26.10 restores the previous strict behavior."},
             {"legacy_join_size_limits_trigger_spilling", true, false, "`max_rows_in_join` / `max_bytes_in_join` are now hard caps for every hash join, including the ones that spill to disk, where they used to act as the spill trigger. Spilling is driven by `max_bytes_before_external_join` / `max_bytes_ratio_before_external_join` alone."},
             {"prefer_optimize_projection", false, false, "New setting: choose a usable projection regardless of its estimated cost, like `force_optimize_projection`, but without failing the query when no projection is used."},
@@ -52,6 +55,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"min_rows_per_stream_for_gradual_resize", 0, 0, "New setting to opt in to starting `GROUP BY` aggregation with a single stream and switching to all aggregation streams in the pre-aggregation stage once the cumulative number of rows crosses the threshold. Disabled by default."},
             {"min_bytes_per_stream_for_gradual_resize", 0, 0, "New setting (in bytes) that, paired with `min_rows_per_stream_for_gradual_resize`, controls when the `GROUP BY` pre-aggregation switches from one active stream to all aggregation streams in this stage."},
+            {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {

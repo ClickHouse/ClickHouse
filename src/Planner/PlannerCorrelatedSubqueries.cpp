@@ -1308,9 +1308,9 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
             /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
-            /// so they stay alive after decorrelation destroys the correlated plan.
-            for (const auto & ctx : correlated_plan.getInterpretersContexts())
-                query_plan.addInterpreterContext(ctx);
+            /// so they stay alive after decorrelation destroys the correlated plan, and the decision
+            /// contexts, so they follow the parent's distributed-plan decision.
+            query_plan.takeContextsFrom(correlated_plan);
 
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
@@ -1356,9 +1356,9 @@ void buildQueryPlanForCorrelatedSubquery(
 
             auto correlated_plan = std::move(subquery_planner).extractQueryPlan();
             /// Propagate interpreter contexts (e.g. for table functions like `url()`) to the parent plan,
-            /// so they stay alive after decorrelation destroys the correlated plan.
-            for (const auto & ctx : correlated_plan.getInterpretersContexts())
-                query_plan.addInterpreterContext(ctx);
+            /// so they stay alive after decorrelation destroys the correlated plan, and the decision
+            /// contexts, so they follow the parent's distributed-plan decision.
+            query_plan.takeContextsFrom(correlated_plan);
 
             DecorrelationContext context{
                 .correlated_subquery = correlated_subquery,
