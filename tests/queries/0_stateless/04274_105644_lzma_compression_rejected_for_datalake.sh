@@ -3,7 +3,7 @@
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/105644
 # Data lake engines (`Iceberg`, `DeltaLake`, `Hudi`, `Paimon`) must reject the
-# `compression_method` argument at CREATE TIME because the data file format
+# `compression_method` argument (other than the default `auto`) at CREATE TIME because the data file format
 # (`Parquet`/`ORC`/`Avro`) already carries its own internal codec. Any
 # user-supplied wrapper is silently dropped on the Iceberg write path while
 # still applied on read, yielding files the engine cannot read back; for the
@@ -31,6 +31,7 @@ TABLES=(
     "${TABLE_PREFIX}_none"
     "${TABLE_PREFIX}_auto"
     "${TABLE_PREFIX}_auto_upper"
+    "${TABLE_PREFIX}_auto_empty"
     "${TABLE_PREFIX}_none_mixed"
     "${TABLE_PREFIX}_attach_full_def_lzma"
     "${TABLE_PREFIX}_kv_compression"
@@ -76,19 +77,30 @@ ${CLICKHOUSE_CLIENT} --query "
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_none', 'Parquet', 'none')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
 
-# 5. Explicit `compression_method = 'auto'` is also rejected (same reason).
+# 5. Explicit `compression_method = 'auto'` is accepted: it is the default and
+#    means the same as omitting the argument. Users pass it explicitly, and the
+#    `*AzureCluster` table functions forward it as a placeholder to the other
+#    nodes of the cluster.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_auto (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_auto', 'Parquet', 'auto')
-" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto"
 
-# 6. Case-insensitive: `AUTO` (upper case) is rejected because the
-#    rejection only checks whether the argument was supplied at all, not its
-#    value.
+# 6. Case-insensitive: `AUTO` (upper case) is accepted as well.
 ${CLICKHOUSE_CLIENT} --query "
     CREATE TABLE ${TABLE_PREFIX}_auto_upper (c0 Int)
     ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_auto_upper', 'Parquet', 'AUTO')
-" 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto_upper"
+
+# 6b. An empty string is the same as `auto` for `chooseCompressionMethod`, so it
+#     is accepted too.
+${CLICKHOUSE_CLIENT} --query "
+    CREATE TABLE ${TABLE_PREFIX}_auto_empty (c0 Int)
+    ENGINE = IcebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_auto_empty', 'Parquet', '')
+"
+${CLICKHOUSE_CLIENT} --query "SELECT count() FROM ${TABLE_PREFIX}_auto_empty"
 
 # 7. `None` (mixed case) is rejected for the same reason.
 ${CLICKHOUSE_CLIENT} --query "
@@ -134,6 +146,12 @@ ${CLICKHOUSE_CLIENT} --query "
 ${CLICKHOUSE_CLIENT} --query "
     SELECT * FROM icebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_tf_gzip', 'Parquet', 'c0 Int32', 'gzip')
 " 2>&1 | grep -o -m1 "BAD_ARGUMENTS"
+
+# 11b. An explicit `'auto'` via the table-function path is accepted: it reads
+#      the empty table created in case 3.
+${CLICKHOUSE_CLIENT} --query "
+    SELECT count() FROM icebergLocal('${USER_FILES_PATH}/${TABLE_PREFIX}_default', 'Parquet', 'c0 Int32', 'auto')
+"
 
 # 12 / 13 / 14. Key-value form via the `S3` data lake parser:
 #         `IcebergS3('<url>', compression = 'lzma')` is the bot-reported gap

@@ -166,9 +166,17 @@ void StorageObjectStorageConfiguration::initialize(
         /// metadata (see `DatabaseDataLake::table_definition_mode`).
         /// The `is_restore_from_backup` guard is kept so that a restore is never rejected even
         /// if it is ever executed with another mode.
+        /// An explicit `auto` (in any case) or an empty string is the same as omitting the argument
+        /// (see `chooseCompressionMethod`), so it is accepted: users pass it explicitly, and
+        /// `addStructureAndFormatToArgsIfNeededAzure` inserts an `auto` placeholder before the
+        /// structure argument when a `*AzureCluster` table function forwards the query to the
+        /// other nodes of the cluster.
+        const auto & user_compression_method = configuration_to_initialize.compression_method;
         if (mode == LoadingStrictnessLevel::CREATE
             && !is_restore_from_backup
-            && configuration_to_initialize.compression_method_user_provided)
+            && configuration_to_initialize.compression_method_user_provided
+            && !user_compression_method.empty()
+            && !boost::iequals(user_compression_method, "auto"))
         {
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,

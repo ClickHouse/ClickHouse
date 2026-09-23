@@ -133,3 +133,61 @@ def test_cluster_function(started_cluster):
     "5\tbb\n" == instance.query(
         f"SELECT * FROM {table_function} ORDER BY a SETTINGS allow_experimental_analyzer=1"
     )
+
+
+def test_cluster_function_positional_compression(started_cluster):
+    """A `*AzureCluster` table function forwards the query to the other nodes with an
+    `auto` placeholder for `compression_method` inserted before the structure argument
+    (`addStructureAndFormatToArgsIfNeededAzure`). Data lake engines reject a real
+    `compression_method`, but `auto` means the same as omitting it, so the forwarded
+    query must still be accepted by the other nodes. See PR #105667."""
+    instance = started_cluster.instances["node1"]
+    table_name = randomize_table_name("test_cluster_function_positional_compression")
+
+    schema = pa.schema([("a", pa.int32()), ("b", pa.string())])
+    data = [
+        pa.array([1, 2, 3, 4, 5], type=pa.int32()),
+        pa.array(["aa", "bb", "cc", "aa", "bb"], type=pa.string()),
+    ]
+
+    account_name = "devstoreaccount1"
+    account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+    storage_options = {
+        "AZURE_STORAGE_ACCOUNT_NAME": account_name,
+        "AZURE_STORAGE_ACCOUNT_KEY": account_key,
+        "AZURE_STORAGE_CONTAINER_NAME": started_cluster.azure_container_name,
+        "AZURE_STORAGE_USE_EMULATOR": "true",
+    }
+    path = f"abfss://{started_cluster.azure_container_name}@{account_name}.dfs.core.windows.net/{table_name}"
+    write_deltalake_with_retry(
+        path, pa.Table.from_arrays(data, schema=schema), storage_options=storage_options
+    )
+
+    storage_account_url = started_cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    positional = f"'{storage_account_url}', '{started_cluster.azure_container_name}', '{table_name}', '{account_name}', '{account_key}'"
+
+    # No compression argument: the forwarded query carries the `auto` placeholder.
+    # An explicit `auto`, in any case, is accepted as well.
+    for extra in ["", ", 'Parquet', 'auto'", ", 'Parquet', 'AUTO'"]:
+        query_id = f"{table_name}_{len(extra)}"
+        assert 5 == int(
+            instance.query(
+                f"SELECT count() FROM deltaLakeAzureCluster(cluster, {positional}{extra})",
+                query_id=query_id,
+            )
+        )
+        # Make sure the query did reach the other node, which is where the rejection was.
+        node2 = started_cluster.instances["node2"]
+        node2.query("SYSTEM FLUSH LOGS query_log")
+        assert 0 < int(
+            node2.query(
+                f"SELECT count() FROM system.query_log "
+                f"WHERE initial_query_id = '{query_id}' AND NOT is_initial_query AND type = 'QueryFinish'"
+            )
+        )
+
+    # A real codec is still rejected.
+    error = instance.query_and_get_error(
+        f"SELECT count() FROM deltaLakeAzureCluster(cluster, {positional}, 'Parquet', 'lzma')"
+    )
+    assert "not supported by data lake engines" in error, error

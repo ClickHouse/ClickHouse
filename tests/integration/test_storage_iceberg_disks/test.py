@@ -238,12 +238,16 @@ def test_single_iceberg_file(started_cluster, format_version, storage_type, with
         "SELECT number, toString(number + 1) FROM numbers(100)"
     )
 
-    # `compression_method` is no longer accepted at CREATE time for data lake
-    # engines (see issue #105644 and PR #105667). Verify rejection for both the
-    # legacy `'auto'` placeholder and an explicit codec name.
-    assert "The `compression_method` argument is not supported by data lake engines" in instance.query_and_get_error(
+    # An explicit `compression_method = 'auto'` is the default and is still
+    # accepted for data lake engines, but a real codec is rejected at CREATE
+    # time (see issue #105644 and PR #105667).
+    instance.query(
         f"CREATE TABLE {table_name_4} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'auto') SETTINGS disk = '{disk_name}'"
     )
+    assert instance.query(f"SELECT * FROM {table_name_4}") == instance.query(
+        "SELECT number, toString(number + 1) FROM numbers(100)"
+    )
+
     assert "The `compression_method` argument is not supported by data lake engines" in instance.query_and_get_error(
         f"CREATE TABLE {table_name_5} ENGINE=Iceberg(path = '{storage_path}', format = Parquet, compression_method = 'lzma') SETTINGS disk = '{disk_name}'"
     )
