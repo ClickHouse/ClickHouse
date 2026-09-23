@@ -496,7 +496,30 @@ void GradualResizeProcessor::routeDataStrict()
             }
         }
 
-        /// The paired output is busy: keep the chunk in the input port and wait for that output.
+        if (paired_output.status == OutputStatus::NotActive)
+        {
+            /// The paired output is busy. If the input paired with some other output has finished,
+            /// that output would otherwise stay idle for the rest of the query, and the stage would
+            /// shrink to the number of still-running inputs - e.g. for parts of different sizes or
+            /// for an upstream filter that empties some streams early. Hand the chunk to such an
+            /// orphaned output, like `StrictResizeProcessor` does when a finished input releases its
+            /// output. Outputs whose input is still running are left to that input.
+            auto orphaned = std::find_if(
+                output_ports.begin(), output_ports.end(),
+                [&](const OutputPortWithStatus & output)
+                {
+                    return output.status == OutputStatus::NeedData
+                        && input_ports[&output - output_ports.data()].status == InputStatus::Finished;
+                });
+
+            if (orphaned != output_ports.end())
+            {
+                transferData(input_with_data, *orphaned);
+                continue;
+            }
+        }
+
+        /// Keep the chunk in the input port and wait for the paired output.
         deferred.push(input_number);
     }
 

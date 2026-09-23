@@ -162,3 +162,37 @@ TEST(GradualResizeProcessor, SteadyStateFallsBackWhenPairedOutputIsFinished)
     f.upstream_out1.finish();
     EXPECT_EQ(f.resize.prepare({&f.in0, &f.in1}, {}), IProcessor::Status::Finished);
 }
+
+TEST(GradualResizeProcessor, SteadyStateReusesOutputOfFinishedInput)
+{
+    Fixture f;
+    f.rampUp();
+
+    /// Input 1 runs out of data early. Its output still needs data, and without a rebalance it would
+    /// stay idle for the rest of the query while input 0 keeps producing.
+    f.upstream_out1.finish();
+    f.resize.prepare({&f.in1}, {});
+
+    /// The first output still holds the chunk of the ramp-up, so the chunk of input 0 goes to the
+    /// output of the finished input instead of waiting for its own output.
+    f.upstream_out0.push(makeChunk(10));
+    f.resize.prepare({&f.in0}, {});
+
+    ASSERT_TRUE(f.downstream_in1.hasData());
+    EXPECT_EQ(valueOf(f.downstream_in1.pull()), 10u);
+    EXPECT_FALSE(f.in0.hasData());
+
+    /// Once its own output is free, input 0 goes there again.
+    ASSERT_EQ(valueOf(f.downstream_in0.pull()), 1u);
+    f.resize.prepare({}, {&f.out0, &f.out1});
+
+    f.upstream_out0.push(makeChunk(20));
+    f.resize.prepare({&f.in0}, {});
+
+    ASSERT_TRUE(f.downstream_in0.hasData());
+    EXPECT_EQ(valueOf(f.downstream_in0.pull()), 20u);
+    EXPECT_FALSE(f.downstream_in1.hasData());
+
+    f.upstream_out0.finish();
+    EXPECT_EQ(f.resize.prepare({&f.in0}, {}), IProcessor::Status::Finished);
+}
