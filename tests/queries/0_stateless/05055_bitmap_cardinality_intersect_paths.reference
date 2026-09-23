@@ -39,6 +39,8 @@
 1	1	1	1
 --- Int64: negative values ---
 1	1	1	1	1
+--- Int64: negative values, Large x Small ---
+1	1	1	1	1
 --- UInt64: many high-32 keys, shared element ---
 1	1	1	1	1
 --- UInt64: many high-32 keys, no shared element ---

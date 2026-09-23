@@ -250,6 +250,17 @@ SELECT
     bitmapAndnotCardinality(a, b) = bitmapCardinality(bitmapAndnot(a, b)),
     bitmapHasAny(a, b) = (bitmapCardinality(bitmapAnd(a, b)) > 0);
 
+SELECT '--- Int64: negative values, Large x Small ---';
+WITH
+    bitmapBuild(arrayMap(x -> toInt64(x - 20), range(40))) AS a,
+    bitmapBuild([-5, -1, 7, -100]::Array(Int64)) AS b
+SELECT
+    bitmapAndCardinality(a, b) = 3,
+    bitmapAndCardinality(a, b) = bitmapCardinality(bitmapAnd(a, b)),
+    bitmapAndCardinality(a, b) = bitmapAndCardinality(b, a),
+    bitmapHasAny(a, b) = (bitmapCardinality(bitmapAnd(a, b)) > 0),
+    bitmapHasAny(a, b) = bitmapHasAny(b, a);
+
 -- Roaring64Map keys each element by its high 32 bits, so operands spread across several
 -- of those keys exercise the merge over sub-bitmaps rather than a single one.
 
