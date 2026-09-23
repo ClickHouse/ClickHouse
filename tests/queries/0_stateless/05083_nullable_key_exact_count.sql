@@ -152,5 +152,12 @@ SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set_
 SELECT count() FROM t_null_set_all WHERE x GLOBAL NOT IN (0) SETTINGS use_lightweight_primary_key_index_analysis = 0;
 SELECT count() FROM t_null_set_all WHERE x GLOBAL NOT IN (0) SETTINGS optimize_use_implicit_projections = 0;
 
+-- `notHas` is a separate entry of that table too, and the only other `NOT has` above sits behind a `CAST`
+-- wrapper, where the exemption does not apply. This array holds no NULL, so every range stays exact.
+SELECT 'a bare key under a negated has()';
+SELECT count() > 0 FROM (EXPLAIN projections = 1 SELECT count() FROM t_null_set_all WHERE NOT has(CAST([0], 'Array(Nullable(UInt64))'), x)) WHERE explain ILIKE '%_exact_count_projection%' SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set_all WHERE NOT has(CAST([0], 'Array(Nullable(UInt64))'), x) SETTINGS use_lightweight_primary_key_index_analysis = 0;
+SELECT count() FROM t_null_set_all WHERE NOT has(CAST([0], 'Array(Nullable(UInt64))'), x) SETTINGS optimize_use_implicit_projections = 0;
+
 DROP TABLE t_null_set_all;
 DROP TABLE t_null_set;
