@@ -94,8 +94,6 @@ static void fillDataWithTableColumns(
     const auto * alias = table->as<StorageAlias>();
     const auto snapshot = table->getInMemoryMetadataPtr(context, false);
     const auto & columns = snapshot->getColumns();
-    /// One walk for the whole table: the per-column checks below must not resolve the chain again for
-    /// every column.
     NameSet chain_granted;
     if (alias)
     {

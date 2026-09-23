@@ -149,8 +149,6 @@ protected:
             SerializationInfoByName serialization_hints{{}};
             StoragePtr storage = storages.at(std::make_pair(database_name, table_name));
             const auto * alias = storage->as<StorageAlias>();
-            /// One walk for the whole table: the per-column checks below must not resolve the chain again
-            /// for every column.
             NameSet chain_granted;
 
             {

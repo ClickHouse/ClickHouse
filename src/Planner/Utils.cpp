@@ -593,8 +593,6 @@ NameSet checkAccessRights(
           */
         auto access = query_context->getAccess();
         const auto * alias = storage->as<StorageAlias>();
-        /// One walk for the whole table: the per-column checks below must not resolve the chain again
-        /// for every column.
         NameSet chain_granted;
         if (alias)
         {
