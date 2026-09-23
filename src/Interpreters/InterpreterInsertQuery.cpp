@@ -1094,12 +1094,30 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// query will be executed on all nodes of the cluster
     auto src_cluster = src_storage_cluster->getCluster(local_context);
 
-    /// Actually the query doesn't change, we just serialize it to string. Strip the initiator-only
-    /// settings from the forwarded query text (both `changes` and `default_settings`, across the INSERT
-    /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
-    /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
+    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
+
+    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
+    const auto src_snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
+
+    /// Strip the initiator-only settings from the forwarded query text (both `changes` and `default_settings`,
+    /// across the INSERT and its source SELECT) so those names — including the new HTTP table-as-file settings —
+    /// do not reach the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is
+    /// stripped below.
     auto query_to_send = query.clone();
     ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+
+    /// The source storage may have been created by `parallel_replicas_for_cluster_engines` from a plain table
+    /// function (`url`, `s3`, ...), while the query text still names that plain function. A node that runs
+    /// the forwarded query as a secondary query does not convert it again: it creates a plain storage that
+    /// expands the globs and reads every file on its own instead of taking its share of the read tasks from
+    /// the initiator, so N nodes insert the data N times. Rewrite the source the same way `IStorageCluster::read`
+    /// does for a `SELECT`: the function becomes its `*Cluster` variant with the cluster name argument, and the
+    /// structure and format arguments are added so that the nodes do not infer the schema again.
+    {
+        auto & select_to_send = query_to_send->as<ASTInsertQuery &>().select->as<ASTSelectWithUnionQuery &>();
+        src_storage_cluster->updateQueryToSendIfNeeded(select_to_send.list_of_selects->children.at(0), src_snapshot, local_context);
+    }
+
     String query_str;
     {
         WriteBufferFromOwnString buf;
@@ -1121,19 +1139,14 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
         query_context->setSettings(stripped_settings);
     }
 
-    src_storage_cluster->updateExternalDynamicMetadataIfExists(local_context);
-
-    const auto src_metadata_snapshot = src_storage_cluster->getInMemoryMetadataPtr(local_context, false);
-
     std::optional<ActionsDAG> filter_dag;
     const ActionsDAG::Node * predicate = nullptr;
     if (select_query && (select_query->prewhere() || select_query->where()))
     {
         /// The metadata and the snapshot are acquired outside of the `try` block below:
-        /// a failure here is a real storage-side problem rather than an expected miss of
+        /// a failure there is a real storage-side problem rather than an expected miss of
         /// the best-effort condition analysis, so it has to propagate.
-        const auto snapshot = src_storage_cluster->getStorageSnapshot(src_metadata_snapshot, local_context);
-        const auto columns = snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
+        const auto columns = src_snapshot->getColumns(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All));
 
         try
         {
