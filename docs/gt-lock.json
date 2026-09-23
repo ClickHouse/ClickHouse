@@ -7,42 +7,42 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-23T20:11:56.577Z",
+          "updatedAt": "2026-09-23T20:24:36.872Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ja": {
-          "updatedAt": "2026-09-23T20:11:55.372Z",
+          "updatedAt": "2026-09-23T20:24:36.044Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ru": {
-          "updatedAt": "2026-09-23T20:11:56.004Z",
+          "updatedAt": "2026-09-23T20:24:36.458Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "zh": {
-          "updatedAt": "2026-09-23T20:11:56.191Z",
+          "updatedAt": "2026-09-23T20:24:36.591Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-23T20:11:55.789Z",
+          "updatedAt": "2026-09-23T20:24:36.326Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ko": {
-          "updatedAt": "2026-09-23T20:11:55.582Z",
+          "updatedAt": "2026-09-23T20:24:36.177Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "es": {
-          "updatedAt": "2026-09-23T20:11:55.176Z",
+          "updatedAt": "2026-09-23T20:24:35.859Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ar": {
-          "updatedAt": "2026-09-23T20:11:56.392Z",
+          "updatedAt": "2026-09-23T20:24:36.736Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         }
@@ -82737,51 +82737,50 @@
     },
     {
       "fileId": "841a215248ca33617ce1b60662593f02527ce9f323463f4cd0517cb0ea92eaf2",
-      "versionId": "014ce4c73be2e8034e013e9e4603890de3e14d4c6ccd16cc8ddfe509a8b8d102",
+      "versionId": "be5cc89dd812e5e5fd13d0390db66db647b7e1a4caf8514dfc421ca79469b88b",
       "translations": {
+        "zh": {
+          "updatedAt": "2026-09-23T20:24:40.206Z",
+          "fileName": "zh/products/cloud/features/infrastructure/shared-merge-tree.mdx",
+          "postProcessHash": "ebba29ba44502bb805a8b1aaf14e201de57cc64fddcb050dc99b0f9437d891bc"
+        },
         "es": {
-          "updatedAt": "2026-08-14T10:41:08.095Z",
+          "updatedAt": "2026-09-23T20:24:40.207Z",
           "fileName": "es/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "da724f830f9d60153c24d501a2be4583314ad06285b952249d95a1e228feb62a"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:08.095Z",
-          "fileName": "ja/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "14d0e13d0d8d19ed054622365b26e9a2ddfd7d7299654236ea3e5ad2428c91ad"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:08.095Z",
-          "fileName": "ko/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "e253a9ddaf31fec8e93bc81dcc277006153e02405929c69d955578f336d5ec04"
+          "postProcessHash": "7d2a41a0ee07e3bb3093049757d4ce464b13508d91f150acdb38fb2281016d2a"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:08.096Z",
+          "updatedAt": "2026-09-23T20:24:40.208Z",
           "fileName": "pt-BR/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "58a663dcafd4679e50c800adced97b6ef61b1400e73e1de2e7e34f851a3ee1f0"
+          "postProcessHash": "18651f912dc406b707b03e0b13fb9cd4853d37995c8d5342fe6e408c73dd8f08"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:08.096Z",
+          "updatedAt": "2026-09-23T20:24:40.208Z",
           "fileName": "ru/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "3f8279320fc917837e91884ff55d916cd215ff5c4d69bc89eb956e56bcbb2174"
+          "postProcessHash": "636cdd3d499b64e79670cd5cbd439f78316542fd61af1c043449099070d8d784"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:08.096Z",
-          "fileName": "zh/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "b775e65ec1c5f9adb9cc5cae3c4c956563385ef1d20fab93219c579cde0a8dca"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:08.096Z",
-          "fileName": "ar/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "866714d15b2192ed01139070a5e9441bc6298510ba3028a52c712cf9b26995a7"
+        "ko": {
+          "updatedAt": "2026-09-23T20:24:40.209Z",
+          "fileName": "ko/products/cloud/features/infrastructure/shared-merge-tree.mdx",
+          "postProcessHash": "1b2dc874908d90afa7d9d6ac736a154438eb266755c3e46eab90a6531a58ca22"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:08.096Z",
+          "updatedAt": "2026-09-23T20:24:40.209Z",
           "fileName": "fr/products/cloud/features/infrastructure/shared-merge-tree.mdx",
-          "postProcessHash": "4eebc5418b2ddd0ca6946011c925a8789bbd10389d6ad191701a7647d57e7f6e"
+          "postProcessHash": "dfd97ebb3b033a567b162eb39bb0cbea51ab4e2b0cb0b444341ea8cbca1ea0c2"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T20:24:40.210Z",
+          "fileName": "ja/products/cloud/features/infrastructure/shared-merge-tree.mdx",
+          "postProcessHash": "2e05107da4b7b05cde58fd7dcdceffa1dfe4077f7f5d930f4e9822c6362112ce"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T20:24:40.210Z",
+          "fileName": "ar/products/cloud/features/infrastructure/shared-merge-tree.mdx",
+          "postProcessHash": "9839755438b3130434951d13e105ccee9261d64a1e7f136867d825f41cfc6662"
         }
       },
-      "fileName": "products/cloud/features/infrastructure/shared-merge-tree.mdx",
-      "staged": false
+      "fileName": "products/cloud/features/infrastructure/shared-merge-tree.mdx"
     },
     {
       "fileId": "ee4c2fd06cd329af5cfee30ee8725d8e27d4871c4cbd5f43dfec5b5b7c516d87",
