@@ -11,7 +11,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # The table has 16 columns and a single key column. The estimate is sized from the server's actual memory
 # limit so that a horizontal merge affords exactly two parts, while a vertical merge of the same table
 # affords 16 times as many. Every candidate range is eligible for the vertical algorithm as soon as it is
-# allowed at all: the parts are wide and the row and byte thresholds are lowered to nothing.
+# allowed at all: the parts are wide in full storage, the row, byte and column thresholds are lowered to
+# nothing, and compact source parts would not rule the algorithm out. Every one of these settings is
+# randomized by the test runner, and any of them could turn the vertical range into a horizontal one.
 
 MEMORY_LIMIT=$($CLICKHOUSE_CLIENT --query "SELECT value FROM system.server_settings WHERE name = 'max_server_memory_usage'")
 # The same successive integer divisions as the server does: `limit / 16 / columns / estimate`.
@@ -28,6 +30,10 @@ SETTINGS merge_memory_estimate_per_source_part_column = $ESTIMATE,
     merge_selector_enable_heuristic_to_lower_max_parts_to_merge_at_once = 0,
     min_bytes_for_wide_part = 0,
     min_rows_for_wide_part = 0,
+    min_bytes_for_full_part_storage = 0,
+    min_rows_for_full_part_storage = 0,
+    allow_vertical_merges_from_compact_to_wide_parts = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1,
     enable_vertical_merge_algorithm = 0,
     vertical_merge_algorithm_min_rows_to_activate = 1,
     vertical_merge_algorithm_min_bytes_to_activate = 0;
