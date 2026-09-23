@@ -3390,8 +3390,12 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
             }
             else
             {
+                /// Without a sorting key the merge keeps the rows of every source part contiguous and in part order,
+                /// so a source `_part_offset` maps to the merged one by adding the starting offset of its part. The
+                /// projection text index relies on `MergedPartOffsets::mapOffsets` for this, so the object has to be
+                /// built from the parts themselves: the `num_parts` constructor leaves the starting offsets empty.
                 global_ctx->merged_part_offsets
-                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts.size(), MergedPartOffsets::MappingMode::Disabled);
+                    = std::make_shared<MergedPartOffsets>(global_ctx->future_part->parts, MergedPartOffsets::MappingMode::Disabled);
             }
             break;
         }

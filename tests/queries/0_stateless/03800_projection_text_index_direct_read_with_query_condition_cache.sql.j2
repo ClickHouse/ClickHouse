@@ -1,0 +1,8 @@
+{% import 'text_index_to_projection.jinja' as tx %}
+-- Derived from tests/queries/0_stateless/02346_text_index_direct_read_with_query_condition_cache.sql — do not edit the
+-- body here. The rewrite (skip INDEX -> PROJECTION INDEX) lives in
+-- text_index_to_projection.jinja, so upstream changes to the skip-index test
+-- flow straight into this projection-index twin.
+SET allow_experimental_projection_text_index = 1;
+{% set upstream %}{% include '02346_text_index_direct_read_with_query_condition_cache.sql' %}{% endset %}
+{{- tx.derive(upstream) }}

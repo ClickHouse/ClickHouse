@@ -1945,8 +1945,43 @@ ORDER BY id;
 Currently supported:
 
 * **basic**: equivalent to a normal MergeTree index on the expression.
+* **text**: an experimental [text index](/reference/engines/table-engines/mergetree-family/textindexes) stored as a projection, see [Text projection indexes](#projection-index-text).
 
 The framework allows adding more index types in the future.
+
+#### Text projection indexes {#projection-index-text}
+
+<ExperimentalBadge/>
+
+A text projection index is a full-text [text index](/reference/engines/table-engines/mergetree-family/textindexes) stored as a projection instead of as a skip index.
+The dictionary of tokens and the posting lists are written as regular typed columns of a projection part, so the index is maintained by the projection machinery: it is built on `INSERT`, merged when parts are merged, and can be rebuilt or removed with [`MATERIALIZE PROJECTION`](/reference/statements/alter/projection#materialize-projection), [`CLEAR PROJECTION`](/reference/statements/alter/projection#clear-projection) and [`DROP PROJECTION`](/reference/statements/alter/projection#drop-projection).
+Queries use it in the same way as a skip text index: the functions listed in [Supported functions](/reference/engines/table-engines/mergetree-family/textindexes#functions-support) are evaluated on the index, and the direct read from the index ([query_plan_direct_read_from_text_index](/reference/settings/session-settings/query-plan#query_plan_direct_read_from_text_index)) is supported as well.
+
+The on-disk format differs from the one of the skip text index and is experimental. Creating or attaching a table with a text projection index requires the setting [allow_experimental_projection_text_index](/reference/settings/session-settings/allow-experimental#allow_experimental_projection_text_index).
+
+```sql
+SET allow_experimental_projection_text_index = 1;
+
+CREATE TABLE logs
+(
+    id UInt64,
+    message String,
+    PROJECTION message_idx INDEX message TYPE text(tokenizer = 'splitByNonAlpha')
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+SELECT count() FROM logs WHERE hasToken(message, 'timeout');
+```
+
+`text(...)` accepts the same parameters as the skip text index, for example `tokenizer`, `preprocessor` and `enable_phrase_query_support`.
+An additional parameter `has_block_index` (default `1`) controls whether a block-level skip structure is written for long posting lists; with `has_block_index = 0` the index is smaller and long posting lists are read sequentially.
+
+Limitations:
+
+* The projection indexes exactly one expression, with the same column types as the skip text index.
+* A column can have at most one text index, whether it is a skip index or a projection index.
+* The name of a text projection index must differ from the names of the secondary indexes of the table, because queries address both kinds of text index by name.
 
 ### Projection storage {#projection-storage}
 Projections are stored inside the part directory. It's similar to an index but contains a subdirectory that stores an anonymous `MergeTree` table's part. The table is induced by the definition query of the projection. If there is a `GROUP BY` clause, the underlying storage engine becomes [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree), and all aggregate functions are converted to `AggregateFunction`. If there is an `ORDER BY` clause, the `MergeTree` table uses it as its primary key expression. During the merge process the projection part is merged via its storage's merge routine. The checksum of the parent table's part is combined with the projection's part. Other maintenance jobs are similar to skip indices.
