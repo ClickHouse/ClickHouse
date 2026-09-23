@@ -123,4 +123,13 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsEmptyName)
     EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsSeparatorInName)
+{
+    /// RFC 7230 separators such as '/' are not tchar, so a name containing one is rejected.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"X/Foo", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
 }

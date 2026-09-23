@@ -5,7 +5,6 @@
 #include <Common/re2.h>
 #include <Poco/String.h>
 #include <algorithm>
-#include <cctype>
 
 namespace DB
 {
@@ -21,13 +20,17 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 
     for (const auto & entry : entries)
     {
-        /// A header name must be an RFC 7230 token: non-empty, without ':', whitespace or control
-        /// characters. A value must not contain CR or LF.
-        const bool name_has_invalid_char = std::any_of(
-            entry.name.begin(),
-            entry.name.end(),
-            [](char c) { return c == ':' || std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); });
-        if (entry.name.empty() || name_has_invalid_char || entry.value.contains('\r') || entry.value.contains('\n'))
+        /// A header name must be an RFC 7230 token: non-empty and built only from tchar bytes
+        /// (letters, digits and "!#$%&'*+-.^_`|~"). A value must not contain CR or LF.
+        const auto is_tchar = [](char c)
+        {
+            return isAlphaNumericASCII(c)
+                || c == '!' || c == '#' || c == '$' || c == '%' || c == '&' || c == '\''
+                || c == '*' || c == '+' || c == '-' || c == '.' || c == '^' || c == '_'
+                || c == '`' || c == '|' || c == '~';
+        };
+        if (entry.name.empty() || !std::all_of(entry.name.begin(), entry.name.end(), is_tchar)
+            || entry.value.contains('\r') || entry.value.contains('\n'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
 
         /// Header names are case-insensitive (RFC 7230 3.2); the forbidden set is stored lower-cased.
