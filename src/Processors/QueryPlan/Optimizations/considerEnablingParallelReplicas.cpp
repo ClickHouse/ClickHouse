@@ -579,6 +579,10 @@ void considerEnablingParallelReplicas(
     ///
     /// Only the root matters. A `CreatingSetStep` further down belongs to a set this plan consumes
     /// rather than builds, and the steps above it are replaced without disturbing it.
+    ///
+    /// Refusing here also saves the probe plan, which is what makes the refusal observable:
+    /// `05218_autopr_set_building_plan_is_left_alone` counts the rounds of index analysis a `GLOBAL IN`
+    /// runs, and considering the set-building plan adds one.
     if (typeid_cast<const CreatingSetStep *>(root.step.get()))
     {
         LOG_DEBUG(getLogger("optimizeTree"), "The plan builds a set, its root must be preserved. Skipping optimization");
