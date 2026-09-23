@@ -151,9 +151,7 @@ SELECT count() FROM (
     UNION ALL SELECT number, materialize(2) AS m FROM numbers(10)
 ) WHERE m = 5;
 
--- a filter pushed down over a JOIN folds inside the fresh FilterStep; the fold prunes the original
--- predicate node from the moved-in DAG, so the caller must not keep references into it (the
--- "Pushed down filter ... side of join" log line read a freed name - caught by ASan)
+-- a filter pushed down over a JOIN still folds in the fresh FilterStep
 SELECT 'pushdown over join', countIf(explain LIKE '%Filter column: 0%')
 FROM (EXPLAIN PLAN actions = 1
     SELECT t1.a FROM (SELECT number AS a, materialize(1) AS m FROM numbers(3)) t1
