@@ -123,10 +123,8 @@ bool typeContainsFloat(const DataTypePtr & type)
     return has_float;
 }
 
-/// Only these columns make a condition safe to evaluate before the FINAL merge: rows of one dedup
-/// group share their values. That holds for value identity, not for comparator equality, and the two
-/// differ for floats (`-0.0` compares equal to `0.0`, `NaN` payloads compare equal to each other), so
-/// float columns are excluded - a condition like `toString(f) = '0'` can drop the group's winner.
+/// -0.0 compares equal to 0.0 and NaN payloads compare equal to each other, so a condition
+/// over a float sorting key column can tell apart rows of one dedup group and drop its winner
 NameSet getSortingKeyNamesSafeBeforeFinal(const KeyDescription & sorting_key)
 {
     NameSet names;

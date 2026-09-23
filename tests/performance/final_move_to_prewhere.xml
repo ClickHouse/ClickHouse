@@ -7,8 +7,7 @@
     <fill_query>INSERT INTO t_final_move_to_prewhere SELECT number, number % 1000, randomPrintableASCII(200), 1 FROM numbers_mt(5000000)</fill_query>
     <fill_query>INSERT INTO t_final_move_to_prewhere SELECT number, number % 1000, randomPrintableASCII(200), 2 FROM numbers_mt(2500000)</fill_query>
 
-    <!-- m is a non-prefix sorting key column: the primary index cannot prune by it,
-         but moved to PREWHERE it skips reads of the heavy payload column -->
+    <!-- m is not a primary index prefix, so only PREWHERE can skip the payload reads -->
     <query>SELECT sum(length(payload)) FROM t_final_move_to_prewhere FINAL WHERE m = 1 FORMAT Null</query>
     <query>SELECT sum(length(payload)) FROM t_final_move_to_prewhere FINAL WHERE m &lt; 10 FORMAT Null</query>
     <query>SELECT max(v) FROM t_final_move_to_prewhere FINAL WHERE k % 7 = 0 AND m = 1 FORMAT Null</query>

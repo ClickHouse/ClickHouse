@@ -36,8 +36,7 @@ SELECT countIf(data = 'old') FROM t_prewhere_final_rand FINAL WHERE arrayExists(
 
 DROP TABLE t_prewhere_final_rand;
 
--- -0.0 and NaN payloads compare equal inside a dedup group while toString and reinterpret tell them
--- apart, so conditions over float sorting key columns must not be moved
+-- -0.0 and 0.0 land in one dedup group but toString tells them apart
 SELECT '= condition over a float sorting key column is not moved =';
 
 DROP TABLE IF EXISTS t_prewhere_final_float;
