@@ -486,8 +486,7 @@ void PostingListCursor::advance(uint32_t target)
 
 bool PostingListCursor::advanceImpl(uint32_t target)
 {
-    /// The target is past the read position, so the search resumes from the current block (it is 0 for
-    /// a freshly prepared segment). Galloping: a leapfrog target is typically within the next few blocks.
+    /// The target is past the read position, so the search resumes from the current block.
     const auto & block_last_row_ids = current_segment->block_last_row_ids;
     const auto * blocks_end = block_last_row_ids.data() + current_segment->block_count;
     const auto * it = gallopingLowerBound(block_last_row_ids.data() + current_block, blocks_end, target);
@@ -551,8 +550,6 @@ namespace
 
 /// Iterator to the first row_id >= row_offset + num_rows. Returns `end` directly when the
 /// exclusive bound exceeds UInt32::max — saturating would drop a match at the boundary.
-/// Galloping: the window holds few postings compared to the rest of the array, so the answer is close to `begin`.
-/// An array that ends inside the window (a block in the middle of a wide window) is answered by one comparison.
 inline const uint32_t * findRowRangeEnd(const uint32_t * begin, const uint32_t * end, size_t row_offset, size_t num_rows)
 {
     size_t exclusive_end = row_offset + num_rows;
@@ -782,8 +779,7 @@ PostingsApplyWindow PostingListCursor::linearSegments(UInt8 * data, size_t row_o
                 }
             }
 
-            /// A block that straddles two consecutive windows is still decoded from the previous call, and the search
-            /// resumes from the read position left by that call when it still lies before the window.
+            /// A block that straddles two consecutive windows is still decoded from the previous call
             if (block_idx != current_block || decoded_count == 0)
                 decodeBlock(block_idx);
 
@@ -1247,7 +1243,7 @@ void lazyIntersectPostingLists(
             max_density = std::max(max_density, cursors[i]->density());
         }
 
-        use_brute_force = min_density * static_cast<double>(BLOCK_SIZE) >= max_density;
+        use_brute_force = min_density * static_cast<double>(IPostingListBlockCodec::BLOCK_SIZE) >= max_density;
     }
 
     /// Sort cursors by ascending cardinality. The sparsest cursor leads the intersection.
