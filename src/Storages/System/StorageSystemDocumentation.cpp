@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseMemory.h>
 #include <Databases/IDatabase.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -29,11 +30,15 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Parsers/IAST.h>
+#include <Parsers/StatementFactory.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
+#include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <Storages/System/attachSystemTables.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -41,6 +46,8 @@
 #include <source_location>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <Poco/String.h>
@@ -76,6 +83,7 @@ enum class EntityType : int8_t
     CurrentMetric = 18,
     AsynchronousMetric = 19,
     SystemTable = 20,
+    Statement = 21,
 };
 
 std::vector<std::pair<String, Int8>> getTypeEnumValues()
@@ -101,6 +109,7 @@ std::vector<std::pair<String, Int8>> getTypeEnumValues()
         {"Current Metric", static_cast<Int8>(EntityType::CurrentMetric)},
         {"Asynchronous Metric", static_cast<Int8>(EntityType::AsynchronousMetric)},
         {"System Table", static_cast<Int8>(EntityType::SystemTable)},
+        {"Statement", static_cast<Int8>(EntityType::Statement)},
     };
 }
 
@@ -112,6 +121,11 @@ constexpr std::string_view MERGE_TREE_SETTINGS_SOURCE = "src/Storages/MergeTree/
 constexpr std::string_view SERVER_SETTINGS_SOURCE = "src/Core/ServerSettings.cpp";
 constexpr std::string_view PROFILE_EVENTS_SOURCE = "src/Common/ProfileEvents.cpp";
 constexpr std::string_view CURRENT_METRICS_SOURCE = "src/Common/CurrentMetrics.cpp";
+
+constexpr std::pair<std::string_view, std::string_view> ASYNCHRONOUS_METRIC_DOCUMENTATION[] =
+{
+#include <Common/AsynchronousMetricDocumentation.inc>
+};
 
 /// The source paths captured by `std::source_location` (in `Documentation`/`FunctionDocumentation`) are produced by
 /// the compiler: relative to the repository root when the build remaps source paths (`ENABLE_BUILD_PATH_MAPPING`,
@@ -186,6 +200,103 @@ bool isFullPageDescription(std::string_view description)
     return false;
 }
 
+std::string_view trimMarkdownLine(std::string_view line)
+{
+    while (!line.empty() && isWhitespaceASCII(line.front()))
+        line.remove_prefix(1);
+    while (!line.empty() && isWhitespaceASCII(line.back()))
+        line.remove_suffix(1);
+    return line;
+}
+
+std::string_view trimMarkdownSectionLabel(std::string_view line)
+{
+    line = trimMarkdownLine(line);
+
+    const size_t hashes = line.find_first_not_of('#');
+    if (hashes != 0 && hashes != std::string_view::npos)
+        line = trimMarkdownLine(line.substr(hashes));
+
+    const size_t anchor = line.find(" {#");
+    if (anchor != std::string_view::npos && line.ends_with('}'))
+        line = trimMarkdownLine(line.substr(0, anchor));
+
+    if (line.size() >= 4 && line.starts_with("**") && line.ends_with("**"))
+        line = trimMarkdownLine(line.substr(2, line.size() - 4));
+
+    if (line.ends_with(':'))
+        line = trimMarkdownLine(line.substr(0, line.size() - 1));
+
+    return line;
+}
+
+bool isSyntaxSectionLabel(std::string_view line)
+{
+    return equalsCaseInsensitive(trimMarkdownSectionLabel(line), "syntax");
+}
+
+bool isRelatedSectionLabel(std::string_view line)
+{
+    line = trimMarkdownSectionLabel(line);
+    return equalsCaseInsensitive(line, "related")
+        || equalsCaseInsensitive(line, "related content")
+        || equalsCaseInsensitive(line, "related statements")
+        || equalsCaseInsensitive(line, "see also");
+}
+
+/// Detects syntax which is already documented by a Markdown section or by prose immediately introducing an SQL block.
+bool descriptionDocumentsSyntax(std::string_view description)
+{
+    bool in_code_block = false;
+    bool syntax_block_follows = false;
+    while (!description.empty())
+    {
+        const size_t eol = description.find('\n');
+        const std::string_view line = trimMarkdownLine(description.substr(0, eol));
+
+        if (line.starts_with("```"))
+        {
+            const bool is_sql_fence = equalsCaseInsensitive(line, "```sql");
+            if (!in_code_block && syntax_block_follows && is_sql_fence)
+                return true;
+            in_code_block = !in_code_block;
+            syntax_block_follows = false;
+        }
+        else if (!in_code_block && !line.empty())
+        {
+            if (isSyntaxSectionLabel(line))
+                return true;
+            syntax_block_follows = toLowerCopyASCII(line).ends_with("syntax:");
+        }
+
+        if (eol == std::string_view::npos)
+            break;
+        description.remove_prefix(eol + 1);
+    }
+    return false;
+}
+
+/// Detects an existing cross-reference section, whose entries should remain the source of truth for the page.
+bool descriptionDocumentsRelated(std::string_view description)
+{
+    bool in_code_block = false;
+    while (!description.empty())
+    {
+        const size_t eol = description.find('\n');
+        const std::string_view line = trimMarkdownLine(description.substr(0, eol));
+
+        if (line.starts_with("```"))
+            in_code_block = !in_code_block;
+        else if (!in_code_block && isRelatedSectionLabel(line))
+            return true;
+
+        if (eol == std::string_view::npos)
+            break;
+        description.remove_prefix(eol + 1);
+    }
+    return false;
+}
+
 /// Assembles the individual structured parts of an entity's embedded documentation into a single Markdown document,
 /// in the same shape as it appears on the website. Empty parts are omitted.
 String composeMarkdown(
@@ -196,6 +307,7 @@ String composeMarkdown(
     const String & returned_value,
     const String & examples,
     const String & introduced_in,
+    const String & parent,
     const std::vector<String> & related)
 {
     String result = boost::algorithm::trim_copy(description);
@@ -216,7 +328,11 @@ String composeMarkdown(
             result += trimmed;
     };
 
-    add_block("Syntax", syntax, /*as_code=*/ true);
+    const String trimmed_syntax = boost::algorithm::trim_copy(syntax);
+    /// Do not append structured syntax when the description already documents it, whether verbatim or as a
+    /// dedicated Markdown section whose formatting or punctuation differs from the structured representation.
+    if (!trimmed_syntax.empty() && !descriptionDocumentsSyntax(result) && !result.contains(trimmed_syntax))
+        add_block("Syntax", trimmed_syntax, /*as_code=*/ true);
     add_block("Arguments", arguments, /*as_code=*/ false);
     add_block("Parameters", parameters, /*as_code=*/ false);
     add_block("Returned value", returned_value, /*as_code=*/ false);
@@ -230,7 +346,15 @@ String composeMarkdown(
         result += "**Introduced in:** " + introduced;
     }
 
-    if (!related.empty())
+    const String enclosing = boost::algorithm::trim_copy(parent);
+    if (!enclosing.empty())
+    {
+        if (!result.empty())
+            result += "\n\n";
+        result += "**Part of:** `" + enclosing + "`";
+    }
+
+    if (!related.empty() && !descriptionDocumentsRelated(result))
     {
         String related_str;
         for (const auto & name : related)
@@ -261,6 +385,7 @@ String renderDoc(const Documentation & doc)
         /*returned_value=*/ "",
         doc.examplesAsString(),
         doc.introducedInAsString(),
+        doc.parent,
         doc.related);
 }
 
@@ -278,6 +403,7 @@ String renderFunctionDoc(const FunctionDocumentation & doc)
         doc.returnedValueAsString(),
         doc.examplesAsString(),
         doc.introducedInAsString(),
+        /*parent=*/ "",
         /*related=*/ {});
 }
 
@@ -812,28 +938,301 @@ void addSettingAliases(
     }
 }
 
-/// The documentation of a system table is its table comment, followed by the list of its columns: the name, type
-/// and description (the column comment) of each, rendered as a Markdown list.
-String renderSystemTableDoc(const String & comment, const ColumnsDescription & columns)
+String formatSystemTableType(const String & type)
 {
-    String result = boost::algorithm::trim_copy(comment);
+    static const std::unordered_map<std::string_view, std::string_view> links = {
+        {"Array", "/reference/data-types/array"},
+        {"Bool", "/reference/data-types/boolean"},
+        {"Date", "/reference/data-types/date"},
+        {"Date32", "/reference/data-types/date32"},
+        {"DateTime", "/reference/data-types/datetime"},
+        {"DateTime64", "/reference/data-types/datetime64"},
+        {"Decimal", "/reference/data-types/decimal"},
+        {"Decimal32", "/reference/data-types/decimal"},
+        {"Decimal64", "/reference/data-types/decimal"},
+        {"Decimal128", "/reference/data-types/decimal"},
+        {"Decimal256", "/reference/data-types/decimal"},
+        {"Enum8", "/reference/data-types/enum"},
+        {"Enum16", "/reference/data-types/enum"},
+        {"FixedString", "/reference/data-types/fixedstring"},
+        {"Float32", "/reference/data-types/float"},
+        {"Float64", "/reference/data-types/float"},
+        {"IPv4", "/reference/data-types/ipv4"},
+        {"IPv6", "/reference/data-types/ipv6"},
+        {"Int8", "/reference/data-types/int-uint"},
+        {"Int16", "/reference/data-types/int-uint"},
+        {"Int32", "/reference/data-types/int-uint"},
+        {"Int64", "/reference/data-types/int-uint"},
+        {"Int128", "/reference/data-types/int-uint"},
+        {"Int256", "/reference/data-types/int-uint"},
+        {"LowCardinality", "/reference/data-types/lowcardinality"},
+        {"Map", "/reference/data-types/map"},
+        {"Nullable", "/reference/data-types/nullable"},
+        {"String", "/reference/data-types/string"},
+        {"Tuple", "/reference/data-types/tuple"},
+        {"UInt8", "/reference/data-types/int-uint"},
+        {"UInt16", "/reference/data-types/int-uint"},
+        {"UInt32", "/reference/data-types/int-uint"},
+        {"UInt64", "/reference/data-types/int-uint"},
+        {"UInt128", "/reference/data-types/int-uint"},
+        {"UInt256", "/reference/data-types/int-uint"},
+        {"UUID", "/reference/data-types/uuid"},
+    };
 
-    String columns_list;
+    const size_t arguments = type.find('(');
+    const std::string_view base(type.data(), arguments == String::npos ? type.size() : arguments);
+    if (const auto it = links.find(base); it != links.end())
+        return "[" + type + "](" + String(it->second) + ")";
+    return "`" + type + "`";
+}
+
+String indentMarkdownContinuation(const String & text)
+{
+    String result;
+    size_t offset = 0;
+    while (offset < text.size())
+    {
+        const size_t end = text.find('\n', offset);
+        const std::string_view line(
+            text.data() + offset,
+            end == String::npos ? text.size() - offset : end - offset);
+        if (offset != 0 && !line.empty())
+            result += "  ";
+        result += line;
+        if (end == String::npos)
+            break;
+        result += '\n';
+        offset = end + 1;
+    }
+    return result;
+}
+
+String renderSystemTableColumns(const String & table_name, const ColumnsDescription & columns)
+{
+    String regular_columns;
+    String aliases;
+
     for (const auto & column : columns)
     {
-        columns_list += "- `" + column.name + "` (`" + column.type->getName() + "`)";
+        if (column.default_desc.expression && column.default_desc.kind == ColumnDefaultKind::Alias)
+        {
+            String description;
+            if (table_name == "trace_log" && column.name == "build_id")
+                description = "Alias for the build ID of the running ClickHouse server binary.";
+            else
+                description = "Alias for `" + column.default_desc.expression->formatForLogging() + "`.";
+            aliases += "- `" + column.name + "` — " + description + "\n";
+            continue;
+        }
+
+        regular_columns += "- `" + column.name + "` (" + formatSystemTableType(column.type->getName()) + ")";
         const String column_comment = boost::algorithm::trim_copy(column.comment);
         if (!column_comment.empty())
-            columns_list += " — " + column_comment;
-        columns_list += "\n";
+            regular_columns += " — " + indentMarkdownContinuation(column_comment);
+        regular_columns += "\n";
     }
 
-    if (!columns_list.empty())
+    String result = boost::algorithm::trim_copy(regular_columns);
+    if (!aliases.empty())
     {
         if (!result.empty())
             result += "\n\n";
-        result += "**Columns**\n\n";
-        result += boost::algorithm::trim_copy(columns_list);
+        result += "**Aliases:**\n\n" + boost::algorithm::trim_copy(aliases);
+    }
+    return result;
+}
+
+String documentationAnchor(const String & name)
+{
+    String result;
+    result.reserve(name.size());
+    for (const char character : name)
+    {
+        if (isAlphaNumericASCII(character) || character == '_')
+            result += toLowerIfAlphaASCII(character);
+    }
+    return result;
+}
+
+String renderDescriptionCatalog(std::vector<std::pair<String, String>> entries)
+{
+    std::ranges::sort(entries, [](const auto & lhs, const auto & rhs)
+    {
+        const int case_insensitive_result = Poco::icompare(lhs.first, rhs.first);
+        if (case_insensitive_result != 0)
+            return case_insensitive_result < 0;
+        return lhs.first < rhs.first;
+    });
+
+    String result;
+    for (const auto & [name, description] : entries)
+    {
+        const String trimmed_description = boost::algorithm::trim_copy(description);
+        if (trimmed_description.empty())
+            continue;
+        if (!result.empty())
+            result += "\n\n";
+        result += "### " + name + " {#" + documentationAnchor(name) + "}\n\n" + trimmed_description;
+    }
+    return result;
+}
+
+void replaceDocumentationPlaceholder(String & document, std::string_view placeholder, std::string_view value)
+{
+    if (const size_t offset = document.find(placeholder); offset != String::npos)
+        document.replace(offset, placeholder.size(), value);
+}
+
+String normalizeMdxForMarkdown(String document)
+{
+    constexpr std::string_view comment_prefix = "{/*";
+    constexpr std::string_view comment_suffix = "*/}";
+
+    size_t offset = 0;
+    while ((offset = document.find(comment_prefix, offset)) != String::npos)
+    {
+        const size_t comment_end = document.find(comment_suffix, offset + comment_prefix.size());
+        if (comment_end == String::npos)
+            break;
+        document.erase(offset, comment_end + comment_suffix.size() - offset);
+    }
+
+    for (const std::string_view component : {"Tip", "Note", "Info", "Warning", "Important", "Danger"})
+    {
+        /// A callout tag usually occupies a line of its own; remove that line as a whole, so that stripping the tag
+        /// does not leave a blank line behind in the rendered Markdown.
+        replaceAll(document, "<" + String(component) + ">\n", "");
+        replaceAll(document, "</" + String(component) + ">\n", "");
+        replaceAll(document, "<" + String(component) + ">", "");
+        replaceAll(document, "</" + String(component) + ">", "");
+    }
+
+    return boost::algorithm::trim_copy(document);
+}
+
+void appendSystemTableSection(String & result, std::string_view title, std::string_view anchor, const String & body)
+{
+    const String trimmed_body = boost::algorithm::trim_copy(body);
+    if (trimmed_body.empty())
+        return;
+    if (!result.empty())
+        result += "\n\n";
+    result += "## " + String(title) + " {#" + String(anchor) + "}\n\n" + trimmed_body;
+}
+
+struct SystemTableCommentSections
+{
+    String description;
+    String columns_notes;
+    String examples;
+    String see_also;
+};
+
+SystemTableCommentSections parseSystemTableComment(const String & comment)
+{
+    SystemTableCommentSections result;
+    String * current_section = &result.description;
+    bool has_section_markers = false;
+
+    size_t offset = 0;
+    while (offset <= comment.size())
+    {
+        const size_t line_end = comment.find('\n', offset);
+        const std::string_view line(
+            comment.data() + offset,
+            line_end == String::npos ? comment.size() - offset : line_end - offset);
+        const String trimmed_line = boost::algorithm::trim_copy(String(line));
+
+        if (trimmed_line == ".description")
+        {
+            current_section = &result.description;
+            has_section_markers = true;
+        }
+        else if (trimmed_line == ".columns_notes")
+        {
+            current_section = &result.columns_notes;
+            has_section_markers = true;
+        }
+        else if (trimmed_line == ".examples")
+        {
+            current_section = &result.examples;
+            has_section_markers = true;
+        }
+        else if (trimmed_line == ".see_also")
+        {
+            current_section = &result.see_also;
+            has_section_markers = true;
+        }
+        else
+        {
+            if (!current_section->empty())
+                *current_section += '\n';
+            current_section->append(line.data(), line.size());
+        }
+
+        if (line_end == String::npos)
+            break;
+        offset = line_end + 1;
+    }
+
+    if (!has_section_markers)
+    {
+        result.description = comment;
+        return result;
+    }
+
+    result.description = boost::algorithm::trim_copy(result.description);
+    result.columns_notes = boost::algorithm::trim_copy(result.columns_notes);
+    result.examples = boost::algorithm::trim_copy(result.examples);
+    result.see_also = boost::algorithm::trim_copy(result.see_also);
+    return result;
+}
+
+/// Render every attached system table with the same page-level structure.
+String renderSystemTableDoc(const String & table_name, const String & comment, const ColumnsDescription & columns)
+{
+    const auto documentation = parseSystemTableComment(comment);
+    String result;
+    appendSystemTableSection(
+        result,
+        "Description",
+        "description",
+        normalizeMdxForMarkdown(documentation.description));
+    String columns_section = renderSystemTableColumns(table_name, columns);
+    const String columns_notes = normalizeMdxForMarkdown(documentation.columns_notes);
+    if (!columns_notes.empty())
+    {
+        if (!columns_section.empty())
+            columns_section += "\n\n";
+        columns_section += columns_notes;
+    }
+    appendSystemTableSection(result, "Columns", "columns", columns_section);
+    appendSystemTableSection(result, "Examples", "examples", normalizeMdxForMarkdown(documentation.examples));
+    appendSystemTableSection(result, "See also", "see-also", normalizeMdxForMarkdown(documentation.see_also));
+
+    if (result.contains("{{PROFILE_EVENTS}}"))
+    {
+        std::vector<std::pair<String, String>> profile_events;
+        for (ProfileEvents::Event event = ProfileEvents::Event(0); event < ProfileEvents::end(); ++event)
+            profile_events.emplace_back(ProfileEvents::getName(event), ProfileEvents::getDocumentation(event));
+        replaceDocumentationPlaceholder(result, "{{PROFILE_EVENTS}}", renderDescriptionCatalog(std::move(profile_events)));
+    }
+
+    if (result.contains("{{CURRENT_METRICS}}"))
+    {
+        std::vector<std::pair<String, String>> current_metrics;
+        for (CurrentMetrics::Metric metric = CurrentMetrics::Metric(0); metric < CurrentMetrics::end(); ++metric)
+            current_metrics.emplace_back(CurrentMetrics::getName(metric), CurrentMetrics::getDocumentation(metric));
+        replaceDocumentationPlaceholder(result, "{{CURRENT_METRICS}}", renderDescriptionCatalog(std::move(current_metrics)));
+    }
+
+    if (result.contains("{{ASYNCHRONOUS_METRICS}}"))
+    {
+        std::vector<std::pair<String, String>> asynchronous_metrics;
+        asynchronous_metrics.reserve(std::size(ASYNCHRONOUS_METRIC_DOCUMENTATION));
+        for (const auto & [name, description] : ASYNCHRONOUS_METRIC_DOCUMENTATION)
+            asynchronous_metrics.emplace_back(String(name), String(description));
+        replaceDocumentationPlaceholder(result, "{{ASYNCHRONOUS_METRICS}}", renderDescriptionCatalog(std::move(asynchronous_metrics)));
     }
 
     return result;
@@ -849,7 +1248,8 @@ ColumnsDescription StorageSystemDocumentation::getColumnsDescription()
         {"type", std::make_shared<DataTypeEnum8>(getTypeEnumValues()), "The kind of the entity, e.g. `Function` or `Table Engine`."},
         {"description", std::make_shared<DataTypeString>(),
             "The reference documentation of the entity rendered as Markdown, assembled from the embedded documentation "
-            "(the same content as published on the website), including syntax, examples and other structured parts, if any."},
+            "and including syntax, examples and other structured parts, if any. Website pages may add MDX-only preambles "
+            "or guidance outside their generated bodies."},
         {"source", std::make_shared<DataTypeString>(),
             "The path to the source file where the entity's documentation is defined, relative to the repository root. "
             "Empty if the source location is unknown."},
@@ -942,25 +1342,85 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 makeRepoRelative(value.source));
     }
 
-    /// System tables document themselves with their table comment, authored at the attachment site.
-    if (const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE))
+    /// SQL statements are documented by the parsers which parse them; the registry is filled by `registerStatements`.
+    addDocumented(res_columns, EntityType::Statement, StatementFactory::instance());
+
+    /// System-table documentation is stored in each attached table's metadata comment. A structured comment uses
+    /// section markers such as `.description` and `.examples`; an ordinary comment remains a concise fallback.
+    const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
+    std::unordered_set<String> documented_system_tables;
+    if (system_database)
     {
         for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
+            const String table_name = iterator->name();
             if (const auto & table = iterator->table())
             {
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (metadata_snapshot)
                 {
-                    /// Bind to a reference first: `typeid(*table)` would warn about evaluating an expression with
-                    /// side effects (the smart pointer dereference) as the operand of a polymorphic `typeid`.
-                    const IStorage & storage = *table;
-                    addRow(res_columns, EntityType::SystemTable, iterator->name(),
-                        renderSystemTableDoc(metadata_snapshot->comment, metadata_snapshot->getColumns()),
-                        makeRepoRelative(getSystemTableSource(typeid(storage))));
+                    documented_system_tables.insert(table_name);
+                    /// Persisted comments identify schema-specific system logs even when their configuration has
+                    /// since been removed. Prefer that owner over the canonical name's default registration.
+                    const char * documentation_source = getSystemTableDocumentationSourceFromComment(metadata_snapshot->comment);
+                    if (!documentation_source)
+                        documentation_source = getSystemTableDocumentationSource(table_name);
+                    addRow(
+                        res_columns,
+                        EntityType::SystemTable,
+                        table_name,
+                        renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns()),
+                        makeRepoRelative(documentation_source));
                 }
             }
         }
+    }
+
+    /// `system.asynchronous_metrics` is attached only by the server, because it needs a live `AsynchronousMetrics`
+    /// instance. Its documentation, however, is owned by the source and does not depend on that instance, so the page
+    /// is rendered from the source-owned comment and the static column description wherever the table is missing -
+    /// in particular in `clickhouse-local`, which is how the documentation generator reads this table.
+    if (!documented_system_tables.contains("asynchronous_metrics"))
+    {
+        addRow(
+            res_columns,
+            EntityType::SystemTable,
+            "asynchronous_metrics",
+            renderSystemTableDoc(
+                "asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION, StorageSystemAsynchronousMetrics::getColumnsDescription()),
+            makeRepoRelative(ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE));
+        documented_system_tables.insert("asynchronous_metrics");
+    }
+
+    /// The `system.zookeeper*`, `system.keeper_*` and `system.transactions` tables are attached only where ZooKeeper,
+    /// an in-process Keeper or experimental transactions are configured, but their documentation is owned by the source
+    /// just like every other system table's. Attach them to a scratch in-memory database - which is never registered in
+    /// `DatabaseCatalog`, so the tables do not become queryable - and render their pages from its metadata comments.
+    /// This is what makes the documentation generator, which reads this table through `clickhouse-local`, see them.
+    auto documentation_only_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+    attachSystemTablesGatedOnZooKeeper(context, *documentation_only_database);
+#if USE_NURAFT
+    attachSystemTablesGatedOnKeeperServer(context, *documentation_only_database);
+#endif
+    attachSystemTablesGatedOnTransactions(context, *documentation_only_database);
+
+    for (auto iterator = documentation_only_database->getTablesIterator(context, {}, false); iterator->isValid(); iterator->next())
+    {
+        const String table_name = iterator->name();
+        if (documented_system_tables.contains(table_name))
+            continue;
+        const auto & table = iterator->table();
+        if (!table)
+            continue;
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        if (!metadata_snapshot)
+            continue;
+        addRow(
+            res_columns,
+            EntityType::SystemTable,
+            table_name,
+            renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns()),
+            makeRepoRelative(getSystemTableDocumentationSource(table_name)));
     }
 }
 

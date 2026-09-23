@@ -1,0 +1,26 @@
+Aliases of tuple elements can repeat in different tuples
+(1,2,3)	(4,5,6)	Tuple(\n    x UInt8,\n    y UInt8,\n    z UInt8)	Tuple(\n    x UInt8,\n    y UInt8,\n    z UInt8)
+(1,2)	(3,4)
+(1)	(2)
+(2)	(3)
+Colliding column names of conflicting constant expressions are disambiguated
+(x)	Tuple(UInt8)					
+(x)_1	Tuple(UInt8)					
+The same argument named differently in different tuples produces different tuples
+(1)	(1)	Tuple(\n    x UInt8)	Tuple(\n    y UInt8)
+A tuple element name can shadow the name of the source column
+(1)	(2)
+(a)	Tuple(\n    a UInt8)					
+(a)_1	Tuple(\n    a UInt8)					
+Unused conflicting aliases of nested expressions are allowed
+(2)
+3
+[4,6]	['qqhello','wwhello']
+An alias defined inside a tuple can be referenced if it is defined once
+(1,2)	11	20
+Referencing an alias that has conflicting definitions is an error
+Conflicting aliases that name projection columns are an error even if not referenced
+Identical duplicate definitions of a referenced alias are still allowed
+1	1	2
+Default expressions of different columns can repeat an alias of a nested expression
+xa	xb	xc

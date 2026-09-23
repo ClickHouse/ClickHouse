@@ -8,7 +8,11 @@
 #include <Common/StringUtils.h>
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
+#include <Common/PODArray.h>
+#include <Functions/Regexps.h>
+#include <IO/VarInt.h>
 
+#include <algorithm>
 #include <limits>
 
 #if defined(__SSE2__)
@@ -35,11 +39,17 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int NOT_IMPLEMENTED;
-#if USE_ICU
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
+#if USE_ICU
     extern const int LOGICAL_ERROR;
     extern const int TOO_LARGE_STRING_SIZE;
 #endif
+}
+
+String ITokenizer::formatTokenForLogs(std::string_view token) const
+{
+    return doubleQuoteString(token);
 }
 
 bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
@@ -56,6 +66,16 @@ bool NgramsTokenizer::nextInString(const char * data, size_t length, size_t & __
     token_length = std::min(token_length, length - token_start);
     pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
     return code_points == n;
+}
+
+/// The length of the lexical unit of a `LIKE` pattern that starts at `pos`: a backslash escapes the
+/// character after it, so the two form one unit.
+static size_t lexicalUnitLengthInStringLike(const char * data, size_t length, size_t pos)
+{
+    if (data[pos] == '\\' && pos + 1 < length)
+        return 1 + UTF8::seqLength(static_cast<UInt8>(data[pos + 1]));
+
+    return UTF8::seqLength(static_cast<UInt8>(data[pos]));
 }
 
 bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t & pos, String & token) const
@@ -100,7 +120,11 @@ bool NgramsTokenizer::nextInStringLike(const char * data, size_t length, size_t 
 
         if (code_points == n)
         {
-            pos += UTF8::seqLength(static_cast<UInt8>(data[pos]));
+            /// The next n-gram restarts one lexical unit later. Advancing by a single code point can
+            /// land inside a `\\` pair, and the re-parse from there pairs the remaining backslashes
+            /// differently and consumes a genuine `%` wildcard as an escaped literal - which requires
+            /// an n-gram containing `%` that no matching row has to contain, so the granule is pruned.
+            pos += lexicalUnitLengthInStringLike(data, length, pos);
             return true;
         }
     }
@@ -120,26 +144,13 @@ void NgramsTokenizer::substringToTokens(const char * data, size_t length, Vector
 
 bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
-    token_start = pos;
-    token_length = 0;
+    const char * end = data + length;
+    const char * start = separator_chars.find<false>(data + pos, end);
+    const char * token_end = separator_chars.find<true>(start, end);
 
-    while (pos < length)
-    {
-        if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
-        {
-            /// Finish current token if any
-            if (token_length > 0)
-                return true;
-            token_start = ++pos;
-        }
-        else
-        {
-            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
-            ++pos;
-            ++token_length;
-        }
-    }
-
+    token_start = start - data;
+    token_length = token_end - start;
+    pos = token_end - data;
     return token_length > 0;
 }
 
@@ -233,20 +244,6 @@ void wordBoundarySubstringToTokens(
             tokens.push_back({data + token_start, token_len});
 }
 
-bool startsWithSeparator(const char * data, size_t length, size_t pos, const std::vector<String> & separators, std::string & matched_sep)
-{
-    for (const auto & separator : separators)
-    {
-        size_t separator_length = separator.size();
-        if (pos + separator_length <= length && std::memcmp(data + pos, separator.data(), separator_length) == 0)
-        {
-            matched_sep = separator;
-            return true;
-        }
-    }
-    return false;
-}
-
 }
 
 void SplitByNonAlphaTokenizer::substringToBloomFilter(
@@ -261,14 +258,38 @@ void SplitByNonAlphaTokenizer::substringToTokens(
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
+SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separators_)
+    : ITokenizerHelper(Type::SplitByString)
+    , separators(separators_)
+{
+    for (const auto & separator : separators)
+    {
+        if (!separator.empty())
+            separator_first_bytes.add(separator.front());
+    }
+
+    all_separators_single_byte = std::ranges::all_of(separators, [](const auto & separator) { return separator.size() == 1; });
+}
+
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     size_t i = pos;
-    std::string matched_separators;
 
     /// Skip prefix of separators
-    while (i < length && startsWithSeparator(data, length, i, separators, matched_separators))
-        i += matched_separators.size();
+    if (all_separators_single_byte)
+    {
+        i = separator_first_bytes.find<false>(data + i, data + length) - data;
+    }
+    else
+    {
+        while (i < length)
+        {
+            size_t separator_length = matchSeparator(data, length, i);
+            if (separator_length == 0)
+                break;
+            i += separator_length;
+        }
+    }
 
     if (i >= length)
     {
@@ -276,10 +297,23 @@ bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size
         return false;
     }
 
-    /// Read token until next separator
+    /// Read token until next separator.
     size_t start = i;
-    while (i < length && !startsWithSeparator(data, length, i, separators, matched_separators))
-        ++i;
+
+    if (all_separators_single_byte)
+    {
+        i = separator_first_bytes.find<true>(data + i, data + length) - data;
+    }
+    else
+    {
+        while (true)
+        {
+            i = separator_first_bytes.find<true>(data + i, data + length) - data;
+            if (i >= length || matchSeparator(data, length, i) != 0)
+                break;
+            ++i;
+        }
+    }
 
     token_start = start;
     token_length = i - start;
@@ -317,6 +351,139 @@ String SplitByStringTokenizer::getDescription() const
     return result + "])";
 }
 
+SplitByRegexpTokenizer::SplitByRegexpTokenizer(const String & regexp_, bool match_tokens_)
+    : ITokenizerHelper(Type::SplitByRegexp)
+    , regexp_str(regexp_)
+    , match_tokens(match_tokens_)
+    /// Captures are tracked in both modes for simplicity, though only `match_tokens` mode reads them.
+    , regexp(std::make_shared<OptimizedRegularExpression>(regexp_, OptimizedRegularExpression::RE_DOT_NL))
+    /// A pattern with capture groups is never "trivial", so whenever `getNumberOfSubpatterns()` is
+    /// non-zero, index 1 is always populated. See the `chassert` in `nextInStringImpl`.
+    , token_group(match_tokens_ && regexp->getNumberOfSubpatterns() > 0 ? 1 : 0)
+{
+    /// Best-effort: reject patterns that can match empty (they'd get `nextMatchedToken` stuck). Not
+    /// exhaustive - a zero-width assertion (`\b`, `$`) can still match empty only in some contexts,
+    /// which this check can't see; `nextMatchedToken` catches that case at the point of use instead.
+    OptimizedRegularExpression::MatchVec probe_matches;
+    if (match_tokens_ && regexp->match("", 0, probe_matches) > 0)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "'{}' tokenizer: pattern '{}' can match an empty string, which is not supported with match_tokens = true",
+            getName(), regexp_);
+}
+
+bool SplitByRegexpTokenizer::nextInStringImpl(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    if (match_tokens)
+        return nextMatchedToken(data, length, pos, token_start, token_length, matches);
+
+    while (pos <= length)
+    {
+        const size_t token_begin = pos;
+        size_t match_start = 0;
+        size_t match_length = 0;
+
+        if (nextRegexpMatch(*regexp, data, length, pos, match_start, match_length, matches))
+        {
+            /// The token is the text preceding the separator; `pos` has already advanced past the separator.
+            if (match_start > token_begin)
+            {
+                token_start = token_begin;
+                token_length = match_start - token_begin;
+                return true;
+            }
+            /// Empty piece (leading or consecutive separators): skip it and keep scanning.
+        }
+        else
+        {
+            /// No further separator: the remaining tail is the last token. An empty tail is not emitted.
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            if (token_begin < length)
+            {
+                token_start = token_begin;
+                token_length = length - token_begin;
+                return true;
+            }
+            return false;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextMatchedToken(
+    const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length, OptimizedRegularExpression::MatchVec & matches) const
+{
+    while (pos <= length)
+    {
+        if (regexp->match(data, length, pos, matches) == 0)
+        {
+            pos = length + 1; /// Mark exhausted so subsequent calls return false.
+            return false;
+        }
+
+        chassert(token_group < matches.size());
+        const auto & whole_match = matches[0];
+
+        if (whole_match.length == 0)
+        {
+            /// Safety net for context-dependent cases (e.g. `\b`) the constructor's check can't see.
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "'{}' tokenizer: pattern '{}' matched an empty string, which is not supported with match_tokens = true",
+                getName(), regexp_str);
+        }
+
+        /// Advance past the whole match, not just the captured span, so matches never overlap.
+        pos = whole_match.offset + whole_match.length;
+
+        /// Capture group 1, or the whole match when the pattern has none. A non-participating or
+        /// empty group contributes no token.
+        const auto & group = matches[token_group];
+        if (group.offset != std::string::npos && group.length > 0)
+        {
+            token_start = group.offset;
+            token_length = group.length;
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool SplitByRegexpTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
+{
+    /// Allocates the RE2 match scratch per call. This is only used by the (constant-only, documented as
+    /// inefficient) `stringToTokens` / `stringToBloomFilter` paths. The hot path - `forEachToken`, used by
+    /// index build, search and the `tokens` function - goes through `forEachTokenImpl`, which reuses a single
+    /// scratch buffer across all tokens of a string.
+    OptimizedRegularExpression::MatchVec matches;
+    return nextInStringImpl(data, length, pos, token_start, token_length, matches);
+}
+
+bool SplitByRegexpTokenizer::nextInStringLike(const char * /*data*/, size_t /*length*/, size_t & /*pos*/, String & /*token*/) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::nextInStringLike is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToBloomFilter is not implemented");
+}
+
+void SplitByRegexpTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "SplitByRegexpTokenizer::substringToTokens is not implemented");
+}
+
+String SplitByRegexpTokenizer::getDescription() const
+{
+    if (match_tokens)
+        return fmt::format("{}({}, true)", getName(), quoteString(regexp_str));
+    return fmt::format("{}({})", getName(), quoteString(regexp_str));
+}
+
 bool ArrayTokenizer::nextInString(const char * /*data*/, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     if (pos == 0)
@@ -342,6 +509,126 @@ void ArrayTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &,
 void ArrayTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ArrayTokenizer::substringToTokens is not implemented");
+}
+
+namespace
+{
+
+void appendToToken(String & out, std::string_view bytes) { out.append(bytes); }
+void appendToToken(PaddedPODArray<UInt8> & out, std::string_view bytes)
+{
+    const auto * data = reinterpret_cast<const UInt8 *>(bytes.data());
+    out.insert(data, data + bytes.size());
+}
+
+void appendToToken(String & out, UInt8 byte) { out.push_back(static_cast<char>(byte)); }
+void appendToToken(PaddedPODArray<UInt8> & out, UInt8 byte) { out.push_back(byte); }
+
+template <typename Out>
+void encodeTokenImpl(std::string_view key, std::string_view value, bool is_duplicate, Out & out)
+{
+    const UInt64 packed = (static_cast<UInt64>(key.size()) << 1) | (is_duplicate ? 1ULL : 0ULL);
+
+    out.clear();
+    out.reserve(key.size() + value.size() + getLengthOfVarUInt(packed));
+    appendToToken(out, key);
+    appendToToken(out, value);
+
+    /// Keys under 64 bytes pack into one varint byte, which is its own reverse.
+    if (packed < 0x80)
+    {
+        appendToToken(out, static_cast<UInt8>(packed));
+        return;
+    }
+
+    char buf[10];
+    const size_t num_bytes = writeVarUInt(packed, buf) - buf;
+    for (size_t i = num_bytes; i-- > 0;)
+        appendToToken(out, static_cast<UInt8>(buf[i]));
+}
+
+}
+
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate, String & out)
+{
+    encodeTokenImpl(key, value, is_duplicate, out);
+}
+
+void KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate, PaddedPODArray<UInt8> & out)
+{
+    encodeTokenImpl(key, value, is_duplicate, out);
+}
+
+String KeyValuePairsTokenizer::encodeToken(std::string_view key, std::string_view value, bool is_duplicate)
+{
+    String out;
+    encodeToken(key, value, is_duplicate, out);
+    return out;
+}
+
+KeyValuePairsTokenizer::DecodedToken KeyValuePairsTokenizer::decodeToken(std::string_view token)
+{
+    /// The trailer is read backwards: the last byte of the token is the first byte of the varint,
+    /// and every byte of the varint except its last one has the continuation bit set.
+    UInt64 packed = 0;
+    size_t trailer_start = token.size();
+
+    for (size_t shift = 0;; shift += 7)
+    {
+        if (trailer_start == 0 || shift >= 64)
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Cannot decode a token of the `keyValuePairs` tokenizer: the trailer is malformed (token size: {})", token.size());
+        }
+
+        const UInt8 byte = static_cast<UInt8>(token[--trailer_start]);
+        packed |= static_cast<UInt64>(byte & 0x7F) << shift;
+
+        if (!(byte & 0x80))
+            break;
+    }
+
+    const size_t key_size = packed >> 1;
+    if (key_size > trailer_start)
+    {
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Cannot decode a token of the `keyValuePairs` tokenizer: the key length {} exceeds the {} bytes before the trailer",
+            key_size, trailer_start);
+    }
+
+    return DecodedToken
+    {
+        .key = token.substr(0, key_size),
+        .value = token.substr(key_size, trailer_start - key_size),
+        .is_duplicate = (packed & 1) != 0,
+    };
+}
+
+String KeyValuePairsTokenizer::formatTokenForLogs(std::string_view token) const
+{
+    const auto decoded = decodeToken(token);
+    return fmt::format("{{{}: {}}}", doubleQuoteString(decoded.key), doubleQuoteString(decoded.value));
+}
+
+bool KeyValuePairsTokenizer::nextInString(const char *, size_t, size_t &, size_t &, size_t &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+        "The `keyValuePairs` tokenizer does not tokenize strings: its tokens are (key, value) pairs of a Map column");
+}
+
+bool KeyValuePairsTokenizer::nextInStringLike(const char *, size_t, size_t &, String &) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::nextInStringLike is not implemented");
+}
+
+void KeyValuePairsTokenizer::substringToBloomFilter(const char *, size_t, BloomFilter &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToBloomFilter is not implemented");
+}
+
+void KeyValuePairsTokenizer::substringToTokens(const char *, size_t, VectorWithMemoryTracking<String> &, bool, bool) const
+{
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "KeyValuePairsTokenizer::substringToTokens is not implemented");
 }
 
 SparseGramsTokenizer::SparseGramsTokenizer(size_t min_length, size_t max_length, std::optional<size_t> min_cutoff_length_)

@@ -4,6 +4,7 @@
 #include <Interpreters/AsynchronousInsertQueue.h>
 
 #include <Access/Common/AccessFlags.h>
+#include <Access/Common/AccessRightsElement.h>
 #include <Access/EnabledQuota.h>
 #include <Columns/IColumn.h>
 #include <Common/ThreadStatus.h>
@@ -69,6 +70,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
+    extern const Event AsyncInsertFlush;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -88,6 +90,8 @@ namespace Setting
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsString insert_deduplication_token;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsBool input_format_defaults_for_omitted_fields;
     extern const SettingsUInt64 log_queries_cut_to_length;
     extern const SettingsUInt64 max_columns_to_read;
@@ -107,6 +111,8 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INVALID_SETTING_VALUE;
+    extern const int USER_EXPIRED;
+    extern const int UNSUPPORTED_PARAMETER;
 }
 
 static const NameSet settings_to_skip
@@ -121,15 +127,21 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
     const ASTPtr & query_,
     const std::optional<UUID> & user_id_,
     const std::vector<UUID> & current_roles_,
+    const std::vector<UUID> & external_roles_,
+    const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
+    time_t authentication_valid_until_,
     const String & current_user_,
     const String & initial_user_,
     const String & authenticated_user_,
     const Settings & settings_,
     AsynchronousInsertQueueDataKind data_kind_)
     : query(query_->clone())
-    , query_str(query->formatWithSecretsOneLine())
+    , query_str_with_secrets(query->formatWithSecretsOneLine())
     , user_id(user_id_)
     , current_roles(current_roles_)
+    , external_roles(external_roles_)
+    , authentication_grants(authentication_grants_)
+    , authentication_valid_until(authentication_valid_until_)
     , current_user(current_user_)
     , initial_user(initial_user_)
     , authenticated_user(authenticated_user_)
@@ -149,6 +161,28 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
             siphash.update(current_role);
         }
     }
+
+    /// Fold the credential grant limit into the key so inserts made under different limits are never
+    /// coalesced into one flush (the queue is keyed by `hash` alone). A null limit (the common,
+    /// unrestricted case) contributes nothing, so it does not change the hash of existing keys.
+    /// A non-null limit is hashed by its textual form even when it is semantically empty (a deny-all
+    /// token), so it never collides with the null case; the leading length prefix keeps it unambiguous.
+    if (authentication_grants)
+    {
+        /// Use the precise serialization (never `toString`): under `enable_read_write_grants = 0` the
+        /// backward-compatibility widening collapses distinct source limits such as `READ ON FILE` and
+        /// `WRITE ON FILE` into one, which would let a read-only token piggyback into a write token's bucket.
+        const auto grants_str = authentication_grants->toStringPrecise();
+        siphash.update(grants_str.size());
+        siphash.update(grants_str);
+    }
+
+    /// Fold the per-method expiry into the key so inserts made under credentials with different
+    /// `VALID UNTIL` are never coalesced: the flush checks a single expiry, so a longer-lived
+    /// credential must not carry an expired one's work past its deadline. 0 (the common, no-expiry
+    /// case) contributes nothing, so it does not change the hash of existing keys.
+    if (authentication_valid_until != 0)
+        siphash.update(authentication_valid_until);
 
     /// Length-prefix each field: update(String) streams only bytes and the queue is keyed
     /// by hash alone, so otherwise "a"/"a"/"aaa" and "aa"/"aa"/"a" would collide.
@@ -179,9 +213,12 @@ AsynchronousInsertQueue::InsertQuery::InsertQuery(
 AsynchronousInsertQueue::InsertQuery::InsertQuery(const InsertQuery & other)
 {
     query = other.query->clone();
-    query_str = other.query_str;
+    query_str_with_secrets = other.query_str_with_secrets;
     user_id = other.user_id;
     current_roles = other.current_roles;
+    external_roles = other.external_roles;
+    authentication_grants = other.authentication_grants;
+    authentication_valid_until = other.authentication_valid_until;
     current_user = other.current_user;
     initial_user = other.initial_user;
     authenticated_user = other.authenticated_user;
@@ -197,9 +234,12 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
     if (this != &other)
     {
         query = other.query->clone();
-        query_str = other.query_str;
+        query_str_with_secrets = other.query_str_with_secrets;
         user_id = other.user_id;
         current_roles = other.current_roles;
+        external_roles = other.external_roles;
+        authentication_grants = other.authentication_grants;
+        authentication_valid_until = other.authentication_valid_until;
         current_user = other.current_user;
         initial_user = other.initial_user;
         authenticated_user = other.authenticated_user;
@@ -214,7 +254,17 @@ AsynchronousInsertQueue::InsertQuery::operator=(const InsertQuery & other)
 
 bool AsynchronousInsertQueue::InsertQuery::operator==(const InsertQuery & other) const
 {
-    return toTupleCmp() == other.toTupleCmp();
+    if (toTupleCmp() != other.toTupleCmp())
+        return false;
+
+    /// Compare the credential grant limit by content, consistently with how it is folded into `hash`.
+    /// A shared_ptr comparison would test identity and wrongly split two equal limits from different sessions.
+    if (static_cast<bool>(authentication_grants) != static_cast<bool>(other.authentication_grants))
+        return false;
+    if (authentication_grants && authentication_grants->toStringPrecise() != other.authentication_grants->toStringPrecise())
+        return false;
+
+    return true;
 }
 
 StorageID AsynchronousInsertQueue::InsertQuery::getStorageID() const
@@ -344,9 +394,13 @@ void AsynchronousInsertQueue::flushAndShutdown()
 
             std::lock_guard lock(shard.mutex);
             for (const auto & [_, elem] : shard.queue)
+            {
                 for (const auto & entry : elem.data->entries)
                     entry->finish(
                         std::make_exception_ptr(Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Wait for async insert timeout exceeded)")));
+
+                discountFromQueueMetrics(*elem.data);
+            }
 
             shard.iterators.clear();
             shard.queue.clear();
@@ -368,6 +422,12 @@ AsynchronousInsertQueue::~AsynchronousInsertQueue()
     clear();
 }
 
+void AsynchronousInsertQueue::discountFromQueueMetrics(const InsertData & data)
+{
+    CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueSize);
+    CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueBytes, data.size_in_bytes);
+}
+
 void AsynchronousInsertQueue::clear()
 {
     for (auto & shard : queue_shards)
@@ -379,6 +439,9 @@ void AsynchronousInsertQueue::clear()
             const auto & insert_query = elem.key.query->as<const ASTInsertQuery &>();
             LOG_WARNING(log, "Has unprocessed async insert for {}.{}",
                         backQuoteIfNeed(insert_query.getDatabase()), backQuoteIfNeed(insert_query.getTable()));
+
+            /// These entries are dropped, not scheduled, so discount them here.
+            discountFromQueueMetrics(*elem.data);
         }
 
         shard.iterators.clear();
@@ -393,6 +456,10 @@ void AsynchronousInsertQueue::scheduleDataProcessingJob(
     /// We add new chunks in the end of entries list, so they are automatically ordered by creation time
     chassert(!data->entries.empty());
     const auto priority = Priority{data->entries.front()->create_time.time_since_epoch().count()};
+
+    /// The data is taken out of the queue by every caller of this method, so discount it here.
+    /// Doing it in one place keeps the metrics correct for all the flush triggers.
+    discountFromQueueMetrics(*data);
 
     /// Wrap 'unique_ptr' with 'shared_ptr' to make this
     /// lambda copyable and allow to save it to the thread pool.
@@ -556,6 +623,20 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
 {
     const auto & settings = query_context->getSettingsRef();
     validateSettings(settings, log);
+
+    /// A non-parallel quorum insert permits a single in-flight quorum part per table, which an
+    /// asynchronous insert - a flush writing the data of several queries at once - cannot honour.
+    /// The check belongs here rather than at one of the call sites: an `INSERT` with inlined data
+    /// arrives through `executeQuery`, while one whose data is sent as blocks over the native
+    /// protocol arrives straight from `TCPHandler`, and only the former used to be checked - the
+    /// latter reached `ReplicatedMergeTreeSink` and failed there with a `LOGICAL_ERROR`.
+    auto quorum_is_enabled = settings[Setting::insert_quorum].valueOr(0) > 1 || settings[Setting::insert_quorum].is_auto;
+    if (quorum_is_enabled && !settings[Setting::insert_quorum_parallel])
+        throw Exception(
+            ErrorCodes::UNSUPPORTED_PARAMETER,
+            "Async inserts with quorum only make sense with enabled insert_quorum_parallel setting, either disable quorum "
+            "or set insert_quorum_parallel=1 or do not use async inserts");
+
     auto & insert_query = query->as<ASTInsertQuery &>();
 
     auto data_kind = chunk.getDataKind();
@@ -580,6 +661,9 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         query,
         query_context->getUserID(),
         query_context->getCurrentRoles(),
+        query_context->getExternalRoles(),
+        query_context->getAuthenticationGrants(),
+        query_context->getAuthenticationValidUntil(),
         client_info.current_user,
         client_info.initial_user,
         client_info.authenticated_user,
@@ -626,7 +710,6 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         size_t entry_data_size = entry->chunk.byteSize();
 
         chassert(data);
-        auto size_in_bytes = data->size_in_bytes;
         /// We rely on the fact that entries are being added to the list in order of creation time in `scheduleDataProcessingJob()`
         try
         {
@@ -691,18 +774,11 @@ AsynchronousInsertQueue::PushResult AsynchronousInsertQueue::pushDataChunk(ASTPt
         ProfileEvents::increment(ProfileEvents::AsyncInsertQuery);
         ProfileEvents::increment(ProfileEvents::AsyncInsertBytes, entry_data_size);
 
-        if (data_to_process)
-        {
-            if (!inserted)
-                CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueSize);
-            CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueBytes, size_in_bytes);
-        }
-        else
-        {
-            if (inserted)
-                CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueSize);
-            CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueBytes, entry_data_size);
-        }
+        /// Account the entry as pending unconditionally, even when it is flushed right away.
+        /// Everything that leaves the queue is discounted in 'scheduleDataProcessingJob' and in 'clear'.
+        if (inserted)
+            CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueSize);
+        CurrentMetrics::add(CurrentMetrics::AsynchronousInsertQueueBytes, entry_data_size);
 
         if (data_to_process)
             scheduleDataProcessingJob(key, std::move(data_to_process), getContext(), shard_num);
@@ -952,14 +1028,12 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
 
             const auto now = std::chrono::steady_clock::now();
 
-            size_t size_in_bytes = 0;
             while (true)
             {
                 if (shard.queue.empty() || shard.queue.begin()->first > now)
                     break;
 
                 auto it = shard.queue.begin();
-                size_in_bytes += it->second.data->size_in_bytes;
 
                 NOEXCEPT_SCOPE({
                     /// The only exception that is possible here is MEMORY_LIMIT_EXCEEDED, by blocking them it is highly unlikely that we will fail here.
@@ -972,12 +1046,6 @@ void AsynchronousInsertQueue::processBatchDeadlines(size_t shard_num) TSA_NO_THR
 
                     shard.queue.erase(it);
                 });
-            }
-
-            if (!entries_to_flush.empty())
-            {
-                CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueSize, entries_to_flush.size());
-                CurrentMetrics::sub(CurrentMetrics::AsynchronousInsertQueueBytes, size_in_bytes);
             }
         }
 
@@ -1046,6 +1114,18 @@ try
     const auto log = getLogger("AsynchronousInsertQueue");
     const auto & insert_query = assert_cast<const ASTInsertQuery &>(*key.query);
 
+    /// Fail closed if the authentication method that queued this insert has expired between enqueue
+    /// and flush. The synchronous path re-checks per query in `Session::checkIfUserIsStillValid`; the
+    /// deferred flush has no session, so without this a token could enqueue data just before expiry
+    /// and have the server flush it afterwards. The per-method expiry is part of the batching key, so
+    /// every entry in this batch shares it and they all fail closed together. 0 means no expiry.
+    if (key.authentication_valid_until != 0)
+    {
+        const time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+        if (now > key.authentication_valid_until)
+            throw Exception(ErrorCodes::USER_EXPIRED, "Authentication method used to submit the deferred insert has expired");
+    }
+
     bool internal = true;
     bool async_insert = true;
 
@@ -1064,8 +1144,16 @@ try
     /// Access rights must be checked for the user who executed the initial INSERT query.
     if (key.user_id)
     {
-        insert_context->setUser(*key.user_id);
-        insert_context->setCurrentRoles(key.current_roles);
+        /// Replay the whole originating identity in one call: the external (pushed) roles, the
+        /// credential grant limit and its expiry are restored together with the user, so a limited
+        /// credential does not regain the full user's rights and a pushed-role session does not fail
+        /// role revalidation.
+        insert_context->setUser(*key.user_id, key.external_roles, key.authentication_grants, key.authentication_valid_until);
+        /// `current_roles` are the session's *effective* current roles, which already include the
+        /// external roles restored above. Re-apply them without the grant check: external roles are not
+        /// locally granted, so a checked re-apply would throw `SET_NON_GRANTED_ROLE`; the locally
+        /// granted current roles are kept and the external ones come from `setUser`.
+        insert_context->setCurrentRoles(key.current_roles, /*check_grants=*/ false);
     }
 
     /// Context::setUser only restores the access-control identity, not the ClientInfo user
@@ -1103,6 +1191,10 @@ try
     }
     else
         query_scope = QueryScope::create(insert_context);
+
+    /// Count the flush inside its own query scope, so that it lands on the same
+    /// `system.query_log` row as the rest of the flush accounting, whatever triggered it.
+    ProfileEvents::increment(ProfileEvents::AsyncInsertFlush);
 
     LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
     LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
@@ -1195,10 +1287,7 @@ try
             return it->second;
         };
 
-        if (entry->chunk.getDataKind() == AsynchronousInsertQueueDataKind::Parsed)
-            elem.query_for_logging = key.query_str;
-        else
-            elem.query_for_logging = get_query_by_format(entry->format);
+        elem.query_for_logging = get_query_by_format(entry->format);
 
         if (is_flush_error)
         {
@@ -1319,8 +1408,10 @@ try
         auto source = std::make_shared<SourceFromSingleChunk>(header, std::move(chunk));
         pipeline.complete(Pipe(std::move(source)));
 
-        CompletedPipelineExecutor completed_executor(pipeline);
-        completed_executor.execute();
+        {
+            CompletedPipelineExecutor completed_executor(pipeline);
+            completed_executor.execute();
+        }
 
         finish_entries(std::move(pipeline), num_rows, num_bytes);
     }

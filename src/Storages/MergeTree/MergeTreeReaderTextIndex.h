@@ -5,6 +5,7 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
+#include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
 #include <Interpreters/ExpressionActions.h>
 
@@ -42,8 +43,7 @@ public:
         size_t from_mark,
         bool continue_reading,
         size_t max_rows_to_read,
-        size_t offset,
-        Columns & res_columns) override;
+        MutableColumns & res_columns) override;
 
     bool canReadIncompleteGranules() const override { return false; }
     void updateAllMarkRanges(const MarkRanges & ranges) override;
@@ -55,7 +55,7 @@ public:
 private:
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule);
     void initializeFallbackReader(const IMergeTreeReader * main_reader);
-    void createEmptyColumns(Columns & columns, size_t max_rows_to_read) const;
+    void createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const;
     std::unique_ptr<MergeTreeReaderStream> makeTextIndexStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
@@ -98,6 +98,11 @@ private:
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
     void initializePositionsStream();
 
+    /// Intersects the phrase tokens' postings into candidates, then decodes only the covering blocks.
+    PaddedPODArray<UInt32> phraseSearchBlocked(const TextSearchQuery & search_query);
+    /// One token's full posting list — the rank space the blocked position stream is addressed in.
+    PostingList readAllPostingsForToken(std::string_view token, const TokenPostingsInfo & token_info);
+
     using TextIndexGranulePtr = std::shared_ptr<const MergeTreeIndexGranuleText>;
 
     MergeTreeIndexWithCondition index;
@@ -133,6 +138,7 @@ private:
     size_t current_row = 0;
     size_t current_mark = 0;
     PaddedPODArray<UInt32> indices_buffer;
+    TextIndexBlockedPositionsCodec::DecodeScratch blocked_positions_scratch;
 
     bool is_initialized = false;
     /// Virtual columns that are always true.

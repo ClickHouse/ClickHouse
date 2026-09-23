@@ -16,6 +16,8 @@ doc_type: 'reference'
 该聚合函数接受以时间戳和值对表示的时间序列数据，并根据由起始时间戳、结束时间戳和步长定义的规则时间网格，从这些数据中计算[类似 PromQL 的 idelta](https://prometheus.io/docs/prometheus/latest/querying/functions/#idelta)。
 对于网格上的每个点，计算 `idelta` 时会使用指定时间窗口内的样本。
 
+如果多个样本具有相同的时间戳，则仅使用其中值最大的一个样本。非数字值 (NaN) 的优先级低于任何其他值，因此仅当该时间戳上的所有样本均为 NaN 时，才会使用 NaN 值。
+
 <Warning>
   此函数为 Experimental 功能，请通过设置 `allow_experimental_time_series_aggregate_functions=true` 启用。
 </Warning>

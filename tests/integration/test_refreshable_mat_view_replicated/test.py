@@ -34,7 +34,7 @@ node2 = cluster.add_instance(
 nodes = [node, node2]
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(scope="module", autouse=True)
 def started_cluster():
     try:
         cluster.start()
@@ -912,3 +912,179 @@ def test_row_policy_survives_refresh(module_setup_tables):
         assert n.query("SELECT count() FROM rp_tgt", user="rp_user") == "1\n"
 
     _drop_row_policy_objects()
+
+
+def coordination_path(node, database, table):
+    # `default_replica_path` is /clickhouse/tables/{uuid}/{shard}, and both replicas are in shard 1.
+    uuid = node.query(
+        f"SELECT uuid FROM system.tables WHERE database = '{database}' AND name = '{table}'"
+    ).strip()
+    return f"/clickhouse/tables/{uuid}/1"
+
+
+def requested_znode(zk, path, replica):
+    # The persistent "requested-<replica>" znode: a `SYSTEM REFRESH VIEW` accepted on that replica and not started yet.
+    zk.sync(path)
+    return zk.exists(f"{path}/requested-{replica}")
+
+
+def test_wait_view_covers_refresh_requested_on_another_replica(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            # 5 rows, one second each: every refresh takes ~5s and appends 5 rows.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(5) SETTINGS max_block_size = 1, insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+
+    # Requests queued behind a running refresh, one per replica: each gets its own refresh, as on a single replica,
+    # and the wait on the other replica must cover all three.
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "15"
+
+    # The same with the waiting replica stopped: the request is still owed on the requesting one.
+    node2.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "25"
+    node2.query("SYSTEM START VIEW test_rmv")
+
+    # The wait reads the coordination state from Keeper first; a Keeper error there must fail it, not hang it.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        assert "KEEPER_EXCEPTION" in node2.query_and_get_error(
+            "SYSTEM WAIT VIEW test_rmv"
+        )
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+
+
+def test_refresh_request_is_shared_and_durable(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            select_query="SELECT now() a FROM numbers(5) SETTINGS insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+    zk = cluster.get_kazoo_client("zoo1")
+    path = coordination_path(node, "default", "test_rmv")
+
+    # Requested on a stopped replica, then on the other one too: that one runs its own request at once and the stopped
+    # replica's after a Keeper session timeout, one refresh each. The stopped replica's wait covers both; starting it runs no third.
+    node.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    znode = requested_znode(zk, path, 1)
+    assert znode is not None and znode.ephemeralOwner == 0
+    node2.query("SYSTEM REFRESH VIEW test_rmv")
+    wait_condition(
+        lambda: node2.query("SELECT count() FROM tgt1").strip(),
+        lambda x: x == "5",
+        max_attempts=100,
+    )
+    assert requested_znode(zk, path, 1) is not None
+    node.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    assert node2.query("SELECT count() FROM tgt1").strip() == "10"
+    assert requested_znode(zk, path, 1) is None
+    assert (
+        node2.query(
+            "SELECT last_refresh_replica FROM system.view_refreshes WHERE view = 'test_rmv'"
+        ).strip()
+        == "2"
+    )
+    node.query("SYSTEM START VIEW test_rmv")
+    node.query("SYSTEM WAIT VIEW test_rmv", timeout=30)
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "10"
+
+    # Stopped cluster-wide: no replica runs the request, so the wait returns. The request survives a restart
+    # of the requesting replica and is run once the view is started again.
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    for n in nodes:
+        n.query("SYSTEM WAIT VIEW test_rmv", timeout=30)
+    node.restart_clickhouse()
+    assert requested_znode(zk, path, 1) is not None
+    node.query("SYSTEM START REPLICATED VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
+    # Either replica may have run it, and an APPEND wait does not cover the replication of the target.
+    node.query("SYSTEM SYNC REPLICA tgt1")
+    assert node.query("SELECT count() FROM tgt1").strip() == "15"
+    assert requested_znode(zk, path, 1) is None
+
+    # Dropped with a request pending: the coordination znode must go all the same.
+    node.query("SYSTEM STOP REPLICATED VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    node.query("DROP TABLE test_rmv ON CLUSTER default SYNC")
+    zk.sync(path)
+    assert zk.exists(path) is None
+
+
+def test_takeover_waits_for_recreated_request(fn3_setup_tables):
+    node.query(
+        CREATE_RMV.render(
+            table_name="test_rmv",
+            refresh_interval="EVERY 1 YEAR",
+            to_clause="tgt1",
+            # ~20 s per refresh: longer than the Keeper session timeout (15 s) a takeover waits for.
+            select_query="SELECT now() + sleepEachRow(1) a FROM numbers(20) SETTINGS max_block_size = 1, insert_deduplicate = 0",
+            with_append=True,
+            on_cluster="default",
+            empty=True,
+        )
+    )
+
+    # node2 sees node's request pending with nothing running and starts its takeover clock.
+    node.query("SYSTEM STOP VIEW test_rmv")
+    node.query("SYSTEM REFRESH VIEW test_rmv")
+    time.sleep(2)
+    # node2 misses the window in which node runs that request and queues a new one behind it: the same znode name,
+    # but a new request, so the clock must start over once nothing is running.
+    fp = "refresh_mv_fail_znodes_read"
+    node2.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+    try:
+        node.query("SYSTEM START VIEW test_rmv")
+        get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Running")
+        node.query("SYSTEM REFRESH VIEW test_rmv")
+        # Leaves the queued request to node2 without cancelling the running refresh.
+        node.query("SYSTEM PAUSE VIEW test_rmv")
+    finally:
+        node2.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+    get_rmv_info(
+        node2,
+        "test_rmv",
+        condition=lambda x: x["status"] == "RunningOnAnotherReplica",
+        max_attempts=100,
+    )
+    get_rmv_info(
+        node2,
+        "test_rmv",
+        condition=lambda x: x["status"] != "RunningOnAnotherReplica",
+        max_attempts=400,
+        delay=0.1,
+    )
+    first_refresh_ended = time.monotonic()
+    get_rmv_info(
+        node2, "test_rmv", condition=lambda x: x["status"] == "Running", max_attempts=400, delay=0.1
+    )
+    assert time.monotonic() - first_refresh_ended >= 10
+    node.query("SYSTEM START VIEW test_rmv")
+    node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
