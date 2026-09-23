@@ -373,7 +373,7 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         const auto * proxy = typeid_cast<const StorageTableProxy *>(storage.get());
         if (!proxy || proxy->isLoaded())
             storage->checkTableCanBeRenamed(new_id);
-        if (proxy || storage->supportsReplication())
+        if (proxy || isReplicatedMergeTree(*storage))
             checkStoredDefinitionCanBeRenamed(
                 parseQueryFromMetadata(log, getContext(), db.getDisk(), db.getObjectMetadataPath(name)),
                 storage->getStorageID(), new_id, /*whole_database=*/ false, getContext());
@@ -795,8 +795,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         const auto * proxy = typeid_cast<const StorageTableProxy *>(table.second.get());
         if (!proxy || proxy->isLoaded())
             table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
-        /// Asking a proxy whether it replicates would load it.
-        if (!server_starting && (proxy || table.second->supportsReplication()))
+        /// Asking a proxy whether it replicates would load it, and an `Alias` would resolve its target under this lock.
+        if (!server_starting && (proxy || isReplicatedMergeTree(*table.second)))
             checkStoredDefinitionCanBeRenamed(
                 parseQueryFromMetadata(log, getContext(), getDisk(), getObjectMetadataPath(table.first)),
                 table.second->getStorageID(), StorageID(new_name, table.first, table.second->getStorageID().uuid),

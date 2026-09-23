@@ -575,6 +575,12 @@ void DatabaseOnDisk::checkStoredDefinitionCanBeRenamed(
                     table_id.getNameForLogs());
 }
 
+bool DatabaseOnDisk::isReplicatedMergeTree(const IStorage & storage)
+{
+    const auto name = storage.getName();
+    return name.starts_with("Replicated") && name.ends_with("MergeTree");
+}
+
 void DatabaseOnDisk::renameTable(
         ContextPtr local_context,
         const String & table_name,
@@ -637,7 +643,7 @@ void DatabaseOnDisk::renameTable(
     /// moves tables then, under the names the definitions were written with.
     const bool server_starting = getContext()->getApplicationType() == Context::ApplicationType::SERVER
         && !getContext()->isServerCompletelyStarted();
-    if (!server_starting && table->supportsReplication())
+    if (!server_starting && isReplicatedMergeTree(*table))
         checkStoredDefinitionCanBeRenamed(
             parseQueryFromMetadata(log, local_context, getDisk(), getObjectMetadataPath(table_name)),
             table->getStorageID(), StorageID(to_database.getDatabaseName(), to_table_name, table->getStorageID().uuid),

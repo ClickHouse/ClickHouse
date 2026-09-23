@@ -54,6 +54,11 @@ SELECT count() FROM {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound;
 RENAME DATABASE {CLICKHOUSE_DATABASE_1:Identifier} TO {CLICKHOUSE_DATABASE_2:Identifier}; -- { serverError NOT_IMPLEMENTED }
 RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.lazy_bound TO {CLICKHOUSE_DATABASE_1:Identifier}.lazy_moved; -- { serverError NOT_IMPLEMENTED }
 SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'lazy_bound';
+-- An `Alias` is renamed without asking its target, which would be resolved under this database's lock.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.alias_t ENGINE = Alias({CLICKHOUSE_DATABASE_1:String}, 'lazy_bound')
+    SETTINGS allow_experimental_alias_table_engine = 1;
+RENAME TABLE {CLICKHOUSE_DATABASE_1:Identifier}.alias_t TO {CLICKHOUSE_DATABASE_1:Identifier}.alias_moved;
+SELECT engine FROM system.tables WHERE database = {CLICKHOUSE_DATABASE_1:String} AND name = 'alias_moved';
 DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier} SYNC;
 
 -- The renames left nothing behind under either name.

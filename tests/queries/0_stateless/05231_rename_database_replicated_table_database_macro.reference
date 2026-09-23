@@ -8,4 +8,5 @@ TableProxy
 TableProxy
 0
 ReplicatedMergeTree
+Alias
 0

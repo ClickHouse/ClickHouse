@@ -79,6 +79,10 @@ public:
     static void checkStoredDefinitionCanBeRenamed(
         const ASTPtr & create_ast, const StorageID & table_id, const StorageID & new_table_id, bool whole_database, ContextPtr context_);
 
+    /// Decided by the engine name: asking the storage whether it replicates may resolve another table under a
+    /// database lock held by the caller (`Alias`).
+    static bool isReplicatedMergeTree(const IStorage & storage);
+
     String getObjectMetadataPath(const String & object_name) const override;
 
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
