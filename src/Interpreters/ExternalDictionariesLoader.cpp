@@ -241,8 +241,7 @@ void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::stri
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    /// The analyzer qualifies the name of every `dictGet`-family call through here, `dictHas` included, whose return
-    /// type never touches the loader.
+    /// Recording usage needed to verify if query is supported for distributed execution under make_distributed_plan=1
     recordUse(dictionary_name, query_context);
     return qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
 }

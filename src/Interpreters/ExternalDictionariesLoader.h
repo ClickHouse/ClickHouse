@@ -38,8 +38,9 @@ public:
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
-    /// The loader's key for a dictionary named in a query. Resolving through a context records the query's use of the
-    /// dictionary (`UsedServerLocalObjects`), so every consumer that names a dictionary goes through one of these two.
+    /// Translates the name a query uses (`db.dict`, or `dict` against the current database) into the key the loader
+    /// stores the dictionary under (the UUID for a DDL dictionary, the name for an XML one), recording the query's use of
+    /// the dictionary (`UsedServerLocalObjects`) on the way. Every consumer that names a dictionary goes through one of these.
     std::string resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const;
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
@@ -84,13 +85,10 @@ protected:
     void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 
-    /// Records the query's use of the dictionary under its qualified name; the context overloads of
-    /// `resolveDictionaryName` and `qualifyDictionaryNameWithDatabase` call it.
+    /// Records the query's use of the dictionary under its qualified name
     void recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const;
 
-    /// Resolution without a record, for the recording overloads above and for the paths outside a query (metadata
-    /// loading resolves against the owning database). `load` needs no record either: it runs from periodic reloads,
-    /// `SYSTEM RELOAD DICTIONARY` and non-lazy loading at startup as well.
+    /// Resolution without a record.
     std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;

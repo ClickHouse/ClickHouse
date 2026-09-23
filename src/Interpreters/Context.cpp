@@ -3090,7 +3090,10 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
 
 void Context::addUsedServerLocalObject(UsedServerLocalObjects::Kind kind, const String & name) const
 {
-    /// Introspection (`system.functions`) instantiates every function resolver; that is not a use by a query.
+    /// Reading `system.functions` creates the resolver of every function to list its properties, which for `regionTo*`
+    /// touches the embedded dictionaries; that enumeration is not a use by the query, so it runs under
+    /// `SuppressQueryFactoriesInfoScope`, the same guard that keeps it out of `query_log.used_functions`. A context that
+    /// was not copied from a query context has no record.
     if (suppress_query_factories_info || !used_server_local_objects)
         return;
     used_server_local_objects->add(kind, name);
