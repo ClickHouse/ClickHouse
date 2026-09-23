@@ -63,5 +63,10 @@ SELECT grp, sumForEachIf(arr, cond) FROM test_foreach_if GROUP BY grp ORDER BY g
 -- Every row filtered out leaves an empty state, not a stretched one.
 SELECT sumForEachIf(arr, 0) FROM test_foreach_if;
 
+-- A `Nullable` condition goes through `AggregateFunctionIfNullVariadic`, which folds the condition into
+-- a null map and calls addBatchSinglePlaceNotNull. A NULL condition skips the row like a false one.
+SELECT sumForEachIf(arr, toNullable(cond)) FROM test_foreach_if;
+SELECT sumForEachIf(arr, if(grp = 2, NULL, cond)) FROM test_foreach_if;
+
 DROP TABLE test_foreach_if;
 DROP TABLE test_foreach_batch;

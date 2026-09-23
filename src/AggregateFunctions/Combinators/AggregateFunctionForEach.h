@@ -366,6 +366,40 @@ public:
         }
     }
 
+    /// `AggregateFunctionIfNullVariadic` (a `*ForEachIf` with a `Nullable` condition) folds the
+    /// condition into `null_map` and lands here, so this must not fall back to the row-at-a-time helper.
+    void addBatchSinglePlaceNotNull( /// NOLINT
+        size_t row_begin,
+        size_t row_end,
+        AggregateDataPtr __restrict place,
+        const IColumn ** columns,
+        const UInt8 * null_map,
+        Arena * arena,
+        ssize_t if_argument_pos = -1) const override
+    {
+        absl::InlinedVector<const IColumn *, 5> nested(num_arguments);
+        for (size_t i = 0; i < num_arguments; ++i)
+            nested[i] = &assert_cast<const ColumnArray &>(*columns[i]).getData();
+
+        const ColumnArray & first_array_column = assert_cast<const ColumnArray &>(*columns[0]);
+        const IColumn::Offsets & offsets = first_array_column.getOffsets();
+        const auto trailing_offsets = collectTrailingOffsets(columns);
+
+        if (if_argument_pos >= 0)
+        {
+            const auto & flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (!null_map[row] && flags[row])
+                    addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+        else
+        {
+            for (size_t row = row_begin; row < row_end; ++row)
+                if (!null_map[row])
+                    addRowToPlace(place, nested.data(), offsets, trailing_offsets, row, arena);
+        }
+    }
+
     /// Optimized batch aggregation across places.
     void addBatch( /// NOLINT
         size_t row_begin,
