@@ -370,12 +370,19 @@ def _rewrite_paths_to_local_uri(started_cluster, table_name, authority, deletes_
 
     assert relocated, f"Nothing to relocate for {table_name}"
 
+    if target_dir:
+        started_cluster.instances["node1"].exec_in_container(["mkdir", "-p", target_dir])
+
     for f in find_files(data_dir, ".parquet"):
         if os.path.basename(f) not in relocated:
             continue
         rel = os.path.relpath(f, host_path)
         local_path = f"{target_dir}/{os.path.basename(f)}" if target_dir else f"/{base_path}/{rel}"
-        started_cluster.default_local_uploader.upload_file(f, local_path)
+        upload_path = f"/{base_path}/{rel}" if target_dir else local_path
+        started_cluster.default_local_uploader.upload_file(f, upload_path)
+        if target_dir:
+            started_cluster.instances["node1"].exec_in_container(
+                ["mv", upload_path, local_path])
         started_cluster.minio_client.remove_object(started_cluster.minio_bucket, f"{base_path}/{rel}")
 
     shutil.rmtree(temp_dir)
