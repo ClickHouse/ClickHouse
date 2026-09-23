@@ -71,7 +71,7 @@ should be carefully researched and tested.
 
 | Option | Description                                                                                                                                                | Default if any |
 |--------|------------------------------------------------------------------------------------------------------------------------------------------------------------|----------------|
-| codec  | A string consisting of arguments passed to `CODEC()` in the column's DDL. For example: `codec: "Delta, ZSTD"` will be compiled as `CODEC(Delta, ZSTD)`.    |    
+| codec  | A string consisting of arguments passed to `CODEC()` in the column's DDL. For example: `codec: "Delta, ZSTD"` will be compiled as `CODEC(Delta, ZSTD)`.    |
 | ttl    | A string consisting of a [TTL (time-to-live) expression](/concepts/features/operations/delete/ttl) that defines a TTL rule in the column's DDL. For example: `ttl: ts + INTERVAL 1 DAY` will be compiled as `TTL ts + INTERVAL 1 DAY`. |
 
 #### Example of schema configuration {#example-of-schema-configuration}
@@ -109,7 +109,7 @@ select
   -- event_type may be infered as a String but we may prefer LowCardinality(String):
   CAST(event_type, 'LowCardinality(String)') as event_type,
   -- countState() may be infered as `AggregateFunction(count)` but we may prefer to change the type of the argument used:
-  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count, 
+  CAST(countState(), 'AggregateFunction(count, UInt32)') as response_count,
   -- maxSimpleState() may be infered as `SimpleAggregateFunction(max, String)` but we may prefer to also change the type of the argument used:
   CAST(maxSimpleState(event_type), 'SimpleAggregateFunction(max, LowCardinality(String))') as max_event_type
 from {{ ref('user_events') }}
@@ -270,11 +270,11 @@ Configurations that are specific for this materialization type are listed below:
 | `unique_key`             | A tuple of column names that uniquely identify rows. For more details on uniqueness constraints, see [here](https://docs.getdbt.com/docs/build/incremental-models#defining-a-unique-key-optional).                                                                                       | Required. If not provided altered rows will be added twice to the incremental table. |
 | `inserts_only`           | It has been deprecated in favor of the `append` incremental `strategy`, which operates in the same way. If set to True for an incremental model, incremental updates will be inserted directly to the target table without creating intermediate table. . If `inserts_only` is set, `incremental_strategy` is ignored. | Optional (default: `False`)                                                          |
 | `incremental_strategy`   | The strategy to use for incremental materialization.  `delete+insert`, `append`, `insert_overwrite`, or `microbatch` are supported.  For additional details on strategies, see [here](#incremental-model-strategies) | Optional (default: 'default')                                                        |
-| `incremental_predicates` | Additional conditions to be applied to the incremental materialization (only applied to `delete+insert` strategy                                                                                                                                                                                    | Optional                      
+| `incremental_predicates` | Additional conditions to be applied to the incremental materialization (only applied to `delete+insert` strategy                                                                                                                                                                                    | Optional
 
 ### Incremental Model Strategies {#incremental-model-strategies}
 
-`dbt-clickhouse` supports three incremental model strategies.
+`dbt-clickhouse` supports the following incremental model strategies.
 
 #### The Default (Legacy) Strategy {#default-legacy-strategy}
 
@@ -338,7 +338,7 @@ in the data or excluded by the incremental query WHERE clause/filter.
 
 #### The insert_overwrite Strategy (Experimental) {#insert-overwrite-strategy}
 
-> [IMPORTANT]  
+> [IMPORTANT]
 > Currently, the insert_overwrite strategy is not fully functional with distributed materializations.
 
 Performs the following steps:
@@ -534,23 +534,37 @@ CREATE TABLE db.table on cluster cluster (
 
 ## Snapshot {#snapshot}
 
-dbt snapshots allow a record to be made of changes to a mutable model over time. This in turn allows point-in-time
-queries on models, where analysts can "look back in time" at the previous state of a model. This functionality is
-supported by the ClickHouse connector and is configured using the following syntax:
+dbt [snapshots](https://docs.getdbt.com/docs/build/snapshots) record how the rows of a mutable model change over time as [type-2 slowly changing dimensions](https://en.wikipedia.org/wiki/Slowly_changing_dimension#Type_2:_add_new_row), so analysts can "look back in time" at a previous state of a model. The ClickHouse adapter supports both the `timestamp` and the `check` strategies. It builds each new version of the snapshot table in a staging table and swaps it in with `EXCHANGE TABLES` (or a drop and rename where the server can't exchange tables), so readers always see a complete version of the snapshot.
 
-Config block in `snapshots/<model_name>.sql`:
+Since dbt 1.9, snapshots are defined in YAML, in `snapshots/<name>.yml`:
+
+```yaml
+snapshots:
+  - name: <snapshot-name>
+    relation: ref('<model-name>')
+    config:
+      unique_key: <column-name>
+      strategy: timestamp             # or check
+      updated_at: <column-name>       # timestamp strategy
+      # check_cols: [<column-name>, ...]  # check strategy
+```
+
+The older Jinja form in `snapshots/<name>.sql` keeps working:
+
 ```python
+{% snapshot <snapshot-name> %}
 {{
    config(
-     schema = "<schema-name>",
      unique_key = "<column-name>",
      strategy = "<strategy>",
      updated_at = "<updated-at-column-name>",
    )
 }}
+select * from {{ ref('<model-name>') }}
+{% endsnapshot %}
 ```
 
-For more information on configuration, check out the [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs) reference page.
+For a worked example on the Jaffle Shop, see the [snapshot section of the guides](/integrations/connectors/data-ingestion/etl-tools/dbt/guides#snapshot). For all options, check out the [snapshot configs](https://docs.getdbt.com/docs/build/snapshots#snapshot-configs) reference page.
 
 ## Contracts and Constraints {#contracts-and-constraints}
 

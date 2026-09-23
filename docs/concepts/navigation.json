@@ -228,6 +228,7 @@
                 { "$ref": "features/interfaces/odbc/navigation.json" },
                 "concepts/features/interfaces/postgresql",
                 "concepts/features/interfaces/prometheus",
+                "concepts/features/interfaces/prometheus-metrics",
                 "concepts/features/interfaces/ssh",
                 "concepts/features/interfaces/grpc",
                 "concepts/features/interfaces/arrowflight"

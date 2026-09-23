@@ -22,7 +22,6 @@ namespace Setting
     extern const SettingsBool allow_window_partitions_independently;
     extern const SettingsBool force_window_partitions_independently;
     extern const SettingsBool allow_creating_set_partitions_independently;
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool collect_hash_table_stats_during_joins;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool correlated_subqueries_use_in_memory_buffer;
@@ -40,6 +39,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -108,8 +108,7 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
-    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_a;
-    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_c;
+    extern const SettingsJoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector;
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
@@ -156,9 +155,6 @@ namespace Setting
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
-    extern const SettingsBool query_plan_derive_not_null_filters_from_joins;
-    extern const SettingsBool query_plan_allow_derived_not_null_filters_execution;
-    extern const SettingsDouble query_plan_max_selectivity_for_not_null_filters_execution;
 }
 
 namespace ServerSetting
@@ -258,7 +254,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     aggregation_in_order = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order] && from[Setting::query_plan_aggregation_in_order];
     optimize_aggregation_in_order_limit = from[Setting::query_plan_enable_optimizations] && from[Setting::optimize_aggregation_in_order_limit];
     optimize_projection = from[Setting::optimize_use_projections];
-    use_query_condition_cache = from[Setting::use_query_condition_cache] && from[Setting::allow_experimental_analyzer];
+    use_query_condition_cache = from[Setting::use_query_condition_cache];
     use_query_condition_cache_for_top_k = from[Setting::use_query_condition_cache_for_top_k];
     direct_read_from_text_index = from[Setting::query_plan_direct_read_from_text_index] && from[Setting::use_skip_indexes];
     /// The count optimization recovers the search query from the index read tasks that only the direct-read rewrite builds.
@@ -293,17 +289,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
 
-    /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
-    /// served from a projection; the implicit count/minmax projection would also be counted once per
-    /// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
-    if (make_distributed_plan)
-    {
-        optimize_projection = false;
-        optimize_use_implicit_projections = false;
-        force_use_projection = false;
-        force_projection_name = {};
-    }
-
+    /// NOTE: projection rewrites are disabled for a distributed plan in `QueryPlan::optimize`, after
+    /// the decision on whether the plan is distributed at all.
+    distributed_plan_fallback_to_local_execution = from[Setting::distributed_plan_fallback_to_local_execution];
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
@@ -331,12 +319,12 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     enable_cascades_optimizer = from[Setting::enable_cascades_optimizer];
     cascades_aggregation_pushdown = from[Setting::cascades_aggregation_pushdown];
 
-    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization] && from[Setting::allow_experimental_analyzer];
+    optimize_lazy_materialization = from[Setting::query_plan_optimize_lazy_materialization];
     optimize_lazy_materialization_for_object_storage = from[Setting::query_plan_optimize_lazy_materialization_for_object_storage];
     optimize_lazy_materialization_for_file = from[Setting::query_plan_optimize_lazy_materialization_for_file];
     max_limit_for_lazy_materialization = from[Setting::query_plan_max_limit_for_lazy_materialization];
 
-    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final] && from[Setting::allow_experimental_analyzer];
+    optimize_lazy_final = from[Setting::query_plan_optimize_lazy_final];
     max_rows_for_lazy_final = from[Setting::max_rows_for_lazy_final];
     max_bytes_for_lazy_final = from[Setting::max_bytes_for_lazy_final];
     min_filtered_ratio_for_lazy_final = from[Setting::min_filtered_ratio_for_lazy_final];
@@ -381,8 +369,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
-    query_plan_optimize_join_order_use_conflict_detector_a = from[Setting::query_plan_optimize_join_order_use_conflict_detector_a];
-    query_plan_optimize_join_order_use_conflict_detector_c = from[Setting::query_plan_optimize_join_order_use_conflict_detector_c];
+    query_plan_optimize_join_order_conflict_detector = from[Setting::query_plan_optimize_join_order_conflict_detector];
     join_use_nulls = from[Setting::join_use_nulls];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default
@@ -399,13 +386,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
-
-    derive_not_null_filters_from_joins = from[Setting::query_plan_convert_outer_join_to_inner_join]
-        && from[Setting::query_plan_derive_not_null_filters_from_joins];
-
-    allow_derived_not_null_filters_execution = from[Setting::query_plan_allow_derived_not_null_filters_execution];
-
-    max_selectivity_for_not_null_filters_execution = from[Setting::query_plan_max_selectivity_for_not_null_filters_execution];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
@@ -442,6 +422,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
     }
 #endif
 
-    enable_parallel_replicas = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
+    enable_parallel_replicas
+        = from->canUseParallelReplicasOnInitiator() && from->getSettingsRef()[Setting::parallel_replicas_plan_based];
 }
 }

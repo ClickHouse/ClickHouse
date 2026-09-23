@@ -1,4 +1,4 @@
--- Tags: long, no-fasttest, no-old-analyzer
+-- Tags: long, no-fasttest
 
 -- Regression test: `parallel_full_sorting_merge` must stay compatible with `make_distributed_plan`.
 --

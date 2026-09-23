@@ -1,5 +1,3 @@
--- Tags: no-old-analyzer
-
 -- Two adjacent ranges of unit intervals (200k rows per side) with exactly one matching
 -- pair at the boundary.
 
