@@ -1,3 +1,5 @@
+import struct
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -11,6 +13,9 @@ from .prometheus_test_utils import (
     http_api_response_close_to,
     send_protobuf_to_remote_write,
 )
+
+
+STALE_NAN = struct.unpack("<d", struct.pack("<Q", 0x7FF0000000000002))[0]
 
 
 cluster = ClickHouseCluster(__file__)
@@ -170,6 +175,39 @@ def send_test_data():
                     230: 13,
                 },
             )
+        ]
+    )
+
+    send_data(
+        [
+            (
+                {"__name__": "stale_marker_metric"},
+                {
+                    100: 1,
+                    120: 2,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "ordinary_nan_metric"},
+                {
+                    140: float("nan"),
+                },
+            ),
+            (
+                {"__name__": "stale_collision_a", "job": "x"},
+                {
+                    120: 1,
+                    140: STALE_NAN,
+                },
+            ),
+            (
+                {"__name__": "stale_collision_b", "job": "x"},
+                {
+                    120: 2,
+                    140: 3,
+                },
+            ),
         ]
     )
 
@@ -860,6 +898,67 @@ def test_instant_selectors():
                 "3",
             ]
         ],
+    )
+
+
+def test_stale_markers():
+    # Before the marker, the instant selector returns the newest real sample.
+    do_query_test(
+        "stale_marker_metric",
+        125,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [125, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:05.000", "2"]],
+    )
+
+    # A stale marker is the end of the series for instant-selector semantics.
+    do_query_test(
+        "stale_marker_metric",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # An ordinary NaN is still a real sample. Only Prometheus's exact stale payload is absent.
+    do_query_test(
+        "ordinary_nan_metric",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "ordinary_nan_metric"}, "value": [145, "NaN"]}]}',
+        [["[('__name__','ordinary_nan_metric')]", "1970-01-01 00:02:25.000", "nan"]],
+    )
+
+    # Downstream presence-based operators must see the stale selector as absent too.
+    do_query_test(
+        "count(stale_marker_metric)",
+        145,
+        '{"resultType": "vector", "result": []}',
+        [],
+    )
+
+    # A stale row must not participate in duplicate detection after a function drops
+    # the metric name. Only the live series remains after both names collapse to {job="x"}.
+    do_query_test(
+        'abs({__name__=~"stale_collision_a|stale_collision_b", job="x"})',
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"job": "x"}, "value": [145, "3"]}]}',
+        [["[('job','x')]", "1970-01-01 00:02:25.000", "3"]],
+    )
+
+    # Range selectors omit stale markers, so range functions can still see older real samples.
+    do_query_test(
+        "last_over_time(stale_marker_metric[1m])",
+        145,
+        '{"resultType": "vector", "result": [{"metric": {"__name__": "stale_marker_metric"}, "value": [145, "2"]}]}',
+        [["[('__name__','stale_marker_metric')]", "1970-01-01 00:02:25.000", "2"]],
+    )
+
+    # In a range query, evaluation steps at and after the stale marker are absent.
+    do_range_query_test(
+        "stale_marker_metric",
+        100,
+        160,
+        20,
+        '{"resultType": "matrix", "result": [{"metric": {"__name__": "stale_marker_metric"}, "values": [[100, "1"], [120, "2"]]}]}',
+        [["[('__name__','stale_marker_metric')]", "[('1970-01-01 00:01:40.000',1),('1970-01-01 00:02:00.000',2)]"]],
     )
 
 
