@@ -1,4 +1,3 @@
-import json
 import struct
 
 import pytest
@@ -13,7 +12,6 @@ from .prometheus_test_utils import (
     execute_range_query_via_http_api,
     http_api_response_close_to,
     send_protobuf_to_remote_write,
-    value_close_to,
 )
 
 
@@ -180,9 +178,7 @@ def send_test_data():
         ]
     )
 
-    # Two large-magnitude (~5.4e8) samples with a tiny (1-unit) spread: regression for a catastrophic-cancellation
-    # bug where a naive {count, sum, sum2} variance accumulator collapsed population variance/stddev to 0 instead
-    # of the correct 0.25/0.5 (sum2 and sum*sum/count rounded to the same Float64 at that magnitude).
+    # Large values with a tiny spread for stddev_over_time / stdvar_over_time: the population variance is exactly 0.25.
     send_data(
         [
             (
@@ -543,49 +539,6 @@ def start_cluster():
         cluster.shutdown()
 
 
-# Compares two Prometheus matrix-result JSON strings, allowing the value at one specific grid-point
-# `timestamp` to differ by up to `eps`; every other timestamp (and every other field) must match
-# exactly. This exists for grid points where real Prometheus' own computation is not portable
-# bit-for-bit across CPU architectures (see the `stdvar_over_time` case in `test_function_over_time`)
-# - it is deliberately narrower than `http_api_response_close_to`, which applies `eps` to every value.
-def matrix_result_close_to_at_timestamp(actual, expected, timestamp, eps):
-    if actual == expected:
-        return True
-
-    actual_json = json.loads(actual)
-    expected_json = json.loads(expected)
-
-    if actual_json["resultType"] != "matrix" or expected_json["resultType"] != "matrix":
-        return False
-
-    actual_result = actual_json["result"]
-    expected_result = expected_json["result"]
-    if len(actual_result) != len(expected_result):
-        return False
-
-    for actual_series, expected_series in zip(actual_result, expected_result):
-        if actual_series["metric"] != expected_series["metric"]:
-            return False
-
-        actual_values = actual_series["values"]
-        expected_values = expected_series["values"]
-        if len(actual_values) != len(expected_values):
-            return False
-
-        for (actual_t, actual_v), (expected_t, expected_v) in zip(
-            actual_values, expected_values
-        ):
-            if actual_t != expected_t:
-                return False
-            if actual_t == timestamp:
-                if not value_close_to(float(actual_v), float(expected_v), eps):
-                    return False
-            elif actual_v != expected_v:
-                return False
-
-    return True
-
-
 # Evaluates the same query in Prometheus and in ClickHouse and compare the results.
 def do_query_test(
     query,
@@ -594,20 +547,11 @@ def do_query_test(
     chresult,
     clickhouse_http_api_result_is_same_as_prometheus=True,
     eps=0,
-    prometheus_result_eps_at_timestamp=None,
 ):
-    actual_result_from_prometheus = execute_query_in_prometheus(query, timestamp, eps=eps)
-    if prometheus_result_eps_at_timestamp is None:
-        assert http_api_response_close_to(
-            actual_result_from_prometheus, result, eps=eps
-        ), f"actual result from prometheus: {actual_result_from_prometheus}, expected: {result}"
-    else:
-        assert matrix_result_close_to_at_timestamp(
-            actual_result_from_prometheus,
-            result,
-            prometheus_result_eps_at_timestamp,
-            eps,
-        ), f"actual result from Prometheus: {actual_result_from_prometheus}, expected: {result}"
+    actual_result = execute_query_in_prometheus(query, timestamp, eps=eps)
+    assert http_api_response_close_to(
+        actual_result, result, eps=eps
+    ), f"actual result from prometheus: {actual_result}, expected: {result}"
 
     actual_chresult = execute_query_in_clickhouse_sql(query, timestamp)
     assert tsv_close_to(
@@ -1604,21 +1548,14 @@ def test_function_over_time():
         [
             [
                 "[]",
-                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.9428090415820632),('1970-01-01 00:02:30.000',1.299038105676658),('1970-01-01 00:02:45.000',0.5),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1.4142135623730951)]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.9428090415820634),('1970-01-01 00:02:30.000',1.299038105676658),('1970-01-01 00:02:45.000',0.5),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',1.4142135623730951)]",
             ]
         ],
         eps=1e-9,
     )
 
-    # The `150` grid point's value is not portable bit-for-bit across CPU architectures: real
-    # Prometheus' own single-pass Kahan/Welford `varianceOverTime` (promql/functions.go) rounds the
-    # last operation to `1.6875000000000002` on amd64, but to the mathematically exact `1.6875` on
-    # arm64, confirmed by running the actual upstream `prometheus-3.5.0` binary against this exact
-    # series on both architectures. This is Prometheus' own ground truth diverging by CPU
-    # architecture, not a ClickHouse discrepancy, and no single hardcoded literal can equal
-    # Prometheus' live output on every architecture - so `prometheus_result_eps_at_timestamp`
-    # tolerates a tiny difference at just this one grid point while every other grid point (here and
-    # in every other test case) still requires an exact match.
+    # Prometheus itself rounds the value at the `150` grid point differently on amd64 (`1.6875000000000002`) and
+    # arm64 (`1.6875`), which the same `eps` covers.
     do_query_test(
         "stdvar_over_time(test[45s])[120s:15s]",
         210,
@@ -1626,16 +1563,14 @@ def test_function_over_time():
         [
             [
                 "[]",
-                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.8888888888888887),('1970-01-01 00:02:30.000',1.6875),('1970-01-01 00:02:45.000',0.25),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
+                "[('1970-01-01 00:02:00.000',0),('1970-01-01 00:02:15.000',0.8888888888888888),('1970-01-01 00:02:30.000',1.6875),('1970-01-01 00:02:45.000',0.25),('1970-01-01 00:03:00.000',0),('1970-01-01 00:03:15.000',0),('1970-01-01 00:03:30.000',2)]",
             ]
         ],
         eps=1e-9,
-        prometheus_result_eps_at_timestamp=150,
     )
 
-    # Single-sample-window: staleness window (5s) narrower than the step (10s) between
-    # samples, so at most one sample ever falls in a window -> the result must be exactly
-    # 0 wherever a sample lands (never NaN or slightly negative from float noise).
+    # The staleness window (5s) is narrower than the step between samples (10s), so at most one sample falls in a
+    # window and the result must be exactly 0 wherever a sample lands.
     do_query_test(
         "stddev_over_time(test[5s])[120s:10s]",
         230,
@@ -1660,9 +1595,7 @@ def test_function_over_time():
         ],
     )
 
-    # Regression: two large-magnitude (~5.4e8) samples 45s apart with a tiny (1-unit) spread must not collapse
-    # to zero variance/stddev due to catastrophic cancellation in a naive {count, sum, sum2} accumulator.
-    # Population variance/stddev of {540000000, 540000001} is exactly 0.25/0.5.
+    # Large values with a tiny spread: the population variance/stddev of {540000000, 540000001} is exactly 0.25/0.5.
     do_query_test(
         "stddev_over_time(large_magnitude[20s])[20s:10s]",
         110,

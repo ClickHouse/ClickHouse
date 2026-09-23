@@ -1,4 +1,4 @@
-#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesVarianceOverTime.h>
+#include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesVariance.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
@@ -7,12 +7,12 @@
 namespace DB
 {
 
-void registerAggregateFunctionTimeseriesVarianceOverTime(AggregateFunctionFactory & factory);
-void registerAggregateFunctionTimeseriesVarianceOverTime(AggregateFunctionFactory & factory)
+void registerAggregateFunctionTimeseriesVariance(AggregateFunctionFactory & factory);
+void registerAggregateFunctionTimeseriesVariance(AggregateFunctionFactory & factory)
 {
     /// timeSeriesStddevToGrid documentation
     FunctionDocumentation::Description description_timeSeriesStddevToGrid = R"(
-Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like stddev_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#stddev_over_time) (population standard deviation) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `stddev_over_time` are considered within the specified time window.
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like stddev_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) (population standard deviation) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `stddev_over_time` are considered within the specified time window.
 
 The samples can be passed in one of three forms:
 - as two arguments `timestamp` and `value`, where each row holds a single sample;
@@ -108,7 +108,7 @@ SELECT timeSeriesStddevToGrid(start_ts, end_ts, step_seconds, window_seconds)(ti
 
     /// timeSeriesStdvarToGrid documentation
     FunctionDocumentation::Description description_timeSeriesStdvarToGrid = R"(
-Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like stdvar_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#stdvar_over_time) (population variance) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `stdvar_over_time` are considered within the specified time window.
+Aggregate function that takes time series data as pairs of timestamps and values and calculates [PromQL-like stdvar_over_time](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) (population variance) from this data on a regular time grid described by start timestamp, end timestamp and step. For each point on the grid the samples for calculating `stdvar_over_time` are considered within the specified time window.
 
 The samples can be passed in one of three forms:
 - as two arguments `timestamp` and `value`, where each row holds a single sample;

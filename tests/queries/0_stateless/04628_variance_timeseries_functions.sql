@@ -5,9 +5,9 @@ INSERT INTO ts_raw_data VALUES
 
 SELECT groupArraySorted(20)((toUnixTimestamp(timestamp), value)) FROM ts_raw_data;
 
-SET allow_experimental_ts_to_grid_aggregate_function = 1;
+SET enable_time_series_aggregate_functions = 1;
 
--- Windows with 0, 1 (exactly 0.0, no NaN/negative-noise) or several samples.
+-- Windows with zero, one or several samples.
 WITH
     90 AS start, 210 AS end, 15 AS step, 45 AS window,
     range(start, end + 1, step) as grid
@@ -58,10 +58,7 @@ SELECT timeSeriesStdvarToGridMerge(90, 210, 15, 45)(stdvar_agg) FROM ts_data_agg
 DROP TABLE ts_data_agg;
 DROP TABLE ts_raw_data;
 
--- Regression: two large-magnitude (~5.4e8) samples with a tiny (1-unit) spread must not collapse to
--- zero variance/stddev due to catastrophic cancellation in a naive `{count, sum, sum2}` accumulator -
--- `combined.sum2` and `combined.sum * combined.sum / count` would round to the same Float64 there.
--- Population variance/stddev for {540000000, 540000001} is exactly 0.25 / 0.5.
+-- Large values with a tiny spread: the population variance/stddev of {540000000, 540000001} is exactly 0.25 / 0.5.
 CREATE TABLE ts_large_magnitude(timestamp DateTime('UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
 
 INSERT INTO ts_large_magnitude VALUES (100, 540000000), (110, 540000001);
@@ -76,10 +73,7 @@ FROM ts_large_magnitude FORMAT Vertical;
 
 DROP TABLE ts_large_magnitude;
 
--- Regression: a NaN sample anywhere in the window must make stddev/stdvar propagate NaN, not silently
--- clamp to a valid-looking 0 (`std::max(0.0, NaN)` returns `0.0`, since any comparison against NaN is
--- false). The Prometheus storage path stores a genuine non-finite user sample raw and unfiltered, so
--- bad input like this must not be hidden as clean zero-variance data.
+-- A NaN sample in the window makes the result NaN.
 CREATE TABLE ts_non_finite(timestamp DateTime('UTC'), value Float64) ENGINE = MergeTree() ORDER BY timestamp;
 
 INSERT INTO ts_non_finite VALUES (100, 1), (110, nan), (120, 3);
@@ -94,9 +88,7 @@ FROM ts_non_finite FORMAT Vertical;
 
 DROP TABLE ts_non_finite;
 
--- Regression: samples sharing a timestamp collapse into one keeping the largest real value, the rule the
--- whole timeSeries*ToGrid family follows (`timeseriesMaxValueForDuplicateTimestamp`). Accumulating the
--- Welford moments straight into the bucket would count each duplicate as a separate sample instead.
+-- Samples sharing a timestamp collapse into one keeping the largest real value (`timeseriesMaxValueForDuplicateTimestamp`).
 -- All queries below use a single-point grid at 100 with the window (90, 100].
 SELECT 'Duplicate timestamps:';
 
@@ -124,8 +116,7 @@ FROM
 (
     SELECT initializeAggregation('timeSeriesStdvarToGridState(100, 100, 1, 10)', ts_arr, val_arr) AS st
     FROM values('ts_arr Array(UInt32), val_arr Array(Float64)', ([95], [3.]), ([95], [5.]))
-)
-SETTINGS max_threads = 1;
+);
 
 SELECT 'Float32 input still yields a Float64 result:';
 
