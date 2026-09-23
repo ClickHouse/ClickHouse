@@ -293,9 +293,17 @@ public:
     using Base = InDepthQueryTreeVisitorWithContext<DistributedProductModeRewriteInJoinVisitor>;
     using Base::Base;
 
-    explicit DistributedProductModeRewriteInJoinVisitor(const ContextPtr & context_, bool allow_global_join_for_right_table_)
+    /// `enforce_distributed_product_mode` is false when the visitor is only asked what shipping would
+    /// do, rather than driving it. `distributed_product_mode = 'deny'` - the default - makes a local
+    /// IN/JOIN over a distributed table an error, which is a policy the real shipping path has to
+    /// apply but a prediction must not: it would fail a query that the caller was only considering.
+    /// A denied query ships nothing, so it also materializes nothing, which is the answer the
+    /// prediction wants.
+    explicit DistributedProductModeRewriteInJoinVisitor(
+        const ContextPtr & context_, bool allow_global_join_for_right_table_, bool enforce_distributed_product_mode_ = true)
         : Base(context_)
         , allow_global_join_for_right_table(allow_global_join_for_right_table_)
+        , enforce_distributed_product_mode(enforce_distributed_product_mode_)
     {}
 
     struct InFunctionOrJoin
@@ -441,6 +449,9 @@ private:
         }
         else if (distributed_product_mode == DistributedProductMode::DENY)
         {
+            if (!enforce_distributed_product_mode)
+                return;
+
             throw Exception(ErrorCodes::DISTRIBUTED_IN_JOIN_SUBQUERY_DENIED,
                 "Double-distributed IN/JOIN subqueries is denied (distributed_product_mode = 'deny'). "
                 "You may rewrite query to use local tables "
@@ -455,6 +466,7 @@ private:
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
     bool allow_global_join_for_right_table = false;
+    bool enforce_distributed_product_mode = true;
 };
 
 /** Replaces large constant values with `__getScalar` function calls to avoid
@@ -942,7 +954,7 @@ bool shippingQueryMaterializesSubqueries(const QueryTreeNodePtr & query_tree, co
     /// without it a plain `JOIN` that ships as a `GLOBAL JOIN` goes unnoticed. Then ask the visitor
     /// `buildQueryTreeForShard` itself uses to decide what to ship.
     rewriteJoinToGlobalJoin(query_tree_copy, context);
-    DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table);
+    DistributedProductModeRewriteInJoinVisitor visitor(context, allow_global_join_for_right_table, /*enforce_distributed_product_mode*/ false);
     visitor.visit(query_tree_copy);
     return !visitor.getGlobalInOrJoinNodes().empty();
 }
