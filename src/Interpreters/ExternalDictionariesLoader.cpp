@@ -94,10 +94,6 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
     dict.updateDictionaryComment(config.getString(key_in_config + ".comment", ""));
 }
 
-/// Records a query's use of a dictionary for the `make_distributed_plan` fallback decision, under the qualified
-/// name. Called by the public entry points (`getDictionary`, `tryGetDictionary`, `getDictionaryStructure`,
-/// `getDictionaryLayoutType`, `qualifyDictionaryNameWithDatabase`); `resolveDictionaryName` and `load` do not record,
-/// so a friend class that reaches a dictionary through them has to call this itself.
 void ExternalDictionariesLoader::recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const
 {
     local_context->addUsedServerLocalObject(
@@ -105,10 +101,21 @@ void ExternalDictionariesLoader::recordUse(const std::string & dictionary_name, 
         qualifyDictionaryNameWithDatabase(dictionary_name, local_context->getCurrentDatabase()).getFullName());
 }
 
-ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+std::string ExternalDictionariesLoader::resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const
 {
     recordUse(dictionary_name, local_context);
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    return resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+}
+
+std::string ExternalDictionariesLoader::resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
+{
+    local_context->addUsedServerLocalObject(UsedServerLocalObjects::Kind::Dictionary, dictionary_name.getFullName());
+    return resolveDictionaryName(dictionary_name);
+}
+
+ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
+{
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
 
     /// Check if we have a cancellable query context
     QueryStatusPtr process_list_element;
@@ -150,8 +157,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    recordUse(dictionary_name, local_context);
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
     if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries] && dictionary)
@@ -163,25 +169,25 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
 
 void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     loadOrReload(resolved_dictionary_name);
 }
 
-void ExternalDictionariesLoader::reloadDictionary(const QualifiedTableName & dictionary_name) const
+void ExternalDictionariesLoader::reloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     loadOrReload(resolved_dictionary_name);
 }
 
 bool ExternalDictionariesLoader::unloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     return unload(resolved_dictionary_name);
 }
 
-bool ExternalDictionariesLoader::unloadDictionary(const QualifiedTableName & dictionary_name) const
+bool ExternalDictionariesLoader::unloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name);
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context);
     return unload(resolved_dictionary_name);
 }
 
@@ -192,8 +198,7 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    recordUse(dictionary_name, query_context);
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
     auto load_result = getLoadResult(resolved_name);
 
@@ -211,8 +216,7 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    recordUse(dictionary_name, query_context);
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context);
 
     auto load_result = getLoadResult(resolved_name);
     if (!load_result.config)

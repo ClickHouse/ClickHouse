@@ -28,18 +28,20 @@ public:
 
     void reloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    void reloadDictionary(const QualifiedTableName & dictionary_name) const;
+    void reloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     bool unloadDictionary(const std::string & dictionary_name, ContextPtr context) const;
 
-    bool unloadDictionary(const QualifiedTableName & dictionary_name) const;
+    bool unloadDictionary(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     void unloadAllDictionaries() const;
 
     QualifiedTableName qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr context) const;
 
-    /// Records the query's use of the dictionary (`UsedServerLocalObjects`) under its qualified name.
-    void recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const;
+    /// The loader's key for a dictionary named in a query. Resolving through a context records the query's use of the
+    /// dictionary (`UsedServerLocalObjects`), so every consumer that names a dictionary goes through one of these two.
+    std::string resolveDictionaryName(const std::string & dictionary_name, ContextPtr local_context) const;
+    std::string resolveDictionaryName(const QualifiedTableName & dictionary_name, ContextPtr local_context) const;
 
     /// The same, but resolving an unqualified name against the given database rather than the
     /// current database of a context. Used when the name has to resolve against the database
@@ -82,6 +84,13 @@ protected:
     void updateObjectFromConfigWithoutReloading(
         IExternalLoadable & object, const Poco::Util::AbstractConfiguration & config, const String & key_in_config) const override;
 
+    /// Records the query's use of the dictionary under its qualified name; the context overloads of
+    /// `resolveDictionaryName` and `qualifyDictionaryNameWithDatabase` call it.
+    void recordUse(const std::string & dictionary_name, const ContextPtr & local_context) const;
+
+    /// Resolution without a record, for the recording overloads above and for the paths outside a query (metadata
+    /// loading resolves against the owning database). `load` needs no record either: it runs from periodic reloads,
+    /// `SYSTEM RELOAD DICTIONARY` and non-lazy loading at startup as well.
     std::string resolveDictionaryName(const std::string & dictionary_name, const std::string & current_database_name) const;
 
     std::string resolveDictionaryName(const QualifiedTableName & dictionary_name) const;

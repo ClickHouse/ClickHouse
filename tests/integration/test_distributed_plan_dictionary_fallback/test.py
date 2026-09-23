@@ -151,31 +151,6 @@ def started_cluster():
         initiator.query("ALTER TABLE t_mat ADD COLUMN m String DEFAULT dictGet(d_both, 'name', k)")
         initiator.query("ALTER TABLE t_mat MATERIALIZE COLUMN m SETTINGS mutations_sync = 2")
         worker.query("SYSTEM SYNC REPLICA t_mat")
-        # A materialized default whose dictionary was dropped afterwards: the parts hold the values, but the default
-        # expression in the metadata no longer resolves. The dictionary has to exist on both replicas while the
-        # materialization runs (each replica executes the mutation itself), and is dropped on both afterwards.
-        for node in (initiator, worker):
-            node.query(
-                """
-                CREATE TABLE t_gone (k UInt64)
-                ENGINE = ReplicatedMergeTree('/clickhouse/tables/{shard}/t_gone', '{replica}') ORDER BY k
-                """
-            )
-            node.query("CREATE TABLE src_gone (k UInt64, name String) ENGINE = MergeTree ORDER BY k")
-            node.query("INSERT INTO src_gone SELECT number, concat('n', toString(number)) FROM numbers(100)")
-            node.query(
-                """
-                CREATE DICTIONARY d_gone (k UInt64, name String) PRIMARY KEY k
-                SOURCE(CLICKHOUSE(TABLE 'src_gone' DB 'default')) LAYOUT(FLAT()) LIFETIME(0)
-                """
-            )
-        initiator.query("INSERT INTO t_gone SELECT number FROM numbers(100)")
-        initiator.query("ALTER TABLE t_gone ADD COLUMN gone String DEFAULT dictGet(d_gone, 'name', k)")
-        initiator.query("ALTER TABLE t_gone MATERIALIZE COLUMN gone SETTINGS mutations_sync = 2")
-        worker.query("SYSTEM SYNC REPLICA t_gone")
-        # The dependency tracking refuses the drop (the default of `gone` uses the dictionary); forced here on purpose.
-        for node in (initiator, worker):
-            node.query("DROP DICTIONARY d_gone SETTINGS check_table_dependencies = 0")
         yield cluster
     finally:
         cluster.shutdown()

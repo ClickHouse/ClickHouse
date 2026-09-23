@@ -594,7 +594,7 @@ public:
 protected:
     /// Needs to be changed while having const context in factories methods
     mutable QueryFactoriesInfo query_factories_info;
-    /// Set on the query context by `makeQueryContext`; sub-contexts reach it through `getQueryContext`.
+    /// Created by `makeQueryContext` and shared by every context copied from the query context.
     UsedServerLocalObjectsPtr used_server_local_objects;
     QueryPrivilegesInfoPtr query_privileges_info;
     /// Query metrics for reading data asynchronously with IAsynchronousReader.

@@ -69,24 +69,20 @@ std::optional<PreformattedMessage> getReasonStepUnsupportedForRemoteExecution(co
 std::optional<PreformattedMessage> getReasonPlanUnsupportedForRemoteExecution(const QueryPlan::Node & root);
 std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings);
 
-/// A `DEFAULT` / `MATERIALIZED` column that a part lacks is computed by the reader from the table metadata
-/// (`IMergeTreeReader::evaluateMissingDefaults`), i.e. on the worker, while the plan carries only `INPUT <column>`,
-/// so nothing in the query's analysis touched the objects those defaults use. Resolving the same defaults here, with
-/// the reader's own routine, makes every resolver record the objects it reaches; the record grew if any did. The part
-/// is assumed to hold every column without a default and none with one: the worst case for the reader, and the
-/// identifiers of the defaults then resolve to columns, so no call folds into a constant that would run here. Whether
-/// some part actually lacks a column is not checked, and a list that fails to resolve counts as a reference: a needless
-/// local run is accepted over a worker task failing, and the local run reports the real error where the reader
-/// evaluates the default.
+/// Here we are using the same code which will run on worker to resolve DEFAULT / MATERIALIZED columns and if
+/// resolution needs some of the objects which are not shipped (like dictionaries) the query falls back
+/// to local execution.
 std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
     const ReadFromMergeTree & read, const QueryPlanOptimizationSettings & optimization_settings)
 {
+    if (optimization_settings.used_server_local_objects  == nullptr)
+    {
+        LOG_TRACE(getLogger("makeDistributed"), "Could not evaluate default columns on initiator due to missing tracker for local objects");
+        return std::nullopt;
+    }
     const auto & columns = read.getStorageMetadata()->getColumns();
 
-    /// The reader's routine takes the columns a part already contains and computes the defaults of the required
-    /// columns that are not among them. Declaring every column without a default as present and every column with
-    /// one as absent makes it list exactly the defaults (`nm`), never the plain columns (`k`); and the identifiers
-    /// inside the defaults then resolve to columns, so no call folds into a constant that would run here.
+    /// For columns which are not default we assume they will be present on workers
     Block columns_present_in_parts;
     for (const auto & column : columns.getAllPhysical())
         if (!columns.getDefault(column.name))
@@ -99,10 +95,10 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
             required_columns.push_back(*column);
 
     const auto & used = optimization_settings.used_server_local_objects;
-    size_t used_before = used ? used->size() : 0;
+    const size_t used_before = used->size();
     try
     {
-        /// Resolving the defaults is what makes their functions record the objects they reach.
+        /// Resolution records additional object usages
         if (!resolveMissingDefaults(columns_present_in_parts, required_columns, columns, read.getContext()))
             return std::nullopt;
     }
@@ -113,10 +109,10 @@ std::optional<PreformattedMessage> getReasonColumnDefaultsCannotBeShipped(
             read.getStorageID().getFullTableName(), e.message());
     }
 
-    size_t used_after = used ? used->size() : 0;
+    const size_t used_after = used->size();
     if (used_after > used_before)
     {
-        auto entry = used->at(used_before);
+        const auto entry = used->at(used_before);
         return PreformattedMessage::create(
             "make_distributed_plan does not support {} {}: it is an object of the initiator, used by a column default of table {}",
             UsedServerLocalObjects::kindName(entry->kind), entry->name, read.getStorageID().getFullTableName());

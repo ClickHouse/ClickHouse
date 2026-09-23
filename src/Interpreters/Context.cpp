@@ -1462,6 +1462,7 @@ ContextData::ContextData(const ContextData &o) :
     partition_id_to_max_block(o.partition_id_to_max_block),
     query_access_info(std::make_shared<QueryAccessInfo>(*o.query_access_info)),
     query_factories_info(o.query_factories_info),
+    used_server_local_objects(o.used_server_local_objects),
     query_privileges_info(o.query_privileges_info),
     async_read_counters(o.async_read_counters),
     view_source(o.view_source),
@@ -3090,17 +3091,14 @@ Context::SuppressQueryFactoriesInfoScope::~SuppressQueryFactoriesInfoScope()
 void Context::addUsedServerLocalObject(UsedServerLocalObjects::Kind kind, const String & name) const
 {
     /// Introspection (`system.functions`) instantiates every function resolver; that is not a use by a query.
-    if (suppress_query_factories_info || !hasQueryContext())
+    if (suppress_query_factories_info || !used_server_local_objects)
         return;
-    if (const auto & objects = getQueryContext()->used_server_local_objects)
-        objects->add(kind, name);
+    used_server_local_objects->add(kind, name);
 }
 
 std::shared_ptr<const UsedServerLocalObjects> Context::getUsedServerLocalObjects() const
 {
-    if (!hasQueryContext())
-        return nullptr;
-    return getQueryContext()->used_server_local_objects;
+    return used_server_local_objects;
 }
 
 void Context::addQueryFactoriesInfo(QueryLogFactories factory_type, const String & created_object) const
