@@ -12,7 +12,7 @@ namespace DB
 
 class QueryPipeline;
 class QueryPlanProfiler;
-class StepStatsStorage;
+class StepStatsCollector;
 
 /// Records one plan that runs for a query without being part of its plan tree. For example:
 ///     - an `IN (SELECT ...)` whose set is built during planning so that index analysis can use it
@@ -49,7 +49,7 @@ private:
         SubPlanKind kind_);
 
     /// Serializes the sub-plan and gives it to the profiler, once.
-    void publish(const StepStatsStorage * stats) noexcept;
+    void publish(const StepStatsCollector * stats) noexcept;
 
     QueryPlanProfilerPtr profiler;
     const QueryPlan * plan = nullptr;

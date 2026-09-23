@@ -16,7 +16,7 @@ namespace DB
 {
 
 class QueryPlan;
-class StepStatsStorage;
+class StepStatsCollector;
 struct ExplainPlanOptions;
 struct PrettyNamesPerPlan;
 
@@ -48,7 +48,7 @@ std::string_view toString(SubPlanKind kind);
 ///
 /// Everything here is an owned value: nothing points into the plan, the pipeline or the steps, so
 /// a captured plan stays readable after all three are gone. That is the point of capturing at all
-/// -- `StepStatsStorage::analyzeStep` reads processors belonging to the pipeline and state held by
+/// -- `StepStatsCollector::analyzeStep` reads processors belonging to the pipeline and state held by
 /// the step, neither of which survives the query, while the document is written much later.
 struct CapturedStep
 {
@@ -122,7 +122,7 @@ CapturedPlan capturePlan(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsStorage * steps_to_stats,
+    const StepStatsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names);
 
 /// The same for a sub-plan, whose pipeline is its own and finishes long before the query does.
@@ -132,7 +132,7 @@ CapturedSubPlan captureSubPlanData(
     size_t max_description_length,
     size_t subquery_id,
     SubPlanKind kind,
-    const StepStatsStorage * steps_to_stats,
+    const StepStatsCollector * steps_to_stats,
     const PrettyNamesPerPlan * pretty_names);
 
 }

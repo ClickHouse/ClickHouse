@@ -15,9 +15,9 @@
 namespace DB
 {
 
-/// Holds everything the pipeline reported about each plan step, and turns it into the per-step
-/// values a consumer can render.
-class StepStatsStorage
+/// Reads what a pipeline reported about each plan step, and derives the per-step values a
+/// consumer can render.
+class StepStatsCollector
 {
     /// Everything collected from the pipeline is keyed by the step it belongs to. A raw pointer is
     /// safe here: the storage is built and consumed while the plan and its pipeline are alive, and
@@ -35,11 +35,9 @@ class StepStatsStorage
     using ReportsByStep = std::unordered_map<const IQueryPlanStep *, StepAnalysisReport>;
 
 public:
-    StepStatsStorage(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
+    StepStatsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_);
 
-    /// Must run while the pipeline is still alive: getAnalysisReport reads state only the step
-    /// object holds, and the processors handed to it belong to the pipeline. What it returns is a
-    /// plain value that outlives both, which is what a renderer is given.
+    /// Must run while the pipeline is still alive.
     AnalyzedStepData analyzeStep(const IQueryPlanStep * step) const;
 
     /// How long the query executed.

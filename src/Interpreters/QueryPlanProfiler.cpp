@@ -11,7 +11,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Formats/FormatSettings.h>
 #include <Common/JSONBuilder.h>
-#include <Processors/QueryPlan/StepStatsStorage.h>
+#include <Processors/QueryPlan/StepStatsCollector.h>
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Columns/ColumnConst.h>
@@ -296,7 +296,7 @@ SubPlanCapture::~SubPlanCapture()
     publish(nullptr);
 }
 
-void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
+void SubPlanCapture::publish(const StepStatsCollector * stats) noexcept
 {
     if (!profiler)
         return;
@@ -357,7 +357,7 @@ void SubPlanCapture::finish(const QueryPipeline & pipeline)
     if (!profiler)
         return;
 
-    std::optional<StepStatsStorage> stats;
+    std::optional<StepStatsCollector> stats;
 
     {
         MemoryTrackerBlockerInThread block_memory_tracker;
@@ -445,7 +445,7 @@ void QueryPlanProfiler::capture(const QueryPipeline * pipeline)
 
     try
     {
-        std::optional<StepStatsStorage> stats;
+        std::optional<StepStatsCollector> stats;
         if (pipeline)
         {
             UInt64 execution_time_ns = 0;

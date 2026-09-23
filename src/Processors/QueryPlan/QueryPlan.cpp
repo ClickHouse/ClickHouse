@@ -33,7 +33,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/StepStatsPrinter.h>
-#include <Processors/QueryPlan/StepStatsStorage.h>
+#include <Processors/QueryPlan/StepStatsCollector.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/ReadFromDistributedPlanSource.h>
 
@@ -423,7 +423,7 @@ static void explainStep(
     IQueryPlanStep::FormatSettings & settings,
     const ExplainPlanOptions & options,
     size_t max_description_length,
-    const StepStatsStorage * steps_to_stats = nullptr)
+    const StepStatsCollector * steps_to_stats = nullptr)
 {
 
     settings.out << settings.header_prefix << step.getName();
@@ -639,7 +639,7 @@ void QueryPlan::explainPlan(
     const PrettyNamesPerPlan * precomputed_pretty_names,
     const std::string & parent_tree_prefix,
     bool is_last_child_plan,
-    StepStatsStorage * steps_to_stats) const
+    StepStatsCollector * steps_to_stats) const
 {
     checkInitialized();
 

@@ -2,7 +2,7 @@
 #include <type_traits>
 #include <unordered_map>
 #include <Processors/Port.h>
-#include <Processors/QueryPlan/StepStatsStorage.h>
+#include <Processors/QueryPlan/StepStatsCollector.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 #include <Processors/QueryPlan/StepStatsAnalyzer.h>
@@ -21,7 +21,7 @@
 namespace DB
 {
 
-StepStatsStorage::StepStatsStorage(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
+StepStatsCollector::StepStatsCollector(const QueryPipeline & pipeline, const QueryPlan & plan, UInt64 execution_query_time_ns_)
 : max_num_threads_per_query(pipeline.getNumThreads())
 , execution_query_time_ns(execution_query_time_ns_)
 {
@@ -33,7 +33,7 @@ StepStatsStorage::StepStatsStorage(const QueryPipeline & pipeline, const QueryPl
     computeJoinBranchCosts(plan);
 }
 
-void StepStatsStorage::collectIOStats(const Processors & processors)
+void StepStatsCollector::collectIOStats(const Processors & processors)
 {
     auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)
     {
@@ -79,7 +79,7 @@ void StepStatsStorage::collectIOStats(const Processors & processors)
     }
 }
 
-StepStatsStorage::ElapsedTimesPerStepGroup StepStatsStorage::collectTimingStats(const QueryPipeline & pipeline, const Processors & processors)
+StepStatsCollector::ElapsedTimesPerStepGroup StepStatsCollector::collectTimingStats(const QueryPipeline & pipeline, const Processors & processors)
 {
     ElapsedTimesPerStepGroup elapsed_per_step_group;
 
@@ -114,7 +114,7 @@ StepStatsStorage::ElapsedTimesPerStepGroup StepStatsStorage::collectTimingStats(
     return elapsed_per_step_group;
 }
 
-void StepStatsStorage::computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group)
+void StepStatsCollector::computeDistribution(const ElapsedTimesPerStepGroup & elapsed_per_step_group)
 {
     /// Compute the per-processor elapsed time distribution for each (step, group).
     /// The multiset is already sorted, so min/max are its bounds and the median is the middle element.
@@ -135,7 +135,7 @@ void StepStatsStorage::computeDistribution(const ElapsedTimesPerStepGroup & elap
     }
 }
 
-void StepStatsStorage::computeJoinBranchCosts(const QueryPlan & plan)
+void StepStatsCollector::computeJoinBranchCosts(const QueryPlan & plan)
 {
     CardinalityByJoinStep cardinality_by_join_step;
     for (const auto & [step, io_stats] : stats_by_step)
@@ -163,7 +163,7 @@ void StepStatsStorage::computeJoinBranchCosts(const QueryPlan & plan)
     }
 }
 
-StepStatsContext StepStatsStorage::makeContext(const IQueryPlanStep * step) const
+StepStatsContext StepStatsCollector::makeContext(const IQueryPlanStep * step) const
 {
     StepStatsContext context;
     context.step = step;
@@ -180,7 +180,7 @@ StepStatsContext StepStatsStorage::makeContext(const IQueryPlanStep * step) cons
     return context;
 }
 
-AnalyzedStepData StepStatsStorage::analyzeStep(const IQueryPlanStep * step) const
+AnalyzedStepData StepStatsCollector::analyzeStep(const IQueryPlanStep * step) const
 {
     StepAnalysisReport raw_report;
     if (const auto report_it = join_raw_reports.find(step); report_it != join_raw_reports.end())
