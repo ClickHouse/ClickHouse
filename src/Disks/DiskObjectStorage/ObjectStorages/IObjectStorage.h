@@ -126,6 +126,12 @@ class WriteBufferFromFileBase;
 
 using ObjectAttributes = std::map<std::string, std::string>;
 
+/// The content cache token of an immutable object. Prefixed so it cannot collide with a real ETag.
+inline String makeImmutableContentsCacheToken(const String & storage_namespace)
+{
+    return "immutable:" + storage_namespace;
+}
+
 struct ObjectMetadata
 {
     uint64_t size_bytes = 0;
@@ -148,6 +154,10 @@ struct ObjectMetadata
     /// fine to expose via the `_etag` virtual column but is not strong: a same-second,
     /// same-size rewrite would collide and could serve stale cached data.
     bool etag_is_strong = true;
+    /// Set when the contents are immutable and so identifiable without an ETag. Holds the endpoint and
+    /// bucket the path is resolved against: a data lake path is bucket-relative while the content
+    /// caches are server-wide, so the path alone would make two buckets share a key.
+    std::optional<String> immutable_contents_namespace = std::nullopt;
     ObjectAttributes tags;
     ObjectAttributes attributes;
 
@@ -156,6 +166,18 @@ struct ObjectMetadata
     /// etag (e.g. the second-precision HDFS token) must never key a cache, otherwise a
     /// same-second, same-size rewrite could serve stale data.
     bool isEtagUsableAsCacheKey() const { return !etag.empty() && etag_is_strong; }
+
+    /// The content token beside the object's path: the strong ETag, else the namespace token of an
+    /// immutable object, else nothing and the cache must be skipped. Never an empty string, or the
+    /// bucket-relative path would be the whole identity.
+    std::optional<std::string> getContentCacheToken() const
+    {
+        if (isEtagUsableAsCacheKey())
+            return etag;
+        if (immutable_contents_namespace)
+            return makeImmutableContentsCacheToken(*immutable_contents_namespace);
+        return std::nullopt;
+    }
 };
 
 struct DataLakeObjectMetadata;

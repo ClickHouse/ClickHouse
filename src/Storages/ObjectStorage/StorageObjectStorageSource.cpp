@@ -214,6 +214,7 @@ namespace Setting
     extern const SettingsUInt64 s3_path_filter_limit;
     extern const SettingsBool use_parquet_metadata_cache;
     extern const SettingsBool s3_validate_etag_on_read;
+    extern const SettingsBool use_iceberg_manifest_object_metadata;
 }
 
 static void logIcebergFileStats(const ObjectInfoPtr & object_info, const LoggerPtr & log)
@@ -392,18 +393,20 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 /// content identifier: a weak token (e.g. HDFS's second-precision `(mtime, size)`) can stay the
 /// same across a same-second, same-size overwrite and would let the cache serve stale row-group
 /// skip marks (missing rows). We therefore skip the cache unless `isEtagUsableAsCacheKey` holds,
-/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). Data-lake data files
-/// are immutable, so the path is a stable identity on its own and no ETag is required (this also
-/// avoids disabling the cache for data lakes whose object metadata does not carry an ETag).
-std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info, bool is_data_lake)
+/// matching the filesystem/page/Parquet-metadata cache checks (fail-close). The same token keys all
+/// four caches: the strong ETag, or the namespace token the Iceberg manifest shortcut records for an
+/// immutable data file (`ObjectMetadata::immutable_contents_namespace`). A data-lake file with
+/// neither, such as one fetched from a weak-ETag store with the shortcut off, skips the cache like
+/// any other object.
+std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(const ObjectInfo & object_info)
 {
-    String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
-    if (is_data_lake)
-        return identifier;
     const auto & metadata = object_info.getObjectMetadata();
-    if (!metadata || !metadata->isEtagUsableAsCacheKey())
+    if (!metadata)
         return std::nullopt;
-    return QueryConditionCache::makeFilePartName(identifier, metadata->etag);
+    const auto content_cache_token = metadata->getContentCacheToken();
+    if (!content_cache_token)
+        return std::nullopt;
+    return QueryConditionCache::makeFilePartName(object_info.getIdentifier(/*include_file_bucket_info=*/false), *content_cache_token);
 }
 
 std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
@@ -1006,7 +1009,8 @@ Chunk StorageObjectStorageSource::generate()
         else if (format_filter_info->condition_hash)
         {
             const auto & object_info = reader.getObjectInfo();
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key
+                = makeQueryConditionCacheKey(*object_info);
             try
             {
                 const auto * input_format = reader.getInputFormat();
@@ -1153,7 +1157,24 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            if (query_settings.ignore_non_existent_file)
+            /// Iceberg records the size in the manifest entry, so the metadata request can be skipped.
+            /// Anything else the read needs still comes from the store, including the ETag that
+            /// `s3_validate_etag_on_read` pins each GET to.
+            const auto & settings = context_->getSettingsRef();
+            const bool needs_object_store_response = with_tags
+                || query_settings.ignore_non_existent_file
+                || read_from_format_info.requested_virtual_columns.contains("_etag")
+                || read_from_format_info.requested_virtual_columns.contains("_time")
+                || (settings[Setting::s3_validate_etag_on_read] && object_storage->getType() == ObjectStorageType::S3);
+
+            std::optional<ObjectMetadata> metadata_without_request;
+            if (!needs_object_store_response && settings[Setting::use_iceberg_manifest_object_metadata])
+                metadata_without_request = object_info->tryGetObjectMetadataWithoutRequest(
+                    dataSourceDescriptionForObjectPath(*configuration, object_info->getPath()));
+
+            if (metadata_without_request)
+                object_info->setObjectMetadata(*metadata_without_request);
+            else if (query_settings.ignore_non_existent_file)
             {
                 auto metadata = object_storage->tryGetObjectMetadata(metadata_object, with_tags);
                 if (!metadata)
@@ -1173,7 +1194,8 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
 
         if (query_condition_cache && !object_info->file_bucket_info)
         {
-            const auto query_condition_cache_key = makeQueryConditionCacheKey(*object_info, configuration->isDataLakeConfiguration());
+            const auto query_condition_cache_key
+                = makeQueryConditionCacheKey(*object_info);
             std::optional<QueryConditionCache::MatchingMarks> matching_marks;
             if (query_condition_cache_key)
                 matching_marks = query_condition_cache->read(
@@ -1232,10 +1254,16 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         auto get_last_mod_time = [&]() -> std::optional<time_t>
         {
             const auto metadata = object_info->getObjectMetadata();
+            if (!metadata)
+                return std::nullopt;
+            /// Immutable contents cannot go stale, so any cached count is valid: report the epoch. The
+            /// count cache key already carries the namespace.
+            if (metadata->immutable_contents_namespace)
+                return std::optional<time_t>(0);
             /// An unknown modification time (e.g. a web object without a `Last-Modified` header) must not be
             /// reported as the epoch, otherwise the stale cached row count would always look valid. Reporting
             /// it as unavailable makes the count cache re-read the file instead.
-            if (!metadata || !metadata->is_last_modified_known)
+            if (!metadata->is_last_modified_known)
                 return std::nullopt;
             return std::optional<time_t>(metadata->last_modified.epochTime());
         };
@@ -1507,7 +1535,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         InputFormatPtr input_format;
         if (context_->getSettingsRef()[Setting::use_parquet_metadata_cache]
             && (Poco::toLower(format_name) == "parquet")
-            && object_info->getObjectMetadata()->isEtagUsableAsCacheKey())
+            && object_info->getObjectMetadata()->getContentCacheToken().has_value())
         {
             std::optional<RelativePathWithMetadata> object_with_metadata = object_info->relative_path_with_metadata;
             if (object_info->isArchive())
@@ -1783,9 +1811,9 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
         object_info.metadata = object_storage->getObjectMetadata(object_info, /*with_tags=*/ false);
     }
 
-    if (use_page_cache && !object_info.metadata->isEtagUsableAsCacheKey())
+    if (use_page_cache && !object_info.metadata->getContentCacheToken())
     {
-        LOG_WARNING(log, "Cannot use page cache, etag is missing or not a strong content identifier");
+        LOG_WARNING(log, "Cannot use page cache, the object's contents cannot be identified");
         use_page_cache = false;
     }
 
@@ -1859,15 +1887,18 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     if (use_filesystem_cache)
     {
         chassert(object_info.metadata.has_value());
-        if (!object_info.metadata->isEtagUsableAsCacheKey())
+        const auto content_cache_token = object_info.metadata->getContentCacheToken();
+        if (!content_cache_token)
         {
-            LOG_WARNING(log, "Cannot use filesystem cache, etag is missing or not a strong content identifier");
+            LOG_WARNING(log, "Cannot use filesystem cache, the object's contents cannot be identified");
         }
         else
         {
+            /// Two separate updates: this hash keys on-disk entries, and a different composition would
+            /// orphan every existing one.
             SipHash hash;
             hash.update(object_info.getPath());
-            hash.update(object_info.metadata->etag);
+            hash.update(*content_cache_token);
 
             auto cache_key = FileCacheKey::fromKey(hash.get128());
             auto cache = FileCacheFactory::instance().get(filesystem_cache_name);
@@ -1881,10 +1912,10 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
 
             LOG_TRACE(
                 log,
-                "Using filesystem cache `{}` (path: {}, etag: {}, hash: {})",
+                "Using filesystem cache `{}` (path: {}, content token: {}, hash: {})",
                 filesystem_cache_name,
                 object_info.getPath(),
-                object_info.metadata->etag,
+                *content_cache_token,
                 toString(hash.get128()));
         }
     }
@@ -1902,7 +1933,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     {
         pipeline.needMemoryCache(
             getPageCachePathForObjectStorage(object_info, object_storage),
-            "etag:" + object_info.metadata->etag,
+            "content:" + *object_info.metadata->getContentCacheToken(),
             modified_read_settings.page_cache_settings);
     }
 

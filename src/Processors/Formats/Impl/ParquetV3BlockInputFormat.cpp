@@ -110,16 +110,15 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
 {
     if (metadata_cache && object_with_metadata.has_value() && object_with_metadata->metadata.has_value())
     {
-        String file_name = object_with_metadata->getPath();
-        String etag = object_with_metadata->metadata->etag;
-        ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        return metadata_cache->getOrSetMetadata(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        if (const auto content_token = object_with_metadata->metadata->getContentCacheToken())
+        {
+            ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(object_with_metadata->getPath(), *content_token);
+            return metadata_cache->getOrSetMetadata(
+                cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher); });
+        }
     }
-    else
-    {
-        return Parquet::Reader::readFileMetaData(prefetcher);
-    }
+
+    return Parquet::Reader::readFileMetaData(prefetcher);
 }
 
 Chunk ParquetV3BlockInputFormat::read()

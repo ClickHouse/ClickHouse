@@ -6199,6 +6199,23 @@ see https://iceberg.apache.org/docs/1.5.2/configuration/.
     DECLARE(UInt64, iceberg_max_number_datafiles_to_compact, 1000, R"(
 Threshold for compaction data files in iceberg.
 )", 0) \
+    DECLARE(Bool, use_iceberg_manifest_object_metadata, true, R"(
+Take the size of an Iceberg data file from the `file_size_in_bytes` its manifest entry already
+records, instead of asking the object store for it. This removes one metadata request (an S3
+`HeadObject`) per data file per query.
+
+It relies on the Iceberg spec guarantee that data files are immutable: a new snapshot writes new
+files rather than rewriting an existing path. No ETag is fetched, so the content caches identify a
+data file by its path within its storage namespace instead. Turn this off for a table whose data
+files are rewritten in place; a reader may otherwise serve data cached for the previous contents.
+
+The object store is still asked whenever the manifest cannot supply what the read needs: the
+`_etag`, `_time` or `_tags` virtual columns; `ignore_non_existent_file`; a data file the manifest
+records as empty, so that a missing object is reported rather than skipped by `skip_empty_files`;
+and, on S3, `s3_validate_etag_on_read`, which pins each read to an ETag seen beforehand and so
+cannot work without one. On S3 the request is therefore only saved with
+`s3_validate_etag_on_read = 0`.
+)", 0) \
     DECLARE(Bool, use_iceberg_metadata_files_cache, true, R"(
 If turned on, iceberg table function and iceberg storage may utilize the iceberg metadata files cache.
 

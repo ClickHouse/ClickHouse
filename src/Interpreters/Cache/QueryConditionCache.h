@@ -95,9 +95,9 @@ public:
     /// different directories do not collide, and folds in a content-version token so an in-place
     /// rewrite of the file yields a different key rather than a stale hit. The token is the ETag for
     /// remote objects, or a local identity (modification time + inode + size) for local files. For
-    /// immutable files (e.g. data-lake data files) the path alone is a stable identity and the token
-    /// may be left empty. The path and the token are separated by a NUL byte, which cannot occur in
-    /// either, so the mapping is unambiguous.
+    /// immutable files (e.g. data-lake data files) without a strong ETag the token is the storage
+    /// namespace, since such a path is bucket-relative. The path and the token are separated by a NUL
+    /// byte, which cannot occur in either, so the mapping is unambiguous.
     static String makeFilePartName(const String & path, std::string_view version_token);
 
     QueryConditionCache(const String & cache_policy, size_t max_size_in_bytes, double size_ratio);
