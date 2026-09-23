@@ -1034,6 +1034,12 @@ Additional virtual columns when `pulsar_handle_error_mode = 'stream'`:
 - `_error` – Exception message happened during failed parsing. Data type: `String`.
 
 Note: `_raw_message` and `_error` virtual columns are filled only in case of an exception during parsing; they are always empty when the message was parsed successfully.
+
+## Data durability {#data-durability}
+
+The `Pulsar` engine can silently lose already-consumed rows if the OS page cache is discarded before the inserted data is written to disk. After a batch is pushed to the dependent materialized views, the consumer acknowledges those messages, which lets the subscription advance past them. The inserted rows, however, are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). If the page cache is lost after the acknowledgement but before the target part is fsynced, the messages are no longer redelivered to the subscription, so the rows are lost with no error and `count()` is simply smaller. A plain process kill does not expose this, because the kernel keeps the page cache and eventually writes it back. A loss of the page cache does expose it; examples are a device-level power loss and an unclean host or kernel reset.
+
+For the recommended materialized-view consumption path (the acknowledgement is sent only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` tables makes the inserted parts durable before the acknowledgement is sent, which narrows this window substantially. The setting must be enabled on every `MergeTree` table the batch is inserted into, including cascaded materialized-view targets; any such table left at the default can still lose its part. Asynchronous intermediaries do not gain durability from this setting alone: for example a `Distributed` target inserts in the background when `distributed_foreground_insert = 0`, which is the default outside ClickHouse Cloud, so it needs its own durability settings or synchronous insertion. This mitigation also does not apply to a direct `INSERT ... SELECT ... FROM <pulsar_table>` with `pulsar_commit_on_select = 1`, where messages are acknowledged when the read reaches its end rather than after the destination has written a durable part.
 )DOCS_MD",
             .syntax
             = "ENGINE = Pulsar() SETTINGS pulsar_service_url = 'pulsar://host:port', pulsar_topic_list = 'topic', pulsar_group_name = "
