@@ -69,7 +69,8 @@ for _ in {1..100}; do
             AND countIf(type IN ('ExceptionBeforeStart', 'ExceptionWhileProcessing') AND exception_code = 735) = 1
             AND countIf(type = 'QueryFinish') = 0
         FROM system.query_log
-        WHERE query_id='$QUERY_ID' AND type != 'QueryStart'")
+        WHERE current_database = currentDatabase()
+            AND query_id='$QUERY_ID' AND type != 'QueryStart'")
     if [[ "$cancelled_without_finish" == 1 ]]; then
         break
     fi
