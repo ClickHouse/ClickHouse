@@ -101,6 +101,7 @@ namespace ErrorCodes
     extern const int QUERY_WAS_CANCELLED;
     extern const int INVALID_CONFIG_PARAMETER;
     extern const int CANNOT_SCHEDULE_TASK;
+    extern const int EXCHANGE_PEER_DISCONNECTED;
 }
 
 namespace FailPoints
@@ -189,18 +190,19 @@ public:
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
-
         auto file_name = exchange_stream_id.toString();
         return std::make_shared<NativeCompressedSink>(input_header, temporary_files->getTemporaryFileForWriting(file_name), file_name);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
         if (!temporary_files)
             throw Exception(
                 ErrorCodes::SUPPORT_IS_DISABLED,
                 "Object storage for Persisted exchanges is not configured, exchange stream id: {}",
                 exchange_stream_id.toString());
+        if (output_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Persisted exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
 
         auto file_name = exchange_stream_id.toString();
         std::unique_ptr<QueryPipelineBuilder> pipeline_ptr = std::make_unique<QueryPipelineBuilder>();
@@ -274,6 +276,12 @@ public:
         std::lock_guard lock(mutex);
         return reader_detached;
     }
+
+    /// Identifies one stream of an exchange, not the whole exchange: it is
+    /// `ExchangeStreamId::toString()`, so the buckets of one exchange have distinct names.
+    const String & getStreamName() const { return name; }
+
+    LoggerPtr getLog() const { return log; }
 
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
@@ -400,8 +408,11 @@ public:
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
+        if (output_is_serialized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "In-memory exchange {} has no deserializer, its source gives data chunks", exchange_stream_id.toString());
+
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
         return std::make_shared<SourceFromInMemoryExchange>(output_header, exchange);
@@ -426,6 +437,7 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
+                LOG_TRACE(exchange->getLog(), "Closing input of exchange stream {}, reader detached", exchange->getStreamName());
                 input.close();
                 return Status::Finished;
             }
@@ -469,6 +481,7 @@ private:
             if (!detach_notified && getPort().isFinished())
             {
                 detach_notified = true;
+                LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
             return ISource::prepare();
@@ -557,33 +570,38 @@ public:
 
     std::shared_ptr<ISink> createSink(SharedHeader input_header, const ExchangeStreamId & exchange_stream_id) override
     {
-        auto it = exchanges.find(exchange_stream_id.exchange_id);
-        if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
-
-        if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSink(input_header, exchange_stream_id);
-        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSink(input_header, exchange_stream_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+        return lookupFor(exchange_stream_id.exchange_id).createSink(std::move(input_header), exchange_stream_id);
     }
 
-    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id) override
+    std::shared_ptr<ISource> createSource(SharedHeader output_header, const ExchangeStreamId & exchange_stream_id, bool output_is_serialized) override
     {
-        auto it = exchanges.find(exchange_stream_id.exchange_id);
-        if (it == exchanges.end())
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_stream_id.exchange_id);
+        return lookupFor(exchange_stream_id.exchange_id).createSource(std::move(output_header), exchange_stream_id, output_is_serialized);
+    }
 
-        if (it->second.kind == ExchangeDescription::Kind::Persisted)
-            return persistent_exchange_lookup->createSource(output_header, exchange_stream_id);
-        else if (it->second.kind == ExchangeDescription::Kind::Streaming)
-            return streaming_exchange_lookup->createSource(output_header, exchange_stream_id);
-        else
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    std::shared_ptr<IProcessor> createSerializer(SharedHeader input_header, const String & exchange_id) override
+    {
+        return lookupFor(exchange_id).createSerializer(std::move(input_header), exchange_id);
+    }
+
+    std::shared_ptr<IProcessor> createDeserializer(SharedHeader output_header, const String & exchange_id) override
+    {
+        return lookupFor(exchange_id).createDeserializer(std::move(output_header), exchange_id);
     }
 
 private:
+    IExchangeLookup & lookupFor(const String & exchange_id) const
+    {
+        auto it = exchanges.find(exchange_id);
+        if (it == exchanges.end())
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange '{}'", exchange_id);
+
+        if (it->second.kind == ExchangeDescription::Kind::Persisted)
+            return *persistent_exchange_lookup;
+        if (it->second.kind == ExchangeDescription::Kind::Streaming)
+            return *streaming_exchange_lookup;
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown exchange kind '{}'", static_cast<int>(it->second.kind));
+    }
+
     const ExchangeDescriptions exchanges;
     ExchangeLookupPtr persistent_exchange_lookup;
     ExchangeLookupPtr streaming_exchange_lookup;
@@ -685,7 +703,8 @@ ExchangeLookupPtr createExchangeLookup(
     const ExchangeStreamSources & exchange_stream_sources,
     TemporaryFileLookupPtr temporary_files_,
     ContextPtr context,
-    bool execute_locally)
+    bool execute_locally,
+    DistributedQueryCancellationPtr cancellation)
 {
     if (execute_locally)
     {
@@ -738,11 +757,14 @@ ExchangeLookupPtr createExchangeLookup(
         if (address.port == 0)
             address.port = static_cast<UInt16>(streaming_exchange_port);
 
+    /// The auth token this node presents when opening an outbound exchange connection, taken from
+    /// the query context (empty when connection authentication is not configured).
     auto streaming_exchanges = createStreamingExchangeLookup(
-        query_id, ExchangeConnections::instance(), sources_with_ports);
+        query_id, ExchangeConnections::instance(), sources_with_ports, std::move(cancellation), /*auth_token=*/ String{},
+        streamingExchangeCompressionCodec(context->getSettingsRef()));
     return std::make_shared<AllKindsExchangeLookup>(exchanges_, persisted_exchanges, streaming_exchanges);
 #else
-    UNUSED(exchange_stream_sources, context);
+    UNUSED(exchange_stream_sources, context, cancellation);
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "Streaming exchanges are only supported on Linux and macOS; "
         "use `distributed_plan_force_exchange_kind = 'Persisted'`");
@@ -816,7 +838,8 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
         task_description.exchange_stream_sources,
         temporary_files,
         context,
-        execute_locally);
+        execute_locally,
+        /*cancellation=*/ nullptr);
 
     auto optimization_settings = QueryPlanOptimizationSettings(context);
 
@@ -924,7 +947,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
     if (config.has(config_prefix))
     {
-        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, false, /*attach=*/false);
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false, /*attach=*/false);
         return {object_storage, object_storage_path};
     }
     return {nullptr, object_storage_path};
@@ -1139,14 +1162,6 @@ static WorkerAddress resolveWorkerAddress(
     address.stateless_worker_port = static_cast<UInt16>(dispatch_port);
 
     return address;
-}
-
-UInt64 chooseTaskSerializationVersion(const ExchangeStreamSources & exchange_stream_sources, UInt64 destination_exchange_port)
-{
-    for (const auto & stream : exchange_stream_sources.stream_hosts)
-        if (stream.second.port != destination_exchange_port)
-            return 2;
-    return 1;
 }
 
 TaskToHostMap::TaskToHostMap(const DistributedQueryPlan & distributed_query_plan_, ContextPtr context_)
@@ -1466,8 +1481,14 @@ protected:
             /// and leave a task that does not settle for the worker to reclaim on shutdown.
             for (auto & task : tasks_to_cancel)
             {
-                if (waitForTaskTerminal(task))
+                if (auto terminal_status = waitForTaskTerminal(task))
+                {
+                    /// Its failure can be the root cause of the teardown: the initiator often sees an
+                    /// effect first, e.g. the result reader's socket closing.
+                    if (terminal_status->status != "Finished" && terminal_status->status != "Unknown task")
+                        recordTaskFailure(task, *terminal_status);
                     tryForgetTask(task);
+                }
                 else
                     LOG_WARNING(logger, "Task {} on {} did not reach a terminal state after cancellation; "
                         "leaving it for the worker to reclaim", task.task_id, task.endpoint_uri);
@@ -1495,14 +1516,31 @@ protected:
         }
 
     private:
-        /// Log the in-flight exception, store it as the query's first failure, and request
-        /// cancellation. Called from the worker lambda's catch blocks so a failed status check
-        /// or a failed re-enqueue surfaces through `checkCancelled` instead of escaping the
-        /// thread (which would be rethrown by ~TaskTracker and terminate the server).
-        void recordFailure()
+        /// Record a task's failed status under the worker's error code, so the client sees it and the
+        /// record can rank it. A status other than `Failed` carries no code and gets the generic remote
+        /// error code, which ranks below a known root cause.
+        void recordTaskFailure(const RunningTaskInfo & task, const DistributedQueryTaskStatus & task_status)
         {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-            cancellation->recordCurrentException();
+            const int code = task_status.error_code != 0 ? task_status.error_code : ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
+            recordFailure(std::make_exception_ptr(Exception(code, "Task {} did not finish successfully (status: {}): {}",
+                task.task_id, task_status.status, task_status.error_message)));
+        }
+
+        /// Log the exception, record it as the query's failure, and request cancellation. The status
+        /// check threads call it from their catch blocks, so a failure there surfaces through
+        /// `checkCancelled` instead of escaping the thread and terminating the server.
+        void recordFailure(std::exception_ptr exception)
+        {
+            /// A consequence is expected while the query stops; only a root cause is worth an error entry.
+            const bool is_consequence = DistributedQueryCancellation::isConsequence(getExceptionErrorCode(exception));
+            if (is_consequence)
+                LOG_TRACE(logger, "Task ended with a failure that another one caused: {}", getExceptionMessage(exception, /*with_stacktrace=*/ false));
+            else
+                tryLogException(exception, __PRETTY_FUNCTION__);
+            /// The teardown waits a bounded time for each task's outcome; a root cause reported later
+            /// is recorded, but the query has been reported already.
+            if (!cancellation->recordException(exception) && !is_consequence)
+                LOG_WARNING(logger, "The failure arrived after the query reported another one, the client did not see it");
         }
 
         void checkCancelled()
@@ -1533,17 +1571,18 @@ protected:
                 return;
             }
 
-            /// Task reached a terminal state on the worker. Release worker-side
-            /// bookkeeping for it (TaskState/progress/future). Best-effort.
+            /// Task reached a terminal state on the worker.
+            const bool finished = task_status.status == "Finished";
+            if (!finished)
+                recordTaskFailure(task, task_status);
+
+            /// Release worker-side bookkeeping for it (TaskState/progress/future). Best-effort. Only
+            /// after recording the failure: a forgotten task answers the teardown's poll with
+            /// "Unknown task", which carries none.
             tryForgetTask(task);
 
-            if (task_status.status != "Finished")
-                throw Exception(ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER,
-                    "Task {} did not finish successfully (status: {}): {}",
-                    task.task_id, task_status.status, task_status.error_message);
-
-            /// Update task state
-            setTaskFinished(stage_name, task.task_id);
+            if (finished)
+                setTaskFinished(stage_name, task.task_id);
         }
 
         void tryForgetTask(const RunningTaskInfo & task) noexcept
@@ -1559,9 +1598,9 @@ protected:
         }
 
         /// Polls the worker until the task leaves the "Running" state or a bounded time budget elapses.
-        /// Returns true when the task is known to be terminal (or already gone from the worker), false
-        /// on timeout or a status-request error.
-        bool waitForTaskTerminal(const RunningTaskInfo & task) noexcept
+        /// Returns the terminal status when the task is known to be terminal (or already gone from the
+        /// worker), nothing on timeout or a status-request error.
+        std::optional<DistributedQueryTaskStatus> waitForTaskTerminal(const RunningTaskInfo & task) noexcept
         {
             constexpr UInt32 poll_wait_ms = 300;
             constexpr size_t max_polls = 10;
@@ -1571,15 +1610,15 @@ protected:
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
                     if (task_status.status != "Running")
-                        return true;
+                        return task_status;
                 }
                 catch (...)
                 {
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format("waitForTaskTerminal {} on {}", task.task_id, task.endpoint_uri));
-                    return false;
+                    return std::nullopt;
                 }
             }
-            return false;
+            return std::nullopt;
         }
 
         void addTaskToCheckQueue(const String & stage_name, const String & task_name)
@@ -1667,8 +1706,8 @@ protected:
                     }
                     catch (...)
                     {
-                        /// recordFailure() logs and stores the exception. Ok.
-                        recordFailure();
+                        /// recordFailure logs and stores the exception. Ok.
+                        recordFailure(std::current_exception());
                     }
                     /// Decrement the in-flight counter before scheduling the next check so
                     /// the next `enqueueGetStatus` is not gated by an already-finished slot.
@@ -1689,8 +1728,8 @@ protected:
                     }
                     catch (...)
                     {
-                        /// recordFailure() logs and stores the exception. Ok.
-                        recordFailure();
+                        /// recordFailure logs and stores the exception. Ok.
+                        recordFailure(std::current_exception());
                     }
                 });
             ++in_flight_request_count;
@@ -1786,12 +1825,6 @@ protected:
                 String input_stream_name = input_stream.toString();
                 task_description.exchange_stream_sources.stream_hosts[input_stream_name] = task_to_host_map->getExchangeStreamSourceHosts().at(input_stream_name);
             }
-            /// A version-1 consumer dials producers on its own exchange port, so the decision must
-            /// compare against the destination worker's port, not the initiator's.
-            const auto & destination_worker = task_to_host_map->getTaskHosts().at(task.task_id);
-            task_description.serialization_version = chooseTaskSerializationVersion(
-                task_description.exchange_stream_sources, destination_worker.streaming_exchange_port);
-
             /// Send the task before registering it: status polling does not tolerate
             /// UnknownTaskId, so a tracker poll racing the start would abort the query.
             /// On send failure clean up directly in case the worker did accept the start;
@@ -1822,29 +1855,65 @@ protected:
 };
 
 
-void DistributedQueryCancellation::recordCurrentException()
+DistributedQueryCancellation::DistributedQueryCancellation()
+    : wakeup(std::make_shared<WakeupFd>())
 {
-    /// Publish the failure and the flag in one critical section. Setting the flag outside it would
-    /// let a waiter that already read no failure still see the flag and report `Query was cancelled`.
-    std::lock_guard lock(mutex);
-    /// A bare cancellation is not a root cause: a task stopped by the cancellation of its
-    /// exchange must not become the query's reported failure.
-    auto exception = std::current_exception();
-    if (!first_exception && getExceptionErrorCode(exception) != ErrorCodes::QUERY_WAS_CANCELLED)
-        first_exception = exception;
+}
+
+DistributedQueryCancellation::FailureRank DistributedQueryCancellation::rankOf(int error_code)
+{
+    if (error_code == ErrorCodes::QUERY_WAS_CANCELLED || error_code == ErrorCodes::EXCHANGE_PEER_DISCONNECTED)
+        return FailureRank::Consequence;
+    if (error_code == ErrorCodes::RECEIVED_ERROR_FROM_REMOTE_IO_SERVER)
+        return FailureRank::Unclassified;
+    return FailureRank::RootCause;
+}
+
+void DistributedQueryCancellation::cancel()
+{
+    cancelled_by_pipeline = true;
     cancelled = true;
+    notifyStageWakeup(wakeup);
+}
+
+bool DistributedQueryCancellation::recordException(std::exception_ptr exception)
+{
+    const FailureRank rank = rankOf(getExceptionErrorCode(exception));
+    bool driving_source_reports = false;
+    {
+        /// Publish the failure and the flag in one critical section. Setting the flag outside it
+        /// would let a waiter that already read no failure still see the flag and report
+        /// `Query was cancelled`.
+        std::lock_guard lock(mutex);
+        const bool worth_recording = rank == FailureRank::RootCause || !cancelled_by_pipeline;
+        if (worth_recording && (!failure || rank > failure_rank))
+        {
+            failure = exception;
+            failure_rank = rank;
+        }
+        cancelled = true;
+        driving_source_reports = !execution_finished;
+    }
+    notifyStageWakeup(wakeup);
+    return driving_source_reports;
+}
+
+void DistributedQueryCancellation::markExecutionFinished()
+{
+    std::lock_guard lock(mutex);
+    execution_finished = true;
 }
 
 std::exception_ptr DistributedQueryCancellation::getFailure() const
 {
     std::lock_guard lock(mutex);
-    return first_exception;
+    return failure;
 }
 
 void DistributedQueryCancellation::rethrowIfFailedLocked() const
 {
-    if (first_exception)
-        std::rethrow_exception(first_exception);
+    if (failure)
+        std::rethrow_exception(failure);
 }
 
 void DistributedQueryCancellation::rethrowIfFailed() const

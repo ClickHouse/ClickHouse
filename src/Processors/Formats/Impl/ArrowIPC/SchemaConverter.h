@@ -96,7 +96,7 @@ struct ArrowType
     std::string unsupported_type_name;
 
     /// Physical buffer layout of a `TypeKind::Unsupported` field, when it is known. The reader cannot
-    /// decode these types, but knowing the layout lets `skipField` advance the node/buffer cursors past an
+    /// decode these types, but knowing the layout lets `advanceField` advance the node/buffer cursors past an
     /// unrequested column of such a type (subset-of-columns support), instead of failing a `SELECT` of the
     /// other columns. `Unknown` means the layout is not known and the column cannot be skipped.
     enum class SkipLayout : UInt8
@@ -142,6 +142,11 @@ ArrowSchema parseSchema(const flatbuf::Schema & schema);
 
 /// Whether a fixed_size_binary(16) field is flagged as the Arrow UUID extension type.
 bool isUUIDField(const ArrowField & field);
+
+/// The ClickHouse type name a field carries when the writer had no Arrow mapping for it and wrote it as an
+/// opaque column, or empty when the field is not one. The field's Arrow type says which encoding it holds:
+/// `Utf8` is the text form, `Binary` is `serializeBinary`.
+std::string_view opaqueFieldTypeName(const ArrowField & field);
 
 /// A record-batch / dictionary-batch location inside an Arrow file.
 struct ArrowFileBlock

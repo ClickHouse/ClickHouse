@@ -27,6 +27,7 @@ namespace ErrorCodes
     extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
+    extern const int CANNOT_READ_ALL_DATA;
 }
 
 
@@ -56,16 +57,22 @@ void ColumnString::doInsertManyFrom(const IColumn & src, size_t position, size_t
         return;
 
     const ColumnString & src_concrete = assert_cast<const ColumnString &>(src);
-    const UInt8 * src_buf = &src_concrete.chars[src_concrete.offsets[position - 1]];
+    const size_t src_offset = src_concrete.offsets[position - 1];
     const size_t src_buf_size
         = src_concrete.offsets[position] - src_concrete.offsets[position - 1]; /// -1th index is Ok, see PaddedPODArray.
+
+    const size_t old_rows = offsets.size();
+    const size_t new_rows = old_rows + length;
+    /// Reserve offsets before changing chars to keep the column consistent if allocation fails.
+    offsets.reserve(new_rows);
 
     const size_t old_size = chars.size();
     const size_t new_size = old_size + src_buf_size * length;
     chars.resize(new_size);
 
-    const size_t old_rows = offsets.size();
-    offsets.resize(old_rows + length);
+    const UInt8 * src_buf = &src_concrete.chars[src_offset];
+
+    offsets.resize_assume_reserved(new_rows);
 
     for (size_t current_offset = old_size; current_offset < new_size; current_offset += src_buf_size)
         memcpySmallAllowReadWriteOverflow15(&chars[current_offset], src_buf, src_buf_size);
@@ -368,6 +375,13 @@ void ColumnString::deserializeAndInsertFromArena(ReadBuffer & in, const IColumn:
     if (string_size < serialize_string_with_zero_byte)
         throw Exception(ErrorCodes::INCORRECT_DATA,
             "Malformed serialized string in aggregation state: size {} is smaller than the zero-byte terminator", string_size);
+
+    /// Callers wrap one complete in-memory record, never a refillable stream, so a size past its end can never be satisfied.
+    if (string_size - serialize_string_with_zero_byte > in.available())
+        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA,
+            "Cannot read all data. Bytes read: {}. Bytes expected: {}.",
+            in.available(), string_size - serialize_string_with_zero_byte);
+
     const size_t old_size = chars.size();
     const size_t new_size = old_size + string_size - serialize_string_with_zero_byte;
     chars.resize(new_size);
@@ -930,4 +944,8 @@ void ColumnString::batchSerializeAsComparable(
         [this](size_t src, String & dst) { serializeAsComparable(src, dst); });
 }
 
+ColumnPlanes ColumnString::getPlanes() const
+{
+    return ColumnPlanes(ColumnPlanes::Shape::String, offsets.data(), chars.data());
+}
 }

@@ -75,7 +75,8 @@ ObjectStoragePtr ObjectStorageFactory::create(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
     const ContextPtr & context,
-    bool skip_access_check,
+    bool run_access_check,
+    bool run_local_paths_check,
     bool attach) const
 {
     std::string type;
@@ -96,7 +97,7 @@ ObjectStoragePtr ObjectStorageFactory::create(
                         "ObjectStorageFactory: unknown object storage type: {}", type);
     }
 
-    return it->second(name, config, config_prefix, context, skip_access_check, attach);
+    return it->second(name, config, config_prefix, context, run_access_check, run_local_paths_check, attach);
 }
 
 #if USE_AWS_S3
@@ -136,7 +137,8 @@ static void registerS3ObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */,
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
         bool /* attach */) -> ObjectStoragePtr
     {
         auto s3_capabilities = getCapabilitiesFromConfig(config, config_prefix);
@@ -167,7 +169,8 @@ static void registerHDFSObjectStorage(ObjectStorageFactory & factory)
            const Poco::Util::AbstractConfiguration & config,
            const std::string & config_prefix,
            const ContextPtr & context,
-           bool /* skip_access_check */,
+           bool /* run_access_check */,
+           bool /* run_local_paths_check */,
            bool /* attach */) -> ObjectStoragePtr
         {
             auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
@@ -191,7 +194,8 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */,
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
         bool /* attach */) -> ObjectStoragePtr
     {
         auto azure_settings = AzureBlobStorage::getRequestSettings(config, config_prefix, context->getSettingsRef());
@@ -211,7 +215,7 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
 
         return std::make_shared<AzureObjectStorage>(
             name,
-            params.auth_method, AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
+            AzureBlobStorage::getContainerClient(params, /*readonly=*/ false), std::move(azure_settings),
             params, params.endpoint.prefix.empty() ? params.endpoint.container_name : params.endpoint.container_name + "/" + params.endpoint.prefix,
             params.endpoint.getServiceEndpoint(), common_key_prefix);
     };
@@ -230,7 +234,8 @@ static void registerWebObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */,
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
         bool /* attach */) -> ObjectStoragePtr
     {
         auto uri = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
@@ -258,12 +263,16 @@ static void registerLocalObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */,
+        bool /* run_access_check */,
+        bool run_local_paths_check,
         bool /* attach */) -> ObjectStoragePtr
     {
         String object_key_prefix;
         UInt64 keep_free_space_bytes = 0;
         loadDiskLocalConfig(name, config, config_prefix, context, object_key_prefix, keep_free_space_bytes);
+
+        if (run_local_paths_check)
+            checkCustomLocalDiskPath(object_key_prefix, context);
 
         /// keys are mapped to the fs, object_key_prefix is a directory also
         fs::create_directories(object_key_prefix);
@@ -287,7 +296,8 @@ static void registerBorrowFromCacheObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */,
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */,
         bool attach) -> ObjectStoragePtr
     {
         auto cache_name = config.getString(config_prefix + ".cache_name");

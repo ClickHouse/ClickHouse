@@ -198,6 +198,11 @@ public:
     /// Returns true if underlying blob ids generator uses random.
     virtual bool areBlobPathsRandom() const = 0;
 
+    /// Whether a cache keyed by the object path may hold a file's data. An object named after the
+    /// path and rewritten in place would be read back as its previous content, since nothing
+    /// invalidates it. Read-only metadata rewrites nothing, so its paths need not be random.
+    bool mayCacheByObjectPath() const { return areBlobPathsRandom() || isReadOnly(); }
+
     /// ==== General purpose methods. Define properties of object storage file based on metadata files ====
 
     virtual bool existsFile(const std::string & path) const = 0;
@@ -295,6 +300,7 @@ public:
     }
 
     virtual bool isReadOnly() const = 0;
+    virtual bool isRemote() const = 0;
 
     /// See `IDisk::isPathOnLocalFilesystem`.
     virtual bool isPathOnLocalFilesystem() const { return true; }

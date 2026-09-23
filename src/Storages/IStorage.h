@@ -21,6 +21,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <expected>
+#include <functional>
 #include <optional>
 #include <list>
 
@@ -39,6 +40,9 @@ class AlterCommands;
 class MutationCommands;
 struct PartitionCommand;
 using PartitionCommands = std::vector<PartitionCommand>;
+
+class DDLGuard;
+using DDLGuardPtr = std::unique_ptr<DDLGuard>;
 
 class IProcessor;
 using ProcessorPtr = std::shared_ptr<IProcessor>;
@@ -127,6 +131,12 @@ public:
     /// of the rows read from such a storage carry the name of the table that actually produced
     /// each row, which is not necessarily the name of this storage.
     virtual bool readsFromOtherTables() const { return false; }
+
+    /// Storages whose rows this storage returns as its own on read, e.g. the target of `Alias`.
+    /// Their row policies apply to reads from this storage as well, so only a wrapper that exposes
+    /// the target's schema unchanged and reads it in the caller's context may list one here.
+    /// `Merge` is not listed: it resolves the policies of its children itself, per child.
+    virtual std::vector<StoragePtr> getUnderlyingStorages() const { return {}; }
 
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
@@ -343,6 +353,18 @@ protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const;
 
+    /// The same, but waits in slices of `check_period` and polls `need_stop` between them (see the public
+    /// `tryLockForShare` overload with `need_stop` below). Returns a nullptr only if `need_stop` returned true.
+    RWLockImpl::LockHolder tryLockTimedSliced(
+        const RWLock & rwlock,
+        RWLockImpl::Type type,
+        const String & query_id,
+        const Poco::Timespan & acquire_timeout,
+        const std::function<bool()> & need_stop,
+        const Poco::Timespan & check_period) const;
+
+    [[noreturn]] void throwLockTimedOut(const RWLock & rwlock, RWLockImpl::Type type, const Poco::Timespan & acquire_timeout) const;
+
 public:
     /// Lock table for share. This lock must be acquired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
@@ -353,6 +375,19 @@ public:
     /// Similar to lockForShare, but returns a nullptr if the table is dropped while
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
+
+    /// Similar to tryLockForShare, but waits for the lock in slices of `check_period`, calling `need_stop`
+    /// between the slices, so that a query that is cancelled (or runs into its time limit) while a concurrent
+    /// DDL query holds the drop lock does not sit in the lock queue for the whole `acquire_timeout`.
+    /// The slicing happens below the throwing API boundary: an expired slice is a plain non-throwing retry,
+    /// and only the exhaustion of the whole `acquire_timeout` throws DEADLOCK_AVOIDED, with the total wait
+    /// in the message. A zero `acquire_timeout` means an infinite wait, as in the other locking methods.
+    /// Returns a nullptr if the table is dropped while acquiring the lock or if `need_stop` returned true.
+    TableLockHolder tryLockForShare(
+        const String & query_id,
+        const Poco::Timespan & acquire_timeout,
+        const std::function<bool()> & need_stop,
+        const Poco::Timespan & check_period);
 
     /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.
@@ -549,8 +584,15 @@ public:
 
     /** ALTER tables in the form of column changes that do not affect the change
       * to Storage or its parameters. Executes under alter lock (lockForAlter).
+      *
+      * `ddl_guard` serializes with RENAME/EXCHANGE TABLES, null when the caller already holds it.
+      * Storages that wait on replicas or mutations may `ddl_guard.reset()` once the change is durably submitted.
       */
-    virtual void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder);
+    virtual void alter(
+        const AlterCommands & params,
+        ContextPtr context,
+        AlterLockHolder & alter_lock_holder,
+        DDLGuardPtr & ddl_guard);
 
     /// Updates metadata that can be changed by other processes
     /// Return true if external metadata exists and was updated.
@@ -648,6 +690,16 @@ public:
     /// Might be called multiple times; only the first call needs to be processed.
     /// Data in memory need to be persistent. Any background work that affects other tables
     /// (e.g. materialized view refreshes that create/drop tables) needs to be stopped.
+    /** Hand over rows that are still buffered in memory, before any database is shut down.
+      *
+      * A `Buffer` table writes into another table, which may live in another database or be another
+      * `Buffer`. Databases shut down one at a time in name order, so by the time a `Buffer` prepares
+      * for shutdown its destination can already be gone, and one pass moves rows at most one link
+      * down a chain. `DatabaseCatalog` therefore calls this for every table first, repeating while
+      * rows keep moving; the return value is the number of buffers this call actually flushed.
+      */
+    virtual size_t flushBufferedRowsBeforeShutdown() { return 0; }
+
     virtual void flushAndPrepareForShutdown() {}
 
     /// Asks table to stop executing some action identified by action_type
