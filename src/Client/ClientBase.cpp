@@ -2160,10 +2160,14 @@ void ClientBase::onProfileEvents(Block & block)
             if (value < 0)
                 continue;
 
+            /// These are `INCREMENT` rows, and the server may coalesce several queued
+            /// snapshots of the same remote host into one packet, so sum them up:
+            /// keeping only the last delta would understate the CPU time relative to
+            /// the "waited" figure below, which covers the whole interval.
             if (event_name == user_time_name)
-                thread_times[host_name].user_ms = value;
+                thread_times[host_name].user_ms += value;
             else if (event_name == system_time_name)
-                thread_times[host_name].system_ms = value;
+                thread_times[host_name].system_ms += value;
             /// Time the query spent blocked in throttlers or waiting for the IO scheduler
             /// (workload resource requests), summed up into a single "waited" figure.
             else if (event_name == throttler_sleep_name || event_name == scheduler_io_read_wait_name || event_name == scheduler_io_write_wait_name)
