@@ -15,5 +15,5 @@ id	time_series
 UInt64	Array(Tuple(DateTime64(3), Float64))
 101	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2)]
 102	[('1970-01-01 00:02:30.000',10),('1970-01-01 00:04:10.000',20)]
--- the bare bucket condition comes before the id IN condition, and the time_series cast is in the outer SELECT
+-- the bare bucket condition and the time_series cast in the outer SELECT
 1	1

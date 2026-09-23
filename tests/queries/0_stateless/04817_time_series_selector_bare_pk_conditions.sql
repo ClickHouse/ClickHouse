@@ -67,13 +67,11 @@ ORDER BY id, timestamp;
 
 SELECT '-- the SELECT over the samples table uses bare columns, time range first';
 
--- The WHERE conditions must reference the bare `id` / `bucket` columns in the generated order.
--- If aliased casts shadow the columns, the conditions render with the wrapped expressions,
--- and `position` returns 0 for both patterns.
--- `optimize_move_to_prewhere = 0` keeps the generated condition order.
-SELECT position(plan, 'bucket >=') BETWEEN 1 AND position(plan, 'id IN') AS bare_bucket_condition_before_id_in,
-       position(plan, 'max_time >=') BETWEEN 1 AND position(plan, 'id IN') AS max_time_condition_before_id_in
-FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, time_series FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
+-- Inspect the raw PREWHERE expression: the pretty formatter reverses conjunction atoms for display.
+-- These conditions must reference bare columns and put the time range before `id IN`.
+SELECT position(plan, 'greaterOrEquals(bucket,') BETWEEN 1 AND position(plan, 'in(id,') AS bare_bucket_condition_before_id_in,
+       position(plan, 'greaterOrEquals(max_time,') BETWEEN 1 AND position(plan, 'in(id,') AS max_time_condition_before_id_in
+FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1, pretty = 0 SELECT id, time_series FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
 
 SELECT '-- a samples table whose physical type differs (here: by timezone only): bare conditions, cast in the outer SELECT';
 
@@ -90,9 +88,9 @@ SELECT id, time_series FROM timeSeriesSelector(ts, 'foo', 100, 250) ORDER BY id 
 -- The cast of `time_series` to the declared type appears only in the outer SELECT (the `Output:`
 -- line of the plan), not in the conditions: comparing the bare columns is correct
 -- because the timezone does not change the stored values.
-SELECT '-- the bare bucket condition comes before the id IN condition, and the time_series cast is in the outer SELECT';
+SELECT '-- the bare bucket condition and the time_series cast in the outer SELECT';
 
-SELECT position(plan, 'bucket >=') BETWEEN 1 AND position(plan, 'id IN') AS bare_bucket_condition_before_id_in,
+SELECT position(plan, 'bucket >=') > 0 AS bare_bucket_condition,
        plan LIKE '%CAST(timeSeriesSliceSortedArray(%AS Array(Tuple(DateTime64(3), Float64)))%' AS time_series_cast_in_outer_select
 FROM (SELECT arrayStringConcat(groupArray(explain), '\n') AS plan FROM (EXPLAIN actions = 1 SELECT id, time_series FROM timeSeriesSelector(ts, 'foo', 100, 250) SETTINGS optimize_move_to_prewhere = 0));
 

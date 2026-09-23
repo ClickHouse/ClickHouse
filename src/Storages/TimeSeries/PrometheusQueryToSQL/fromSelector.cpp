@@ -70,7 +70,26 @@ namespace
 
         /// Prometheus range selectors omit the dedicated stale-NaN payload while preserving
         /// ordinary NaN samples as data.
-        if (filter_stale_markers)
+        if (filter_stale_markers && context.time_series_version >= TimeSeriesVersion::MIN_WITH_BUCKETED_SAMPLES)
+        {
+            const String sample_name = "sample";
+            ASTPtr is_not_stale_marker = makeASTFunction(
+                "not",
+                isStaleMarker(makeASTFunction(
+                    "tupleElement",
+                    make_intrusive<ASTIdentifier>(sample_name),
+                    make_intrusive<ASTLiteral>(2))));
+
+            builder.select_list.back() = makeASTFunction(
+                "arrayFilter",
+                makeASTFunction(
+                    "lambda",
+                    makeASTFunction("tuple", make_intrusive<ASTIdentifier>(sample_name)),
+                    std::move(is_not_stale_marker)),
+                make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries));
+            builder.select_list.back()->setAlias(ColumnNames::TimeSeries);
+        }
+        else if (filter_stale_markers)
         {
             builder.where = makeASTFunction(
                 "not",
