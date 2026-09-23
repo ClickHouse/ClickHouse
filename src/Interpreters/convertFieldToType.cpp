@@ -317,6 +317,12 @@ const IDataType * getElementTypeHint(const IDataType * container_hint, size_t i)
     return nullptr;
 }
 
+/// A `Bool` literal is a `Bool` field, a `Bool` read from a column a `UInt64` one, as is the type's default.
+Field::Types::Which fieldTagClass(Field::Types::Which which)
+{
+    return which == Field::Types::Bool ? Field::Types::UInt64 : which;
+}
+
 /// A field does not record which alternative of a `Variant` it came from; the one alternative whose
 /// fields carry the same tag stands in for it. Null when none or several do.
 const IDataType * uniqueVariantAlternative(const DataTypeVariant & variant, const Field & src)
@@ -324,7 +330,7 @@ const IDataType * uniqueVariantAlternative(const DataTypeVariant & variant, cons
     const IDataType * found = nullptr;
     for (const auto & alternative : variant.getVariants())
     {
-        if (alternative->getDefault().getType() != src.getType())
+        if (fieldTagClass(alternative->getDefault().getType()) != fieldTagClass(src.getType()))
             continue;
         if (found)
             return nullptr;
@@ -333,7 +339,7 @@ const IDataType * uniqueVariantAlternative(const DataTypeVariant & variant, cons
     return found;
 }
 
-Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
+Field convertFieldToTypeImpl(const Field & src_in, const IDataType & type, const IDataType * from_type_hint, const FormatSettings & format_settings, bool strict, bool convert_inexact_floats)
 {
     /// The caller unwraps `to_type` only; the branches below `static_cast` the hint, so it is unwrapped here once.
     /// A `Dynamic` hint names no alternative at all.
@@ -344,12 +350,19 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
         else if (const auto * low_cardinality_hint = typeid_cast<const DataTypeLowCardinality *>(from_type_hint))
             from_type_hint = low_cardinality_hint->getDictionaryType().get();
         else if (const auto * variant_hint = typeid_cast<const DataTypeVariant *>(from_type_hint))
-            from_type_hint = uniqueVariantAlternative(*variant_hint, src);
+            from_type_hint = uniqueVariantAlternative(*variant_hint, src_in);
         else if (WhichDataType(*from_type_hint).isDynamic())
             from_type_hint = nullptr;
         else
             break;
     }
+
+    /// A `Bool` read from a column arrives as a `UInt64` field and a `String` target prints the tag, so it is
+    /// given back the tag a `Bool` literal carries.
+    const Field retagged = from_type_hint && from_type_hint->getName() == "Bool" && src_in.getType() == Field::Types::UInt64
+        ? Field(src_in.safeGet<UInt64>() != 0)
+        : Field();
+    const Field & src = retagged.isNull() ? src_in : retagged;
 
     if (from_type_hint && from_type_hint->equals(type))
     {
