@@ -282,7 +282,6 @@ namespace Setting
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
 }
@@ -10394,12 +10393,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
     std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
-    /// When validation is disabled, mutation predicates may deliberately reference objects that
-    /// do not exist yet. Do not run the pruning analysis then: it would eagerly validate the
-    /// predicate and change `validate_mutation_query = 0` from deferred validation into a
-    /// submission-time exception.
-    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning]
-        && query_context->getSettingsRef()[Setting::validate_mutation_query];
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
 
     /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
     /// different time. A partition counts as analyzed only if every pruned command has seen it,

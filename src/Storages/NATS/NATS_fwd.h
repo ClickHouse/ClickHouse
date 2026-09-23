@@ -1,7 +1,6 @@
 #pragma once
 #include <Core/Types.h>
 #include <Core/Field.h>
-#include <Common/maskURIPassword.h>
 #include <optional>
 
 namespace NATS
@@ -26,7 +25,11 @@ static inline std::unordered_map<String, ValueMaskingFunc> SETTINGS_TO_HIDE =
         std::string masked_value;
         if (!value.tryGet<std::string>(masked_value))
             return {};
-        DB::maskURIPassword(&masked_value);
+        /// libnats takes the scheme as optional and ends the userinfo at the LAST '@' of the whole
+        /// value (`contrib/nats-io/src/url.c`, `natsUrl_Create`), so no URI authority bounds it and
+        /// nothing short of the whole value can be masked safely.
+        if (masked_value.contains('@'))
+            masked_value = "[HIDDEN]";
         return masked_value;
     }}
 };
