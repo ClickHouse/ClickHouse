@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -13,7 +12,7 @@ struct IndexDescription;
 class MergeTreeIndexTextPreprocessor
 {
 public:
-    MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description, ContextPtr context);
+    MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description);
 
     /// Processes n_rows rows of input column, starting at start_row.
     /// The transformation is only applied in the range [start_row, start_row + n_rows)

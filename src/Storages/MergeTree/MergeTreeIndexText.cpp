@@ -2086,11 +2086,8 @@ MergeTreeIndexText::MergeTreeIndexText(
     , params(std::move(params_))
     , tokenizer(std::move(tokenizer_))
     , posting_list_codec(std::move(posting_list_codec_))
-    /// Global context: built on merges, mutations and server load, and shared across users.
-    , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(
-        params.preprocessor, index_, Context::getGlobalContextInstance()))
-    , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(
-        params.postprocessor, index_, Context::getGlobalContextInstance()))
+    , preprocessor(std::make_shared<MergeTreeIndexTextPreprocessor>(params.preprocessor, index_))
+    , postprocessor(std::make_shared<MergeTreeIndexTextPostprocessor>(params.postprocessor, index_))
     , normalized_index_column_name(getNormalizedIndexColumnName(index_))
 {
 }
@@ -2331,23 +2328,6 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
     return std::make_shared<MergeTreeIndexText>(std::move(metadata_snapshot), index, index_params, std::move(tokenizer), std::move(posting_list_codec));
 }
 
-void checkIndexArgumentsAccess(const IndexDescription & index, ContextPtr context)
-{
-    if (index.type != TEXT_INDEX_NAME)
-        return;
-
-    auto options = convertArgumentsToOptionsMap(index.arguments);
-    auto preprocessor_ast = extractASTOption(options, ARGUMENT_PREPROCESSOR, false);
-    auto postprocessor_ast = extractASTOption(options, ARGUMENT_POSTPROCESSOR, false);
-
-    if (!preprocessor_ast && !postprocessor_ast)
-        return;
-
-    /// Built only for the access checks the resolution performs; the index rebuilds its own.
-    MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index, context);
-    MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index, context);
-}
-
 void textIndexValidator(const IndexDescription & index, bool /*attach*/, const MergeTreeSettings & settings)
 {
     auto options = convertArgumentsToOptionsMap(index.arguments);
@@ -2441,11 +2421,11 @@ void textIndexValidator(const IndexDescription & index, bool /*attach*/, const M
     /// For very strict validation of the expression we fully parse it here.
     /// However it will be parsed again for index construction, generally immediately after this call.
     /// This is a bit redundant but that doesn't impact performance anyhow because the expression is intended to be simple enough.
-    MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index, Context::getGlobalContextInstance());
+    MergeTreeIndexTextPreprocessor preprocessor(preprocessor_ast, index);
 
     /// Create the postprocessor for validation.
     /// This validates the token transformation expression (always String -> String).
-    MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index, Context::getGlobalContextInstance());
+    MergeTreeIndexTextPostprocessor postprocessor(postprocessor_ast, index);
 }
 
 }

@@ -9,6 +9,9 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Functions/FunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 #include <Storages/extractKeyExpressionList.h>
 
 #include <Storages/ReplaceAliasByExpressionVisitor.h>
@@ -47,6 +50,43 @@ void expandTextIndexTransformAliases(const ASTPtr & arguments, const ColumnsDesc
     }
 }
 
+void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
+{
+    if (const auto * func = ast->as<ASTFunction>())
+        FunctionFactory::instance().tryGet(func->name, context);
+
+    for (const auto & child : ast->children)
+        resolveFunctionsAsUser(child, context);
+}
+
+}
+
+void checkIndexArgumentsAccess(const IndexDescription & index, const ContextPtr & context)
+{
+    if (index.type != TEXT_INDEX_NAME || !index.arguments)
+        return;
+
+    for (const auto & child : index.arguments->children)
+    {
+        const auto * func = child->as<ASTFunction>();
+        if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
+            continue;
+
+        const auto * key = func->arguments->children[0]->as<ASTIdentifier>();
+        if (!key || (key->name() != "preprocessor" && key->name() != "postprocessor"))
+            continue;
+
+        auto expression = func->arguments->children[1]->clone();
+        /// `TreeRewriter` inlines these before the expression is ever resolved, so a privileged
+        /// function hidden inside one must be seen here too.
+        if (!UserDefinedSQLFunctionFactory::instance().empty())
+            UserDefinedSQLFunctionVisitor::visit(expression, context);
+
+        /// Resolving a name runs the function's `create`, which is where a grant-checked function
+        /// such as `demangle` performs its `checkAccess`. Only the names are resolved: the types are
+        /// the index validator's business, and checking them here would pre-empt its diagnostics.
+        resolveFunctionsAsUser(expression, context);
+    }
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)

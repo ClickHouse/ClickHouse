@@ -440,11 +440,6 @@ void ginIndexValidator(const IndexDescription & index, bool attach, const MergeT
 MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & settings);
 void textIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & settings);
 
-/// Authorises the expressions an index carries in its arguments (the text index
-/// `preprocessor`/`postprocessor`). Call only where a user declares an index: everything downstream
-/// resolves them under the global full-access context, and revalidation would check the wrong user.
-void checkIndexArgumentsAccess(const IndexDescription & index, ContextPtr context);
-
 String getIndexFileName(const String & index_name, bool escape_filename);
 
 /// Check if an index substream file exists for the part. Returns true if the file is listed

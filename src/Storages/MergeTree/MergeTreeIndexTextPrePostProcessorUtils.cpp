@@ -14,7 +14,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_QUERY;
-    extern const int LOGICAL_ERROR;
 }
 
 void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name, const String & identifier_name)
@@ -32,11 +31,9 @@ void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name,
         replaceExpressionToIdentifier(child, expression_name, identifier_name);
 }
 
-ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns, ContextPtr context)
+ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns)
 {
-    if (!context)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "No context to resolve a text index transform expression against");
-
+    auto context = Context::getGlobalContextInstance();
     auto syntax_result = TreeRewriter(context).analyze(expression_ast, source_columns);
     auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false, true);
 

@@ -93,13 +93,12 @@ ActionsDAG createActionsDAGForPreprocessor(
     const NamesAndTypesList & source_columns,
     const String & source_name,
     const DataTypePtr & source_type,
-    ASTPtr expression_ast,
-    ContextPtr context)
+    ASTPtr expression_ast)
 {
     if (expression_ast == nullptr)
         return ActionsDAG();
 
-    auto actions_dag = buildActionsDAGFromAST(expression_ast, source_columns, context);
+    auto actions_dag = buildActionsDAGFromAST(expression_ast, source_columns);
     validateTransformActionsDAG(actions_dag, "preprocessor", source_name);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
@@ -125,8 +124,7 @@ ActionsDAG createActionsDAGForPreprocessor(
 
 }
 
-MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(
-    ASTPtr expression_ast, const IndexDescription & index_description, ContextPtr context)
+MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
     : index_column_type(index_description.data_types.front())
     , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, true))
     /// Use source index columns to execute index and preprocessor expressions.
@@ -134,22 +132,19 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(
         index_description.expression->getRequiredColumnsWithTypes(),
         index_description.column_names.front(),
         index_column_type,
-        convertASTForIndexColumn(index_description, expression_ast, false),
-        context))
+        convertASTForIndexColumn(index_description, expression_ast, false)))
     /// Assume that index expression is already executed and use a placeholder column to execute preprocessor expression.
     , actions_for_index_column(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, index_column_type}},
         preprocessor_column_name,
         index_column_type,
-        convertASTForIndexColumn(index_description, expression_ast, true),
-        context))
+        convertASTForIndexColumn(index_description, expression_ast, true)))
     /// Take constant string and execute preprocessor expression.
     , actions_for_constant(createActionsDAGForPreprocessor(
         {{preprocessor_column_name, std::make_shared<DataTypeString>()}},
         preprocessor_column_name,
         std::make_shared<DataTypeString>(),
-        convertASTForConstant(index_description, expression_ast),
-        context))
+        convertASTForConstant(index_description, expression_ast)))
 {
     if (expression_ast)
     {

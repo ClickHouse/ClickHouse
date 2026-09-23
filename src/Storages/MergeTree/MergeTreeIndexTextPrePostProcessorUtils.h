@@ -2,7 +2,6 @@
 
 #include <Core/NamesAndTypes.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Parsers/IAST_fwd.h>
 
@@ -15,10 +14,7 @@ void replaceExpressionToIdentifier(ASTPtr & ast, const String & expression_name,
 
 /// Builds an ActionsDAG for `expression_ast` over `source_columns`, projects to the single output,
 /// and removes unused actions.
-///
-/// Resolving a function name runs its `create`, where a grant-checked function performs its
-/// `checkAccess`, so `context` decides who the expression is authorised as.
-ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns, ContextPtr context);
+ActionsDAG buildActionsDAGFromAST(ASTPtr expression_ast, const NamesAndTypesList & source_columns);
 
 /// Validates common text-index transform requirements shared by preprocessor and postprocessor
 /// expressions: a single functional output, at least one expression on top of the source column,

@@ -6,7 +6,6 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/ActionsDAG.h>
-#include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ITokenizer.h>
 #include <Parsers/ASTFunction.h>
@@ -147,8 +146,7 @@ std::optional<MergeTreeIndexTextInlineFilter> tryExtractInlineFilter(const ASTPt
 
 }
 
-MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(
-    ASTPtr expression_ast, const IndexDescription & index_description, ContextPtr context)
+MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
     : string_type(std::make_shared<DataTypeString>())
 {
     if (!expression_ast)
@@ -166,7 +164,7 @@ MergeTreeIndexTextPostprocessor::MergeTreeIndexTextPostprocessor(
 
     /// Build ActionsDAG treating the input as a plain String token.
     NamesAndTypesList source_columns{{postprocessor_token_name, string_type}};
-    ActionsDAG actions_dag = buildActionsDAGFromAST(transformed_ast, source_columns, context);
+    ActionsDAG actions_dag = buildActionsDAGFromAST(transformed_ast, source_columns);
     validateTransformActionsDAG(actions_dag, "postprocessor", postprocessor_token_name);
 
     const ActionsDAG::NodeRawConstPtrs & outputs = actions_dag.getOutputs();
@@ -266,7 +264,6 @@ ActionsDAG MergeTreeIndexTextPostprocessor::getOriginalActionsDAG(
         std::move(tokens_ast));
 
     NamesAndTypesList source_columns{{col_name, col_type}};
-    /// Global context: an index that exists was authorised when it was defined, not per reader.
-    return buildActionsDAGFromAST(std::move(expr), source_columns, Context::getGlobalContextInstance());
+    return buildActionsDAGFromAST(std::move(expr), source_columns);
 }
 }
