@@ -218,11 +218,11 @@ SELECT key FROM (
 ) WHERE intDiv(1, x) > 0;
 DROP TABLE t_04366_nonkey;
 
--- `compatibility` with a version before 26.7 restores the pre-26.7 plan (the push-down shipped
--- in 26.7, so SettingsChangesHistory registers the semantic change under that version); 26.7
--- through 26.9 had it enabled, so those must keep it on.
-SET compatibility = '26.6';
-SELECT getSetting('query_plan_filter_push_down_below_limit_by');
+-- `compatibility` with a version before the one the setting was added in turns it off, so the
+-- filter stays above the `LIMIT BY`; from that version on, and unset, it is on.
 SET compatibility = '26.9';
 SELECT getSetting('query_plan_filter_push_down_below_limit_by');
+SET compatibility = '26.10';
+SELECT getSetting('query_plan_filter_push_down_below_limit_by');
 SET compatibility = '';
+SELECT getSetting('query_plan_filter_push_down_below_limit_by');
