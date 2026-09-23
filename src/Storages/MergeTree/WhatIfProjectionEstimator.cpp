@@ -478,7 +478,7 @@ MarkRanges pruneSyntheticProjectionPart(
                                   .withBytesAndRows(0, data.rows, 0)
                                   .build();
         synthetic_part->index_granularity = granularity;
-        synthetic_part->setIndex(index_columns);
+        synthetic_part->setIndex(index_columns, *projection.metadata);
 
         RangesInDataPart synthetic_ranges(
             synthetic_part, parent_ranges.data_part, parent_ranges.part_index_in_query, parent_ranges.part_starting_offset_in_query);

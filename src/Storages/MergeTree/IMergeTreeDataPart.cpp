@@ -751,7 +751,7 @@ void IMergeTreeDataPart::removeFromVectorIndexCache(VectorSimilarityIndexCache *
     vector_similarity_index_cache->removeEntriesFromCache(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart());
 }
 
-void IMergeTreeDataPart::setIndex(Columns index_columns)
+void IMergeTreeDataPart::setIndex(Columns index_columns, const StorageInMemoryMetadata & metadata_snapshot)
 {
     std::scoped_lock lock(index_mutex);
     if (index)
@@ -764,7 +764,7 @@ void IMergeTreeDataPart::setIndex(Columns index_columns)
     ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
 
     auto marks_count = index_granularity->getMarksCount();
-    index_columns = correctVirtualColumnsInIndex(marks_count, std::move(index_columns));
+    index_columns = correctVirtualColumnsInIndex(marks_count, std::move(index_columns), metadata_snapshot);
     index_columns = optimizeIndexColumns(marks_count, std::move(index_columns));
     index = std::make_shared<Index>(std::move(index_columns));
 }
@@ -1751,7 +1751,7 @@ ColumnsT IMergeTreeDataPart::optimizeIndexColumns(size_t marks_count, ColumnsT i
 }
 
 template <typename ColumnsT>
-ColumnsT IMergeTreeDataPart::correctVirtualColumnsInIndex(size_t marks_count, ColumnsT index_columns) const
+ColumnsT IMergeTreeDataPart::correctVirtualColumnsInIndex(size_t marks_count, ColumnsT index_columns, const StorageInMemoryMetadata & metadata_snapshot) const
 {
     const auto & part_info = isProjectionPart() ? getParentPart()->info : info;
     if (marks_count == 0 || part_info.getBlocksCount() > 1 || part_info.isPatch())
@@ -1766,8 +1766,7 @@ ColumnsT IMergeTreeDataPart::correctVirtualColumnsInIndex(size_t marks_count, Co
             corrected.push_back(std::move(col));
     };
 
-    const auto metadata_snapshot = getMetadataSnapshot();
-    const auto & primary_key = metadata_snapshot->getPrimaryKey();
+    const auto & primary_key = metadata_snapshot.getPrimaryKey();
     for (size_t j = 0; j < index_columns.size(); ++j)
     {
         if (primary_key.column_names[j] == BlockNumberColumn::name)
@@ -1823,7 +1822,7 @@ std::shared_ptr<IMergeTreeDataPart::Index> IMergeTreeDataPart::loadIndex() const
             key_serializations[j]->deserializeBinary(*loaded_index[j], *index_file, format_settings);
     }
 
-    loaded_index = correctVirtualColumnsInIndex(marks_count, std::move(loaded_index));
+    loaded_index = correctVirtualColumnsInIndex(marks_count, std::move(loaded_index), *metadata_snapshot);
     loaded_index = optimizeIndexColumns(marks_count, std::move(loaded_index));
     size_t total_bytes = 0;
 

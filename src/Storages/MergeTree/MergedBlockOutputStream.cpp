@@ -291,7 +291,7 @@ MergedBlockOutputStream::Finalizer MergedBlockOutputStream::finalizePartAsync(
     /// virtual columns and some of them were not possible to calculate correctly before commit.
     if (auto computed_index = writer->releaseIndexColumns())
         if (init_index)
-            new_part->setIndex(std::move(*computed_index));
+            new_part->setIndex(std::move(*computed_index), *metadata_snapshot);
 
     /// In mutation, existing_rows_count is already calculated in PartMergerWriter
     /// In merge situation, lightweight deleted rows was physically deleted, existing_rows_count equals rows_count
