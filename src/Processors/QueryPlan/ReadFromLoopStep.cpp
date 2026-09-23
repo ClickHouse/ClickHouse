@@ -4,7 +4,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
-#include <Interpreters/InterpreterSelectWithUnionQuery.h>
+#include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -29,7 +29,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -72,20 +71,10 @@ namespace
 
         auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false);
 
-        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        {
-            InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
-            if (query_info.storage_limits)
-                interpreter.addStorageLimits(*query_info.storage_limits);
-            plan = std::move(interpreter).extractQueryPlan();
-        }
-        else
-        {
-            InterpreterSelectWithUnionQuery interpreter(select_ast, context, options, column_names);
-            if (query_info.storage_limits)
-                interpreter.addStorageLimits(*query_info.storage_limits);
-            interpreter.buildQueryPlan(plan);
-        }
+        InterpreterSelectQueryAnalyzer interpreter(select_ast, context, options, column_names);
+        if (query_info.storage_limits)
+            interpreter.addStorageLimits(*query_info.storage_limits);
+        plan = std::move(interpreter).extractQueryPlan();
     }
 }
 
@@ -99,7 +88,8 @@ public:
             const StorageSnapshotPtr & storage_snapshot_,
             ContextPtr & context_,
             const StorageID & inner_table_id_,
-            ASTPtr inner_table_function_ast_)
+            ASTPtr inner_table_function_ast_,
+            String repeated_build_scope_name_)
             : ISource(std::make_shared<const Block>(storage_snapshot_->getSampleBlockForColumns(column_names_)))
             , column_names(column_names_)
             , query_info(query_info_)
@@ -107,6 +97,7 @@ public:
             , context(context_)
             , inner_table_id(inner_table_id_)
             , inner_table_function_ast(std::move(inner_table_function_ast_))
+            , repeated_build_scope_name(std::move(repeated_build_scope_name_))
     {
     }
 
@@ -151,6 +142,11 @@ public:
                 step->setStepDescription("Converting columns");
                 plan.addStep(std::move(step));
             }
+
+            /// Mark the region, so that the joins of the looped relation are counted once instead of
+            /// once per pass. The name was taken while the pipeline holding this `loop` was assembled, so
+            /// it is the same on every rebuild of that pipeline, see `makeScopeForPipelineBuiltLater`.
+            QueryExecutionCounters::RepeatedPipelineBuildScope repeated_build_scope(repeated_build_scope_name);
 
             auto builder = plan.buildQueryPipeline(QueryPlanOptimizationSettings(context), BuildQueryPipelineSettings(context));
             QueryPlanResourceHolder resources;
@@ -207,6 +203,8 @@ private:
     ContextPtr context;
     StorageID inner_table_id;
     ASTPtr inner_table_function_ast;
+    /// Names this `loop` for the deduplication of the joins it rebuilds, see `initLoop`.
+    String repeated_build_scope_name;
     ContextPtr inner_context;
     // add retries. If the source failed to pull X times in a row we'd better to fail here not to hang
     size_t retries_count = 0;
@@ -246,7 +244,8 @@ ReadFromLoopStep::ReadFromLoopStep(
 Pipe ReadFromLoopStep::makePipe()
 {
     return Pipe(std::make_shared<LoopSource>(
-            column_names, query_info, storage_snapshot, context, inner_table_id, inner_table_function_ast));
+            column_names, query_info, storage_snapshot, context, inner_table_id, inner_table_function_ast,
+            QueryExecutionCounters::makeScopeForPipelineBuiltLater("loop")));
 }
 
 void ReadFromLoopStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)

@@ -22,12 +22,28 @@ String quoteStringSingleQuoteWithSingleQuote(std::string_view x)
 }
 
 
+String quoteStringPostgreSQL(std::string_view x)
+{
+    WriteBufferFromOwnString wb;
+    writeQuotedStringPostgreSQLLossless(x, wb);
+    return wb.str();
+}
+
+
 String doubleQuoteString(std::string_view x)
 {
     String res(2 + x.size(), '\0');
     WriteBufferFromString wb(res);
     writeDoubleQuotedString(x, wb);
     return res;
+}
+
+
+String doubleQuoteStringPostgreSQL(std::string_view x)
+{
+    WriteBufferFromOwnString wb;
+    writeDoubleQuotedStringPostgreSQL(x, wb);
+    return wb.str();
 }
 
 
