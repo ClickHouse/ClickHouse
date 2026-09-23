@@ -189,6 +189,33 @@ FROM prometheusQuery(
     'histogram_quantile(0.5, timestamp(float32_histogram_bucket))',
     toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
 
+-- `and` / `unless` return left-hand samples only, so an empty result keeps the left operand's value type
+-- even when the right operand is `timestamp`.
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'clamp(vector(1), 2, 1) and timestamp(vector(1))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(any(value)), count()
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'clamp(vector(1), 2, 1) unless timestamp(vector(1))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+-- A comparison without `bool` is a filter: the result keeps the value type of the filtered side.
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    'float32_timestamp_metric != timestamp(vector(1))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
+SELECT toTypeName(value), value
+FROM prometheusQuery(
+    'promql_timestamp_float32',
+    '1 < timestamp(vector(1))',
+    toDateTime64('2025-11-30 10:30:10.250', 3, 'UTC'));
+
 DROP TABLE promql_timestamp_float32;
 DROP TABLE promql_timestamp_float32_tags;
 DROP TABLE promql_timestamp_float32_samples;

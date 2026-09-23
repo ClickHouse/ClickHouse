@@ -155,7 +155,10 @@ SQLQueryPiece applyComparisonOperator(
         if (right_argument.type == ResultType::INSTANT_VECTOR)
             right_argument = toVectorGrid(std::move(right_argument), context);
 
-        return applySimpleBinaryOperator(
+        /// The result values come from the filtered side only, so the result keeps its value type.
+        auto value_data_type = filter_left ? left_argument.value_data_type : right_argument.value_data_type;
+
+        auto res = applySimpleBinaryOperator(
             operator_node,
             std::move(left_argument),
             std::move(right_argument),
@@ -163,6 +166,9 @@ SQLQueryPiece applyComparisonOperator(
             apply_function_to_ast,
             /* drop_metric_name = */ false,
             /* allow_grouping_modifier_copy_metric_name = */ true);
+
+        res.value_data_type = value_data_type;
+        return res;
     }
 }
 

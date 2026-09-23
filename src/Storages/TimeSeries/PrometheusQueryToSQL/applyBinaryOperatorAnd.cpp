@@ -25,7 +25,7 @@ SQLQueryPiece applyBinaryOperatorAnd(
     if ((left_argument.store_method == StoreMethod::EMPTY) || (right_argument.store_method == StoreMethod::EMPTY))
     {
         SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY};
-        res.value_data_type = mergeValueDataType(left_argument.value_data_type, right_argument.value_data_type);
+        res.value_data_type = left_argument.value_data_type;
         return res;
     }
 
