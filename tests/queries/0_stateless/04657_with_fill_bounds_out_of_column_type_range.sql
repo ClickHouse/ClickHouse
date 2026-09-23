@@ -72,39 +72,25 @@ SELECT count(), min(d), max(d) FROM (SELECT toDate('2020-01-01') AS d ORDER BY d
 -- STALENESS terminates the filling in-domain even with an INTERVAL step, so the TO bound is accepted.
 SELECT count(), min(d), max(d) FROM (SELECT toDate('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 70000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
 
-SELECT 'an INTERVAL step clamps at the calendar boundary, which for Date32 and DateTime64 is inside the storage range';
+SELECT 'an INTERVAL step clamps at the calendar boundary of Date32 and DateTime64, so any TO is accepted';
 
 -- The calendar arithmetic of an INTERVAL step clamps at the representable calendar, [0000-01-01, 9999-12-31],
--- and for Date32 and DateTime64 that window is strictly narrower than the storage type: a TO bound beyond the
--- calendar boundary fits the storage type but can never be reached, so without the check these fills keep
--- generating the clamped boundary value forever.
-SELECT * FROM (SELECT toDate32('9999-12-31') AS d ORDER BY d ASC WITH FILL TO 3000000 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDate32('9999-06-01') AS d ORDER BY d ASC WITH FILL TO 2932897 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDate32('0001-06-01') AS d ORDER BY d DESC WITH FILL TO -800000 STEP INTERVAL -1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDateTime64('9999-06-01 00:00:00.123', 3, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDateTime64('0001-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO -70000000000 STEP INTERVAL -100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- The calendar clamp happens in the local civil calendar of the column's time zone, so the boundary expressed
--- in raw ticks is shifted by the UTC offset: local 9999-12-31 23:59:59 is 253402250399 in Etc/GMT-14 (UTC+14)
--- and 253402343999 in Etc/GMT+12 (UTC-12), while local 0000-01-01 00:00:00 in Etc/GMT+12 is -62167176000.
--- A TO within the UTC calendar window but beyond the local one can never be reached.
-SELECT * FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'Etc/GMT-14') AS t ORDER BY t ASC WITH FILL TO 253402250400 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDateTime64('2000-01-01 00:00:00.123', 3, 'Etc/GMT-14') AS t ORDER BY t ASC WITH FILL TO 253402250400000 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDateTime64('0001-06-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t DESC WITH FILL TO -62167219200 STEP INTERVAL -100 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
-SELECT * FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL TO 253402344000 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- A TO beyond the UTC calendar window but within the local one is accepted (the anchor steps exactly onto the
--- exclusive bound, so the fill terminates with the anchor row alone).
-SELECT count() FROM (SELECT toDateTime64('9998-12-31 23:59:59', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL TO 253402343999 STEP INTERVAL 1 YEAR);
--- The exclusive TO bound at exactly the calendar boundary is reachable and terminates. Only acceptance and
--- termination are asserted: an anchor beyond the DateLUT table takes the out-of-range calendar path, whose
--- clamped values are a pre-existing data-dependent artifact (see the pull request description). The anchor
--- steps exactly onto the boundary; an anchor whose sequence would step over it instead stagnates there
--- forever, which is the data-dependent shape that stays unfixed without a FROM.
+-- which for Date32 and DateTime64 is strictly narrower than the storage type: a step that would leave the
+-- calendar returns its input unchanged, and a step that no longer advances the value ends the filling. So a TO
+-- beyond the calendar boundary is accepted, and the fill stops at the last value it can reach.
+SELECT count(), min(d), max(d) FROM (SELECT toDate32('9999-12-31') AS d ORDER BY d ASC WITH FILL TO 3000000 STEP INTERVAL 1 YEAR);
+SELECT count(), min(d), max(d) FROM (SELECT toDate32('9999-06-01') AS d ORDER BY d ASC WITH FILL TO 2932897 STEP INTERVAL 1 YEAR);
+SELECT count(), min(d), max(d) FROM (SELECT toDate32('0001-06-01') AS d ORDER BY d DESC WITH FILL TO -800000 STEP INTERVAL -1 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-06-01 00:00:00.123', 3, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP INTERVAL 1 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('0001-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO -70000000000 STEP INTERVAL -100 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2000-01-01 00:00:00', 0, 'Etc/GMT-14') AS t ORDER BY t ASC WITH FILL TO 253402250400 STEP INTERVAL 1000 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'Etc/GMT+12') AS t ORDER BY t ASC WITH FILL TO 253402344000 STEP INTERVAL 1 YEAR);
+-- The exclusive TO bound at exactly the calendar boundary is reachable and terminates.
 SELECT count() > 0 FROM (SELECT toDate32('9995-12-31') AS d ORDER BY d ASC WITH FILL TO 2932896 STEP INTERVAL 1 YEAR);
 -- In-range INTERVAL fills over Date32 and DateTime64 are unchanged.
 SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate32('2020-01-01') TO toDate32('2027-01-01') STEP INTERVAL 1 YEAR);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('2020-01-03 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('2020-01-01 00:00:00', 0, 'UTC') TO toDateTime64('2020-01-05 00:00:00', 0, 'UTC') STEP INTERVAL 1 DAY);
--- STALENESS terminates the filling in-domain, so an out-of-calendar TO is accepted.
 SELECT count(), min(d), max(d) FROM (SELECT toDate32('2026-03-05') AS d ORDER BY d ASC WITH FILL TO 3000000 STEP INTERVAL 1 YEAR STALENESS INTERVAL 3 YEAR);
 
 SELECT 'bounds between the calendar boundary and the storage boundary of Date32 and DateTime64 are invalid';
@@ -155,21 +141,15 @@ SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-12-31 23:59:59.998', 3, 'UTC') TO 253402300800 STEP 0.001);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-12-31 23:59:58', 0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 253402300800 STEP 1);
 
-SELECT 'an INTERVAL step that stagnates at the calendar boundary before an in-range TO is rejected';
+SELECT 'an INTERVAL step that stagnates at the calendar boundary before an in-range TO stops there';
 
 -- The calendar arithmetic returns its input unchanged when the result would leave the representable calendar,
--- so the sequence can stop advancing strictly below a perfectly representable TO and never terminate. With an
--- explicit FROM the whole sequence is known up front, and a fill that provably stagnates is rejected.
-SELECT t FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-12-31 00:00:00', 0, 'UTC') STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- The stagnation may strike several steps after FROM.
-SELECT t FROM (SELECT toDateTime64('9995-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9995-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-12-31 00:00:00', 0, 'UTC') STEP INTERVAL 2 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- A TO just above the stagnation point is still unreachable.
-SELECT t FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9998-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-06-02 00:00:00', 0, 'UTC') STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- Date32 stagnates the same way (day number 2932501 is 9998-12-01, below the boundary 2932896 = 9999-12-31).
-SELECT d FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM 2932501 TO 2932896 STEP INTERVAL 1 YEAR) FORMAT Null; -- { serverError INVALID_WITH_FILL_EXPRESSION }
--- A sequence that crosses TO before reaching the calendar boundary terminates and is accepted.
+-- so the sequence can stop advancing strictly below a perfectly representable TO: the filling ends there.
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9999-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-12-31 00:00:00', 0, 'UTC') STEP INTERVAL 1 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9995-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9995-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-12-31 00:00:00', 0, 'UTC') STEP INTERVAL 2 YEAR);
+SELECT count(), min(d), max(d) FROM (SELECT toDate32('2000-01-01') AS d ORDER BY d ASC WITH FILL FROM 2932501 TO 2932896 STEP INTERVAL 1 YEAR);
+SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9990-01-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9990-01-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-12-31 23:59:59', 0, 'UTC') STEP INTERVAL 1 YEAR);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime64('9998-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime64('9998-06-01 00:00:00', 0, 'UTC') TO toDateTime64('9999-01-01 00:00:00', 0, 'UTC') STEP INTERVAL 1 YEAR);
--- Without FROM the sequence is anchored at a data value and nothing is provable up front.
 SELECT count() FROM (SELECT toDateTime64('9999-06-01 00:00:00', 0, 'UTC') AS t ORDER BY t DESC WITH FILL TO toDateTime64('9999-01-01 00:00:00', 0, 'UTC') STEP INTERVAL -1 MONTH);
 
 SELECT 'an INTERVAL step that wraps around the column type before an in-range TO is rejected';

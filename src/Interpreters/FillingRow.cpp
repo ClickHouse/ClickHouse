@@ -47,42 +47,6 @@ bool equals(const Field & lhs, const Field & rhs)
     return accurateEquals(lhs, rhs);
 }
 
-bool fillValueWithinCalendarRange(const Field & value, const IDataType & type)
-{
-    /// For Date32 and DateTime64 the boundaries of the representable calendar lie strictly inside the range of
-    /// the storage type, and the values between the two are invalid: nothing else produces them (conversions
-    /// clamp at the calendar boundary), the serializers render them as the clamped boundary date, and the
-    /// calendar arithmetic of an INTERVAL step clamps back into the calendar from them. (For Date and DateTime
-    /// the whole storage range maps into the calendar, so there is nothing to check there.)
-    WhichDataType which(type);
-
-    if (which.isDate32() && value.getType() == Field::Types::Int64)
-    {
-        const Int64 day_num = value.safeGet<Int64>();
-        return day_num >= DATE_LUT_MIN_EXTEND_DAY_NUM && day_num <= DATE_LUT_MAX_EXTEND_DAY_NUM;
-    }
-
-    if (which.isDateTime64() && value.getType() == Field::Types::Decimal64)
-    {
-        /// The calendar clamps in the local civil calendar of the column's time zone (the local year is clamped
-        /// to [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary expressed in raw ticks is
-        /// shifted by the UTC offset of the time zone: the last representable second is the raw value of local
-        /// 9999-12-31 23:59:59, not of the same instant in UTC.
-        const auto & time_zone = static_cast<const DataTypeDateTime64 &>(type).getTimeZone();
-        const Int64 max_seconds = time_zone.makeDateTime(DATE_LUT_MAX_REPRESENTABLE_YEAR, 12, 31, 23, 59, 59);
-        const Int64 min_seconds = time_zone.makeDateTime(DATE_LUT_MIN_REPRESENTABLE_YEAR, 1, 1, 0, 0, 0);
-        const auto & decimal = value.safeGet<DecimalField<Decimal64>>();
-        const Int128 scale_multiplier = DecimalUtils::scaleMultiplier<Int128>(decimal.getScale());
-        /// The last representable time point of the calendar has all its sub-second digits set.
-        const Int128 max_ticks = static_cast<Int128>(max_seconds) * scale_multiplier + (scale_multiplier - 1);
-        const Int128 min_ticks = static_cast<Int128>(min_seconds) * scale_multiplier;
-        const Int128 ticks = decimal.getValue().value;
-        return ticks >= min_ticks && ticks <= max_ticks;
-    }
-
-    return true;
-}
-
 bool fillValueFitsColumnType(const Field & value, const IDataType & type)
 {
     const auto [min, max] = fillRepresentableRangeOfColumnType(type);
@@ -110,10 +74,14 @@ std::pair<Field, Field> fillRepresentableRangeOfColumnType(const IDataType & typ
 
     if (which.isDateTime64())
     {
-        /// See the comment in `fillValueWithinCalendarRange`: the calendar boundary in raw ticks is shifted by
-        /// the UTC offset of the column's time zone, and the last representable time point has all its sub-second
-        /// digits set. For a high enough scale the calendar window in ticks is wider than the Int64 storage of
-        /// the column, so the window is clamped to the storage range.
+        /// For Date32 and DateTime64 the boundaries of the representable calendar lie strictly inside the range of
+        /// the storage type, and the values between the two are invalid: nothing else produces them (conversions
+        /// clamp at the calendar boundary) and the serializers render them as the clamped boundary date.
+        /// The calendar clamps in the local civil calendar of the column's time zone (the local year is clamped to
+        /// [0000, 9999], see e.g. DateLUTImpl::addYearsOutOfRange), so the boundary expressed in raw ticks is
+        /// shifted by the UTC offset of the time zone, and the last representable time point has all its
+        /// sub-second digits set. For a high enough scale the calendar window in ticks is wider than the Int64
+        /// storage of the column, so the window is clamped to the storage range.
         const auto & date_time_type = static_cast<const DataTypeDateTime64 &>(type);
         const auto & time_zone = date_time_type.getTimeZone();
         const UInt32 scale = date_time_type.getScale();
@@ -304,11 +272,11 @@ void FillingRow::checkStepAdvancesInSortingDirection(const Field & current_value
     throw Exception(
         ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
         "WITH FILL step does not advance the value {} of the ORDER BY column {} of type {} in the sorting direction: "
-        "the next value is {}. This means the sequence wrapped around the range of the column type or stagnated "
-        "at a fixed point of the step function, so continuing would generate values the column cannot hold",
+        "the next value is {}. This means the sequence wrapped around the range of the column type, so continuing "
+        "would generate values the column cannot hold",
         applyVisitor(FieldVisitorToString(), current_value),
         sort_description[column_ind].column_name,
-        descr.fill_column_type ? descr.fill_column_type->getName() : "unknown",
+        descr.fill_column_type->getName(),
         applyVisitor(FieldVisitorToString(), next_value));
 }
 
@@ -381,10 +349,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
         if (!less(next_value, constraints[i], getDirection(i)))
             continue;
 
-        /// Checked only after the constraint cut-off above: a step that fails to advance (wrapped around the
-        /// column type, stagnated at a fixed point of the calendar arithmetic or of the float addition, or was
-        /// applied to NaN) stops the filling at the constraint the same way it always did, and only a sequence
-        /// that would otherwise loop forever is rejected.
+        /// Checked only after the cut-offs above: a step that leaves the value unchanged (a fixed point of the
+        /// calendar arithmetic or of the float addition) has already ended the filling of this column, and a step
+        /// that turns back beyond the constraint stops the filling at the constraint the same way it always did.
+        /// Only a sequence that wrapped around the column type before the constraint is rejected.
         checkStepAdvancesInSortingDirection(row[i], next_value, i);
 
         checkGeneratedValueFitsColumnType(next_value, i);
@@ -411,10 +379,10 @@ bool FillingRow::next(const FillingRow & next_original_row, bool& value_changed)
     if (!constraints[pos].isNull() && !less(next_value, constraints[pos], getDirection(pos)))
         return false;
 
-    /// Checked only after the cut-offs above: a step that fails to advance (wrapped around the column type,
-    /// stagnated at a fixed point of the calendar arithmetic or of the float addition, or was applied to NaN)
-    /// stops the filling at the border the same way it always did, and only a sequence that would otherwise
-    /// loop forever is rejected.
+    /// Checked only after the cut-offs above: a step that leaves the value unchanged (a fixed point of the
+    /// calendar arithmetic or of the float addition) has already ended the filling, and a step that turns back
+    /// beyond the border stops the filling at the border the same way it always did. Only a sequence that
+    /// wrapped around the column type before the border is rejected.
     checkStepAdvancesInSortingDirection(row[pos], next_value, pos);
 
     checkGeneratedValueFitsColumnType(next_value, pos);

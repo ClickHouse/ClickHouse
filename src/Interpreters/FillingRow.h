@@ -9,11 +9,6 @@ namespace DB
 bool less(const Field & lhs, const Field & rhs, int direction);
 bool equals(const Field & lhs, const Field & rhs);
 
-/// Whether `value` lies within the window of the calendar representable by the type - the `[0000-01-01, 9999-12-31]`
-/// window of `DateLUTImpl`, taken in the local civil calendar of the column's time zone. Only `Date32` and
-/// `DateTime64` have a calendar window narrower than their storage type; for every other type the answer is `true`.
-bool fillValueWithinCalendarRange(const Field & value, const IDataType & type);
-
 /// Whether `value` is a valid value of a fill column of type `type`: it fits the range of the storage type and,
 /// for the calendar-backed `Date32` and `DateTime64`, the representable calendar window as well. Types that
 /// saturate instead of wrapping around (`Float`, `Decimal`) are not checked and always pass.
@@ -36,8 +31,7 @@ class FillingRow
     void checkGeneratedValueFitsColumnType(const Field & value, size_t column_ind) const;
 
     /// Throws when stepping from `current_value` produced a `next_value` that is not strictly further in the
-    /// sorting direction - the sequence wrapped around the column type or stagnated at a fixed point of the step
-    /// function, so continuing would generate garbage or hang.
+    /// sorting direction - the sequence wrapped around the column type, so continuing would generate garbage.
     void checkStepAdvancesInSortingDirection(const Field & current_value, const Field & next_value, size_t column_ind) const;
 
     bool hasSomeConstraints(size_t pos) const;

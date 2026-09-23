@@ -244,10 +244,9 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   *
   * An INTERVAL step makes an out-of-range TO in the fill direction fatal no matter where the sequence is anchored,
   * so TO itself is the value required to fit. The step functions (see Add*Impl in FunctionDateOrDateTimeAddInterval.h)
-  * perform the calendar arithmetic in the column's own native integer type - UInt16 for Date, UInt32 for DateTime,
-  * Int32 for Date32 - so unlike a plain numeric step, which advances an Int64 that eventually exceeds any TO, an
-  * INTERVAL step wraps or saturates within the column domain and can never reach a TO outside of it: filling never
-  * terminates. `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01 and 2070-01-01,
+  * perform the calendar arithmetic in the column's own native integer type - UInt16 for Date, UInt32 for DateTime -
+  * so unlike a plain numeric step, which advances an Int64 that eventually exceeds any TO, an INTERVAL step wraps
+  * around within the column domain and can never reach a TO outside of it. `WITH FILL FROM toDate(0) TO 70000 STEP INTERVAL 100 YEAR` generates 1970-01-01 and 2070-01-01,
   * then wraps around 1990 and cycles through the UInt16 domain forever, all of it below TO = 70000.
   * A TO on the other side - out of range against the fill direction - is harmless: every possible anchor is
   * already past it, so filling never takes a single step and the query is a no-op
@@ -256,14 +255,12 @@ static bool tryConvertFields(FillColumnDescription & descr, const DataTypePtr & 
   * a TO on the non-filling side cannot reach this check: the FROM would lie even further out of range and is
   * rejected first.)
   *
-  * On top of that, the calendar arithmetic clamps at the boundaries of the representable calendar - the window
-  * [0000-01-01, 9999-12-31] of DateLUTImpl, taken in the local civil calendar of the column's time zone - and
-  * for Date32 and DateTime64 that window is strictly narrower than the range of the storage type. A TO bound
-  * beyond the calendar boundary in the fill direction passes the storage-range check and is still unreachable:
-  * the filling keeps generating the boundary value forever. Such bounds are checked separately in
-  * checkFillBoundsFitColumnType against the calendar limits, not just the storage limits. (For Date the
-  * calendar clamp coincides with the UInt16 storage boundary, and DateTime wraps within UInt32 where any
-  * in-range TO stays reachable from some anchor, so the storage check suffices there.)
+  * The wraparound only happens for Date and DateTime. For Date32 and DateTime64 the calendar arithmetic clamps
+  * at the boundaries of the representable calendar instead - the window [0000-01-01, 9999-12-31] of DateLUTImpl,
+  * which lies strictly inside the range of their storage type: adding an interval whose result would leave the
+  * calendar returns the value unchanged (see e.g. DateLUTImpl::addYearsOutOfRange). A step that no longer advances
+  * the value ends the filling (see `FillingRow::next`), so a TO beyond the calendar boundary simply lets the
+  * filling run up to the last value it can reach, and nothing is required to fit there.
   *
   * STALENESS is the exception: it terminates the filling in-domain, see below.
   *
@@ -311,6 +308,10 @@ static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDes
     /// fill direction is a guaranteed no-op instead - clamping towards zero keeps it accepted.
     if (descr.step_kind)
     {
+        const WhichDataType which(descr.fill_column_type);
+        if (which.isDate32() || which.isDateTime64())
+            return {};
+
         const Int128 fatal_case = direction > 0 ? std::max<Int128>(to, 0) : std::min<Int128>(to, 0);
         /// The clamp towards zero also brought the value into the Int64 range.
         return as_bound_field(static_cast<Int64>(fatal_case));
@@ -359,41 +360,8 @@ static std::optional<Field> fillValueRequiredToFitColumnType(const FillColumnDes
   */
 static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, const DataTypePtr & type, int direction)
 {
-    WhichDataType which(type);
-
-    /// For Date32 and DateTime64 the boundaries of the representable calendar lie strictly inside the range of
-    /// the storage type, and the values between the two are invalid: nothing else produces them (conversions
-    /// clamp at the calendar boundary), the serializers render them as the clamped boundary date, and the
-    /// calendar arithmetic of an INTERVAL step clamps back into the calendar from them. A bound in that gap
-    /// fits the storage type but is out of range of the *column type*, so the representability check below
-    /// tests the calendar window as well - `fillValueFitsColumnType` does both. The window is also needed on
-    /// its own right here: the INTERVAL-step check just below reports it with a dedicated message.
-    auto within_calendar = [&](const Field & value) { return fillValueWithinCalendarRange(value, *type); };
-
-    /// A TO bound beyond the calendar boundary in the fill direction can never be reached by an INTERVAL step
-    /// even when it fits the storage type - the calendar arithmetic clamps at the boundary - and the filling
-    /// would keep generating the clamped boundary value forever. STALENESS terminates the filling in-domain
-    /// (see below), so it lifts the check. This duplicates the generic check below for the sake of the more
-    /// specific error message.
-    if (descr.step_kind && !descr.fill_to.isNull() && descr.fill_staleness.isNull() && !within_calendar(descr.fill_to))
-    {
-        /// The window always contains zero (1970), so the sign of an out-of-window bound tells on which of the
-        /// two sides it lies.
-        const bool is_positive = which.isDate32()
-            ? descr.fill_to.safeGet<Int64>() > 0
-            : descr.fill_to.safeGet<DecimalField<Decimal64>>().getValue().value > 0;
-        const bool beyond_fill_direction = direction > 0 ? is_positive : !is_positive;
-
-        if (beyond_fill_direction)
-            throw Exception(
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL TO value {} is out of the calendar range of the ORDER BY column type {} and can never be reached by an INTERVAL step",
-                applyVisitor(FieldVisitorToString(), descr.fill_to),
-                type->getName());
-    }
-
-    /// `fillValueFitsColumnType` tests the range of the storage type and the calendar window above; types that
-    /// saturate instead of wrapping around (Float, Decimal) are not checked by it at all.
+    /// `fillValueFitsColumnType` tests the range of the storage type and, for Date32 and DateTime64, the calendar
+    /// window; types that saturate instead of wrapping around (Float, Decimal) are not checked by it at all.
     auto is_representable = [&](const Field & value) { return fillValueFitsColumnType(value, *type); };
 
     if (!descr.fill_from.isNull() && !is_representable(descr.fill_from))
@@ -407,8 +375,9 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     /// representable: `WITH FILL FROM 0 TO 256` over a UInt8 column generates 0..255, and so does
     /// `WITH FILL FROM 0 TO 257 STEP 3`, which stops at 255 - all of which fit. When the generated values depend
     /// on the data (no FROM), the bound is rejected only if filling provably wraps for every possible anchor.
-    /// An INTERVAL step can never reach a TO that is out of range in the fill direction at all, so there the
-    /// bound itself is required to fit (while a TO out of range against the fill direction is a no-op).
+    /// An INTERVAL step over Date or DateTime can never reach a TO that is out of range in the fill direction at
+    /// all, so there the bound itself is required to fit (while a TO out of range against the fill direction is a
+    /// no-op); over Date32 and DateTime64 it stops at the calendar boundary, so any TO is accepted.
     if (!descr.fill_to.isNull() && !is_representable(descr.fill_to))
     {
         const auto required_value = fillValueRequiredToFitColumnType(descr, direction);
@@ -422,43 +391,46 @@ static void checkFillBoundsFitColumnType(const FillColumnDescription & descr, co
     }
 }
 
-/** An INTERVAL step performs calendar arithmetic that clamps at the boundary of the representable calendar
-  * (the window [0000-01-01, 9999-12-31] of DateLUTImpl): adding an interval to a value whose result would leave
-  * the calendar returns the value unchanged (see e.g. DateLUTImpl::addYearsOutOfRange). A filling sequence that
-  * reaches such a fixed point strictly before TO stops advancing and never terminates, even when TO itself is
-  * perfectly representable: `WITH FILL FROM toDateTime64('9999-06-01 00:00:00', 0) TO
-  * toDateTime64('9999-12-31 00:00:00', 0) STEP INTERVAL 1 YEAR` stagnates at the FROM value right away.
+/** The calendar arithmetic of an INTERVAL step over Date and DateTime is performed in the storage type of the
+  * column (see Add*Impl in FunctionDateOrDateTimeAddInterval.h), so a step whose result does not fit wraps around:
+  * `WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO 4294967295 STEP INTERVAL 100 YEAR` jumps from 2106
+  * back to 2069 and keeps cycling below TO forever, even though TO itself is perfectly representable. A step that
+  * goes backwards is always such a wraparound, and the value it wrapped from is above the type maximum, hence
+  * above TO: the sequence has already overshot the bound, so every value generated from there on is spurious -
+  * out of order and past the TO the query asked for - whether or not the wrapped-around walk happens to land on
+  * a value beyond TO later on and terminate.
   *
   * With an explicit FROM the whole sequence the suffix generation walks is known up front - `FillingRow::next`
   * advances it by one application of the step function at a time - so walk it here the same way and reject the
-  * query when it provably stagnates before reaching TO. The walk is bounded: a sequence that takes more steps
+  * query when it provably turns back before reaching TO. The walk is bounded: a sequence that takes more steps
   * than the budget to settle (a fine-grained step over a huge span) is accepted as before - the walk must never
   * misjudge a terminating sequence, and the calendar arithmetic has no closed form that could shortcut it.
-  * A sequence that wraps around instead of clamping (a DateTime within its UInt32 storage) does not stagnate at
-  * a fixed point, and it is equally broken: `WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO
-  * 4294967295 STEP INTERVAL 100 YEAR` jumps from 2106 back to 2069 and keeps cycling below TO forever. The walk
-  * therefore rejects any step that does not advance the sequence towards TO, not only the fixed point. A step
-  * that goes backwards is always a wraparound of the storage type, and the value it wrapped from is above the
-  * type maximum, hence above TO: the sequence has already overshot the bound, so every value generated from
-  * there on is spurious - out of order and past the TO the query asked for - whether or not the wrapped-around
-  * walk happens to land on a value beyond TO later on and terminate.
   *
-  * Without FROM the sequence is anchored at a data value and nothing about it is provable up front, and
-  * STALENESS replaces TO as the effective bound with the last data value plus the staleness, which the
-  * calendar arithmetic reaches in-domain.
+  * A step that leaves the value unchanged is not a failure: the calendar arithmetic returns its input unchanged
+  * when the result would leave the representable calendar (see e.g. DateLUTImpl::addYearsOutOfRange), and a step
+  * that no longer advances the value ends the filling (see `FillingRow::next`) - the sequence just stops at the
+  * last value it can reach. That is also all the calendar arithmetic of Date32 and DateTime64 ever does at the
+  * boundary: their calendar window lies strictly inside the range of the storage type, so they never wrap.
+  *
+  * Without FROM the sequence is anchored at a data value and nothing about it is provable up front (the per-value
+  * check in `FillingRow::next` still rejects a wraparound when it happens), and STALENESS replaces TO as the
+  * effective bound with the last data value plus the staleness, which the calendar arithmetic reaches in-domain.
   */
-static void checkIntervalStepFillCanReachFillTo(const FillColumnDescription & descr, int direction)
+static void checkIntervalStepFillDoesNotWrap(const FillColumnDescription & descr, int direction)
 {
     if (!descr.step_kind || descr.fill_from.isNull() || descr.fill_to.isNull() || !descr.fill_staleness.isNull())
         return;
 
-    /// Both failure modes need a value below TO to step across the boundary of the representable range:
-    /// stagnation happens at the calendar boundary and wraparound at the boundary of the storage type. The
-    /// calendar arithmetic is monotonic, so probing one step from TO itself covers every value the walk visits:
-    /// when the probe advances in the fill direction and stays within the representable range, no value below
-    /// TO can reach the boundary, and the walk provably finds nothing - skip it. An ordinary fill over a big
-    /// span with a fine-grained step (a dashboard fill of a month by minutes) is skipped here; the walk runs
-    /// only when TO is within one step of the boundary.
+    const WhichDataType which(descr.fill_column_type);
+    if (which.isDate32() || which.isDateTime64())
+        return;
+
+    /// A wraparound needs a value below TO to step across the boundary of the storage type. The calendar
+    /// arithmetic is monotonic, so probing one step from TO itself covers every value the walk visits: when the
+    /// probe advances in the fill direction and stays within the representable range, no value below TO can
+    /// reach the boundary, and the walk provably finds nothing - skip it. An ordinary fill over a big span with
+    /// a fine-grained step (a dashboard fill of a month by minutes) is skipped here; the walk runs only when TO
+    /// is within one step of the boundary.
     Field probe = descr.fill_to;
     descr.step_func(probe, 1);
     const bool probe_advances = less(descr.fill_to, probe, direction);
@@ -476,15 +448,9 @@ static void checkIntervalStepFillCanReachFillTo(const FillColumnDescription & de
         Field next = value;
         descr.step_func(next, 1);
 
+        /// The filling stops here, see above.
         if (equals(next, value))
-            throw Exception(
-                ErrorCodes::INVALID_WITH_FILL_EXPRESSION,
-                "WITH FILL can never reach the TO value {}: starting from the FROM value {}, the INTERVAL step stops advancing "
-                "at value {} (the calendar arithmetic clamps at the boundary of the representable calendar), "
-                "so filling would never terminate",
-                applyVisitor(FieldVisitorToString(), descr.fill_to),
-                applyVisitor(FieldVisitorToString(), descr.fill_from),
-                applyVisitor(FieldVisitorToString(), value));
+            return;
 
         if (!less(value, next, direction))
             throw Exception(
@@ -626,7 +592,7 @@ FillingTransform::FillingTransform(
         }
 
         checkFillBoundsFitColumnType(descr, type, fill_description[i].direction);
-        checkIntervalStepFillCanReachFillTo(descr, fill_description[i].direction);
+        checkIntervalStepFillDoesNotWrap(descr, fill_description[i].direction);
         checkNumericStepFillDoesNotWrap(descr, fill_description[i].direction);
     }
     logDebug("fill description", dumpSortDescription(fill_description));

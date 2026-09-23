@@ -21,8 +21,15 @@ an INTERVAL step can never reach a TO out of range in the fill direction, so suc
 1	2020-01-01	2020-01-01
 1	2020-01-01	2020-01-01
 3	2026-03-05	2028-03-05
-an INTERVAL step clamps at the calendar boundary, which for Date32 and DateTime64 is inside the storage range
-1
+an INTERVAL step clamps at the calendar boundary of Date32 and DateTime64, so any TO is accepted
+1	9999-12-31	9999-12-31
+1	9999-06-01	9999-06-01
+2	0000-06-01	0001-06-01
+1	9999-06-01 00:00:00	9999-06-01 00:00:00
+1	9999-06-01 00:00:00.123	9999-06-01 00:00:00.123
+2	0000-06-01 00:00:00	0001-06-01 00:00:00
+9	2000-01-01 00:00:00	9999-01-01 00:00:00
+2	9998-06-01 00:00:00	9999-06-01 00:00:00
 1
 7	2020-01-01	2026-01-01
 4	2020-01-01 00:00:00	2020-01-04 00:00:00
@@ -36,7 +43,11 @@ a numeric step over DateTime64 must not generate ticks beyond the calendar
 1	9999-12-31 23:59:58	9999-12-31 23:59:58
 2	9999-12-31 23:59:59.998	9999-12-31 23:59:59.999
 2	9999-12-31 23:59:58	9999-12-31 23:59:59
-an INTERVAL step that stagnates at the calendar boundary before an in-range TO is rejected
+an INTERVAL step that stagnates at the calendar boundary before an in-range TO stops there
+1	9999-06-01 00:00:00	9999-06-01 00:00:00
+3	9995-06-01 00:00:00	9999-06-01 00:00:00
+3	2000-01-01	9999-12-01
+10	9990-01-01 00:00:00	9999-01-01 00:00:00
 1	9998-06-01 00:00:00	9998-06-01 00:00:00
 5
 an INTERVAL step that wraps around the column type before an in-range TO is rejected
