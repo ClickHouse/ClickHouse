@@ -56,7 +56,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Arguments are positional (trace_id, timeline_width, cluster), and any of them can instead be given as `name = value`. 
+/// Arguments are positional (trace_id, timeline_width, cluster), and any of them can instead be given as `name = value`.
 /// `query_id` exists only in the named form: a query id cannot be told apart from a trace id positionally, because server-generated query ids are UUIDs too.
 /// `since` and `until` are named only as well: a date has no natural position.
 constexpr std::array<std::string_view, 3> positional_names{"trace_id", "timeline_width", "cluster"};
@@ -553,7 +553,7 @@ Block renderTrace(const SpanColumns & spans, UInt64 timeline_width, const NamesA
 ///
 /// Under `skip_unavailable_shards` an unreachable replica answers nothing and is left out, as the
 /// read of its log would leave it out too; without the setting, it fails the call, as it would the read.
-std::vector<size_t> replicasWithTable(const Cluster & replicas, const StorageID & table_id, ContextPtr context)
+VectorWithMemoryTracking<size_t> replicasWithTable(const Cluster & replicas, const StorageID & table_id, ContextPtr context)
 {
     const auto & shards = replicas.getShardsInfo();
 
@@ -562,7 +562,7 @@ std::vector<size_t> replicasWithTable(const Cluster & replicas, const StorageID 
     /// The result of `EXISTS TABLE`.
     auto header = std::make_shared<const Block>(Block{{ColumnUInt8::create(), std::make_shared<DataTypeUInt8>(), "result"}});
 
-    std::vector<std::unique_ptr<RemoteQueryExecutor>> probes(shards.size());
+    VectorWithMemoryTracking<std::unique_ptr<RemoteQueryExecutor>> probes(shards.size());
     for (size_t i = 0; i < shards.size(); ++i)
     {
         if (shards[i].isLocal())
@@ -574,7 +574,7 @@ std::vector<size_t> replicasWithTable(const Cluster & replicas, const StorageID 
         probes[i]->sendQuery();
     }
 
-    std::vector<size_t> with_table;
+    VectorWithMemoryTracking<size_t> with_table;
     for (size_t i = 0; i < shards.size(); ++i)
     {
         bool has_table = false;
@@ -620,13 +620,14 @@ String TableFunctionTraceView::spanLogSource(ContextMutablePtr context) const
     if (std::ranges::any_of(all_replicas->getShardsInfo(), [](const auto & shard) { return shard.isLocal(); }))
         context->checkAccess(AccessType::SELECT, span_log_id);
 
-    const std::vector<size_t> indices = replicasWithTable(*all_replicas, span_log_id, context);
+    const VectorWithMemoryTracking<size_t> indices = replicasWithTable(*all_replicas, span_log_id, context);
     if (indices.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "No replica of cluster '{}' has the table system.opentelemetry_span_log yet: it is created by the first flush of spans."
             " Run a query with tracing enabled, then SYSTEM FLUSH LOGS opentelemetry_span_log on the nodes that ran it and retry",
             cluster);
-    const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(indices);
+    const ClusterPtr span_log_replicas = all_replicas->getClusterWithMultipleShards(
+        std::vector<size_t>(indices.begin(), indices.end())); // STYLE_CHECK_ALLOW_STD_CONTAINERS: the type it takes
 
     /// A Distributed table over those replicas only, visible to the internal queries of `context`
     /// under this name. It lives as long as `context`, which is private to this call.
