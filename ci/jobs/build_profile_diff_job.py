@@ -74,6 +74,7 @@ import os
 import statistics
 import subprocess
 import traceback
+from collections.abc import Mapping
 from typing import Dict, List, Optional
 
 from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster, LogClusterUnavailable
@@ -212,7 +213,7 @@ class Section:
 
 
 class Db:
-    def __init__(self):
+    def __init__(self, read_budget_s=None):
         # CI_LOGS_USER only for local runs
         user = os.environ.get("CI_LOGS_USER", BUILD_PROFILE_USER)
         # This job only reads, so it goes to the read-only sub-service of the
@@ -230,9 +231,12 @@ class Db:
                 user=user,
                 password=password,
                 readonly=True,
+                read_budget_s=read_budget_s,
             )
         else:
-            self._cluster = LogCluster(readonly=True, user=user)
+            self._cluster = LogCluster(
+                readonly=True, user=user, read_budget_s=read_budget_s
+            )
 
     def query(self, query: str) -> List[dict]:
         """Run a SELECT and return rows as dicts.
@@ -520,6 +524,7 @@ class LocalInfo:
     pr_number = 0
     sha = ""
     event_time = ""
+    is_local_run = True
 
     def get_kv_data(self, key):
         return None
@@ -570,6 +575,38 @@ EXTEND_MAX_PAGES = 60
 # so every call carries its own deadline.
 GH_TIMEOUT_SECONDS = 120
 GH_STREAM_LEN = 300
+
+# Wall clock kept back from the CI logs cluster read retries so that the job can
+# still report: praktika SIGKILLs a job at its timeout and a killed job produces
+# no Result at all. What has to fit in the reserve is the interpreter startup
+# before the first read, one in-flight POST overrunning its own 60 s socket
+# timeout (measured at up to 185 s on a trickling connection), one
+# already-started backoff (<= 40 s) and the comment refresh plus the job
+# completion; the rest is slack. The image pull is not in it: the timeout only
+# starts with the job process.
+CLUSTER_READ_RESERVE_SECONDS = 550
+
+
+def cluster_read_budget_seconds(info):
+    """Wall clock all CI logs cluster reads of this job may spend on retries, together.
+
+    None on a local run, which leaves the reads unbounded. `JOB_CONFIG` survives
+    serialization as a plain dict, so it is read as a mapping. A timeout smaller
+    than the reserve leaves a 1 s budget: one attempt per read and no retries.
+    """
+    if info.is_local_run:
+        return None
+    job_config = info.job_config
+    job_timeout = (
+        job_config.get("timeout")
+        if isinstance(job_config, Mapping)
+        else getattr(job_config, "timeout", None)
+    )
+    if not isinstance(job_timeout, (int, float)) or job_timeout <= 0:
+        raise RuntimeError(
+            f"Cannot derive the CI logs cluster read budget: job timeout is [{job_timeout!r}]"
+        )
+    return max(1, int(job_timeout) - CLUSTER_READ_RESERVE_SECONDS)
 
 
 def _elide_stream(text: str) -> str:
@@ -1662,7 +1699,7 @@ def main():
         return
 
     try:
-        db = Db()
+        db = Db(read_budget_s=cluster_read_budget_seconds(info))
         comparison = run_comparison(db, info, args, pr_number, pr_sha)
     except LogClusterUnavailable as e:
         # Not a failed comparison - one that never ran. A local run has no job
