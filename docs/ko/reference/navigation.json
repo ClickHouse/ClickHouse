@@ -1,18 +1,18 @@
 {
   "icon": "/images/icons/icon-reference.svg",
-  "item": "참고",
+  "item": "Reference",
   "pages": [
     "ko/reference/home",
     {
       "expandable": true,
       "expanded": true,
-      "group": "SQL 참고",
+      "group": "SQL Reference",
       "pages": [
         "ko/reference/syntax",
         {
           "expandable": true,
           "expanded": false,
-          "group": "SQL 문",
+          "group": "Statements",
           "pages": [
             "ko/reference/statements/index",
             {
@@ -66,7 +66,7 @@
                     "ko/reference/statements/create/dictionary/lifetime",
                     {
                       "expanded": false,
-                      "group": "레이아웃",
+                      "group": "Layouts",
                       "pages": [
                         "ko/reference/statements/create/dictionary/layouts/overview",
                         "ko/reference/statements/create/dictionary/layouts/flat",
@@ -85,7 +85,7 @@
                     },
                     {
                       "expanded": false,
-                      "group": "SOURCES",
+                      "group": "Sources",
                       "pages": [
                         "ko/reference/statements/create/dictionary/sources/overview",
                         "ko/reference/statements/create/dictionary/sources/local-file",
@@ -108,6 +108,7 @@
                 },
                 "ko/reference/statements/create/masking-policy",
                 "ko/reference/statements/create/function",
+                "ko/reference/statements/create/handler",
                 "ko/reference/statements/create/named-collection",
                 "ko/reference/statements/create/quota",
                 "ko/reference/statements/create/role",
@@ -115,7 +116,7 @@
                 "ko/reference/statements/create/settings-profile",
                 {
                   "expanded": false,
-                  "group": "테이블",
+                  "group": "TABLE",
                   "pages": [
                     "ko/reference/statements/create/table",
                     "ko/reference/statements/create/table/codec",
@@ -191,7 +192,7 @@
         {
           "expandable": true,
           "expanded": false,
-          "group": "연산자",
+          "group": "Operators",
           "pages": [
             "ko/reference/operators/index",
             "ko/reference/operators/exists",
@@ -203,12 +204,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "데이터 타입",
+      "group": "Data Types",
       "pages": [
         "ko/reference/data-types/index",
         {
           "expanded": false,
-          "group": "숫자 타입",
+          "group": "Numeric types",
           "pages": [
             "ko/reference/data-types/int-uint",
             "ko/reference/data-types/float",
@@ -218,7 +219,7 @@
         },
         {
           "expanded": false,
-          "group": "문자열 타입",
+          "group": "String types",
           "pages": [
             "ko/reference/data-types/string",
             "ko/reference/data-types/fixedstring"
@@ -226,7 +227,7 @@
         },
         {
           "expanded": false,
-          "group": "날짜 및 시간 타입",
+          "group": "Date and time types",
           "pages": [
             "ko/reference/data-types/date",
             "ko/reference/data-types/date32",
@@ -238,7 +239,7 @@
         },
         {
           "expanded": false,
-          "group": "네트워크 타입",
+          "group": "Network types",
           "pages": [
             "ko/reference/data-types/ipv4",
             "ko/reference/data-types/ipv6"
@@ -246,7 +247,7 @@
         },
         {
           "expanded": false,
-          "group": "복합 타입",
+          "group": "Composite types",
           "pages": [
             "ko/reference/data-types/array",
             "ko/reference/data-types/tuple",
@@ -256,7 +257,7 @@
         },
         {
           "expanded": false,
-          "group": "반정형 타입",
+          "group": "Semi-structured types",
           "pages": [
             "ko/reference/data-types/newjson",
             "ko/reference/data-types/dynamic",
@@ -265,7 +266,7 @@
         },
         {
           "expanded": false,
-          "group": "널 허용 및 옵셔널 타입",
+          "group": "Nullable and optional types",
           "pages": [
             "ko/reference/data-types/nullable",
             "ko/reference/data-types/lowcardinality"
@@ -273,7 +274,7 @@
         },
         {
           "expanded": false,
-          "group": "특수 타입",
+          "group": "Specialized types",
           "pages": [
             "ko/reference/data-types/uuid",
             "ko/reference/data-types/enum",
@@ -284,7 +285,7 @@
         },
         {
           "expanded": false,
-          "group": "집계 함수 타입",
+          "group": "Aggregate function types",
           "pages": [
             "ko/reference/data-types/aggregatefunction",
             "ko/reference/data-types/simpleaggregatefunction"
@@ -292,7 +293,7 @@
         },
         {
           "expanded": false,
-          "group": "특수 데이터 타입",
+          "group": "Special Data Types",
           "pages": [
             "ko/reference/data-types/special-data-types/index",
             "ko/reference/data-types/special-data-types/expression",
@@ -302,7 +303,7 @@
           ]
         },
         {
-          "group": "바이너리 인코딩",
+          "group": "Binary encoding",
           "pages": [
             "ko/reference/data-types/data-types-binary-encoding"
           ]
@@ -312,17 +313,17 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "엔진",
+      "group": "Engines",
       "pages": [
         "ko/reference/engines/engines",
         {
           "expanded": false,
-          "group": "테이블 엔진",
+          "group": "Table Engines",
           "pages": [
             "ko/reference/engines/table-engines/index",
             {
               "expanded": false,
-              "group": "통합",
+              "group": "Integrations",
               "pages": [
                 "ko/reference/engines/table-engines/integrations/index",
                 "ko/reference/engines/table-engines/integrations/arrowflight",
@@ -356,7 +357,7 @@
             },
             {
               "expanded": false,
-              "group": "Log 계열",
+              "group": "Log Family",
               "pages": [
                 "ko/reference/engines/table-engines/log-family/index",
                 "ko/reference/engines/table-engines/log-family/log",
@@ -366,7 +367,7 @@
             },
             {
               "expanded": false,
-              "group": "MergeTree 엔진 계열",
+              "group": "MergeTree Family",
               "pages": [
                 "ko/reference/engines/table-engines/mergetree-family/index",
                 "ko/reference/engines/table-engines/mergetree-family/mergetree",
@@ -385,7 +386,7 @@
             },
             {
               "expanded": false,
-              "group": "특수",
+              "group": "Special",
               "pages": [
                 "ko/reference/engines/table-engines/special/index",
                 "ko/reference/engines/table-engines/special/alias",
@@ -412,7 +413,7 @@
         },
         {
           "expanded": false,
-          "group": "데이터베이스 엔진",
+          "group": "Database Engines",
           "pages": [
             "ko/reference/engines/database-engines/index",
             "ko/reference/engines/database-engines/atomic",
@@ -432,12 +433,12 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "함수",
+      "group": "Functions",
       "pages": [
         "ko/reference/functions/index",
         {
           "expanded": false,
-          "group": "일반 함수",
+          "group": "Regular functions",
           "pages": [
             "ko/reference/functions/regular-functions/overview",
             "ko/reference/functions/regular-functions/ai-functions",
@@ -503,7 +504,7 @@
         },
         {
           "expanded": false,
-          "group": "집계 함수",
+          "group": "Aggregate Functions",
           "pages": [
             "ko/reference/functions/aggregate-functions/index",
             "ko/reference/functions/aggregate-functions/combinators",
@@ -511,7 +512,7 @@
             "ko/reference/functions/aggregate-functions/parametric-functions",
             {
               "expanded": false,
-              "group": "참고",
+              "group": "Reference",
               "pages": [
                 "ko/reference/functions/aggregate-functions/reference-index",
                 "ko/reference/functions/aggregate-functions/aggThrow",
@@ -556,6 +557,7 @@
                 "ko/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "ko/reference/functions/aggregate-functions/first_value",
                 "ko/reference/functions/aggregate-functions/flame_graph",
+                "ko/reference/functions/aggregate-functions/gini",
                 "ko/reference/functions/aggregate-functions/groupArray",
                 "ko/reference/functions/aggregate-functions/groupArrayArray",
                 "ko/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -678,7 +680,7 @@
         },
         {
           "expanded": false,
-          "group": "테이블 함수",
+          "group": "Table functions",
           "pages": [
             "ko/reference/functions/table-functions/index",
             "ko/reference/functions/table-functions/arrowflight",
@@ -745,7 +747,7 @@
         },
         {
           "expanded": false,
-          "group": "윈도우 함수",
+          "group": "Window functions",
           "pages": [
             "ko/reference/functions/window-functions/index",
             "ko/reference/functions/window-functions/cume_dist",
@@ -765,7 +767,7 @@
           ]
         },
         {
-          "group": "사용자 정의 함수",
+          "group": "User Defined Functions",
           "pages": [
             "ko/reference/functions/regular-functions/udf",
             "ko/reference/functions/regular-functions/wasm_udf"
@@ -776,7 +778,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "포맷",
+      "group": "Formats",
       "pages": [
         "ko/reference/formats/index",
         {
@@ -905,7 +907,7 @@
         "ko/reference/formats/Prometheus",
         {
           "expanded": false,
-          "group": "형식",
+          "group": "Protobuf",
           "pages": [
             "ko/reference/formats/Protobuf/Protobuf",
             "ko/reference/formats/Protobuf/ProtobufList",
@@ -963,7 +965,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "인터페이스",
+      "group": "Interfaces",
       "pages": [
         "ko/reference/interfaces/specs/NativeProtocol",
         "ko/reference/interfaces/specs/NativeFormat"
@@ -972,7 +974,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "설정",
+      "group": "Settings",
       "pages": [
         "ko/reference/settings/index",
         {
@@ -993,7 +995,7 @@
     {
       "expandable": true,
       "expanded": false,
-      "group": "시스템 테이블",
+      "group": "System Tables",
       "pages": [
         "ko/reference/system-tables/overview",
         "ko/reference/system-tables/aggregate_function_combinators",
@@ -1138,6 +1140,7 @@
         "ko/reference/system-tables/settings_profile_elements",
         "ko/reference/system-tables/settings_profiles",
         "ko/reference/system-tables/stack_trace",
+        "ko/reference/system-tables/statements",
         "ko/reference/system-tables/stemmers",
         "ko/reference/system-tables/storage_policies",
         "ko/reference/system-tables/symbols",
@@ -1171,7 +1174,7 @@
       ]
     },
     {
-      "group": "데이터 레이크",
+      "group": "Data Lakes",
       "pages": [
         "ko/reference/datalakes"
       ]

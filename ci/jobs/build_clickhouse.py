@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 import shutil
 
@@ -48,7 +49,7 @@ BUILD_TYPE_TO_CMAKE = {
     # Emscripten's own toolchain file, which supplies `emcc`/`em++`, so no compiler is passed
     # here. `emcc` is a Python driver that sccache cannot cache, hence the cache is disabled.
     BuildTypes.WASM64: f"       emcmake cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=          -DCOMPILER_CACHE=disabled -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_LEXER_TEST=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON",
-    BuildTypes.ARM_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-aarch64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=1",  # TODO: fix build with -DSANITIZE_COVERAGE=1
+    BuildTypes.AMD_FUZZERS: f"  cmake --debug-trycompile -DCMAKE_VERBOSE_MAKEFILE=1 -LA -DCMAKE_BUILD_TYPE=None  -DENABLE_THINLTO=0 -DSANITIZE=address   -DENABLE_CHECK_HEAVY_BUILDS=1 -DBUILD_STRIPPED_BINARY=1 -DENABLE_CLICKHOUSE_SELF_EXTRACTING=1 -DCMAKE_C_COMPILER={ToolSet.COMPILER_C} -DCMAKE_CXX_COMPILER={ToolSet.COMPILER_CPP} -DCOMPILER_CACHE={ToolSet.COMPILER_CACHE}        -DCMAKE_TOOLCHAIN_FILE={repo_path_normalized}/cmake/linux/toolchain-x86_64.cmake -DENABLE_BUILD_PROFILING=0 -DENABLE_TESTS=0 -DENABLE_UTILS=0 -DCMAKE_FIND_PACKAGE_NO_PACKAGE_REGISTRY=ON -DENABLE_FUZZING=1 -DENABLE_PROTOBUF=1 -DCMAKE_SKIP_INSTALL_ALL_DEPENDENCY=ON -DENABLE_BUZZHOUSE=0 -DPARALLEL_LINK_JOBS=1",  # TODO: fix build with -DSANITIZE_COVERAGE=1
 }
 
 # sccache-warmup builds (MasterCI only) reuse the cmake configuration of the
@@ -103,10 +104,38 @@ def parse_args():
     return parser.parse_args()
 
 
-def run_shell(name, command, **kwargs):
+def run_shell_with_output(name, command, **kwargs):
     print(f"\n>>>> {name}\n")
+    kwargs["verbose"] = True
     Shell.check(command, **kwargs)
     print(f"\n<<<< {name}\n")
+
+
+def warn_on_low_sccache_hit_rate(info):
+    """Post a non-blocking workflow warning when the sccache hit rate is below 40% (issue #46502)."""
+    stats = Shell.get_output("sccache --show-stats --stats-format json")
+    if not stats:
+        return
+    # Best-effort observability: an unexpected stats blob (unparseable, or a
+    # future sccache renaming these fields) must never fail an already-green build.
+    try:
+        counts = json.loads(stats)["stats"]
+        hits = sum(counts["cache_hits"]["counts"].values())
+        misses = sum(counts["cache_misses"]["counts"].values())
+    except (json.JSONDecodeError, KeyError, AttributeError, TypeError) as e:
+        print(f"WARNING: could not parse sccache stats, skipping hit-rate check: {e}")
+        return
+    total = hits + misses
+    if total == 0:
+        info.add_workflow_warning(
+            "sccache recorded no compilations - the compiler cache may not be in use"
+        )
+        return
+    hit_rate = 100 * hits / total
+    if hit_rate < 40:
+        info.add_workflow_warning(
+            f"Low sccache hit rate {hit_rate:.1f}% ({hits}/{total} compilations cached) - the compiler cache may be degraded or stale"
+        )
 
 
 def setup_build_caches_env(info):
@@ -120,14 +149,14 @@ def setup_build_caches_env(info):
     os.environ["SCCACHE_DIR"] = f"{temp_dir}/sccache"
     os.environ["SCCACHE_CACHE_SIZE"] = "40G"
     os.environ["SCCACHE_IDLE_TIMEOUT"] = "7200"
-    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_PATH
+    os.environ["SCCACHE_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
     os.environ["SCCACHE_S3_KEY_PREFIX"] = "ccache/sccache"
     os.environ["SCCACHE_ERROR_LOG"] = f"{build_dir}/sccache.log"
     os.environ["SCCACHE_LOG"] = "info"
     # PR builds must not pollute the shared sccache bucket; only master/release
     # builds (pr_number == 0) are allowed to write entries.
     if info.pr_number > 0:
-        os.environ["SCCACHE_S3_READ_ONLY"] = "true"
+        os.environ["SCCACHE_S3_RW_MODE"] = "READ_ONLY"
     os.makedirs(build_dir, exist_ok=True)
 
     if info.is_local_run:
@@ -142,7 +171,7 @@ def setup_build_caches_env(info):
         # anyway, will be terminated once the build is finished
         os.environ["CTCACHE_LOG_LEVEL"] = "debug"
         os.environ["CTCACHE_DIR"] = f"{temp_dir}/ccache/clang-tidy-cache"
-        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_PATH
+        os.environ["CTCACHE_S3_BUCKET"] = Settings.S3_ARTIFACT_BUCKET
         os.environ["CTCACHE_S3_FOLDER"] = "ccache/clang-tidy-cache"
         # PR builds run on untrusted runners without S3 write access; only
         # master/release builds (pr_number == 0) are allowed to write entries.
@@ -328,13 +357,13 @@ def main():
                 f"ln -sf /build/cmake/toolchain/darwin-x86_64 {current_directory}/cmake/toolchain/darwin-aarch64"
             )
         elif build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
         # The sccache server sometimes fails to start because of issues with S3.
         # Start it explicitly with retries before cmake, since cmake can invoke
         # the compiler during configuration. Non-fatal: build can proceed without it.
         if not Shell.check("sccache --start-server", retries=3):
             print("WARNING: sccache server failed to start, build will proceed without it")
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
         cmake_result_index = len(results)
         results.append(
             Result.from_commands_run(
@@ -383,7 +412,7 @@ def main():
 
     files = []
     if res and JobStages.BUILD in stages:
-        if build_type == BuildTypes.ARM_FUZZERS:
+        if build_type == BuildTypes.AMD_FUZZERS:
             targets = "fuzzers"
         elif build_type == BuildTypes.WASM64:
             # The multicall `clickhouse` binary builds and links for WebAssembly, and
@@ -461,18 +490,21 @@ def main():
             else:
                 results.append(retry_cmake)
 
-        run_shell("sccache stats", "sccache --show-stats")
+        run_shell_with_output("sccache stats", "sccache --show-stats")
+        # wasm64 disables the cache (emcc is uncacheable), so sccache sees zero compilations on a healthy build
+        if not cache_warmup and "-DCOMPILER_CACHE=disabled" not in cmake_cmd:
+            warn_on_low_sccache_hit_rate(info)
         if build_type in (BuildTypes.AMD_TIDY, BuildTypes.ARM_TIDY):
-            run_shell("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
+            run_shell_with_output("clang-tidy-cache stats", "clang-tidy-cache.py --show-stats")
             clang_tidy_cache_log = "./ci/tmp/clang-tidy-cache.log"
             Shell.check(f"cp /tmp/clang-tidy-cache.log {clang_tidy_cache_log}")
             files.append(clang_tidy_cache_log)
-            run_shell(
+            run_shell_with_output(
                 "clang-tidy-cache.log stats",
                 f'echo "$(grep "exists in cache" {clang_tidy_cache_log} | wc -l) in cache\n'
                 f'$(grep "does not exist in cache" {clang_tidy_cache_log} | wc -l) not in cache"',
             )
-        run_shell("Output programs", f"ls -l {build_dir}/programs/", verbose=True)
+        run_shell_with_output("Output programs", f"ls -l {build_dir}/programs/")
         Shell.check("pwd")
         res = results[-1].is_ok()
 

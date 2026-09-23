@@ -143,6 +143,8 @@ ThreadGroup::ThreadGroup(ThreadGroupPtr parent_thread_group)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
     , shared_data(parent->getSharedData())
 {
+    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
+    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
 }
 
 ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread_group)
@@ -156,6 +158,9 @@ ThreadGroup::ThreadGroup(ContextPtr query_context_, ThreadGroupPtr parent_thread
     , performance_counters(VariableContext::Process, &parent->performance_counters)
     , memory_tracker(&parent->memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor*/ false)
 {
+    /// Mirror the memory-tracker parent so a nested group's monitor escalates against the outer query.
+    memory_pressure_monitor.setParent(parent->memory_pressure_monitor);
+
     shared_data.query_is_canceled_predicate = [this] () -> bool {
         if (auto context_locked = query_context.lock())
         {
@@ -387,8 +392,10 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
     thread_group = thread_group_;
     try
     {
-        performance_counters.setParent(&thread_group->performance_counters);
+        /// Reparenting the memory tracker flushes the untracked balance the thread carried in, so the
+        /// counters must be reparented after it, or those bytes are reported as this group's.
         memory_tracker.setParent(&thread_group->memory_tracker);
+        performance_counters.setParent(&thread_group->performance_counters);
 
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;
