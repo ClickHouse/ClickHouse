@@ -1190,36 +1190,52 @@ bool isLosslessConversion(const DataTypePtr & from, const DataTypePtr & to)
     return from_array && to_array && isLosslessConversion(from_array->getNestedType(), to_array->getNestedType());
 }
 
-/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion is lossless (see above).
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` with a lossless conversion (see above).
+bool isLosslessConversionFunction(const ActionsDAG::Node & node)
 {
-    if (!node.isFunction())
-        return node;
+    if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base)
+        return false;
 
-    const auto function = node.toFunctionNode();
-    const auto function_name = function.getFunctionName();
-    const size_t arguments_size = function.getArgumentsSize();
+    const auto function_name = node.function_base->getName();
+    const size_t arguments_size = node.children.size();
 
     const bool is_cast = (function_name == "CAST" || function_name == "_CAST") && arguments_size == 2;
     const bool is_wrapper = (function_name == "toNullable" || function_name == "toLowCardinality") && arguments_size == 1;
 
     if (!is_cast && !is_wrapper)
+        return false;
+
+    return isLosslessConversion(node.children.front()->result_type, node.result_type);
+}
+
+/// Strips lossless conversions from the node (see above).
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node)
+{
+    if (!node.isFunction())
         return node;
 
     /// Only the DAG form carries the types; the AST form is left as is.
-    auto argument = function.getArgumentAt(0);
+    const auto function = node.toFunctionNode();
     const auto * function_dag_node = function.getDAGNode();
-    const auto * argument_dag_node = argument.getDAGNode();
 
-    if (!function_dag_node || !argument_dag_node)
+    if (!function_dag_node || !isLosslessConversionFunction(*function_dag_node))
         return node;
 
-    if (!isLosslessConversion(argument_dag_node->result_type, function_dag_node->result_type))
-        return node;
-
-    return unwrapLosslessConversion(argument);
+    return unwrapLosslessConversion(function.getArgumentAt(0));
 }
 
+}
+
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node)
+{
+    const auto * node_without_alias = node;
+    while (node_without_alias->type == ActionsDAG::ActionType::ALIAS)
+        node_without_alias = node_without_alias->children.front();
+
+    if (!isLosslessConversionFunction(*node_without_alias))
+        return node;
+
+    return unwrapLosslessConversion(node_without_alias->children.front());
 }
 
 bool MergeTreeIndexConditionText::traverseFunctionNode(
@@ -2203,7 +2219,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const IColumn * set_column_ptr = columns[*set_key_position].get();
     if (const auto * nullable_set_column = checkAndGetColumn<ColumnNullable>(set_column_ptr))
     {
-        /// A NULL element has no token, and `x IN (NULL, ...)` is NULL for the rows that match nothing else.
+        /// The set keeps NULL elements only with `transform_null_in`, and then `IN` matches NULL rows, which have no tokens.
         const auto & null_map = nullable_set_column->getNullMapData();
         if (!memoryIsZero(null_map.data(), 0, null_map.size()))
             return false;

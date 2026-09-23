@@ -263,4 +263,8 @@ private:
 static constexpr std::string_view TEXT_INDEX_VIRTUAL_COLUMN_PREFIX = "__text_index_";
 bool isTextIndexVirtualColumn(const String & column_name);
 
+/// Strips `CAST`, `_CAST`, `toNullable` and `toLowCardinality` from the node while the conversion never
+/// changes the value and never throws. The index is analyzed on the expression under such conversions.
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
+
 }
