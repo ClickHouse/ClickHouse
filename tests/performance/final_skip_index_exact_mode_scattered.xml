@@ -1,0 +1,26 @@
+<!-- `use_skip_indexes_if_final_exact_mode` with a selective skip index whose selected granules are
+     scattered over many parts with overlapping key ranges. The query reads little data, so the time
+     is dominated by the pass that adds back the granules intersecting the selected ranges by primary key. -->
+<test>
+    <create_query>
+        CREATE TABLE final_skip_index_scattered (key UInt64, ver UInt64, v UInt8, INDEX idx_v v TYPE minmax GRANULARITY 1)
+        ENGINE = ReplacingMergeTree(ver)
+        ORDER BY key
+        SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi'
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES final_skip_index_scattered</fill_query>
+
+    <!-- 40 parts, each covers the whole key range. -->
+    <fill_query>
+        INSERT INTO final_skip_index_scattered
+        SELECT (number % 200000) * 40 + intDiv(number, 200000) AS key, 1, intHash64(key) % 20011 = 0
+        FROM numbers(8000000)
+        SETTINGS max_threads = 1, max_insert_threads = 1, max_block_size = 200000, max_insert_block_size = 200000,
+            min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0
+    </fill_query>
+
+    <query>SELECT count() FROM final_skip_index_scattered FINAL WHERE v = 1 SETTINGS use_skip_indexes_if_final = 1, use_skip_indexes_if_final_exact_mode = 1, use_query_condition_cache = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS final_skip_index_scattered</drop_query>
+</test>
