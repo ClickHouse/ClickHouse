@@ -92,11 +92,11 @@ Valores posibles:
   `CREATE FUNCTION`, `DROP FUNCTION`, `CREATE WORKLOAD`, `DROP WORKLOAD`, `CREATE RESOURCE`,
   `DROP RESOURCE`, `CREATE HANDLER`, `ALTER HANDLER`, `DROP HANDLER`. `RENAME`, `EXCHANGE`,
   `ATTACH` y `DETACH` también necesitan estos privilegios, por lo que igualmente se bloquean, salvo que
-  `ALTER TABLE ... ATTACH PARTITION` y `ATTACH PART` solo necesitan `INSERT` y esta configuración no
+  `ALTER TABLE ... ATTACH PARTITION` y `ATTACH PART` solo necesitan `INSERT` y este SETTING no
   los bloquea, aunque `readonly` sí lo hace en una tabla persistente.
   `ATTACH PARTITION ... FROM` necesita además `ALTER DELETE`, por lo que sí se bloquea. La concesión y revocación de
   estos privilegios no se bloquea.
-* 1 — Esta configuración no bloquea nada.
+* 1 — Este SETTING no bloquea nada.
 
 Valor predeterminado: 1
 
@@ -109,7 +109,7 @@ Valor predeterminado: 1
   `ALTER DATABASE ... MODIFY SETTING`, `ALTER DATABASE ... MODIFY COMMENT` y `UNDROP TABLE`, que
   `readonly` tampoco restringe. Dentro de un `CREATE` o un `ALTER` de un usuario, un rol o un perfil de
   configuración, se rechaza una cláusula `SETTINGS allow_ddl = 1` mientras la sesión actual tenga `allow_ddl = 0`,
-  mientras que una cláusula `SETTINGS allow_ddl = 0` sí se acepta. Toda configuración incrustada se verifica frente a las
+  mientras que una cláusula `SETTINGS allow_ddl = 0` sí se acepta. Todo SETTING incrustado se verifica frente a las
   restricciones de configuración de la propia sesión, y por eso también se rechaza `SET allow_ddl = 1`.
 </Note>
 
@@ -117,9 +117,10 @@ Valor predeterminado: 1
   **KILL QUERY**
 
   Terminar tus propias consultas no requiere el privilegio `KILL QUERY`, por lo que funciona con cualquier combinación
-  de `readonly` y `allow_ddl`. Lo que sí requiere es `SELECT` sobre `system.processes`. Terminar una consulta que
-  pertenece a otro usuario, así como cualquier `KILL QUERY ... ON CLUSTER`, requiere el privilegio `KILL QUERY`, que
-  `readonly = 1` y `readonly = 2` deniegan.
+  de `readonly` y `allow_ddl`. Lo que sí requiere es `SELECT` sobre `system.processes`, excepto en el caso de
+  `KILL QUERY WHERE query_id = '<id>'`, que cancela tu propia consulta con ese id sin leer dicha
+  tabla. Terminar una consulta que pertenece a otro usuario, así como cualquier `KILL QUERY ... ON CLUSTER`, requiere el
+  privilegio `KILL QUERY`, que `readonly = 1` y `readonly = 2` deniegan.
 </Info>
 
 ## Otras configuraciones relevantes {#other-relevant-settings}

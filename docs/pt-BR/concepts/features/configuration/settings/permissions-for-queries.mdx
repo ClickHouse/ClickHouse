@@ -117,9 +117,10 @@ Valor padrão: 1
   **KILL QUERY**
 
   Encerrar as próprias consultas não exige o privilégio `KILL QUERY`, portanto funciona com qualquer combinação
-  de `readonly` e `allow_ddl`. Exige, porém, `SELECT` em `system.processes`. Encerrar uma consulta que
-  pertence a outro usuário, bem como qualquer `KILL QUERY ... ON CLUSTER`, exige o privilégio `KILL QUERY`, que
-  `readonly = 1` e `readonly = 2` recusam.
+  de `readonly` e `allow_ddl`. Exige, porém, `SELECT` em `system.processes`, exceto no caso de
+  `KILL QUERY WHERE query_id = '<id>'`, que cancela a sua própria consulta com esse id sem ler essa
+  tabela. Encerrar uma consulta que pertence a outro usuário, bem como qualquer `KILL QUERY ... ON CLUSTER`, exige o
+  privilégio `KILL QUERY`, que `readonly = 1` e `readonly = 2` recusam.
 </Info>
 
 ## Outras configurações relevantes {#other-relevant-settings}

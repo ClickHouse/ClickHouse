@@ -118,9 +118,10 @@ doc_type: 'reference'
   **KILL QUERY**
 
   Завершение собственных запросов не требует привилегии `KILL QUERY`, поэтому оно работает при любом сочетании
-  `readonly` и `allow_ddl`. Однако требуется привилегия `SELECT` на `system.processes`. Завершение запроса,
-  принадлежащего другому пользователю, а также любой `KILL QUERY ... ON CLUSTER` требуют привилегии `KILL QUERY`,
-  которую `readonly = 1` и `readonly = 2` не допускают.
+  `readonly` и `allow_ddl`. Однако требуется привилегия `SELECT` на `system.processes` — за исключением запроса
+  `KILL QUERY WHERE query_id = '<id>'`, который отменяет ваш собственный запрос с этим ID, не читая эту
+  таблицу. Завершение запроса, принадлежащего другому пользователю, а также любой `KILL QUERY ... ON CLUSTER` требуют
+  привилегии `KILL QUERY`, которую `readonly = 1` и `readonly = 2` не допускают.
 </Info>
 
 ## Другие связанные настройки {#other-relevant-settings}

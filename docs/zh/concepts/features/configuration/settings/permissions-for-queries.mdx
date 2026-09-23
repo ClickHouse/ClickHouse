@@ -92,9 +92,9 @@ insert 和 drop。
 <Note>
   如果当前 session 的 `allow_ddl = 0`，则无法执行 `SET allow_ddl = 1`。
 
-  `allow_ddl` 不会限制访问管理类查询：`GRANT`、`REVOKE` 以及对用户、role、行策略、脱敏策略、配额和 profile 的 `CREATE`、`ALTER` 和
+  `allow_ddl` 不会限制访问管理类查询：`GRANT`、`REVOKE` 以及对用户、角色、行策略、脱敏策略、配额和 profile 的 `CREATE`、`ALTER` 和
   `DROP` 均不受其影响。`CREATE TEMPORARY TABLE` 和 named collection 管理同样不受影响，
-  `ALTER DATABASE ... MODIFY SETTING`、`ALTER DATABASE ... MODIFY COMMENT` 和 `UNDROP TABLE` 也是如此，`readonly` 同样不会限制这些操作。在对用户、role 或 profile 执行 `CREATE` 或 `ALTER` 时，
+  `ALTER DATABASE ... MODIFY SETTING`、`ALTER DATABASE ... MODIFY COMMENT` 和 `UNDROP TABLE` 也是如此，`readonly` 同样不会限制这些操作。在对用户、角色或 profile 执行 `CREATE` 或 `ALTER` 时，
   只要当前 session 的 `allow_ddl = 0`，其中的 `SETTINGS allow_ddl = 1` 子句就会被拒绝，
   而 `SETTINGS allow_ddl = 0` 子句会被接受。内嵌的设置会依据 session 自身的 settings 约束进行检查，这也正是 `SET allow_ddl = 1` 被拒绝的原因。
 </Note>
@@ -102,7 +102,9 @@ insert 和 drop。
 <Info>
   **KILL QUERY**
 
-  终止自己的查询不需要 `KILL QUERY` 特权，因此在 `readonly` 和 `allow_ddl` 的任意组合下都可以执行，但需要对 `system.processes` 拥有 `SELECT` 权限。终止其他用户的查询，以及任何 `KILL QUERY ... ON CLUSTER`，都需要 `KILL QUERY` 特权，而 `readonly = 1` 和 `readonly = 2` 会拒绝该特权。
+  终止自己的查询不需要 `KILL QUERY` 特权，因此在 `readonly` 和 `allow_ddl` 的任意组合下都可以执行，但需要对 `system.processes` 拥有 `SELECT` 权限；
+  `KILL QUERY WHERE query_id = '<id>'` 除外，它会直接取消您自己的、具有该 id 的查询，而无需读取该表。终止其他用户的查询，以及任何 `KILL QUERY ... ON CLUSTER`，都需要
+  `KILL QUERY` 特权，而 `readonly = 1` 和 `readonly = 2` 会拒绝该特权。
 </Info>
 
 ## 其他相关设置 {#other-relevant-settings}

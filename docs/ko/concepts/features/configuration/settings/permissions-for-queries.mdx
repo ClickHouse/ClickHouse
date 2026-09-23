@@ -114,7 +114,8 @@ masking policies, 쿼터, 설정 프로필에 대한 `CREATE`, `ALTER`, `DROP` �
   **KILL QUERY**
 
   자신의 쿼리를 kill할 때는 `KILL QUERY` 권한가 필요하지 않으므로, `readonly`와 `allow_ddl`의
-  어떤 조합에서도 동작합니다. 단, `system.processes`에 대한 `SELECT`는 필요합니다. 다른 사용자의 쿼리를
+  어떤 조합에서도 동작합니다. 단, `system.processes`에 대한 `SELECT`는 필요합니다. 다만
+  `KILL QUERY WHERE query_id = '<id>'`는 해당 테이블을 읽지 않고 해당 id를 가진 자신의 쿼리를 취소하므로 예외입니다. 다른 사용자의 쿼리를
   kill하거나 `KILL QUERY ... ON CLUSTER`를 실행하려면 `KILL QUERY` 권한가 필요하며,
   `readonly = 1`과 `readonly = 2`는 이를 거부합니다.
 </Info>

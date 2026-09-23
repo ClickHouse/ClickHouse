@@ -117,9 +117,10 @@ Valeur par défaut : 1
   **KILL QUERY**
 
   Interrompre vos propres requêtes ne nécessite pas le privilège `KILL QUERY` ; cela fonctionne donc avec n&#39;importe quelle combinaison
-  de `readonly` et d&#39;`allow_ddl`. En revanche, le privilège `SELECT` sur `system.processes` est requis. Interrompre une requête
-  appartenant à un autre utilisateur, ainsi que tout `KILL QUERY ... ON CLUSTER`, exigent le privilège `KILL QUERY`, que
-  `readonly = 1` et `readonly = 2` refusent.
+  de `readonly` et d&#39;`allow_ddl`. En revanche, le privilège `SELECT` sur `system.processes` est requis, sauf pour
+  `KILL QUERY WHERE query_id = '<id>'`, qui annule votre propre requête portant cet identifiant sans lire cette
+  table. Interrompre une requête appartenant à un autre utilisateur, ainsi que tout `KILL QUERY ... ON CLUSTER`, exigent le
+  privilège `KILL QUERY`, que `readonly = 1` et `readonly = 2` refusent.
 </Info>
 
 ## Autres paramètres pertinents {#other-relevant-settings}

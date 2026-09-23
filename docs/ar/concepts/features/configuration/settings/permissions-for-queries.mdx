@@ -106,9 +106,10 @@ doc_type: 'reference'
   **KILL QUERY**
 
   لا يتطلب إنهاء استعلاماتك الخاصة امتياز `KILL QUERY`، لذا فهو يعمل مع أي مزيج
-  من `readonly` و`allow_ddl`، لكنه يتطلب `SELECT` على `system.processes`. أما إنهاء استعلام
-  يخص مستخدمًا آخر، وأي `KILL QUERY ... ON CLUSTER`، فيتطلب امتياز `KILL QUERY`، وهو ما
-  يرفضه `readonly = 1` و`readonly = 2`.
+  من `readonly` و`allow_ddl`، لكنه يتطلب `SELECT` على `system.processes`، باستثناء
+  `KILL QUERY WHERE query_id = '<id>'`، الذي يلغي استعلامك الخاص الذي يحمل هذا المعرّف دون قراءة ذلك
+  الجدول. أما إنهاء استعلام يخص مستخدمًا آخر، وأي `KILL QUERY ... ON CLUSTER`، فيتطلب
+  امتياز `KILL QUERY`، وهو ما يرفضه `readonly = 1` و`readonly = 2`.
 </Info>
 
 ## إعدادات أخرى ذات صلة {#other-relevant-settings}

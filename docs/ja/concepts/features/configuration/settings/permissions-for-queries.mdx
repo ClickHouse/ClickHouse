@@ -72,17 +72,18 @@ ClickHouse のクエリは、いくつかの種類に分類できます。
 <Note>
   現在のセッションで `allow_ddl = 0` の場合、`SET allow_ddl = 1` を実行することはできません。
 
-  `allow_ddl` はアクセス管理クエリを制限しません。`GRANT`、`REVOKE`、およびユーザー、ロール、行ポリシー、マスキングポリシー、クォータ、settings profile に対する `CREATE`、`ALTER`、
+  `allow_ddl` はアクセス管理クエリを制限しません。`GRANT`、`REVOKE`、およびユーザー、ロール、行ポリシー、マスキングポリシー、クォータ、SETTINGS PROFILE に対する `CREATE`、`ALTER`、
   `DROP` はこの設定の影響を受けません。`CREATE TEMPORARY TABLE` と 名前付きコレクションの管理も影響を受けず、
   `ALTER DATABASE ... MODIFY SETTING`、`ALTER DATABASE ... MODIFY COMMENT`、`UNDROP TABLE` も同様です。これらは
-  `readonly` でも制限されません。ユーザー、ロール、settings profile の `CREATE` または `ALTER` の内部では、現在のセッションが `allow_ddl = 0` である間、`SETTINGS allow_ddl = 1` 句は拒否され、
+  `readonly` でも制限されません。ユーザー、ロール、SETTINGS PROFILE の `CREATE` または `ALTER` の内部では、現在のセッションが `allow_ddl = 0` である間、`SETTINGS allow_ddl = 1` 句は拒否され、
   `SETTINGS allow_ddl = 0` 句は受け入れられます。埋め込まれた設定はセッション自身の設定制約に照らして検査されるため、`SET allow_ddl = 1` も拒否されます。
 </Note>
 
 <Info>
   **KILL QUERY**
 
-  自分自身のクエリを kill する場合は `KILL QUERY` 権限が不要なため、`readonly` と `allow_ddl` のどの組み合わせでも動作します。ただし `system.processes` に対する `SELECT` は必要です。他のユーザーのクエリを kill する場合、および `KILL QUERY ... ON CLUSTER` には `KILL QUERY` 権限が必要であり、
+  自分自身のクエリを kill する場合は `KILL QUERY` 権限が不要なため、`readonly` と `allow_ddl` のどの組み合わせでも動作します。ただし `system.processes` に対する `SELECT` は必要です。例外は
+  `KILL QUERY WHERE query_id = '<id>'` で、このテーブルを読み取らずに、指定した id を持つ自分自身のクエリをキャンセルできます。他のユーザーのクエリを kill する場合、および `KILL QUERY ... ON CLUSTER` には `KILL QUERY` 権限が必要であり、
   `readonly = 1` および `readonly = 2` ではこれが拒否されます。
 </Info>
 
