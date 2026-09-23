@@ -46,38 +46,17 @@ using Set = cuco::static_set<
 
 using InsertRef = decltype(std::declval<const Set &>().ref(cuco::op::insert_and_find));
 
-/// The set is kept at most this full, so that a probe ends within a few slots.
 constexpr double max_load = 0.6;
 
-/// The first table is this large, four megabytes of keys: within the L2 cache of a device, where a
-/// `GROUP BY` of a few hundred thousand groups stays for as long as it can.
 constexpr size_t min_capacity = 1UL << 19;
 
-/// Slots are numbered in 32 bits when the groups are written out.
 constexpr size_t max_capacity = size_t{std::numeric_limits<uint32_t>::max()} - 1;
 
-/// Rows go into the table as many at a time as could all be new keys and still fit, so that the
-/// table is sized by the groups it has rather than by the rows of a part; and at least this many,
-/// so that a nearly full table is grown rather than fed a few rows per kernel.
 constexpr size_t min_chunk_rows = 1UL << 18;
 
 constexpr unsigned threads_per_block = 256;
 constexpr size_t max_blocks = 32768;
 
-/** A chunk whose groups are few next to its rows may be grouped in two passes: the rows are
-  * sorted into buckets by their key, and a block per bucket groups its rows in a table in shared
-  * memory, then the buckets' groups are folded into the table on the device. Where a row went to
-  * the device's table once, a group of a bucket goes now.
-  *
-  * The sort is one pass of a byte, so the buckets are 256, and the last of them also takes the
-  * rows the filter drops and the rows whose key is the sentinel, which its block tells apart from
-  * its own. A shared table holds at most `max_probe` slots' worth of collisions, after which the
-  * row goes to the device's table as it would without the passes.
-  *
-  * The passes cost about as much per row as the direct kernel does over a table of a hundred
-  * thousand groups, and far more than one over a few hundred, so which of the two a query takes
-  * is measured, not assumed: each is timed on a chunk, and the cheaper one is kept for a while.
-  */
 constexpr uint32_t bucket_bits = 8;
 constexpr uint32_t num_buckets = 1u << bucket_bits;
 constexpr uint8_t last_bucket = num_buckets - 1;
@@ -87,33 +66,23 @@ constexpr size_t shared_table_bytes = 48UL * 1024;
 constexpr uint32_t max_probe = 32;
 constexpr uint64_t bucket_multiplier = 0x9E3779B97F4A7C15ULL;
 
-/// Below this many rows a chunk is not worth sorting.
 constexpr size_t min_partitioned_rows = size_t{num_buckets} * 4096;
 
-/// How many rows the two passes are measured on: little next to a query, so that one the direct
-/// kernel serves better loses little to finding that out.
 constexpr size_t measurement_rows = 2UL << 20;
 
-/// The two passes are taken only where the direct kernel costs at least this many nanoseconds a
-/// row. Below that the grouping takes less of the device than expanding and copying the row's
-/// bytes do - a dozen bytes at the link's few gigabytes a second come to about this - so a cheaper
-/// kernel gains nothing, while the sort's traffic slows the expansion that runs beside it. A
-/// `sum` by a key of a hundred thousand values costs 1.4 ns a row and lost 5% in two passes; a
-/// `sum`, `min` and `max` by the same key cost 2.6 ns a row and gained 15%.
 constexpr double min_direct_cost_for_buckets = 2.0;
 
-/// The accumulators of a table: for each of `capacity` slots of the set, and for the spare slot
-/// at `capacity` that takes rows whose key equals `key_sentinel`, a record of `num_values` words
-/// side by side, so that a row's aggregates land in one cache line.
 struct Accumulators
 {
     uint64_t * records = nullptr;
     uint32_t num_values = 0;
 
-    __host__ __device__ __forceinline__ uint64_t * of(size_t slot) const { return records + slot * num_values; }
+    __host__ __device__ __forceinline__ uint64_t * of(size_t slot) const
+    {
+        return records + slot * num_values;
+    }
 };
 
-/// Where a key column's values are, and where its bits go in the packed key.
 struct KeyLayout
 {
     const char * data = nullptr;
@@ -250,9 +219,6 @@ __device__ __forceinline__ void storeBits(char * data, size_t row, uint32_t size
     }
 }
 
-/// A non-negative double orders as a signed integer of the same bits, and a negative one orders
-/// the other way as an unsigned integer, so a minimum or maximum is one integer atomic on the
-/// bits, chosen by the sign of the value.
 __device__ __forceinline__ void atomicMinDouble(uint64_t * accumulator, double value)
 {
     if (value >= 0)
@@ -269,8 +235,6 @@ __device__ __forceinline__ void atomicMaxDouble(uint64_t * accumulator, double v
         atomicMin(reinterpret_cast<unsigned long long *>(accumulator), static_cast<unsigned long long>(__double_as_longlong(value)));
 }
 
-/// A row's value as the bits of the accumulator it folds into: an integer widened to eight bytes,
-/// a float widened to a double.
 __device__ __forceinline__ uint64_t loadValueBits(const ValueLayout & value, size_t row)
 {
     switch (value.fold)
@@ -290,8 +254,6 @@ __device__ __forceinline__ uint64_t loadValueBits(const ValueLayout & value, siz
     return 0;
 }
 
-/// Folds `bits`, in the accumulator's representation, into the accumulator, which may be in
-/// shared memory as well as on the device.
 __device__ __forceinline__ void foldBits(Fold fold, uint64_t bits, uint64_t * accumulator)
 {
     switch (fold)
@@ -345,8 +307,6 @@ __device__ __forceinline__ FilterValue loadFilterValue(const FilterColumnLayout 
     }
 }
 
-/// -1, 0 or 1 as `a` compares to `b`, and 2 when they are unordered, which only NaN is. Integers
-/// compare by their value whatever their signs; two floats compare as doubles.
 __device__ __forceinline__ int compareFilterValues(const FilterValue & a, const FilterValue & b)
 {
     if (a.kind == GPUFilterValueKind::Float || b.kind == GPUFilterValueKind::Float)
