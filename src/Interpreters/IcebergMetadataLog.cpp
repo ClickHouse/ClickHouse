@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Common/DateLUTImpl.h>
 #include <Common/ErrnoException.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <base/getFQDNOrHostName.h>
 #include <Common/config_version.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -123,7 +124,7 @@ void insertRowToLogTableImpl(
             .query_id = local_context->getCurrentQueryId(),
             .content_type = row_log_level,
             .table_path = normalized_table_path,
-            .file_path = file_path.serialize(),
+            .file_path = maskCredentialsInURI(file_path.serialize()),
             .metadata_content = row,
             .row_in_file = row_in_file,
             .pruning_status = pruning_status};
