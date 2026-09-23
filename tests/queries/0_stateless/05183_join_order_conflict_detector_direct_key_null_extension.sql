@@ -39,12 +39,12 @@ INSERT INTO t3 VALUES ([10], 'ten'), ([], 'null_key');
 SELECT 'Array    rows limit=0', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
     SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0;
 SELECT 'Array    rows cd_a  ', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1;
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a';
 SELECT 'Array    rows cd_c  ', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_c = 1;
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c';
 SELECT 'Array    plan cd_a' AS arm, replaceRegexpOne(explain, '^[^A-Za-z]+', '') AS join_step
 FROM ( EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1 )
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a' )
 WHERE explain LIKE '%Join conditions:%';
 
 DROP TABLE t2;
@@ -60,10 +60,10 @@ INSERT INTO t3 VALUES (10::Int64, 'ten'), (NULL, 'null_key');
 SELECT 'Variant  rows limit=0', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
     SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0;
 SELECT 'Variant  rows cd_a  ', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1;
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a';
 SELECT 'Variant  plan cd_a' AS arm, replaceRegexpOne(explain, '^[^A-Za-z]+', '') AS join_step
 FROM ( EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1 )
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a' )
 WHERE explain LIKE '%Join conditions:%';
 
 DROP TABLE t2;
@@ -80,10 +80,10 @@ INSERT INTO t3 VALUES (10, 'ten'), (NULL, 'null_key');
 SELECT 'Nullable rows limit=0', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
     SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0;
 SELECT 'Nullable rows cd_a  ', t1.a, t2.a, t3.tag FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k ORDER BY ALL
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1;
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a';
 SELECT 'Nullable plan cd_a' AS arm, replaceRegexpOne(explain, '^[^A-Za-z]+', '') AS join_step
 FROM ( EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_a = 1 )
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a' )
 WHERE explain LIKE '%Join conditions:%';
 
 -- CD-C witness. CD-C must reach the same sound reassociation as CD-A; plain DPsub cannot reassociate
@@ -91,7 +91,7 @@ WHERE explain LIKE '%Join conditions:%';
 -- has not silently fallen back.
 SELECT 'Nullable plan cd_c' AS arm, replaceRegexpOne(explain, '^[^A-Za-z]+', '') AS join_step
 FROM ( EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3 ON t2.k = t3.k
-    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_use_conflict_detector_c = 1 )
+    SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10, query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c' )
 WHERE explain LIKE '%Join conditions:%';
 
 DROP TABLE t1;
