@@ -11,7 +11,7 @@ import traceback
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from threading import Thread
 
@@ -799,8 +799,21 @@ def build_flamegraph_upload_tsv():
     return True
 
 
+# The CIDB `DateTime` and `Date` columns are UTC, while the job runs with the
+# local time zone of the test image (`TZ=Europe/Amsterdam` in `test-base`).
+# Local time would put rows of a run after 22:00 UTC on the next day, and the
+# performance dashboard lists runs only up to the current UTC date, so every
+# timestamp written to CIDB goes through these helpers.
+def utc_now():
+    return datetime.now(timezone.utc)
+
+
+def format_utc_date_time(value):
+    return value.astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+
+
 def get_check_start_time():
-    """Return the perf check start time (ISO, no microseconds).
+    """Return the perf check start time in UTC (`YYYY-MM-DD hh:mm:ss`).
 
     Uses the CHPC_CHECK_START_TIMESTAMP env var when available so that every
     batch of the same job lines up on the same timestamp (same "data point"
@@ -808,12 +821,10 @@ def get_check_start_time():
     """
     check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
     if check_start_timestamp:
-        return (
-            datetime.fromtimestamp(int(check_start_timestamp))
-            .isoformat(sep=" ")
-            .split(".")[0]
+        return format_utc_date_time(
+            datetime.fromtimestamp(int(check_start_timestamp), timezone.utc)
         )
-    return datetime.now().isoformat(sep=" ").split(".")[0]
+    return format_utc_date_time(utc_now())
 
 
 # --- Export of the system logs to the CI Logs cluster ----------------------
@@ -1039,7 +1050,7 @@ def run_report_upload(cfg, cidb, info, reference_sha, compare_against_release):
     )
     insert_metadata = get_insert_metadata(info, compare_against_release)
     query = query_template.format(
-        EVENT_DATE=datetime.now().date().isoformat(),
+        EVENT_DATE=utc_now().date().isoformat(),
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
@@ -1075,7 +1086,7 @@ def insert_flamegraph_stacks(cidb, info, reference_sha, compare_against_release)
     insert_metadata = get_insert_metadata(info, compare_against_release)
     query = INSERT_FLAMEGRAPH_STACKS.format(
         FLAMEGRAPH_STACKS_TABLE=FLAMEGRAPH_STACKS_TABLE,
-        EVENT_DATE=datetime.now().date().isoformat(),
+        EVENT_DATE=utc_now().date().isoformat(),
         CHECK_START_TIME=get_check_start_time(),
         PR_NUMBER=info.pr_number,
         REF_SHA=escape_sql_string(reference_sha),
@@ -2564,16 +2575,9 @@ def main():
                 print("WARNING: Failed to prepare raw query metrics TSV")
                 return True
 
-            check_start_timestamp = os.environ.get("CHPC_CHECK_START_TIMESTAMP", "")
-            if check_start_timestamp:
-                check_start_time = datetime.fromtimestamp(
-                    int(check_start_timestamp)
-                ).isoformat(sep=" ").split(".")[0]
-            else:
-                check_start_time = datetime.now().isoformat(sep=" ").split(".")[0]
+            check_start_time = get_check_start_time()
 
-            now = datetime.now()
-            date = now.date().isoformat()
+            date = utc_now().date().isoformat()
 
             with open(raw_query_metrics_path, "r", encoding="utf-8") as f:
                 data = f.read()
@@ -2627,9 +2631,9 @@ def main():
                 print("WARNING: CIDB not ready - skipping historical data insert")
                 return True
 
-            now = datetime.now()
+            now = utc_now()
             date = now.date().isoformat()
-            date_time = now.isoformat(sep=" ").split(".")[0]
+            date_time = format_utc_date_time(now)
 
             report_path = f"{perf_wd}/report/all-query-metrics.tsv"
             with open(report_path, "r", encoding="utf-8") as f:
