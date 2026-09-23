@@ -19,10 +19,14 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/Context.h>
+#include <Core/ServerSettings.h>
+#include <Common/Macros.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
@@ -64,6 +68,12 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsString default_replica_path;
+    extern const ServerSettingsString default_replica_name;
 }
 
 namespace ErrorCodes
@@ -506,6 +516,65 @@ static size_t getNumberOfTablesToMove(const StoragePtr & table, const ContextPtr
     return 1;
 }
 
+void DatabaseOnDisk::checkStoredDefinitionCanBeRenamed(
+    const ASTPtr & create_ast, const StorageID & table_id, const StorageID & new_table_id, bool whole_database, ContextPtr context_)
+{
+    const auto * create = create_ast ? create_ast->as<ASTCreateQuery>() : nullptr;
+    if (!create || !create->storage || !create->storage->engine)
+        return;
+
+    const auto & engine = *create->storage->engine;
+    if (!engine.name.starts_with("Replicated") || !engine.name.ends_with("MergeTree"))
+        return;
+
+    String zookeeper_path;
+    String replica_name;
+    const auto * path_literal = engine.arguments && engine.arguments->children.size() >= 2 ? engine.arguments->children[0]->as<ASTLiteral>() : nullptr;
+    const auto * replica_literal = path_literal ? engine.arguments->children[1]->as<ASTLiteral>() : nullptr;
+    if (path_literal && replica_literal && path_literal->value.getType() == Field::Types::String
+        && replica_literal->value.getType() == Field::Types::String)
+    {
+        zookeeper_path = path_literal->value.safeGet<String>();
+        replica_name = replica_literal->value.safeGet<String>();
+    }
+    else
+    {
+        const auto & server_settings = context_->getServerSettings();
+        zookeeper_path = server_settings[ServerSetting::default_replica_path];
+        replica_name = server_settings[ServerSetting::default_replica_name];
+    }
+
+    /// Only whether `{database}` takes part matters, at any level of a configured macro; other macros may be absent here.
+    Macros::MacroExpansionInfo info;
+    info.table_id = table_id;
+    info.ignore_unknown = true;
+    Macros::MacroExpansionInfo replica_info = info;
+    context_->getMacros()->expand(zookeeper_path, info);
+    context_->getMacros()->expand(replica_name, replica_info);
+    const bool binds_database = info.expanded_database || replica_info.expanded_database;
+    const bool binds_table = info.expanded_table || replica_info.expanded_table;
+
+    if (whole_database)
+    {
+        if (!binds_database)
+            return;
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Cannot rename database {} to {}, because zookeeper_path or replica_name of Replicated table {} "
+                        "contains implicit 'database' macro. We cannot rename path in ZooKeeper, so the table would be "
+                        "bound to a different path on the next load. If you really want to rename the database, "
+                        "you should edit metadata file of the table first and restart server or reattach the table.",
+                        table_id.database_name, new_table_id.database_name, table_id.getNameForLogs());
+    }
+
+    if (!binds_database && !binds_table)
+        return;
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot rename Replicated table {}, because zookeeper_path or replica_name contains implicit "
+                    "'database' or 'table' macro. We cannot rename path in ZooKeeper, so path may become inconsistent "
+                    "with table name. If you really want to rename table, you should edit metadata file first.",
+                    table_id.getNameForLogs());
+}
+
 void DatabaseOnDisk::renameTable(
         ContextPtr local_context,
         const String & table_name,
@@ -562,6 +631,17 @@ void DatabaseOnDisk::renameTable(
             target_db->checkTablesLimit(getNumberOfTablesToMove(table, local_context));
         }
     }
+
+    /// Refused before anything is moved, from the stored definition under the current macros; the storage answers for
+    /// the macros it was loaded with in `rename`. Not while the server starts: the Ordinary-to-Atomic conversion
+    /// moves tables then, under the names the definitions were written with.
+    const bool server_starting = getContext()->getApplicationType() == Context::ApplicationType::SERVER
+        && !getContext()->isServerCompletelyStarted();
+    if (!server_starting && table->supportsReplication())
+        checkStoredDefinitionCanBeRenamed(
+            parseQueryFromMetadata(log, local_context, getDisk(), getObjectMetadataPath(table_name)),
+            table->getStorageID(), StorageID(to_database.getDatabaseName(), to_table_name, table->getStorageID().uuid),
+            /*whole_database=*/ false, local_context);
 
     table_lock = table->lockExclusively(local_context->getCurrentQueryId(), local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
 

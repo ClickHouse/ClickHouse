@@ -3,8 +3,13 @@ import pytest
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
+# The test rewrites the macros; a remote database disk would need `{shard}` and `{replica}` among them.
 node = cluster.add_instance(
-    "node", with_zookeeper=True, stay_alive=True, macros={"prefix": "/clickhouse/tables/db1"}
+    "node",
+    with_zookeeper=True,
+    stay_alive=True,
+    with_remote_database_disk=False,
+    macros={"prefix": "/clickhouse/tables/db1"},
 )
 
 
@@ -54,3 +59,16 @@ def test_rename_after_macro_reload(started_cluster):
         node.query("SELECT is_readonly FROM system.replicas WHERE database = 'db2' AND table = 't2'")
         == "0\n"
     )
+
+    # `RENAME TABLE` to or from an `Ordinary` database takes the on-disk path; the same check runs there.
+    node.query(
+        "CREATE DATABASE ord ENGINE = Ordinary", settings={"allow_deprecated_database_ordinary": 1}
+    )
+    node.query(
+        "CREATE TABLE ord.t (x UInt64) ENGINE = ReplicatedMergeTree('{prefix}/ord_t', 'r1') ORDER BY x"
+    )
+    set_macros({"prefix": "/clickhouse/tables/{table}"})
+    assert "NOT_IMPLEMENTED" in node.query_and_get_error("RENAME TABLE ord.t TO db2.t3")
+    set_macros({"prefix": "/clickhouse/tables/db1"})
+    node.query("RENAME TABLE ord.t TO db2.t3")
+    assert node.query("SELECT count() FROM system.tables WHERE database = 'db2' AND name = 't3'") == "1\n"

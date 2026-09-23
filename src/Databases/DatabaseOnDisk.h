@@ -72,6 +72,13 @@ public:
 
     void drop(ContextPtr context) override;
 
+    /// Whether the stored definition of a `ReplicatedMergeTree` table can follow a rename: a path or replica name,
+    /// explicit or the server default, that expands `{database}` cannot follow a database rename, and one that expands
+    /// `{database}` or `{table}` cannot be renamed at all. Expanded with the current macros, which a loaded table's own
+    /// check does not see, and the only answer for a table nothing has loaded or a detached one.
+    static void checkStoredDefinitionCanBeRenamed(
+        const ASTPtr & create_ast, const StorageID & table_id, const StorageID & new_table_id, bool whole_database, ContextPtr context_);
+
     String getObjectMetadataPath(const String & object_name) const override;
 
     time_t getObjectMetadataModificationTime(const String & object_name) const override;
