@@ -116,7 +116,7 @@ struct JSONParserState
 ///
 /// Extraction trees capture the query's `session_timezone` and the parser follows `allow_simdjson`,
 /// so the cache has the same lifetime as `DataTypesCache`: it is released when the thread starts serving
-/// another query context or `session_timezone` changes. Entries are also released when a map reaches
+/// another query context or when `session_timezone` or `allow_simdjson` changes. Entries are also released when a map reaches
 /// `MAX_ELEMENTS` schemas or an object larger than `DBMS_DEFAULT_BUFFER_SIZE` is parsed.
 /// An idle thread keeps the state of its last query until then.
 class JSONParserStateCache

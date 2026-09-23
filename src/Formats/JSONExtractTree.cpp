@@ -718,7 +718,8 @@ class DateTimeNode : public JSONExtractTreeNode<JSONParser>, public TimezoneMixi
 {
 public:
     explicit DateTimeNode(const DataTypeDateTime & datetime_type)
-        : TimezoneMixin(datetime_type), utc_time_zone(DateLUT::instance("UTC"))
+        /// Without an explicit timezone, use the current one: pooled serializations share types created under other queries.
+        : TimezoneMixin(datetime_type.hasExplicitTimeZone() ? datetime_type.getTimeZone().getTimeZone() : ""), utc_time_zone(DateLUT::instance("UTC"))
     {
     }
 
@@ -963,7 +964,8 @@ class DateTime64Node : public JSONExtractTreeNode<JSONParser>, public TimezoneMi
 {
 public:
     explicit DateTime64Node(const DataTypeDateTime64 & datetime64_type)
-        : TimezoneMixin(datetime64_type), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
+        /// Without an explicit timezone, use the current one: pooled serializations share types created under other queries.
+        : TimezoneMixin(datetime64_type.hasExplicitTimeZone() ? datetime64_type.getTimeZone().getTimeZone() : ""), utc_time_zone(DateLUT::instance("UTC")), scale(datetime64_type.getScale())
     {
     }
 
