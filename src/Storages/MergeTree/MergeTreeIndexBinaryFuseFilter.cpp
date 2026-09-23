@@ -1,4 +1,6 @@
-#include <Storages/MergeTree/MergeTreeIndexBloomFilter.h>
+#include <Storages/MergeTree/MergeTreeIndexBinaryFuseFilter.h>
+
+#include <cmath>
 
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
@@ -13,13 +15,16 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/BloomFilter.h>
 #include <Interpreters/BloomFilterHash.h>
+#include <Interpreters/BinaryFuseFilter.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Set.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/misc.h>
+#include <Storages/IndicesDescription.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -39,119 +44,73 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(size_t bits_per_row_, size_t hash_functions_, size_t index_columns_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(index_columns_)
+MergeTreeIndexGranuleBinaryFuseFilter::MergeTreeIndexGranuleBinaryFuseFilter(double /* false_positive_rate */, size_t f_bits_, size_t index_columns_)
+    : f_bits(f_bits_), binary_fuse_filters(index_columns_)
 {
     total_rows = 0;
     for (size_t column = 0; column < index_columns_; ++column)
-        bloom_filters[column] = std::make_shared<BloomFilter>(bits_per_row, hash_functions, 0);
+        binary_fuse_filters[column] = std::make_shared<BinaryFuseFilter>(BinaryFuseFilter::empty(f_bits));
 }
 
-MergeTreeIndexGranuleBloomFilter::MergeTreeIndexGranuleBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, const std::vector<HashSet<UInt64>>& column_hashes_)
-        : bits_per_row(bits_per_row_), hash_functions(hash_functions_), bloom_filters(column_hashes_.size())
+MergeTreeIndexGranuleBinaryFuseFilter::MergeTreeIndexGranuleBinaryFuseFilter(
+    double false_positive_rate_, size_t f_bits_, const std::vector<HashSet<UInt64>> & column_hashes_)
+    : f_bits(f_bits_), binary_fuse_filters(column_hashes_.size())
 {
     if (column_hashes_.empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule_index_blocks empty or total_rows is zero.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Granule index hash sets are empty.");
 
-    size_t bloom_filter_max_size = 0;
+    size_t max_distinct = 0;
     for (const auto & column_hash : column_hashes_)
-        bloom_filter_max_size = std::max(bloom_filter_max_size, column_hash.size());
+        max_distinct = std::max(max_distinct, column_hash.size());
 
-    static size_t atom_size = 8;
+    total_rows = max_distinct;
 
-    // If multiple columns are given, we will initialize all the bloom filters
-    // with the size of the highest-cardinality one. This is done for compatibility with
-    // existing binary serialization format
-    total_rows = bloom_filter_max_size;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-
-    for (size_t column = 0, columns = column_hashes_.size(); column < columns; ++column)
-    {
-        bloom_filters[column] = std::make_shared<BloomFilter>(bytes_size, hash_functions, 0);
-        fillingBloomFilter(bloom_filters[column], column_hashes_[column]);
-    }
+    for (size_t column = 0; column < column_hashes_.size(); ++column)
+        binary_fuse_filters[column] = std::make_shared<BinaryFuseFilter>(BinaryFuseFilter::buildFromHashes(column_hashes_[column], false_positive_rate_));
 }
 
-bool MergeTreeIndexGranuleBloomFilter::empty() const
+bool MergeTreeIndexGranuleBinaryFuseFilter::empty() const
 {
     return !total_rows;
 }
 
-size_t MergeTreeIndexGranuleBloomFilter::memoryUsageBytes() const
+size_t MergeTreeIndexGranuleBinaryFuseFilter::memoryUsageBytes() const
 {
     size_t sum = 0;
-    for (const auto & bloom_filter : bloom_filters)
-        sum += bloom_filter->memoryUsageBytes();
+    for (const auto & filter : binary_fuse_filters)
+        sum += filter->memoryUsageBytes();
     return sum;
 }
 
-void MergeTreeIndexGranuleBloomFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
+void MergeTreeIndexGranuleBinaryFuseFilter::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     if (version != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown index version {}.", version);
 
-    readVarUInt(total_rows, istr);
+    UInt64 total_rows_u64 = 0;
+    readVarUInt(total_rows_u64, istr);
+    total_rows = static_cast<size_t>(total_rows_u64);
 
-    static size_t atom_size = 8;
-    size_t bytes_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    size_t read_size = bytes_size;
-    for (auto & filter : bloom_filters)
+    for (auto & filter : binary_fuse_filters)
     {
-        filter->resize(bytes_size);
-        /// Big-endian granules hold whole `BloomFilter::UnderType` words, so only the payload size
-        /// differs there. The read itself is unconditional: guarding it too leaves the filter zeroed.
-        if constexpr (std::endian::native == std::endian::big)
-            read_size = filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        istr.readStrict(reinterpret_cast<char *>(filter->getFilter().data()), read_size);
+        filter = std::make_shared<BinaryFuseFilter>(BinaryFuseFilter::empty(f_bits));
+        filter->deserializeBinary(istr, version);
     }
 }
 
-void MergeTreeIndexGranuleBloomFilter::serializeBinary(WriteBuffer & ostr) const
+void MergeTreeIndexGranuleBinaryFuseFilter::serializeBinary(WriteBuffer & ostr) const
 {
     if (empty())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty bloom filter index.");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Attempt to write empty binary fuse filter index.");
 
-    writeVarUInt(total_rows, ostr);
+    writeVarUInt(static_cast<UInt64>(total_rows), ostr);
 
-    static size_t atom_size = 8;
-    size_t write_size = (bits_per_row * total_rows + atom_size - 1) / atom_size;
-    for (const auto & bloom_filter : bloom_filters)
-    {
-        /// Mirrors `deserializeBinary`: the size is byte-order dependent, the write is not.
-        if constexpr (std::endian::native == std::endian::big)
-            write_size = bloom_filter->getFilter().size() * sizeof(BloomFilter::UnderType);
-        ostr.write(reinterpret_cast<const char *>(bloom_filter->getFilter().data()), write_size);
-    }
-}
-
-void MergeTreeIndexGranuleBloomFilter::fillingBloomFilter(BloomFilterPtr & bf, const HashSet<UInt64> &hashes) const
-{
-    for (const auto & bf_base_hash : hashes)
-        for (size_t i = 0; i < hash_functions; ++i)
-            bf->addHashWithSeed(bf_base_hash.getKey(), BloomFilterHash::bf_hash_seed[i]);
+    for (const auto & filter : binary_fuse_filters)
+        filter->serializeBinary(ostr);
 }
 
 namespace
 {
-
-/// True when the index column is an `Array` and the set holds an empty array. A set column that is
-/// not a `ColumnArray` cannot be inspected, so it counts as holding one.
-bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
-{
-    if (!WhichDataType(index_type).isArray())
-        return false;
-
-    const auto * array_column = checkAndGetColumn<ColumnArray>(set_column.get());
-    if (!array_column)
-        return true;
-
-    for (size_t row = 0; row < row_size; ++row)
-        if (array_column->getSize(row) == 0)
-            return true;
-
-    return false;
-}
 
 ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
 {
@@ -166,18 +125,7 @@ ColumnWithTypeAndName getPreparedSetInfo(const ConstSetPtr & prepared_set)
     return {ColumnTuple::create(set_elements), std::make_shared<DataTypeTuple>(prepared_set->getElementsTypes()), "dummy"};
 }
 
-bool hashMatchesFilter(const BloomFilterPtr& bloom_filter, UInt64 hash, size_t hash_functions)
-{
-    return std::all_of(BloomFilterHash::bf_hash_seed,
-                       BloomFilterHash::bf_hash_seed + hash_functions,
-                       [&](const auto &hash_seed)
-                       {
-                           return bloom_filter->findHashWithSeed(hash,
-                                                                 hash_seed);
-                       });
-}
-
-bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & bloom_filter, size_t hash_functions, bool match_all)
+bool maybeTrueOnBinaryFuseFilter(const IColumn * hash_column, const BinaryFuseFilterPtr & binary_fuse_filter, bool match_all)
 {
     const auto * const_column = typeid_cast<const ColumnConst *>(hash_column);
     const auto * non_const_column = typeid_cast<const ColumnUInt64 *>(hash_column);
@@ -186,31 +134,19 @@ bool maybeTrueOnBloomFilter(const IColumn * hash_column, const BloomFilterPtr & 
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Hash column must be Const or UInt64.");
 
     if (const_column)
-    {
-        return hashMatchesFilter(bloom_filter,
-                                 const_column->getValue<UInt64>(),
-                                 hash_functions);
-    }
+        return binary_fuse_filter->contains(const_column->getValue<UInt64>());
 
     const ColumnUInt64::Container & hashes = non_const_column->getData();
 
     if (match_all)
     {
-        return std::all_of(hashes.begin(),
-                           hashes.end(),
-                           [&](const auto& hash_row)
-                           {
-                               return hashMatchesFilter(bloom_filter,
-                                                        hash_row,
-                                                        hash_functions);
-                           });
+        return std::all_of(hashes.begin(), hashes.end(), [&](UInt64 hash_row) { return binary_fuse_filter->contains(hash_row); });
     }
 
-    return std::any_of(
-        hashes.begin(), hashes.end(), [&](const auto & hash_row) { return hashMatchesFilter(bloom_filter, hash_row, hash_functions); });
+    return std::any_of(hashes.begin(), hashes.end(), [&](UInt64 hash_row) { return binary_fuse_filter->contains(hash_row); });
 }
 
-/// Information about a Map column's presence in the bloom filter index.
+/// Information about a Map column's presence in the binary fuse filter index.
 /// Used to unify handling of both `arrayElement(map, key)` function calls
 /// and `map.key_<serialized_key>` subcolumn references produced by `FunctionToSubcolumnsPass`.
 struct MapIndexInfo
@@ -222,7 +158,7 @@ struct MapIndexInfo
     Field key_field;
 };
 
-/// Try to resolve a Map column against the bloom filter index header by the map column name
+/// Try to resolve a Map column against the binary fuse filter index header by the map column name
 /// and the key as a Field. Returns std::nullopt if neither `mapKeys(<col>)` nor `mapValues(<col>)`
 /// is present in the index.
 std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_name, const Field & key_field, const Block & header)
@@ -252,7 +188,7 @@ std::optional<MapIndexInfo> tryResolveMapIndexInfo(const String & map_column_nam
 }
 
 /// Try to parse a Map subcolumn reference like `map.key_<serialized_key>` and resolve it
-/// against the bloom filter index header. The subcolumn name format is produced by
+/// against the binary fuse filter index header. The subcolumn name format is produced by
 /// `FunctionToSubcolumnsPass`.
 std::optional<MapIndexInfo> tryParseMapSubcolumn(
     const String & column_name, const Block & header, const NameSet & shadowing_columns)
@@ -310,16 +246,9 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
 
 }
 
-MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
-    const ActionsDAG::Node * predicate,
-    ContextPtr context_,
-    const Block & header_,
-    size_t hash_functions_,
-    NameSet columns_shadowing_map_subcolumns_)
-    : WithContext(context_)
-    , header(header_)
-    , hash_functions(hash_functions_)
-    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
+MergeTreeIndexConditionBinaryFuseFilter::MergeTreeIndexConditionBinaryFuseFilter(
+    const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, NameSet columns_shadowing_map_subcolumns_)
+    : WithContext(context_), header(header_), columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
 {
     if (!predicate)
     {
@@ -334,18 +263,20 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     rpn = std::move(builder).extractRPN();
 }
 
-bool MergeTreeIndexConditionBloomFilter::alwaysUnknownOrTrue() const
+bool MergeTreeIndexConditionBinaryFuseFilter::alwaysUnknownOrTrue() const
 {
     return rpnEvaluatesAlwaysUnknownOrTrue(
         rpn,
         {RPNElement::FUNCTION_EQUALS,
+         RPNElement::FUNCTION_NOT_EQUALS,
          RPNElement::FUNCTION_HAS,
          RPNElement::FUNCTION_HAS_ANY,
          RPNElement::FUNCTION_HAS_ALL,
-         RPNElement::FUNCTION_IN});
+         RPNElement::FUNCTION_IN,
+         RPNElement::FUNCTION_NOT_IN});
 }
 
-bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const
+bool MergeTreeIndexConditionBinaryFuseFilter::mayBeTrueOnGranule(const MergeTreeIndexGranuleBinaryFuseFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjunction_fn) const
 {
     std::vector<BoolMask> rpn_stack;
     const auto & filters = granule->getFilters();
@@ -359,7 +290,9 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                 rpn_stack.emplace_back(true, true);
                 break;
             case RPNElement::FUNCTION_IN:
+            case RPNElement::FUNCTION_NOT_IN:
             case RPNElement::FUNCTION_EQUALS:
+            case RPNElement::FUNCTION_NOT_EQUALS:
             case RPNElement::FUNCTION_HAS:
             case RPNElement::FUNCTION_HAS_ANY:
             case RPNElement::FUNCTION_HAS_ALL:
@@ -373,13 +306,12 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
                     const auto & filter = filters[query_index_hash.first];
                     const ColumnPtr & hash_column = query_index_hash.second;
 
-                    match_rows = maybeTrueOnBloomFilter(&*hash_column,
-                                                        filter,
-                                                        hash_functions,
-                                                        match_all);
+                    match_rows = maybeTrueOnBinaryFuseFilter(&*hash_column, filter, match_all);
                 }
 
                 rpn_stack.emplace_back(match_rows, true);
+                if (element.function == RPNElement::FUNCTION_NOT_EQUALS || element.function == RPNElement::FUNCTION_NOT_IN)
+                    rpn_stack.back() = !rpn_stack.back();
                 break;
             }
             case RPNElement::FUNCTION_NOT:
@@ -410,20 +342,20 @@ bool MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule(const MergeTreeIndex
             /// No `default:` to make the compiler warn if not all enum values are handled.
         }
 
-        if (update_partial_result_disjuntion_fn)
+        if (update_partial_result_disjunction_fn)
         {
-            update_partial_result_disjuntion_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
+            update_partial_result_disjunction_fn(element_idx, rpn_stack.back().can_be_true, element.function == RPNElement::FUNCTION_UNKNOWN);
             ++element_idx;
         }
     }
 
     if (rpn_stack.size() != 1)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionBloomFilter::mayBeTrueOnGranule");
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected stack size in MergeTreeIndexConditionBinaryFuseFilter::mayBeTrueOnGranule");
 
     return rpn_stack[0].can_be_true;
 }
 
-bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
+bool MergeTreeIndexConditionBinaryFuseFilter::extractAtomFromTree(const RPNBuilderTreeNode & node, RPNElement & out)
 {
     {
         Field const_value;
@@ -457,11 +389,11 @@ bool MergeTreeIndexConditionBloomFilter::extractAtomFromTree(const RPNBuilderTre
 namespace
 {
 
-/// Hash the JSON path string and append a predicate entry for bloom filter index.
-void fillJSONPathBloomPredicate(
+/// Hash the JSON path string and append a predicate entry for binary fuse filter index.
+void fillJSONPathBinaryFusePredicate(
     const JSONSubcolumnIndexInfo & json_info,
     const Block & header,
-    MergeTreeIndexConditionBloomFilter::RPNElement & out)
+    MergeTreeIndexConditionBinaryFuseFilter::RPNElement & out)
 {
     const DataTypePtr & index_type = header.getByPosition(json_info.header_position).type;
     const auto actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -473,7 +405,7 @@ void fillJSONPathBloomPredicate(
 
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
+bool MergeTreeIndexConditionBinaryFuseFilter::traverseFunction(const RPNBuilderTreeNode & node, RPNElement & out, const RPNBuilderTreeNode * parent)
 {
     if (!node.isFunction())
         return false;
@@ -496,17 +428,18 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     /// Handle isNotNull for JSON subcolumns: isNotNull(json.some.path)
     /// When a JSON path is absent, the value is NULL (for Dynamic/Nullable types),
     /// so isNotNull(NULL) = false — always safe to skip granules where path is absent.
-    if (function_name == "isNotNull" && arguments_size == 1)
+    /// Only for a bare atom: nested forms like isNotNull(json.a) = 0 must not use this fast path.
+    if (parent == nullptr && function_name == "isNotNull" && arguments_size == 1)
     {
         auto arg = function.getArgumentAt(0);
         if (auto json_info = tryMatchNodeToJSONIndex(arg, header, "JSONAllPaths"))
         {
             auto arg_type = arg.getDAGNode()->result_type;
-            /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
+            /// It doesn't make sense to use binary fuse filter for isNotNull on non-Nullable type, as isNotNull will be always true.
             if (!canContainNull(*arg_type))
                 return false;
 
-            fillJSONPathBloomPredicate(*json_info, header, out);
+            fillJSONPathBinaryFusePredicate(*json_info, header, out);
             out.function = RPNElement::FUNCTION_HAS;
             return true;
         }
@@ -525,11 +458,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
 
     if (functionIsInOrGlobalInOperator(function_name))
     {
-        /// A bloom filter only answers "may be present", so a negated set atom holds for any granule
-        /// that has one other value and can never skip one.
-        if (function_name == "notIn" || function_name == "globalNotIn")
-            return false;
-
         if (auto future_set = rhs_argument.tryGetPreparedSet(); future_set)
         {
             if (auto prepared_set = future_set->buildOrderedSetInplace(rhs_argument.getTreeContext().getQueryContext()); prepared_set)
@@ -546,6 +474,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     }
 
     if (function_name == "equals" ||
+        function_name == "notEquals" ||
         function_name == "has" ||
         function_name == "mapContains" ||
         function_name == "mapContainsKey" ||
@@ -563,7 +492,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
                 return true;
         }
         else if (lhs_argument.tryGetConstant(const_value, const_type) &&
-            (function_name == "equals" || function_name == "has" || function_name == "hasAny"))
+            (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
         {
             if (traverseTreeEquals(function_name, rhs_argument, const_type, const_value, out, parent))
                 return true;
@@ -575,23 +504,25 @@ bool MergeTreeIndexConditionBloomFilter::traverseFunction(const RPNBuilderTreeNo
     return false;
 }
 
-/// True when converting the constant to the element type yields the exact bytes the index holds, so
-/// hashing it is equivalent to the comparison. Floats are excluded: `-0.0` equals but hashes apart.
-static bool bloomFilterHashDomainMatches(const DataTypePtr & value_type, const DataTypePtr & nested_type)
+/// True when the index column is an `Array` and the set holds an empty array. A set column that is
+/// not a `ColumnArray` cannot be inspected, so it counts as holding one.
+static bool setHasEmptyArray(const DataTypePtr & index_type, const ColumnPtr & set_column, size_t row_size)
 {
-    if (!value_type)
+    if (!WhichDataType(index_type).isArray())
         return false;
 
-    auto value = removeLowCardinalityAndNullable(value_type);
-    auto element = removeLowCardinalityAndNullable(nested_type);
+    const auto * array_column = checkAndGetColumn<ColumnArray>(set_column.get());
+    if (!array_column)
+        return true;
 
-    if (isFloat(value) || isFloat(element))
-        return false;
+    for (size_t row = 0; row < row_size; ++row)
+        if (array_column->getSize(row) == 0)
+            return true;
 
-    return (isInteger(value) && isInteger(element)) || value->equals(*element);
+    return false;
 }
 
-bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
+bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeIn(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const ConstSetPtr & prepared_set,
@@ -620,13 +551,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
 
-        /// `nullIn` (transform_null_in=1) selects the same rows as `in` only for a NULL-free,
-        /// single-column, non-Array set whose type matches the index; otherwise no pruning.
-        if ((function_name == "nullIn" || function_name == "globalNullIn") && prepared_set
-            && prepared_set->getDataTypes().size() == 1 && !prepared_set->hasNull()
-            && prepared_set->areTypesEqual(0, index_type)
-            && !typeid_cast<const DataTypeArray *>(index_type.get()))
-            out.function = RPNElement::FUNCTION_IN;
+        if (function_name == "notIn"  || function_name == "globalNotIn")
+            out.function = RPNElement::FUNCTION_NOT_IN;
 
         return true;
     }
@@ -634,7 +560,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
     /// Try to match the column name to a JSONAllPaths index for JSON subcolumn IN filtering.
     /// tryMatchNodeToJSONIndex handles both plain subcolumns and CAST-wrapped expressions.
     /// NOT IN is not supported because after BoolMask inversion it never skips any granules.
-    /// nullIn/globalNullIn are deliberately not wired here: JSON paths need per-path NULL checks.
     if (auto json_info = tryMatchNodeToJSONIndex(key_node, header, "JSONAllPaths"))
     {
         if (function_name != "in" && function_name != "globalIn")
@@ -645,9 +570,16 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         auto key_type = key_node.getDAGNode()->result_type;
 
-        /// Check safety: if key type is non-Nullable and the set contains the default value,
-        /// we cannot skip granules where the path is absent.
-        if (!canContainNull(*key_type))
+        /// Check safety: in a granule where the path is absent the key evaluates to the default
+        /// value of its type, so we cannot skip such a granule when the set matches that value.
+        if (canContainNull(*key_type))
+        {
+            /// The default is `NULL`, and `NULL IN (NULL, ...)` is false unless `transform_null_in`
+            /// is enabled. `hasNull` accounts for that setting, returning false when it is disabled.
+            if (prepared_set->hasNull())
+                return false;
+        }
+        else
         {
             auto default_column_to_check = key_type->createColumnConstWithDefaultValue(1)->convertToFullColumnIfConst();
             ColumnWithTypeAndName default_column_with_type_to_check{default_column_to_check, key_type, ""};
@@ -658,7 +590,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
                 return false;
         }
 
-        fillJSONPathBloomPredicate(*json_info, header, out);
+        fillJSONPathBinaryFusePredicate(*json_info, header, out);
         out.function = RPNElement::FUNCTION_IN;
 
         return true;
@@ -714,7 +646,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
 
         if (map_info->has_keys_index)
         {
-            /// For mapKeys we serialize key argument with bloom filter
+            /// For mapKeys we serialize key argument with binary fuse filter
             size_t position = map_info->keys_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -722,7 +654,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         }
         else if (map_info->has_values_index)
         {
-            /// For mapValues we serialize set with bloom filter
+            /// For mapValues we serialize set with binary fuse filter
             size_t row_size = column->size();
             size_t position = map_info->values_index_position;
             const DataTypePtr & index_type = header.getByPosition(position).type;
@@ -736,52 +668,22 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             return false;
         }
 
-        /// nullIn/globalNullIn are deliberately not wired here, as in the JSON branch above.
         if (function_name == "in" || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
+
+        if (function_name == "notIn" || function_name == "globalNotIn")
+            out.function = RPNElement::FUNCTION_NOT_IN;
 
         return true;
     }
 
-    /// `arrayJoin(col) IN (set)` needs a set element in the granule, same as `hasAny(col, set)`.
-    /// `notIn` is not derivable: a granule holding a set element still yields rows outside the set.
-    if (function_name != "in" && function_name != "globalIn")
-        return false;
-    if (!column)
-        return false;
-
-    auto array_join_argument = key_node.getArrayJoinArgument();
-    if (!array_join_argument)
-        return false;
-
-    auto array_column_name = array_join_argument->getColumnName();
-    if (!header.has(array_column_name))
-        return false;
-
-    size_t position = header.getPositionByName(array_column_name);
-    const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
-    if (!array_type)
-        return false;
-
-    const auto & array_nested_type = array_type->getNestedType();
-    if (!bloomFilterHashDomainMatches(type, array_nested_type))
-        return false;
-
-    const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    out.predicate.emplace_back(
-        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
-    out.function = RPNElement::FUNCTION_HAS_ANY;
-    return true;
+    return false;
 }
 
 
-/// The array-search functions coerce the constant with CAST before comparing it to the elements:
-/// `hasAny`/`hasAll`, and `has`/`indexOf` over a `FixedString` element, cast both sides to the least
-/// supertype (hasAllAny.h, arrayIndex.h `executeGeneric`), and `has`/`indexOf` over a `LowCardinality`
-/// element cast the constant straight to the dictionary type (LowCardinalityExecutionHelpers.h
-/// `dictionaryIndexForConstant`). A CAST of `FixedString` to `String` strips the trailing zero
-/// padding, while `convertFieldToType` keeps it, so the index hashed a value the function never
-/// compares and wrongly pruned granules.
+/// The string-like search functions (`has`, `indexOf`, `hasAny`, `hasAll`, `mapContainsKey`,
+/// `mapContainsValue`, `mapContains`) do not compare the raw constant bytes against a `FixedString`
+/// or `LowCardinality` element: they first coerce the constant the way the runtime function does.
 ///
 /// Replicate that coercion at the `Field` level: strip the padding of a `FixedString` constant, then
 /// re-pad it to the width of the element type, which is the stored form of every element the function
@@ -850,8 +752,7 @@ static ColumnPtr createColumnFromConstantArray(
 
     /// The elements' own type. `convertFieldToType` needs it to convert a value that carries a unit -
     /// a `Date` day number probed against an `Array(DateTime)` column - instead of re-basing its raw
-    /// number as seconds, which hashes something the column can never hold. Every other call in this
-    /// file passes the same hint.
+    /// number as seconds, which hashes something the column can never hold.
     DataTypePtr element_type;
     if (value_type)
         if (const auto * value_array_type = typeid_cast<const DataTypeArray *>(removeLowCardinalityAndNullable(value_type).get()))
@@ -968,7 +869,7 @@ static bool indexOfCanUseBloomFilter(const RPNBuilderTreeNode * parent)
 }
 
 
-bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
+bool MergeTreeIndexConditionBinaryFuseFilter::traverseTreeEquals(
     const String & function_name,
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
@@ -977,32 +878,6 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     const RPNBuilderTreeNode * parent)
 {
     auto key_column_name = key_node.getColumnName();
-
-    /// `arrayJoin(col) = const` needs an element equal to the constant, same as `has(col, const)`.
-    /// `notEquals` is not derivable: a granule holding the constant still yields differing rows.
-    if (function_name == "equals")
-    {
-        if (auto array_join_argument = key_node.getArrayJoinArgument())
-        {
-            auto array_column_name = array_join_argument->getColumnName();
-            if (header.has(array_column_name))
-            {
-                size_t position = header.getPositionByName(array_column_name);
-                const auto * array_type = typeid_cast<const DataTypeArray *>(header.getByPosition(position).type.get());
-                if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
-                {
-                    const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
-                    auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
-                    if (converted_field.isNull())
-                        return false;
-
-                    out.function = RPNElement::FUNCTION_HAS;
-                    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithField(actual_type.get(), converted_field)));
-                    return true;
-                }
-            }
-        }
-    }
 
     if (header.has(key_column_name))
     {
@@ -1064,7 +939,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             if (array_type)
                 return false;
 
-            out.function = RPNElement::FUNCTION_EQUALS;
+            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
             const DataTypePtr actual_type = BloomFilter::getPrimitiveType(index_type);
 
             /// Where equality compares zero-padded, the constant can equal a stored value of a different byte
@@ -1110,7 +985,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             return false;
 
         out.function = RPNElement::FUNCTION_EQUALS;
-        fillJSONPathBloomPredicate(*json_info, header, out);
+        fillJSONPathBinaryFusePredicate(*json_info, header, out);
 
         return true;
     }
@@ -1195,7 +1070,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     }
 
     /// Handle both `arrayElement(map, 'key') = value` and `map.key_<serialized_key> = value`.
-    if (function_name == "equals")
+    if (function_name == "equals" || function_name == "notEquals")
     {
         if (auto map_info = tryResolveMapInfoFromNode(key_node, header, columns_shadowing_map_subcolumns))
         {
@@ -1226,7 +1101,7 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 return false;
             }
 
-            out.function = RPNElement::FUNCTION_EQUALS;
+            out.function = function_name == "equals" ? RPNElement::FUNCTION_EQUALS : RPNElement::FUNCTION_NOT_EQUALS;
 
             const auto & index_type = header.getByPosition(position).type;
             const auto actual_type = BloomFilter::getPrimitiveType(index_type);
@@ -1239,29 +1114,27 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
     return false;
 }
 
-MergeTreeIndexAggregatorBloomFilter::MergeTreeIndexAggregatorBloomFilter(
-    size_t bits_per_row_, size_t hash_functions_, const Names & columns_name_)
-    : bits_per_row(bits_per_row_), hash_functions(hash_functions_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
+MergeTreeIndexAggregatorBinaryFuseFilter::MergeTreeIndexAggregatorBinaryFuseFilter(
+    double false_positive_rate_, size_t f_bits_, const Names & columns_name_)
+    : false_positive_rate(false_positive_rate_), f_bits(f_bits_), index_columns_name(columns_name_), column_hashes(columns_name_.size())
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
 }
 
-bool MergeTreeIndexAggregatorBloomFilter::empty() const
+bool MergeTreeIndexAggregatorBinaryFuseFilter::empty() const
 {
     return !total_rows;
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBloomFilter::getGranuleAndReset()
+MergeTreeIndexGranulePtr MergeTreeIndexAggregatorBinaryFuseFilter::getGranuleAndReset()
 {
-    const auto granule = std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, column_hashes);
+    const auto granule = std::make_shared<MergeTreeIndexGranuleBinaryFuseFilter>(false_positive_rate, f_bits, column_hashes);
     total_rows = 0;
     for (auto & hashes : column_hashes)
         hashes.clear();
     return granule;
 }
 
-void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * pos, size_t limit)
+void MergeTreeIndexAggregatorBinaryFuseFilter::update(const Block & block, size_t * pos, size_t limit)
 {
     if (*pos >= block.rows())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The provided position is not less than the number of block rows. "
@@ -1273,10 +1146,7 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     for (size_t column = 0; column < index_columns_name.size(); ++column)
     {
         const auto & column_and_type = block.getByName(index_columns_name[column]);
-        /// A bloom filter only needs the set of distinct hashes, so for LowCardinality
-        /// columns this returns one hash per distinct dictionary value present in the
-        /// granule instead of one per row -- turning O(rows) hash-set inserts into
-        /// O(distinct). For other columns it is one hash per row, as before.
+        /// Hash only distinct dictionary values for LowCardinality columns, matching bloom_filter.
         auto index_column = BloomFilterHash::hashWithColumnDistinct(column_and_type.type, column_and_type.column, *pos, max_read_rows);
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
@@ -1289,33 +1159,30 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
     total_rows += max_read_rows;
 }
 
-MergeTreeIndexBloomFilter::MergeTreeIndexBloomFilter(
+MergeTreeIndexBinaryFuseFilter::MergeTreeIndexBinaryFuseFilter(
     StorageMetadataPtr metadata_snapshot_,
     const IndexDescription & index_,
-    size_t bits_per_row_,
-    size_t hash_functions_)
+    double false_positive_rate_,
+    size_t f_bits_)
     : IMergeTreeIndex(std::move(metadata_snapshot_), index_)
-    , bits_per_row(bits_per_row_)
-    , hash_functions(hash_functions_)
+    , false_positive_rate(false_positive_rate_)
+    , f_bits(f_bits_)
 {
-    chassert(bits_per_row != 0);
-    chassert(hash_functions != 0);
 }
 
-MergeTreeIndexGranulePtr MergeTreeIndexBloomFilter::createIndexGranule() const
+MergeTreeIndexGranulePtr MergeTreeIndexBinaryFuseFilter::createIndexGranule() const
 {
-    return std::make_shared<MergeTreeIndexGranuleBloomFilter>(bits_per_row, hash_functions, index.column_names.size());
+    return std::make_shared<MergeTreeIndexGranuleBinaryFuseFilter>(false_positive_rate, f_bits, index.column_names.size());
 }
 
-MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilter::createIndexAggregator() const
+MergeTreeIndexAggregatorPtr MergeTreeIndexBinaryFuseFilter::createIndexAggregator() const
 {
-    return std::make_shared<MergeTreeIndexAggregatorBloomFilter>(bits_per_row, hash_functions, index.column_names);
+    return std::make_shared<MergeTreeIndexAggregatorBinaryFuseFilter>(false_positive_rate, f_bits, index.column_names);
 }
 
-MergeTreeIndexConditionPtr MergeTreeIndexBloomFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
+MergeTreeIndexConditionPtr MergeTreeIndexBinaryFuseFilter::createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeIndexConditionBloomFilter>(
-        predicate, context, index.sample_block, hash_functions, getColumnsShadowingMapSubcolumns());
+    return std::make_shared<MergeTreeIndexConditionBinaryFuseFilter>(predicate, context, index.sample_block, getColumnsShadowingMapSubcolumns());
 }
 
 static void assertIndexColumnsType(const Block & header)
@@ -1333,11 +1200,11 @@ static void assertIndexColumnsType(const Block & header)
         if (!which.isUInt() && !which.isInt() && !which.isString() && !which.isFixedString() && !which.isFloat() &&
             !which.isDate() && !which.isDateTime() && !which.isDateTime64() && !which.isEnum() && !which.isUUID() &&
             !which.isIPv4() && !which.isIPv6())
-            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of binary fuse filter index.", type->getName());
     }
 }
 
-MergeTreeIndexPtr bloomFilterIndexCreator(
+MergeTreeIndexPtr binaryFuseFilterIndexCreator(
     StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)
 {
     double false_positive_rate = 0.025;
@@ -1345,47 +1212,44 @@ MergeTreeIndexPtr bloomFilterIndexCreator(
     if (index.arguments && !index.arguments->children.empty())
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
-        false_positive_rate = std::min<Float64>(1.0, std::max<Float64>(argument.safeGet<Float64>(), 0.0));
+        false_positive_rate = argument.safeGet<Float64>();
     }
 
-    const auto & bits_per_row_and_size_of_hash_functions = BloomFilterHash::calculationBestPractices(false_positive_rate);
+    /// Same open interval as `BinaryFuseFilter::fingerprintBitsFromFalsePositiveRate`; clamp for attach / edge metadata.
+    false_positive_rate = std::max(false_positive_rate, 1e-15);
+    false_positive_rate = std::min(false_positive_rate, 1.0 - 1e-15);
+    const size_t f_bits = BinaryFuseFilter::fingerprintBitsFromFalsePositiveRate(false_positive_rate);
 
-    return std::make_shared<MergeTreeIndexBloomFilter>(
-        std::move(metadata_snapshot), index, bits_per_row_and_size_of_hash_functions.first, bits_per_row_and_size_of_hash_functions.second);
+    return std::make_shared<MergeTreeIndexBinaryFuseFilter>(std::move(metadata_snapshot), index, false_positive_rate, f_bits);
 }
 
-void bloomFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
+void binaryFuseFilterIndexValidator(const IndexDescription & index, bool attach, const MergeTreeSettings & /*settings*/)
 {
     assertIndexColumnsType(index.sample_block);
-
-    /// The index hashing rejects an array of nullable elements (see `unwrapArraySlice` in
-    /// `BloomFilterHash.h`), which `assertIndexColumnsType` does not notice because it looks at the
-    /// primitive type only. Such an index is accepted at DDL and then fails every insert, merge and
-    /// mutation of the table, and the natural recovery - `DROP INDEX` - is refused while one of those
-    /// failed mutations is pending. Reject it here, like a nested array already is. Not on `ATTACH`:
-    /// a table created before this check must still load, so that its index can be dropped.
-    if (!attach)
-    {
-        for (const auto & type : index.sample_block.getDataTypes())
-        {
-            const auto * array_type = typeid_cast<const DataTypeArray *>(type.get());
-            if (array_type && array_type->getNestedType()->isNullable())
-                throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Unexpected type {} of bloom filter index.", type->getName());
-        }
-    }
 
     if (index.arguments && index.arguments->children.size() > 1)
     {
         if (!attach) /// This is for backward compatibility.
-            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "BloomFilter index cannot have more than one parameter.");
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Binary fuse filter index cannot have more than one parameter.");
     }
 
     if (index.arguments && !index.arguments->children.empty())
     {
         auto argument = getFieldFromIndexArgumentAST(index.arguments->children[0]);
 
-        if (!attach && (argument.getType() != Field::Types::Float64 || argument.safeGet<Float64>() < 0 || argument.safeGet<Float64>() > 1))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The BloomFilter false positive must be a double number between 0 and 1.");
+        if (!attach)
+        {
+            if (argument.getType() != Field::Types::Float64)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The binary fuse filter false positive rate must be a double strictly between 0 and 1 (exclusive).");
+
+            const Float64 fpr = argument.safeGet<Float64>();
+            if (!std::isfinite(fpr) || fpr <= 0 || fpr >= 1)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "The binary fuse filter false positive rate must be a double strictly between 0 and 1 (exclusive).");
+        }
     }
 }
 

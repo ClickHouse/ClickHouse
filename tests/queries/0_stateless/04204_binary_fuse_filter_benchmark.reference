@@ -1,0 +1,162 @@
+--- begin 04204_binary_fuse_filter_benchmark ---
+--- single fpr=0.025 ---
+bloom_uncompressed	2
+binary_fuse_uncompressed	12
+bloom_compressed	28
+binary_fuse_compressed	38
+skip_index_bytes_both_nonzero
+1
+--- single fpr=0.001 ---
+bloom_uncompressed	3
+binary_fuse_uncompressed	12
+bloom_compressed	29
+binary_fuse_compressed	38
+skip_index_bytes_both_nonzero
+1
+--- single fpr=0.1 ---
+bloom_uncompressed	2
+binary_fuse_uncompressed	12
+bloom_compressed	28
+binary_fuse_compressed	38
+skip_index_bytes_both_nonzero
+1
+--- pct1 fpr=0.025 ---
+bloom_uncompressed	101
+binary_fuse_uncompressed	187
+bloom_compressed	128
+binary_fuse_compressed	213
+skip_index_bytes_both_nonzero
+1
+--- pct1 fpr=0.001 ---
+bloom_uncompressed	189
+binary_fuse_uncompressed	187
+bloom_compressed	216
+binary_fuse_compressed	213
+skip_index_bytes_both_nonzero
+1
+--- pct1 fpr=0.1 ---
+bloom_uncompressed	64
+binary_fuse_uncompressed	187
+bloom_compressed	91
+binary_fuse_compressed	213
+skip_index_bytes_both_nonzero
+1
+--- pct10 fpr=0.025 ---
+bloom_uncompressed	1002
+binary_fuse_uncompressed	1396
+bloom_compressed	1032
+binary_fuse_compressed	1426
+skip_index_bytes_both_nonzero
+1
+--- pct10 fpr=0.001 ---
+bloom_uncompressed	1877
+binary_fuse_uncompressed	1396
+bloom_compressed	1911
+binary_fuse_compressed	1426
+skip_index_bytes_both_nonzero
+1
+--- pct10 fpr=0.1 ---
+bloom_uncompressed	627
+binary_fuse_uncompressed	1396
+bloom_compressed	656
+binary_fuse_compressed	1426
+skip_index_bytes_both_nonzero
+1
+--- pct50 fpr=0.025 ---
+bloom_uncompressed	5002
+binary_fuse_uncompressed	6293
+bloom_compressed	5048
+binary_fuse_compressed	6327
+skip_index_bytes_both_nonzero
+1
+--- pct50 fpr=0.001 ---
+bloom_uncompressed	9377
+binary_fuse_uncompressed	6293
+bloom_compressed	9440
+binary_fuse_compressed	6327
+skip_index_bytes_both_nonzero
+1
+--- pct50 fpr=0.1 ---
+bloom_uncompressed	3127
+binary_fuse_uncompressed	6293
+bloom_compressed	3166
+binary_fuse_compressed	6327
+skip_index_bytes_both_nonzero
+1
+--- pct90 fpr=0.025 ---
+bloom_uncompressed	9002
+binary_fuse_uncompressed	11029
+bloom_compressed	9064
+binary_fuse_compressed	11055
+skip_index_bytes_both_nonzero
+1
+--- pct90 fpr=0.001 ---
+bloom_uncompressed	16877
+binary_fuse_uncompressed	11029
+bloom_compressed	16970
+binary_fuse_compressed	11055
+skip_index_bytes_both_nonzero
+1
+--- pct90 fpr=0.1 ---
+bloom_uncompressed	5627
+binary_fuse_uncompressed	11029
+bloom_compressed	5676
+binary_fuse_compressed	11055
+skip_index_bytes_both_nonzero
+1
+--- alldist fpr=0.025 ---
+bloom_uncompressed	10002
+binary_fuse_uncompressed	12309
+bloom_compressed	10068
+binary_fuse_compressed	12348
+skip_index_bytes_both_nonzero
+1
+--- alldist fpr=0.001 ---
+bloom_uncompressed	18752
+binary_fuse_uncompressed	12309
+bloom_compressed	18852
+binary_fuse_compressed	12348
+skip_index_bytes_both_nonzero
+1
+--- alldist fpr=0.1 ---
+bloom_uncompressed	6252
+binary_fuse_uncompressed	12309
+bloom_compressed	6303
+binary_fuse_compressed	12348
+skip_index_bytes_both_nonzero
+1
+--- lower-fpr representative alldist fpr=0.005 ---
+bloom_uncompressed	15002
+binary_fuse_uncompressed	12309
+skip_index_bytes_both_nonzero
+1
+--- granularity sensitivity alldist fpr=0.025 g=1 ---
+bloom_uncompressed	10156
+binary_fuse_uncompressed	17816
+skip_index_bytes_both_nonzero
+1
+--- granularity sensitivity alldist fpr=0.025 g=8 ---
+bloom_uncompressed	10020
+binary_fuse_uncompressed	13960
+skip_index_bytes_both_nonzero
+1
+--- granularity sensitivity alldist fpr=0.025 g=64 ---
+bloom_uncompressed	10004
+binary_fuse_uncompressed	12585
+skip_index_bytes_both_nonzero
+1
+--- case A high_ndv_uniform g=8 fpr=0.025 ---
+bloom_uncompressed	20003
+binary_fuse_uncompressed	23832
+--- case B tenant_local_low_ndv g=8 fpr=0.025 ---
+bloom_uncompressed	162
+binary_fuse_uncompressed	276
+--- case C heavy_hitters_plus_rare g=8 fpr=0.025 ---
+bloom_uncompressed	1022
+binary_fuse_uncompressed	1428
+--- tiny pruning sanity alldist g=8 fpr=0.025 ---
+bloom_hit_granules	1
+binary_fuse_hit_granules	1
+bloom_miss_granules	0
+binary_fuse_miss_granules	0
+--- end 04204_binary_fuse_filter_benchmark ---
