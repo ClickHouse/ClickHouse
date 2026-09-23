@@ -130,29 +130,16 @@ bool hasJoin(const ASTSelectWithUnionQuery & ast)
 /// `LEFT ARRAY JOIN` changes the nullability of the joined columns under `array_join_use_nulls`,
 /// exactly like `JOIN` does under `join_use_nulls`. An inner `ARRAY JOIN` never does (an empty array
 /// simply produces no rows), so only the `LEFT` kind is relevant for the schema-mismatch guard.
-bool hasLeftArrayJoin(const ASTSelectQuery & select)
+/// The whole query is searched, not only the top-level `SELECT`, because a `LEFT ARRAY JOIN` inside
+/// a table subquery, a CTE or a nested `UNION` propagates its `Nullable` columns to the view output too.
+bool hasLeftArrayJoin(const IAST & ast)
 {
-    const auto & tables = select.tables();
-    if (!tables)
-        return false;
+    if (const auto * array_join = ast.as<ASTArrayJoin>(); array_join && array_join->kind == ASTArrayJoin::Kind::Left)
+        return true;
 
-    for (const auto & child : tables->children)
+    for (const auto & child : ast.children)
     {
-        const auto & table_element = child->as<ASTTablesInSelectQueryElement &>();
-        if (!table_element.array_join)
-            continue;
-
-        if (table_element.array_join->as<ASTArrayJoin &>().kind == ASTArrayJoin::Kind::Left)
-            return true;
-    }
-    return false;
-}
-
-bool hasLeftArrayJoin(const ASTSelectWithUnionQuery & ast)
-{
-    for (const auto & child : ast.list_of_selects->children)
-    {
-        if (const auto * select = child->as<ASTSelectQuery>(); select && hasLeftArrayJoin(*select))
+        if (child && hasLeftArrayJoin(*child))
             return true;
     }
     return false;
