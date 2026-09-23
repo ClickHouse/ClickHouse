@@ -215,6 +215,16 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count, range_span, segment_range.begin, segment_range.end);
     }
 
+    /// The row range of a segment in the dictionary is its first and its last row id (see `checkSegmentRowRange`
+    /// on the eager path). `advance` and the skip heuristics choose segments by the range, while `decodeBlock`
+    /// uses `first_row_id` as the delta base of the first block, so the two must agree.
+    if (segment.first_row_id != segment_range.begin)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: segment {} starts at row id {} while its row range is [{}, {}]",
+            segment_idx, segment.first_row_id, segment_range.begin, segment_range.end);
+    }
+
     /// Create the per-block codec for this segment's codec type now and reuse it for decoding (see
     /// `decodeBlock`). It owns the codec-specific per-block worst-case size, so the cursor can bound
     /// `payload_bytes` against corrupted metadata without naming a concrete codec.
@@ -222,7 +232,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
-    const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + BLOCK_SIZE - 1) / BLOCK_SIZE;
+    const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + IPostingListBlockCodec::BLOCK_SIZE - 1) / IPostingListBlockCodec::BLOCK_SIZE;
     const UInt64 per_block_cap = block_codec->maxBlockBytes();
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
@@ -257,6 +267,14 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
             segment.doc_count);
     }
 
+    if (num_blocks != max_blocks_count)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: number of blocks {} does not match "
+            "the expected {} for segment with {} documents",
+            num_blocks, max_blocks_count, segment.doc_count);
+    }
+
     segment.block_last_row_ids.resize(num_blocks);
     segment.block_offsets.resize(num_blocks);
 
@@ -273,6 +291,23 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
                 "monotonic at block {}: previous = {}, current = {}",
                 i, segment.block_last_row_ids[i - 1], segment.block_last_row_ids[i]);
         }
+    }
+
+    /// The block index must end at the last row id of the segment range: `advance` and the skip heuristics
+    /// look up blocks by `block_last_row_ids`, and `decodeBlock` uses them as delta bases of the next blocks.
+    /// Together with the strict monotonicity above this keeps every block boundary inside the segment range.
+    if (segment.block_last_row_ids.front() < segment.first_row_id)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: the first block of segment {} ends at row id {} before the segment starts at row id {}",
+            segment_idx, segment.block_last_row_ids.front(), segment.first_row_id);
+    }
+
+    if (segment.block_last_row_ids.back() != segment_range.end)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: segment {} ends at row id {} while its row range is [{}, {}]",
+            segment_idx, segment.block_last_row_ids.back(), segment_range.begin, segment_range.end);
     }
 
     for (size_t i = 0; i < num_blocks; ++i)
@@ -297,7 +332,7 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     }
 
     segment.block_count = num_blocks;
-    segment.tail_size = segment.doc_count % BLOCK_SIZE;
+    segment.tail_size = segment.doc_count % IPostingListBlockCodec::BLOCK_SIZE;
     return segment;
 }
 
@@ -323,8 +358,8 @@ void PostingListCursor::decodeBlock(size_t block_idx)
         last_decoded_doc_id = segment.block_last_row_ids[block_idx - 1];
     }
 
-    /// Determine block element count: BLOCK_SIZE for full blocks, tail_size for the last block.
-    size_t count = BLOCK_SIZE;
+    /// Determine block element count: a full block, or `tail_size` for the last block.
+    size_t count = IPostingListBlockCodec::BLOCK_SIZE;
     if (block_idx == segment.block_count - 1 && segment.tail_size > 0)
         count = segment.tail_size;
 
@@ -371,6 +406,15 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     /// Restore absolute row ids from deltas directly in decoded_values.
     std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);
     last_decoded_doc_id = count > 0 ? decoded_values[count - 1] : last_decoded_doc_id;
+
+    /// The decoded block must end at the row id the Index Section claims for it: `advance` and the skip
+    /// heuristics position by `block_last_row_ids`, and the next block decodes its deltas from it.
+    if (last_decoded_doc_id != segment.block_last_row_ids[block_idx])
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted data in lazy posting list cursor: block {} ends at row id {} while its Index Section entry is {}",
+            block_idx, last_decoded_doc_id, segment.block_last_row_ids[block_idx]);
+    }
 
     decoded_count = count;
     index = 0;
