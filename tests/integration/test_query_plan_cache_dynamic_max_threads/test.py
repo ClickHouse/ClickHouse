@@ -79,19 +79,20 @@ def allocate_memory_for_single_effective_thread(min_free_per_thread):
             "WHERE name = 'max_server_memory_usage'"
         )
     )
-    # Keep enough headroom for the query itself while still making
-    # floor(free_memory / min_free_per_thread) equal to one.
-    target_free_memory = min_free_per_thread * 3 // 2
+    # Keep as much headroom as possible while still making
+    # floor(free_memory / min_free_per_thread) equal to one: the server memory limit
+    # is checked against RSS, which exceeds the tracked memory used for the thread count.
+    target_free_memory = min_free_per_thread * 19 // 10
     bytes_to_allocate = hard_limit - tracked - target_free_memory
     assert bytes_to_allocate > 0
     node.query(f"SYSTEM ALLOCATE MEMORY {bytes_to_allocate}")
 
 
 def test_cached_plan_across_dynamic_max_threads(started_cluster):
-    # The server memory limit of this test is 1 GB, which sanitizer builds exceed with their
-    # baseline RSS alone, so the effective thread count cannot be controlled there.
+    # The RSS of sanitizer builds is far above their tracked memory, so the allocation that
+    # lowers the effective thread count makes the server exceed its memory limit there.
     if node.is_built_with_sanitizer():
-        pytest.skip("The 1 GB server memory limit is too low for sanitizer builds")
+        pytest.skip("The RSS of sanitizer builds does not fit the server memory limit of this test")
 
     node.query("DROP TABLE IF EXISTS query_plan_cache_dynamic_threads")
     node.query(
@@ -121,7 +122,8 @@ def test_cached_plan_across_dynamic_max_threads(started_cluster):
             "SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'"
         )
     )
-    min_free_per_thread = (hard_limit - tracked) // 5
+    # Three effective threads without the allocation, one with it.
+    min_free_per_thread = (hard_limit - tracked) // 3
     assert min_free_per_thread > 0
 
     ground_truth, _ = run_query(False, min_free_per_thread)
