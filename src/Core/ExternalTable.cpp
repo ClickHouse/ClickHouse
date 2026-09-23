@@ -295,10 +295,11 @@ void ExternalTablesHandler::handlePart(const Poco::Net::MessageHeader & header, 
     CompletedPipelineExecutor executor(pipeline);
     executor.execute();
 
-    /// The limiter checks `expect_eof` in `nextImpl`, which a format that stopped exactly at the
-    /// budget never reached. Ask it, so the check runs whatever the format did with the part.
+    /// Whatever the format left unread still belongs to the part, and `HTMLForm` would skip it
+    /// outside the limiter. Read it out through the limiter so it counts against the budget, and so
+    /// that a part running past the budget trips `expect_eof` rather than slipping by.
     if (form_data_size_limit)
-        read_buffer->eof();
+        read_buffer->ignoreAll();
 
     form_data_bytes_read += read_buffer->count();
 }
