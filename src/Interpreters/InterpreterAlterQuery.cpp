@@ -490,6 +490,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
+
+            for (const auto & child : alter.command_list->children)
+            {
+                const auto & command = child->as<const ASTAlterCommand &>();
+                if (command.type == ASTAlterCommand::DELETE || command.type == ASTAlterCommand::UPDATE)
+                    checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
+            }
         }
 
         DDLQueryOnClusterParams params;

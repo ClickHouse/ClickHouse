@@ -152,6 +152,8 @@ BlockIO InterpreterUpdateQuery::execute()
                 visitor.substituteDatabaseInTableFunctions(*update_query.predicate);
             if (update_query.assignments)
                 visitor.substituteDatabaseInTableFunctions(*update_query.assignments);
+
+            checkNoRowPolicyForSetOperands(query_ptr, resolved_table_id.database_name, getContext());
         }
 
         DDLQueryOnClusterParams params;

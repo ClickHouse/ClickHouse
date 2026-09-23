@@ -4,8 +4,16 @@ from helpers.cluster import ClickHouseCluster
 
 
 cluster = ClickHouseCluster(__file__)
-initiator = cluster.add_instance("initiator", with_zookeeper=True)
-worker = cluster.add_instance("worker")
+initiator = cluster.add_instance(
+    "initiator",
+    main_configs=["configs/config.d/clusters.xml"],
+    with_zookeeper=True,
+)
+worker = cluster.add_instance(
+    "worker",
+    main_configs=["configs/config.d/clusters.xml"],
+    with_zookeeper=True,
+)
 
 
 @pytest.fixture(scope="module")
@@ -103,3 +111,53 @@ def test_replicated_mutation_checks_set_row_policy(started_cluster):
     for error in (alter_error, delete_error, update_error):
         assert_set_policy_error(error, "replicated_rp.set_rp")
     assert initiator.query("SELECT count(), sum(v) FROM replicated_rp.data_rp") == "2\t30\n"
+
+
+def test_on_cluster_mutation_checks_initiator_row_policy(started_cluster):
+    assert (
+        initiator.query(
+            "SELECT value FROM system.server_settings "
+            "WHERE name = 'distributed_ddl_use_initial_user_and_roles'"
+        )
+        == "0\n"
+    )
+
+    for node in (initiator, worker):
+        node.query("CREATE TABLE cluster_set_rp (k UInt64) ENGINE = Set")
+        node.query("INSERT INTO cluster_set_rp VALUES (1), (2)")
+        node.query(
+            "CREATE TABLE cluster_data_rp (k UInt64, v UInt64) "
+            "ENGINE = MergeTree ORDER BY k "
+            "SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1"
+        )
+        node.query("INSERT INTO cluster_data_rp VALUES (1, 10), (2, 20)")
+
+    initiator.query("CREATE ROLE cluster_mutator_role")
+    initiator.query("CREATE USER cluster_mutator DEFAULT ROLE cluster_mutator_role")
+    initiator.query("GRANT CLUSTER ON *.* TO cluster_mutator_role")
+    initiator.query(
+        "GRANT ALTER DELETE, ALTER UPDATE ON default.cluster_data_rp "
+        "TO cluster_mutator_role"
+    )
+    initiator.query("GRANT SELECT ON default.cluster_set_rp TO cluster_mutator_role")
+    initiator.query(
+        "CREATE ROW POLICY cluster_set_rp_filter ON cluster_set_rp "
+        "USING k = 1 TO cluster_mutator_role"
+    )
+
+    alter_error = initiator.query_and_get_error(
+        "ALTER TABLE cluster_data_rp ON CLUSTER cluster "
+        "DELETE WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+    )
+    update_error = initiator.query_and_get_error(
+        "UPDATE cluster_data_rp ON CLUSTER cluster "
+        "SET v = v + 1 WHERE k IN cluster_set_rp",
+        user="cluster_mutator",
+        settings={"enable_lightweight_update": 1},
+    )
+
+    for error in (alter_error, update_error):
+        assert_set_policy_error(error, "default.cluster_set_rp")
+    for node in (initiator, worker):
+        assert node.query("SELECT count(), sum(v) FROM cluster_data_rp") == "2\t30\n"

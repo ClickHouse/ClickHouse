@@ -1,0 +1,20 @@
+<clickhouse>
+    <remote_servers>
+        <cluster>
+            <shard>
+                <internal_replication>true</internal_replication>
+                <replica>
+                    <host>initiator</host>
+                    <port>9000</port>
+                </replica>
+                <replica>
+                    <host>worker</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </cluster>
+    </remote_servers>
+    <distributed_ddl>
+        <path>/clickhouse/task_queue/ddl</path>
+    </distributed_ddl>
+</clickhouse>
