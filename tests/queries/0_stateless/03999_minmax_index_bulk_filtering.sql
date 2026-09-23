@@ -267,7 +267,9 @@ FROM
 
 DROP TABLE t_bulk_fixed_string;
 
--- Exercise survivors immediately on both sides of the 65,536-granule chunk boundary.
+-- Exercise survivors immediately on both sides of the chunk boundary: `filterMarksUsingIndex`
+-- evaluates the index in chunks of `DEFAULT_BLOCK_SIZE` = 65409 granules, so granule 65408 is the
+-- last one of the first chunk and granule 65409 is the first one of the second chunk.
 CREATE TABLE t_bulk_chunk_boundary
 (
     x UInt32,
@@ -278,13 +280,19 @@ ORDER BY tuple()
 SETTINGS index_granularity = 1;
 
 INSERT INTO t_bulk_chunk_boundary SELECT number FROM numbers(65538);
+-- A single part, so that the granule number of `x` is `x`.
+OPTIMIZE TABLE t_bulk_chunk_boundary FINAL;
 
 SELECT 'bulk chunk boundary parity',
-    (SELECT count() FROM t_bulk_chunk_boundary WHERE x = 65535 OR x = 65536
+    (SELECT count() FROM t_bulk_chunk_boundary WHERE x BETWEEN 65408 AND 65409
          SETTINGS use_minmax_index_bulk_filtering = 0) =
-    (SELECT count() FROM t_bulk_chunk_boundary WHERE x = 65535 OR x = 65536
+    (SELECT count() FROM t_bulk_chunk_boundary WHERE x BETWEEN 65408 AND 65409
          SETTINGS use_minmax_index_bulk_filtering = 1) AS eq,
-    (SELECT count() FROM t_bulk_chunk_boundary WHERE x = 65535 OR x = 65536) AS count;
+    (SELECT count() FROM t_bulk_chunk_boundary WHERE x BETWEEN 65408 AND 65409) AS count;
+
+-- Exactly the two granules survive: a granule lost at the handoff changes the count, an extra one exceeds the limit.
+SELECT 'bulk chunk boundary granules', count() FROM t_bulk_chunk_boundary WHERE x BETWEEN 65408 AND 65409
+    SETTINGS use_minmax_index_bulk_filtering = 1, force_data_skipping_indices = 'idx_x', max_rows_to_read = 2, read_overflow_mode = 'throw';
 
 DROP TABLE t_bulk_chunk_boundary;
 DROP TABLE t_bulk_num;

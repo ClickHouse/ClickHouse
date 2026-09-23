@@ -13,3 +13,4 @@ bulk observability parity	1	100
 bulk own-disjunction parity	1	1999
 FixedString negative pattern fallback	1	2
 bulk chunk boundary parity	1	2
+bulk chunk boundary granules	2

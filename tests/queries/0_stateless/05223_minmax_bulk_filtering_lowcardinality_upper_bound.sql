@@ -8,6 +8,12 @@
 -- plain `ColumnUInt8` threw a logical error.
 
 SET allow_suspicious_low_cardinality_types = 1;
+-- The test runner randomizes both; either one can move the queries off the bulk path.
+SET secondary_indices_enable_bulk_filtering = 1;
+SET use_skip_indexes_on_data_read = 0;
+-- Otherwise the part-level statistics prune granules before the skip index, depending on the
+-- randomized `materialize_statistics_on_insert`, and `EXPLAIN` shows an extra `Granules` line.
+SET use_statistics_for_part_pruning = 0;
 
 DROP TABLE IF EXISTS t_bulk_lc_upper;
 DROP TABLE IF EXISTS t_bulk_lc_int;

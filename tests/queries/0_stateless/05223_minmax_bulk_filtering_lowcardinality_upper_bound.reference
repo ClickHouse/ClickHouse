@@ -7,10 +7,8 @@ lc constant on the right	6
 lc float upper bound parity	1	6
 Parts: 2 | Granules: 2
 Granules: 2/3
-Granules: 2/2
 lc int upper bound	3
 lc int lower bound	2
 lc int equals	1
 Parts: 1 | Granules: 1
 Granules: 1/2
-Granules: 1/1
