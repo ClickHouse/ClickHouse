@@ -28,14 +28,14 @@ function count_tables_like()
 
 echo '--- a new table: the METRIC FAMILIES keyword, the .inner_id.metricfamilies inner table ---'
 $CLIENT -q "CREATE TABLE ts_new ENGINE = TimeSeries METRIC FAMILIES INNER ENGINE = ReplacingMergeTree"
-get_create_query ts_new | grep -o "METRIC FAMILIES INNER COLUMNS\|METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family_name"
+get_create_query ts_new | grep -o "METRIC FAMILIES INNER COLUMNS\|METRIC FAMILIES INNER ENGINE = ReplacingMergeTree ORDER BY metric_family"
 count_tables_like '.inner\_id.metricfamilies.%'
 count_tables_like '.inner\_id.metrics.%'
 $CLIENT -q "INSERT INTO ts_new (metric_name, tags, samples, metric_family, type, unit, help) VALUES
     ('http_requests_total', {'job': 'test'}, [(now64(3), 1.)], 'http_requests_total', 'counter', 'requests', 'Total HTTP requests')"
-$CLIENT -q "SELECT metric_family_name, type, unit, help FROM timeSeriesMetricFamilies(ts_new)"
+$CLIENT -q "SELECT metric_family, type, unit, help FROM timeSeriesMetricFamilies(ts_new)"
 echo 'the alias timeSeriesMetrics still works:'
-$CLIENT -q "SELECT metric_family_name, type, unit, help FROM timeSeriesMetrics(ts_new)"
+$CLIENT -q "SELECT metric_family, type, unit, help FROM timeSeriesMetrics(ts_new)"
 $CLIENT -q "DROP TABLE ts_new"
 
 echo '--- the old kind name in the AST JSON is understood ---'
