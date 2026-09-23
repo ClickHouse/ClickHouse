@@ -3092,18 +3092,16 @@ bool StorageFile::hasUnreplicatedTableDataOnDisk() const
     if (use_table_fd)
         return false;
 
-    /// A table over an archive is read-only unconditionally - `write` above always throws for it - so it never
-    /// owns any data either, and whether the path denotes an archive is decided by the path syntax alone, at
-    /// creation time, identically on every replica.
-    ///
-    /// Note that globs are deliberately not treated the same way, even though `write` also rejects a table whose
-    /// path expands to more than one file: `is_path_with_globs` follows the number of files the pattern matches
-    /// on the local filesystem right now, so the same `CREATE TABLE` could be accepted on one replica and
-    /// rejected on another, and a table accepted as read-only could later become writable. Rejecting a
-    /// glob-backed read-only table is a false rejection, which this gate tolerates; accepting a table that turns
-    /// out to own local unreplicated data is not.
-    if (archive_info.has_value())
-        return false;
+    /// Read-only variants over an explicit path are deliberately not recognized here, even though `write` rejects
+    /// them, because whether a path denotes such a variant is not decided by the `CREATE TABLE` query alone, so
+    /// the same query could be accepted on one replica and rejected on another:
+    /// - an archive: the `::` path syntax is interpreted only when `allow_archive_path_syntax` is enabled, and a
+    ///   `Replicated` database applies on other replicas only the settings changed by the initiating query, not
+    ///   each replica's own profile, so the path can denote an archive on one replica and a plain file on another;
+    /// - a glob: `is_path_with_globs` follows the number of files the pattern matches on the local filesystem
+    ///   right now, so a table accepted as read-only could also later become writable.
+    /// Rejecting such a read-only table is a false rejection, which this gate tolerates; accepting a table that
+    /// turns out to own local unreplicated data is not.
 
     /// A table over an explicit path keeps its own data in a local file just like a table inside the database
     /// directory does, and that data is not replicated.
