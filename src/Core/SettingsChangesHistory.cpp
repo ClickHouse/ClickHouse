@@ -64,6 +64,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"max_promql_native_vector_grid_cells", 200000000, 200000000, "New setting bounding the combined number of series-by-evaluation-point cells admitted across native PromQL fragments."},
             {"max_promql_native_rate_samples_per_series", 1000000, 1000000, "New setting bounding cumulative raw samples per physical series in a native PromQL rate fragment."},
             {"min_promql_native_query_range_points", 0, 0, "New setting to keep short PromQL range queries on the SQL plan."},
+            {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
