@@ -727,6 +727,14 @@ void ColumnAggregateFunction::popBack(size_t n)
     data.resize_assume_reserved(new_size);
 }
 
+void ColumnAggregateFunction::popBackWithoutDestroy(size_t n)
+{
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    data.resize_assume_reserved(data.size() - n);
+}
+
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const
 {
     size_t size = data.size();

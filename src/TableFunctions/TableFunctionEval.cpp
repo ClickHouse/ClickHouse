@@ -23,7 +23,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_eval_table_function;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
@@ -37,7 +36,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int NOT_IMPLEMENTED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -106,11 +104,6 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Table function `eval` is experimental. Set `allow_experimental_eval_table_function = 1` to enable it");
 
-    if (!settings[Setting::allow_experimental_analyzer])
-        throw Exception(
-            ErrorCodes::NOT_IMPLEMENTED,
-            "Table function `eval` is supported only with the analyzer. Set `enable_analyzer = 1` to use it");
-
     /// The generated query can still reach `eval` indirectly, for example through the body
     /// of a SQL user defined function, so recursion is bounded by the stack size check.
     checkStackSize();
@@ -146,9 +139,9 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
 
     checkNoEval(query);
 
-    /// The generated query cannot flip the `enable_analyzer` setting in a SETTINGS clause:
-    /// `eval` is analyzer-only, and the same validation rejects such a change for a usual query.
-    validateAnalyzerSettings(query, settings[Setting::allow_experimental_analyzer]);
+    /// The generated query cannot disable the analyzer in a SETTINGS clause, the same way a usual
+    /// query cannot.
+    validateAnalyzerSettings(query);
 
     /// The generated query does not go through `executeQuery`, so materialize the construction
     /// settings a NON-last `UNION` arm carries in its own `SETTINGS` clause here, same as
