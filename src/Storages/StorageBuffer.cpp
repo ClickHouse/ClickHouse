@@ -8,7 +8,6 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Databases/DatabasesCommon.h>
 #include <Interpreters/InterpreterInsertQuery.h>
-#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
@@ -37,6 +36,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnDefault.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageValues.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -89,7 +89,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsUInt64 readonly;
@@ -97,6 +96,7 @@ namespace Setting
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
@@ -304,8 +304,7 @@ void StorageBuffer::read(
 {
     storage_snapshot->check(column_names);
 
-    bool enable_analyzer = local_context->getSettingsRef()[Setting::allow_experimental_analyzer];
-    if (enable_analyzer && processed_stage > QueryProcessingStage::FetchColumns)
+    if (processed_stage > QueryProcessingStage::FetchColumns)
     {
         /** For query processing stages after FetchColumns, we do not allow using the same table more than once in the query.
           * For example: SELECT * FROM buffer t1 JOIN buffer t2 USING (column)
@@ -540,27 +539,16 @@ void StorageBuffer::read(
         auto buffers_select_query_options = SelectQueryOptions(processed_stage);
         buffers_select_query_options.is_local_plan_for_distributed_query = true;
 
-        if (enable_analyzer)
-        {
-            auto storage = std::make_shared<StorageValues>(
-                    getStorageID(),
-                    storage_snapshot->getAllColumnsDescription(),
-                    std::move(pipe_from_buffers),
-                    storage_snapshot->metadata->virtuals);
+        auto storage = std::make_shared<StorageValues>(
+                getStorageID(),
+                storage_snapshot->getAllColumnsDescription(),
+                std::move(pipe_from_buffers),
+                storage_snapshot->metadata->virtuals);
 
-            auto interpreter
-                = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            buffers_plan = std::move(interpreter).extractQueryPlan();
-        }
-        else
-        {
-            auto interpreter = InterpreterSelectQuery(
-                    query_info.query, local_context, std::move(pipe_from_buffers),
-                    buffers_select_query_options);
-            interpreter.addStorageLimits(*query_info.storage_limits);
-            interpreter.buildQueryPlan(buffers_plan);
-        }
+        auto interpreter
+            = InterpreterSelectQueryAnalyzer(query_info.query, local_context, buffers_select_query_options, storage);
+        interpreter.addStorageLimits(*query_info.storage_limits);
+        buffers_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
@@ -1430,7 +1418,7 @@ std::optional<UInt64> StorageBuffer::totalBytes(ContextPtr) const
     return total_writes.bytes;
 }
 
-void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &)
+void StorageBuffer::alter(const AlterCommands & params, ContextPtr local_context, AlterLockHolder &, DDLGuardPtr &)
 {
     auto table_id = getStorageID();
     checkAlterIsPossible(params, local_context);
@@ -1491,7 +1479,7 @@ void registerStorageBuffer(StorageFactory & factory)
         if (engine_args.size() < 9 || engine_args.size() > 12)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
                             "Storage Buffer requires from 9 to 12 parameters: "
-                            " destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
+                            "destination_database, destination_table, num_buckets, min_time, max_time, min_rows, "
                             "max_rows, min_bytes, max_bytes[, flush_time, flush_rows, flush_bytes].");
 
         // Table and database name arguments accept expressions, evaluate them.
@@ -1559,6 +1547,17 @@ void registerStorageBuffer(StorageFactory & factory)
                 args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
 
             auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
+
+            /// An `Alias` reports its target's columns, so a structure inferred from one needs the
+            /// privilege on the target that describing the target requires.
+            if (const auto * alias = destination->as<StorageAlias>();
+                !from_existing_metadata && alias
+                && !alias->isTargetTableGranted(structure_context, AccessType::SHOW_COLUMNS, {}))
+                throw Exception(
+                    ErrorCodes::ACCESS_DENIED,
+                    "Not enough privileges to describe metadata exposed by {}",
+                    destination_id.getNameForLogs());
+
             auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
         }
@@ -1584,9 +1583,9 @@ void registerStorageBuffer(StorageFactory & factory)
         .description = R"DOCS_MD(
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
-:::note
+<Note>
 A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
-:::
+</Note>
 
 ```sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
@@ -1662,9 +1661,9 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
 
-:::note
+<Note>
 Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-:::
+</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 
