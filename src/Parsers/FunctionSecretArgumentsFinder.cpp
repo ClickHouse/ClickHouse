@@ -18,12 +18,21 @@ namespace
     /// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
     /// presigned-URL query parameters. The parameter set mirrors `BackupInfo::removeCredentialsFromS3URL`
     /// (which strips the same fields from persisted backup metadata). Returns true if anything was masked.
-    bool maskS3URICredentials(String & url)
+    bool maskS3URICredentials(String & value, bool value_is_url)
     {
+        /// The userinfo scan reads a scheme at the start of the value only, so that an '@' in a path or
+        /// query is not taken for a credential. A url whose scheme is not at position 0, preceded by
+        /// something or absent entirely, is unreadable to it and its '@' can still be userinfo: hide it.
+        if (value_is_url && findURIAuthority(value) == String::npos && value.contains('@'))
+        {
+            value = "[HIDDEN]";
+            return true;
+        }
+
         /// Both scans live in `Common/maskURIPassword.h` and are checked against the regular
         /// expressions they replaced in `src/Common/tests/gtest_mask_uri_password.cpp`.
-        bool changed = maskURIUserinfo(url);
-        changed |= maskPresignedURLParameters(url);
+        bool changed = maskURIUserinfo(value);
+        changed |= maskPresignedURLParameters(value);
         return changed;
     }
 }
@@ -85,7 +94,7 @@ std::vector<size_t> FunctionSecretArgumentsFinder::classifyS3Arguments(size_t st
                         String url;
                         if (f->arguments->at(1)->tryGetString(&url, /* allow_identifier= */ false))
                         {
-                            if (maskS3URICredentials(url))
+                            if (maskS3URICredentials(url, /* value_is_url= */ true))
                                 result.replaced_arguments[i] = "url = " + quoteString(url);
                         }
                         else
@@ -205,7 +214,7 @@ void FunctionSecretArgumentsFinder::maskS3UrlArgument(const std::vector<size_t> 
         markSecretArgument(positional[url_slot]);
         return;
     }
-    if (maskS3URICredentials(url))
+    if (maskS3URICredentials(url, /* value_is_url= */ true))
         result.replaced_arguments[positional[url_slot]] = quoteString(url);
 }
 
@@ -1254,7 +1263,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
                 else if (key_value->arguments->at(1)->tryGetString(&value, /* allow_identifier= */ true))
                 {
                     /// A `url` override can itself carry credentials (userinfo, presign parameters).
-                    has_secret |= maskS3URICredentials(value);
+                    has_secret |= maskS3URICredentials(value, /* value_is_url= */ key == "url");
                     replacement += quoteString(value);
                 }
                 else if (String literal_text; key_value->arguments->at(1)->tryGetLiteralText(&literal_text))
@@ -1338,7 +1347,7 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
         else if (arg->tryGetString(&arg_value, /* allow_identifier= */ true))
         {
             /// The url positional can itself carry credentials (userinfo, presign parameters).
-            has_secret |= maskS3URICredentials(arg_value);
+            has_secret |= maskS3URICredentials(arg_value, /* value_is_url= */ !is_named_collection && slot == 0);
             replacement += quoteString(arg_value);
         }
         else
