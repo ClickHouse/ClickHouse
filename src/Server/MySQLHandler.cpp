@@ -727,8 +727,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
     auto read_bytes = [this, &buf, &pos, &packet_size](size_t count) -> void {
         while (pos < count)
         {
-            /// These reads bypass `in`, so re-apply its deadline here: `receiveBytes` restarts the
-            /// socket timeout, which would otherwise give the phase one budget per call.
+            /// Per call: `receiveBytes` restarts the socket timeout.
             in->applyHandshakeDeadlineToSocket();
 
             int ret = 0;
@@ -738,8 +737,7 @@ void MySQLHandler::finishHandshake(MySQLProtocol::ConnectionPhase::HandshakeResp
             }
             catch (const Poco::TimeoutException &)
             {
-                /// This read bypasses `ReadBufferFromPocoSocket`, so report the timeout the way that
-                /// buffer does rather than letting Poco's bare "Timeout" reach the log.
+                /// Report it the way the buffer does, not as Poco's bare "Timeout".
                 throw NetException(
                     ErrorCodes::SOCKET_TIMEOUT,
                     "Timeout exceeded while reading from socket (peer: {}, local: {}, {} ms)",
@@ -1086,8 +1084,7 @@ void MySQLHandlerSSL::finishHandshakeSSL(
     const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
 
     ss = std::make_shared<SecureStreamSocket>(SecureStreamSocket::attach(socket(), SSLManager::instance().defaultServerContext()));
-    /// Not from the plaintext socket: the deadline clamped both of those, and the clamped values
-    /// would become the ones restored after authentication.
+    /// Not from the plaintext socket: the deadline clamped those, and they would be restored later.
     const Settings & handshake_settings = server.context()->getSettingsRef();
     ss->setReceiveTimeout(handshake_settings[Setting::receive_timeout]);
     ss->setSendTimeout(handshake_settings[Setting::send_timeout]);

@@ -50,9 +50,7 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
-    /// The deadline bounds the request line, the URI and the headers: it is checked before every
-    /// read and holds the socket timeout at the time left, so neither a trickling client nor a
-    /// silent one outlasts it. Clearing it restores the receive timeout for the body.
+    /// Bounds the request line, the URI and the headers; clearing it restores the body timeout.
     if (headers_read_timeout > Poco::Timespan(0))
         socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
 

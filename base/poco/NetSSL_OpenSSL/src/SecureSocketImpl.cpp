@@ -508,10 +508,8 @@ int SecureSocketImpl::completeHandshakeImpl(bool verifyPeer)
 	HandshakeProfileEventCounter handshakeCounter(SSL_is_server(_pSSL) != 0);
 
 	int rc;
-	/// On a blocking socket OpenSSL reads inside its own state machine, where only SO_RCVTIMEO
-	/// applies and only per read, so a peer that dribbles a byte before each timeout keeps the
-	/// handshake alive for as long as it likes. Drive it non-blocking instead: OpenSSL then hands
-	/// control back with WANT_READ/WANT_WRITE and the wait in mustRetry is charged against the budget.
+	/// Non-blocking, so that OpenSSL hands control back with WANT_READ/WANT_WRITE instead of
+	/// reading in its own loop, where only SO_RCVTIMEO applies and only per read.
 	HandshakeDriver handshake_driver(*this);
 
 	try
@@ -664,9 +662,8 @@ bool SecureSocketImpl::mustRetry(int rc, Poco::Timespan& remaining_time)
 		case SSL_ERROR_WANT_READ:
 			if (waitHere())
 			{
-				/// Charge the wait, not only the time spent inside SSL_do_handshake: otherwise a peer
-				/// that sends a byte before every timeout never depletes `remaining_time`, and the
-				/// handshake has no wall-clock bound at all.
+				/// Charge the wait too, or a peer sending a byte before every timeout never
+				/// depletes the budget.
 				RemainingTimeCounter counter(remaining_time);
 				if (_pSocket->pollImpl(remaining_time, Poco::Net::Socket::SELECT_READ))
 					return true;

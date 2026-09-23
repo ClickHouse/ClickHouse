@@ -451,9 +451,14 @@ PostgreSQLHandler::PostgreSQLHandler(
 
 void PostgreSQLHandler::changeIO(Poco::Net::StreamSocket & socket)
 {
+    /// The deadline lives in the buffer, so carry what is left of it over to the replacement.
+    const UInt64 handshake_milliseconds_left = in ? in->handshakeMillisecondsLeft() : 0;
+
     in = std::make_shared<ReadBufferFromPocoSocket>(socket, read_event);
     out = std::make_shared<AutoCanceledWriteBuffer<WriteBufferFromPocoSocket>>(socket, write_event);
     message_transport = std::make_shared<PostgreSQLProtocol::Messaging::MessageTransport>(in.get(), out.get());
+
+    in->setHandshakeTimeout(handshake_milliseconds_left);
 }
 
 void PostgreSQLHandler::run()
@@ -470,8 +475,8 @@ void PostgreSQLHandler::run()
     server.context()->getProcessList().registerPostgreSQLCancellationKey(connection_id, secret_key, currentQueryId());
     SCOPE_EXIT({ server.context()->getProcessList().unregisterPostgreSQLCancellationKey(connection_id, secret_key); });
 
-    /// The listener leaves this socket without a receive timeout, so without a deadline a peer that
-    /// connects and says nothing holds this thread for good.
+    /// The listener leaves this socket without a receive timeout, so nothing else bounds a peer
+    /// that connects and says nothing.
     in->setHandshakeTimeout(server.context()->getServerSettings()[ServerSetting::handshake_timeout_milliseconds]);
 
     try
@@ -739,10 +744,8 @@ void PostgreSQLHandler::makeSecureConnectionSSL()
     {
         ctx = Poco::Net::SSLManager::instance().defaultServerContext();
     }
-    const UInt64 handshake_milliseconds_left = in->handshakeMillisecondsLeft();
     ss = std::make_shared<Poco::Net::SecureStreamSocket>(Poco::Net::SecureStreamSocket::attach(socket(), ctx));
     changeIO(*ss);
-    in->setHandshakeTimeout(handshake_milliseconds_left);
 }
 #else
 void PostgreSQLHandler::makeSecureConnectionSSL() {}
