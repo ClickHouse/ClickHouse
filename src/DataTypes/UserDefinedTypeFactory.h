@@ -44,11 +44,11 @@ public:
         const String & type_name,
         const ASTPtr & create_type_query,
         bool throw_if_exists,
-        bool replace_if_exists);
+        bool replace_if_exists) const;
 
     /// Removes the type. Rejected while another user-defined type references it. Returns false if the type does
     /// not exist and `throw_if_not_exists` is false (`IF EXISTS`).
-    bool unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists);
+    bool unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists) const;
 
     /// The normalized `CREATE TYPE` query (an `ASTCreateTypeQuery`) of the type, or nullptr if there is no such type.
     ASTPtr tryGet(const String & type_name) const;

@@ -269,7 +269,7 @@ const IUserDefinedSQLObjectsStorage * UserDefinedTypeFactory::tryGetStorage() co
     auto global_context = Context::getGlobalContextInstance();
     if (!global_context)
         return nullptr;
-    return &global_context->getUserDefinedTypesStorage();
+    return global_context->tryGetUserDefinedTypesStorage();
 }
 
 bool UserDefinedTypeFactory::registerType(
@@ -277,7 +277,7 @@ bool UserDefinedTypeFactory::registerType(
     const String & type_name,
     const ASTPtr & create_type_query,
     bool throw_if_exists,
-    bool replace_if_exists)
+    bool replace_if_exists) const
 {
     auto & storage = current_context->getUserDefinedTypesStorage();
 
@@ -348,7 +348,7 @@ bool UserDefinedTypeFactory::registerType(
     }
 }
 
-bool UserDefinedTypeFactory::unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists)
+bool UserDefinedTypeFactory::unregisterType(const ContextMutablePtr & current_context, const String & type_name, bool throw_if_not_exists) const
 {
     auto & storage = current_context->getUserDefinedTypesStorage();
 

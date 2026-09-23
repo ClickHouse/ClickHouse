@@ -587,6 +587,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_sql_objects_storage;
     mutable OnceFlag user_defined_types_storage_initialized;
     mutable std::unique_ptr<IUserDefinedSQLObjectsStorage> user_defined_types_storage;
+    /// Published once `user_defined_types_storage` is created, and cleared before it is destroyed. It lets the type
+    /// lookup skip the storage entirely when nothing has created it (tools like `clickhouse-obfuscator` have no config).
+    mutable std::atomic<IUserDefinedSQLObjectsStorage *> user_defined_types_storage_if_initialized{nullptr};
 
     mutable OnceFlag workload_entity_storage_initialized;
     mutable std::shared_ptr<IWorkloadEntityStorage> workload_entity_storage;
@@ -1239,6 +1242,7 @@ struct ContextSharedPart : boost::noncopyable
             delete_external_dictionaries_loader = std::move(external_dictionaries_loader);
             delete_external_user_defined_executable_functions_loader = std::move(external_user_defined_executable_functions_loader);
             delete_user_defined_sql_objects_storage = std::move(user_defined_sql_objects_storage);
+            user_defined_types_storage_if_initialized.store(nullptr);
             delete_user_defined_types_storage = std::move(user_defined_types_storage);
             delete_workload_entity_storage = std::move(workload_entity_storage);
             delete_ddl_worker = std::move(ddl_worker);
@@ -4390,6 +4394,7 @@ const IUserDefinedSQLObjectsStorage & Context::getUserDefinedTypesStorage() cons
 {
     callOnce(shared->user_defined_types_storage_initialized, [&] {
         shared->user_defined_types_storage = createUserDefinedSQLObjectsStorage(getGlobalContext(), UserDefinedSQLObjectType::Type);
+        shared->user_defined_types_storage_if_initialized.store(shared->user_defined_types_storage.get());
     });
 
     return *shared->user_defined_types_storage;
@@ -4399,9 +4404,15 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedTypesStorage()
 {
     callOnce(shared->user_defined_types_storage_initialized, [&] {
         shared->user_defined_types_storage = createUserDefinedSQLObjectsStorage(getGlobalContext(), UserDefinedSQLObjectType::Type);
+        shared->user_defined_types_storage_if_initialized.store(shared->user_defined_types_storage.get());
     });
 
     return *shared->user_defined_types_storage;
+}
+
+const IUserDefinedSQLObjectsStorage * Context::tryGetUserDefinedTypesStorage() const
+{
+    return shared->user_defined_types_storage_if_initialized.load();
 }
 
 std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const

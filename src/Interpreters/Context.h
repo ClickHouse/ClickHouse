@@ -1323,6 +1323,8 @@ public:
     /// of functions (on disk or in ZooKeeper), but types form a separate namespace.
     const IUserDefinedSQLObjectsStorage & getUserDefinedTypesStorage() const;
     IUserDefinedSQLObjectsStorage & getUserDefinedTypesStorage();
+    /// Returns nullptr if the storage of user-defined types has not been created yet (nothing loaded or created a type).
+    const IUserDefinedSQLObjectsStorage * tryGetUserDefinedTypesStorage() const;
     void loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config);
 
     /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
