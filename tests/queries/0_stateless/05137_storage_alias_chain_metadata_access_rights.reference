@@ -28,6 +28,8 @@ Test system.columns with a column revoked on the final table
 secret_id
 Test system.completions with a column-level grant on the final table
 secret_id
+Test count() with no column granted through the whole chain
+ACCESS_DENIED
 Test DESCRIBE through the chain with the final target granted
 secret_id	UInt64
 secret_payload	String
@@ -40,4 +42,6 @@ Test hasColumnInTable through the chain with the final target granted
 Test system.projections, system.constraints and system.data_skipping_indices with the final target granted
 1	1	1
 Test system.completions through the chain with the final target granted
+2
+Test count() with the same column granted through the whole chain
 2

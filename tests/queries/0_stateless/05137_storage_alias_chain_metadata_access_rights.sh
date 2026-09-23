@@ -8,6 +8,7 @@ user="chain_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 mid_user="chain_mid_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 col_user="chain_col_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 rev_user="chain_rev_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+sel_user="chain_sel_user_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 # Build `chain_a1 -> chain_a2 -> chain_a3 -> chain_base`. Every CREATE names a target that is either
 # absent or not an Alias, which is the only order the point-in-time Alias -> Alias rejection accepts.
@@ -17,6 +18,7 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER IF EXISTS ${mid_user};
     DROP USER IF EXISTS ${col_user};
     DROP USER IF EXISTS ${rev_user};
+    DROP USER IF EXISTS ${sel_user};
     DROP TABLE IF EXISTS chain_a1;
     DROP TABLE IF EXISTS chain_a2;
     DROP TABLE IF EXISTS chain_a3;
@@ -66,6 +68,12 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     GRANT SHOW TABLES, SHOW COLUMNS ON chain_a3 TO ${rev_user};
     GRANT SHOW COLUMNS ON chain_base TO ${rev_user};
     REVOKE SHOW COLUMNS(secret_payload) ON chain_base FROM ${rev_user};
+
+    CREATE USER ${sel_user} NOT IDENTIFIED;
+    GRANT SELECT(secret_payload) ON chain_a1 TO ${sel_user};
+    GRANT SELECT(secret_payload) ON chain_a2 TO ${sel_user};
+    GRANT SELECT(secret_payload) ON chain_a3 TO ${sel_user};
+    GRANT SELECT(secret_id) ON chain_base TO ${sel_user};
 "
 
 echo "Test DESCRIBE through the chain"
@@ -147,7 +155,18 @@ ${CLICKHOUSE_CLIENT} --user="${col_user}" --query "
     SELECT word FROM system.completions WHERE context = 'column' AND belongs = 'chain_a1' ORDER BY word;
 "
 
-${CLICKHOUSE_CLIENT} --query "GRANT SHOW COLUMNS ON chain_base TO ${user};"
+# `sel_user` holds one column on the alias names and the other one on the final table, so no column is
+# granted through the whole chain. That is the only grant shape in which a zero-column `SELECT` is
+# observable: with a column granted everywhere the count is the same however far the chain walk goes.
+echo "Test count() with no column granted through the whole chain"
+${CLICKHOUSE_CLIENT} --user="${sel_user}" --query "
+    SELECT count() FROM chain_a1 SETTINGS optimize_trivial_count_query = 1;
+" 2>&1 | grep -o -m1 "ACCESS_DENIED"
+
+${CLICKHOUSE_CLIENT} --multiquery --query "
+    GRANT SHOW COLUMNS ON chain_base TO ${user};
+    GRANT SELECT(secret_payload) ON chain_base TO ${sel_user};
+"
 
 echo "Test DESCRIBE through the chain with the final target granted"
 ${CLICKHOUSE_CLIENT} --user="${user}" --query "DESCRIBE TABLE chain_a1;" | cut -f1,2
@@ -183,6 +202,11 @@ ${CLICKHOUSE_CLIENT} --user="${user}" --query "
     SELECT count() FROM system.completions WHERE context = 'column' AND belongs = 'chain_a1';
 "
 
+echo "Test count() with the same column granted through the whole chain"
+${CLICKHOUSE_CLIENT} --user="${sel_user}" --query "
+    SELECT count() FROM chain_a1 SETTINGS optimize_trivial_count_query = 1;
+"
+
 ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP TABLE chain_a1;
     DROP TABLE chain_a2;
@@ -192,4 +216,5 @@ ${CLICKHOUSE_CLIENT} --multiquery --query "
     DROP USER ${mid_user};
     DROP USER ${col_user};
     DROP USER ${rev_user};
+    DROP USER ${sel_user};
 "
