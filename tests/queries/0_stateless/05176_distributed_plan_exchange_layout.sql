@@ -1,12 +1,14 @@
 -- Tags: no-fasttest
 -- no-fasttest: needs the streaming exchange of the stateless worker configuration.
 
--- The sending side of a streaming exchange keeps its work spread over the streams of a task: every
--- scattered stream serializes its own packets ahead of the sinks, whether the scatter is round-robin
--- or by key, and a broadcast serializes once per stream, not once per destination. The checks read
--- the processors of every task from `processors_profile_log`. They are relations between counts, not
--- exact counts, so they hold for any stream count. When a check fails, the last query prints the
--- layout of the tasks behind it.
+-- The work around a streaming exchange stays spread over the streams of a task. On the sending side
+-- every scattered stream serializes its own packets ahead of the sinks, whether the scatter is
+-- round-robin or by key, and a broadcast serializes once per stream, not once per destination. On
+-- the receiving side the packets of one source are deserialized on all threads, and the initiator
+-- deserializes its result behind the source that reads it. The checks read the processors of every
+-- task from `processors_profile_log`. They are relations between counts, not exact counts, so they
+-- hold for any stream count. When a check fails, the last query prints the layout of the tasks
+-- behind it.
 
 DROP TABLE IF EXISTS t_exchange_layout;
 DROP TABLE IF EXISTS t_exchange_layout_small;
@@ -66,7 +68,8 @@ SELECT substring(roots.log_comment, length('05176_distributed_plan_exchange_layo
     sumIf(input_rows, name = 'StreamingExchangeSerializingTransform') AS rows_serialized,
     maxIf(input_rows, name = 'StreamingExchangeSerializingTransform') AS max_rows_into_serializer,
     maxIf(input_rows, name = 'ScatterByPartitionTransform') AS max_rows_into_scatter,
-    countIf(name LIKE 'StreamingExchangeSource%') AS sources
+    countIf(name LIKE 'StreamingExchangeSource%') AS sources,
+    countIf(name = 'StreamingExchangeDeserializingTransform') AS deserializers
 FROM system.processors_profile_log AS p
 INNER JOIN (
     SELECT query_id, log_comment FROM system.query_log
@@ -88,16 +91,22 @@ SELECT check, ok FROM (
     UNION ALL SELECT 3, 'scatter: serializers = scatters * sinks', min(serializers = scatters * sinks) FROM v_exchange_layout WHERE scatters > 0
     UNION ALL SELECT 4, 'scatter: max rows into one serializer <= max rows into one scatter', min(max_rows_into_serializer <= max_rows_into_scatter) FROM v_exchange_layout WHERE scatters > 0
     UNION ALL SELECT 5, 'broadcast: serializers = read streams and serialized rows = read rows', min(serializers = reads AND rows_serialized = rows_read) FROM v_exchange_layout WHERE sinks > 1 AND scatters = 0
+    UNION ALL SELECT 6, 'receive: deserializers >= sources in every task', min(deserializers >= sources) FROM v_exchange_layout WHERE sources > 0
+    UNION ALL SELECT 7, 'receive: deserializers > sources in some task', max(deserializers > sources) FROM v_exchange_layout WHERE sources > 0 AND stage != 'initiator'
+    UNION ALL SELECT 8, 'receive: the initiator deserializes its result behind its one source', min(sources = 1 AND deserializers = 1) FROM v_exchange_layout WHERE stage = 'initiator'
 ) ORDER BY step;
 
 -- Empty when every check passes. Otherwise the layout of the tasks behind the failure, with the
 -- query id to find the task in the server log.
-SELECT format('{} {} ({}): reads={} rows_read={} scatters={} sinks={} serializers={} rows_serialized={} max_rows_into_serializer={} max_rows_into_scatter={} sources={}',
+SELECT format('{} {} ({}): reads={} rows_read={} scatters={} sinks={} serializers={} rows_serialized={} max_rows_into_serializer={} max_rows_into_scatter={} sources={} deserializers={}',
     run, stage, query_id, toString(reads), toString(rows_read), toString(scatters), toString(sinks), toString(serializers), toString(rows_serialized),
-    toString(max_rows_into_serializer), toString(max_rows_into_scatter), toString(sources))
+    toString(max_rows_into_serializer), toString(max_rows_into_scatter), toString(sources), toString(deserializers))
 FROM v_exchange_layout
 WHERE (scatters > 0 AND (serializers != scatters * sinks OR max_rows_into_serializer > max_rows_into_scatter))
    OR (sinks > 1 AND scatters = 0 AND (serializers != reads OR rows_serialized != rows_read))
+   OR (sources > 0 AND deserializers < sources)
+   OR (stage = 'initiator' AND NOT (sources = 1 AND deserializers = 1))
+   OR (sources > 0 AND stage != 'initiator' AND (SELECT max(deserializers > sources) FROM v_exchange_layout WHERE sources > 0 AND stage != 'initiator') = 0)
 ORDER BY run, stage;
 
 DROP VIEW v_exchange_layout;

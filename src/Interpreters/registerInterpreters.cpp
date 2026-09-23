@@ -3,10 +3,7 @@
 namespace DB
 {
 
-void registerInterpreterSelectQuery(InterpreterFactory & factory);
 void registerInterpreterSelectQueryAnalyzer(InterpreterFactory & factory);
-void registerInterpreterSelectWithUnionQuery(InterpreterFactory & factory);
-void registerInterpreterSelectIntersectExceptQuery(InterpreterFactory & factory);
 void registerInterpreterInsertQuery(InterpreterFactory & factory);
 void registerInterpreterCreateQuery(InterpreterFactory & factory);
 void registerInterpreterDropQuery(InterpreterFactory & factory);
@@ -78,10 +75,7 @@ void registerInterpreters()
 {
     auto & factory = InterpreterFactory::instance();
 
-    registerInterpreterSelectQuery(factory);
     registerInterpreterSelectQueryAnalyzer(factory);
-    registerInterpreterSelectWithUnionQuery(factory);
-    registerInterpreterSelectIntersectExceptQuery(factory);
     registerInterpreterInsertQuery(factory);
     registerInterpreterCreateQuery(factory);
     registerInterpreterDropQuery(factory);
