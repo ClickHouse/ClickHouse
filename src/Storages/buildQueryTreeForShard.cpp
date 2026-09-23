@@ -893,7 +893,7 @@ void checkJoin(const JoinNode & join_node, const QueryNode & enclosing_query)
             continue;
 
         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-            "JOIN {} using identifier '{}' is resolved from an alias nested in the SELECT list, which is not "
+            "JOIN {} using identifier '{}' is resolved from an alias defined in WITH or nested in the SELECT list, which is not "
             "supported for queries sent to remote servers. Move the alias to the top level of the SELECT list",
             join_node.formatASTForErrorMessage(), name);
     }

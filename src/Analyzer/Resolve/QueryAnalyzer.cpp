@@ -6001,15 +6001,17 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
         auto & join_using_list = join_node_typed.getJoinExpression()->as<ListNode &>();
         std::unordered_set<std::string> join_using_identifiers;
 
-        /// SELECT-list alias map, computed lazily once per resolveJoin and reused (projection is not mutated here).
-        std::optional<ScopeAliases> select_list_aliases;
+        /// Alias map of the WITH section and the SELECT list, computed lazily once per resolveJoin and reused (the query is not mutated here).
+        std::optional<ScopeAliases> query_aliases;
 
-        /// Set below when the identifier matched a nested SELECT-list alias (not a top-level projection alias); reset per identifier.
-        bool nested_alias_matched = false;
+        /// Set below when the identifier matched an alias other than a top-level projection alias
+        /// (defined in WITH or nested in a SELECT-list expression); reset per identifier.
+        bool non_top_level_alias_matched = false;
 
-        /// Find a SELECT-list node aliased as the USING identifier: top-level projection aliases first (pick-first, kept for compatibility), then nested-subexpression aliases.
-        auto find_aliased_node_in_projection = [&select_list_aliases, &nested_alias_matched](const QueryNode * query_node_,
-                                                   const String & identifier_full_name_) -> QueryTreeNodePtr
+        /// Find a node aliased as the USING identifier: top-level projection aliases first (pick-first, kept for compatibility),
+        /// then aliases defined in WITH or on nested SELECT-list subexpressions.
+        auto find_aliased_node_in_query = [&scope, &query_aliases, &non_top_level_alias_matched](const QueryNode * query_node_,
+                                              const String & identifier_full_name_) -> QueryTreeNodePtr
         {
             for (const auto & projection_node : query_node_->getProjection().getNodes())
             {
@@ -6017,28 +6019,31 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                     return projection_node;
             }
 
-            /// QueryExpressionsAliasVisitor applies SELECT-list scoping and stores clones of aliased nodes; it needs a mutable node, so clone first.
-            if (!select_list_aliases)
+            /// QueryExpressionsAliasVisitor applies SELECT-list scoping and stores clones of aliased nodes; it needs a mutable node, so clone the projection first.
+            /// The WITH section is already removed from the query node by resolveQuery, its nodes are kept in the scope.
+            if (!query_aliases)
             {
+                query_aliases.emplace();
+                QueryExpressionsAliasVisitor visitor(*query_aliases);
+                QueryTreeNodePtr with_list = std::make_shared<ListNode>(scope.with_nodes);
+                visitor.visit(with_list);
                 auto projection_list_clone = query_node_->getProjectionNode()->clone();
-                select_list_aliases.emplace();
-                QueryExpressionsAliasVisitor visitor(*select_list_aliases);
                 visitor.visit(projection_list_clone);
             }
 
             /// A lambda alias must not become a USING column.
-            auto it = select_list_aliases->alias_name_to_expression_node.find(identifier_full_name_);
-            if (it == select_list_aliases->alias_name_to_expression_node.end())
+            auto it = query_aliases->alias_name_to_expression_node.find(identifier_full_name_);
+            if (it == query_aliases->alias_name_to_expression_node.end())
                 return nullptr;
 
             /// Do not pick an arbitrary expression among duplicated aliases.
-            for (const auto & duplicated_node : select_list_aliases->nodes_with_duplicated_aliases)
+            for (const auto & duplicated_node : query_aliases->nodes_with_duplicated_aliases)
             {
                 if (duplicated_node->hasAlias() && duplicated_node->getAlias() == identifier_full_name_)
                     return nullptr;
             }
 
-            nested_alias_matched = true;
+            non_top_level_alias_matched = true;
             return it->second;
         };
 
@@ -6046,7 +6051,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
           * Example: SELECT a + 1 AS b FROM (SELECT 1 AS a) t1 JOIN (SELECT 2 AS b) USING b
           * In this case `b` is not in the left table expression, but it is in the parent subquery projection.
           */
-        auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_projection](
+        auto try_resolve_identifier_from_query_projection = [this, &find_aliased_node_in_query](
                                                                    const String & identifier_full_name_,
                                                                    const TableExpressionNodePtr & left_table_expression,
                                                                    const IdentifierResolveScope & scope_) -> QueryTreeNodePtr
@@ -6055,7 +6060,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (!query_node)
                 return nullptr;
 
-            auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name_);
+            auto matched_node = find_aliased_node_in_query(query_node, identifier_full_name_);
             if (!matched_node)
                 return nullptr;
 
@@ -6109,7 +6114,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
         for (auto & join_using_node : join_using_list.getNodes())
         {
-            nested_alias_matched = false;
+            non_top_level_alias_matched = false;
 
             auto * identifier_node = join_using_node->as<IdentifierNode>();
             if (!identifier_node)
@@ -6141,8 +6146,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (settings[Setting::analyzer_compatibility_join_using_top_level_identifier])
                 result_left_table_expression = try_resolve_identifier_from_query_projection(identifier_full_name, join_node_typed.getLeftTableExpressionNodeTyped(), scope);
 
-            /// A nested-alias USING key cannot ship to a remote server (rendered SQL keeps only top-level projection aliases), so disable parallel replicas for such a query.
-            if (result_left_table_expression && nested_alias_matched)
+            /// Such a USING key cannot ship to a remote server (rendered SQL keeps only top-level projection aliases:
+            /// nested aliases and the WITH section are gone), so disable parallel replicas for such a query.
+            if (result_left_table_expression && non_top_level_alias_matched)
             {
                 /// Independently-planned subqueries (`IN`/`FROM`/`JOIN`-right-side) are planned from their own context copies,
                 /// so disable on every `QueryNode`/`UnionNode` on the scope chain that contains this JOIN, not just the root.
@@ -6168,7 +6174,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
                     if (chain_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
                         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                            "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list, "
+                            "JOIN USING identifier '{}' is resolved from an alias defined in WITH or nested in the SELECT list, "
                             "which is not supported with parallel replicas",
                             identifier_full_name);
 
@@ -6178,7 +6184,7 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
                 if (disabled_any)
                     LOG_DEBUG(getLogger("QueryAnalyzer"),
-                        "JOIN USING identifier '{}' is resolved from an alias nested in the SELECT list; "
+                        "JOIN USING identifier '{}' is resolved from an alias defined in WITH or nested in the SELECT list; "
                         "parallel replicas are disabled because the query sent to a remote server would not contain the alias",
                         identifier_full_name);
             }
@@ -6195,9 +6201,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 const QueryNode * query_node = scope.scope_node ? scope.scope_node->as<QueryNode>() : nullptr;
                 if (!settings[Setting::analyzer_compatibility_join_using_top_level_identifier] && query_node)
                 {
-                    if (auto matched_node = find_aliased_node_in_projection(query_node, identifier_full_name))
+                    if (auto matched_node = find_aliased_node_in_query(query_node, identifier_full_name))
                         extra_message = fmt::format(
-                            ", but alias '{}' is present in SELECT list."
+                            ", but alias '{}' is present in the SELECT list or the WITH clause."
                             " You may try to SET analyzer_compatibility_join_using_top_level_identifier = 1, to allow to use it in USING clause",
                             matched_node->formatASTForErrorMessage());
                 }
@@ -7092,8 +7098,11 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
       * and CTE for other sections to use.
       *
       * Example: WITH 1 AS constant, (x -> x + 1) AS lambda, a AS (SELECT * FROM test_table);
+      *
+      * The nodes are kept in the scope: a JOIN USING key may be resolved from their aliases, see resolveJoin.
       */
-    query_node_typed.getWith().getNodes().clear();
+    scope.with_nodes = std::move(with_nodes);
+    with_nodes.clear();
 
     for (auto & window_node : query_node_typed.getWindow().getNodes())
     {

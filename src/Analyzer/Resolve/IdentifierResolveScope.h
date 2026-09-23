@@ -177,6 +177,10 @@ struct IdentifierResolveScope
     /// CTE name to its definitions in declaration order (several only with `analyzer_compatibility_allow_cte_redefinition`)
     std::unordered_map<std::string, QueryTreeNodes> cte_name_to_query_node;
 
+    /// Nodes of the WITH section, kept after the section is removed from the query node:
+    /// `resolveJoin` may resolve a `JOIN USING` key from their aliases (`analyzer_compatibility_join_using_top_level_identifier`).
+    QueryTreeNodes with_nodes;
+
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
 
