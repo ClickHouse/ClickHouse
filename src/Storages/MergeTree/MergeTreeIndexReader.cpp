@@ -110,6 +110,10 @@ void MergeTreeIndexReader::initStreamIfNeeded()
 
     for (const auto & substream : index_format.substreams)
     {
+        /// Per-row substreams carry the marks of the part, not of the index, and index analysis never reads them.
+        if (MergeTreeIndexSubstream::isPerRow(substream.type))
+            continue;
+
         auto full_stream_name = index_name + substream.suffix;
         auto stream_name_opt = DB::IMergeTreeDataPart::getStreamNameOrHash(full_stream_name, substream.extension, checksums);
 
@@ -161,7 +165,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .part_info = *data_part_info,
             .index = *index,
             .readable_ranges = readable_ranges,
-            .skip_postings_deserialization = false,
+            .text_index_read_postings = true,
         };
 
         res->deserializeBinaryWithMultipleStreams(streams, state);

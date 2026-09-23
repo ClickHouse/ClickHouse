@@ -1,0 +1,28 @@
+-- scores of scattered primary key ranges
+105	2.6865
+112	1.6341
+119	2.4602
+126	1.5475
+4991	1.3353
+4998	1.8401
+5005	2.9587
+7980	1.3992
+7987	1.9638
+7994	1.3353
+-- the fragmented read gives the same scores as the sequential read of the whole table
+0	50
+-- the same with blocks smaller than a granule, so reads resume in the middle of granules
+0	50
+-- the same after merging the parts, which rewrites the index
+1
+0	50
+105	2.6865
+112	1.6341
+119	2.4602
+126	1.5475
+4991	1.3353
+4998	1.8401
+5005	2.9587
+7980	1.3992
+7987	1.9638
+7994	1.3353

@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -41,6 +43,7 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        TextIndexDocLengths,
     };
 
     Type type;
@@ -53,7 +56,16 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+        /// Document lengths are `SmallFloat` bytes, which generic codec expand rather than compress.
+        return type != Type::TextIndexPostings
+            && type != Type::TextIndexPositions
+            && type != Type::TextIndexDocLengths;
+    }
+
+    /// A per-row substream holds exactly one uncompressed byte per row of the part.
+    static bool isPerRow(Type type)
+    {
+        return type == Type::TextIndexDocLengths;
     }
 };
 
@@ -66,22 +78,32 @@ struct MergeTreeIndexFormat
     MergeTreeIndexSubstreams substreams;
 
     explicit operator bool() const { return version != 0; }
+
+    bool hasSubstream(MergeTreeIndexSubstream::Type type) const
+    {
+        return std::ranges::any_of(substreams, [type](const auto & substream) { return substream.type == type; });
+    }
 };
 
 using MergeTreeIndexWriterStream = MergeTreeWriterStream;
 using MergeTreeIndexOutputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexWriterStream *>;
+
+class MergeTreeIndexGranularity;
+
+/// Writes the marks of a per-row index substream: one mark per granule of the part at the granule's starting row.
+void writePerRowSubstreamMarks(MergeTreeWriterStream & stream, const MergeTreeIndexGranularity & index_granularity, bool can_use_adaptive_granularity);
 
 using MergeTreeIndexReaderStream = MergeTreeReaderStream;
 using MergeTreeIndexInputStreams = std::map<MergeTreeIndexSubstream::Type, MergeTreeIndexReaderStream *>;
 
 struct MergeTreeIndexDeserializationState
 {
-    MergeTreeIndexVersion version;
-    const IMergeTreeIndexCondition * condition;
+    MergeTreeIndexVersion version = 0;
+    const IMergeTreeIndexCondition * condition = nullptr;
     const IMergeTreeDataPartInfoForReader & part_info;
     const IMergeTreeIndex & index;
-    const MarkRanges * readable_ranges;
-    bool skip_postings_deserialization;
+    const MarkRanges * readable_ranges = nullptr;
+    bool text_index_read_postings = true;
 };
 
 }

@@ -5,6 +5,8 @@
 #include <Common/Exception.h>
 #include <Common/PODArray.h>
 
+#include <array>
+
 namespace DB
 {
 
@@ -38,9 +40,9 @@ namespace
     class BitpackingPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) override
+        size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override
         {
-            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(deltas);
+            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(values);
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
 
             /// Block Layout: [1byte(max_bits)][payload]
@@ -48,7 +50,7 @@ namespace
             out.resize(out.size() + needed_bytes_with_header);
             std::span<char> out_span(out.data() + offset, needed_bytes_with_header);
             writeByte(static_cast<uint8_t>(max_bits), out_span);
-            auto used_memory = BitpackingBlockCodec::encode(deltas, max_bits, out_span);
+            auto used_memory = BitpackingBlockCodec::encode(values, max_bits, out_span);
 
             if (used_memory != needed_bytes_without_header || !out_span.empty())
             {
@@ -57,7 +59,7 @@ namespace
                     "but actually used {} bytes with {} bytes remaining in buffer",
                     needed_bytes_without_header,
                     max_bits,
-                    deltas.size(),
+                    values.size(),
                     used_memory,
                     out_span.size());
             }
@@ -91,6 +93,34 @@ namespace
             return 1 + consumed_size;
         }
 
+        size_t encodeZeros(size_t /*count*/, PODArray<char> & out) override
+        {
+            /// A zero-width block: the bits byte alone, with no payload after it. Identical to what
+            /// `encodeBlock` emits for all-zero input, and independent of `count`.
+            out.push_back('\0');
+            return 1;
+        }
+
+        size_t skipBlock(std::span<const std::byte> & in, size_t count) override
+        {
+            if (in.empty())
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected at least {} bytes, but got {}", 1, in.size());
+
+            uint8_t bits = readByte(in);
+            if (bits > 32)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected bits <= 32, but got {}", bits);
+
+            /// `bits == 0` means every value in the block is 0 and no payload was written.
+            size_t required_size = BitpackingBlockCodec::bitpackingCompressedBytes(count, bits);
+            if (in.size() < required_size)
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected data size {}, but got {}", required_size, in.size());
+
+            in = in.subspan(required_size);
+
+            /// Total bytes skipped in `in`: the bits byte plus the bit-packed payload.
+            return 1 + required_size;
+        }
+
         /// `1` (bits header) + `4 * BLOCK_SIZE` (bit-pure max at `bits = 32`) + 16 (SIMD alignment slack).
         size_t maxBlockBytes() const override { return 1 + sizeof(uint32_t) * BLOCK_SIZE + 16; }
 
@@ -102,17 +132,17 @@ namespace
     class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) override
+        size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override
         {
             /// `MAX_BLOCK_BYTES` bounds one block, so an oversized input would overrun the reserved tail.
-            if (deltas.empty() || deltas.size() > BLOCK_SIZE)
+            if (values.empty() || values.size() > BLOCK_SIZE)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, deltas.size());
+                    "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, values.size());
 
             /// The encoded size is only known afterwards; `PODArray::resize` does not zero-fill, so grow to the bound and shrink.
             const size_t offset = out.size();
             out.resize(offset + MAX_BLOCK_BYTES);
-            const size_t written = PFor::encodeBlocks<uint32_t>(deltas, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
+            const size_t written = PFor::encodeBlocks<uint32_t>(values, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
             chassert(written > 0 && written <= MAX_BLOCK_BYTES);
             out.resize(offset + written);
             return written;
@@ -133,12 +163,30 @@ namespace
             return consumed;
         }
 
+        size_t encodeZeros(size_t count, PODArray<char> & out) override
+        {
+            /// PFor has no dedicated all-zero form, so the block is encoded like any other block of `count` zeros.
+            static constexpr std::array<uint32_t, BLOCK_SIZE> zeros{};
+            chassert(count > 0 && count <= BLOCK_SIZE);
+            return encodeBlock(std::span<const uint32_t>(zeros.data(), count), out);
+        }
+
+        size_t skipBlock(std::span<const std::byte> & in, size_t count) override
+        {
+            /// A PFor block is delimited only by decoding it, so the values go to a scratch buffer.
+            chassert(count > 0 && count <= BLOCK_SIZE);
+            return decodeBlock(in, count, std::span<uint32_t>(scratch.data(), count));
+        }
+
         size_t maxBlockBytes() const override { return MAX_BLOCK_BYTES; }
 
         IPostingListCodec::Type type() const override { return IPostingListCodec::Type::PFor; }
 
     private:
         static constexpr size_t MAX_BLOCK_BYTES = PFor::maxCompressedBytes<uint32_t>(BLOCK_SIZE);
+
+        /// Receives the values of a skipped block.
+        std::array<uint32_t, BLOCK_SIZE> scratch{};
     };
 
 }

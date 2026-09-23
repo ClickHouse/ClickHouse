@@ -1,0 +1,62 @@
+-- hasAnyTokens (generic scorer): scores match the SQL reference
+1	OK
+2	OK
+3	OK
+4	OK
+5	OK
+7	OK
+-- hasAllTokens (conjunction scorer): scores match the SQL reference
+1	OK
+7	OK
+-- hasToken: scores match the SQL reference
+1	OK
+4	OK
+5	OK
+7	OK
+-- AND of two hasToken (conjunction scorer over both tokens)
+1	OK
+7	OK
+-- OR composition (generic scorer): a row surviving via one branch gets contributions from all its scoring tokens
+1	OK
+4	OK
+7	OK
+8	OK
+-- OR with a regular-column branch: a row surviving only via it scores 0 where it matches no scoring token
+4	1
+6	1
+-- ORDER BY _bm25_score DESC LIMIT: plain top-k works
+1
+7
+3
+-- _bm25_score used only in ORDER BY (not in SELECT)
+3
+2
+-- _bm25_score inside an expression
+7	1
+10	1
+-- SELECT * does not include the ephemeral virtual column
+7	distributed consensus raft raft raft quorum	30
+10	vector search with quorum reads	4
+-- PREWHERE on a regular column composes with the score
+1	1
+7	1
+3	1
+2	1
+5	1
+-- part-distribution invariance: identical scores for 1-part and multi-part layouts
+1	OK
+4	OK
+7	OK
+8	OK
+-- same result when skip indexes are applied during the planning-time analysis
+1	OK
+4	OK
+7	OK
+8	OK
+-- lightweight delete: scoring is rejected while the part carries a deleted-rows mask
+-- after the deleted rows are merged away, scoring matches the fresh statistics
+1	OK
+2	OK
+3	OK
+4	OK
+5	OK

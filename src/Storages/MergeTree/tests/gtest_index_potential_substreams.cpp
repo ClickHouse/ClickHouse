@@ -64,10 +64,10 @@ TEST(MergeTreeIndexPotentialSubstreams, TextCoversPositionsWhenDefinitionHasNone
     description.expression_list_ast = expression_list;
     description.expression = std::make_shared<ExpressionActions>(ActionsDAG());
 
-    /// `positions = 0`: the index definition asks for no positions, but a part written under an
+    /// Positions disabled: the index definition asks for no positions, but a part written under an
     /// earlier definition still holds `.pos` marks, so eviction must still cover them.
     MergeTreeIndexTextParams params;
-    params.positions = 0;
+    params.enable_positions = false;
 
     MergeTreeIndexText index(nullptr, description, params, nullptr, nullptr);
 
@@ -78,5 +78,6 @@ TEST(MergeTreeIndexPotentialSubstreams, TextCoversPositionsWhenDefinitionHasNone
     EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::Regular, "", ".idx"));
     EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::TextIndexDictionary, ".dct", ".idx"));
     EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::TextIndexPostings, ".pst", ".idx"));
-    EXPECT_EQ(potential.size(), 4);
+    EXPECT_TRUE(hasSubstream(potential, MergeTreeIndexSubstream::Type::TextIndexDocLengths, ".dl", ".idx"));
+    EXPECT_EQ(potential.size(), 5);
 }

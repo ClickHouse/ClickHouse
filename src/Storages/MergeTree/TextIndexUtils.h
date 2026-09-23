@@ -2,6 +2,7 @@
 
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
+#include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeProjectionsIndexesTask.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/TextIndexPositionData.h>
@@ -86,6 +87,7 @@ public:
     MergeTextIndexesTask(
         std::vector<TextIndexSegment> segments,
         MergeTreeMutableDataPartPtr new_data_part_,
+        MergeTreeIndexGranularityPtr index_granularity_,
         size_t num_rows_,
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
@@ -114,6 +116,9 @@ private:
     bool isNewToken(const TokenSortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
+    /// Builds the merged per-row document lengths and the per-part BM25 collection statistics once,
+    /// before token iteration. Only called on the scoring path.
+    void buildDocLengthsAndStats();
     /// Throws CORRUPTED_DATA if the sorted row ids do not fit into the rows of the part; no-op without merged part offsets.
     void checkRowIdsInPart(std::span<const UInt32> row_ids, size_t part_index) const;
     /// Checks and adjusts all row ids in place; no-op without merged part offsets.
@@ -133,23 +138,28 @@ private:
     class PostingsMergeQueue;
 
     /// Points the cursor at a source and decodes its first postings.
-    /// A source with positions is decoded at once because positions are addressed by posting rank.
     void initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source);
-    /// Decodes one posting list segment of the source and appends its row ids in pre-remap order.
-    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids);
+    /// Decodes one posting list segment of the source into the row ids (in pre-remap order) and,
+    /// on the scoring path, into the exact per-row term frequencies if the source stores them.
+    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs);
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advancePostingsCursor(PostingsMergeCursor & cursor);
 
     /// Merges the postings of current_token_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
     /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
+    /// On the scoring path every chunk comes with the per-row `(tf - 1)` parallel to its row ids, otherwise with an empty span.
+    /// Once a source is exhausted, its positions (if any) are appended to output_positions.
     template <typename Sink> void mergePostings(Sink && sink);
 
+    /// Serializes a merged posting list of up to MAX_CARDINALITY_FOR_RAW_POSTINGS row ids as raw or embedded postings.
     TokenPostingsInfo flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
     TokenPostingsInfo flushEncodedPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality);
 
-    /// Reads the positions of one source and appends them to output_positions.
-    /// Positions are stored per posting rank, so they are paired with the row ids of the source in pre-remap order.
-    void readAndAppendPositions(const TokenSource & source, std::span<const UInt32> row_ids);
+    /// Appends the pre-remap row ids of the cursor's current segment to its token_row_ids if the token has positions.
+    void captureRowIdsForPositions(PostingsMergeCursor & cursor) const;
+    /// Reads the positions of an exhausted source, pairing them with the row ids captured by its
+    /// cursor, remaps their row ids and appends them to output_positions.
+    void readAndAppendPositions(const PostingsMergeCursor & cursor);
     /// Sorts and merges output_positions and serializes them to the positions stream.
     void flushPositions(TokenPostingsInfo & token_info);
 
@@ -158,6 +168,8 @@ private:
 
     std::vector<TextIndexSegment> segments;
     MergeTreeMutableDataPartPtr new_data_part;
+    /// Granularity of the part being written, taken from its writer: the part itself gets it only on finalize.
+    MergeTreeIndexGranularityPtr index_granularity;
     size_t num_rows;
     MergeTreeIndexPtr index_ptr;
     MergeTreeIndexTextParams params;
@@ -207,6 +219,12 @@ private:
     std::vector<PostingsSerialization> source_postings_serializations;
 
     bool is_initialized = false;
+
+    /// BM25 scoring state.
+    /// Merged per-row `SmallFloat` document-length bytes, indexed by global merged row id.
+    PaddedPODArray<UInt8> merged_doc_lengths;
+    /// Total sum of the merged per-row document lengths.
+    UInt64 merged_sum_doc_length = 0;
 };
 
 using MergeTextIndexesTaskPtr = std::unique_ptr<MergeTextIndexesTask>;

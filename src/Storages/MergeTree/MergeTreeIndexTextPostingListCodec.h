@@ -5,14 +5,18 @@
 #include <IO/ReadBuffer.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBuffer.h>
+#include <IO/WriteHelpers.h>
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 
 #include <memory>
+#include <span>
 
 namespace DB
 {
+
 struct TokenPostingsInfo;
+struct PostingListBuildContext;
 class WriteBuffer;
 class ReadBuffer;
 using PostingList = roaring::Roaring;
@@ -31,6 +35,9 @@ namespace ErrorCodes
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
+/// With BM25 scoring every block is followed by the per-row `(tf - 1)` of its row ids, encoded by the same block codec,
+/// and the segment header and the Index Section carry the block-max inputs of the scoring (see `PackedBlockMeta`).
+///
 /// Assumes that input row ids are strictly increasing.
 class SegmentedPostingListCodec
 {
@@ -48,15 +55,21 @@ class SegmentedPostingListCodec
         {
         }
 
-        void write(WriteBuffer & out, IPostingListCodec::Type codec_type_) const
+        void write(WriteBuffer & out, IPostingListCodec::Type codec_type_, bool has_term_frequencies) const
         {
             writeVarUInt(static_cast<uint8_t>(codec_type_), out);
             writeVarUInt(payload_bytes, out);
             writeVarUInt(cardinality, out);
             writeVarUInt(first_row_id, out);
+
+            if (has_term_frequencies)
+            {
+                writeBinaryLittleEndian(segment_min_dl_byte, out);
+                writeBinaryLittleEndian(segment_max_tf_minus_one, out);
+            }
         }
 
-        void read(ReadBuffer & in)
+        void read(ReadBuffer & in, bool has_term_frequencies)
         {
             UInt64 v = 0;
             readVarUInt(v, in);
@@ -72,6 +85,12 @@ class SegmentedPostingListCodec
 
             readVarUInt(v, in);
             first_row_id = static_cast<uint32_t>(v);
+
+            if (has_term_frequencies)
+            {
+                readBinaryLittleEndian(segment_min_dl_byte, in);
+                readBinaryLittleEndian(segment_max_tf_minus_one, in);
+            }
         }
 
         /// Block codec used for this segment's payload. Filled by read.
@@ -82,6 +101,10 @@ class SegmentedPostingListCodec
         uint32_t cardinality = 0;
         /// The first row id in the segment (used as a base value to restore from deltas)
         uint32_t first_row_id = 0;
+        /// Min `SmallFloat` doc-length byte across the segment. Written only with term frequencies.
+        UInt8 segment_min_dl_byte = 0xFF;
+        /// Max saturating `(tf - 1)` across the segment (`255` is the "max tf >= 256" sentinel). Written only with term frequencies.
+        UInt8 segment_max_tf_minus_one = 0;
     };
 
     /// A segment header together with its payload, which points either into the read
@@ -110,9 +133,13 @@ class SegmentedPostingListCodec
     struct PackedBlockMeta
     {
         /// Last row_id in this packed block
-        uint32_t last_row_id;
+        UInt32 last_row_id = 0;
         /// Offset within segment payload (from segment data start)
-        uint64_t relative_offset;
+        UInt64 relative_offset = 0;
+        /// Min `SmallFloat` doc-length byte in this block.
+        UInt8 min_dl_byte = 0xFF;
+        /// Max saturating `(tf - 1)` in this block (`255` is the "max tf >= 256" sentinel).
+        UInt8 max_tf_minus_one = 0;
     };
 
     /// Per-segment list of packed block metadata.
@@ -129,9 +156,14 @@ public:
     /// The requested `segment_size_` is rounded up to a multiple of BLOCK_SIZE.
     SegmentedPostingListCodec(IPostingListCodec::Type block_codec_type_, size_t segment_size_);
 
-    /// Encode a batch of sorted unique row ids (increasing across calls), appending
+    /// Encodes a batch of sorted unique row ids (increasing across calls), appending
     /// to the open segment and starting a new one every `segment_size` row ids.
-    void append(std::span<const UInt32> row_ids);
+    /// On the BM25 scoring path (`context.enable_scoring`) a non-empty `tf_minus_one`, parallel to `row_ids`,
+    /// carries the per-row term frequencies, and the doc lengths of the rows come from `context.doc_lengths`.
+    void append(
+        std::span<const UInt32> row_ids,
+        std::span<const UInt32> tf_minus_one,
+        const PostingListBuildContext & context);
 
     /// Write all segments to output and fill TokenPostingsInfo:
     /// - offsets: byte offsets in output where each segment begins
@@ -140,6 +172,9 @@ public:
 
     /// Total number of row ids added so far.
     size_t cardinality() const { return total_row_ids; }
+
+    /// True once an `append` carried scoring (i.e. BM25 scoring is enabled for the index).
+    bool hasScoring() const { return has_scoring; }
 
     /// Deserialize a postings list from input `in` into `out`.
     ///
@@ -150,23 +185,40 @@ public:
     /// to reconstruct absolute row ids.
     ///
     /// `max_cardinality` bounds the sizes claimed by the segment header (see `readSegmentData`).
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer);
+    /// With `has_term_frequencies` every block is followed by its term frequencies, which are skipped.
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, bool has_term_frequencies, PaddedPODArray<char> & buffer);
 
     /// The same, but appends the decoded row ids to the plain array,
     /// decoding blocks directly into the array without a roaring bitmap.
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer);
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, bool has_term_frequencies, PaddedPODArray<char> & buffer);
+
+    /// Deserializes a postings list with the exact per-row term frequencies.
+    ///
+    /// Works like the above, but the term-frequency payload of each block is decoded.
+    /// Every decoded `tf` is appended to `tfs`, parallel to the decoded row ids.
+    void decodeWithTermFrequencies(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs, PaddedPODArray<char> & buffer);
 
 private:
     /// Encodes one block of up to BLOCK_SIZE row ids as deltas and appends it to `compressed_data`.
     ///
     /// Block layout:
-    ///   [1 byte bits][row ids payload]
+    ///   [1 byte bits][row ids payload][term frequencies payload]
     ///
     /// - bits: max bit-width among deltas in this block
     /// - row ids payload: Codec::encode(...) bitpacked bytes
+    /// - term frequencies payload: the per-row `(tf - 1)` encoded by the same block codec, only with scoring
     ///
     /// Also updates current segment metadata (cardinality, payload size).
-    void encodeBlock(std::span<const UInt32> block_row_ids);
+    ///
+    /// When scoring is enabled, the block-max metadata takes the doc lengths from `doc_lengths[row_id - doc_lengths_first_row_id]`.
+    void encodeBlock(
+        std::span<const UInt32> block_row_ids,
+        std::span<const UInt32> term_frequencies,
+        std::span<const UInt8> doc_lengths,
+        UInt32 doc_lengths_first_row_id);
+
+    /// Appends one block's `count` term frequencies to `compressed_data`, after its deltas.
+    void encodeTermFrequencies(std::span<const UInt32> term_frequencies, size_t count);
 
     /// Decodes one compressed block of `out.size()` row ids into `out` and reconstructs absolute row ids.
     ///
@@ -177,7 +229,13 @@ private:
 
     /// Reads a segment header and returns it together with the segment payload.
     /// Throws CORRUPTED_DATA if the header claims more than `max_cardinality` row ids or more payload bytes than they can take.
-    SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<char> & buffer);
+    SegmentData readSegmentData(ReadBuffer & in, UInt64 max_cardinality, bool has_term_frequencies, PaddedPODArray<char> & buffer);
+
+    /// Skips one block's term frequencies.
+    void skipTermFrequencies(std::span<const std::byte> & in, size_t count);
+
+    /// Decodes one block's term frequencies and appends the exact `tf` for each row to `tfs`.
+    void decodeTermFrequencies(std::span<const std::byte> & in, size_t count, PaddedPODArray<UInt32> & tfs);
 
     /// Number of row ids per segment.
     size_t segment_size = 0;
@@ -195,6 +253,10 @@ private:
     std::vector<SegmentBlockMetas> segment_block_metas;
     /// Total number of postings added across all segments.
     size_t total_row_ids = 0;
+    /// Set true once an `append` was made with scoring enabled; observed by `serializeTo`, which has no
+    /// build context, to emit the per-segment header block-max bytes and the per-block
+    /// `min_dl_byte[]`/`max_tf_minus_one[]` arrays.
+    bool has_scoring = false;
     /// Per-block payload codec (bitpacking). On encode it is fixed by the constructor; on decode it
     /// is created from the segment header. One instance is reused across all blocks of a single encode/decode call.
     std::unique_ptr<IPostingListBlockCodec> block_codec;
@@ -211,7 +273,14 @@ public:
     {
     }
 
-    void append(std::span<const UInt32> row_ids) override { impl.append(row_ids); }
+    void append(
+        std::span<const UInt32> row_ids,
+        std::span<const UInt32> tf_minus_one,
+        const PostingListBuildContext & context) override
+    {
+        impl.append(row_ids, tf_minus_one, context);
+    }
+
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return impl.cardinality(); }
@@ -239,8 +308,9 @@ public:
     /// Creates a SegmentedPostingListEncoder whose block payloads are produced by this codec's block codec (see `getType`).
     std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
 
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, bool has_term_frequencies, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, bool has_term_frequencies, PaddedPODArray<char> & buffer) const override;
+    void decodeWithTermFrequencies(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs, PaddedPODArray<char> & buffer) const override;
 };
 
 /// Each block is stored as [1 byte: bits-width][bit-packed payload], at the block's maximum delta width.
@@ -269,7 +339,10 @@ class PostingListEncoderNone final : public IPostingListEncoder
 public:
     explicit PostingListEncoderNone(size_t segment_size_) : segment_size(segment_size_) {}
 
-    void append(std::span<const UInt32> row_ids) override;
+    void append(
+        std::span<const UInt32> row_ids,
+        std::span<const UInt32> tf_minus_one,
+        const PostingListBuildContext & context) override;
     void finalize(WriteBuffer & out, TokenPostingsInfo & info) override;
 
     size_t cardinality() const override { return total_row_ids; }
@@ -294,9 +367,9 @@ public:
     PostingListCodecNone() : IPostingListCodec(Type::None) {}
 
     std::unique_ptr<IPostingListEncoder> createEncoder(size_t segment_size) const override;
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const override;
-    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, bool has_term_frequencies, PaddedPODArray<char> & buffer) const override;
+    void decode(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, bool has_term_frequencies, PaddedPODArray<char> & buffer) const override;
+    void decodeWithTermFrequencies(ReadBuffer & in, UInt64 max_cardinality, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs, PaddedPODArray<char> & buffer) const override;
 };
 
 }
-
