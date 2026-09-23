@@ -3,6 +3,8 @@
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
 #include <Columns/ColumnSparse.h>
+#include <Common/HashTable/Hash.h>
+#include <Common/SipHash.h>
 #include <Common/Stopwatch.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
@@ -74,10 +76,12 @@ struct ProjectionPartData
     size_t bytes = 0;
     /// per-row bytes, only filled for adaptive granularity
     PaddedPODArray<UInt32> row_bytes;
+    /// some stored column has values of different sizes
+    bool variable_width = false;
 };
 
 /// per-row version of `getBlockSizeForGranularity`
-void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, const Block & block)
+void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, bool & variable_width, const Block & block)
 {
     const size_t rows = block.rows();
     const size_t offset = row_bytes.size();
@@ -91,8 +95,11 @@ void appendRowSizes(PaddedPODArray<UInt32> & row_bytes, const Block & block)
         if (elem.column->valuesHaveFixedSize())
             fixed += static_cast<UInt32>(elem.column->sizeOfValueIfFixed());
         else
+        {
+            variable_width = true;
             for (size_t i = 0; i < rows; ++i)
                 row_bytes[offset + i] += static_cast<UInt32>(elem.column->byteSizeAt(i));
+        }
     }
     for (size_t i = 0; i < rows; ++i)
         row_bytes[offset + i] += fixed;
@@ -165,15 +172,20 @@ ReadSlice findReadSlice(QueryPlan::Node * root, const ReadFromMergeTree * read_s
     return slice;
 }
 
-/// the whole part, or every `sample_step`-th granule (at least one) when sampling
+/// the whole part, or one granule from every run of `sample_step` at a hashed position,
+/// so data that repeats with the step can't line up with the sample
 MarkRanges marksToScan(const DataPartPtr & part, size_t sample_step)
 {
     const size_t marks = part->index_granularity->getMarksCountWithoutFinal();
     if (sample_step <= 1)
         return {{0, marks}};
+    const UInt64 seed = sipHash64(part->name);
     MarkRanges ranges;
-    for (size_t mark = std::min(sample_step / 2, marks - 1); mark < marks; mark += sample_step)
+    for (size_t first = 0; first < marks; first += sample_step)
+    {
+        const size_t mark = first + intHash64(seed ^ first) % std::min(sample_step, marks - first);
         ranges.emplace_back(mark, mark + 1);
+    }
     return ranges;
 }
 
@@ -286,7 +298,7 @@ bool buildProjectionPart(
         /// measured before the key expression, as the writer does
         out.bytes += getBlockSizeForGranularity(block);
         if (need_row_bytes)
-            appendRowSizes(out.row_bytes, block);
+            appendRowSizes(out.row_bytes, out.variable_width, block);
         /// `required_columns` can skip a subcolumn the key needs, add it back like the writer does
         for (const auto & required : proj_key.expression->getRequiredColumns())
             if (!block.has(required))
@@ -516,9 +528,8 @@ PartEstimate pruneSyntheticProjectionPart(
             synthetic_ranges,
             projection.metadata,
             *key_condition,
-            /// offsets in a sample don't match the part
-            part_offset_condition && scale == 1.0 ? &part_offset_condition->generateForPart(synthetic_part) : nullptr,
-            total_offset_condition && scale == 1.0 ? &total_offset_condition->generateForPart(synthetic_part) : nullptr,
+            part_offset_condition ? &part_offset_condition->generateForPart(synthetic_part) : nullptr,
+            total_offset_condition ? &total_offset_condition->generateForPart(synthetic_part) : nullptr,
             nullptr,
             nullptr,
             query_settings,
@@ -626,6 +637,14 @@ bool tryEstimateProjection(
     std::vector<double> granule_shares;
     UInt64 layout_marks = 0;
 
+    /// a sample's row offsets are not the part's, so an offset filter can't be applied to it
+    if (sample_step > 1 && (part_offset_condition || total_offset_condition))
+    {
+        result.empirical_unsupported_reason
+            = "The query filters on part offsets, which an estimate from a sample of granules cannot follow (see max_rows_to_scan)";
+        return false;
+    }
+
     Stopwatch watch;
     auto log = getLogger("WhatIfProjectionEstimator");
 
@@ -661,8 +680,9 @@ bool tryEstimateProjection(
         ++scanned_parts;
         scanned_marks += ranges.getNumberOfMarks();
         /// with uneven row widths the layout depends on block boundaries we can't know
-        bool uneven_rows = false;
-        if (part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
+        /// a sample can't show that rows it didn't read have the same width
+        bool uneven_rows = sample_step > 1 && part_data.variable_width;
+        if (!uneven_rows && part_data.row_bytes.size() == part_data.rows && !part_data.row_bytes.empty())
         {
             const auto [narrowest, widest] = std::minmax_element(part_data.row_bytes.begin(), part_data.row_bytes.end());
             uneven_rows = *narrowest != *widest;
@@ -728,8 +748,8 @@ bool tryEstimateProjection(
     {
         result.verdict = "too close to call";
         result.verdict_reason = fmt::format(
-            "{} against {} from the base table, but the rows differ in width on {} of the {} parts read, so the granule "
-            "layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
+            "{} against {} from the base table, but the rows are not known to have the same width on {} of the {} parts read, "
+            "so the granule layout depends on the blocks the writer was fed and the mark count is a model, not a measurement",
             marks_text(projection_marks),
             baseline_marks,
             uneven_width_parts,
