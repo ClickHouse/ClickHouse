@@ -1535,7 +1535,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.10",
         {
-            {"text_index_dictionary_compression_codec", "", "LZ4", "New setting which compresses the dictionary substream of a text index with a codec chosen for decompression speed instead of the part's default data codec. An empty value restores the previous behaviour."},
+            {"text_index_dictionary_compression_codec", "", "", "New setting which compresses the dictionary substream of a text index with its own codec instead of the part's default data codec. Empty by default, which keeps the previous behaviour."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",

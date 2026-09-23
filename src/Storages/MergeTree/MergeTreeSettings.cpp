@@ -714,18 +714,32 @@ Can be overridden by explicit `dictionary_block_size` index argument.
 Default front-coding compression for text index dictionary blocks.
 Can be overridden by explicit `dictionary_block_frontcoding_compression` index argument.
 )", 0) \
-    DECLARE(String, text_index_dictionary_compression_codec, "LZ4", R"(
+    DECLARE(String, text_index_dictionary_compression_codec, "", R"(
 Compression codec of the dictionary substream of text indexes.
+Can be overridden by explicit `dictionary_compression_codec` index argument.
 
-Every unanchored `LIKE` / `ILIKE` pattern scan decompresses the whole dictionary, which is written as one
-independently seekable compressed block per `text_index_dictionary_block_size` tokens. Decompression speed
-therefore matters more for it than compression ratio. An empty value falls back to the part's default data
-codec, which is the behaviour before this setting existed.
+An unanchored `LIKE` / `ILIKE` evaluated by a dictionary scan decompresses the whole dictionary, which is
+written as one independently seekable compressed block per `text_index_dictionary_block_size` tokens, so
+decompression speed matters more for it than compression ratio does. The part's default data codec is chosen
+for column data instead. The default empty value keeps the dictionary on the part's default codec.
 
-Posting lists and positions are compressed while they are built and are not affected by this codec.
+`LZ4` is the suggested value for a text index over ordinary text: on a corpus of real source text, measured on
+local disk, it cut unanchored `LIKE` and `ILIKE` time by 24-30% for 1.6% more index size. It is not the default
+because the trade-off depends on the indexed column: a column of mostly rare tokens produces a dictionary that
+`ZSTD` compresses several times better than `LZ4` does, and there the same change was worth 2-3% of query time
+while adding 164% to the index size.
+
+The separate posting list and positions substreams are compressed while they are built and are not affected by this
+codec. The posting lists of rare tokens are embedded in the dictionary blocks instead, so this codec does compress
+them, which is where the 164% above comes from.
 
 If the part's default codec encrypts and this codec does not, the default codec is used instead, so that the
-indexed tokens are never written in plaintext. Applies to newly written parts only.
+indexed tokens are never written in plaintext. The index header is a separate substream that always keeps the
+part default codec and holds the first token of every dictionary block, so an encrypting codec set here does not
+by itself encrypt every indexed token. Applies to newly written parts only, and the parameter takes effect
+whenever it names a codec different from the part default, in either direction. The `LZ4` gain above needs a part
+default heavier than `LZ4`: without an explicit `default_compression_codec` the part default is chosen by part
+size, so a small freshly inserted part is already on `LZ4`.
 )", 0) \
     DECLARE(NonZeroUInt64, text_index_posting_list_block_size, 1048576, R"(
 Default posting list block size for text indexes (rows).
