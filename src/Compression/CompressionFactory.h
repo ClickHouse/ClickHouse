@@ -93,11 +93,9 @@ public:
     /// information about type to improve inner settings, but every codec should
     /// be able to work without information about type. Also AST can contain
     /// codec, which can be alias to current default codec, which can be changed
-    /// in runtime. If only_generic is true than method will filter all
-    /// isGenericCompression() == false codecs from result. If nothing found
-    /// will return codec NONE. It's useful for auxiliary parts of complex columns
-    /// like Nullable, Array and so on. If all codecs are non generic and
-    /// only_generic = true, than codec NONE will be returned.
+    /// in runtime. If `only_generic` is true, only the codecs that do not interpret the values
+    /// are kept: generic compression (`isGenericCompression`) and encryption (`isEncryption`); `NONE`
+    /// if nothing remains.
     CompressionCodecPtr get(const ASTPtr & ast, const IDataType * column_type, CompressionCodecPtr current_default = nullptr, bool only_generic = false) const;
 
     /// Just wrapper for previous method.
