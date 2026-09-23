@@ -1,3 +1,5 @@
+-- Tags: no-old-analyzer
+
 -- The IEJoin planner path pre-sorts each input by its first-condition key with a plan-level
 -- sort, which makes the inputs eligible for the read-in-order optimization: when a MergeTree
 -- table is ordered by that key, the sort turns into a streaming FinishSorting (or is elided)

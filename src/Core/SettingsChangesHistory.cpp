@@ -35,10 +35,10 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// History of settings changes that controls some backward incompatible changes
         /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
         /// in this version. This history contains both changes to existing settings and newly added settings.
-        /// Entries are `{setting_name, previous_value, new_value, reason, compatibility_mode = Apply}`.
-        /// Use `Ignore` when a new default must apply even with an older `compatibility` version.
-        /// For a newly added setting choose the most appropriate `previous_value` (for example, if the setting
-        /// controls a new feature and is `true` by default, use `false` as `previous_value`).
+        /// Settings changes is a vector of structs
+        ///     {setting_name, previous_value, new_value, reason}.
+        /// For newly added setting choose the most appropriate previous_value (for example, if new setting
+        /// controls new feature and it's 'true' by default, use 'false' as previous_value).
         /// It's used to implement `compatibility` setting (see https://github.com/ClickHouse/ClickHouse/issues/35972)
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
@@ -145,6 +145,11 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
+            {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7: the previous value is deliberately equal to the new one, because 26.7 already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
+            {"allow_experimental_ai_functions", false, false, "The setting is obsolete, AI functions are beta now and enabled by default."},
+            {"ai_function_max_retries", 0, 1, "Retry a transient API error once by default, so a single 429 or 5xx from the provider does not fail the query."},
+            {"adaptive_aggregator_freeze_threshold_bytes", 4194304, 4194304, "New setting bounding the adaptive aggregator's frozen local tables in bytes, whichever of it and the key-count threshold is reached first; 0 disables the byte bound."},
+            {"query_plan_aggregation_bucket_top_k", false, true, "New setting to toggle the plan optimization that materializes only each two-level bucket's best n groups when a final aggregation feeds ORDER BY over its outputs with LIMIT n and the per-bucket selection is provably exact."},
             {"enable_group_by_top_k_optimization", false, true, "New setting to control the TopK filtering optimization during aggregation in `GROUP BY key ORDER BY key LIMIT N` queries."},
             {"group_by_top_k_optimization_observation_rows", 65536, 65536, "New experimental setting: rows each aggregation stream observes before declaring a full top-K heap that never rejected anything pure overhead and freezing it."},
             {"time_series_prefer_recent_samples_table", true, true, "New setting to read from the recent samples table of a TimeSeries table when the requested time range fits in its TTL window."},
@@ -228,7 +233,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"input_format_parquet_dictionary_filter_push_down", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."},
             {"input_format_read_datetime_number_as_raw_value", true, false, "From 26.8, an unquoted number for a `DateTime`/`DateTime64` column in the `JSON` and `Values`/`Quoted` paths (and in `JSONExtract` and typed `JSON`) is a Unix timestamp in seconds, consistent with the `Values` format, `CAST` and `toDateTime64`. Set this to `true` (or `SET compatibility = '26.7'`) to restore the pre-26.8 behavior, where a bare unquoted integer fed to a `DateTime64` column was read as the raw scaled value (ticks). The tab-separated, CSV and other escaped/whole-text formats are not governed by this setting."},
             {"query_plan_short_circuit_constant_false_join", false, true, "New setting to short-circuit a JOIN with a constant-false ON condition so the non-contributing side is not read. previous_value=false so `compatibility` with versions before 26.8 restores the pre-existing behavior (no short-circuit)."},
-            {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
             {"distributed_plan_workers_provisioning_timeout_ms", 0, 10000, "New setting bounding how long a query waits for leased stateless workers to become reachable before execution; `compatibility` below 26.8 restores the previous no-wait behavior."},
             {"query_plan_optimize_lazy_materialization_for_object_storage", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading Parquet files from object storage (including Iceberg tables)."},
             {"query_plan_optimize_lazy_materialization_for_file", false, true, "New setting to use lazy materialization for `ORDER BY ... LIMIT n` queries reading local Parquet files with the `file` table function and the `File` table engine."},
@@ -238,6 +242,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_use_native_writer", true, true, "Obsolete setting, the native ClickHouse writer is now always used for the `Arrow` and `ArrowStream` formats (the Apache Arrow library-based writer has been removed)."},
             {"distributed_cache_min_inflight_bytes_to_discard_connection_on_seek", 0, 4 * 1024 * 1024, "New setting to drop and reopen a distributed cache connection on a seek when too many in-flight bytes would otherwise be discarded. Defaults to 4 MiB; 0 restores the previous behavior (always reuse the connection via the read range id)."},
             {"iceberg_delete_manifest_decode_concurrency", 2, 4, "New setting bounding how many Iceberg delete manifest files are decoded concurrently before the first row is read. Before 26.8 one manifest was decoded at a time with the next one's fetch already in flight, so `2` is the closest equivalent of the previous behavior, which put the sum of their object storage round-trips on the critical path before the first row."},
+            {"iceberg_file_entries_queue_size", 100, 100, "New setting for the previously hardcoded capacity of the queue between the Iceberg data manifest decode tasks and the query."},
+            {"iceberg_manifest_decode_concurrency", 2, 4, "New setting bounding how many Iceberg manifest files are decoded concurrently, for delete and data manifests alike. It replaces `iceberg_delete_manifest_decode_concurrency` (kept as an alias). `2` approximates the data path before this change, which decoded one manifest at a time with the next one's fetch already in flight."},
             {"run_query_in_background", false, false, "New setting to run a query in the background, detached from the connection that submitted it, discarding the result."},
             {"enable_cascades_optimizer", false, false, "New experimental setting."},
             {"merge_tree_min_bytes_per_read_stream", 0, (64 * 1024), "New setting to cap the number of streams for ordinary local unordered `MergeTree` narrow-column scans using a sqrt cost model, reducing per-stream overhead on high-core-count machines. previous_value=0 (disabled) so `compatibility` with versions before 26.8 restores the pre-existing stream count."},
@@ -251,6 +257,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"enable_function_early_short_circuit", false, false, "New setting"},
             {"merge_tree_prefetch_json_shared_data_substreams", true, true, "New setting to control prefetching of JSON shared data substreams that are read by seeking to a mark in Wide parts."},
             {"iceberg_compaction_commit_batch_size", 100, 100, "New setting"},
+            {"output_format_arrow_record_batch_size", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target row count. The default `0` preserves one record batch per block."},
+            {"output_format_arrow_record_batch_size_bytes", 0, 0, "New setting to combine small blocks in `Arrow` and `ArrowStream` output using a target size in bytes of accumulated data. The default `0` preserves one record batch per block."},
         });
         addSettingsChanges(settings_changes_history, "26.7",
         {
@@ -783,7 +791,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"allow_experimental_correlated_subqueries", false, true, "Mark correlated subqueries support as Beta."},
             {"promql_database", "", "", "New experimental setting"},
             {"promql_table", "", "", "New experimental setting"},
-            {"evaluation_time", Field{"auto"}, Field{"auto"}, "New experimental setting"},
+            {"evaluation_time", 0, Field{"auto"}, "New experimental setting"},
             {"output_format_parquet_date_as_uint16", false, false, "Added a compatibility setting for a minor compatibility-breaking change introduced back in 24.12."},
             {"enable_lightweight_update", false, true, "Lightweight updates were moved to Beta. Added an alias for setting 'allow_experimental_lightweight_update'."},
             {"allow_experimental_lightweight_update", false, true, "Lightweight updates were moved to Beta."},
@@ -1491,7 +1499,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "20.7",
         {
-            {"show_table_uuid_in_table_create_query_if_not_nil", true, false, "Stop showing UID of the table in its CREATE query for Engine=Atomic"}
+            {"show_table_uuid_in_table_create_query_if_not_nil", true, false, "Stop showing  UID of the table in its CREATE query for Engine=Atomic"}
         });
         addSettingsChanges(settings_changes_history, "20.5",
         {
@@ -1528,27 +1536,19 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 
 const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
 {
-    using CompatibilitySetting = SettingsChangesHistory::SettingChange::CompatibilitySetting;
     static VersionToSettingsChangesMap merge_tree_settings_changes_history;
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
-            {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},
             {"patch_parts_version", "v1", "v2", "New setting to control the on-disk serialization version of patch parts produced by lightweight updates. Older compatibility modes keep writing v1 patches, which all replicas in a mixed-version cluster can read."},
-            {"skip_empty_columns_on_insert", false, false, "New setting to skip writing all type-default columns on INSERT"},
-            {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
-            {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
-            {"shared_merge_tree_merge_coordinator_distribution_algorithm", "sainte_lague", "sainte_lague", "Keep Sainte-Lague distribution regardless of `compatibility`.", CompatibilitySetting::Ignore},
-            {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
-            {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
-            {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
-            {"object_shared_data_target_chunk_rows", 8192, 8192, "New setting"},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",
         {
+            {"shared_merge_tree_use_blobs_list_for_parts", false, false, "New setting which stores a SharedMergeTree part's per-file blob map in one consolidated Keeper node instead of one node per file"},
+            {"shared_merge_tree_blobs_list_inline_file_max_bytes", 0, 0, "New setting which stores small files of a blob-list part inline in the consolidated blobs.list instead of separate blobs"},
             {"merge_use_batch_sorting_queue", false, false, "New setting to use the batch sorting queue for ordinary `MergeTree` merges."},
             {"always_fetch_mutated_part", false, false, "New setting to make a replica fetch mutated parts instead of executing mutations locally"},
             {"packed_skip_index_max_bytes", 0, 1024 * 1024, "Promote to BETA and enable by default: pack skip-index substreams whose serialized on-disk size is at most 1 MiB into a single `skp_idx.packed` archive per part, cutting object count and read requests on object storage. Larger substreams keep the standalone `skp_idx_<name>.idx2` / `.mrk2` layout. Set to 0 to restore the previous behavior (no packing)."},
@@ -1686,7 +1686,7 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
         {
             {"object_serialization_version", "v2", "v2", "Add a setting to control JSON serialization versions"},
             {"object_shared_data_serialization_version", "map", "map", "Add a setting to control JSON serialization versions"},
-            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions for zero level parts"},
+            {"object_shared_data_serialization_version_for_zero_level_parts", "map", "map", "Add a setting to control JSON serialization versions  for zero level parts"},
             {"object_shared_data_buckets_for_compact_part", 8, 8, "Add a setting to control number of buckets for shared data in JSON serialization in compact parts"},
             {"object_shared_data_buckets_for_wide_part", 32, 32, "Add a setting to control number of buckets for shared data in JSON serialization in wide parts"},
             {"dynamic_serialization_version", "v2", "v2", "Add a setting to control Dynamic serialization versions"},

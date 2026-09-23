@@ -11,7 +11,6 @@
 #include <DataTypes/DataTypeUUID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
-#include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreePartition.h>
@@ -195,22 +194,11 @@ const Cond & ConditionTemplate<Cond>::generateUnsubstituted() const
 template <typename Cond>
 const Cond & ConditionTemplate<Cond>::generateForPart(const MergeTreeDataPartPtr & part) const
 {
-    return generateForPartition(part->partition, part->info.getPartitionId(), part->isProjectionPart());
-}
-
-template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPart(const IMergeTreeDataPartInfoForReader & part_info) const
-{
-    return generateForPartition(part_info.getPartition(), part_info.getPartInfo().getPartitionId(), part_info.isProjectionPart());
-}
-
-template <typename Cond>
-const Cond & ConditionTemplate<Cond>::generateForPartition(
-    const MergeTreePartition & partition, const String & partition_id, bool is_projection_part) const
-{
-    if (skip_folding || !dag || !dag->predicate || is_projection_part)
+    if (skip_folding || !dag || !dag->predicate || part->isProjectionPart())
         return generateUnsubstituted();
 
+    const auto & partition = part->partition;
+    const auto & partition_id = part->info.getPartitionId();
     if (const auto * cond = lookupSubstituted(partition_id))
         return *cond;
 

@@ -1,17 +1,8 @@
 #include <Processors/Port.h>
 #include <Processors/Transforms/IntersectOrExceptTransform.h>
 
-#include <algorithm>
-#include <Common/FailPoint.h>
-
 namespace DB
 {
-
-namespace FailPoints
-{
-extern const char intersect_or_except_transform_pause[];
-extern const char intersect_or_except_transform_counts_pause[];
-}
 
 /// After visitor is applied, ASTSelectIntersectExcept always has two child nodes.
 IntersectOrExceptTransform::IntersectOrExceptTransform(SharedHeader header_, Operator operator_)
@@ -159,17 +150,7 @@ void IntersectOrExceptTransform::addToCounts(
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-    {
-        if ((i & 0xFFF) == 0)
-        {
-            if (i > 0) [[unlikely]]
-                FailPointInjection::pauseFailPoint(FailPoints::intersect_or_except_transform_counts_pause);
-            if (isCancelled())
-                return;
-        }
-
         ++state.emplaceKey(method.data, i, variants.string_pool).getMapped();
-    }
 }
 
 
@@ -183,12 +164,6 @@ size_t IntersectOrExceptTransform::filterWithCounts(
 
     for (size_t i = 0; i < rows; ++i)
     {
-        if ((i & 0xFFF) == 0 && isCancelled())
-        {
-            std::fill(filter.begin() + i, filter.end(), 0);
-            return new_rows_num;
-        }
-
         auto find_result = state.findKey(method.data, i, variants.string_pool);
 
         /// A remaining right-side occurrence of this row.
@@ -214,17 +189,7 @@ void IntersectOrExceptTransform::addToSet(Method & method, const ColumnRawPtrs &
     typename Method::State state(columns, key_sizes, nullptr);
 
     for (size_t i = 0; i < rows; ++i)
-    {
-        if ((i & 0xFFF) == 0)
-        {
-            if (i > 0) [[unlikely]]
-                FailPointInjection::pauseFailPoint(FailPoints::intersect_or_except_transform_pause);
-            if (isCancelled())
-                return;
-        }
-
         state.emplaceKey(method.data, i, variants.string_pool);
-    }
 }
 
 
@@ -241,12 +206,6 @@ size_t IntersectOrExceptTransform::buildFilter(
 
     for (size_t i = 0; i < rows; ++i)
     {
-        if ((i & 0xFFF) == 0 && isCancelled())
-        {
-            std::fill(filter.begin() + i, filter.end(), 0);
-            return new_rows_num;
-        }
-
         auto find_result = state.findKey(method.data, i, variants.string_pool);
         filter[i] = (current_operator == ASTSelectIntersectExceptQuery::Operator::EXCEPT_DISTINCT)
             ? !find_result.isFound()

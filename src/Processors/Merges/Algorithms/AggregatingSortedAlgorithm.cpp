@@ -313,7 +313,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
     while (queue.isValid())
     {
         bool key_differs = false;
-        SortCursor current = *queue.current().first;
+        SortCursor current = queue.current();
 
         if (current->isLast() && skipLastRowFor(current->order))
         {
@@ -353,7 +353,7 @@ IMergingAlgorithm::Status AggregatingSortedAlgorithm::merge()
 
         if (!current->isLast())
         {
-            queue.next(1);
+            queue.next();
         }
         else
         {

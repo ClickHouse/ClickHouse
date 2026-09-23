@@ -40,7 +40,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
     else
     {
-        ostr << backQuoteIfNeed(func_name);
+        ostr << func_name;
 
         if (parameters)
         {
@@ -53,7 +53,7 @@ void ASTColumnsApplyTransformer::formatImpl(WriteBuffer & ostr, const FormatSett
     }
 
     if (!column_name_prefix.empty())
-        ostr << ", " << quoteString(column_name_prefix) << ")";
+        ostr << ", '" << column_name_prefix << "')";
 }
 
 void ASTColumnsApplyTransformer::appendColumnName(WriteBuffer & ostr) const
@@ -84,14 +84,11 @@ void ASTColumnsApplyTransformer::updateTreeHashImpl(SipHash & hash_state, bool i
 {
     hash_state.update(func_name.size());
     hash_state.update(func_name);
-    /// `parameters` and `lambda` are not children, so `updateTreeHash` is needed to reach their own
-    /// subtrees; `updateTreeHashImpl` alone stops at the node itself, and the arguments of
-    /// `APPLY quantile(0.5)` live below it.
     if (parameters)
-        parameters->updateTreeHash(hash_state, ignore_aliases);
+        parameters->updateTreeHashImpl(hash_state, ignore_aliases);
 
     if (lambda)
-        lambda->updateTreeHash(hash_state, ignore_aliases);
+        lambda->updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(lambda_arg.size());
     hash_state.update(lambda_arg);
