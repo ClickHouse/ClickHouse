@@ -310,6 +310,9 @@ private:
     const size_t pool_size;
     const bool flush_on_shutdown;
 
+    /// Batches and jobs point into these vectors: `InsertData::in_flight_flushes` refers to a shard, and
+    /// `processData` receives the shard's flush time history by reference. Keep them declared before
+    /// `pool` and `dump_by_first_update_threads`, so they are destroyed after the threads that use them.
     std::vector<QueueShard> queue_shards;
     std::vector<QueueShardFlushTimeHistory> flush_time_history_per_queue_shard;
 
