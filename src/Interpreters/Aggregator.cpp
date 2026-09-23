@@ -12,6 +12,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -2284,6 +2285,18 @@ bool Aggregator::executeOnBlock(Columns columns,
 
         if (!result.isLowCardinality())
         {
+            /// Serialized methods read key columns through `IColumn` virtuals, so a non-nullable
+            /// `LowCardinality` key can be serialized from its dictionary without being copied into
+            /// a full column first. `LowCardinality(Nullable)` keys need the materialized
+            /// representation, which carries their null map, and top-K aggregation keeps it for its
+            /// own ranked columns.
+            if (result.isSerialized() && !params.top_k)
+            {
+                const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
+                if (low_cardinality && !low_cardinality->getDictionary().nestedColumnIsNullable())
+                    continue;
+            }
+
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
             if (column_no_lc.get() != key_columns[i])
             {

@@ -274,6 +274,28 @@ bool AggregatedDataVariants::isLowCardinality() const
     }
 }
 
+bool AggregatedDataVariants::isSerialized() const
+{
+    switch (type)
+    {
+        case Type::serialized:
+        case Type::prealloc_serialized:
+        case Type::serialized_two_level:
+        case Type::prealloc_serialized_two_level:
+        case Type::serialized_hash64:
+        case Type::prealloc_serialized_hash64:
+        case Type::serialized_void:
+        case Type::prealloc_serialized_void:
+        case Type::serialized_void_two_level:
+        case Type::prealloc_serialized_void_two_level:
+        case Type::serialized_void_hash64:
+        case Type::prealloc_serialized_void_hash64:
+            return true;
+        default:
+            return false;
+    }
+}
+
 HashMethodContextPtr AggregatedDataVariants::createCache(Type type, const HashMethodContext::Settings & settings)
 {
     switch (type)
