@@ -14,8 +14,10 @@ granule skipping, limit reached	[999]
 granule skipping, no limit	[999]
 token and pattern, limit reached	[999]
 token and pattern, without the index	[999]
-after modifying the block size, limit reached	[999]
-after modifying the block size, no limit	[999]
+Dictionary block size from the table setting
+table block size, limit not reached, before the alter	[999]
+table block size, limit not reached, after the alter	[999]
+table block size, limit reached, after the alter	[999]
 Array tokenizer
 array, limit reached	[999]
 array, no limit	[999]
@@ -24,8 +26,6 @@ Index over an expression
 expression, limit reached	[999]
 expression, no limit	[999]
 expression, without the index	[999]
-scan_limit_after_alter_limited	1	2	0
-scan_limit_after_alter_unlimited	0	64	1
 scan_limit_array_limited	1	1	0
 scan_limit_array_unlimited	0	16	1
 scan_limit_ends_with_limited	1	1	0
@@ -41,4 +41,7 @@ scan_limit_prefix_limited	1	1	0
 scan_limit_prefix_unlimited	0	1	1
 scan_limit_starts_with_limited	1	1	0
 scan_limit_suffix_limited	1	1	0
+scan_limit_table_block_size_after_alter	0	64	1
+scan_limit_table_block_size_before_alter	0	64	1
+scan_limit_table_block_size_limited	1	2	0
 scan_limit_token_and_pattern_limited	1	2	1

@@ -66,11 +66,34 @@ SELECT 'granule skipping, no limit', arraySort(groupArray(id)) FROM tab WHERE me
 SELECT 'token and pattern, limit reached', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'bw999') AND message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 10, log_comment = 'scan_limit_token_and_pattern_limited';
 SELECT 'token and pattern, without the index', arraySort(groupArray(id)) FROM tab WHERE hasToken(message, 'bw999') AND message LIKE '%aw999%' SETTINGS use_skip_indexes = 0;
 
--- The limit counts the tokens the search really matched, so changing the dictionary block size of the
--- table does not move the decision for parts that were already written with the previous value.
-ALTER TABLE tab MODIFY SETTING text_index_dictionary_block_size = 8192;
-SELECT 'after modifying the block size, limit reached', arraySort(groupArray(id)) FROM tab WHERE message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 100, log_comment = 'scan_limit_after_alter_limited';
-SELECT 'after modifying the block size, no limit', arraySort(groupArray(id)) FROM tab WHERE message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 0, log_comment = 'scan_limit_after_alter_unlimited';
+SELECT 'Dictionary block size from the table setting';
+
+DROP TABLE IF EXISTS tab_table_block_size;
+
+-- This table takes the dictionary block size from the table setting rather than from an index
+-- argument, which is the only way the setting below can still be changed after a part is written.
+CREATE TABLE tab_table_block_size
+(
+    id UInt32,
+    message String,
+    INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 64, text_index_dictionary_block_size = 64;
+
+INSERT INTO tab_table_block_size SELECT number, concat('aw', toString(number), ' bw', toString(number), ' cw', toString(number), ' dw', toString(number)) FROM numbers(1024);
+OPTIMIZE TABLE tab_table_block_size FINAL;
+
+-- The part holds 4096 tokens, so a limit of 10000 is never reached and the search prunes. Raising the
+-- table setting 128x does not rewrite the part, so the search must still reach the same decision: a
+-- limit measured against the table setting instead of the tokens really matched would stop the search
+-- after the ALTER and not before it.
+SELECT 'table block size, limit not reached, before the alter', arraySort(groupArray(id)) FROM tab_table_block_size WHERE message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 10000, log_comment = 'scan_limit_table_block_size_before_alter';
+ALTER TABLE tab_table_block_size MODIFY SETTING text_index_dictionary_block_size = 8192;
+SELECT 'table block size, limit not reached, after the alter', arraySort(groupArray(id)) FROM tab_table_block_size WHERE message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 10000, log_comment = 'scan_limit_table_block_size_after_alter';
+-- A limit below the dictionary still stops the search on the same part.
+SELECT 'table block size, limit reached, after the alter', arraySort(groupArray(id)) FROM tab_table_block_size WHERE message LIKE '%aw999%' SETTINGS text_index_like_max_dictionary_tokens_to_scan = 100, log_comment = 'scan_limit_table_block_size_limited';
 
 SELECT 'Array tokenizer';
 
@@ -130,5 +153,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_databa
 ORDER BY log_comment;
 
 DROP TABLE tab;
+DROP TABLE tab_table_block_size;
 DROP TABLE tab_array;
 DROP TABLE tab_expression;
