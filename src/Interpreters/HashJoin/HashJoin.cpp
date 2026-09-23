@@ -2103,13 +2103,12 @@ private:
             auto end = map.end();
             const RowDataStore * const * block_row_stores = parent.data->stored_columns_index->rowStoresData();
 
-            /// Ownership uses the routed bucket. `iteratorAt` / `offsetInternalAtBucket`
-            /// take the physical impls index (`getBucket()`, always 0 on flat storage).
+            /// `getBucket` is the bucket the key routes to, on both table shapes.
             auto skip_to_next_owned_bucket = [&]() -> bool
             {
-                while (it != end && !isBucketOwnedByStream(it.getRoutedBucket()))
+                while (it != end && !isBucketOwnedByStream(it.getBucket()))
                 {
-                    if constexpr (Map::isFixedRangeStorage())
+                    if constexpr (is_partitioned_fixed_table<Map>)
                     {
                         ++it;
                     }
@@ -2148,7 +2147,7 @@ private:
 
                 ++it;
 
-                if (it != end && !isBucketOwnedByStream(it.getRoutedBucket()) && !skip_to_next_owned_bucket())
+                if (it != end && !isBucketOwnedByStream(it.getBucket()) && !skip_to_next_owned_bucket())
                     break;
             }
         }
