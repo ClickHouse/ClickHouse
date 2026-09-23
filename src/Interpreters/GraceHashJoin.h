@@ -84,6 +84,8 @@ public:
     ~GraceHashJoin() override;
 
     std::string getName() const override { return "GraceHashJoin"; }
+
+    std::string getAlgorithm() const override { return toString(JoinAlgorithm::GRACE_HASH); }
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
@@ -181,7 +183,8 @@ private:
 
     FileBucket * current_bucket = nullptr;
     /// A bucket crossed the hard cap under `join_overflow_mode = 'break'`: emit it, then stop.
-    bool stop_after_current_bucket = false;
+    /// Set from the concurrent build phase (`addBlockToJoin`) as well as from `getDelayedBlocks`.
+    std::atomic<bool> stop_after_current_bucket = false;
 
     mutable std::mutex current_bucket_mutex;
 

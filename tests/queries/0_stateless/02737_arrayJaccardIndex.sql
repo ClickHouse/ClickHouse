@@ -12,6 +12,15 @@ SELECT [toUInt16(1)] AS arr1, [toUInt32(1)] AS arr2, round(arrayJaccardIndex(arr
 SELECT ['a'] AS arr1, ['a', 'aa', 'aaa'] AS arr2, round(arrayJaccardIndex(arr1, arr2), 2);
 SELECT [[1,2], [3,4]] AS arr1, [[1,2], [3,5]] AS arr2, round(arrayJaccardIndex(arr1, arr2), 2);
 
+SELECT 'duplicate elements';
+
+SELECT round(arrayJaccardIndex([1, 1], [1, 1]), 2);
+SELECT round(arrayJaccardIndex([1, 1], [1]), 2);
+SELECT round(arrayJaccardIndex([1, 1, 2], [1, 2]), 2);
+SELECT round(arrayJaccardIndex([1, 1], [1, 2]), 2);
+SELECT round(arrayJaccardIndex(materialize([1, 1]), [1, 1]), 2);
+SELECT round(arrayJaccardIndex([1, 1, 2]::Array(UInt256), [2, 3]::Array(Int128)), 2);
+
 SELECT 'non-const arguments';
 
 DROP TABLE IF EXISTS array_jaccard_index;
@@ -20,6 +29,7 @@ CREATE TABLE array_jaccard_index (arr Array(UInt8)) engine = MergeTree ORDER BY 
 INSERT INTO array_jaccard_index values ([1,2,3]);
 INSERT INTO array_jaccard_index values ([1,2]);
 INSERT INTO array_jaccard_index values ([1]);
+INSERT INTO array_jaccard_index values ([1,1,2]);
 
 SELECT arr, [1,2] AS other, round(arrayJaccardIndex(arr, other), 2) FROM array_jaccard_index ORDER BY arr;
 SELECT arr, [] AS other, round(arrayJaccardIndex(arr, other), 2) FROM array_jaccard_index ORDER BY arr;

@@ -72,6 +72,7 @@ public:
     ~SpillingHashJoin() override;
 
     std::string getName() const override;
+    std::string getAlgorithm() const override;
     const TableJoin & getTableJoin() const override { return *table_join; }
     bool anyTakeLastRow() const override { return any_take_last_row; }
 
@@ -107,7 +108,7 @@ public:
     bool hasDelayedBlocks() const override { return true; }
 
     void onBuildPhaseFinish() override;
-    void onProbePhaseFinish(size_t matched_right_rows) override;
+    void onProbePhaseFinish(std::optional<size_t> matched_right_rows) override;
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;

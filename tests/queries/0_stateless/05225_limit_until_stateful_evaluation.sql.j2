@@ -1,0 +1,77 @@
+{% for block_size in [1, 2, 3, 65536] %}
+SET max_block_size = {{ block_size }};
+SELECT 'max_block_size = {{ block_size }}';
+
+-- A stateful expression used only by `UNTIL` sees every chunk from the beginning of the stream.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6 UNTIL rowNumberInAllBlocks() >= 9);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 7 UNTIL rowNumberInAllBlocks() >= 9);
+
+-- Early end matches are ignored, while an end condition already true at the start closes immediately.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6 UNTIL rowNumberInAllBlocks() = 2);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6 UNTIL rowNumberInAllBlocks() >= 2);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6 UNTIL rowNumberInAllBlocks() = 6);
+
+-- The numeric limit and a missing start also apply when the boundaries are evaluated together.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT 2 AFTER number = 6 UNTIL rowNumberInAllBlocks() >= 9);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 20 UNTIL rowNumberInAllBlocks() >= 9);
+
+-- Constant starts work when the boundary expressions need no input columns.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number LIMIT AFTER 1 UNTIL rowNumberInAllBlocks() >= 9);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number LIMIT AFTER 0 UNTIL rowNumberInAllBlocks() >= 9);
+
+-- Nullable end columns retain the stateful expression's stream position.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6 UNTIL toNullable(rowNumberInAllBlocks() >= 9));
+
+-- `UNTIL` alone and repeated ranges evaluate stateful boundaries from the first chunk as well.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number LIMIT UNTIL rowNumberInAllBlocks() >= 9);
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number IN (2, 6) ALL UNTIL rowNumberInAllBlocks() IN (4, 9));
+
+{% endfor %}
+
+SET max_block_size = 3;
+
+-- Statefulness confined to `AFTER` does not require early evaluation of a deterministic `UNTIL`.
+SELECT groupArray(number) FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER throwIf(rowNumberInAllBlocks() != number) + (number = 6)
+     UNTIL throwIf(number < 6) + (number = 9));
+
+-- Non-deterministic end predicates execute before the start even when the function is not stateful.
+SELECT count() FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6 UNTIL throwIf(number < 6) + (rand() > 0)); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+
+-- The same rule applies to lambdas without captures, with captures, and inside other lambdas.
+SELECT count() FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6
+     UNTIL throwIf(number < 6) + arrayExists(x -> rand(x) > 0, [number])); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count() FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6
+     UNTIL throwIf(number < 6) + arrayExists(x -> rand(x + number) > 0, [number])); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
+SELECT count() FROM
+    (SELECT number FROM numbers(12) ORDER BY number
+     LIMIT AFTER number = 6
+     UNTIL throwIf(number < 6) + arrayExists(x -> arrayExists(y -> rand(y + x) > 0, [number]), [number])); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }
