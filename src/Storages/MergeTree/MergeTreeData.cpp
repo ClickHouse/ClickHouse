@@ -184,6 +184,7 @@
 
 #include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
+#include <Poco/JSON/JSONException.h>
 #include <Poco/Net/NetException.h>
 
 #if USE_AZURE_BLOB_STORAGE
@@ -9668,6 +9669,17 @@ bool isDestinationSideError(const Exception & e)
     return e.code() == ErrorCodes::NOT_ENOUGH_SPACE || e.code() == ErrorCodes::SUPPORT_IS_DISABLED;
 }
 
+/// Whether a non-`DB::Exception` error comes from parsing the metadata files of a part with Poco
+/// (`Poco::JSON::Parser`, `Poco::Dynamic::Var` conversions), i.e. describes the contents of the files.
+bool isPartMetadataParseError(const Poco::Exception & e)
+{
+    return dynamic_cast<const Poco::JSON::JSONException *>(&e)
+        || dynamic_cast<const Poco::DataException *>(&e)
+        || dynamic_cast<const Poco::BadCastException *>(&e)
+        || dynamic_cast<const Poco::RangeException *>(&e)
+        || dynamic_cast<const Poco::InvalidAccessException *>(&e);
+}
+
 /// Assigns the final error code to a failure that happened while loading a part restored from a backup,
 /// and records it in `system.errors` (the load runs under `Exception::SuppressErrorCodesScope`, so nothing
 /// has been recorded for it yet).
@@ -9678,10 +9690,11 @@ bool isDestinationSideError(const Exception & e)
 /// cannot be read: either it was written by a newer server whose format this one does not understand
 /// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
 ///
-/// A failure that is not a `DB::Exception` has no code to reassign. If it comes from parsing the metadata
-/// of the part (e.g. `Poco::JSON::JSONException` or `Poco::BadCastException` for a truncated or malformed
+/// A failure that is not a `DB::Exception` has no code to reassign. If it is positively identified as a
+/// failure to parse the metadata of the part (see `isPartMetadataParseError`, e.g. a truncated or malformed
 /// `serialization.json`), `error` is replaced with a fresh `BACKUP_DAMAGED` exception carrying its text.
-/// `Poco::IOException` describes the local filesystem, not the backup, and is left as is.
+/// Any other such failure (`std::bad_alloc`, `Poco::IOException` of the local filesystem, ...) says nothing
+/// about the backup: it is left as is and is not attributed to a broken part.
 ///
 /// `in_local_step` is set if the failure happened in a step that only writes to the destination.
 /// Returns whether the failure is attributed to the part in the backup being broken.
@@ -9699,8 +9712,8 @@ bool classifyAndRecordRestoreError(std::exception_ptr & error, bool retryable, b
         if (!e)
         {
             const auto * poco_exception = current_exception_cast<const Poco::Exception *>();
-            if (retryable || in_local_step || !poco_exception || dynamic_cast<const Poco::IOException *>(poco_exception))
-                return !retryable;
+            if (retryable || in_local_step || !poco_exception || !isPartMetadataParseError(*poco_exception))
+                return false;
 
             /// The constructor records the new exception in `system.errors`.
             error = std::make_exception_ptr(Exception(ErrorCodes::BACKUP_DAMAGED, "{}", poco_exception->displayText()));
