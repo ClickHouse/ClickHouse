@@ -43,7 +43,9 @@ ALTER TABLE t_05218 MODIFY COLUMN p Int8 SETTINGS alter_sync = 2;
 DETACH TABLE t_05218;
 ATTACH TABLE t_05218;
 
-SELECT command FROM system.mutations WHERE database = currentDatabase() AND table = 't_05218' AND NOT is_done ORDER BY mutation_id;
+-- `SYSTEM STOP MERGES` does not survive the restart, so the mutation may run right away; select it
+-- by its command rather than by `NOT is_done`.
+SELECT command FROM system.mutations WHERE database = currentDatabase() AND table = 't_05218' AND command LIKE '%DELETE%' ORDER BY mutation_id;
 
 SYSTEM START MERGES t_05218;
 

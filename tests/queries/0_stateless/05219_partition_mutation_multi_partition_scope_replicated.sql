@@ -45,8 +45,10 @@ ALTER TABLE t_05219 UPDATE n = n IN PARTITION 1, 2 WHERE 1 SETTINGS mutations_sy
 
 SELECT p, n FROM t_05219 ORDER BY p, n;
 
--- The part of the unlisted partition was never rewritten by the mutations.
-SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 't_05219' AND active ORDER BY name;
+-- The part of the unlisted partition was never rewritten by the mutations. The block numbers in
+-- the part names depend on insert retries, so only check whether a part carries a mutation version.
+SELECT partition_id, length(splitByChar('_', name)) = 5 AS mutated
+FROM system.parts WHERE database = currentDatabase() AND table = 't_05219' AND active ORDER BY partition_id;
 
 SELECT count() FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_05219' AND NOT is_done;
