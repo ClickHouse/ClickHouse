@@ -41,6 +41,17 @@ public:
     /// These rows were already counted when they were read from the original source.
     std::optional<ReadProgress> getReadProgress() override { return std::nullopt; }
 
+    void cancel(CancelReason reason) noexcept override
+    {
+        /// A partial result must finish processing data already read into temporary files.
+        if (reason == CancelReason::PartialResult)
+            return;
+
+        ISource::cancel(reason);
+    }
+
+    using ISource::cancel;
+
     Chunk generate() override
     {
         if (!tmp_read_stream)
