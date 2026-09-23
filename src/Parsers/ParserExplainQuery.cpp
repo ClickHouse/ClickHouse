@@ -938,29 +938,38 @@ EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP 
 
 ```text
 Query summary:
-  Time:        10.72 ms (planning 6.45 ms · execution 4.26 ms)
-  Read:        1.00 million rows, 8.00 MB (234.49 million rows/s., 1.88 GB/s.)
-  Peak memory: 28.98 KiB
+  Time:        22.65 ms (planning 7.98 ms · execution 14.66 ms)
+  Execution:   in steps 3.46 ms (23.60%) · outside steps 16.60 us (0.11%) · idle 11.19 ms (76.29%)
+  Read:        1.00 million rows, 8.00 MB (68.20 million rows/s., 545.59 MB/s.)
+  Peak memory: 16.00 KiB
 
 Output: number MOD 10, count()
 
 Expression ((Project names + Projection))
 │  I/O: rows 10 → 10 · 90 B → 90 B
-│    time 21.82 us (0.5%) · parallelism 0.98/1
+│  Time: step 12.09 us (0.08%) · branch 3.46 ms (23.60%)
+│  Concurrency: step 1.00/16 · branch 4.96/16
+│    time 12.36 us (0.08%) · parallelism 0.98/1
 └──Aggregating
    │  Keys: number MOD 10
    │  Aggregates: count()
    │  Skip merging: 0
    │  I/O: rows 1.00 million → 10 (0.00%) · 1.00 MB → 90 B
-   │    Stage (partial aggregation): time 868.45 us (20.4%) · parallelism 3.80/15
-   │    Stage (final aggregation): time 445.27 us (10.4%) · parallelism 1.11/16
+   │  Time: step 2.03 ms (13.85%) · branch 3.45 ms (23.52%)
+   │  Concurrency: step 5.93/16 · branch 4.97/16
+   │    Stage (partial aggregation): time 1.69 ms (11.50%) · parallelism 1.80/15
+   │    Stage (final aggregation): time 351.39 us (2.40%) · parallelism 1.10/16
    └──Expression ((Before GROUP BY + Change column names to column identifiers))
       │  I/O: rows 1.00 million → 1.00 million · 8.00 MB → 1.00 MB
-      │    time 677.07 us (15.9%) · parallelism 4.31/15
+      │  Time: step 2.02 ms (13.78%) · branch 2.76 ms (18.81%)
+      │  Concurrency: step 7.13/16 · branch 5.87/16
+      │    time 2.02 ms (13.81%) · parallelism 2.26/11
       └──ReadFromSystemNumbers
             Output: number
             I/O: rows 0 → 1.00 million · 0 B → 8.00 MB
-              time 993.94 us (23.3%) · parallelism 7.52/15
+            Time: step 2.58 ms (17.57%) · branch 2.58 ms (17.57%)
+            Concurrency: step 5.98/16 · branch 5.98/16
+              time 2.58 ms (17.58%) · parallelism 3.55/15
 ```
 
 Let's examine the output. First let's look at the header.
@@ -974,7 +983,7 @@ Let's examine the output. First let's look at the header.
 ```
 
 - `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
-- `Execution` — printed only with `time = 1`. The execution time split by what the threads were doing: `in steps` is the time when at least one thread ran a processor of a step of the plan, `outside steps` is the time when threads ran only processors that belong to no step of the plan, and `idle` is the time when no thread ran any processor. The three parts add up to `execution`. `in steps` equals the `branch` time of the root step, see [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency).
+- `Execution` — not printed with `time = 0`. The execution time split by what the threads were doing: `in steps` is the time when at least one thread ran a processor of a step of the plan, `outside steps` is the time when threads ran only processors that belong to no step of the plan, and `idle` is the time when no thread ran any processor. The three parts add up to `execution`. `in steps` equals the `branch` time of the root step, see [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency).
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
 - `Peak memory` — peak memory the query used.
 
@@ -1195,7 +1204,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 #### Step and branch wall-clock time and concurrency levels {#explain-analyze-concurrency}
 
-With `time = 1` two more lines are printed for every query plan step:
+Unless `time = 0`, two more lines are printed for every query plan step:
 
 ```txt
 Time: step <t> (<share>%) · branch <t> (<share>%)

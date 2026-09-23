@@ -10,9 +10,9 @@ SET enable_analyzer = 1;
 SELECT countIf(explain LIKE '  Execution:   in steps %· outside steps %· idle %') = 1
 FROM (EXPLAIN ANALYZE time = 1 SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
 
--- 2. Without `time` the work intervals are not collected, so the line is not printed.
+-- 2. With `time = 0` the work intervals are not collected, so the line is not printed.
 SELECT countIf(explain LIKE '%Execution:%') = 0
-FROM (EXPLAIN ANALYZE SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
+FROM (EXPLAIN ANALYZE time = 0 SELECT number % 10 AS k, count() FROM numbers_mt(1000000) GROUP BY k);
 
 -- 3. The three shares partition the execution time: they add up to 100% up to the rounding of
 --    three values with two decimals, and each of them is within [0, 100].
