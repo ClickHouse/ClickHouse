@@ -194,8 +194,8 @@ private:
 
     SharedMutex nodes_mutex;
 
-    /// Set when `updatePipeline` threw halfway through recording the processors an expansion
-    /// added (an allocation failed, for example): the parent's ports are already connected to
+    /// Set when `updatePipeline` threw while an expansion was in flight, either while the processor was
+    /// connecting the new processors or while the graph was recording them: the parent's ports are already connected to
     /// processors that never became nodes, so the nodes and edges no longer describe the ports and
     /// any further expansion would trip over them. The exception has already cancelled the executor;
     /// later expansions only bail out. Guarded by the `nodes_mutex` write lock.
