@@ -739,13 +739,20 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     const bool row_exists_is_marker = isRowExistsLightweightDeleteMarker(storage, getContext());
+    /// A `MODIFY SQL SECURITY` in the same statement decides what the new body will execute as, and
+    /// `processSQLSecurityOption` has already authorized exactly that. The stored security then says
+    /// nothing about the body being written, so it must not add a requirement of its own.
+    const bool sql_security_is_being_replaced = std::ranges::any_of(
+        alter.command_list->children,
+        [](const auto & child) { return child->template as<ASTAlterCommand &>().sql_security != nullptr; });
+
     for (const auto & child : alter.command_list->children)
     {
         const auto & command = child->as<ASTAlterCommand &>();
         required_access.append_range(
             getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_is_marker));
 
-        if (command.type == ASTAlterCommand::MODIFY_QUERY)
+        if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
     }
 

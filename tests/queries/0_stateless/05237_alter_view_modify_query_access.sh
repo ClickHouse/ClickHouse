@@ -75,6 +75,19 @@ run 'security none   ' "ALTER TABLE $db.mv_none MODIFY QUERY SELECT id, ''::Stri
 ${CLICKHOUSE_CLIENT} --query "GRANT ALLOW SQL SECURITY NONE ON *.* TO $author"
 run 'after the grant ' "ALTER TABLE $db.mv_none MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
 
+echo '-- a MODIFY SQL SECURITY in the same statement decides what the body runs as, so the old one'
+echo '-- must not be what gets authorized'
+${CLICKHOUSE_CLIENT} --query "
+CREATE MATERIALIZED VIEW $db.mv_migrate ENGINE = MergeTree ORDER BY id
+DEFINER = $definer SQL SECURITY DEFINER
+AS SELECT id, ''::String AS secret FROM $db.src;
+GRANT ALTER VIEW MODIFY QUERY, ALTER VIEW MODIFY SQL SECURITY, SELECT ON $db.mv_migrate TO $author;
+REVOKE SET DEFINER ON $definer FROM $author;
+"
+run 'take over      ' "ALTER TABLE $db.mv_migrate MODIFY SQL SECURITY DEFINER DEFINER = CURRENT_USER, MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
+run 'hand to other  ' "ALTER TABLE $db.mv_migrate MODIFY SQL SECURITY DEFINER DEFINER = $definer, MODIFY QUERY SELECT id, ''::String AS secret FROM $db.src"
+run 'still no read  ' "ALTER TABLE $db.mv_migrate MODIFY SQL SECURITY DEFINER DEFINER = CURRENT_USER, MODIFY QUERY SELECT id, secret FROM $db.secret"
+
 echo '-- ON CLUSTER must not become a way around the checks above'
 ${CLICKHOUSE_CLIENT} --query "GRANT CLUSTER ON *.* TO $author"
 run 'cluster top level' "ALTER TABLE $db.mv_own ON CLUSTER test_shard_localhost MODIFY QUERY SELECT id, secret FROM $db.secret"
@@ -90,5 +103,6 @@ ${CLICKHOUSE_CLIENT} --query "
 DROP TABLE $db.mv_own SYNC;
 DROP TABLE $db.mv_foreign SYNC;
 DROP TABLE $db.mv_none SYNC;
+DROP TABLE $db.mv_migrate SYNC;
 DROP USER $author, $definer;
 "

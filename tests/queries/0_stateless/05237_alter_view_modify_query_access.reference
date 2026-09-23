@@ -15,6 +15,11 @@ after the grant  accepted
 -- a SQL SECURITY NONE body runs unchecked, so rewriting it needs ALLOW SQL SECURITY NONE
 security none    ACCESS_DENIED
 after the grant  accepted
+-- a MODIFY SQL SECURITY in the same statement decides what the body runs as, so the old one
+-- must not be what gets authorized
+take over       accepted
+hand to other   ACCESS_DENIED
+still no read   ACCESS_DENIED
 -- ON CLUSTER must not become a way around the checks above
 cluster top level ACCESS_DENIED
 cluster subquery  ACCESS_DENIED
