@@ -149,6 +149,11 @@ ORDER BY event_time_microseconds;
 * `used_row_policies` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间所使用的行策略名称列表。
 * `used_privileges` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间成功通过校验的权限。
 * `missing_privileges` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间缺少的权限。
+* `used_number_of_joins` ([UInt64](/zh/reference/data-types/int-uint)) — 该查询执行的物理连接数量。该值在构建管道时从管道中收集，因此反映的是经过所有优化后仍保留的连接，而不是查询文本中 JOIN 子句的数量。无论连接嵌套多深都会被计入：子查询、公用表表达式、视图、视图的视图，以及由 INSERT 触发的 materialized view 的 SELECT，都会汇总到所发送查询的那一行中，因此即使查询自身文本中不含任何 JOIN，该值也可能不为零。仅构建管道而不执行的查询 (例如 EXPLAIN PIPELINE) 会报告其所解释查询的连接。在单个查询运行期间，某些管道会被多次组装：materialized view 的 SELECT 会针对触发它的 INSERT 的每个数据块以及每个插入流分别组装一次，递归 CTE 的递归成员会在每次迭代时组装一次，而循环的关系在每次重新启动时都会再次组装。尽管如此，此类管道中的连接仍只计数一次，因此该数值描述的是查询本身，而非其管道被组装的次数。
+* `used_join_algorithms` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 计入 used&#95;number&#95;of&#95;joins 的连接所使用的算法：&#39;HASH&#39;、&#39;PARALLEL&#95;HASH&#39;、&#39;GRACE&#95;HASH&#39;、&#39;PARTIAL&#95;MERGE&#39;、&#39;FULL&#95;SORTING&#95;MERGE&#39;、&#39;PARALLEL&#95;FULL&#95;SORTING&#95;MERGE&#39;、&#39;IE&#95;JOIN&#39;、&#39;DIRECT&#39;、&#39;PASTE&#39; 和 &#39;CONSTANT&#39;，已排序并去重，因此多个连接共用的算法只出现一次。这里记录的是实际选定用于执行各个连接的算法，而不是 join&#95;algorithm 设置所允许的算法。算法可能在执行过程中被替换为另一种算法，此时两者都会被报告。
+* `used_join_kinds` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 计入 used&#95;number&#95;of&#95;joins 的连接的类型，每个连接对应一个元素，因此多个连接共用的类型会出现多次。元素经过排序，并非按执行顺序排列。每个类型都是实际执行时的类型，可能与查询文本不同，因为优化器可能会交换连接的左右两侧来执行，从而将 LEFT 变为 RIGHT。
+* `used_join_strictness` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 计入 used&#95;number&#95;of&#95;joins 的连接的严格性，每个连接对应一个元素，顺序与 used&#95;join&#95;kinds 相同：两个数组中相同索引处的元素描述的是同一个连接。
+* `spilled_to_disk` ([Array(LowCardinality(String))](/zh/reference/data-types/array)) — 查询执行期间将数据写入磁盘临时文件 (即使用外部内存处理) 的运算符，已排序并去重。空数组表示查询完全在内存中完成。
 * `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/zh/reference/data-types/tuple)) — 执行该查询时所属事务的标识符。
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/zh/reference/data-types/enum)) — 查询执行过程中对查询缓存的使用情况。值：&#39;Unknown&#39; = 状态未知，&#39;None&#39; = 查询结果既未写入查询结果缓存，也未从查询结果缓存中读取，&#39;Write&#39; = 查询结果已写入查询结果缓存，&#39;Read&#39; = 查询结果已从查询结果缓存中读取。
 * `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/zh/reference/data-types/map)) — 异步读取的指标。
@@ -248,6 +253,11 @@ used_executable_user_defined_functions:[]
 used_sql_user_defined_functions:       []
 used_privileges:                       []
 missing_privileges:                    []
+used_number_of_joins:                  0
+used_join_algorithms:                  []
+used_join_kinds:                       []
+used_join_strictness:                  []
+spilled_to_disk:                       []
 query_cache_usage:                     None
 ```
 

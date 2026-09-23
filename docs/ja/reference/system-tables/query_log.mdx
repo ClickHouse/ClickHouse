@@ -150,6 +150,11 @@ ORDER BY event_time_microseconds;
 * `used_row_policies` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中に使用された行ポリシー名の一覧。
 * `used_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に正常にチェックされた権限。
 * `missing_privileges` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行時に不足している権限。
+* `used_number_of_joins` ([UInt64](/ja/reference/data-types/int-uint)) — このクエリで実行された物理的な結合の数。パイプラインの構築時に収集されるため、クエリテキスト内の JOIN 句の数ではなく、すべての最適化が適用された後に残った結合の数を反映します。結合はネストの深さに関係なくカウントされます。サブクエリ、共通テーブル式、ビュー、ビューのビュー、および INSERT によってトリガーされた materialized view の SELECT は、いずれも送信されたクエリの行に集計されます。そのため、クエリ自体のテキストに JOIN がまったく含まれていなくても、この値が 0 以外になることがあります。EXPLAIN PIPELINE のように、パイプラインを構築するだけで実行しないクエリでは、説明対象のクエリの結合が報告されます。1 つのクエリの実行中に、一部のパイプラインは複数回組み立てられます。materialized view の SELECT は、それをトリガーする INSERT のブロックごと、および insert ストリームごとに組み立てられます。再帰 CTE の再帰メンバーは反復ごとに組み立てられ、ループのリレーションは再開されるたびに組み立て直されます。それでも、このようなパイプラインの結合は 1 回だけカウントされます。したがって、この数値はパイプラインが組み立てられた回数ではなく、クエリそのものを表します。
+* `used_join_algorithms` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合のアルゴリズム: &#39;HASH&#39;、&#39;PARALLEL&#95;HASH&#39;、&#39;GRACE&#95;HASH&#39;、&#39;PARTIAL&#95;MERGE&#39;、&#39;FULL&#95;SORTING&#95;MERGE&#39;、&#39;PARALLEL&#95;FULL&#95;SORTING&#95;MERGE&#39;、&#39;IE&#95;JOIN&#39;、&#39;DIRECT&#39;、&#39;PASTE&#39;、&#39;CONSTANT&#39;。ソートおよび重複排除されているため、複数の結合で共通するアルゴリズムは 1 回だけ現れます。これは join&#95;algorithm 設定で許可されているアルゴリズムではなく、各結合の実行に実際に選択されたアルゴリズムです。実行途中でアルゴリズムが別のものに切り替わることがあり、その場合は両方が報告されます。
+* `used_join_kinds` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合の種類。結合ごとに 1 つの要素を持つため、複数の結合で共通する種類は複数回現れます。要素は実行順ではなく、ソートされた順に並びます。各種類は実際に実行されたものであり、クエリテキストとは異なる場合があります。これは、オプティマイザが結合の左右を入れ替えて実行し、その結果 LEFT が RIGHT に変わることがあるためです。
+* `used_join_strictness` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — used&#95;number&#95;of&#95;joins でカウントされた結合の厳密性。結合ごとに 1 つの要素を持ち、used&#95;join&#95;kinds と同じ順序で並びます。つまり、両方の配列で同じインデックスの要素は同じ結合を表します。
+* `spilled_to_disk` ([Array(LowCardinality(String))](/ja/reference/data-types/array)) — クエリ実行中にディスク上の一時ファイルへデータを書き込んだ (外部メモリで処理した) 演算子。ソートおよび重複排除されています。空の配列は、クエリがすべてメモリ内で実行されたことを意味します。
 * `transaction_id` ([Tuple(UInt64, UInt64, UUID, Int64)](/ja/reference/data-types/tuple)) — このクエリが属するトランザクションの識別子。
 * `query_cache_usage` ([Enum8(&#39;Unknown&#39; = 0, &#39;None&#39; = 1, &#39;Write&#39; = 2, &#39;Read&#39; = 3)](/ja/reference/data-types/enum)) — クエリ実行時のクエリキャッシュの使用状況。値: &#39;Unknown&#39; = 状態不明、&#39;None&#39; = クエリ結果はクエリ結果キャッシュに書き込まれず、クエリ結果キャッシュからも読み出されませんでした、&#39;Write&#39; = クエリ結果はクエリ結果キャッシュに書き込まれました、&#39;Read&#39; = クエリ結果はクエリ結果キャッシュから読み出されました。
 * `asynchronous_read_counters` ([Map(LowCardinality(String), UInt64)](/ja/reference/data-types/map)) — 非同期読み込みのメトリクス。
@@ -249,6 +254,11 @@ used_executable_user_defined_functions:[]
 used_sql_user_defined_functions:       []
 used_privileges:                       []
 missing_privileges:                    []
+used_number_of_joins:                  0
+used_join_algorithms:                  []
+used_join_kinds:                       []
+used_join_strictness:                  []
+spilled_to_disk:                       []
 query_cache_usage:                     None
 ```
 
