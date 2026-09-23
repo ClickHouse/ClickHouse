@@ -302,8 +302,7 @@ MarkCache::MappedPtr MergeTreeMarksLoader::loadMarksImpl()
     return res;
 }
 
-/// Keyed by the part's NAME, as every insertion and eviction site is (`getRelativePathOfActivePart()` =
-/// `getFullRootPath()/<name>/`); the directory a part occupies may differ from it (`<name>.proj`).
+/// The directory a part occupies may differ from its name (`<name>.proj`); the key names the part.
 MarkCache::Key MergeTreeMarksLoader::getCacheKey() const
 {
     auto data_part_storage = data_part_reader->getDataPartStorage();

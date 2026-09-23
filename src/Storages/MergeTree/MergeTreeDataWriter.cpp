@@ -470,8 +470,7 @@ void MergeTreeTemporaryPart::prewarmCaches()
 {
     auto prewarm_caches = part->storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
-    /// `streams` also holds the streams written for this part's projections, and a mark-cache key names
-    /// the part that owns the marks.
+    /// `streams` also holds the streams written for this part's projections.
     auto streamOwner = [this](const Stream & stream) -> const IMergeTreeDataPart *
     {
         if (stream.projection_name.empty())
