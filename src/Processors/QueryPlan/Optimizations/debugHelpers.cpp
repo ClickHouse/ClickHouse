@@ -1,15 +1,15 @@
-#include <memory>
-#include <ranges>
-#include <Core/Block.h>
+#include <Processors/QueryPlan/Optimizations/joinOrder.h>
 #include <Core/Joins.h>
-#include <Interpreters/Context.h>
-#include <Processors/QueryPlan/Optimizations/debugHelpers.h>
+#include <ranges>
+#include <memory>
 #include <Poco/JSON/JSON.h>
-#include <Poco/JSON/Object.h>
 #include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Object.h>
 #include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/Context.h>
+#include <Core/Block.h>
 
 #include <pcg_random.hpp>
 #include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
@@ -34,6 +34,10 @@ namespace DB
  *   ...
  * }';
  */
+RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name);
+RelationStats parseTableStatsHint(ContextPtr context, const String & table_name);
+RelationStats getRandomizedStats(UInt64 seed, size_t relation_index, const String & table_name, const Block & header);
+
 RelationStats parseTableStatsHint(const String & stats_hint_json, const String & table_name)
 {
     try

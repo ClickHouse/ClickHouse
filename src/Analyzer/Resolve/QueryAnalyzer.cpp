@@ -924,6 +924,11 @@ void QueryAnalyzer::validateJoinTableExpressionWithoutAlias(const QueryTreeNodeP
     if ((query_node && !query_node->getCTEName().empty()) || (union_node && !union_node->getCTEName().empty()))
         return;
 
+    /// A parameterized view has a name to qualify its columns with, so it is exempt like the plain table below.
+    if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+        table_function_node && table_function_node->isParameterizedView())
+        return;
+
     auto table_expression_node_type = table_expression_node->getNodeType();
 
     if (table_expression_node_type == QueryTreeNodeType::TABLE_FUNCTION ||
@@ -1712,6 +1717,13 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
         if (table_node->isMaterializedCTE())
             additional_column_qualification_parts = {table_node->getMaterializedCTE()->cte_name};
     }
+    else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+        table_function_node && table_function_node->isParameterizedView())
+    {
+        /// A parameterized view has a name of its own, qualify with it exactly like for a `TableNode`.
+        const auto & table_storage_id = table_function_node->getStorageID();
+        additional_column_qualification_parts = {table_storage_id.getDatabaseName(), table_storage_id.getTableName()};
+    }
     else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
         additional_column_qualification_parts = {query_node->getCTEName()};
     else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
@@ -1747,6 +1759,9 @@ void QueryAnalyzer::qualifyColumnNodesWithProjectionNames(const QueryTreeNodes &
             else
                 forced_qualifier = table_node->getStorageID().getTableName();
         }
+        else if (auto * table_function_node = table_expression_node->as<TableFunctionNode>();
+            table_function_node && table_function_node->isParameterizedView())
+            forced_qualifier = table_function_node->getStorageID().getTableName();
         else if (auto * query_node = table_expression_node->as<QueryNode>(); query_node && query_node->isCTE())
             forced_qualifier = query_node->getCTEName();
         else if (auto * union_node = table_expression_node->as<UnionNode>(); union_node && union_node->isCTE())
@@ -4522,6 +4537,15 @@ void QueryAnalyzer::initializeTableExpressionData(const TableExpressionNodePtr &
     else if (table_function_node)
     {
         table_expression_data.table_expression_description = "table_function";
+
+        /// A parameterized view has a name of its own, expose it exactly like a `TableNode` does.
+        if (table_function_node->isParameterizedView())
+        {
+            const auto & table_storage_id = table_function_node->getStorageID();
+            table_expression_data.database_name = table_storage_id.database_name;
+            table_expression_data.table_name = table_storage_id.table_name;
+            table_expression_data.table_expression_name = table_storage_id.getFullNameNotQuoted();
+        }
     }
 
     if (table_expression_node->hasAlias())

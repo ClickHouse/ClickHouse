@@ -34,7 +34,6 @@
     M(AsyncInsertBytes, "Data size in bytes of asynchronous INSERT queries.", ValueType::Bytes) \
     M(AsyncInsertRows, "Number of rows inserted by asynchronous INSERT queries.", ValueType::Number) \
     M(AsyncInsertCacheHits, "Number of times a duplicate hash id has been found in asynchronous INSERT hash id cache.", ValueType::Number) \
-    M(AsyncInsertFlush, "Number of flushes of the asynchronous INSERT queue. Every flush inserts a batch of asynchronous INSERT queries as a single part. Compare with AsyncInsertQuery to see how many queries are batched together on average.", ValueType::Number) \
     M(FailedInternalQuery, "Number of failed internal queries.", ValueType::Number) \
     M(FailedInternalSelectQuery, "Same as FailedInternalQuery, but only for SELECT queries.", ValueType::Number) \
     M(FailedInternalInsertQuery, "Same as FailedInternalQuery, but only for INSERT queries.", ValueType::Number) \

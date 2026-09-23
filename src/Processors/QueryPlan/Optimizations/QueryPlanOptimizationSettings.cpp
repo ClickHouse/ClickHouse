@@ -108,8 +108,7 @@ namespace Setting
     extern const SettingsDouble join_runtime_bloom_filter_max_ratio_of_set_bits;
     extern const SettingsDouble join_runtime_filter_pass_ratio_threshold_for_disabling;
     extern const SettingsJoinOrderAlgorithm query_plan_optimize_join_order_algorithm;
-    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_a;
-    extern const SettingsBool query_plan_optimize_join_order_use_conflict_detector_c;
+    extern const SettingsJoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector;
     extern const SettingsBool join_use_nulls;
     extern const SettingsUInt64 query_plan_min_columns_for_join_lazy_indexing;
     extern const SettingsMaxThreads max_threads;
@@ -369,8 +368,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     join_runtime_filter_size_from_hash_table_stats = from[Setting::join_runtime_filter_size_from_hash_table_stats];
 
     query_plan_optimize_join_order_algorithm = from[Setting::query_plan_optimize_join_order_algorithm];
-    query_plan_optimize_join_order_use_conflict_detector_a = from[Setting::query_plan_optimize_join_order_use_conflict_detector_a];
-    query_plan_optimize_join_order_use_conflict_detector_c = from[Setting::query_plan_optimize_join_order_use_conflict_detector_c];
+    query_plan_optimize_join_order_conflict_detector = from[Setting::query_plan_optimize_join_order_conflict_detector];
     join_use_nulls = from[Setting::join_use_nulls];
     if (query_plan_optimize_join_order_algorithm.empty())
         query_plan_optimize_join_order_algorithm.push_back(JoinOrderAlgorithm::GREEDY); /// Use greedy by default

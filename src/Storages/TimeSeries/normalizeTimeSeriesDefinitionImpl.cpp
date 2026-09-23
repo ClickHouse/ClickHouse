@@ -27,7 +27,6 @@
 #include <Parsers/ASTDataType.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTTLElement.h>
@@ -722,33 +721,6 @@ namespace
             default:
                 UNREACHABLE();
         }
-    }
-
-    ASTPtr makeDefaultTagsIndex()
-    {
-        auto index = make_intrusive<ASTIndexDeclaration>(
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
-            makeASTFunction("text", makeASTOperator("equals",
-                make_intrusive<ASTIdentifier>("tokenizer"), make_intrusive<ASTLiteral>("keyValuePairs"))),
-            "tags_idx");
-        /// A text index covers the whole part; its posting lists identify individual rows.
-        index->granularity = ASTIndexDeclaration::DEFAULT_TEXT_INDEX_GRANULARITY;
-        return index;
-    }
-
-    /// Removes the default `tags` index copied by `CREATE AS`, so it is generated for the new engine.
-    void removeGeneratedInnerIndices(ASTColumns & inner_columns, ViewTarget::Kind kind)
-    {
-        if (kind != ViewTarget::Tags || !inner_columns.indices)
-            return;
-
-        const auto default_index = makeDefaultTagsIndex()->formatWithSecretsOneLine();
-        auto & indices = inner_columns.indices->children;
-        auto is_generated = [&](const ASTPtr & index)
-        {
-            return index->formatWithSecretsOneLine() == default_index;
-        };
-        indices.erase(std::remove_if(indices.begin(), indices.end(), is_generated), indices.end());
     }
 
     /// Removes the generated columns (see `isGeneratedInnerColumn`) from an inner table's column list,
@@ -1559,20 +1531,6 @@ namespace
         return changed;
     }
 
-    /// Adds the default text index for exact label lookups in the `tags` map.
-    /// Explicit index declarations are kept, and engines outside the `MergeTree` family have no indexes.
-    bool normalizeInnerIndices(ASTColumns & inner_columns, const ASTStorage & inner_engine, ViewTarget::Kind kind)
-    {
-        if (kind != ViewTarget::Tags || !inner_engine.engine->name.ends_with("MergeTree")
-            || (inner_columns.indices && !inner_columns.indices->children.empty()))
-            return false;
-
-        auto indices = make_intrusive<ASTExpressionList>();
-        indices->children.push_back(makeDefaultTagsIndex());
-        inner_columns.setOrReplace(inner_columns.indices, indices);
-        return true;
-    }
-
     /// Checks that a target table or an inner-columns list has all the columns required by the
     /// TimeSeries table engine, and that those columns match the resolved types.
     void checkTargetTable(
@@ -1863,7 +1821,6 @@ namespace
                     auto new_inner_columns = boost::static_pointer_cast<ASTColumns>(old_inner_columns->clone());
                     removeInnerColumnsDisabledByNewSettings(*new_inner_columns, kind, old_settings, new_settings);
                     removeGeneratedInnerColumns(*new_inner_columns, kind, old_settings);
-                    removeGeneratedInnerIndices(*new_inner_columns, kind);
                     create_query.setTargetInnerColumns(kind, new_inner_columns);
                 }
             }
@@ -2087,10 +2044,6 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                     : make_intrusive<ASTStorage>();
                 if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, *params.query_settings))
                     create_query.setTargetInnerEngine(kind, inner_engine);
-
-                if (settings[TimeSeriesSetting::version] >= TimeSeriesVersion::MIN_WITH_TAGS_TEXT_INDEX
-                    && normalizeInnerIndices(*inner_columns, *inner_engine, kind))
-                    create_query.setTargetInnerColumns(kind, inner_columns);
             }
         }
 

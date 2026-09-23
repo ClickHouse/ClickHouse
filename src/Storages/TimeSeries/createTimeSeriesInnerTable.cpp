@@ -29,7 +29,12 @@ namespace
         manual_create_query->uuid = inner_table_uuid;
         manual_create_query->has_uuid = inner_table_uuid != UUIDHelpers::Nil;
 
-        manual_create_query->set(manual_create_query->columns_list, inner_columns.clone());
+        auto new_columns_list = make_intrusive<ASTColumns>();
+        if (inner_columns.columns)
+            new_columns_list->set(
+                new_columns_list->columns,
+                boost::static_pointer_cast<ASTExpressionList>(inner_columns.columns->clone()));
+        manual_create_query->set(manual_create_query->columns_list, new_columns_list);
 
         if (inner_storage_def)
             manual_create_query->set(manual_create_query->storage, inner_storage_def->clone());

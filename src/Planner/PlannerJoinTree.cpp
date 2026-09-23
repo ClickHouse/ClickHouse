@@ -809,7 +809,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         /// would let the query read the view without any `SELECT` grant. Enforce the same column-aware `SELECT`
         /// check the underlying view would receive as a `TableNode`.
         const auto & storage = table_function_node->getStorage();
-        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        if (table_function_node->isParameterizedView())
         {
             const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
             columns_names_allowed_to_select = checkAccessRights(
@@ -1099,16 +1099,6 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
         limit_offset = offset_uint->getUInt(0);
     }
 
-    /// `arrayJoin` in the projection expands one input row into several output rows after the
-    /// source has run. Capping the source to `limit + offset` rows would truncate input BEFORE
-    /// expansion, so hard consumers of `trivial_limit` (StorageLoop, system.zeros, generateRandom)
-    /// could drop output rows that the LIMIT should keep. See issue #82279 and the sibling guard
-    /// in `numbersLikeUtils::shouldPushdownLimit`. (The `ARRAY JOIN` clause is lowered to a
-    /// separate table expression in the analyzer, so it is not a single-table read and never
-    /// reaches this optimization.)
-    if (hasFunctionNode(main_query_node.getProjectionNode(), "arrayJoin"))
-        return 0;
-
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
       * then as the block size we will use limit + offset (not to read more from the table than requested),
@@ -1339,7 +1329,7 @@ void pushOrderByIntoView(
     /// source rows before the expansion runs, so if the top ordered rows have
     /// empty arrays the rewritten query would return too few rows instead of
     /// continuing to lower ordered rows to fill the `LIMIT`. Mirror the existing
-    /// guard in `mainQueryNodeBlockSizeByLimit`.
+    /// `trivial_limit` guard in `buildQueryPlanForTableExpression`.
     if (hasFunctionNode(outer->getProjectionNode(), "arrayJoin"))
         return;
 
@@ -1744,6 +1734,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
         UInt64 max_block_size = settings[Setting::max_block_size];
         UInt64 max_block_size_limited = 0;
+        /// LIMIT + OFFSET as the most rows the source has to produce, when that holds.
+        UInt64 max_source_rows = 0;
         if (is_single_table_expression && !select_query_options.only_analyze)
         {
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
@@ -1760,24 +1752,46 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
             {
-                if (max_block_size_limited < max_block_size)
+                const bool has_array_join = hasFunctionNode(select_query_info.query_tree->as<QueryNode &>().getProjectionNode(), "arrayJoin");
+                const bool shrink_block = max_block_size_limited < max_block_size;
+                if (shrink_block)
                 {
-                    max_block_size = std::max<UInt64>(1, max_block_size_limited);
-                    max_streams = 1;
-                    max_threads_execute_query = 1;
+                    /// With `arrayJoin` the source cannot stop at the LIMIT, so over a long run of empty arrays it streams
+                    /// every row anyway, and one-row blocks make that hundreds of times slower than the default block.
+                    /// Keep a few hundred rows per block: still a small read, and the empty prefix stays cheap.
+                    constexpr UInt64 min_block_size_above_array_join = 256;
+                    if (has_array_join)
+                        max_block_size = std::min(max_block_size, std::max(max_block_size_limited, min_block_size_above_array_join));
+                    else
+                        max_block_size = std::max<UInt64>(1, max_block_size_limited);
                 }
 
-                if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
+                if (!has_array_join)
                 {
-                    if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                    max_source_rows = max_block_size_limited;
+                    if (shrink_block)
+                    {
+                        max_streams = 1;
+                        max_threads_execute_query = 1;
+                    }
+
+                    if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                    {
+                        if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                            table_expression_query_info.trivial_limit = max_block_size_limited;
+                        /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                        else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
+                            table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                    }
+                    else
+                    {
                         table_expression_query_info.trivial_limit = max_block_size_limited;
-                    /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                    else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
-                        table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                    }
                 }
                 else
                 {
-                    table_expression_query_info.trivial_limit = max_block_size_limited;
+                    table_expression_query_info.small_limit_above_array_join = shrink_block;
                 }
             }
 
@@ -2664,8 +2678,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                                 rows_to_read = table_expression_query_info.trivial_limit;
 
-                            if (max_block_size_limited && (max_block_size_limited < rows_to_read))
-                                rows_to_read = max_block_size_limited;
+                            if (max_source_rows && (max_source_rows < rows_to_read))
+                                rows_to_read = max_source_rows;
 
                             const size_t number_of_replicas_to_use
                                 = rows_to_read / settings[Setting::parallel_replicas_min_number_of_rows_per_replica];

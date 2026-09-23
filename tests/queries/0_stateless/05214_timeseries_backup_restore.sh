@@ -49,7 +49,7 @@ $CLIENT -q "BACKUP TABLE ts TO Disk('backups', '$BACKUP_NAME') FORMAT Null"
 $CLIENT -q "RESTORE TABLE ts AS ts_restored FROM Disk('backups', '$BACKUP_NAME') FORMAT Null"
 
 echo '--- the restored table has the same definition ---'
-get_create_query ts_restored | grep -c "version = [0-9]*"
+get_create_query ts_restored | grep -o "version = [0-9]*"
 diff <(get_create_query_without_name ts) <(get_create_query_without_name ts_restored) && echo 'definitions are equal'
 
 echo '--- the restored table has its own inner tables ---'

@@ -752,7 +752,8 @@ Pipe ReadFromMergeTree::readFromPool(
       * Because time spend during filling per thread tasks can be greater than whole query
       * execution for big tables with small limit.
       */
-    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && (allow_prefetched_remote || allow_prefetched_local);
+    bool use_prefetched_read_pool = query_info.trivial_limit == 0 && !query_info.small_limit_above_array_join
+        && (allow_prefetched_remote || allow_prefetched_local);
 
     if (use_prefetched_read_pool)
     {

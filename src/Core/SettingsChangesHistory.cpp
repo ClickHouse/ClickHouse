@@ -49,6 +49,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
+            {"max_bytes_before_external_distinct", 0, 0, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_distinct` applies."},
+            {"max_bytes_ratio_before_external_distinct", 0., 0.5, "New setting to enable spilling of `DISTINCT` to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_distinct` applies."},
             {"validate_group_by_all_key_types", true, true, "The validation of the key types that `GROUP BY ALL` expands the `SELECT` expressions into is kept under `compatibility` with 26.7 or 26.8: the previous value is deliberately equal to the new one, because those versions already rejected such a key and only a version before 26.7 restores the earlier acceptance."},
             {"allow_delta_lake_create_table", false, false, "New setting: allow creating a new DeltaLake table using delta-kernel-rs or registering an existing one into a catalog."},
             {"delta_lake_accurate_write_cast", false, true, "New setting: cast written values to the Delta write-schema type with an accurate cast that throws on a value that does not fit the target type instead of silently truncating; `compatibility` below 26.9 uses the plain, non-throwing cast."},
@@ -58,8 +61,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"workload_admission_timeout_ms", 0, 0, "New setting bounding how long a query waits to be admitted by workload scheduling (acquiring its query slot and memory reservation) before failing; 0 (default) preserves the previous unbounded wait."},
             {"s3_disable_checksum", false, false, "Obsolete setting: checksum calculation no longer re-reads the source"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
-            {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
-            {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},
+            {"query_plan_optimize_join_order_conflict_detector", "", "", "New setting selecting the conflict detector that decides join reordering validity in the DPsub join order algorithm: `a` for the (correct but incomplete) CD-A, `c` for the (correct and complete) CD-C, empty for none."},
             {"reader_executor_window_size", 4194304, 8388608, "Raised the default read window of the experimental `ReaderExecutor` from 4 MiB to 8 MiB. Under memory pressure the window is reduced from this base, floored at 128 KiB."},
             {"webassembly_udf_input_split_memory_ratio", 0.0, 0.5, "New setting controlling the fraction of a WebAssembly UDF instance's linear memory that one call's serialized input may occupy, which also enables the dynamic splitting of that input by its serialized size; `compatibility` below 26.9 sets it to 0 and restores the previous behavior, where `webassembly_udf_max_input_block_size = 0` meant one call per pipeline block."},
             {"cascades_aggregation_pushdown", false, true, "New setting to consider pushing partial aggregation below a join (eager aggregation) in the Cascades optimizer."},

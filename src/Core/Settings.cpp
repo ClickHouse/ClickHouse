@@ -4683,6 +4683,11 @@ Possible values:
     DECLARE(Bool, allow_execute_multiif_columnar, true, R"(
 Allow execute multiIf function columnar
 )", 0) \
+    DECLARE(Bool, allow_executable_tables, true, R"(
+Allow reading through the `executable` table function and from `Executable` and `ExecutablePool` tables.
+
+Disabling this refuses reads only: creating, attaching, dropping and describing such tables still works. `ExecutablePool` processes that have already started are left running rather than terminated, but each read is still refused until the setting is enabled again.
+)", 0) \
     DECLARE(Bool, formatdatetime_f_prints_single_zero, false, R"(
 Formatter '%f' in function 'formatDateTime' prints a single zero instead of six zeros if the formatted value has no fractional seconds.
 )", 0) \
@@ -7406,7 +7411,7 @@ Maximum time to wait for a file segment which is being downloaded to the filesys
 Prefer bigger buffer size if filesystem cache is enabled to avoid writing small file segments which deteriorate cache performance. On the other hand, enabling this setting might increase memory usage.
 )", 0) \
     DECLARE(UInt64, filesystem_cache_boundary_alignment, 0, R"(
-Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
+Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used.
 )", 0) \
     DECLARE(UInt64, temporary_data_in_cache_reserve_space_wait_lock_timeout_milliseconds, (10 * 60 * 1000), R"(
 Wait time to lock cache for space reservation for temporary data in filesystem cache
@@ -9411,13 +9416,12 @@ Specifies which JOIN order algorithms to attempt during query plan optimization.
  - 'dphyp' - implements DPhyp (Dynamic Programming via Hypergraph Partitioning) algorithm currently only for inner joins - explores the same search space as `dpsize` but enumerates only connected subgraph pairs, which generates fewer intermediate joins on sparse join graphs, at the cost of not considering cross products
 Multiple algorithms can be specified as a comma-separated list, e.g. `dphyp,greedy`. They are tried in order; if an algorithm cannot handle the query (e.g. due to outer joins or disconnected components), the next one is used as a fallback.
 )", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_a, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join
-reorderings are valid using the CD-A conflict detector).
-)", EXPERIMENTAL) \
-    DECLARE(Bool, query_plan_optimize_join_order_use_conflict_detector_c, false, R"(
-Only affects the `dpsub` join order algorithm. When enabled, DPsub decides which join reorderings
-are valid using the CD-C conflict detector. Takes precedence over `query_plan_optimize_join_order_use_conflict_detector_a` when both are enabled.
+    DECLARE(JoinOrderConflictDetector, query_plan_optimize_join_order_conflict_detector, JoinOrderConflictDetector::NONE, R"(
+Only affects the `dpsub` join order algorithm. Selects the conflict detector that DPsub uses to
+decide which join reorderings are valid. The following values are available:
+ - `''` (default) - no conflict detector, DPsub uses the per-relation `ON` clause restriction
+ - `'a'` - the CD-A conflict detector, which is correct but incomplete
+ - `'c'` - the CD-C conflict detector, which is correct and complete
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_database_paimon_rest_catalog, false, R"(
 Allow experimental database engine DataLakeCatalog with catalog_type = 'paimon_rest'

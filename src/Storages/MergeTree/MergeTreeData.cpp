@@ -381,10 +381,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
-    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -455,6 +451,17 @@ namespace FailPoints
     /// transient error (e.g. temporary disk unavailability). Used to test that the refresh task
     /// reschedules itself after such an error instead of stopping permanently.
     extern const char merge_tree_refresh_parts_throw_once[];
+    /// Throws a retryable error (`MEMORY_LIMIT_EXCEEDED`) while loading every outdated part in the
+    /// background. Used to test that the loading is retried later instead of terminating the server.
+    extern const char merge_tree_load_outdated_parts_retryable_error[];
+    /// Pauses every worker that loads an outdated part in the background until the failpoint is disabled.
+    /// Used to cancel the loading (e.g. with `DETACH TABLE`) while the workers are in flight.
+    extern const char merge_tree_load_outdated_parts_pause[];
+}
+
+namespace ErrorCodes
+{
+    extern const int MEMORY_LIMIT_EXCEEDED;
 }
 
 static String getPartNameFromAST(const ASTPtr & partition)
@@ -3563,9 +3570,41 @@ try
     /// Acquire shared lock because 'relative_data_path' is used while loading parts.
     TableLockHolder shared_lock;
     if (is_async)
-        shared_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+    {
+        shared_lock = tryLockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+        if (!shared_lock)
+        {
+            /// The table is being dropped, detached or restarted (e.g. by `SYSTEM RESTART REPLICA`).
+            /// It is not an inconsistency of the set of parts, so retry later instead of terminating:
+            /// if the table is going away, the task is deactivated in `shutdown` anyway.
+            LOG_DEBUG(log, "Cannot lock the table to load outdated data parts because it is being dropped or restarted, will retry later");
+            outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+            return;
+        }
+    }
 
     std::atomic_size_t num_loaded_parts = 0;
+
+    /// A retryable error (e.g. not enough memory or a network error) is not a sign of an inconsistent
+    /// set of parts, so the parts that failed with it are put back to the queue and loaded later.
+    ///
+    /// The workers collect them under a dedicated mutex and must not touch `outdated_data_parts_mutex`:
+    /// the cancellation branch below waits for all the workers while holding that mutex,
+    /// so a worker that takes it before its future becomes ready would deadlock
+    /// `DETACH`, `DROP`, shutdown and `SYSTEM RESTART REPLICA`. The failed parts are returned
+    /// to `outdated_unloaded_data_parts` only after all the workers have finished.
+    std::mutex failed_parts_mutex;
+    PartLoadingTreeNodes failed_parts;
+    std::exception_ptr retryable_exception;
+    std::atomic_bool has_retryable_exception = false;
+
+    /// Must be called after `runner.waitForAllToFinishAndRethrowFirstError()` and under `outdated_data_parts_mutex`.
+    auto requeue_failed_parts = [&]() TSA_REQUIRES(outdated_data_parts_mutex)
+    {
+        std::lock_guard lock(failed_parts_mutex);
+        outdated_unloaded_data_parts.insert(outdated_unloaded_data_parts.end(), failed_parts.begin(), failed_parts.end());
+        failed_parts.clear();
+    };
 
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
@@ -3585,6 +3624,7 @@ try
                 /// Wait for every scheduled task
                 /// In case of any exception it will be re-thrown and server will be terminated.
                 runner.waitForAllToFinishAndRethrowFirstError();
+                requeue_failed_parts();
 
                 LOG_DEBUG(log,
                     "Stopped loading outdated data parts because task was canceled. "
@@ -3592,22 +3632,47 @@ try
                 return;
             }
 
-            if (outdated_unloaded_data_parts.empty())
+            /// Do not start loading the remaining parts if the loading is going to be retried later anyway.
+            if (outdated_unloaded_data_parts.empty() || has_retryable_exception)
                 break;
 
             part = outdated_unloaded_data_parts.back();
             outdated_unloaded_data_parts.pop_back();
         }
 
-        /// num_loaded_parts will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, replicated]()
+        /// The captured locals will outlive runner, so capturing by reference is ok
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts, &retryable_exception, &has_retryable_exception, replicated]()
         {
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
-            auto res = loadDataPartWithRetries(
-                my_part->info, my_part->name, my_part->disk,
-                DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
-                loading_parts_max_backoff_ms, loading_parts_max_tries);
+            LoadPartResult res;
+            try
+            {
+                FailPointInjection::pauseFailPoint(FailPoints::merge_tree_load_outdated_parts_pause);
+
+                fiu_do_on(FailPoints::merge_tree_load_outdated_parts_retryable_error,
+                {
+                    throw Exception(ErrorCodes::MEMORY_LIMIT_EXCEEDED, "Injected retryable error while loading outdated part {}", my_part->name);
+                });
+
+                res = loadDataPartWithRetries(
+                    my_part->info, my_part->name, my_part->disk,
+                    DataPartState::Outdated, data_parts_mutex, loading_parts_initial_backoff_ms,
+                    loading_parts_max_backoff_ms, loading_parts_max_tries);
+            }
+            catch (...)
+            {
+                if (!isRetryableException(std::current_exception()))
+                    throw;
+
+                /// The part is not added to the set of parts if the loading failed, so it can be loaded again from scratch.
+                std::lock_guard lock(failed_parts_mutex);
+                failed_parts.push_back(my_part);
+                if (!retryable_exception)
+                    retryable_exception = std::current_exception();
+                has_retryable_exception = true;
+                return;
+            }
 
             ++num_loaded_parts;
             if (res.is_broken)
@@ -3623,6 +3688,28 @@ try
     }
 
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// All the workers have finished, so no synchronization is needed to read `retryable_exception`.
+    if (has_retryable_exception)
+    {
+        size_t num_unloaded_parts = 0;
+        {
+            std::lock_guard lock(outdated_data_parts_mutex);
+            requeue_failed_parts();
+            num_unloaded_parts = outdated_unloaded_data_parts.size();
+        }
+
+        /// Synchronous loading (on table drop) has no task to retry with, so it fails fast as before.
+        if (!is_async)
+            std::rethrow_exception(retryable_exception);
+
+        LOG_WARNING(log, "Loading of outdated data parts was interrupted by a retryable error, will retry later. "
+            "Loaded {} parts, {} left unloaded. Error: {}",
+            num_loaded_parts.load(), num_unloaded_parts, getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
+
+        outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+        return;
+    }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
@@ -5336,7 +5423,8 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     }
 
     removeImplicitStatistics(new_metadata.columns);
-    commands.apply(new_metadata, local_context, share_nested_offsets);
+    auto settings_defaults = getDefaultSettings();
+    commands.apply(new_metadata, local_context, share_nested_offsets, settings_defaults.get());
 
     /// The sort direction of a retained sorting key column is immutable via ALTER, in either direction. Existing parts
     /// stay physically sorted in the directions the key had when they were written, and no regular data part records those
@@ -7590,11 +7678,24 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
         return std::nullopt;
     }
 
+    auto metadata_snapshot = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/ false);
+    auto column_in_metadata = metadata_snapshot->getColumns().tryGetPhysical(column_name);
+    if (!column_in_metadata)
+        return std::nullopt;
+
     ColumnDefaultnessStats aggregate;
     for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
     {
         if (part->isEmpty())
             continue;
+
+        /// A metadata-only `MODIFY COLUMN` (e.g. `UInt64` -> `Nullable(UInt64)`) does not rewrite the part,
+        /// so its `num_defaults` counts defaults of the old type while reads return the new type.
+        if (part->getColumnsDescription().tryGetPhysical(column_name) != column_in_metadata)
+        {
+            LOG_DEBUG(log, "No defaultness stats for column {}: type in part {} differs from the type in metadata", column_name, part->name);
+            return std::nullopt;
+        }
 
         const auto & infos = part->getSerializationInfos();
         auto it = infos.find(column_name);
@@ -7825,7 +7926,18 @@ void MergeTreeData::throwIfTableSizeLimitsExceeded(
         /// so they are not part of the table size any more.
         const UInt64 total_rows = current.rows - std::min(current.rows, covered.rows);
 
-        if (total_rows > max_rows)
+        /// An operation that replaces the covered parts with a part that has no more rows than they
+        /// had is always allowed, so that a table that has already crossed the limit can be brought
+        /// back under it by a merge or mutation, and not only by dropping whole parts - the same
+        /// carve-out the byte limits below have. Without it no partial merge of an over-limit table
+        /// can ever commit, so the table cannot be compacted at all and its part count grows until
+        /// inserts start failing with `parts_to_throw_insert`.
+        /// A patch part represents a mutation of rows in a regular part rather than additional table
+        /// rows, so it never grows the row count.
+        const UInt64 added_rows = added_part && !added_part->info.isPatch() ? added_part->rows_count : 0;
+        const bool is_shrinking_rows = added_part && added_rows <= covered.rows;
+
+        if (total_rows > max_rows && !is_shrinking_rows)
             throw Exception(ErrorCodes::TABLE_SIZE_LIMIT_EXCEEDED,
                 "Table size limit exceeded: the total number of rows in active data parts of table {} is {}, "
                 "which exceeds the 'max_table_size_rows' setting value ({})",
@@ -7992,19 +8104,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
     }
 
-    size_t parts_count_in_partition = 0;
-    size_t size_of_partition = 0;
-    {
-        /// Smallest threshold that could trigger a throw or delay.
-        /// A zero parts_to_throw_insert means "throw on any part", so treat it as 1 to never skip.
-        UInt64 min_enabled_threshold = active_parts_to_throw_insert > 0 ? active_parts_to_throw_insert : 1;
-        if (active_parts_to_delay_insert > 0)
-            min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
-
-        /// If total number of parts is less than minimal threshold, avoid iterating over parts under lock
-        if (parts_count_in_total >= min_enabled_threshold)
-            std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
-    }
+    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     size_t active_parts_over_threshold = 0;
 
@@ -11823,27 +11923,12 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
 }
 
-namespace
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
-
-/// Two streams that render to the same file name, and so end up written into one file.
-struct StreamFileNameCollision
-{
-    String stream_name;
-    String full_stream_name;
-    String other_full_stream_name;
-    NameAndTypePair column;
-    /// Not set when both streams belong to `column`.
-    std::optional<NameAndTypePair> other_column;
-};
-
-/// File names are rendered as they would be for a part written with the given serialization versions.
-std::optional<StreamFileNameCollision> findStreamFileNameCollision(
-    const NamesAndTypesList & columns_list,
-    const MergeTreeSettings & settings,
-    MergeTreeMapSerializationVersion map_serialization_version,
-    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version)
-{
+    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -11852,101 +11937,47 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
-        map_serialization_version,
+        settings[MergeTreeSetting::map_serialization_version],
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
-
-    ISerialization::EnumerateStreamsSettings enumerate_settings;
-    enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
-    enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
-    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
-    enumerate_settings.enumerate_dynamic_streams = false;
-
-    std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
-        std::optional<StreamFileNameCollision> collision;
 
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
-            /// Keep the first one: which later collision gets reported would depend on the enumeration order.
-            if (!inserted && !collision)
-                collision = StreamFileNameCollision{stream_name, full_stream_name, it->second, column, {}};
+            column_streams.emplace(stream_name, full_stream_name);
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
-        auto substream_data = ISerialization::SubstreamData(serialization);
-        serialization->enumerateStreams(enumerate_settings, callback, substream_data);
-
-        if (collision)
-            return collision;
+        serialization->enumerateStreams(callback);
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
-            auto [it, inserted] = stream_name_to_column.emplace(stream_name, std::pair{full_stream_name, column});
+            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
             if (!inserted)
             {
-                const auto & [other_full_stream_name, other_column] = it->second;
-                return StreamFileNameCollision{stream_name, full_stream_name, other_full_stream_name, column, other_column};
+                const auto & [other_full_name, other_column_name] = it->second;
+                auto other_type = columns.getPhysical(other_column_name).type;
+
+                auto message = fmt::format(
+                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
+
+                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
+                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
+
+                if (throw_on_error)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                return;
             }
         }
     }
-
-    return {};
-}
-
-}
-
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
-{
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
-
-    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
-    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
-    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
-    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
-
-    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
-
-    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
-    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
-    /// configurations never share a file.
-    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
-        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
-
-    if (!collision)
-        return;
-
-    String message = collision->other_column.has_value()
-        ? fmt::format(
-            "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-            collision->column.name, collision->column.type->getName(),
-            collision->other_column->name, collision->other_column->type->getName(),
-            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name)
-        : fmt::format(
-            "Column '{} {}' has two streams ({} and {}) with collision in file name {}",
-            collision->column.name, collision->column.type->getName(),
-            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name);
-
-    /// Identical full names collide on their own; only distinct ones can have been merged by hashing.
-    if (collision->full_stream_name != collision->other_full_stream_name && settings[MergeTreeSetting::replace_long_file_name_to_hash])
-        message += collision->other_column.has_value()
-            ? ". It may be a collision between a filename for one column and a hash of filename for another column"
-              " (see setting 'replace_long_file_name_to_hash')"
-            : ". It may be a collision between a filename for one stream and a hash of filename for another stream"
-              " (see setting 'replace_long_file_name_to_hash')";
-
-    if (throw_on_error)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-    LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const

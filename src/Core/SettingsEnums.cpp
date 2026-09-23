@@ -70,6 +70,12 @@ IMPLEMENT_SETTING_MULTI_ENUM(JoinOrderAlgorithm, ErrorCodes::BAD_ARGUMENTS,
      {"dphyp",              JoinOrderAlgorithm::DPHYP}})
 
 
+IMPLEMENT_SETTING_ENUM(JoinOrderConflictDetector, ErrorCodes::BAD_ARGUMENTS,
+    {{"",  JoinOrderConflictDetector::NONE},
+     {"a", JoinOrderConflictDetector::CD_A},
+     {"c", JoinOrderConflictDetector::CD_C}})
+
+
 IMPLEMENT_SETTING_ENUM(TotalsMode, ErrorCodes::UNKNOWN_TOTALS_MODE,
     {{"before_having",          TotalsMode::BEFORE_HAVING},
      {"after_having_exclusive", TotalsMode::AFTER_HAVING_EXCLUSIVE},

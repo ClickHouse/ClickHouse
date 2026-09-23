@@ -43,7 +43,6 @@ static struct InitFiu
     REGULAR(smt_blobs_list_split_file_writes_small) \
     REGULAR(smt_blobs_list_zero_byte_append) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
-    REGULAR(merge_tree_marks_load_sync_sleep) \
     REGULAR(merge_tree_sequential_source_sleep_before_read) \
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
@@ -309,6 +308,8 @@ static struct InitFiu
     REGULAR(rmt_merge_selecting_task_no_free_threads) \
     REGULAR(rmt_merge_selecting_task_max_part_size) \
     REGULAR(merge_tree_load_statistics_throw) \
+    REGULAR(merge_tree_load_outdated_parts_retryable_error) \
+    PAUSEABLE(merge_tree_load_outdated_parts_pause) \
     PAUSEABLE(smt_mutate_task_pause_in_prepare) \
     PAUSEABLE(smt_merge_selecting_task_pause_when_scheduled) \
     REGULAR(smt_merge_selecting_task_reach_memory_limit) \
