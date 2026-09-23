@@ -1,0 +1,58 @@
+-- The probe of a join with several disjuncts (`ON a OR b`) on the partitioned hash join stops at
+-- `max_joined_block_size_rows` and hands the rest of the left block back, as `hash` does, so a result much
+-- larger than its input is not built in one block.
+
+SET enable_analyzer = 1;
+SET query_plan_join_swap_table = 0;
+SET enable_join_runtime_filters = 0;
+
+-- Every left row matches about 3750 right rows, 18.75 million in all: in one block they need far more than 50M.
+WITH t1 AS (
+    SELECT number % 2 AS id, sipHash64(number, 1) % 2 AS attr FROM numbers(5_000)
+),
+t2 AS (
+    SELECT number % 2 AS id, sipHash64(number, 2) % 2 AS attr FROM numbers(5_000)
+)
+SELECT sum(ignore(*) + 1)
+FROM t1
+LEFT JOIN t2
+ON t1.id = t2.id OR (t1.attr = t2.attr)
+SETTINGS join_algorithm = 'partitioned_hash', max_memory_usage = '50M';
+
+DROP TABLE IF EXISTS t_or_split_l;
+DROP TABLE IF EXISTS t_or_split_r;
+
+CREATE TABLE t_or_split_l (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a;
+CREATE TABLE t_or_split_r (a UInt64, b UInt64, w UInt64) ENGINE = MergeTree ORDER BY a;
+
+-- About 31 right rows per left row through the two keys, and rows neither key reaches on both sides.
+INSERT INTO t_or_split_l SELECT number % 50, number % 30, number FROM numbers(600);
+INSERT INTO t_or_split_r SELECT number % 60 + 10, number % 40 + 5, number FROM numbers(900);
+
+-- A block split after every left row, after a few, mid-block, and never. Each shape is checked against `hash` on the
+-- same data; `h = pa` prints 1 when the two algorithms agree. ANY claims a right row for the first left row that
+-- reaches it, so those shapes run on one thread to be deterministic.
+{% for name, join, columns, threads in [
+    ('inner all', 'INNER JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 4),
+    ('left all', 'LEFT JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 4),
+    ('right all', 'RIGHT JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 4),
+    ('full all', 'FULL JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 4),
+    ('inner any', 'ANY INNER JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 1),
+    ('left any', 'ANY LEFT JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 1),
+    ('right any', 'ANY RIGHT JOIN', 'r.a, r.b, r.w', 1),
+    ('left semi', 'SEMI LEFT JOIN', 'l.a, l.b, l.v', 4),
+    ('left anti', 'ANTI LEFT JOIN', 'l.a, l.b, l.v', 4),
+    ('right semi', 'SEMI RIGHT JOIN', 'r.a, r.b, r.w', 4),
+    ('right anti', 'ANTI RIGHT JOIN', 'r.a, r.b, r.w', 4),
+] -%}
+{% for block_rows in [1, 7, 100, 1000000] -%}
+SELECT '{{ name }}', {{ block_rows }}, h.1, h = pa FROM (SELECT
+    (SELECT (count(), sum(cityHash64({{ columns }}))) FROM t_or_split_l AS l {{ join }} t_or_split_r AS r ON l.a = r.a OR l.b = r.b
+        SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = {{ block_rows }}, max_threads = {{ threads }}) AS h,
+    (SELECT (count(), sum(cityHash64({{ columns }}))) FROM t_or_split_l AS l {{ join }} t_or_split_r AS r ON l.a = r.a OR l.b = r.b
+        SETTINGS join_algorithm = 'partitioned_hash', max_joined_block_size_rows = {{ block_rows }}, max_threads = {{ threads }}) AS pa);
+{% endfor -%}
+{% endfor -%}
+
+DROP TABLE t_or_split_l;
+DROP TABLE t_or_split_r;

@@ -906,7 +906,10 @@ size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & ta
         }
 
         if constexpr (join_features.need_replication)
-            added_columns.offsets_to_replicate = IColumn::Offsets(rows);
+        {
+            added_columns.offsets_to_replicate.clear();
+            added_columns.offsets_to_replicate.reserve(rows);
+        }
 
         Arena pool;
 
@@ -932,8 +935,11 @@ size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & ta
                 added_columns.matched_rows.reserve(rows);
             }
 
+            /// Stop once the result reaches `max_joined_block_rows`, as `HashJoin` does: one left row can match
+            /// thousands of right rows through the clauses together. `probeImpl` hands the rest of the block back.
             IColumn::Offset current_offset = 0;
-            for (size_t i = 0; i < rows; ++i)
+            size_t i = 0;
+            for (; i < rows && current_offset < added_columns.max_joined_block_rows; ++i)
             {
                 if constexpr (can_prefetch)
                     prefetcher.prefetchAt(i);
@@ -968,15 +974,14 @@ size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & ta
                 }
 
                 if constexpr (join_features.need_replication)
-                    added_columns.offsets_to_replicate[i] = current_offset;
+                    added_columns.offsets_to_replicate.push_back(current_offset);
             }
+            return i;
         };
 
         if (added_columns.need_filter)
-            loop.template operator()<true>();
-        else
-            loop.template operator()<false>();
-        return rows;
+            return loop.template operator()<true>();
+        return loop.template operator()<false>();
     }
 }
 
