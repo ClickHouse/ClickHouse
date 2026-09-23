@@ -28,9 +28,8 @@ struct MaterializedCteWithLevel
 
 using CTEToLevelMap = std::unordered_map<MaterializedCTEPtr, MaterializedCteWithLevel>;
 
-/// Registers one occurrence of `cte`. The deepest level wins, because that is the level whose gate
-/// dominates every shallower reader; a null `subquery` is upgraded by any occurrence carrying a body,
-/// which is what a writer can be built from. Returns true iff the entry is new or its level rose.
+/// The deepest level wins: that is the level whose gate dominates every shallower reader. A null
+/// `subquery` is upgraded by any occurrence carrying a body, since only a body can build a writer.
 bool registerMaterializedCTE(
     CTEToLevelMap & materialized_ctes,
     const MaterializedCTEPtr & cte,
@@ -94,8 +93,7 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
     if (materialized_ctes.empty())
         return ctes_by_level;
 
-    /// A by-name reference carries no body, so the CTEs that body reads are invisible to the walk
-    /// above. They belong one level deeper than the CTE reading them, so that their gate dominates.
+    /// A by-name reference carries no body, so the CTEs that body reads are invisible to the walk above.
     for (size_t iteration = 0;; ++iteration)
     {
         std::vector<std::pair<MaterializedCTEPtr, size_t>> known;
@@ -111,8 +109,7 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
         if (!level_changed)
             break;
 
-        /// A level can only keep rising past one round per CTE if the dependencies contain a cycle,
-        /// which no ordering of writers satisfies.
+        /// A level rising past one round per CTE implies a dependency cycle, which no ordering satisfies.
         if (iteration >= materialized_ctes.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Dependencies of materialized CTEs form a cycle, their materialization cannot be ordered");

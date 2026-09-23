@@ -19,9 +19,7 @@ class QueryPlan;
 struct MaterializedCTE;
 using MaterializedCTEPtr = std::shared_ptr<MaterializedCTE>;
 
-/// One materialized CTE collected from a query tree. `subquery` is null when the tree reaches the CTE
-/// only by its temporary table name: such a reference still needs a gate, but the writer belongs to
-/// whichever plan holds the body.
+/// `subquery` is null when the tree reaches the CTE only by temporary table name: gate here, writer where the body is.
 struct CollectedMaterializedCTE
 {
     MaterializedCTEPtr cte;

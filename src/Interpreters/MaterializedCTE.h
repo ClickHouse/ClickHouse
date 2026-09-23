@@ -81,9 +81,7 @@ struct MaterializedCTE
     const std::string temporary_table_name;
     /// Query Plan for the CTE
     std::unique_ptr<QueryPlan> plan = {};
-    /// The materialized CTEs this CTE's own body reads. Planning-time only, insert-only and never
-    /// cleared: a re-analysis of this CTE can reach it by temporary table name with no body to walk.
-    /// Planning is single-threaded per query, so no synchronization is implied.
+    /// The materialized CTEs this CTE's own body reads. Written only while planning, which is single-threaded.
     std::unordered_set<std::shared_ptr<MaterializedCTE>> dependencies = {};
     /// If true, query plan is built for the CTE (i.e. the table is being populated, but is not ready for reads yet).
     std::atomic_bool is_materialization_planned{false};
