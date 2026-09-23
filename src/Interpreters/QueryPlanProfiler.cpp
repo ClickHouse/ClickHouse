@@ -171,16 +171,20 @@ String toJSONString(JSONBuilder::ItemPtr item)
 
 }
 
-QueryPlan & QueryPlanProfiler::setQueryPlan(QueryPlan plan_)
+QueryPlan & QueryPlanProfiler::captureQueryPlan(QueryPlan plan_)
 {
-    query_plan.emplace(std::move(plan_));
+    /// One plan per query, given before anything else is asked of the profiler.
+    chassert(!running.query_plan);
+    chassert(!finished);
+
+    running.query_plan.emplace(std::move(plan_));
 
     /// Both of these read the ActionsDAGs, which building the pipeline moves out of the steps.
-    recordConsumedSubqueries(*query_plan);
-    pretty_names.emplace(
-        QueryPlanFormat::buildPrettyNamesPerPlan(*query_plan)
+    recordConsumedSubqueries(*running.query_plan);
+    running.pretty_names.emplace(
+        QueryPlanFormat::buildPrettyNamesPerPlan(*running.query_plan)
     );
-    return *query_plan;
+    return *running.query_plan;
 }
 
 void QueryPlanProfiler::declineCapture(const ContextPtr & context, const char * reason)
@@ -233,11 +237,11 @@ bool QueryPlanProfiler::canEnableProfiler(const ContextPtr & context, const ASTP
 
 void QueryPlanProfiler::instrumentPipeline(QueryPipeline & pipeline) const
 {
-    if (!query_plan || !query_plan->isInitialized())
+    if (!running.query_plan || !running.query_plan->isInitialized())
         return;
 
     auto registry = std::make_unique<StepWallClockRegistry>();
-    registry->populateFromPlan(*query_plan);
+    registry->populateFromPlan(*running.query_plan);
     pipeline.setStepWallClockRegistry(std::move(registry));
 }
 
@@ -305,7 +309,7 @@ void SubPlanCapture::publish(const StepStatsStorage * stats) noexcept
 
     try
     {
-        auto serialized = serializeSubPlan(
+        auto serialized = captureSubPlanData(
             *plan,
             planExplainOptions(),
             owner->max_description_length,
@@ -400,22 +404,41 @@ SubPlanCapture QueryPlanProfiler::captureSubPlan(
     }
 }
 
-void QueryPlanProfiler::addSubPlan(SerializedSubPlan sub_plan)
+void QueryPlanProfiler::addSubPlan(CapturedSubPlan sub_plan)
 {
-    std::lock_guard lock(sub_plans_mutex);
-    sub_plans.push_back(std::move(sub_plan));
+    std::lock_guard lock(running.sub_plans_mutex);
+    running.sub_plans.push_back(std::move(sub_plan));
 }
 
-const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
+void QueryPlanProfiler::captureStatistics(const QueryPipeline & pipeline)
 {
-    /// Don't render twice to avoid throwing away the plan
-    if (plan_json)
-        return *plan_json;
+    /// Otherwise there is nothing for the statistics to be about, and the pipeline that produced
+    /// them was built from a plan this profiler never saw.
+    chassert(running.query_plan);
+    chassert(!finished);
 
-    if (!canRender())
-        return plan_json.emplace();
+    capture(&pipeline);
+}
 
-    /// Rendering runs on the query-finish path after the client has already received the result.
+void QueryPlanProfiler::finish()
+{
+    if (finished)
+        return;
+
+    /// Nothing captured means the query never reached `captureStatistics`; take the plan alone.
+    if (!captured)
+        capture(nullptr);
+
+    running.release();
+    finished = true;
+}
+
+void QueryPlanProfiler::capture(const QueryPipeline * pipeline)
+{
+    if (captured || !canCapture())
+        return;
+
+    /// Runs on the query-finish path after the client has already received the result.
     /// An exception here would fail a query that had already succeeded,
     /// so diagnostics must not propagate.
     MemoryTrackerBlockerInThread block_memory_tracker;
@@ -428,17 +451,43 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
             UInt64 execution_time_ns = 0;
             if (const auto * registry = pipeline->getStepClocks())
                 execution_time_ns = registry->getExecutionTimeNs();
-            stats.emplace(*pipeline, *query_plan, execution_time_ns);
+            stats.emplace(*pipeline, *running.query_plan, execution_time_ns);
         }
 
-        std::lock_guard lock(sub_plans_mutex);
-        plan_json = toJSONString(queryPlanToJSON(
-            *query_plan,
+        auto result = capturePlan(
+            *running.query_plan,
             planExplainOptions(),
             max_description_length,
             stats ? &*stats : nullptr,
-            pretty_names ? &*pretty_names : nullptr,
-            &sub_plans));
+            running.pretty_names ? &*running.pretty_names : nullptr);
+
+        std::lock_guard lock(running.sub_plans_mutex);
+        result.sub_plans = std::move(running.sub_plans);
+        captured = std::move(result);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(__PRETTY_FUNCTION__);
+    }
+}
+
+String QueryPlanProfiler::render()
+{
+    /// Rendering before `finish` would keep the plan -- and the table locks it owns -- alive for
+    /// the whole of logging, which is what `finish` exists to prevent.
+    chassert(finished);
+
+    if (!captured)
+        return {};
+
+    auto capture = std::move(*captured);
+    captured.reset();
+
+    MemoryTrackerBlockerInThread block_memory_tracker;
+
+    try
+    {
+        return toJSONString(capturedPlanToJSON(capture));
     }
     catch (...)
     {
@@ -448,17 +497,13 @@ const String & QueryPlanProfiler::render(const QueryPipeline * pipeline)
         {
             auto error_map = std::make_unique<JSONBuilder::JSONMap>();
             error_map->add("Error", getCurrentExceptionMessage(/*with_stacktrace=*/ false));
-            plan_json = toJSONString(std::move(error_map));
+            return toJSONString(std::move(error_map));
         }
         catch (...)
         {
             /// Empty rather than invalid: the column takes its default, an empty JSON object.
-            plan_json.emplace();
+            return {};
         }
     }
-
-    releasePlan();
-
-    return *plan_json;
 }
 }

@@ -726,7 +726,10 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
     }
 
     if (auto plan_profiler = context->getPlanProfiler())
-        plan_profiler->render(&query_pipeline);
+    {
+        plan_profiler->captureStatistics(query_pipeline);
+        plan_profiler->finish();
+    }
 
     /// Reset pipeline before fetching profile counters
     query_pipeline.reset();
@@ -743,7 +746,12 @@ static QueryPipelineFinalizedInfo finalizeQueryPipelineBeforeLogging(QueryPipeli
 static void attachQueryPlan(const ContextPtr & context, QueryLogElement & elem)
 {
     if (auto plan_profiler = context->getPlanProfiler())
+    {
+        /// A query that failed before its pipeline finished never reached `finish`; for it,
+        /// profiling ends here. On the success path it finished already and this does nothing.
+        plan_profiler->finish();
         elem.query_plan = plan_profiler->render();
+    }
 }
 
 static void logQueryFinishImpl(

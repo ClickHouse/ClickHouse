@@ -71,14 +71,21 @@ public:
     /// Reports why a query that asked for its plan is not going to get one.
     static void declineCapture(const ContextPtr & context, const char * reason);
 
-    /// Takes ownership of the plan and returns it.
-    QueryPlan & setQueryPlan(QueryPlan plan_);
+    /// Records the plan the query is about to run, taking ownership of it and handing back
+    /// a reference.
+    QueryPlan & captureQueryPlan(QueryPlan plan_);
 
-    /// Renders the query plan as JSON.
-    /// Only renders at the first call, all subsequent calls return the cached object.
-    ///
-    /// The `pipeline` parameter is used to include per-step runtime statistics.
-    const String & render(const QueryPipeline * pipeline = nullptr);
+    /// Records what the pipeline measured. Does not keep the pipeline obejct, but extracts
+    /// the statistics out of it.
+    void captureStatistics(const QueryPipeline & pipeline);
+
+    /// Ends profiling, drops every object kept while the query was being executed,
+    /// and keeps only objects about the execution and query structure. Idempotent: a query that
+    /// failed before its pipeline did finishes at logging time instead.
+    void finish();
+
+    /// Renders the plan as JSON
+    String render();
 
     size_t getMaxDescriptionLength() const { return max_description_length; }
 
@@ -93,24 +100,50 @@ public:
 private:
     friend class SubPlanCapture;
 
+    /// The body shared by `captureStatistics` and `finish`: the pipeline is what the statistics
+    /// come from, and there is none when a query failed before finishing.
+    void capture(const QueryPipeline * pipeline);
+
     /// Takes a finished sub-plan. Safe to call concurrently.
-    void addSubPlan(SerializedSubPlan sub_plan);
+    void addSubPlan(CapturedSubPlan sub_plan);
 
-    /// Drops the captured plan, to avoid holding QueryPlanResourceHolder.
-    void releasePlan()
+    bool canCapture() const
     {
-        query_plan.reset();
-        pretty_names.reset();
+        return running.query_plan && running.query_plan->isInitialized() && running.pretty_names.has_value();
     }
-
-    bool canRender() const { return query_plan && query_plan->isInitialized() && pretty_names.has_value(); }
 
     const size_t max_description_length;
 
-    std::mutex sub_plans_mutex;
-    std::vector<SerializedSubPlan> sub_plans TSA_GUARDED_BY(sub_plans_mutex);
-    std::optional<QueryPlan> query_plan;
-    std::optional<PrettyNamesPerPlan> pretty_names;
-    std::optional<String> plan_json;
+
+    /// Set of fields the profiler needs to keep alive while the query is still being executed.
+    /// Once the query finishes, or throws, these fields are cleared and only `captured` has
+    /// valid state.
+    struct WhileRunning
+    {
+        /// Sub-plans arrive as subqueries finish, from index analysis, which runs concurrently.
+        std::mutex sub_plans_mutex;
+        std::vector<CapturedSubPlan> sub_plans TSA_GUARDED_BY(sub_plans_mutex);
+
+        /// QueryPlan has to be dropped as it holds `QueryPlanResourceHolder`.
+        std::optional<QueryPlan> query_plan;
+        std::optional<PrettyNamesPerPlan> pretty_names;
+
+        /// `sub_plans` is not cleared here: `finish` moves it into the capture under the lock,
+        /// which leaves it empty, and a late `addSubPlan` appending to it afterwards is harmless.
+        void release()
+        {
+            query_plan.reset();
+            pretty_names.reset();
+        }
+    };
+
+    WhileRunning running;
+
+    /// Out-of-order use is not loud -- it yields a plan with no statistics, or an empty column --
+    /// so the order the methods must come in is asserted in debug builds.
+    bool finished = false;
+
+    /// Valid once the profiling is finished
+    std::optional<CapturedPlan> captured;
 };
 }

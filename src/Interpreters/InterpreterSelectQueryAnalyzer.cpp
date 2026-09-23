@@ -516,7 +516,7 @@ QueryPipelineBuilder InterpreterSelectQueryAnalyzer::buildQueryPipeline()
     /// Hence: move the plan into the profiler, build the names there, then build the pipeline from it.
     QueryPlan * plan_to_build = &query_plan;
     if (plan_profiler)
-        plan_to_build = &plan_profiler->setQueryPlan(std::move(planner).extractQueryPlan());
+        plan_to_build = &plan_profiler->captureQueryPlan(std::move(planner).extractQueryPlan());
 
     ProfileEventTimeIncrement<Microseconds> pipeline_build_time_watch(ProfileEvents::QueryPipelineBuildMicroseconds);
     return std::move(*plan_to_build->buildQueryPipeline(optimization_settings, build_pipeline_settings, /*do_optimize=*/false));
