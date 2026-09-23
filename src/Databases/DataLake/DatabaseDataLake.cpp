@@ -95,6 +95,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsString google_adc_quota_project_id;
     extern const DatabaseDataLakeSettingsString google_adc_credentials_file;
     extern const DatabaseDataLakeSettingsBool force_add_bucket;
+    extern const DatabaseDataLakeSettingsBool flat_namespaces;
 }
 
 namespace Setting
@@ -263,6 +264,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -278,6 +280,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -294,6 +297,7 @@ void DatabaseDataLake::initialize() const
                 settings[DatabaseDataLakeSetting::auth_header],
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -315,6 +319,7 @@ void DatabaseDataLake::initialize() const
                 onelake_auth_scope,
                 settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 settings[DatabaseDataLakeSetting::oauth_server_use_request_body].value,
+                settings[DatabaseDataLakeSetting::flat_namespaces].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -497,7 +502,8 @@ void DatabaseDataLake::resetCatalog(String reason) const
 
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
-    DataLakeStorageSettingsPtr storage_settings) const
+    DataLakeStorageSettingsPtr storage_settings,
+    DataLake::DataLakeTableFormat /* table_format */) const
 {
     /// TODO: add tests for azure, local storage types.
 
@@ -847,7 +853,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
         (*storage_settings)[DB::DataLakeStorageSetting::iceberg_metadata_file_path] = metadata_location;
     }
 
-    const auto configuration = getConfiguration(storage_type, storage_settings);
+    const auto configuration = getConfiguration(storage_type, storage_settings, table_metadata.getTableFormat());
 
     /// HACK: Hacky-hack to enable lazy load
     ContextMutablePtr context_copy = Context::createCopy(context_);
@@ -929,7 +935,7 @@ StoragePtr DatabaseDataLake::tryGetTableImpl(const String & name, ContextPtr con
             return std::nullopt;
         if (!with_vended_credentials && !catalog_manages_provider_chain)
             return std::nullopt;
-        return catalog->getCredentialsConfigurationCallback(storage_id);
+        return catalog->getCredentialsConfigurationCallback(storage_id, table_metadata);
     };
 
     const auto catalog_uuid = table_metadata.getTableUUID();
@@ -1070,7 +1076,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Debug level: an error-level entry is forwarded to the client as an error of this query, which succeeds.
+        /// A direct log leaves the exception unmarked, so `~Exception` still escalates an important error code.
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
@@ -1219,7 +1227,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     for (const auto & catalog_table : catalog_tables)
@@ -1257,7 +1265,7 @@ VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     return result;
@@ -1389,8 +1397,7 @@ ASTPtr DatabaseDataLake::getCreateTableQueryImpl(
 
     auto * storage = table_storage_define->as<ASTStorage>();
     storage->engine->setKind(ASTFunction::Kind::TABLE_ENGINE);
-    if (!table_metadata.isDefaultReadableTable())
-        storage->engine->name = DataLake::FAKE_TABLE_ENGINE_NAME_FOR_UNREADABLE_TABLES;
+    storage->engine->name = String(catalog->getTableEngineName(table_metadata));
 
     storage->settings = {};
 
@@ -1616,7 +1623,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                         throw_invalid_auth();
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::GLUE:
@@ -1629,7 +1635,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_glue_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::UNITY:
@@ -1642,7 +1647,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_unity_catalog");
                 }
 
-                engine_func->name = "DeltaLake";
                 break;
             }
             case DatabaseDataLakeCatalogType::ICEBERG_HIVE:
@@ -1655,7 +1659,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_hms_catalog");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::PAIMON_REST:
@@ -1668,7 +1671,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_experimental_database_paimon_rest_catalog");
                 }
 
-                engine_func->name = "Paimon";
                 break;
             }
             case DatabaseDataLakeCatalogType::S3_TABLES:
@@ -1681,7 +1683,6 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
                                     "To allow its usage, enable setting allow_database_iceberg");
                 }
 
-                engine_func->name = "Iceberg";
                 break;
             }
             case DatabaseDataLakeCatalogType::NONE:
@@ -1719,6 +1720,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
+        .has_builtin_setting_fn = DatabaseDataLakeSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 The `DataLakeCatalog` database engine enables you to connect ClickHouse to external

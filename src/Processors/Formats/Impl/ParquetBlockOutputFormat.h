@@ -21,6 +21,8 @@ public:
 
     String getName() const override { return "ParquetBlockOutputFormat"; }
 
+    std::unordered_map<String, size_t> getColumnSizesOnDisk() const override { return column_sizes_on_disk; }
+
 private:
     struct MemoryToken
     {
@@ -95,6 +97,7 @@ private:
 
     void consume(Chunk) override;
     void finalizeImpl() override;
+    void collectColumnSizesOnDisk(const Block & header);
     void resetFormatterImpl() override;
     void onCancel() noexcept override;
 
@@ -120,6 +123,7 @@ private:
     Parquet::IcebergOptionality iceberg_optionality;
     Parquet::SchemaElements schema;
     Parquet::FileWriteState file_state;
+    std::unordered_map<String, size_t> column_sizes_on_disk;
     size_t base_offset = 0; // initial out.count(), just for assert
 
     std::mutex mutex;

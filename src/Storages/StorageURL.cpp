@@ -2584,6 +2584,8 @@ void registerStorageURL(StorageFactory & factory)
         "URL",
         [](const StorageFactory::Arguments & args) -> StoragePtr
         {
+            checkStorageSettingNames(args);
+
             /// The `URL` engine is a unified wrapper: dispatch by scheme to File/S3/Azure/HDFS.
             if (auto dispatched = tryDispatchURLEngineByScheme(args))
                 return dispatched;
