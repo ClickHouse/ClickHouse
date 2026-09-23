@@ -345,43 +345,20 @@ parseFloatFromRange(T & x, const char * first, const char * last, fast_float::ch
 }
 
 
-template <typename T, typename ReturnType>
-ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
+constexpr int MAX_LENGTH = 316;
+
+/// Out of line, so that building the message does not cost a stack frame on the fast path.
+[[noreturn]] NO_INLINE void throwCannotParseFloat(const char * begin, const char * end)
 {
-    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextPreciseImpl must be float or double");
-    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
+    throw Exception(ErrorCodes::CANNOT_PARSE_NUMBER, "Cannot read floating point value here: {}", String(begin, end - begin));
+}
 
+/// Slow path. Copy characters that may be present in floating point number to temporary buffer.
+/// Out of line, so that the buffer does not cost a stack frame on the fast path.
+template <typename T, typename ReturnType>
+NO_INLINE ReturnType readFloatTextPreciseSlow(T & x, ReadBuffer & buf)
+{
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
-    static constexpr int MAX_LENGTH = 316;
-    static constexpr auto float_fmt = fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus;
-
-    /// Fast path (avoid copying) if the buffer has at least MAX_LENGTH bytes or the whole input is in memory.
-    /// The bounds check comes first, so the virtual isMemoryBuffer() is only called near the end of the buffer.
-    if (likely(!buf.eof() && (buf.position() + MAX_LENGTH <= buf.buffer().end() || buf.isMemoryBuffer())))
-    {
-        auto * initial_position = buf.position();
-        auto * const buf_end = buf.buffer().end();
-        auto res = parseFloatFromRange(x, initial_position, buf_end, float_fmt);
-
-        /// result_out_of_range means overflow/underflow: fast_float has already set x to +-inf or +-0,
-        /// matching strtod semantics. Only a genuine parse failure is an error.
-        if (unlikely(res.ec != std::errc() && res.ec != std::errc::result_out_of_range))
-        {
-            if constexpr (throw_exception)
-                throw Exception(
-                    ErrorCodes::CANNOT_PARSE_NUMBER,
-                    "Cannot read floating point value here: {}",
-                    String(initial_position, buf.buffer().end() - initial_position));
-            else
-                return ReturnType(false);
-        }
-
-        buf.position() += res.ptr - initial_position;
-
-        return ReturnType(true);
-    }
-
-    /// Slow path. Copy characters that may be present in floating point number to temporary buffer.
     bool negative = false;
 
     /// We check eof here because we can parse +inf +nan
@@ -462,6 +439,43 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
         x = -x;
 
     return ReturnType(true);
+}
+
+
+template <typename T, typename ReturnType>
+ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
+{
+    static_assert(std::is_same_v<T, double> || std::is_same_v<T, float>, "Argument for readFloatTextPreciseImpl must be float or double");
+    static_assert('a' > '.' && 'A' > '.' && '\n' < '.' && '\t' < '.' && '\'' < '.' && '"' < '.', "Layout of char is not like ASCII");
+
+    static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
+    static constexpr auto float_fmt = fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus;
+
+    /// Fast path (avoid copying) if the buffer has at least MAX_LENGTH bytes or the whole input is in memory.
+    /// The bounds check comes first, so the virtual isMemoryBuffer() is only called near the end of the buffer.
+    if (likely(!buf.eof() && (buf.position() + MAX_LENGTH <= buf.buffer().end() || buf.isMemoryBuffer())))
+    {
+        auto * initial_position = buf.position();
+        auto * const buf_end = buf.buffer().end();
+
+        auto res = parseFloatFromRange(x, initial_position, buf_end, float_fmt);
+
+        /// result_out_of_range means overflow/underflow: fast_float has already set x to +-inf or +-0,
+        /// matching strtod semantics. Only a genuine parse failure is an error.
+        if (unlikely(res.ec != std::errc() && res.ec != std::errc::result_out_of_range))
+        {
+            if constexpr (throw_exception)
+                throwCannotParseFloat(initial_position, buf_end);
+            else
+                return ReturnType(false);
+        }
+
+        buf.position() += res.ptr - initial_position;
+
+        return ReturnType(true);
+    }
+
+    return readFloatTextPreciseSlow<T, ReturnType>(x, buf);
 }
 
 
