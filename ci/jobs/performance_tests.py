@@ -1531,25 +1531,9 @@ def dashboard_api_get(path, params=None, timeout_sec=60):
 
 
 def dashboard_run_id(info):
-    """The dashboard's identifier of the comparison run this job belongs to.
-
-    PR runs are keyed by PR number and head sha. Master runs carry a
-    timestamp suffix that only the dashboard knows, so they are looked up by
-    sha; the newest run for the sha is the one this job uploads into."""
-    if info.pr_number:
-        return f"pr-{info.pr_number}-{info.sha}"
-    data = dashboard_api_get("/runs", {"scope": "master", "q": info.sha[:12]})
-    identities = [
-        item.get("identity") or {}
-        for item in data.get("items", [])
-        if (item.get("identity") or {}).get("newSha") == info.sha
-    ]
-    if not identities:
-        raise PerfDashboardError(f"no master run for sha {info.sha} yet")
-    identities.sort(
-        key=lambda identity: identity.get("runTime", ""), reverse=True
-    )
-    return identities[0]["runId"]
+    """The dashboard's identifier of the PR comparison run this job belongs
+    to: PR runs are keyed by PR number and head sha."""
+    return f"pr-{info.pr_number}-{info.sha}"
 
 
 def read_shard_queries(metrics_tsv_path):
@@ -1635,11 +1619,9 @@ def perf_dashboard_gate(info, arch, metrics_tsv_path):
         )
 
     deadline = time.monotonic() + DASHBOARD_INGEST_TIMEOUT_SEC
-    run_id = None
+    run_id = dashboard_run_id(info)
     while True:
         try:
-            if run_id is None:
-                run_id = dashboard_run_id(info)
             if dashboard_has_shard(run_id, arch, tests[0]):
                 break
             reason = f"run [{run_id}] has no {arch} data for test [{tests[0]}] yet"
@@ -2775,6 +2757,11 @@ def main():
                         status = Result.Status.FAIL
             elif info.is_local_run:
                 print("Local run: skipping the performance dashboard gate")
+            elif not info.pr_number:
+                # A master run has nothing to block, and the dashboard often
+                # does not list the run of the commit being tested yet, so
+                # waiting for its verdict only turned master runs red.
+                print("Master run: skipping the performance dashboard gate")
             else:
                 # `master_head` mode: the performance dashboard's verdict is the
                 # gate. It judges every changed query on its raw samples and
