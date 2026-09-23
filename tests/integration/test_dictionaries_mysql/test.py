@@ -19,6 +19,7 @@ DICTS = [
     "configs/dictionaries/mysql_dict_compression.xml",
     "configs/dictionaries/mysql_dict_compression_wire.xml",
     "configs/dictionaries/mysql_dict_no_compression_wire.xml",
+    "configs/dictionaries/mysql_dict_local_infile.xml",
 ]
 CONFIG_FILES = [
     "configs/remote_servers.xml",
@@ -1030,5 +1031,76 @@ def test_mysql_shared_pool_no_setting_inheritance(started_cluster):
         instance.query("DROP DICTIONARY IF EXISTS inherit_limited_dict_b")
         execute_mysql_query(
             mysql_connection, "DROP TABLE IF EXISTS test.inherit_pool_test;"
+        )
+        mysql_connection.close()
+
+
+def test_enable_local_infile_xml_dict(started_cluster):
+    """`enable_local_infile` is rejected in a dictionary created with a DDL query, but a dictionary
+    defined in a server configuration file is written by an operator and keeps working."""
+    mysql_connection = get_mysql_conn(started_cluster)
+
+    try:
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.dict_local_infile_table;"
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "CREATE TABLE test.dict_local_infile_table (id INT NOT NULL, value TEXT, PRIMARY KEY(id));",
+        )
+        execute_mysql_query(
+            mysql_connection,
+            "INSERT INTO test.dict_local_infile_table VALUES (1, 'local_infile');",
+        )
+
+        # The dictionary is lazily loaded, so nothing has touched the source yet; reload it now that
+        # its table exists.
+        for _ in range(10):
+            try:
+                instance.query("SYSTEM RELOAD DICTIONARY dict_local_infile")
+                break
+            except Exception:
+                time.sleep(0.5)
+
+        # Loading the dictionary means the source was instantiated and connected with the option on,
+        # which is what the guard must not prevent for this route.
+        value = instance.query(
+            "SELECT dictGet('dict_local_infile', 'value', toUInt64(1))"
+        ).strip()
+        last_exception = instance.query(
+            "SELECT last_exception FROM system.dictionaries WHERE name = 'dict_local_infile'"
+        ).strip()
+        assert value == "local_infile", (
+            "<enable_local_infile> was rejected in the XML dict config: "
+            f"{last_exception!r}"
+        )
+
+        # The same option from a DDL query is rejected, at the source and at a replica alike. The
+        # endpoint here is the working MySQL server, so a rejection cannot be a connection failure
+        # in disguise.
+        credentials = f"USER 'root' PASSWORD '{mysql_pass}' DB 'test' TABLE 'dict_local_infile_table'"
+        for source in (
+            f"HOST 'mysql80' PORT 3306 {credentials} ENABLE_LOCAL_INFILE 1",
+            f"{credentials} REPLICA(PRIORITY 1 HOST 'mysql80' PORT 3306 ENABLE_LOCAL_INFILE 1)",
+        ):
+            instance.query("DROP DICTIONARY IF EXISTS dict_local_infile_ddl")
+            instance.query(
+                f"""
+                CREATE DICTIONARY dict_local_infile_ddl (id UInt64, value String)
+                PRIMARY KEY id
+                SOURCE(MYSQL({source}))
+                LAYOUT(FLAT())
+                LIFETIME(0)
+                """
+            )
+            with pytest.raises(Exception) as exc:
+                instance.query("SYSTEM RELOAD DICTIONARY dict_local_infile_ddl")
+            assert "cannot be enabled in a dictionary created with a DDL query" in str(
+                exc.value
+            ), f"Unexpected error for {source!r}: {exc.value}"
+    finally:
+        instance.query("DROP DICTIONARY IF EXISTS dict_local_infile_ddl")
+        execute_mysql_query(
+            mysql_connection, "DROP TABLE IF EXISTS test.dict_local_infile_table;"
         )
         mysql_connection.close()

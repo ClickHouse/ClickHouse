@@ -499,11 +499,14 @@ formats.
 There is a special Session level setting `aggregate_function_input_format` that allows to build state from the input values.
 It supports the following formats:
 
-- `state` - binary string with the serialized state (the default).
+- `state` - the serialized state (the default).
 If you dump data into, for example, the `TabSeparated` format with a `SELECT`
 query, then this dump can be loaded back using the `INSERT` query.
-- `value` - the format will expect a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; that will be deserialized to form the relevant state
-- `array` - the format will expect an Array of values, as described in the values option above; all the elements of the array will be aggregated to form the state
+- `value` - the format expects a single value of the argument of the aggregate function, or in the case of multiple arguments, a tuple of them; the value is aggregated to form the state.
+- `array` - the format expects an Array of values, as described in the `value` option above; all the elements of the array are aggregated to form the state.
+
+In the `value` and `array` modes, the column is read as if it had the type of the values (`T`, `Tuple(T1, T2)`, or an `Array` of them),
+in the representation the input format uses for that type. This works the same way in every input format, from `CSV` and `JSONEachRow` to `RowBinary` and `Parquet`.
 
 ### Data Selection {#data-selection}
 

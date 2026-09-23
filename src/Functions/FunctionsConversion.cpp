@@ -641,7 +641,7 @@ FunctionCast::WrapperType FunctionCast::createFixedStringWrapper(const DataTypeP
 
 FunctionCast::WrapperType FunctionCast::createIntervalWrapper(const DataTypePtr & from_type, IntervalKind kind) const
 {
-    switch (kind.kind)
+    switch (kind.getKind())
     {
         GENERATE_INTERVAL_CASE(Nanosecond)
         GENERATE_INTERVAL_CASE(Microsecond)
