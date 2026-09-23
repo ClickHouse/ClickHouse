@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/Compaction/MergeSelectors/TTLMergeSelector.h>
 #include <Storages/MergeTree/Compaction/MergeSelectors/TrivialMergeSelector.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
 
@@ -48,6 +49,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_bytes_for_full_part_storage;
     extern const MergeTreeSettingsUInt64 min_rows_for_full_part_storage;
     extern const MergeTreeSettingsUInt32 min_level_for_full_part_storage;
+    extern const MergeTreeSettingsMergeTreePartMinMaxIndexColumns part_minmax_index_columns;
 }
 
 namespace
@@ -121,8 +123,8 @@ size_t getAffordablePartsToMergeAtOnce(const ChooseContext & ctx)
 /// merges the key columns of all source parts together, and its vertical stage then gathers the other
 /// columns one column at a time - so the peak is the horizontal stage. This mirrors the key columns of
 /// `MergeTask::ExecuteAndFinalizeHorizontalPart::extractMergingAndGatheringColumns` as far as the table
-/// metadata can tell: the sorting key, the columns the merging mode needs, the partition key (in case the
-/// merge has to recompute the min-max index), the columns of multi-column skip indexes and of projections
+/// metadata can tell: the sorting key, the columns the merging mode needs, the columns of the min-max index
+/// (in case the merge has to recompute it), the columns of multi-column skip indexes and of projections
 /// (which are rebuilt on the horizontal stage) and, when rows expire, the columns of the TTL expressions.
 /// The remaining columns are the ones the vertical stage gathers. Over-counting here is harmless - it
 /// prices a vertical merge a little higher and predicts vertical merges a little less often - so the
@@ -135,6 +137,14 @@ size_t getColumnsMergedOnHorizontalStageOfVerticalMerge(const ChooseContext & ct
     NameSet key_columns;
     key_columns.insert_range(metadata.getColumnsRequiredForSortingKey());
     key_columns.insert_range(metadata.getColumnsRequiredForPartitionKey());
+
+    /// With `part_minmax_index_columns = 'with_block_number_offset'` the min-max index a merge recomputes
+    /// also covers `_block_number` and `_block_offset`, see `MergeTreeData::getMinMaxColumns`.
+    if (ctx.merge_tree_settings[MergeTreeSetting::part_minmax_index_columns] >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
+    {
+        key_columns.insert(BlockNumberColumn::name);
+        key_columns.insert(BlockOffsetColumn::name);
+    }
 
     if (!params.sign_column.empty())
         key_columns.insert(params.sign_column);
