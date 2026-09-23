@@ -116,6 +116,22 @@ bool AggregatedDataVariants::topKHeapEverRejected() const
     }
 }
 
+bool AggregatedDataVariants::topKHeapFrozen() const
+{
+    switch (type)
+    {
+        case Type::EMPTY:
+        case Type::without_key:
+            return false;
+
+    #define M(NAME, IS_TWO_LEVEL) \
+        case Type::NAME: \
+            return (NAME)->top_k_heap.frozen;
+        APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+    }
+}
+
 void AggregatedDataVariants::resetAfterStateOwnershipTransfer()
 {
     chassert(!aggregator);

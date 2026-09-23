@@ -27,3 +27,22 @@ SELECT s, p, count(), sum(v) FROM lc_serialized_group_by GROUP BY s, p ORDER BY 
 SELECT s, p, count(), sum(v) FROM lc_serialized_group_by GROUP BY s, p ORDER BY s, p NULLS FIRST SETTINGS max_block_size = 64, group_by_two_level_threshold = 1;
 
 DROP TABLE IF EXISTS lc_serialized_group_by;
+
+-- A top-K heap can freeze and fall back to ordinary aggregation in the middle of a query. The
+-- worst `(s, f)` pair in the sort order is rare and the deliberately small observation window makes
+-- the heap freeze after the first block, so the remaining blocks are aggregated without the ranked
+-- columns.
+DROP TABLE IF EXISTS lc_serialized_group_by_topk;
+CREATE TABLE lc_serialized_group_by_topk
+(
+    s LowCardinality(String),
+    f LowCardinality(FixedString(4)),
+    v UInt64
+)
+ENGINE = MergeTree ORDER BY v;
+
+INSERT INTO lc_serialized_group_by_topk SELECT if(number % 1000 < 995, 'a', 'b'), if(number % 1000 < 500, toFixedString('x', 4), toFixedString('y', 4)), number FROM numbers(200000);
+
+SELECT s, f, count(), sum(v) FROM lc_serialized_group_by_topk GROUP BY s, f ORDER BY s, f LIMIT 2 SETTINGS max_threads = 1, max_block_size = 8192, group_by_top_k_optimization_observation_rows = 1;
+
+DROP TABLE IF EXISTS lc_serialized_group_by_topk;

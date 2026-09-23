@@ -2269,6 +2269,10 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
+    /// The plan's `top_k` flag stays set after the heap freezes and `executeImpl` falls back to
+    /// ordinary aggregation, which no longer ranks the keys.
+    const bool top_k_active = params.top_k && !result.topKHeapFrozen();
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -2288,9 +2292,9 @@ bool Aggregator::executeOnBlock(Columns columns,
             /// Serialized methods read key columns through `IColumn` virtuals, so a non-nullable
             /// `LowCardinality` key can be serialized from its dictionary without being copied into
             /// a full column first. `LowCardinality(Nullable)` keys need the materialized
-            /// representation, which carries their null map, and top-K aggregation keeps it for its
-            /// own ranked columns.
-            if (result.isSerialized() && !params.top_k)
+            /// representation, which carries their null map, and so does an active top-K heap, whose
+            /// ranked columns are built from the key columns.
+            if (result.isSerialized() && !top_k_active)
             {
                 const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
                 if (low_cardinality && !low_cardinality->getDictionary().nestedColumnIsNullable())
