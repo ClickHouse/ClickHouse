@@ -47,8 +47,7 @@ public:
         ColumnRawPtrs key_columns;
         ColumnPtr null_map_holder;
         ConstNullMapPtr null_map = nullptr;
-        /// The clause's right-side ON condition; rows it filters are not inserted, as in the
-        /// standard build.
+        /// The clause's right-side ON condition; rows it filters are not inserted.
         JoinCommon::JoinMask join_mask;
         /// Null-key rows OR mask-filtered rows. Materialized only when the mask actually filters.
         /// Otherwise `skipData` returns the plain null map.

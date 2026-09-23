@@ -1525,7 +1525,6 @@ void checkAsofGrowthCleanup(bool fail_overflow_allocation)
     HashJoin schema(
         table_join,
         std::make_shared<const Block>(build_header),
-        /*any_take_last_row_=*/false,
         /*allow_set_maps_=*/false);
     std::vector<HashJoinClause::FillBlock> build_blocks;
     std::atomic<size_t> accumulated_bytes{0};

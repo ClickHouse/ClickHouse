@@ -10,7 +10,7 @@ extern const int LOGICAL_ERROR;
 }
 
 /** Each combination's maps shape mirrors the `MapGetter` table. Only combinations a real query plan
-  * can reach are listed; anything else is a logic error, as in `HashJoin::joinBlock`.
+  * can reach are listed; anything else is a logic error.
   * `prefer_use_maps_all` is set when the barrier promoted ALL to RightAny on a unique-key build:
   * the ALL-built `RowRefList` maps are probed with RightAny semantics and skip replication. It is
   * also set for a mixed ON condition, whose residual filter has to see every right row of a key

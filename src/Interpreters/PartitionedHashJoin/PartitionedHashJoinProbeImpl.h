@@ -237,9 +237,8 @@ struct SharedAmacFindPolicy
     }
 };
 
-/** Probe of the shared table: the single-map `joinRightColumns` loop with this table's walk.
-  * Probe blocks are never scattered. Unlike `switchJoinRightColumns` this never splits the block:
-  * `HashJoinResult` caps the output.
+/** Probe of the shared table through a single map.
+  * Probe blocks are never scattered, and this never splits the block: `HashJoinResult` caps the output.
   *
   * When `use_amac` holds (past the prefetch threshold and the row floor), a block is probed in two
   * passes. A find ring fills pooled scratch out of order. An in-order pass then consumes it
@@ -369,7 +368,7 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
         /// The loop invariants as locals. Captured by reference they would live in the closure, whose
         /// address the `appendFromBlock` call sees. The compiler then reloads the row count, the selector
         /// (with its variant check), the key getter, the table and the output after every call: a dozen
-        /// loads per probe row that `HashJoinMethods::joinRightColumns` does not pay.
+        /// loads per probe row.
         const size_t num_rows = rows;
         AddedColumnsType & cols = added_columns;
         const Map & map = table;
@@ -850,13 +849,13 @@ size_t PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType
     return rows;
 }
 
-/** The probe over the tables of several ON clauses (`ON a OR b`): the multi-map `joinRightColumns` of
-  * `HashJoin`. Per probe row the clauses are walked in order; `KnownRowsHolder` keeps a right row an
+/** The probe over the tables of several ON clauses (`ON a OR b`).
+  * Per probe row the clauses are walked in order; `KnownRowsHolder` keeps a right row an
   * earlier clause emitted from being emitted again, the last clause skips that bookkeeping, and ANY and
   * SEMI stop at the first clause that matches - except RIGHT and FULL ANY, which mark every clause's
   * rows. The used flags are kept per right-table row, since one row is reachable through several keys.
   * No find ring and no flat lookup: their out-of-order results could not be deduplicated across the
-  * clauses, and `HashJoin` has neither on this path.
+  * clauses.
   */
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
 size_t PartitionedHashJoin::joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block)
@@ -1022,8 +1021,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
     }
 
     /// Only `MapsAll` keeps every right row of a key, so only there do the recorded words resolve to
-    /// exact right rows. The residual-filter path marks its right matches itself, as in
-    /// `HashJoinMethods::joinBlockImpl`.
+    /// exact right rows. The residual-filter path marks its right matches itself.
     constexpr bool refs_can_carry_stats = join_features.is_maps_all && (join_features.inner || join_features.left || join_features.full);
     const bool record_refs_for_stats = refs_can_carry_stats && join.recordsRowRefsForStats();
 
@@ -1101,7 +1099,7 @@ JoinResultPtr PartitionedHashJoin::probeImpl(Block block, size_t lane, const Blo
     }
 
     /// A mixed ON condition stops at `max_joined_block_rows`; the rows it did not reach go back to the
-    /// transform as the next block, as in `HashJoinMethods::joinBlockImpl`.
+    /// transform as the next block.
     std::optional<ScatteredBlock> next_scattered_block;
     if (0 < processed_rows && processed_rows < scattered_block.rows())
     {

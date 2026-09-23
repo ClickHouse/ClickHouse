@@ -142,7 +142,7 @@ PartitionedHashJoin::PartitionedHashJoin(
     , any_take_last_row(any_take_last_row_)
     , num_threads(std::max<size_t>(1, num_threads_))
     , max_bytes_before_external_join(max_bytes_before_external_join_)
-    , hash_join(std::make_unique<HashJoin>(table_join, right_sample_block, any_take_last_row, /*allow_set_maps_=*/false))
+    , hash_join(std::make_unique<HashJoin>(table_join, right_sample_block, /*allow_set_maps_=*/false))
     , join_table_mode(join_table_mode_)
     , used_flags_per_row(hash_join->needUsedFlagsForPerRightTableRow(table_join))
     , cached_distinct_estimates(table_join->getClauses().size())
@@ -164,8 +164,8 @@ PartitionedHashJoin::PartitionedHashJoin(
             *hash_join, *table_join, clause_idx, any_take_last_row, num_threads, max_bytes_before_external_join, build_blocks, accumulated_bytes, log);
     post_build_pools.resize(clauses.size());
 
-    /// The same shapes for which `HashJoin` allocates its per-row flags: the flagged (kind, strictness)
-    /// pairs of `MapGetter`. The others mark nothing and read nothing.
+    /// Per-row flags are allocated for the flagged (kind, strictness) pairs of `MapGetter`. The others
+    /// mark nothing and read nothing.
     if (used_flags_per_row)
         joinDispatch(
             hash_join->getKind(),
@@ -375,7 +375,7 @@ ColumnWithTypeAndName PartitionedHashJoin::joinGet(const Block & block, const Bl
 void PartitionedHashJoin::shrinkStoredBlocksToFit()
 {
     size_t total_bytes = getTotalByteCount();
-    hash_join->shrinkStoredBlocksToFit(total_bytes, /*force_optimize=*/true);
+    hash_join->shrinkStoredBlocksToFit(total_bytes);
 }
 
 PartitionedHashJoin::FillLane & PartitionedHashJoin::getFillLane()
@@ -431,7 +431,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     FillBlock fill;
     fill.rows = rows;
     /// Zeroed here, on the fill thread, rather than for every block at once on the thread that stores
-    /// them; `HashJoin` allocates its per-row flags on its fill workers too.
+    /// them.
     if (allocate_per_row_flags)
         fill.per_row_flags = JoinStuff::JoinUsedFlags::UsedFlagsForColumns(rows);
 
@@ -450,7 +450,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     {
         /// One block at a time under the storage's write lock: stored, then inserted straight into the
         /// table, which is probe-ready again when this returns. No routes, no sketch, no barrier. The
-        /// limits are the storage's `max_rows_in_join` / `max_bytes_in_join`, checked as `HashJoin` does.
+        /// limits are the storage's `max_rows_in_join` / `max_bytes_in_join`.
         const bool nullmap_saved = storeBlockInRowStore(fill);
         const bool any_row_stored = clauses.front().insertJoinTableBlock(fill);
         if (!any_row_stored && !nullmap_saved)
@@ -493,7 +493,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     FillLane & lane = getFillLane(worker_id);
     {
         /// A sketch merge reads `hll` under this lock, so it never sees a half-written register.
-        /// One hash pass per clause, as `HashJoin` hashes each block once per map.
+        /// One hash pass per clause.
         std::lock_guard hll_lock(lane.hll_mutex);
         for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
             clauses[clause_idx].computeRoutes(fill, lane.hll[clause_idx]);
@@ -548,7 +548,7 @@ const Block & PartitionedHashJoin::getTotals() const
 bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
 {
     auto & data = *hash_join->data;
-    /// Registered and accounted while a local list still owns it, as `HashJoin::addBlockToJoin` does:
+    /// Registered and accounted while a local list still owns it:
     /// a registration that throws leaves no unregistered block behind, and `splice` cannot throw. A
     /// list node keeps its address across the splice.
     HashJoin::StoredBlocksList new_block;
@@ -567,7 +567,7 @@ bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
     }
 
     /// Per-row used flags cover every stored row, the ones that never enter a table included. A row
-    /// nothing marks is emitted as non-joined, so no null map is kept for it; `HashJoin` keeps none either.
+    /// nothing marks is emitted as non-joined, so no null map is kept for it.
     /// The flags are attached here, on the one thread that stores blocks, before any probe can read them.
     if (allocate_per_row_flags)
     {
@@ -580,8 +580,7 @@ bool PartitionedHashJoin::storeBlockInRowStore(FillBlock & fill)
         return false;
 
     /// RIGHT/FULL output needs the rows that never made it into the table - null keys and rows the
-    /// ON condition filtered - exactly as the standard build saves them, from the one clause's null map
-    /// and mask.
+    /// ON condition filtered. They are saved from the one clause's null map and mask.
     HashJoinClause::Input & input = fill.clauses.front();
     bool save_nullmap = false;
     if (input.null_map)
@@ -878,7 +877,7 @@ void PartitionedHashJoin::finishBuildPhase(bool all_values_unique)
     hash_join->onBuildPhaseFinish();
     reinitUsedFlags();
     /// Every stored block has its final number: the right-side flags of the statistics are sized
-    /// per block, as `HashJoin::onBuildPhaseFinish` sizes its own.
+    /// per block.
     if (matched_rows_stats)
         matched_rows_stats->prepareRightFlagsIfNeeded(storedBlocks());
     build_phase_finished = true;

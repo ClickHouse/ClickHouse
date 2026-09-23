@@ -34,8 +34,6 @@ class ExpressionActions;
 class JoinSource;
 using Sizes = std::vector<size_t>;
 
-class MatchedRowsStats;
-
 namespace JoinStuff
 {
 /// Flags needed to implement RIGHT and FULL JOINs.
@@ -56,16 +54,6 @@ enum class JoinMapsKind : uint8_t
     Default,
     All,
     Set,
-};
-
-template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-class HashJoinMethods;
-
-struct BuildResult
-{
-    bool is_inserted = false;
-    bool all_values_unique = true;
-    size_t new_keys = 0;
 };
 
 /// A join whose result never contains a value taken from a right row (see `MapGetter`)
@@ -124,10 +112,8 @@ using JoinFixedHashMap = std::conditional_t<
   *
   * 1. Build hash table in memory from "right" table.
   * This hash table is in form of keys -> row in case of ANY or keys -> [rows...] in case of ALL.
-  * This is done in insertFromBlock method.
   *
   * 2. Process "left" table and join corresponding rows from "right" table by lookups in the map.
-  * This is done in joinBlock methods.
   *
   * In case of ANY LEFT JOIN - form new columns with found values or default values.
   * This is the most simple. Number of rows in left table does not change.
@@ -154,67 +140,33 @@ using JoinFixedHashMap = std::conditional_t<
   * If it is true, we always generate Nullable column and substitute NULLs for non-joined rows,
   *  as in standard SQL.
   */
-class HashJoin : public IJoin
+class HashJoin
 {
 public:
     HashJoin(
         std::shared_ptr<TableJoin> table_join_,
         SharedHeader right_sample_block,
-        bool any_take_last_row_ = false,
         /// `PartitionedHashJoin` passes false: its `HashJoinTable` has no key-only counterpart.
         bool allow_set_maps_ = true);
 
-    ~HashJoin() override;
+    ~HashJoin();
 
-    std::string getName() const override { return "HashJoin"; }
+    const TableJoin & getTableJoin() const { return *table_join; }
 
-    const TableJoin & getTableJoin() const override { return *table_join; }
-
-    /// The left side is streamed through once, each row emitted in input order.
-    bool preservesLeftBlockOrder() const override { return true; }
-
-    /** Add block of data from right hand of JOIN to the map.
-      * Returns false, if some limit was exceeded and you should not insert more data.
-      * The build runs on one thread, so `worker_id` is not read.
-      */
-    bool addBlockToJoin(const Block & source_block_, size_t num_rows, size_t worker_id, bool check_limits) override;
-
-    void checkTypesOfKeys(const Block & block) const override;
-
-    using IJoin::joinBlock;
-
-    /** Join data from the map (that was previously built by calls to addBlockToJoin) to the block with data from "left" table.
-      * Could be called from different threads in parallel.
-      */
-    JoinResultPtr joinBlock(Block block) override;
+    void checkTypesOfKeys(const Block & block) const;
 
     /// Check joinGet arguments and infer the return type.
     DataTypePtr joinGetCheckAndGetReturnType(const DataTypes & data_types, const String & column_name, bool or_null) const;
 
-    IBlocksStreamPtr getNonJoinedBlocks(
-        const Block & left_sample_block, const Block & result_sample_block, UInt64 max_block_size) const override;
-
-    void onBuildPhaseFinish() override;
+    void onBuildPhaseFinish();
 
     /// Number of unique keys in all built JOIN maps.
-    size_t getTotalRowCount() const final;
-    /// Sum size in bytes of all buffers, used for JOIN maps and for the memory pool.
-    size_t getTotalByteCount() const final;
-    /// Number of right-side rows ingested into the build.
-    size_t getRightTableRowCount() const { return getJoinedData()->rows_to_join; }
-    /// Peak bytes the build occupied
-    size_t getPeakBuildBytes() const { return peak_build_bytes; }
-
-    StepAnalysisReport getAnalysisReport() const override;
-    const MatchedRowsStats * getMatchStats() const { return matched_rows_stats.get(); }
-
-    bool alwaysReturnsEmptySet() const final;
+    size_t getTotalRowCount() const;
 
     JoinKind getKind() const { return kind; }
     JoinStrictness getStrictness() const { return strictness; }
     const std::optional<TypeIndex> & getAsofType() const { return asof_type; }
     ASOFJoinInequality getAsofInequality() const { return asof_inequality; }
-    bool anyTakeLastRow() const override { return any_take_last_row; }
 
     const ColumnWithTypeAndName & rightAsofKeyColumn() const;
 
@@ -429,12 +381,12 @@ public:
         std::atomic<size_t> rows_to_join = 0;
         /// Number of keys of right table to join
         std::atomic<size_t> keys_to_join = 0;
-        /// The maps and the arena; recomputed after every insert and after a post-build step swaps maps.
+        /// The maps and the arena.
         std::atomic<size_t> maps_bytes = 0;
 
         /// Exact `allocated_size + nullmaps_allocated_size + maps_bytes`. The three parts are
         /// independent atomics. A concurrent sum can miss one update and under-count
-        /// `max_bytes_in_join`. Size-limit checks and `peak_build_bytes` read only this.
+        /// `max_bytes_in_join`. Size-limit checks read only this.
         std::atomic<size_t> total_bytes = 0;
 
         /// Add `total_bytes` first so a concurrent size-limit check cannot under-count.
@@ -514,7 +466,7 @@ public:
     bool isUsed(size_t off) const;
     bool isUsed(UInt32 block_no, size_t row_idx) const;
 
-    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join, bool force_optimize = false);
+    void shrinkStoredBlocksToFit(size_t & total_bytes_in_join);
 
     void materializeColumnsFromLeftBlock(Block & block) const;
     Block materializeColumnsFromRightBlock(Block block) const;
@@ -529,7 +481,7 @@ public:
 
     bool enableSoftwarePrefetch() const { return enable_prefetch; }
 
-    void setEnableLazyColumnsIndexing(bool value) override { enable_lazy_columns_indexing = value; }
+    void setEnableLazyColumnsIndexing(bool value) { enable_lazy_columns_indexing = value; }
 
     static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
     static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
@@ -537,20 +489,13 @@ public:
 private:
     friend class JoinSource;
     /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its
-    /// own partitioned maps. It needs the access the join methods have.
+    /// own partitioned maps.
     friend class PartitionedHashJoin;
     friend class HashJoinClause;
-
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
-    friend class HashJoinMethods;
-
-    bool addBlockToJoin(const Block & block, ScatteredBlock::Selector selector, bool check_limits, RowDataStorePtr row_store = nullptr);
 
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
-
-    const bool any_take_last_row; /// Overwrite existing values when encountering the same key again
 
     std::optional<TypeIndex> asof_type;
     const ASOFJoinInequality asof_inequality;
@@ -563,7 +508,6 @@ private:
     /// so we must guarantee constantness of hash table during HashJoin lifetime
     mutable std::shared_ptr<JoinStuff::JoinUsedFlags> used_flags;
 
-    std::unique_ptr<MatchedRowsStats> matched_rows_stats;
     RightTableDataPtr data;
 
     std::vector<Sizes> key_sizes;
@@ -589,15 +533,6 @@ private:
     bool enable_lazy_columns_indexing = false;
     bool enable_prefetch = true;
 
-    /// When tracked memory consumption is more than a threshold, we will shrink to fit stored blocks.
-    bool shrink_blocks = false;
-    Int64 memory_usage_before_adding_blocks = 0;
-
-    /// Peak of bytes observed during the build.
-    size_t peak_build_bytes = 0;
-
-    void updatePeakBuildBytes(size_t bytes) { peak_build_bytes = std::max(peak_build_bytes, bytes); }
-
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;
     /// False when the owner cannot consume key-only maps, whatever `canUseSetMaps` would otherwise say.
@@ -613,8 +548,6 @@ private:
     void dataMapInit(MapsVariant & map);
 
     void initRightBlockStructure(Block & saved_block_sample);
-
-    JoinResultPtr runJoinDispatch(ScatteredBlock block);
 
     bool preferUseMapsAll() const;
 

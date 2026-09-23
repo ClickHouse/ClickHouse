@@ -429,7 +429,7 @@ KeyGetter makeSectionKeyGetter(const ColumnRawPtrs & key_columns, const Sizes & 
 }
 
 /// Inserts one compact section - rows `[first_row, first_row + rows)` of the columns - into the shared
-/// table on behalf of the owner of `target.range_end`. Semantics match `insertFromBlockImplTypeCase`:
+/// table on behalf of the owner of `target.range_end`:
 /// one hash per build row, then the value shape's own append. The recorded ref comes from the
 /// scattered locator column, 8-byte encoded or 4-byte packed. On the single-partition path it is
 /// `RowRef(block_no, i)`, with `skip_bytes` excluding rows that must not be inserted.
@@ -605,10 +605,10 @@ void insertSectionFixed(
 }
 
 /// The Join table engine's insert of one stored block: `emplaceKey` per row. The first row of a key
-/// initializes the cell; every later row appends to its `RowRefList` (a `Batch` chain, as `HashJoin`
-/// builds it) or, under `any_take_last_row`, replaces its `RowRef`. Rows the null map skips are stored
-/// but never inserted. The table grows inside `emplace`. Returns whether a cell refers to the block,
-/// by `HashJoin`'s rule: a list-valued shape always does, a single-row one when a row was stored.
+/// initializes the cell; every later row appends to its `RowRefList` (a `Batch` chain)
+/// or, under `any_take_last_row`, replaces its `RowRef`. Rows the null map skips are stored
+/// but never inserted. The table grows inside `emplace`. Returns whether a cell refers to the block:
+/// a list-valued shape always does, a single-row one when a row was stored.
 template <typename KeyGetter, typename Table>
 bool insertJoinTableRows(
     Table & table,

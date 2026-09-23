@@ -362,7 +362,7 @@ private:
     /// Moves one fill block's stored form into the inner `HashJoin`'s block list and saves its null-key and
     /// filtered rows for RIGHT/FULL output. Returns whether a saved null map refers to the block.
     bool storeBlockInRowStore(FillBlock & fill);
-    /// A block that nothing refers to is not kept, as `HashJoin` does not keep it: `ANY` tables see
+    /// A block that nothing refers to is not kept: `ANY` tables see
     /// their repeated keys re-inserted without growing. Join-engine mode only.
     void dropLastStoredBlock();
     /// The saved-block form of one stored block, for the drains that hand blocks to another join.
@@ -402,8 +402,8 @@ private:
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
     size_t joinRightColumns(const Map & table, AddedColumnsType & added_columns, const ScatteredBlock & block, size_t lane);
 
-    /// The probe of a join with several ON clauses (`ON a OR b`), over one table per clause: the
-    /// multi-map loop of `HashJoin`, with the used flags kept per right-table row.
+    /// The probe of a join with several ON clauses (`ON a OR b`), over one table per clause, with the
+    /// used flags kept per right-table row.
     template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsShape, typename KeyGetter, typename Map, typename AddedColumnsType> // NOLINT(readability-identifier-naming)
     size_t joinRightColumns(const std::vector<const Map *> & tables, AddedColumnsType & added_columns, const ScatteredBlock & block);
 
