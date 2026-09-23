@@ -356,8 +356,8 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     static constexpr auto float_fmt = fast_float::chars_format::general | fast_float::chars_format::allow_leading_plus;
 
     /// Fast path (avoid copying) if the buffer has at least MAX_LENGTH bytes or the whole input is in memory.
-    /// isMemoryBuffer() is a cheap virtual call, replacing a per-value dynamic_cast.
-    if (likely(!buf.eof() && (buf.isMemoryBuffer() || buf.position() + MAX_LENGTH <= buf.buffer().end())))
+    /// The bounds check comes first, so the virtual isMemoryBuffer() is only called near the end of the buffer.
+    if (likely(!buf.eof() && (buf.position() + MAX_LENGTH <= buf.buffer().end() || buf.isMemoryBuffer())))
     {
         auto * initial_position = buf.position();
         auto * const buf_end = buf.buffer().end();
