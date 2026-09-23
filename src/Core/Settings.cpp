@@ -7138,6 +7138,9 @@ work across the two versions, with the old meaning on both sides.
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
 )", 0) \
+    DECLARE(Bool, optimize_correlated_scalar_aggregate_to_window, false, R"(
+Rewrite a correlated scalar aggregate subquery over a table that the enclosing query also reads into a window function over that table, instead of reading the table a second time.
+)", 0) \
     DECLARE(Bool, correlated_subqueries_substitute_equivalent_expressions, true, R"(
 Use filter expressions to inference equivalent expressions and substitute them instead of creating a CROSS JOIN.
 )", 0) \
