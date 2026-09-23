@@ -84,6 +84,39 @@ def get_error_counts_delta(before):
     return {name: value - before.get(name, 0) for name, value in after.items() if value != before.get(name, 0)}
 
 
+def replace_file_in_backup(bname, file_in_backup, transform):
+    """Replaces the content of `file_in_backup` in the backup `bname` on the "backups" disk with
+    `transform(original content)`, keeping the backup otherwise consistent."""
+    file_path = f"{BACKUPS_DISK_ROOT}/{bname}/{file_in_backup}"
+    backup_metadata_path = f"{BACKUPS_DISK_ROOT}/{bname}/.backup"
+    # Transfer the file base64-encoded: the helper strips the command output, and the byte-exact
+    # content is needed to find the file's entry in the backup metadata.
+    original = base64.b64decode(node.exec_in_container(["base64", "-w0", file_path], privileged=True, user="root"))
+    edited = transform(original)
+
+    # The backup's entry for the file must be re-pointed at the new size, so that the only thing wrong
+    # with the backup is the content of the file itself. The checksum is the key under which the backup
+    # looks the file up, not something it verifies against the content, so it is kept.
+    backup_metadata = node.exec_in_container(["cat", backup_metadata_path], privileged=True, user="root")
+    entry_match = re.search(
+        f"<name>{re.escape(file_in_backup)}</name><size>{len(original)}</size><checksum>[0-9a-f]+</checksum>", backup_metadata
+    )
+    assert entry_match, f"no entry for {file_in_backup} of size {len(original)} in {backup_metadata}"
+    original_entry = entry_match.group(0)
+    edited_entry = original_entry.replace(f"<size>{len(original)}</size>", f"<size>{len(edited)}</size>")
+    assert edited_entry != original_entry
+    node.exec_in_container(
+        [
+            "bash",
+            "-c",
+            f"echo -n '{base64.b64encode(edited).decode()}' | base64 -d > {file_path} && "
+            f"sed -i 's|{original_entry}|{edited_entry}|' {backup_metadata_path}",
+        ],
+        privileged=True,
+        user="root",
+    )
+
+
 def test_restore_table_with_broken_part(started_cluster):
     # Converted from stateless test 02864_restore_table_with_broken_part.sh.
     # In this test we restore from "backups/with_broken_part.zip".
@@ -399,37 +432,12 @@ def test_restore_part_written_by_newer_server(started_cluster):
     node.query(f"BACKUP TABLE tbl_newer_format TO Disk('backups', '{bname}')")
 
     # Rewrite the part's `serialization.json` inside the backup with an extra top-level field.
-    file_in_backup = f"data/default/tbl_newer_format/{part}/serialization.json"
-    file_path = f"{BACKUPS_DISK_ROOT}/{bname}/{file_in_backup}"
-    backup_metadata_path = f"{BACKUPS_DISK_ROOT}/{bname}/.backup"
-    # Transfer the file base64-encoded: the helper strips the command output, and the byte-exact
-    # content is needed to find the file's entry in the backup metadata.
-    original = base64.b64decode(node.exec_in_container(["base64", "-w0", file_path], privileged=True, user="root"))
-    edited_json = json.loads(original)
-    edited_json["field_added_by_a_newer_server"] = True
-    edited = json.dumps(edited_json).encode()
+    def add_unknown_field(original):
+        edited_json = json.loads(original)
+        edited_json["field_added_by_a_newer_server"] = True
+        return json.dumps(edited_json).encode()
 
-    # The backup's entry for the file must be re-pointed at the new size, so that the only thing wrong
-    # with the backup is the part format itself. The checksum is the key under which the backup looks
-    # the file up, not something it verifies against the content, so it is kept.
-    backup_metadata = node.exec_in_container(["cat", backup_metadata_path], privileged=True, user="root")
-    entry_match = re.search(
-        f"<name>{re.escape(file_in_backup)}</name><size>{len(original)}</size><checksum>[0-9a-f]+</checksum>", backup_metadata
-    )
-    assert entry_match, f"no entry for {file_in_backup} of size {len(original)} in {backup_metadata}"
-    original_entry = entry_match.group(0)
-    edited_entry = original_entry.replace(f"<size>{len(original)}</size>", f"<size>{len(edited)}</size>")
-    assert edited_entry != original_entry
-    node.exec_in_container(
-        [
-            "bash",
-            "-c",
-            f"echo -n '{base64.b64encode(edited).decode()}' | base64 -d > {file_path} && "
-            f"sed -i 's|{original_entry}|{edited_entry}|' {backup_metadata_path}",
-        ],
-        privileged=True,
-        user="root",
-    )
+    replace_file_in_backup(bname, f"data/default/tbl_newer_format/{part}/serialization.json", add_unknown_field)
 
     node.query("DROP TABLE tbl_newer_format SYNC")
     errors_before = get_error_counts()
@@ -444,6 +452,50 @@ def test_restore_part_written_by_newer_server(started_cluster):
     assert get_error_counts_delta(errors_before) == {"BACKUP_VERSION_NOT_SUPPORTED": 1}
 
     node.query("DROP TABLE IF EXISTS tbl_newer_format SYNC")
+    remove_from_backups_disk(bname)
+
+
+def test_restore_part_with_malformed_serialization_json(started_cluster):
+    # A truncated `serialization.json` fails in the JSON parser, before any `DB::Exception` exists
+    # (`Poco::JSON::JSONException`). It is damage of the backup all the same, so RESTORE must report
+    # `BACKUP_DAMAGED` rather than leak the raw parser error.
+    node.query("DROP TABLE IF EXISTS tbl_malformed_json SYNC")
+    node.query("CREATE TABLE tbl_malformed_json (x UInt64, s String) ENGINE = MergeTree ORDER BY x")
+    node.query("INSERT INTO tbl_malformed_json SELECT number, toString(number) FROM numbers(10)")
+
+    part = node.query(
+        "SELECT name FROM system.parts WHERE database = currentDatabase() AND table = 'tbl_malformed_json' AND active"
+    ).strip()
+    assert part, "no active part to address"
+
+    bname = "test_restore_part_with_malformed_serialization_json"
+    node.query(f"BACKUP TABLE tbl_malformed_json TO Disk('backups', '{bname}')")
+
+    # Keep the first half of the file: the JSON object is left unterminated.
+    replace_file_in_backup(bname, f"data/default/tbl_malformed_json/{part}/serialization.json", lambda original: original[: len(original) // 2])
+
+    node.query("DROP TABLE tbl_malformed_json SYNC")
+    errors_before = get_error_counts()
+
+    err = node.query_and_get_error(f"RESTORE TABLE tbl_malformed_json FROM Disk('backups', '{bname}')")
+    assert f"while restoring part {part}" in err
+    assert "Code: 601" in err
+    assert "BACKUP_DAMAGED" in err
+    assert get_error_counts_delta(errors_before) == {"BACKUP_DAMAGED": 1}
+
+    # Such a part is broken, so it can be restored as detached.
+    node.query("DROP TABLE IF EXISTS tbl_malformed_json SYNC")
+    result = node.query(
+        f"RESTORE TABLE tbl_malformed_json FROM Disk('backups', '{bname}') SETTINGS restore_broken_parts_as_detached = true"
+    )
+    assert result.split("\t")[1].strip() == "RESTORED"
+    assert node.query("SELECT count() FROM tbl_malformed_json") == "0\n"
+    assert (
+        node.query("SELECT reason FROM system.detached_parts WHERE database = 'default' AND table = 'tbl_malformed_json'")
+        == "broken-from-backup\n"
+    )
+
+    node.query("DROP TABLE IF EXISTS tbl_malformed_json SYNC")
     remove_from_backups_disk(bname)
 
 

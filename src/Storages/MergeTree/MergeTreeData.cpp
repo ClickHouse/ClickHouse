@@ -9678,9 +9678,14 @@ bool isDestinationSideError(const Exception & e)
 /// cannot be read: either it was written by a newer server whose format this one does not understand
 /// (`BACKUP_VERSION_NOT_SUPPORTED`), or its contents are malformed (`BACKUP_DAMAGED`).
 ///
+/// A failure that is not a `DB::Exception` has no code to reassign. If it comes from parsing the metadata
+/// of the part (e.g. `Poco::JSON::JSONException` or `Poco::BadCastException` for a truncated or malformed
+/// `serialization.json`), `error` is replaced with a fresh `BACKUP_DAMAGED` exception carrying its text.
+/// `Poco::IOException` describes the local filesystem, not the backup, and is left as is.
+///
 /// `in_local_step` is set if the failure happened in a step that only writes to the destination.
 /// Returns whether the failure is attributed to the part in the backup being broken.
-bool classifyAndRecordRestoreError(std::exception_ptr error, bool retryable, bool in_local_step)
+bool classifyAndRecordRestoreError(std::exception_ptr & error, bool retryable, bool in_local_step)
 {
     try
     {
@@ -9692,7 +9697,15 @@ bool classifyAndRecordRestoreError(std::exception_ptr error, bool retryable, boo
         /// this block only reaches into the exception object to assign and record its final code.
         Exception * e = current_exception_cast<Exception *>();
         if (!e)
-            return !retryable;
+        {
+            const auto * poco_exception = current_exception_cast<const Poco::Exception *>();
+            if (retryable || in_local_step || !poco_exception || dynamic_cast<const Poco::IOException *>(poco_exception))
+                return !retryable;
+
+            /// The constructor records the new exception in `system.errors`.
+            error = std::make_exception_ptr(Exception(ErrorCodes::BACKUP_DAMAGED, "{}", poco_exception->displayText()));
+            return true;
+        }
 
         bool part_is_broken = !retryable && !in_local_step && !isDestinationSideError(*e);
         if (part_is_broken)
