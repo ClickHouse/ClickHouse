@@ -30,9 +30,9 @@ from typing import Dict, List, Any, Optional, Tuple
 LOCALES = ('ar', 'es', 'fr', 'ja', 'ko', 'pt-BR', 'ru', 'zh')
 
 # Keep the legacy English NYC taxi tutorial as a direct-link compatibility
-# target for translated pages until their links are regenerated. It is not
-# rendered in the English quickstarts explorer.
-EXPLORER_EXCLUDED_QUICKSTART_IDS = {'tutorial'}
+# target for translated pages until their links are regenerated. It is neither
+# rendered in the English quickstarts explorer nor indexed by site search.
+ENGLISH_LEGACY_DIRECT_LINK_QUICKSTART_IDS = {'tutorial'}
 
 CLOUD_SETUP_CARD = {
     'id': 'create-your-first-service-on-cloud',
@@ -330,12 +330,12 @@ def generate_badges(use_cases: List[str], products: List[str]) -> str:
     return f'{first_line}\n<div className="mt-2 flex flex-wrap gap-2">\n{second_line}\n</div>'
 
 def update_quickstart_page(file_path: Path, use_cases: List[str], products: List[str],
-                           update_badges: bool) -> Optional[str]:
+                           update_badges: bool, searchable: bool) -> Optional[str]:
     """
     Normalize required frontmatter and optionally refresh the badge section.
 
     Returns the updated page content, or None when the badge block is already
-    up to date and `searchable: true` is already present. Nothing is written
+    up to date and the expected `searchable` value is already present. Nothing is written
     here: the caller stages the content and flushes it only after the whole
     scan has succeeded, so a failure on a later page cannot leave the tree
     half-regenerated.
@@ -345,29 +345,31 @@ def update_quickstart_page(file_path: Path, use_cases: List[str], products: List
         use_cases: List of use case tags
         products: List of product tags
         update_badges: Whether to refresh the English badge block
+        searchable: Whether to include the page in site search
     """
     with open(file_path, 'r', encoding='utf-8') as f:
         original = f.read()
 
     frontmatter_match = re.match(r'^---\s*\n(.*?)\n---\s*\n', original, re.DOTALL)
     if not frontmatter_match:
-        raise ValueError("no frontmatter block; cannot set `searchable: true`")
+        raise ValueError("no frontmatter block; cannot set `searchable`")
 
     frontmatter = frontmatter_match.group(1)
     searchable_lines = re.findall(r'^searchable:\s*.*$', frontmatter, re.MULTILINE)
     if len(searchable_lines) > 1:
         raise ValueError("multiple `searchable` frontmatter fields")
 
+    searchable_value = 'true' if searchable else 'false'
     if searchable_lines:
         frontmatter = re.sub(
-            r'^searchable:\s*.*$', 'searchable: true', frontmatter,
+            rf'^searchable:\s*.*$', f'searchable: {searchable_value}', frontmatter,
             count=1, flags=re.MULTILINE)
     else:
         frontmatter, replacements = re.subn(
-            r'(^sidebarTitle:.*$)', r'\1\nsearchable: true', frontmatter,
+            r'(^sidebarTitle:.*$)', rf'\1\nsearchable: {searchable_value}', frontmatter,
             count=1, flags=re.MULTILINE)
         if not replacements:
-            frontmatter = f'searchable: true\n{frontmatter}'
+            frontmatter = f'searchable: {searchable_value}\n{frontmatter}'
 
     content = (
         original[:frontmatter_match.start(1)]
@@ -458,7 +460,11 @@ def build_quickstarts(quickstarts_dir: Path, project_root: Path,
             seen_ids[data['id']] = file_path
 
             updated = update_quickstart_page(
-                file_path, data['useCases'], data['products'], update_badges)
+                file_path, data['useCases'], data['products'], update_badges,
+                searchable=not (
+                    update_badges
+                    and data['id'] in ENGLISH_LEGACY_DIRECT_LINK_QUICKSTART_IDS
+                ))
             if updated is not None:
                 staged[file_path] = updated
 
@@ -497,7 +503,7 @@ def main():
                    / 'quickstarts-data.jsx')
     explorer_quickstarts = [
         quickstart for quickstart in quickstarts
-        if quickstart['id'] not in EXPLORER_EXCLUDED_QUICKSTART_IDS
+        if quickstart['id'] not in ENGLISH_LEGACY_DIRECT_LINK_QUICKSTART_IDS
     ]
     staged[output_path] = render_data_module(explorer_quickstarts)
     print(f"✓ Staged {len(explorer_quickstarts)} quick-start(s) for {output_path}")

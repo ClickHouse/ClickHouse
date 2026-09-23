@@ -10,9 +10,11 @@ Eight checks (see docs/get-started/quickstarts/README.md for the authoring
 guide):
 
 1. Frontmatter metadata and badge markers. Every English and localized
-   quickstart page must declare `searchable: true`. Quickstart pages are not
-   included in any locale's sidebar, so this keeps them discoverable through
-   docs search. Every English quickstart must additionally declare `products`
+   quickstart page except the English legacy `tutorial` compatibility page
+   must declare `searchable: true`. The legacy page must declare
+   `searchable: false` so that it is available only to existing direct links.
+   Quickstart pages are not included in any locale's sidebar, so discoverable
+   pages need search indexing. Every English quickstart must additionally declare `products`
    (one or more of ALLOWED_PRODUCTS) and `useCases` (one or more of
    ALLOWED_USE_CASES). The QuickStartsGrid explorer filters match on slugs
    derived from the tag values, so an unknown value produces a card that no
@@ -80,6 +82,7 @@ ALLOWED_PRODUCTS = [
 ]
 SKIP_FILES = {"home.mdx", "README.md"}
 LOCALES = ["ar", "es", "fr", "ja", "ko", "pt-BR", "ru", "zh"]
+ENGLISH_LEGACY_DIRECT_LINK_QUICKSTART_IDS = {"tutorial"}
 CLOUD_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-cloud-quick-start"
 INSTALL_SIGNUP_URL = "https://clickhouse.cloud/signUp?loc=docs-install-page-banner"
 EXPECTED_LOCALIZED_HOMEPAGE_LINKS = 43
@@ -226,11 +229,15 @@ def check_searchable(docs_root: Path) -> list:
         if not m:
             errors.append(f"{name}: no frontmatter block")
             continue
-        if not re.search(r"^searchable:\s*true\s*$", m.group(1), re.M):
+        is_legacy_direct_link = (
+            page.parent == docs_root / "get-started" / "quickstarts"
+            and page.stem in ENGLISH_LEGACY_DIRECT_LINK_QUICKSTART_IDS
+        )
+        expected = "false" if is_legacy_direct_link else "true"
+        if not re.search(rf"^searchable:\s*{expected}\s*$", m.group(1), re.M):
             errors.append(
-                f"{name}: `searchable` frontmatter must be the boolean `true`; "
-                "quickstart pages are omitted from the sidebar and must remain "
-                "discoverable through docs search (run the quickstart generator)"
+                f"{name}: `searchable` frontmatter must be the boolean `{expected}`; "
+                "run the quickstart generator"
             )
     return errors
 
