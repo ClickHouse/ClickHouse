@@ -12,31 +12,24 @@
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesBase.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSamples.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesSlidingSum.h>
-#include <IO/ReadHelpers.h>
-#include <IO/WriteHelpers.h>
 
 #include <optional>
 
 namespace DB
 {
 
-namespace ErrorCodes
-{
-    extern const int INCORRECT_DATA;
-}
-
 /// `is_rate` divides the accumulated value by the window;
 /// `check_resets` counts resets and clamps extrapolation at zero.
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_, bool check_resets_>
+template <typename TimestampType_, typename ValueType_, bool is_rate_, bool check_resets_>
 struct AggregateFunctionTimeseriesExtrapolatedValueTraits
 {
     static constexpr bool is_rate = is_rate_;
     static constexpr bool check_resets = check_resets_;
-
-    using TimestampType = TimestampType_;
-    using IntervalType = IntervalType_;
+    using GridScaleTimestampType = DateTime64;
+    using GridScaleIntervalType = Decimal64;
     using ValueType = ValueType_;
-    using ResultType = ValueType_;
+    using TimestampType = TimestampType_;
+    using ResultType = Float64;
 
     static String getName()
     {
@@ -51,6 +44,7 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     using Samples = AggregateFunctionTimeseriesSamples<TimestampType, ValueType>;
 
     /// Summary of a bucket or of the whole window: first/last sample, count and reset adjustment.
+    /// The timestamps keep the type of the input columns, they are converted to the grid in `getResult`.
     struct Summary
     {
         TimestampType first_timestamp = 0;
@@ -102,22 +96,22 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
     /// sum in O(1) per bucket; `getResult` reads its first/last sample, count and resets.
     struct Aggregator
     {
-        AggregateFunctionTimeseriesSlidingSum<TimestampType, Summary> sliding_sum;
+        AggregateFunctionTimeseriesSlidingSum<Summary> sliding_sum;
 
         /// `Summary::merge` is order-dependent (not commutative), so it must take the invertible running-sum path,
         /// not the two-stacks path which combines values out of time order.
         static_assert(decltype(sliding_sum)::is_invertible);
 
-        IntervalType window;
-        TimestampType timestamp_scale_multiplier;
-        bool exact_rate = false;
+        GridScaleIntervalType window;
+        Int64 grid_ticks_per_second;
+        Int64 column_to_grid_multiplier;
 
-        Aggregator(IntervalType window_, TimestampType timestamp_scale_multiplier_, bool exact_rate_ = false)
-            : window(window_), timestamp_scale_multiplier(timestamp_scale_multiplier_), exact_rate(exact_rate_)
+        Aggregator(GridScaleIntervalType window_, Int64 grid_ticks_per_second_, Int64 column_to_grid_multiplier_)
+            : window(window_), grid_ticks_per_second(grid_ticks_per_second_), column_to_grid_multiplier(column_to_grid_multiplier_)
         {
         }
 
-        void add(const Samples & samples, TimestampType bucket_end_timestamp)
+        void add(const Samples & samples, GridScaleTimestampType bucket_end_timestamp)
         {
             Summary summary;
             samples.forEachSample([&summary](TimestampType timestamp, ValueType value)
@@ -139,129 +133,74 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
             add(std::move(summary), bucket_end_timestamp);
         }
 
-        void add(Summary summary, TimestampType bucket_end_timestamp)
+        void add(Summary summary, GridScaleTimestampType bucket_end_timestamp)
         {
             if (summary.count == 0)
                 return;
             sliding_sum.add(std::move(summary), bucket_end_timestamp);
         }
 
-        void removeBefore(TimestampType cut_off)
+        void removeBefore(GridScaleTimestampType cut_off)
         {
             sliding_sum.removeBefore(cut_off);
         }
 
-#pragma clang diagnostic push
-#pragma clang diagnostic ignored "-Wdouble-promotion"
-        std::optional<ValueType> getResult(TimestampType grid_timestamp) const
+        std::optional<ResultType> getResult(GridScaleTimestampType grid_timestamp) const
         {
             const Summary combined = sliding_sum.getCurrentSum();
-
-            if (exact_rate)
-            {
-                if (combined.count == 0)
-                    return std::nullopt;
-
-                const auto & last_removed = sliding_sum.getLastRemoved();
-                const TimestampType last_timestamp = combined.last_timestamp;
-                const ValueType last_value = combined.last_value;
-                const Float64 total_resets = combined.resets;
-
-                // Check if last_removed sample is valid and within staleness window.
-                bool has_prev = false;
-                ValueType prev_value = 0;
-                TimestampType prev_timestamp = 0;
-
-                if (last_removed.has_value())
-                {
-                    const auto & prev_summary = last_removed->second;
-                    // Subtract in Int128 for the same reason as the boundary arithmetic below.
-                    const Int128 sample_ts = static_cast<Int128>(static_cast<Int64>(prev_summary.last_timestamp));
-                    const Int128 window_128 = static_cast<Int128>(static_cast<Int64>(window));
-                    const Int128 cut_off_ts = static_cast<Int128>(static_cast<Int64>(grid_timestamp)) - window_128;
-                    if (sample_ts <= cut_off_ts && (cut_off_ts - sample_ts) <= window_128)
-                    {
-                        has_prev = true;
-                        prev_timestamp = prev_summary.last_timestamp;
-                        prev_value = prev_summary.last_value;
-                    }
-                }
-
-                Float64 value_difference = 0.0;
-                if (has_prev)
-                {
-                    const TimestampType time_difference = last_timestamp - prev_timestamp;
-                    if (time_difference == 0)
-                        return std::nullopt;
-
-                    Float64 resets_from_prev = (check_resets && prev_value > combined.first_value)
-                        ? static_cast<Float64>(prev_value) : 0.0;
-                    value_difference = last_value - prev_value + total_resets + resets_from_prev;
-                }
-                else
-                {
-                    if (combined.count < 2)
-                        return std::nullopt;
-
-                    const TimestampType time_difference = last_timestamp - combined.first_timestamp;
-                    if (time_difference == 0)
-                        return std::nullopt;
-
-                    value_difference = last_value - combined.first_value + total_resets;
-                }
-
-                Float64 factor = 1.0;
-                if constexpr (is_rate)
-                    factor = static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
-
-                value_difference *= factor;
-                return static_cast<ValueType>(value_difference);
-            }
 
             /// Need at least two samples to calculate the rate or delta.
             if (combined.count < 2)
                 return std::nullopt;
 
-            const TimestampType first_timestamp = combined.first_timestamp;
-            const ValueType first_value = combined.first_value;
-            const TimestampType last_timestamp = combined.last_timestamp;
-            const ValueType last_value = combined.last_value;
+            const Int64 first_timestamp = static_cast<Int64>(combined.first_timestamp);
+            const Float64 first_value = static_cast<Float64>(combined.first_value);
+            const Int64 last_timestamp = static_cast<Int64>(combined.last_timestamp);
+            const Float64 last_value = static_cast<Float64>(combined.last_value);
             const UInt64 total_count = combined.count;
             const Float64 total_resets = combined.resets;
 
-            /// Extrapolation logic follows Prometheus' rate calculation (Apache 2.0).
-            const TimestampType time_difference = last_timestamp - first_timestamp;
+            /// The extrapolation logic is copied from Prometheus' rate calculation
+            /// (https://github.com/prometheus/prometheus/blob/5e124cf4f2b9467e4ae1c679840005e727efd599/promql/functions.go#L127),
+            /// licensed under the Apache License 2.0.
+
+            /// The timestamps of the samples have the scale of the input columns, the calculations below use the scale of the grid.
+            /// The difference of two timestamps in a window fits Int64 at the scale of the grid because the window does.
+            const GridScaleIntervalType time_difference = (last_timestamp - first_timestamp) * column_to_grid_multiplier;
             if (time_difference == 0)
                 return std::nullopt;
 
             Float64 value_difference = last_value - first_value + total_resets;
 
-            // Duration between first/last samples and boundary of range. Subtract in Int128
-            // to avoid signed overflow and Float64 precision loss with large timestamps.
+            // Duration between first/last samples and boundary of range. Subtract in `Int128` first to avoid
+            // both signed overflow on `grid_timestamp - window` and `Float64` precision loss when timestamps
+            // are large (e.g. `DateTime64(9)` near present-day epoch ~1.7e18).
             Float64 duration_to_start = static_cast<Float64>(
-                static_cast<Int128>(static_cast<Int64>(first_timestamp))
+                static_cast<Int128>(first_timestamp) * column_to_grid_multiplier
                 - static_cast<Int128>(static_cast<Int64>(grid_timestamp))
                 + static_cast<Int128>(static_cast<Int64>(window)));
             Float64 duration_to_end = static_cast<Float64>(
                 static_cast<Int128>(static_cast<Int64>(grid_timestamp))
-                - static_cast<Int128>(static_cast<Int64>(last_timestamp)));
+                - static_cast<Int128>(last_timestamp) * column_to_grid_multiplier);
 
-            const auto sampled_interval = time_difference;
-            const Float64 average_duration_between_samples = static_cast<Float64>(sampled_interval) / static_cast<Float64>(total_count - 1);
+            const Float64 average_duration_between_samples = static_cast<Float64>(time_difference) / static_cast<Float64>(total_count - 1);
 
-            // Extrapolate to boundary if samples are close enough (within 10% of avg duration);
-            // otherwise extrapolate by half of the average duration between samples.
+            // If samples are close enough to the (lower or upper) boundary of the range, we extrapolate the
+            // rate all the way to the boundary in question. "Close enough" is up to 10% more than the average
+            // duration between samples within the range; otherwise we extrapolate by only half of the average
+            // duration between samples (our guess for where the series actually starts or ends).
             const auto extrapolation_threshold = average_duration_between_samples * 1.1;
-            Float64 extrapolate_to_interval = static_cast<Float64>(sampled_interval);
+            Float64 extrapolate_to_interval = static_cast<Float64>(time_difference);
 
             if (duration_to_start >= extrapolation_threshold)
                 duration_to_start = average_duration_between_samples / 2;
 
             if (check_resets && value_difference > 0 && first_value >= 0)
             {
-                // Counters cannot be negative; extrapolate zero point if closer than
-                // duration_to_start, avoiding extrapolation to negative counter values.
-                Float64 duration_to_zero = static_cast<Float64>(sampled_interval) * (first_value / value_difference);
+                // Counters cannot be negative. If we have any slope at all we can extrapolate the zero point
+                // of the counter; if that is closer than duration_to_start, take it as the start, avoiding
+                // extrapolation to negative counter values.
+                Float64 duration_to_zero = static_cast<Float64>(time_difference) * (first_value / value_difference);
                 duration_to_start = std::min(duration_to_zero, duration_to_start);
             }
 
@@ -271,142 +210,58 @@ struct AggregateFunctionTimeseriesExtrapolatedValueTraits
                 duration_to_end = average_duration_between_samples / 2;
             extrapolate_to_interval += duration_to_end;
 
-            Float64 factor = extrapolate_to_interval / static_cast<Float64>(sampled_interval);
+            Float64 factor = extrapolate_to_interval / static_cast<Float64>(time_difference);
 
             if constexpr (is_rate)
-                factor = factor * static_cast<Float64>(timestamp_scale_multiplier) / static_cast<Float64>(window);
+                factor = factor * static_cast<Float64>(grid_ticks_per_second) / static_cast<Float64>(window);
 
             value_difference *= factor;
 
-            return static_cast<ValueType>(value_difference);
+            return value_difference;
         }
-#pragma clang diagnostic pop
     };
 
     /// The bucket stores raw samples; the aggregator's `add(const Samples &)` preaggregates them into a `Summary`.
     using Bucket = Samples;
 
-    static constexpr UInt16 FORMAT_VERSION = 4;
+    static constexpr UInt16 FORMAT_VERSION = 5;
 };
 
 
 /// Aggregate function to calculate extrapolated values (rate, increase and delta) of timeseries on the specified grid
-template <typename TimestampType_, typename IntervalType_, typename ValueType_, bool is_rate_, bool check_resets_>
+template <typename TimestampType_, typename ValueType_, bool is_rate_, bool check_resets_>
 class AggregateFunctionTimeseriesExtrapolatedValue final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesExtrapolatedValue<TimestampType_, IntervalType_, ValueType_, is_rate_, check_resets_>,
-        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_, check_resets_>>
+        AggregateFunctionTimeseriesExtrapolatedValue<TimestampType_, ValueType_, is_rate_, check_resets_>,
+        AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, ValueType_, is_rate_, check_resets_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, IntervalType_, ValueType_, is_rate_, check_resets_>;
+    using Traits = AggregateFunctionTimeseriesExtrapolatedValueTraits<TimestampType_, ValueType_, is_rate_, check_resets_>;
 
     static constexpr bool is_rate = Traits::is_rate;
     static constexpr bool check_resets = Traits::check_resets;
-
-    using TimestampType = typename Traits::TimestampType;
-    using IntervalType = typename Traits::IntervalType;
+    using GridScaleTimestampType = typename Traits::GridScaleTimestampType;
     using ValueType = typename Traits::ValueType;
     using Aggregator = typename Traits::Aggregator;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesExtrapolatedValue, Traits>;
-    bool exact_rate = false;
-
-    static bool extractExactRate(const Array & parameters_, bool fallback)
-    {
-        if (parameters_.size() >= 5)
-        {
-            if (UInt64 val = 0; parameters_[4].tryGet(val))
-                return val != 0;
-            if (Int64 val = 0; parameters_[4].tryGet(val))
-                return val != 0;
-        }
-        return fallback;
-    }
-
-    AggregateFunctionTimeseriesExtrapolatedValue(
-        const DataTypes & argument_types_,
-        const Array & parameters_,
-        TimestampType start_,
-        TimestampType end_,
-        IntervalType step_,
-        IntervalType window_,
-        UInt32 scale_,
-        bool exact_rate_ = false)
-        : Base(argument_types_, parameters_, start_, end_, step_, window_, scale_)
-        , exact_rate(extractExactRate(parameters_, exact_rate_))
-    {
-    }
-
-    /// The mode is resolved from a setting, so it cannot be folded into the parameters: the factory
-    /// requires `getParameters()` to equal what it was handed, or an attached table would reconstruct
-    /// a different type than its metadata records. Compare it here instead, so a state built in one
-    /// mode is never accepted by a function built in the other and finalized with the wrong meaning.
-    bool haveSameStateRepresentationImpl(const IAggregateFunction & rhs) const override
-    {
-        const auto * other = typeid_cast<const AggregateFunctionTimeseriesExtrapolatedValue *>(&rhs);
-        if (!other || other->exact_rate != exact_rate)
-            return false;
-        return Base::haveSameStateRepresentationImpl(rhs);
-    }
+    using Base::Base;
 
     Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return Aggregator{Base::window, Base::timestamp_scale_multiplier, exact_rate};
-    }
-
-    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
-    {
-        if (exact_rate)
-        {
-            writeBinaryLittleEndian(UInt16(5), buf);
-            writeBinaryLittleEndian(UInt8(1), buf);
-            this->serializeBuckets(place, buf);
-        }
-        else
-        {
-            writeBinaryLittleEndian(UInt16(4), buf);
-            this->serializeBuckets(place, buf);
-        }
-    }
-
-    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
-    {
-        UInt16 format_version = 0;
-        readBinaryLittleEndian(format_version, buf);
-
-        if (format_version == 5)
-        {
-            UInt8 state_exact_rate = 0;
-            readBinaryLittleEndian(state_exact_rate, buf);
-            if (static_cast<bool>(state_exact_rate) != exact_rate)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot deserialize timeSeries*ToGrid state: state was created with exact_rate={} but function has exact_rate={}",
-                    static_cast<bool>(state_exact_rate), exact_rate);
-            this->deserializeBuckets(place, buf);
-        }
-        else if (format_version == 4)
-        {
-            if (exact_rate)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Cannot deserialize timeSeries*ToGrid state: legacy format version 4 does not support promql_exact_rate = 1");
-            this->deserializeBuckets(place, buf);
-        }
-        else
-        {
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot deserialize data with unexpected format version {}", format_version);
-        }
+        return Aggregator{Base::window, Base::grid_ticks_per_second, Base::column_to_grid_multiplier};
     }
 };
 
-/// Each SQL function as a 3-argument template with its `is_rate` / `check_resets` variant baked in, so
+/// Each SQL function as a template with its `is_rate` / `check_resets` variant baked in, so
 /// registration names the function directly.
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesRateToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, /* is_rate = */ true, /* check_resets = */ true>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesRateToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, ValueType, /* is_rate = */ true, /* check_resets = */ true>;
 
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesIncreaseToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, /* is_rate = */ false, /* check_resets = */ true>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesIncreaseToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, ValueType, /* is_rate = */ false, /* check_resets = */ true>;
 
-template <typename TimestampType, typename IntervalType, typename ValueType>
-using AggregateFunctionTimeseriesDeltaToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, IntervalType, ValueType, /* is_rate = */ false, /* check_resets = */ false>;
+template <typename TimestampType, typename ValueType>
+using AggregateFunctionTimeseriesDeltaToGrid = AggregateFunctionTimeseriesExtrapolatedValue<TimestampType, ValueType, /* is_rate = */ false, /* check_resets = */ false>;
 
 }

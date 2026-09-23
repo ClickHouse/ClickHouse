@@ -2,37 +2,10 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.h>
-#include <Core/Settings.h>
 
 
 namespace DB
 {
-
-namespace ErrorCodes
-{
-    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-}
-
-namespace Setting
-{
-    extern const SettingsBool promql_exact_rate;
-}
-
-static std::pair<Array, bool> parseTimeseriesExtrapolatedParameters(
-    const String & name, const Array & parameters, const Settings * settings)
-{
-    if (parameters.size() != 4 && parameters.size() != 5)
-        throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
-            "Aggregate function {} requires 4 or 5 parameters: start_timestamp, end_timestamp, step, window[, exact_rate]", name);
-
-    bool exact_rate = false;
-    if (parameters.size() == 5)
-        exact_rate = extractTimeseriesIntParameter(name, "exact_rate", parameters[4]) != 0;
-    else
-        exact_rate = settings && (*settings)[Setting::promql_exact_rate];
-
-    return {parameters, exact_rate};
-}
 
 void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesExtrapolatedValue(AggregateFunctionFactory & factory)
@@ -53,15 +26,14 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesRateToGrid = R"(
-timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness[, exact_rate])(timestamp, value)
-timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness[, exact_rate])(samples)
+timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesRateToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesRateToGrid = {
-        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"exact_rate", "Optional flag to calculate rate without boundary extrapolation. If omitted, uses the `promql_exact_rate` setting.", {"UInt8", "UInt32", "UInt64"}}
+        {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesRateToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
@@ -93,9 +65,9 @@ FROM
 );
         )",
         R"(
-┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                         │
-└────────────────────────────────────────────────────────────────────────────────────────┘
+┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)──┐
+│ [NULL,NULL,0,0.06666666666666667,0.1,0.05555555555555555,NULL,NULL,0.08333333333333333] │
+└─────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     },
     {
@@ -113,7 +85,7 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
         )",
         R"(
 ┌─timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.06666667,0.1,0.055555556,NULL,NULL,0.083333336]                           │
+│ [NULL,NULL,0,0.06666666666666667,0.1,0.05555555555555555,NULL,NULL,0.08333333333333333]  │
 └──────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
@@ -125,14 +97,12 @@ SELECT timeSeriesRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(time
     factory.registerFunction("timeSeriesRateToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            auto [parameters_with_exact, exact_rate] = parseTimeseriesExtrapolatedParameters(name, parameters, settings);
-            auto make_function = [&argument_types, parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
-                TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, IntervalType, ValueType>>(
-                    argument_types, parameters_with_exact, start, end, step, window, scale, exact_rate);
+                return std::make_shared<AggregateFunctionTimeseriesRateToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters_with_exact, settings, make_function);
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
         documentation_timeSeriesRateToGrid});
 
@@ -154,15 +124,14 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesIncreaseToGrid = R"(
-timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness[, exact_rate])(timestamp, value)
-timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness[, exact_rate])(samples)
+timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesIncreaseToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesIncreaseToGrid = {
-        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"exact_rate", "Optional flag to calculate increase without boundary extrapolation. If omitted, uses the `promql_exact_rate` setting.", {"UInt8", "UInt32", "UInt64"}}
+        {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesIncreaseToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
@@ -226,14 +195,12 @@ SELECT timeSeriesIncreaseToGrid(start_ts, end_ts, step_seconds, window_seconds)(
     factory.registerFunction("timeSeriesIncreaseToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            auto [parameters_with_exact, exact_rate] = parseTimeseriesExtrapolatedParameters(name, parameters, settings);
-            auto make_function = [&argument_types, parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
-                TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, IntervalType, ValueType>>(
-                    argument_types, parameters_with_exact, start, end, step, window, scale, exact_rate);
+                return std::make_shared<AggregateFunctionTimeseriesIncreaseToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters_with_exact, settings, make_function);
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
         documentation_timeSeriesIncreaseToGrid});
 
@@ -254,15 +221,14 @@ This function is in private preview, enable it by setting `enable_time_series_ag
 </Warning>
     )";
     FunctionDocumentation::Syntax syntax_timeSeriesDeltaToGrid = R"(
-timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness[, exact_rate])(timestamp, value)
-timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness[, exact_rate])(samples)
+timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(timestamp, value)
+timeSeriesDeltaToGrid(start_timestamp, end_timestamp, grid_step, staleness)(samples)
     )";
     FunctionDocumentation::Parameters parameters_timeSeriesDeltaToGrid = {
-        {"start_timestamp", "Specifies start of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"end_timestamp", "Specifies end of the grid. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
-        {"grid_step", "Specifies step of the grid in seconds. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. With a `DateTime64` timestamp argument it can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
-        {"exact_rate", "Optional flag to calculate delta without boundary extrapolation. If omitted, uses the `promql_exact_rate` setting.", {"UInt8", "UInt32", "UInt64"}}
+        {"start_timestamp", "Specifies start of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"end_timestamp", "Specifies end of the grid. It can also be a fractional number, or a string containing a number or a date-time text.", {"UInt32", "DateTime", "DateTime64", "Float*", "Decimal*", "String"}},
+        {"grid_step", "Specifies step of the grid in seconds. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}},
+        {"staleness", "Specifies the maximum staleness in seconds of the considered samples. The staleness window is a left-open and right-closed interval. It can also be a fractional number, or a string containing a number or a duration like '15s' or '1m'.", {"UInt32", "Float*", "Decimal*", "String"}}
     };
     FunctionDocumentation::Arguments arguments_timeSeriesDeltaToGrid = {
         {"timestamp", "Timestamp of the sample. Can be individual values or arrays.", {"UInt32", "DateTime", "DateTime64", "Array(UInt32)", "Array(DateTime)", "Array(DateTime64)"}},
@@ -327,14 +293,12 @@ SELECT timeSeriesDeltaToGrid(start_ts, end_ts, step_seconds, window_seconds)(tim
     factory.registerFunction("timeSeriesDeltaToGrid",
         {[](const String & name, const DataTypes & argument_types, const Array & parameters, const Settings * settings) -> AggregateFunctionPtr
         {
-            auto [parameters_with_exact, exact_rate] = parseTimeseriesExtrapolatedParameters(name, parameters, settings);
-            auto make_function = [&argument_types, parameters_with_exact, exact_rate]<typename TimestampType, typename IntervalType, typename ValueType>(
-                TimestampType start, TimestampType end, IntervalType step, IntervalType window, UInt32 scale) -> AggregateFunctionPtr
+            assertTimeseriesParametersCount(name, parameters, 4, "start_timestamp, end_timestamp, step, window");
+            auto make_function = [&]<typename TimestampType, typename ValueType>(DateTime64 start, DateTime64 end, Decimal64 step, Decimal64 window, UInt32 grid_scale, UInt32 column_timestamp_scale) -> AggregateFunctionPtr
             {
-                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, IntervalType, ValueType>>(
-                    argument_types, parameters_with_exact, start, end, step, window, scale, exact_rate);
+                return std::make_shared<AggregateFunctionTimeseriesDeltaToGrid<TimestampType, ValueType>>(argument_types, parameters, start, end, step, window, grid_scale, column_timestamp_scale);
             };
-            return createAggregateFunctionTimeseries(name, argument_types, parameters_with_exact, settings, make_function);
+            return createAggregateFunctionTimeseries(name, argument_types, parameters, settings, make_function);
         },
         documentation_timeSeriesDeltaToGrid});
 }
