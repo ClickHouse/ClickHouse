@@ -31,10 +31,12 @@
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
 #include <Common/re2.h>
+#include <Common/StringUtils.h>
 
 #include <Poco/AccessExpireCache.h>
 #include <boost/algorithm/string/join.hpp>
 #include <boost/algorithm/string/trim.hpp>
+#include <algorithm>
 #include <filesystem>
 #include <atomic>
 #include <functional>
@@ -102,6 +104,14 @@ namespace
             return names;
         }
 
+        auto count_non_whitespace = [](const String & text)
+        {
+            return static_cast<size_t>(std::ranges::count_if(text, [](char c) { return !isWhitespaceASCII(c); }));
+        };
+
+        /// Text of the <function> elements, to compare with the text of the whole section below.
+        size_t function_elements_text_size = 0;
+
         for (const auto & key : keys)
         {
             if (key != "function" && !key.starts_with("function["))
@@ -111,11 +121,24 @@ namespace
                     key,
                     prefix);
 
+            function_elements_text_size += count_non_whitespace(config.getRawString(prefix + "." + key, ""));
+
             String name = config.getString(prefix + "." + key);
             boost::trim(name);
             if (!name.empty())
                 names.push_back(std::move(name));
         }
+
+        /// `keys` lists only child elements, so a name written as bare text next to them, as in
+        /// `hex <function>decrypt</function>`, would be dropped and `hex` left unprotected. The text
+        /// of an element includes the text of all its children, so any text that is not accounted
+        /// for by the <function> elements sits directly in the section.
+        if (count_non_whitespace(config.getRawString(prefix, "")) != function_elements_text_size)
+            throw Exception(
+                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                "Function names in {} must be listed as <function> elements, found text outside of them",
+                prefix);
+
         return names;
     }
 

@@ -921,8 +921,9 @@
                  <function>tryDecrypt</function>
                  <function>aes_decrypt_mysql</function>
              </functions_requiring_grant>
-             Every name goes in its own <function> element; a bare list as the element's own
-             text, or any child element other than <function>, is an error.
+             Every name goes in its own <function> element; any text outside of them (a bare
+             list, or a name next to <function> elements), or any child element other than
+             <function>, is an error.
         -->
         <functions_requiring_grant></functions_requiring_grant>
 

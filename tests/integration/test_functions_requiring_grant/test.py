@@ -283,6 +283,11 @@ BAD_CONFIGS = [
         "Unknown element 'functoin'",
         id="misspelled_element",
     ),
+    pytest.param(
+        "hex <function>decrypt</function>",
+        "found text outside of them",
+        id="text_next_to_function_elements",
+    ),
 ]
 
 
