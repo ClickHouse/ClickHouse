@@ -15,6 +15,8 @@ Conditions: __table1.a1 > __table2.lo AND __table1.a1 < __table2.hi
 79	1028580
 -- plain group by: propagated ranges still choose by selectivity
 Conditions: __table1.a1 < __table2.b1 AND __table1.a3 < __table2.b3
+-- NULL-heavy grouped key: input NULL fraction is not propagated
+Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 -- grouping sets: generated default keys make ranges non-representative
 Conditions: __table1.a1 < __table2.b1 AND __table1.a2 < __table2.b2
 -- overflow rows: generated default keys make ranges non-representative
