@@ -10,6 +10,8 @@ set optimize_aggregation_in_order = 0;
 set max_block_size = 65505;
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
+set min_rows_per_stream_for_gradual_resize = 0;
+set min_bytes_per_stream_for_gradual_resize = 0;
 
 -- The pipeline shape depends on the exact thread count;
 -- disable the free-memory limiter to keep `max_threads` as set in the queries.

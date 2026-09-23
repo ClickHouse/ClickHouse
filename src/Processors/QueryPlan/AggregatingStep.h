@@ -26,6 +26,14 @@ bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys,
 /// the key's name, the sort would order by something the heap never ranked and pruning could drop real winners.
 bool isSortKeyPassThrough(const ActionsDAG & dag, const String & name);
 
+/// Whether every one of `keys` is semantically a constant in `dag`: a folded constant, or a constant
+/// wrapped in `materialize` (possibly nested, possibly through aliases). Such an aggregation produces a
+/// single group even though the key columns in the pipeline header are not `ColumnConst` - `materialize`
+/// deliberately strips constness - so callers of `AggregatingStep` use it to keep the strict pre-aggregation
+/// resize for queries like `GROUP BY materialize(1)` (see `markGroupByKeysSemanticallyConstant`).
+/// Best-effort: an expression over a materialized constant (e.g. `materialize(1) + 0`) is not recognized.
+bool allAggregationKeysAreSemanticallyConstant(const ActionsDAG & dag, const Names & keys);
+
 class AggregatingProjectionStep;
 
 /// Aggregation. See AggregatingTransform.
@@ -91,6 +99,33 @@ public:
     void applyTopKOptimization(Aggregator::Params::TopKParams top_k);
     bool memoryBoundMergingWillBeUsed() const;
     void skipMerging() { skip_merging = true; }
+    /// The caller determined (from the pre-aggregation actions DAG, before `materialize` strips constness -
+    /// see `allAggregationKeysAreSemanticallyConstant`) that every `GROUP BY` key is a constant, so the
+    /// aggregation produces a single group and the gradual pre-aggregation resize must not be used.
+    /// Preserved by `clone` and by the query plan serialization round-trip, so that a plan copied
+    /// by the cascades optimizer or shipped to a shard keeps the decision, but dropped by
+    /// `rebaseOntoInput`, which replaces the very key set the decision was made for. A peer that predates the
+    /// serialized bit simply ignores it and falls back to the header-based `ColumnConst` check,
+    /// which affects only the choice between the strict and the gradual resize.
+    void markGroupByKeysSemanticallyConstant() { group_by_keys_semantically_constant = true; }
+    /// The step is the pre-aggregation stage of an ordinary `GROUP BY` planned from a user query, which is the
+    /// only surface that `min_rows_per_stream_for_gradual_resize` / `min_bytes_per_stream_for_gradual_resize`
+    /// are documented to affect. `AggregatingStep` is also built by ClickHouse itself for internal
+    /// aggregations (the deduplication of `FINAL` in `LazyReadReplacingFinalSource`, merge-only steps over
+    /// aggregate projections or Cascades pushdown); those keep the strict resize because the bit is never set on
+    /// them. The decorrelation of a correlated subquery rebuilds the user's step with the correlated columns
+    /// appended to the keys and carries the bit over: that is still the user's `GROUP BY`. Preserved by `clone` and by the query plan
+    /// serialization round-trip, exactly like `markGroupByKeysSemanticallyConstant`, but dropped by `rebaseOntoInput`:
+    /// Cascades pushdown clones the user's step and rebases the clone onto the join keys, and that clone is an
+    /// internal aggregation. A plan from a peer that predates the serialized bit keeps the strict resize.
+    void enableGradualResize() { gradual_resize_enabled = true; }
+    bool isGradualResizeEnabled() const { return gradual_resize_enabled; }
+    /// The source storage reads evenly into its streams (`IStorage::hasEvenlyDistributedRead`), so the step
+    /// plans no pre-aggregation resize at all and the gradual/strict choice never arises for it. Code that
+    /// rebuilds the step without this property (the decorrelation, the plan deserialization) must not carry
+    /// the gradual-resize bit over from such a step: the rebuilt copy does reach the resize branch, and the
+    /// settings are documented to ignore evenly distributed sources.
+    bool storageHasEvenlyDistributedRead() const { return storage_has_evenly_distributed_read; }
     /// `prefix_columns` is the number of leading columns of the group-by sort description
     /// the query is ordered by; the in-order streams may stop only at a boundary of them.
     void setLimitHint(size_t limit, size_t prefix_columns)
@@ -172,6 +207,8 @@ private:
     size_t merge_threads;
     size_t temporary_data_merge_threads;
     bool skip_merging = false; // if we aggregate partitioned data merging is not needed
+    bool group_by_keys_semantically_constant = false; /// See `markGroupByKeysSemanticallyConstant`.
+    bool gradual_resize_enabled = false; /// See `enableGradualResize`.
 
     bool storage_has_evenly_distributed_read;
     bool group_by_use_nulls;

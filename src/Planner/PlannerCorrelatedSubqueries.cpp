@@ -943,6 +943,16 @@ QueryPlan decorrelateQueryPlan(
             aggeregating_step->explicitSortingRequired()
         );
         result_step->setStepDescription(*aggeregating_step);
+        /// This is still the user's `GROUP BY`, only with the correlated columns appended to its keys, so it keeps
+        /// the gradual pre-aggregation resize the planner chose for it. The semantic constness of the keys is not
+        /// carried over: the key set has just changed, and the correlated columns are never constant.
+        /// The step is rebuilt with `storage_has_evenly_distributed_read = false` above (the decorrelated input is
+        /// a join, not the original storage), so it reaches the pre-aggregation resize branch even when the
+        /// original step skipped it. An evenly distributed source (`Memory`, `numbers_mt`, ...) is documented to
+        /// ignore the gradual-resize thresholds, so do not carry the bit over from such a step: the rebuilt copy
+        /// then keeps the strict resize it builds today, exactly like the plan serialization does.
+        if (aggeregating_step->isGradualResizeEnabled() && !aggeregating_step->storageHasEvenlyDistributedRead())
+            result_step->enableGradualResize();
 
         decorrelated_query_plan.addStep(std::move(result_step));
 

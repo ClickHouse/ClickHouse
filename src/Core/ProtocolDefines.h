@@ -125,7 +125,13 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Version 21 introduces serialization version 1 of `AggregatingStep`, which adds a second flags byte
+/// carrying `group_by_keys_semantically_constant` (bit 1), which keeps the gradual pre-aggregation
+/// resize off for `GROUP BY materialize(1)`-like keys on the shard, and `gradual_resize_enabled`
+/// (bit 2), which keeps it on for the pre-aggregation of a user `GROUP BY` only. A stream towards an
+/// older peer stays at step version 0 and carries neither bit; that peer falls back to the
+/// header-based check and to the strict resize.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -177,6 +183,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First global query-plan version that writes version 1 of `Aggregating`, which adds a second flags
+/// byte whose bit 1 is `group_by_keys_semantically_constant` and whose bit 2 is
+/// `gradual_resize_enabled`. Not gated by throwing: an older peer gets the step at version 0, without
+/// the byte, and falls back to the header-based constness check and to the strict pre-aggregation
+/// resize.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
