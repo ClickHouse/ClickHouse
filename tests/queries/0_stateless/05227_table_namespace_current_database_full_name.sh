@@ -4,7 +4,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The current database keeps the full name selected by USE ("db.ns", "db.ns.sub") for logs,
+# The current database keeps the full name selected by USE ("db.ns", "db.ns.sub") for logs and
 # cache keys, while currentDatabase() reports the physical database.
 # A quoted dotted database name is a plain database and is never split.
 
