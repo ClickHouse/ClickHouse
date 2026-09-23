@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # Tags: long, no-fasttest, no-parallel, no-object-storage, no-random-settings, no-flaky-check
+# Tag no-flaky-check: the test reads through the shared `s3_cache`, `local_cache` and `azure_cache` caches
+# and expects exact cache hit/miss sequences. Repeated runs start while background merges of `test.hits_s3`
+# are still writing through `s3_cache` with `cache_on_write_operations`, which fills the whole cache with
+# non-releasable segments, so reads bypass the cache or re-download.
 
 # set -x
 

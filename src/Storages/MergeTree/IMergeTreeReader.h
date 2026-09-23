@@ -125,8 +125,8 @@ public:
     const RangesInDataPartReadHints & getReadHints() const { return read_hints; }
 
 protected:
-    /// Creates a context copy with experimental settings enabled and the enable_analyzer setting
-    /// propagated. Used when compiling default or virtual-column expressions at read time.
+    /// Creates a context copy with experimental settings enabled.
+    /// Used when compiling default or virtual-column expressions at read time.
     ContextPtr createContextForDefaultExpressions() const;
 
     /// Builds a ColumnsDescription that includes both the storage metadata columns and any virtual

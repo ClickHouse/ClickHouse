@@ -23,6 +23,7 @@
 #include <IO/ReadBufferFromFileDecorator.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/FileEncryptionCommon.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
 #include <Common/CurrentThread.h>
@@ -273,8 +274,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::build() const
     if (auto pipeline_buf = tryBuildReaderExecutor(query_id))
         return pipeline_buf;
 
+    /// Resolved on this thread for the same reason as `query_id` above.
+    QueryStatusPtr query_status;
+    if (source->read_settings.remote_fs_settings.interruptible_reads)
+    {
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+    }
+
     auto impl = gather
-        ? buildGatherStage(query_id)
+        ? buildGatherStage(query_id, query_status)
         : buildSingleObjectStage(query_id);
 
     impl = wrapMemoryCache(std::move(impl));
@@ -360,6 +369,16 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     }
     else if (const auto * obj_src = std::get_if<ObjectStorageSource>(&source->source))
     {
+        /// The executor has no interruption point, so serving this read would silently drop
+        /// the caller's opt-in. Fall back to the gather path, which honors it.
+        if (settings.remote_fs_settings.interruptible_reads)
+        {
+            LOG_DEBUG(log,
+                "use_reader_executor: falling back to the legacy read path "
+                "(interruptible reads not yet supported by the executor)");
+            return nullptr;
+        }
+
         LOG_DEBUG(log, "build: using ReaderExecutor for object storage, {} objects, gather={}",
             source->objects.size(), gather);
         source_reader = std::make_shared<ObjectStorageSourceReader>(obj_src->storage, settings);
@@ -520,7 +539,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::tryBuildReaderExecutor(con
     return std::make_unique<PipelineReadBuffer>(std::move(executor), settings.reader_executor.hold_consumed);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std::string & query_id) const
+std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
+    const std::string & query_id, const QueryStatusPtr & query_status) const
 {
     const auto & settings = source->read_settings;
 
@@ -635,7 +655,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         /// Copy, not move: fallback may be called multiple times (e.g. after
         /// connection pool exhaustion on different read ranges).
         auto fallback_creator = [gather_creator, objects = source->objects,
-                                 captured_settings = settings]() mutable
+                                 captured_settings = settings, query_status]() mutable
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
             auto creator_copy = gather_creator;
@@ -644,7 +664,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
                 objects,
                 captured_settings.remote_fs_settings.min_bytes_for_seek,
                 /* use_external_buffer */ true,
-                /* buffer_size */ 0);
+                /* buffer_size */ 0,
+                query_status);
         };
 
         auto impl = DistributedCache::readWithDistributedCache(
@@ -665,7 +686,8 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(const std
         source->objects,
         settings.remote_fs_settings.min_bytes_for_seek,
         use_external_buffer,
-        buffer_size);
+        buffer_size,
+        query_status);
 }
 
 std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(const std::string & query_id) const
