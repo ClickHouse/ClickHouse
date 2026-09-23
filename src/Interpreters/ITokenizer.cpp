@@ -87,6 +87,7 @@ String JSONPathValuesTokenizer::getDescription() const
     append_array(result, path_matcher->getSkipPathRegexps());
     result += "])";
     return result;
+}
 
 String ITokenizer::formatTokenForLogs(std::string_view token) const
 {
