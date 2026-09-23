@@ -9,6 +9,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
 #include <Interpreters/SelectQueryOptions.h>
+#include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TranslateQualifiedNamesVisitor.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -36,6 +37,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool skip_unavailable_shards;
@@ -107,7 +109,16 @@ void IStorageCluster::read(
     SharedHeader sample_block;
     ASTPtr query_to_send = query_info.query;
 
-    sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query_info.query, context, SelectQueryOptions(processed_stage));
+    }
+    else
+    {
+        auto interpreter = InterpreterSelectQuery(query_info.query, context, SelectQueryOptions(processed_stage).analyze());
+        sample_block = interpreter.getSampleBlock();
+        query_to_send = interpreter.getQueryInfo().query->clone();
+    }
 
     updateQueryToSendIfNeeded(query_to_send, storage_snapshot, context);
 
@@ -196,9 +207,6 @@ void ReadFromCluster::initializePipeline(QueryPipelineBuilder & pipeline, const 
             shard_info.pool);
 
         remote_query_executor->setLogger(log);
-        /// The cluster of a *Cluster function uses every replica as a shard, so `shard_num`
-        /// identifies the fan-out entry rather than a shard of the original cluster definition.
-        remote_query_executor->setShardScope({storage->getClusterName(), shard_info.shard_num});
         Pipe pipe{std::make_shared<RemoteSource>(
             remote_query_executor,
             add_agg_info,

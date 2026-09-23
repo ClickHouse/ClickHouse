@@ -21,12 +21,12 @@ namespace ErrorCodes
     extern const int INCORRECT_DATA;
 }
 
-template <typename TimestampType_, typename ValueType_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 struct AggregateFunctionTimeseriesToGridSparseTraits
 {
-    using GridScaleTimestampType = DateTime64;
-    using ValueType = ValueType_;
     using TimestampType = TimestampType_;
+    using IntervalType = IntervalType_;
+    using ValueType = ValueType_;
     using ResultType = ValueType_;
 
     static String getName()
@@ -98,27 +98,21 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
     struct Aggregator
     {
         Summary latest;
-        Int64 column_to_grid_multiplier;
 
-        explicit Aggregator(Int64 column_to_grid_multiplier_)
-            : column_to_grid_multiplier(column_to_grid_multiplier_)
-        {
-        }
-
-        void add(const Summary & summary, GridScaleTimestampType /*bucket_end_timestamp*/)
+        void add(const Summary & summary, TimestampType /*bucket_end_timestamp*/)
         {
             /// Buckets arrive in ascending time order, so a populated bucket's sample is newer than the kept one;
             /// `merge` keeps the newer sample and ignores an empty bucket.
             latest.merge(summary);
         }
 
-        void removeBefore(GridScaleTimestampType cut_off)
+        void removeBefore(TimestampType cut_off)
         {
-            if (latest.has_value && static_cast<Int64>(latest.first) * column_to_grid_multiplier <= cut_off)
+            if (latest.has_value && latest.first <= cut_off)
                 latest = Summary{};
         }
 
-        std::optional<ResultType> getResult(GridScaleTimestampType /*grid_timestamp*/) const
+        std::optional<ValueType> getResult(TimestampType /*grid_timestamp*/) const
         {
             if (!latest.has_value)
                 return std::nullopt;
@@ -129,27 +123,27 @@ struct AggregateFunctionTimeseriesToGridSparseTraits
     /// Resample keeps no preaggregated summary - the bucket (its newest sample) is fed to the aggregator as-is.
     using Bucket = Summary;
 
-    static constexpr UInt16 FORMAT_VERSION = 5;
+    static constexpr UInt16 FORMAT_VERSION = 4;
 };
 
 
 /// Aggregate function to convert timeseries to the specified grid with staleness
 /// Missing values are filled with NULLs
-template <typename TimestampType_, typename ValueType_>
+template <typename TimestampType_, typename IntervalType_, typename ValueType_>
 class AggregateFunctionTimeseriesToGridSparse final :
     public AggregateFunctionTimeseriesBase<
-        AggregateFunctionTimeseriesToGridSparse<TimestampType_, ValueType_>,
-        AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, ValueType_>>
+        AggregateFunctionTimeseriesToGridSparse<TimestampType_, IntervalType_, ValueType_>,
+        AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, IntervalType_, ValueType_>>
 {
 public:
-    using Traits = AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, ValueType_>;
+    using Traits = AggregateFunctionTimeseriesToGridSparseTraits<TimestampType_, IntervalType_, ValueType_>;
 
     using Base = AggregateFunctionTimeseriesBase<AggregateFunctionTimeseriesToGridSparse, Traits>;
     using Base::Base;
 
     typename Traits::Aggregator createAggregator(size_t /* stack_size_for_two_stacks */) const
     {
-        return typename Traits::Aggregator{Base::column_to_grid_multiplier};
+        return {};
     }
 };
 

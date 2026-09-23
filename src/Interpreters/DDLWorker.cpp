@@ -1496,12 +1496,6 @@ void DDLWorker::markReplicasActive(bool reinitialized)
                 }
 
                 auto code = zookeeper->tryRemove(active_path, stat.version);
-                if (code == Coordination::Error::ZBADVERSION)
-                {
-                    // The node was rewritten after it was read, so the check above no longer describes it.
-                    LOG_TRACE(log, "Loopback host {} was rewritten while it was being claimed, skipping it", host_id);
-                    continue;
-                }
                 if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
                     throw Coordination::Exception::fromPath(code, active_path);
             }

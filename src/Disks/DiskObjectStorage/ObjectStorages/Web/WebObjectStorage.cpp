@@ -273,7 +273,7 @@ void WebObjectStorage::removeObjectsIfExist( /// NOLINT
     throwNotAllowed();
 }
 
-void WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
+String WebObjectStorage::copyObject(const StoredObject &, const StoredObject &, const ReadSettings &, const WriteSettings &, std::optional<ObjectAttributes>) // NOLINT
 {
     throwNotAllowed();
 }
@@ -289,11 +289,6 @@ void WebObjectStorage::startup()
 ObjectStorageKeyGeneratorPtr WebObjectStorage::createKeyGenerator() const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "createKeyGenerator is not supported for {}", getName());
-}
-
-ObjectStoragePtr WebObjectStorage::cloneImpl() const
-{
-    return std::make_shared<WebObjectStorage>(url_shards, getContext(), headers, max_directories_to_read);
 }
 
 ObjectMetadata WebObjectStorage::getObjectMetadata(const std::string & path, bool with_tags) const

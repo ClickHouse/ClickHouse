@@ -71,7 +71,7 @@
 #include <Interpreters/MergeTreeTransaction/VersionMetadataOnDisk.h>
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PartLog.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Planner/TableExpressionData.h>
@@ -142,7 +142,6 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/FailPoint.h>
 #include <Common/Increment.h>
-#include <base/sleep.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/ProfileEventsScope.h>
@@ -205,7 +204,6 @@ namespace fs = std::filesystem;
 namespace ProfileEvents
 {
     extern const Event RejectedInserts;
-    extern const Event SystemPartsEnumerationSlowdownSleeps;
     extern const Event DelayedInserts;
     extern const Event DelayedInsertsMilliseconds;
     extern const Event InsertedWideParts;
@@ -251,6 +249,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsBool allow_drop_detached;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_full_text_index;
     extern const SettingsBool allow_non_metadata_alters;
     extern const SettingsBool allow_suspicious_indices;
@@ -266,6 +265,8 @@ namespace Setting
     extern const SettingsMaxThreads max_threads;
     extern const SettingsUInt64 number_of_mutations_to_delay;
     extern const SettingsUInt64 number_of_mutations_to_throw;
+    extern const SettingsBool parallel_replicas_for_non_replicated_merge_tree;
+    extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsUInt64 dead_blobs_to_delay_insert;
     extern const SettingsUInt64 dead_blobs_to_throw_insert;
     extern const SettingsUInt64 parts_to_delay_insert;
@@ -380,10 +381,6 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
-    extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
-    extern const MergeTreeSettingsMergeTreeObjectSerializationVersion object_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
-    extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -398,7 +395,6 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char claim_inject_stale_part_dir[];
-    extern const char slowdown_system_parts_enumeration[];
 }
 
 namespace ErrorCodes
@@ -447,7 +443,6 @@ namespace ErrorCodes
     extern const int FAULT_INJECTED;
     extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int TABLE_SIZE_LIMIT_EXCEEDED;
-    extern const int ILLEGAL_PROJECTION;
 }
 
 namespace FailPoints
@@ -1037,45 +1032,6 @@ static void checkKeyExpression(const ExpressionActions & expr, const Block & sam
     }
 }
 
-/// A function that opts out of constant folding may do context-dependent work (an access check, a remote
-/// call) before it looks at the row count, and the expression here was analyzed with the context of the user
-/// running the DDL rather than the storage's, so probing such an expression could answer a different question.
-static bool indexExpressionMayBeProbed(const IndexDescription & index)
-{
-    if (!index.expression)
-        return false;
-
-    for (const auto & node : index.expression->getActionsDAG().getNodes())
-        if (node.type == ActionsDAG::ActionType::FUNCTION
-            && (!node.function_base || !node.function_base->isSuitableForConstantFolding()))
-            return false;
-
-    return true;
-}
-
-static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & index)
-{
-    if (!indexExpressionMayBeProbed(index))
-        return {};
-
-    try
-    {
-        Block header;
-        for (const auto & column : index.expression->getRequiredColumnsWithTypes())
-            header.insert({column.type->createColumn(), column.type, column.name});
-
-        /// The same dry run a merge performs: it rebuilds this expression's AST under the storage
-        /// context and hands the result to `ExpressionTransform::transformHeader`, which is this call.
-        index.expression->getActionsDAG().updateHeader(header);
-    }
-    catch (...)
-    {
-        return std::current_exception();
-    }
-
-    return {};
-}
-
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
@@ -1242,29 +1198,6 @@ void MergeTreeData::checkProperties(
                 if (!attach && !allow_minmax_index_for_json)
                     checkMinMaxIndexForJSON(index);
                 MergeTreeIndexFactory::instance().validate(index, attach, *getSettings());
-
-                /// An index the server generates from a setting is not the user's declaration, so it
-                /// must not be the reason a statement is refused; `addImplicitIndicesForColumn` drops
-                /// one it cannot validate instead of failing the statement.
-                if (!attach && !index.isImplicitlyCreated())
-                {
-                    if (auto failure = tryEvaluateIndexExpression(index))
-                    {
-                        const IndexDescription * old_index = nullptr;
-                        /// The create path and the projection recursion pass the same metadata object as both
-                        /// arguments, so an index found there is the one being declared and nothing can be inherited.
-                        /// Definitions are not compared: `RENAME COLUMN` rewrites an index's AST without redeclaring it.
-                        if (&old_metadata != &new_metadata)
-                            for (const auto & candidate : old_metadata.secondary_indices)
-                                if (candidate.name == index.name)
-                                    old_index = &candidate;
-
-                        const bool inherited = old_index && tryEvaluateIndexExpression(*old_index);
-
-                        if (!inherited)
-                            std::rethrow_exception(failure);
-                    }
-                }
             }
             catch (Exception & e)
             {
@@ -1622,12 +1555,7 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
-        {
             columns = partition_key.expression->getRequiredColumnsWithTypes();
-            /// Min-max index slots are addressed by position and a loaded part keeps the order it was
-            /// built with, so this order must not follow the mutable table column order.
-            columns.sort();
-        }
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
@@ -2237,11 +2165,8 @@ std::optional<UInt64> MergeTreeData::totalRowsByPartitionPredicateImpl(
     if (!filter_dag)
         return {};
 
-    /// Generate valid expressions for filtering.
-    /// The surviving rows are mapped back to parts by their name, so a physical column named
-    /// `_part` shadowing the virtual one - which leaves it out of the block, see
-    /// `getHeaderWithVirtualsForFilter` - makes the filtering by virtual columns unavailable.
-    bool valid = virtual_columns_block.has("_part");
+    /// Generate valid expressions for filtering
+    bool valid = true;
     for (const auto * input : filter_dag->getInputs())
         if (!virtual_columns_block.has(input->result_name))
             valid = false;
@@ -2366,11 +2291,11 @@ void MergeTreeData::PartLoadingTree::add(const MergeTreePartInfo & info, const S
                 return RollbackStatus::Committed;
 
             /// On-disk CSN is unresolved — consult TransactionLog (mirrors VersionMetadata::tryGetCSN).
-            csn = TransactionManager::getCSN(version_info.creation_tid);
+            csn = TransactionLog::getCSN(version_info.creation_tid);
             if (!csn
-                && TransactionManager::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
+                && TransactionLog::instance().tryGetRunningTransaction(version_info.creation_tid.getHash()) == nullptr)
             {
-                csn = TransactionManager::getCSN(version_info.creation_tid);  /// re-check after the race window
+                csn = TransactionLog::getCSN(version_info.creation_tid);  /// re-check after the race window
                 if (!csn)
                     return RollbackStatus::RolledBack;
             }
@@ -2623,7 +2548,7 @@ static void preparePartForRemoval(const MergeTreeMutableDataPartPtr & part)
     if (!current_version_info.isRemoved())
     {
         TransactionInfoContext transaction_context{part->storage.getStorageID(), part->name};
-        part->version->setAndStoreNonTransactionalRemovalTID(LockKind::REMOVAL, transaction_context);
+        part->version->setAndStoreNonTransactionalRemovalTID(transaction_context);
     }
 }
 
@@ -4795,7 +4720,7 @@ size_t MergeTreeData::clearEmptyParts()
 
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
             if (!part->version->getInfo().creation_tid.isNonTransactional()
-                && !part->version->isVisible(TransactionManager::instance().getLatestSnapshot()))
+                && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -6290,35 +6215,6 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         local_context->checkMergeTreeSettingsConstraints(
             *settings_from_storage, alter_effective_settings->changesFrom(*settings_from_storage));
 
-    /// Shared Catalog replays every ALTER on its replicas too, and marks such a replay in the client
-    /// info rather than in a ZooKeeper metadata transaction.
-    bool is_secondary_replay = is_replay_on_another_replica;
-#if CLICKHOUSE_CLOUD
-    if (local_context->getClientInfo().is_shared_catalog_internal && !SharedDatabaseCatalog::isInitialQuery(local_context))
-        is_secondary_replay = true;
-#endif
-
-    /// A declaration that could not be analyzed is not in the analyzed set the checks below iterate, so an ALTER
-    /// that invalidates it (dropping or retyping a column it uses) would be accepted and then persisted next to a
-    /// table it no longer matches. `DROP PROJECTION` and `CLEAR PROJECTION` share a command type and cannot do that.
-    if (!is_secondary_replay && new_metadata.projections.hasUnavailable())
-    {
-        for (const auto & command : commands)
-        {
-            if (command.type == AlterCommand::DROP_PROJECTION)
-                continue;
-
-            throw Exception(
-                ErrorCodes::ILLEGAL_PROJECTION,
-                "Cannot ALTER table {}: projection {} is declared but could not be analyzed when the table was loaded, "
-                "so this ALTER cannot be validated against it. The server log records why. Removing that cause and "
-                "restarting the server may make the projection usable again; otherwise drop the declaration with "
-                "ALTER TABLE ... DROP PROJECTION",
-                getStorageID().getNameForLogs(),
-                fmt::join(new_metadata.projections.getUnavailableNames(), ", "));
-        }
-    }
-
     checkProperties(new_metadata, old_metadata, false, false, allow_nullable_key, local_context, alter_effective_settings.get());
     checkTTLExpressions(new_metadata, old_metadata);
 
@@ -7239,7 +7135,7 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
     NonTransactionalRemovalLocks removal_locks;
     for (const DataPartPtr & part : remove)
         if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, LockKind::REMOVAL, removal_locks);
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, removal_locks);
     removal_locks.store();
 
     for (const DataPartPtr & part : remove)
@@ -8208,19 +8104,7 @@ void MergeTreeData::delayInsertOrThrowIfNeeded(Poco::Event * until, const Contex
             dead_blobs_over_threshold = dead_blobs_count - dead_blobs_to_delay_insert + 1;
     }
 
-    size_t parts_count_in_partition = 0;
-    size_t size_of_partition = 0;
-    {
-        /// Smallest threshold that could trigger a throw or delay.
-        /// A zero parts_to_throw_insert means "throw on any part", so treat it as 1 to never skip.
-        UInt64 min_enabled_threshold = active_parts_to_throw_insert > 0 ? active_parts_to_throw_insert : 1;
-        if (active_parts_to_delay_insert > 0)
-            min_enabled_threshold = std::min(min_enabled_threshold, static_cast<UInt64>(active_parts_to_delay_insert));
-
-        /// If total number of parts is less than minimal threshold, avoid iterating over parts under lock
-        if (parts_count_in_total >= min_enabled_threshold)
-            std::tie(parts_count_in_partition, size_of_partition) = getMaxPartsCountAndSizeForPartition();
-    }
+    auto [parts_count_in_partition, size_of_partition] = getMaxPartsCountAndSizeForPartition();
     size_t average_part_size = parts_count_in_partition ? size_of_partition / parts_count_in_partition : 0;
     size_t active_parts_over_threshold = 0;
 
@@ -10143,102 +10027,17 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// rewritten to literals on the initiator passes this check naturally. A function unknown
     /// to the factory (e.g. a user-defined function) is conservatively treated as
     /// non-deterministic.
-    /// A column definition is only followed once: the definitions form a directed acyclic graph,
-    /// but a diamond-shaped one (`c2 ALIAS c1 + c1`, `c3 ALIAS c2 + c2`, ...) would otherwise be
-    /// walked an exponential number of times. It doubles as a backstop against a cycle in
-    /// hand-edited metadata.
-    NameSet followed_column_definitions;
-    /// The parameters of the lambdas enclosing the node being visited. A lambda keeps its
-    /// parameters as plain identifiers in the AST, and inside its body such a name shadows a
-    /// storage column of the same name, so it must not be mistaken for that column.
-    std::vector<String> lambda_parameters;
     auto contains_nondeterministic_function = [&](const ASTPtr & ast, const auto & self) -> bool
     {
-        if (const auto * function = ast->as<ASTFunction>())
+        /// Being deterministic for a lambda expression is completely determined by the
+        /// contents of its definition, so just proceed to the children.
+        if (const auto * function = ast->as<ASTFunction>(); function && function->name != "lambda")
         {
-            /// Being deterministic for a lambda expression is completely determined by the
-            /// contents of its definition, so just proceed to the body, remembering the
-            /// parameters it binds. The parameter list itself contains only identifiers.
-            if (function->name == "lambda")
-            {
-                if (function->arguments && function->arguments->children.size() == 2)
-                {
-                    const auto & arguments = function->arguments->children;
-                    const size_t enclosing_parameters = lambda_parameters.size();
-                    const auto & parameters = arguments[0];
-                    if (const auto * parameters_tuple = parameters->as<ASTFunction>(); parameters_tuple && parameters_tuple->arguments)
-                    {
-                        for (const auto & parameter : parameters_tuple->arguments->children)
-                            if (const auto * parameter_identifier = parameter->as<ASTIdentifier>())
-                                lambda_parameters.push_back(parameter_identifier->name());
-                    }
-                    else if (const auto * parameter_identifier = parameters->as<ASTIdentifier>())
-                    {
-                        lambda_parameters.push_back(parameter_identifier->name());
-                    }
+            if (!FunctionFactory::instance().has(function->name))
+                return true;
 
-                    const bool body_is_nondeterministic = self(arguments[1], self);
-                    lambda_parameters.resize(enclosing_parameters);
-                    return body_is_nondeterministic;
-                }
-            }
-            else
-            {
-                if (!FunctionFactory::instance().has(function->name))
-                    return true;
-
-                if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
-                    return true;
-            }
-        }
-
-        /// A non-deterministic function can also hide inside a column's own expression. The analysis
-        /// below resolves an `ALIAS` column against the storage - that is deliberate - so `now` inside
-        /// such a definition is folded here just the same, while the asynchronous execution re-expands
-        /// the definition and evaluates it again, later.
-        ///
-        /// Only a read-time carrier is re-expanded: `QueryAnalyzer` attaches an expression to `ALIAS`
-        /// columns alone, while a stored `DEFAULT`/`MATERIALIZED` column is read as it was written, so
-        /// its definition cannot diverge between this analysis and the execution and following it
-        /// would only lose pruning for a perfectly safe predicate. `EPHEMERAL` is a computed carrier
-        /// just like `ALIAS`, so it is followed for symmetry.
-        if (const auto * identifier = ast->as<ASTIdentifier>())
-        {
-            /// The identifier is the raw text of the predicate, so the column can be spelled
-            /// qualified (`db.table.column`) or addressed through a subcolumn (`column.subcolumn`),
-            /// while `getDefault` is keyed by the bare storage column name. Look up every
-            /// contiguous range of the name parts: an accidental match with an unrelated column of
-            /// that name only costs a pruning opportunity, whereas a miss hides the very expression
-            /// this check exists to find.
-            /// A name bound by an enclosing lambda (`arrayExists(x -> x = 1, arr)`) is that lambda's
-            /// parameter, or a subcolumn of it, and never a storage column - even if a column of the
-            /// same name exists.
-            const auto & name_parts = identifier->name_parts;
-            const bool is_lambda_parameter = !name_parts.empty()
-                && std::ranges::find(lambda_parameters, name_parts.front()) != lambda_parameters.end();
-            for (size_t begin = 0; !is_lambda_parameter && begin < name_parts.size(); ++begin)
-            {
-                String candidate;
-                for (size_t end = begin; end < name_parts.size(); ++end)
-                {
-                    if (end > begin)
-                        candidate += ".";
-                    candidate += name_parts[end];
-
-                    if (!followed_column_definitions.emplace(candidate).second)
-                        continue;
-
-                    auto column_default = metadata_snapshot->getColumns().getDefault(candidate);
-                    if (!column_default || !column_default->expression)
-                        continue;
-
-                    if (column_default->kind != ColumnDefaultKind::Alias && column_default->kind != ColumnDefaultKind::Ephemeral)
-                        continue;
-
-                    if (self(column_default->expression, self))
-                        return true;
-                }
-            }
+            if (!FunctionFactory::instance().get(function->name, query_context)->isDeterministic())
+                return true;
         }
 
         return std::ranges::any_of(ast->children, [&](const auto & child) { return self(child, self); });
@@ -10252,7 +10051,8 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// same context the commands will be interpreted in. An ALTER mutation does not run with the
     /// submitting session's context: the background worker builds a fresh context from the
     /// background context (`MutatePlainMergeTreeTask::createTaskContext`,
-    /// `MutateFromLogEntryTask::prepare`), so session-only settings do not propagate to the
+    /// `MutateFromLogEntryTask::prepare`), so session-only settings - most importantly the
+    /// analyzer selection consulted by `shouldUseAnalyzerForMutations` - do not propagate to the
     /// execution. Derive the analysis context the same way, so that the pruning analysis and the
     /// asynchronous execution cannot diverge. A lightweight update, on the contrary, interprets
     /// its commands in the foreground with the submitting context
@@ -10283,6 +10083,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     std::optional<ActionsDAG> actions_dag;
     const ActionsDAG::Node * predicate_node = nullptr;
 
+    if (shouldUseAnalyzerForMutations(execution_context))
     {
         auto expression = buildQueryTree(predicate_clone, execution_context);
 
@@ -10334,6 +10135,35 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
         if (actions_dag->getOutputs().size() != 1)
             return std::nullopt;
         predicate_node = actions_dag->getOutputs().front();
+    }
+    else
+    {
+        /// Every column the mutation predicate may legally reference must be known here, otherwise
+        /// this analysis throws on a predicate the mutation itself accepts. `getAll` adds the
+        /// `ALIAS` and `EPHEMERAL` columns on top of the physical ones; the virtual columns
+        /// (e.g. `_part`, `_partition_id`) are available during mutation execution too.
+        /// A column that is not part of the partition key simply makes the expression opaque to
+        /// `PartitionPruner`, which then keeps the partition - it does not have to be readable here.
+        auto columns = metadata_snapshot->getColumns().getAll();
+
+        NameSet column_names;
+        for (const auto & column : columns)
+            column_names.insert(column.name);
+        for (const auto & column : metadata_snapshot->virtuals)
+        {
+            if (!column_names.contains(column.name))
+                columns.emplace_back(column.name, column.type);
+        }
+
+        TreeRewriter tree_rewriter(execution_context);
+        auto syntax_result = tree_rewriter.analyze(predicate_clone, columns);
+        actions_dag.emplace(ExpressionAnalyzer(predicate_clone, syntax_result, execution_context).getActionsDAG(false));
+
+        /// The predicate output is the node matching the predicate expression name.
+        /// `getActionsDAG` may include input columns in the outputs list, so we need
+        /// to find the correct node by name.
+        String predicate_column_name = predicate_clone->getColumnName();
+        predicate_node = actions_dag->tryFindInOutputs(predicate_column_name);
     }
 
     if (!predicate_node)
@@ -10469,40 +10299,10 @@ std::unordered_set<String> MergeTreeData::getAllPartitionIds() const
     return res;
 }
 
-namespace
-{
-
-/// Test-only instrumentation, a no-op unless the `slowdown_system_parts_enumeration` failpoint
-/// is enabled, and even then it only affects the tables with a special name prefix, so that the
-/// tests using the failpoint do not affect concurrent queries over the tables of other tests.
-/// When active, the parts-snapshot walks below sleep on every enumerated element and poll
-/// `need_stop` on every element instead of every 8192, so a test with a fixture of a reasonable
-/// size can prove with a timed assertion that the walk itself honors `need_stop` (reaching the
-/// regular polling cadence would require a fixture with many thousands of parts).
-bool isPartsSnapshotSlowdownActive(const StorageID & storage_id)
-{
-    bool active = false;
-    fiu_do_on(FailPoints::slowdown_system_parts_enumeration,
-    {
-        active = storage_id.table_name.starts_with("t_slowdown_system_parts_snap");
-    });
-    return active;
-}
-
-void sleepForPartsSnapshotSlowdown()
-{
-    ProfileEvents::increment(ProfileEvents::SystemPartsEnumerationSlowdownSleeps);
-    sleepForMilliseconds(500);
-}
-
-}
-
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, const DataPartsAnyLock & /*lock*/, DataPartStateVector * out_states) const
 {
     DataPartsVector res;
     DataPartsVector buf;
-    bool stopped = false;
-    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
 
     for (auto state : affordable_states)
     {
@@ -10511,44 +10311,8 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
             auto range = getDataPartsStateRange(state, kind);
             std::swap(buf, res);
             res.clear();
-
-            if (need_stop || slowdown)
-            {
-                /// Merge manually instead of std::merge to be able to check `need_stop`
-                /// periodically during the walk (the ranges can be arbitrarily large).
-                auto it = range.begin();
-                auto buf_it = buf.begin();
-                size_t counter = 0;
-                while (it != range.end() || buf_it != buf.end())
-                {
-                    ++counter;
-                    if (slowdown)
-                        sleepForPartsSnapshotSlowdown();
-                    if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
-                    {
-                        stopped = true;
-                        break;
-                    }
-
-                    if (it == range.end())
-                        res.push_back(*buf_it++);
-                    else if (buf_it == buf.end() || !LessDataPart()(*buf_it, *it))
-                        res.push_back(*it++);
-                    else
-                        res.push_back(*buf_it++);
-                }
-            }
-            else
-            {
-                std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
-            }
-
-            if (stopped)
-                break;
+            std::merge(range.begin(), range.end(), buf.begin(), buf.end(), std::back_inserter(res), LessDataPart());
         }
-
-        if (stopped)
-            break;
     }
 
     if (out_states != nullptr)
@@ -10561,10 +10325,10 @@ MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
+MergeTreeData::DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsKinds & affordable_kinds, DataPartStateVector * out_states) const
 {
     auto lock = readLockParts();
-    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states, need_stop);
+    return getDataPartsVectorForInternalUsage(affordable_states, affordable_kinds, lock, out_states);
 }
 
 DataPartsVector MergeTreeData::getDataPartsVectorForInternalUsage(const DataPartStates & affordable_states, const DataPartsAnyLock & lock, DataPartStateVector * out_states) const
@@ -10615,34 +10379,19 @@ DataPartsVector MergeTreeData::getPatchPartsVectorForPartition(const String & pa
     return getPatchPartsVectorForPartition(partition_id, lock);
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForInternalUsage(const DataPartStates & affordable_states, DataPartStateVector * out_states) const
 {
     auto lock = readLockParts();
     ProjectionPartsVector res;
-    size_t counter = 0;
-    bool stopped = false;
-    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (auto state : affordable_states)
     {
         auto range = getDataPartsStateRange(state);
         for (const auto & part : range)
         {
-            ++counter;
-            if (slowdown)
-                sleepForPartsSnapshotSlowdown();
-            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
-            {
-                stopped = true;
-                break;
-            }
-
             res.data_parts.push_back(part);
             for (const auto & [_, projection_part] : part->getProjectionParts())
                 res.projection_parts.push_back(projection_part);
         }
-
-        if (stopped)
-            break;
     }
 
     if (out_states != nullptr)
@@ -10655,29 +10404,11 @@ MergeTreeData::ProjectionPartsVector MergeTreeData::getProjectionPartsVectorForI
     return res;
 }
 
-MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
+MergeTreeData::DataPartsVector MergeTreeData::getAllDataPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     DataPartsVector res;
     auto lock = readLockParts();
-    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
-    if (need_stop || slowdown)
-    {
-        res.reserve(data_parts_by_info.size());
-        size_t counter = 0;
-        for (const auto & part : data_parts_by_info)
-        {
-            ++counter;
-            if (slowdown)
-                sleepForPartsSnapshotSlowdown();
-            if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
-                break;
-            res.push_back(part);
-        }
-    }
-    else
-    {
-        res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
-    }
+    res.assign(data_parts_by_info.begin(), data_parts_by_info.end());
     if (out_states != nullptr)
     {
         out_states->resize(res.size());
@@ -10740,20 +10471,12 @@ bool MergeTreeData::areAsynchronousInsertsEnabled() const
     return (*getSettings())[MergeTreeSetting::async_insert];
 }
 
-MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states, const std::function<bool()> & need_stop) const
+MergeTreeData::ProjectionPartsVector MergeTreeData::getAllProjectionPartsVector(MergeTreeData::DataPartStateVector * out_states) const
 {
     ProjectionPartsVector res;
     auto lock = readLockParts();
-    size_t counter = 0;
-    const bool slowdown = isPartsSnapshotSlowdownActive(getStorageID());
     for (const auto & part : data_parts_by_info)
     {
-        ++counter;
-        if (slowdown)
-            sleepForPartsSnapshotSlowdown();
-        if (need_stop && (slowdown || 0 == counter % 8192) && need_stop())
-            break;
-
         res.data_parts.push_back(part);
         for (const auto & [p_name, projection_part] : part->getProjectionParts())
             res.projection_parts.push_back(projection_part);
@@ -11672,8 +11395,7 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
             for (const auto & part : precommitted_parts)
             {
                 if (!covering_parts[idx])
-                    MergeTreeTransaction::addNewPartAndRemoveCovered(
-                        data.shared_from_this(), part, covered_parts_for_commit[idx], txn, LockKind::REMOVAL, removal_locks);
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts_for_commit[idx], txn, removal_locks);
                 ++idx;
             }
             removal_locks.store();
@@ -11923,14 +11645,6 @@ Block MergeTreeData::getMinMaxCountProjectionBlock(
             predicate, virtual_columns_block, query_context, /*allow_filtering_with_partial_predicate =*/true);
 
         rows = virtual_columns_block.rows();
-
-        /// A physical column named `_part` shadows the virtual one, which is then absent from the
-        /// block (see `getHeaderWithVirtualsForFilter`), so the surviving rows cannot be mapped back
-        /// to parts. Decline the projection instead of failing the query; the caller falls back to an
-        /// ordinary read.
-        if (!virtual_columns_block.has("_part"))
-            return {};
-
         part_name_column = virtual_columns_block.getByName("_part").column;
     }
 
@@ -12118,6 +11832,52 @@ ActionDAGNodes MergeTreeData::getFiltersForPrimaryKeyAnalysis(const InterpreterS
     return filter_nodes;
 }
 
+QueryProcessingStage::Enum MergeTreeData::getQueryProcessingStage(
+    ContextPtr query_context,
+    QueryProcessingStage::Enum to_stage,
+    const StorageSnapshotPtr &,
+    SelectQueryInfo &) const
+{
+    /// with the analyzer, Planner make decision regarding parallel replicas usage, and so about processing stage on reading
+    if (!query_context->getSettingsRef()[Setting::allow_experimental_analyzer])
+    {
+        const auto & settings = query_context->getSettingsRef();
+        if (query_context->canUseParallelReplicasCustomKey())
+        {
+            if (query_context->getClientInfo().distributed_depth > 0)
+                return QueryProcessingStage::FetchColumns;
+
+            if (!supportsReplication() && !settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+                return QueryProcessingStage::Enum::FetchColumns;
+
+            if (to_stage >= QueryProcessingStage::WithMergeableState
+                && query_context->canUseParallelReplicasCustomKeyForCluster(*query_context->getClusterForParallelReplicas()))
+                return QueryProcessingStage::WithMergeableStateAfterAggregationAndLimit;
+        }
+
+        if (query_context->getClientInfo().collaborate_with_initiator)
+            return QueryProcessingStage::Enum::FetchColumns;
+
+        /// Parallel replicas
+        /// This branch is reached only with the analyzer disabled, and `parallel_replicas_plan_based`
+        /// requires the analyzer, so such a query reads locally: keep the stage local as well.
+        if (query_context->canUseParallelReplicasOnInitiator() && to_stage >= QueryProcessingStage::WithMergeableState
+            && !settings[Setting::parallel_replicas_plan_based])
+        {
+            /// ReplicatedMergeTree
+            if (supportsReplication())
+                return QueryProcessingStage::Enum::WithMergeableState;
+
+            /// For non-replicated MergeTree we allow them only if parallel_replicas_for_non_replicated_merge_tree is enabled
+            if (settings[Setting::parallel_replicas_for_non_replicated_merge_tree])
+                return QueryProcessingStage::Enum::WithMergeableState;
+        }
+    }
+
+    return QueryProcessingStage::Enum::FetchColumns;
+}
+
+
 UInt64 MergeTreeData::estimateNumberOfRowsToRead(
     ContextPtr query_context, const StorageSnapshotPtr & storage_snapshot, const SelectQueryInfo & query_info) const
 {
@@ -12163,27 +11923,12 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
     checkColumnFilenamesForCollision(metadata.getColumns(), *settings, throw_on_error);
 }
 
-namespace
+void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
-
-/// Two streams that render to the same file name, and so end up written into one file.
-struct StreamFileNameCollision
-{
-    String stream_name;
-    String full_stream_name;
-    String other_full_stream_name;
-    NameAndTypePair column;
-    /// Not set when both streams belong to `column`.
-    std::optional<NameAndTypePair> other_column;
-};
-
-/// File names are rendered as they would be for a part written with the given serialization versions.
-std::optional<StreamFileNameCollision> findStreamFileNameCollision(
-    const NamesAndTypesList & columns_list,
-    const MergeTreeSettings & settings,
-    MergeTreeMapSerializationVersion map_serialization_version,
-    MergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version)
-{
+    std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
+    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
+        ? Nested::collect(columns.getAllPhysical())
+        : columns.getAllPhysical();
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -12192,101 +11937,47 @@ std::optional<StreamFileNameCollision> findStreamFileNameCollision(
         settings[MergeTreeSetting::serialization_info_version],
         settings[MergeTreeSetting::string_serialization_version],
         settings[MergeTreeSetting::nullable_serialization_version],
-        map_serialization_version,
+        settings[MergeTreeSetting::map_serialization_version],
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
     };
-
-    ISerialization::EnumerateStreamsSettings enumerate_settings;
-    enumerate_settings.object_serialization_version = settings[MergeTreeSetting::object_serialization_version];
-    enumerate_settings.object_shared_data_serialization_version = object_shared_data_serialization_version;
-    /// Dynamic paths and bucket counts are properties of the data, not of the type, so they are unknown here.
-    enumerate_settings.enumerate_dynamic_streams = false;
-
-    std::unordered_map<String, std::pair<String, NameAndTypePair>> stream_name_to_column;
 
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
-        std::optional<StreamFileNameCollision> collision;
 
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
-            auto [it, inserted] = column_streams.emplace(stream_name, full_stream_name);
-            /// Keep the first one: which later collision gets reported would depend on the enumeration order.
-            if (!inserted && !collision)
-                collision = StreamFileNameCollision{stream_name, full_stream_name, it->second, column, {}};
+            column_streams.emplace(stream_name, full_stream_name);
         };
 
         auto serialization = column.type->getSerialization(serialization_settings);
-        auto substream_data = ISerialization::SubstreamData(serialization);
-        serialization->enumerateStreams(enumerate_settings, callback, substream_data);
-
-        if (collision)
-            return collision;
+        serialization->enumerateStreams(callback);
 
         for (const auto & [stream_name, full_stream_name] : column_streams)
         {
-            auto [it, inserted] = stream_name_to_column.emplace(stream_name, std::pair{full_stream_name, column});
+            auto [it, inserted] = stream_name_to_full_name.emplace(stream_name, std::pair{full_stream_name, column.name});
             if (!inserted)
             {
-                const auto & [other_full_stream_name, other_column] = it->second;
-                return StreamFileNameCollision{stream_name, full_stream_name, other_full_stream_name, column, other_column};
+                const auto & [other_full_name, other_column_name] = it->second;
+                auto other_type = columns.getPhysical(other_column_name).type;
+
+                auto message = fmt::format(
+                    "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
+                    column.name, column.type->getName(), other_column_name, other_type->getName(), full_stream_name, other_full_name, stream_name);
+
+                if (settings[MergeTreeSetting::replace_long_file_name_to_hash])
+                    message += ". It may be a collision between a filename for one column and a hash of filename for another column (see setting 'replace_long_file_name_to_hash')";
+
+                if (throw_on_error)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
+
+                LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
+                return;
             }
         }
     }
-
-    return {};
-}
-
-}
-
-void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
-{
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
-
-    MergeTreeMapSerializationVersion map_version = settings[MergeTreeSetting::map_serialization_version];
-    MergeTreeObjectSharedDataSerializationVersion shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version];
-    MergeTreeMapSerializationVersion zero_level_map_version = settings[MergeTreeSetting::map_serialization_version_for_zero_level_parts];
-    MergeTreeObjectSharedDataSerializationVersion zero_level_shared_data_version = settings[MergeTreeSetting::object_shared_data_serialization_version_for_zero_level_parts];
-
-    auto collision = findStreamFileNameCollision(columns_list, settings, map_version, shared_data_version);
-
-    /// Zero-level parts (written by `INSERT`) may use different serialization versions than merged parts, and a
-    /// collision under either corrupts the parts written with it. Checked separately, as parts of different
-    /// configurations never share a file.
-    if (!collision && (zero_level_map_version != map_version || zero_level_shared_data_version != shared_data_version))
-        collision = findStreamFileNameCollision(columns_list, settings, zero_level_map_version, zero_level_shared_data_version);
-
-    if (!collision)
-        return;
-
-    String message = collision->other_column.has_value()
-        ? fmt::format(
-            "Columns '{} {}' and '{} {}' have streams ({} and {}) with collision in file name {}",
-            collision->column.name, collision->column.type->getName(),
-            collision->other_column->name, collision->other_column->type->getName(),
-            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name)
-        : fmt::format(
-            "Column '{} {}' has two streams ({} and {}) with collision in file name {}",
-            collision->column.name, collision->column.type->getName(),
-            collision->full_stream_name, collision->other_full_stream_name, collision->stream_name);
-
-    /// Identical full names collide on their own; only distinct ones can have been merged by hashing.
-    if (collision->full_stream_name != collision->other_full_stream_name && settings[MergeTreeSetting::replace_long_file_name_to_hash])
-        message += collision->other_column.has_value()
-            ? ". It may be a collision between a filename for one column and a hash of filename for another column"
-              " (see setting 'replace_long_file_name_to_hash')"
-            : ". It may be a collision between a filename for one stream and a hash of filename for another stream"
-              " (see setting 'replace_long_file_name_to_hash')";
-
-    if (throw_on_error)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "{}", message);
-
-    LOG_ERROR(log, "Table definition is incorrect. {}. It may lead to corruption of data or crashes. You need to resolve it manually", message);
 }
 
 MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & source_table, const StorageMetadataPtr & src_snapshot, const StorageMetadataPtr & my_snapshot) const

@@ -82,7 +82,7 @@ GTEST_TEST(SortDescriptionSerialization, WithFillRoundTrip)
     ASSERT_EQ(restored.fill_description.fill_to, column.fill_description.fill_to);
     ASSERT_EQ(restored.fill_description.fill_step, column.fill_description.fill_step);
     ASSERT_TRUE(restored.fill_description.step_kind.has_value());
-    ASSERT_EQ(*restored.fill_description.step_kind, IntervalKind::Kind::Second);
+    ASSERT_EQ(restored.fill_description.step_kind->kind, IntervalKind::Kind::Second);
     ASSERT_FALSE(restored.fill_description.staleness_kind.has_value());
 }
 

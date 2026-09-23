@@ -28,7 +28,7 @@ ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 1024, index_granularity_bytes = '10Mi', min_bytes_for_wide_part = 0,
     min_compress_block_size = 65536, max_compress_block_size = 1048576,
     min_columns_to_activate_adaptive_write_buffer = 1, adaptive_write_buffer_initial_size = 16384,
-    disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_DISKS_FILES}/${CLICKHOUSE_TEST_UNIQUE_NAME}/');
+    disk = disk(type = 'local_blob_storage', path = '${CLICKHOUSE_TEST_UNIQUE_NAME}/');
 
 -- ~10 granules in a single wide part.
 INSERT INTO quantize_pq_codebook_mark_range
