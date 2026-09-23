@@ -177,6 +177,14 @@ MarkRanges marksToScan(const DataPartPtr & part, size_t sample_step)
     return ranges;
 }
 
+/// grow a [low, high] mark range by `spread` on both sides
+void widen(UInt64 & low, UInt64 & high, double spread)
+{
+    const auto by = static_cast<UInt64>(std::ceil(spread));
+    low = low > by ? low - by : 0;
+    high += by;
+}
+
 /// scale a size down to the sample, keeping it at least 1
 size_t scaleSize(size_t value, double scale)
 {
@@ -406,6 +414,8 @@ struct PartEstimate
     MergeTreeIndexGranularityPtr granularity;
     UInt64 marks_low = 0;
     UInt64 marks_high = 0;
+    /// for a sample, the selected share of every granule read
+    std::vector<double> granule_shares;
 };
 
 /// build the projection's primary index in memory and prune it, nothing is written
@@ -421,8 +431,7 @@ PartEstimate pruneSyntheticProjectionPart(
     const Settings & query_settings,
     bool uneven_rows,
     double scale,
-    const std::vector<size_t> & granule_ends,
-    std::vector<double> & granule_shares,
+    const MarkRanges & ranges_read,
     LoggerPtr log)
 {
     const auto & proj_key = projection.metadata->getSortingKey();
@@ -533,39 +542,44 @@ PartEstimate pruneSyntheticProjectionPart(
 
     if (scale < 1.0)
     {
-        /// which sampled granule each row came from
-        PaddedPODArray<UInt32> source(data.rows, static_cast<UInt32>(granule_ends.size()));
-        for (size_t granule = 0, row = 0; granule < granule_ends.size(); ++granule)
-            for (; row < std::min(granule_ends[granule], data.rows); ++row)
-                source[row] = static_cast<UInt32>(granule);
+        /// the sampled granule each row came from, and how many rows each one has
+        const auto & parent_granularity = *parent_ranges.data_part->index_granularity;
+        std::vector<size_t> granule_rows;
+        std::vector<UInt32> source;
+        source.reserve(data.rows);
+        for (const auto & range : ranges_read)
+            for (size_t mark = range.begin; mark < range.end; ++mark)
+            {
+                granule_rows.push_back(parent_granularity.getMarkRows(mark));
+                source.resize(source.size() + granule_rows.back(), static_cast<UInt32>(granule_rows.size() - 1));
+            }
+        chassert(source.size() == data.rows);
 
-        /// if the key follows the parent order, a range end can be off by up to a whole sampling step
-        size_t adjacent_from_one_granule = 0;
+        /// neighbours in projection order from one sampled granule mean the key follows the parent order,
+        /// and then a range end can be off by a whole sampling step instead of one granule
+        size_t same_source = 0;
         for (size_t pos = 1; pos < data.rows; ++pos)
-            adjacent_from_one_granule += source[data.order[pos]] == source[data.order[pos - 1]];
-        const double clustering
-            = data.rows > 1 ? static_cast<double>(adjacent_from_one_granule) / static_cast<double>(data.rows - 1) : 1.0;
-        const double step = static_cast<double>(parent_ranges.data_part->index_granularity->getMarksCountWithoutFinal())
-            / static_cast<double>(granule_ends.size());
-        const double end_error = 1.0 + clustering * (step - 1.0);
+            same_source += source[data.order[pos]] == source[data.order[pos - 1]];
+        const double follows_parent = static_cast<double>(same_source) / static_cast<double>(std::max<size_t>(1, data.rows - 1));
+        const double step = static_cast<double>(parent_granularity.getMarksCountWithoutFinal()) / static_cast<double>(granule_rows.size());
+        const double granules_per_end = 1.0 + follows_parent * (step - 1.0);
+        const double range_ends = 2.0 * static_cast<double>(std::max<size_t>(1, estimate.pruned.size()));
 
-        /// plus rounding of granule sizes at sample scale; count one range even if nothing matched
-        const double granule_sample_rows = static_cast<double>(data.rows) / static_cast<double>(layouts[primary].size());
-        const auto spread = static_cast<UInt64>(std::ceil(
-            2.0 * end_error * static_cast<double>(std::max<size_t>(1, estimate.pruned.size()))
-            + static_cast<double>(estimate.pruned.getNumberOfMarks()) / granule_sample_rows));
-        estimate.marks_low = estimate.marks_low > spread ? estimate.marks_low - spread : 0;
-        estimate.marks_high += spread;
+        /// granule sizes rounded at the sample's scale are up to a row off
+        const double marks = static_cast<double>(estimate.pruned.getNumberOfMarks());
+        const double rounding = marks * static_cast<double>(layouts[primary].size()) / static_cast<double>(data.rows);
 
-        std::vector<size_t> selected(granule_ends.size() + 1, 0);
+        widen(estimate.marks_low, estimate.marks_high, range_ends * granules_per_end + rounding);
+
+        std::vector<size_t> selected(granule_rows.size());
         for (const auto & range : estimate.pruned)
-            for (size_t pos = estimate.granularity->getMarkStartingRow(range.begin);
-                 pos < estimate.granularity->getMarkStartingRow(range.end);
-                 ++pos)
+        {
+            const size_t end = estimate.granularity->getMarkStartingRow(range.end);
+            for (size_t pos = estimate.granularity->getMarkStartingRow(range.begin); pos < end; ++pos)
                 ++selected[source[data.order[pos]]];
-        for (size_t i = 0; i < granule_ends.size(); ++i)
-            granule_shares.push_back(
-                static_cast<double>(selected[i]) / static_cast<double>(granule_ends[i] - (i != 0 ? granule_ends[i - 1] : 0)));
+        }
+        for (size_t i = 0; i < granule_rows.size(); ++i)
+            estimate.granule_shares.push_back(static_cast<double>(selected[i]) / static_cast<double>(granule_rows[i]));
     }
     return estimate;
 }
@@ -667,12 +681,6 @@ bool tryEstimateProjection(
         /// share of the part's rows that was read
         const double scale = sample_step > 1 ? static_cast<double>(part_data.rows) / static_cast<double>(part->rows_count) : 1.0;
 
-        std::vector<size_t> granule_ends;
-        if (sample_step > 1)
-            for (const auto & range : ranges)
-                for (size_t mark = range.begin; mark < range.end; ++mark)
-                    granule_ends.push_back((granule_ends.empty() ? 0 : granule_ends.back()) + part->index_granularity->getMarkRows(mark));
-
         const auto estimate = pruneSyntheticProjectionPart(
             part_data,
             projection,
@@ -685,8 +693,7 @@ bool tryEstimateProjection(
             query_settings,
             uneven_rows,
             scale,
-            granule_ends,
-            granule_shares,
+            ranges,
             log);
 
         projection_marks += estimate.pruned.getNumberOfMarks();
@@ -695,6 +702,7 @@ bool tryEstimateProjection(
         marks_low += estimate.marks_low;
         marks_high += estimate.marks_high;
         layout_marks += estimate.granularity->getMarksCount();
+        granule_shares.insert(granule_shares.end(), estimate.granule_shares.begin(), estimate.granule_shares.end());
     }
 
     /// widen by two standard errors of the selected share (successive differences, fits a systematic sample)
@@ -705,9 +713,7 @@ bool tryEstimateProjection(
             sum_of_squares += (granule_shares[i] - granule_shares[i - 1]) * (granule_shares[i] - granule_shares[i - 1]);
         const double count = static_cast<double>(granule_shares.size());
         const double standard_error = std::sqrt(sum_of_squares / (2.0 * count * (count - 1.0)));
-        const auto spread = static_cast<UInt64>(std::ceil(2.0 * standard_error * static_cast<double>(layout_marks)));
-        marks_low = marks_low > spread ? marks_low - spread : 0;
-        marks_high += spread;
+        widen(marks_low, marks_high, 2.0 * standard_error * static_cast<double>(layout_marks));
     }
 
     result.estimated_marks = projection_marks;
