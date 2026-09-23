@@ -110,10 +110,16 @@ ChunkRowRange shrinkRunToLimitWindow(
 }
 
 
-LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
+LimitByTransform::LimitByTransform(
+    SharedHeader header,
+    UInt64 group_length_,
+    UInt64 group_offset_,
+    const Names & column_names,
+    bool always_read_till_end_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
+    , always_read_till_end(always_read_till_end_)
 {
     auto grouping_keys = filterNonConstKeys(header, column_names);
     grouping_key_positions = std::move(grouping_keys.positions);
@@ -232,6 +238,8 @@ void LimitByTransform::transform(Chunk & chunk)
         if (group_counts.empty())
             group_counts.push_back(0);
         processRun(0, row_count, 0);
+        if (!always_read_till_end && group_counts[0] >= group_limit_end)
+            stopReading();
     }
     else
     {
@@ -286,10 +294,12 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     UInt64 group_length_,
     UInt64 group_offset_,
     const SortDescription & sorted_columns_descr,
+    bool always_read_till_end_,
     UInt64 groups_limit_hint_)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
+    , always_read_till_end(always_read_till_end_)
     , groups_limit_hint(groups_limit_hint_)
 {
     Names key_names;
@@ -406,6 +416,11 @@ void LimitBySortedStreamTransform::transform(Chunk & chunk)
         current_run_start_row = run_end;
         ++run_count;
     }
+
+    /// `filterNonConstKeys` removed all grouping keys, so every row in this stream
+    /// belongs to one logical group and no later input can produce another output row.
+    if (!always_read_till_end && grouping_key_positions.empty() && current_group_rows_seen >= group_limit_end)
+        stopReading();
 
     /// Save the last grouping key so the next chunk can detect whether its first
     /// row continues the same group or starts a new one. With no non-constant grouping

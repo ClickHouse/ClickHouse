@@ -269,12 +269,17 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     /// disabled; the per-stream row pre-cap below stays as it is, being offset-correct by widening.
     UInt64 groups_hint = offset == 0 ? limit_by->getOuterLimitHint() : 0;
 
+    /// `alwaysReadTillEnd()` means this `LIMIT BY` must drain its input, so no group bound may arm an
+    /// early stop below it.
+    if (limit_by->alwaysReadTillEnd())
+        groups_hint = 0;
+
     /// Nested child plans are scanned only here: `ReadFromMerge` has them by now, `applyFilters` having
     /// pruned its tables in an earlier pass of this stage.
     if (groups_hint && subtreeBlocksLimitByGroupHint(&node, /*descend_into_child_plans=*/true))
         groups_hint = 0;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset, groups_hint);
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, groups_hint, limit_by->alwaysReadTillEnd());
 }
 
 }

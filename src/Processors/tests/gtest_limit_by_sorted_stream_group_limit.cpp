@@ -68,7 +68,12 @@ size_t countOutputRows(const std::vector<std::vector<UInt64>> & chunk_keys, UInt
     auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
 
     auto transform = std::make_shared<LimitBySortedStreamTransform>(
-        header, group_length, /*group_offset_=*/0, makeSortDescription(), groups_limit_hint);
+        header,
+        group_length,
+        /*group_offset_=*/0,
+        makeSortDescription(),
+        /*always_read_till_end_=*/false,
+        groups_limit_hint);
 
     connect(source->getPort(), transform->getInputPort());
     auto * output_port = &transform->getOutputPort();
