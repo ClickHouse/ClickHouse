@@ -1090,6 +1090,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                 {
                     if (args.mode < LoadingStrictnessLevel::FORCE_ATTACH)
                         throw;
+                    /// Only the analyzed description, which query execution needs, is missing. The declaration itself
+                    /// stays in the metadata, so a later rewrite of the CREATE query still contains it.
+                    metadata.projections.addUnavailable(projection_ast->clone());
                     tryLogCurrentException(__PRETTY_FUNCTION__, fmt::format(
                         "Cannot parse projection {} during server startup, skipping it. "
                         "It may be caused by a dependency on a dropped dictionary or a missing object. "
@@ -2526,7 +2529,9 @@ They can be used for prewhere optimization only if we enable `set use_statistics
 #### Part Pruning with Statistics {#part-pruning-with-statistics}
 
 When `use_statistics_for_part_pruning` is enabled, statistics can be used for part pruning.
-Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning. When such statistics are defined on a column, ClickHouse tracks the minimum and maximum values for that column in each part.
+Currently, only `basic` statistics (and the deprecated `minmax` statistics) support part pruning.
+On numeric and temporal columns, `basic` (and explicit `minmax`) track the minimum and maximum values in each part, so range predicates can skip parts whose bounds cannot match.
+For `Nullable` columns of any type, `basic` also tracks the number of `NULL` values in each part. That enables pruning based on `IS NULL` / `IS NOT NULL` predicates. On numeric and temporal columns it also tightens range bounds for parts that contain no `NULL` values.
 Part pruning allows to skip reading entire data parts when the query filter condition cannot match any rows in that part.
 
 **Example:**
