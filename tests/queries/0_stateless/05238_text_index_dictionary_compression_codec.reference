@@ -1,0 +1,22 @@
+insert path
+1	1
+merge path
+1	1
+second part changed
+1	1
+mixed codec merge reads correctly
+1	1	1	1	1	1
+dictionary reads equal
+1	1
+check table
+1
+1
+per index resolution
+1	1	1	1	1
+two dictionary codecs in one part read correctly
+1	1	1	1
+1
+per index precedence, insert path
+1	1	1	1	1
+per index precedence, merge path
+1	1	1	1	1

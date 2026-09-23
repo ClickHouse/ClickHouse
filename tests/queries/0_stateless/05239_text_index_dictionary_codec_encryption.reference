@@ -1,0 +1,18 @@
+guard
+1	1	1	1	1
+reads
+50000	1	1
+50000	1	1
+50000	1	1
+check table
+1
+1
+1
+temp segments
+1	1	1
+temp reads
+100000	1	1
+100000	1	1
+temp check table
+1
+1
