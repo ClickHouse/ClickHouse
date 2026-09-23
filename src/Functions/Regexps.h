@@ -292,7 +292,7 @@ struct GlobalCacheTable
     std::array<Bucket, CACHE_SIZE> known_regexps TSA_GUARDED_BY(mutex);
     std::mutex mutex;
 
-    static size_t getBucketIndexFor(const VectorWithMemoryTracking<String> patterns, std::optional<UInt32> edit_distance)
+    static size_t getBucketIndexFor(const VectorWithMemoryTracking<String> & patterns, std::optional<UInt32> edit_distance)
     {
         size_t hash = 0;
         for (const auto & pattern : patterns)
