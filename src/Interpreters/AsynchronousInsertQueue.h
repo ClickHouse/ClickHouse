@@ -348,6 +348,11 @@ private:
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
 
+    /// Call it for every entry that leaves the queue, whether it is flushed or dropped.
+    /// 'AsynchronousInsertQueueSize' and 'AsynchronousInsertQueueBytes' are increased when
+    /// an entry enters the queue, so a caller that forgets this leaves both metrics too high.
+    static void discountFromQueueMetrics(const InsertData & data);
+
     void processData(
         InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);
 
