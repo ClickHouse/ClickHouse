@@ -547,6 +547,41 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
+### Authentification OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
+
+Les options `OAUTHBEARER` sont des paramètres étendus de `librdkafka` ; elles doivent donc être imbriquées sous `<kafka>` dans chaque collection nommée. Les clés `kafka_*` de premier niveau configurent le table engine Kafka. ClickHouse convertit les underscores des noms d&#39;éléments XML imbriqués en points avant de les transmettre à `librdkafka`.
+
+L&#39;exemple suivant configure des identifiants client OAuth pour un namespace Azure Event Hubs :
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+    <named_collections>
+        <eventhub_one>
+            <!-- Kafka table-engine settings -->
+            <kafka_broker_list>domain.one.servicebus.windows.net:9093</kafka_broker_list>
+            <kafka_topic_list>my-topic</kafka_topic_list>
+            <kafka_group_name>my-group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_security_protocol>sasl_ssl</kafka_security_protocol>
+            <kafka_sasl_mechanism>OAUTHBEARER</kafka_sasl_mechanism>
+
+            <!-- Extended librdkafka settings -->
+            <kafka>
+                <sasl_oauthbearer_method>oidc</sasl_oauthbearer_method>
+                <sasl_oauthbearer_client_id from_env="EVENTHUB_CLIENT_ID"/>
+                <sasl_oauthbearer_client_secret from_env="EVENTHUB_CLIENT_SECRET"/>
+                <sasl_oauthbearer_token_endpoint_url>https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/token</sasl_oauthbearer_token_endpoint_url>
+                <sasl_oauthbearer_scope>https://domain.one.servicebus.windows.net/.default</sasl_oauthbearer_scope>
+            </kafka>
+        </eventhub_one>
+    </named_collections>
+</clickhouse>
+```
+
+Lorsque `ENGINE = Kafka(eventhub_one)` utilise une collection nommée, ClickHouse ne fusionne pas la configuration globale `<kafka>` du serveur. Créez une collection distincte pour chaque namespace Event Hubs dont l&#39;adresse du broker ou le scope OAuth diffère, et incluez dans cette collection toutes les propriétés OIDC obligatoires.
+
+Dans cet exemple, les attributs `from_env` s&#39;appliquent aux collections nommées définies en XML et lisent leurs valeurs dans l&#39;environnement du processus serveur ClickHouse. Consultez [substitution par des variables d&#39;environnement](/fr/concepts/features/configuration/server-config/configuration-files#from_env_zk) pour plus de détails sur le déploiement et les valeurs par défaut, ainsi que [chiffrement et masquage de la configuration](/fr/concepts/features/configuration/server-config/configuration-files#encryption) pour protéger les secrets dans les fichiers de configuration prétraités.
+
 ### Exemple d’utilisation des collections nommées avec une table Kafka {#example-of-using-named-collections-with-a-kafka-table}
 
 Les deux exemples suivants utilisent la même collection nommée `my_kafka_cluster` :

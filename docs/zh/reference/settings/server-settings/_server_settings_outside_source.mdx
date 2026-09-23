@@ -1887,6 +1887,7 @@ curl 127.0.0.1:9363/metrics
 
 | Setting                                         | Description                                                                                                                                                                                                                                                             | Default |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `enable_read_write_grants`                      | 启用针对外部数据源 (如 `S3`、`HDFS`、`Kafka` 等) 的 `READ` 和 `WRITE` 特权分离。自 25.7 版本起可用。设为 `true` 时，可以为数据源分别授予 `READ` 和 `WRITE`，而不是使用同时涵盖两者的单一授权。                                                                                                                                      | `false` |
 | `on_cluster_queries_require_cluster_grant`      | 设置 `ON CLUSTER` 查询是否需要 `CLUSTER` 授权。                                                                                                                                                                                                                                    | `true`  |
 | `role_cache_expiration_time_seconds`            | 设置角色自上次访问后在角色缓存中保留的秒数。                                                                                                                                                                                                                                                  | `600`   |
 | `select_from_information_schema_requires_grant` | 设置 `SELECT * FROM information_schema.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON information_schema.<table>`，与普通表相同。                                                                                                                                   | `true`  |
@@ -1908,6 +1909,7 @@ curl 127.0.0.1:9363/metrics
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 

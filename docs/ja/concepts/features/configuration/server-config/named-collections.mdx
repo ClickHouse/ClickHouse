@@ -539,6 +539,41 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
+### OAUTHBEARER/OIDC 認証 {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` のオプションは `librdkafka` の拡張設定であるため、各名前付きコレクション内の `<kafka>` の下にネストして指定する必要があります。トップレベルの `kafka_*` キーは、Kafka テーブルエンジンの設定に使用されます。ClickHouse は、ネストされた XML 要素名に含まれるアンダースコアをピリオドに変換したうえで `librdkafka` に渡します。
+
+次の例では、Azure Event Hubs のネームスペース向けに OAuth クライアント認証情報を設定します。
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+    <named_collections>
+        <eventhub_one>
+            <!-- Kafka table-engine settings -->
+            <kafka_broker_list>domain.one.servicebus.windows.net:9093</kafka_broker_list>
+            <kafka_topic_list>my-topic</kafka_topic_list>
+            <kafka_group_name>my-group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_security_protocol>sasl_ssl</kafka_security_protocol>
+            <kafka_sasl_mechanism>OAUTHBEARER</kafka_sasl_mechanism>
+
+            <!-- Extended librdkafka settings -->
+            <kafka>
+                <sasl_oauthbearer_method>oidc</sasl_oauthbearer_method>
+                <sasl_oauthbearer_client_id from_env="EVENTHUB_CLIENT_ID"/>
+                <sasl_oauthbearer_client_secret from_env="EVENTHUB_CLIENT_SECRET"/>
+                <sasl_oauthbearer_token_endpoint_url>https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/token</sasl_oauthbearer_token_endpoint_url>
+                <sasl_oauthbearer_scope>https://domain.one.servicebus.windows.net/.default</sasl_oauthbearer_scope>
+            </kafka>
+        </eventhub_one>
+    </named_collections>
+</clickhouse>
+```
+
+`ENGINE = Kafka(eventhub_one)` で名前付きコレクションを使用する場合、ClickHouseはサーバー全体のグローバルな `<kafka>` 設定をマージしません。broker アドレスまたはOAuthスコープが異なる場合は、Event Hubsのネームスペースごとにコレクションを1つずつ作成し、必要なOIDCプロパティをすべてそのコレクションに含めてください。
+
+この例の `from_env` 属性は、XMLで定義された名前付きコレクションに適用され、ClickHouseサーバープロセスの環境から値を読み取ります。デプロイ方法やデフォルト値の詳細については [環境変数による置換](/ja/concepts/features/configuration/server-config/configuration-files#from_env_zk) を、前処理済みの設定ファイル内のシークレットを保護する方法については [設定の暗号化と秘匿化](/ja/concepts/features/configuration/server-config/configuration-files#encryption) を参照してください。
+
 ### Kafkaテーブルで named collection を使用する例 {#example-of-using-named-collections-with-a-kafka-table}
 
 以下の2つの例では、どちらも同じ named collection `my_kafka_cluster` を使用します。

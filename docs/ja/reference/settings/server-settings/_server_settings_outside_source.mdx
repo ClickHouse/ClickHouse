@@ -1886,6 +1886,7 @@ PostgreSQL プロトコルでクライアントと通信するためのポート
 
 | 設定                                              | 説明                                                                                                                                                                                                                                                                                                                                                    | デフォルト   |
 | ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `enable_read_write_grants`                      | `S3`、`HDFS`、`Kafka` などの外部データソースに対する `READ` 権限と `WRITE` 権限の分離を有効にします。バージョン 25.7 以降で利用可能です。`true` に設定すると、両方をまとめて許可する単一の権限ではなく、ソースに対して `READ` と `WRITE` を個別に付与できます。                                                                                                                                                                                      | `false` |
 | `on_cluster_queries_require_cluster_grant`      | `ON CLUSTER` クエリに `CLUSTER` 権限が必要かどうかを設定します。                                                                                                                                                                                                                                                                                                          | `true`  |
 | `role_cache_expiration_time_seconds`            | 最終アクセスからロールキャッシュ内にロールを保持する秒数を設定します。                                                                                                                                                                                                                                                                                                                   | `600`   |
 | `select_from_information_schema_requires_grant` | `SELECT * FROM information_schema.<table>` の実行に権限を必要とするかどうか、および任意のユーザーが実行できるかどうかを設定します。true に設定すると、このクエリの実行には通常のテーブルと同様に `GRANT SELECT ON information_schema.<table>` が必要になります。                                                                                                                                                                       | `true`  |
@@ -1907,6 +1908,7 @@ PostgreSQL プロトコルでクライアントと通信するためのポート
     <settings_constraints_replace_previous>true</settings_constraints_replace_previous>
     <table_engines_require_grant>false</table_engines_require_grant>
     <role_cache_expiration_time_seconds>600</role_cache_expiration_time_seconds>
+    <enable_read_write_grants>false</enable_read_write_grants>
 </access_control_improvements>
 ```
 

@@ -547,6 +547,41 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
+### مصادقة OAUTHBEARER/OIDC {#oauthbearer-oidc-authentication}
+
+تُعدّ خيارات `OAUTHBEARER` إعدادات موسّعة لـ `librdkafka`، لذا يجب تضمينها داخل `<kafka>` في كل مجموعة مسمّاة (named collection). أما مفاتيح `kafka_*` في المستوى الأعلى فتُستخدم لتهيئة محرك الجدول Kafka. يحوّل ClickHouse الشرطات السفلية (underscores) في أسماء عناصر XML المتداخلة إلى نقاط قبل تمريرها إلى `librdkafka`.
+
+يوضّح المثال التالي كيفية تهيئة بيانات اعتماد عميل OAuth لمساحة أسماء Azure Event Hubs:
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+    <named_collections>
+        <eventhub_one>
+            <!-- Kafka table-engine settings -->
+            <kafka_broker_list>domain.one.servicebus.windows.net:9093</kafka_broker_list>
+            <kafka_topic_list>my-topic</kafka_topic_list>
+            <kafka_group_name>my-group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_security_protocol>sasl_ssl</kafka_security_protocol>
+            <kafka_sasl_mechanism>OAUTHBEARER</kafka_sasl_mechanism>
+
+            <!-- Extended librdkafka settings -->
+            <kafka>
+                <sasl_oauthbearer_method>oidc</sasl_oauthbearer_method>
+                <sasl_oauthbearer_client_id from_env="EVENTHUB_CLIENT_ID"/>
+                <sasl_oauthbearer_client_secret from_env="EVENTHUB_CLIENT_SECRET"/>
+                <sasl_oauthbearer_token_endpoint_url>https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/token</sasl_oauthbearer_token_endpoint_url>
+                <sasl_oauthbearer_scope>https://domain.one.servicebus.windows.net/.default</sasl_oauthbearer_scope>
+            </kafka>
+        </eventhub_one>
+    </named_collections>
+</clickhouse>
+```
+
+عندما يستخدم `ENGINE = Kafka(eventhub_one)` مجموعة مسمّاة (named collection)، فإن ClickHouse لا يدمج معها تهيئة `<kafka>` العامة للخادم. لذا أنشئ مجموعة مستقلة لكل مساحة أسماء في Event Hubs إذا اختلف عنوان الوسيط (broker) أو نطاق OAuth، واحرص على تضمين جميع خصائص OIDC المطلوبة في تلك المجموعة.
+
+تنطبق سمات `from_env` في هذا المثال على المجموعات المسمّاة المعرّفة بصيغة XML، إذ تقرأ قيمها من بيئة عملية خادم ClickHouse. راجع [الاستبدال بواسطة متغيرات البيئة](/ar/concepts/features/configuration/server-config/configuration-files#from_env_zk) للاطلاع على تفاصيل النشر والقيم الافتراضية، و[تشفير التهيئة وإخفاؤها](/ar/concepts/features/configuration/server-config/configuration-files#encryption) لحماية البيانات السرية في ملفات التهيئة الناتجة عن المعالجة المسبقة.
+
 ### مثال على استخدام المجموعات المسماة مع جدول Kafka {#example-of-using-named-collections-with-a-kafka-table}
 
 يستخدم المثالان التاليان المجموعة المسماة نفسها `my_kafka_cluster`:

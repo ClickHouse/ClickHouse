@@ -547,6 +547,41 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
+### OAUTHBEARER/OIDC 身份验证 {#oauthbearer-oidc-authentication}
+
+`OAUTHBEARER` 选项属于扩展的 `librdkafka` 设置，因此必须嵌套在每个命名集合内的 `<kafka>` 元素下。顶层的 `kafka_*` 键则用于配置 Kafka 表引擎。ClickHouse 会先将嵌套 XML 元素名称中的下划线转换为点号，再将其传递给 `librdkafka`。
+
+以下示例为 Azure Event Hubs 命名空间配置 OAuth 客户端凭证：
+
+```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
+<clickhouse>
+    <named_collections>
+        <eventhub_one>
+            <!-- Kafka table-engine settings -->
+            <kafka_broker_list>domain.one.servicebus.windows.net:9093</kafka_broker_list>
+            <kafka_topic_list>my-topic</kafka_topic_list>
+            <kafka_group_name>my-group</kafka_group_name>
+            <kafka_format>JSONEachRow</kafka_format>
+            <kafka_security_protocol>sasl_ssl</kafka_security_protocol>
+            <kafka_sasl_mechanism>OAUTHBEARER</kafka_sasl_mechanism>
+
+            <!-- Extended librdkafka settings -->
+            <kafka>
+                <sasl_oauthbearer_method>oidc</sasl_oauthbearer_method>
+                <sasl_oauthbearer_client_id from_env="EVENTHUB_CLIENT_ID"/>
+                <sasl_oauthbearer_client_secret from_env="EVENTHUB_CLIENT_SECRET"/>
+                <sasl_oauthbearer_token_endpoint_url>https://login.microsoftonline.com/TENANT_ID/oauth2/v2.0/token</sasl_oauthbearer_token_endpoint_url>
+                <sasl_oauthbearer_scope>https://domain.one.servicebus.windows.net/.default</sasl_oauthbearer_scope>
+            </kafka>
+        </eventhub_one>
+    </named_collections>
+</clickhouse>
+```
+
+当 `ENGINE = Kafka(eventhub_one)` 使用命名集合时，ClickHouse 不会合并全局服务器的 `<kafka>` 配置。如果各 Event Hubs 命名空间的 broker 地址或 OAuth scope 不同，请为每个命名空间分别创建一个集合，并在该集合中包含所有必需的 OIDC 属性。
+
+本示例中的 `from_env` 属性适用于通过 XML 定义的命名集合，会从 ClickHouse 服务器进程的环境变量中读取值。有关部署及默认值的详细信息，请参阅[通过环境变量进行替换](/zh/concepts/features/configuration/server-config/configuration-files#from_env_zk)；如需在预处理后的配置文件中保护机密信息，请参阅[加密和隐藏配置](/zh/concepts/features/configuration/server-config/configuration-files#encryption)。
+
 ### 使用命名集合的 Kafka 表示例 {#example-of-using-named-collections-with-a-kafka-table}
 
 以下两个示例都使用同一个命名集合 `my_kafka_cluster`：
