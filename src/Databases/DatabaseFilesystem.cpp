@@ -4,6 +4,7 @@
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
 #include <Common/Logger.h>
+#include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
 #include <IO/Operators.h>
@@ -41,7 +42,8 @@ namespace ErrorCodes
     extern const int FILE_DOESNT_EXIST;
 }
 
-DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path_, ContextPtr context_)
+DatabaseFilesystem::DatabaseFilesystem(
+    const String & name_, const String & path_, ContextPtr context_, bool is_internal_metadata_replay)
     : IDatabase(name_), WithContext(context_->getGlobalContext()), path(path_), log(getLogger("DatabaseFileSystem(" + name_ + ")"))
 {
     bool is_local = context_->getApplicationType() == Context::ApplicationType::LOCAL;
@@ -61,7 +63,15 @@ DatabaseFilesystem::DatabaseFilesystem(const String & name_, const String & path
     }
 
     if (!fs::exists(path))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+    {
+        /// Metadata loading stops at the first exception, so refusing the server's own startup replay here
+        /// would make a directory removed since then enough to stop the server from starting. Tables resolve
+        /// their file on access, so an unreachable path costs only the tables; the database still drops.
+        if (!is_internal_metadata_replay)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path does not exist: {}", path);
+
+        LOG_WARNING(log, "Path does not exist: {}. The database has no tables until it reappears", path);
+    }
 }
 
 std::string DatabaseFilesystem::getTablePath(const std::string & table_name) const
@@ -95,14 +105,14 @@ bool DatabaseFilesystem::checkTableFilePath(const std::string & table_path, Cont
     if (!containsGlobs(table_path))
     {
         /// Check if the corresponding file exists.
-        if (!fs::exists(table_path))
+        if (!existsOrFileNameTooLong([&] { return fs::exists(table_path); }))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", table_path);
             return false;
         }
 
-        if (!fs::is_regular_file(table_path))
+        if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(table_path); }))
         {
             if (throw_on_error)
                 throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", table_path);
@@ -124,7 +134,7 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
     }
 
     /// Invalidate cache if file no longer exists.
-    if (table && !fs::exists(getTablePath(name)))
+    if (table && !existsOrFileNameTooLong([&] { return fs::exists(getTablePath(name)); }))
     {
         std::lock_guard lock(mutex);
         loaded_tables.erase(name);
@@ -298,7 +308,12 @@ void registerDatabaseFilesystem(DatabaseFactory & factory)
             init_path = safeGetLiteralValue<String>(arguments[0], engine_name);
         }
 
-        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context);
+        /// The loader flag, not `internal`, is the discriminator: an internal query is not necessarily the
+        /// server's own replay, because wrappers run user statements as internal ones.
+        const bool is_internal_metadata_replay
+            = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+
+        return std::make_shared<DatabaseFilesystem>(args.database_name, init_path, args.context, is_internal_metadata_replay);
     };
     factory.registerDatabase("Filesystem", create_fn, {
         .supports_arguments = true,

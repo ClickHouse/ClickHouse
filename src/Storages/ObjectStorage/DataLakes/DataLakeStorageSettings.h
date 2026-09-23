@@ -20,6 +20,7 @@ class SettingsChanges;
 /// List of available types supported in DataLakeStorageSettingsSettings object
 #define STORAGE_DATA_LAKE_STORAGE_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ArrowCompression) \
+    M(CLASS_NAME, ArrowUnsupportedTypes) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
@@ -128,7 +129,7 @@ Stored in the table definition, so it survives a server restart. Falls back to t
 Per-table counterpart of the query-level setting of the same name: max rows of a data file produced by compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
-    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, std::numeric_limits<UInt64>::max(), R"(
+    DECLARE(UInt64, iceberg_compaction_max_bytes_in_data_file, 512_MiB, R"(
 Per-table counterpart of the query-level setting of the same name: max bytes of a data file produced by compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
@@ -136,11 +137,11 @@ Stored in the table definition, so it survives a server restart. Falls back to t
 Per-table counterpart of the query-level setting of the same name: max number of data files considered by a single compaction operation.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 10_MiB, R"(
+    DECLARE(UInt64, iceberg_data_file_size_lower_threshold_compaction, 384_MiB, R"(
 Per-table counterpart of the query-level setting of the same name: data files smaller than this are selected for compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \
-    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 10_GiB, R"(
+    DECLARE(UInt64, iceberg_data_file_size_upper_threshold_compaction, 512_MiB * 9 / 5, R"(
 Per-table counterpart of the query-level setting of the same name: data files larger than this are selected for compaction.
 Stored in the table definition, so it survives a server restart. Falls back to the query-level setting when not set explicitly.
 )", 0) \

@@ -25,6 +25,7 @@ from ci.defs.job_configs import JobConfigs
 # Runs every Monday at 03:00 UTC.
 workflow = Workflow.Config(
     name="WeeklyCFI",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[

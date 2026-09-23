@@ -1,0 +1,38 @@
+-- non-MergeTree left, right eligible: left is materialized into a temporary table
+1
+-- non-MergeTree left, right eligible: the raw left read is not sent to the replicas
+0
+-- non-MergeTree left, right eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- table function left, right eligible: left is materialized into a temporary table
+1
+-- table function left, right eligible: the raw left read is not sent to the replicas
+0
+-- non-replicated MergeTree left, right eligible: left is materialized into a temporary table
+1
+-- non-replicated MergeTree left, right eligible: the raw left read is not sent to the replicas
+0
+-- non-replicated MergeTree left, right eligible: results are correct
+0
+1
+2
+3
+4
+5
+6
+7
+8
+9
+-- replicated left, right eligible: the JOIN is still offloaded
+1
+-- replicated left, right eligible: the local join is kept
+0

@@ -33,6 +33,8 @@ class SchemaCache;
 struct StorageObjectStorageSettings;
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 struct IPartitionStrategy;
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 /**
  * A general class containing implementation for external table engines
@@ -170,6 +172,11 @@ public:
 
     std::shared_ptr<DataLake::ICatalog> getCatalog() const { return catalog; }
 
+    /// True when the target commits the refresh cursor atomically with the data (Iceberg on a CAS catalog),
+    /// so the refresh reads/persists the cursor here instead of in the Keeper znode.
+    bool isTransactionalRefreshTarget();
+    CursorTreeNodePtr loadRefreshCursor(ContextPtr query_context);
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
@@ -194,9 +201,17 @@ public:
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & alter_lock_holder, DDLGuardPtr & ddl_guard) override;
+
+    Pipe alterPartition(
+        const StorageMetadataPtr & /* metadata_snapshot */, const PartitionCommands & /* commands */, ContextPtr /* context */) override;
 
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+    void checkAlterPartitionIsPossible(
+        const PartitionCommands & commands,
+        const StorageMetadataPtr & metadata_snapshot,
+        const Settings & settings,
+        ContextPtr context) const override;
 
     ObjectStoragePtr getObjectStorage() const
     {
