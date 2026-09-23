@@ -394,11 +394,13 @@ std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefi
             for (const auto & extension : extensions)
                 alternatives.push_back(extension + "." + compression_suffix);
     }
-    else if (chooseCompressionMethod(/* path */ "", compression_method) != CompressionMethod::None)
+    else if (compression_hint != "none")
     {
-        /// A misspelled codec is reported right here, at `CREATE TABLE`, instead of degrading into a
-        /// glob without suffixes: table reads set `throw_on_zero_files_match = false`, so that would
-        /// turn an invalid codec into a silently empty table.
+        /// A misspelled codec is not validated here: this runs on `ATTACH` and at server startup too,
+        /// where throwing would make existing metadata unloadable. `CREATE TABLE` rejects it in
+        /// `StorageObjectStorageConfiguration::initPartitionStrategy`, and a table attached from older
+        /// metadata keeps the suffix alternatives, so its reads reach `chooseCompressionMethod` and
+        /// fail loudly with `Unknown compression method` instead of silently matching nothing.
         ///
         /// The suffix is arbitrary, but it has to be a suffix: `.csv.*` and not `.csv*`, which is a
         /// prefix match on the extension and would hand the `data.csvwithnames.gz` files of a sibling

@@ -230,3 +230,17 @@ CREATE TABLE 05233_bad_codec (id UInt64, key UInt64)
 ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'not_a_codec', partition_strategy = 'hive')
 PARTITION BY key;
 " 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+
+# The check is for new definitions only: metadata that already exists (`ATTACH`, server startup)
+# must still load, and the misspelled codec surfaces when the table is read.
+echo 'invalid compression method on ATTACH:'
+attach_db="${CLICKHOUSE_DATABASE}_attach"
+attach_uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
+$CLICKHOUSE_CLIENT --send_logs_level=error -q "
+CREATE DATABASE $attach_db ENGINE = Atomic;
+ATTACH TABLE $attach_db.bad_codec UUID '$attach_uuid' (id UInt64, key UInt64)
+ENGINE = S3('$path/gz_lake', 'test', 'testtest', format = 'JSONEachRow', compression_method = 'not_a_codec', partition_strategy = 'hive')
+PARTITION BY key;
+"
+$CLICKHOUSE_CLIENT -q "SELECT count() FROM $attach_db.bad_codec" 2>&1 | grep -cm1 "Unknown compression method 'not_a_codec'"
+$CLICKHOUSE_CLIENT -q "DROP DATABASE $attach_db"

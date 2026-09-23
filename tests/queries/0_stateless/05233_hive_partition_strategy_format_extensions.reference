@@ -42,3 +42,5 @@ gzipped jsonl lake with an explicit compression method after insert:
 15	12
 invalid compression method:
 1
+invalid compression method on ATTACH:
+1
