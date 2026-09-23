@@ -1,0 +1,8 @@
+Test 1: `json.null = 1` reads the nested path, parts must not be pruned
+0
+1
+Test 2: a real `.null` subcolumn is not registered as a statistics pruning key
+1
+Test 3: outer null-map semantics via `IS NULL` still prune by the NULL count
+1	1
+0
