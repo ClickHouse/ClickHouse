@@ -2071,6 +2071,11 @@ namespace DB
                 auto builder_type = getArrowType(
                     column_type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
 
+                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
+                auto target_type = schema->field(static_cast<int>(column_i))->type();
+                if (builder_type->id() == arrow::Type::STRING && target_type->id() == arrow::Type::BINARY)
+                    builder_type = target_type;
+
                 std::unique_ptr<arrow::ArrayBuilder> array_builder;
                 arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), builder_type, &array_builder);
                 checkStatus(status, column->getName(), format_name);
@@ -2087,8 +2092,6 @@ namespace DB
                     settings,
                     dictionary_values);
 
-                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
-                auto target_type = schema->field(static_cast<int>(column_i))->type();
                 if (!arrow_array->type()->Equals(*target_type))
                     arrow_array = checkResult(arrow_array->View(target_type), column->getName(), format_name);
 
