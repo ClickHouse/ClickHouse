@@ -19,6 +19,12 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
+}
+
 /// `is_rate` divides the accumulated value by the window;
 /// `check_resets` counts resets and clamps extrapolation at zero.
 template <typename TimestampType_, typename ValueType_, bool is_rate_, bool check_resets_>
