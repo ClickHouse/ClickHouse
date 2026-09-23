@@ -213,6 +213,45 @@ def test_remote_write_unsupported_content_type():
     assert "Content-Type" in response.text
 
 
+def post_undecodable_body(path, content_encoding):
+    """A body the client encoded wrongly, sent verbatim so nothing compresses it on the way out."""
+    return requests.post(
+        f"http://{node.ip_address}:9093/{path.strip('/')}",
+        data=b"this is not a compressed protobuf",
+        headers={
+            "Content-Encoding": content_encoding,
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Write-Version": "0.1.0",
+        },
+    )
+
+
+@pytest.mark.parametrize("content_encoding", ["snappy", "zstd"])
+def test_remote_write_undecodable_body(content_encoding):
+    """A body that cannot be decompressed is the sender's permanent fault. It must not be answered
+    with a 5xx, which Prometheus retries for as long as it keeps the batch."""
+    response = post_undecodable_body("/write", content_encoding)
+    assert response.status_code == requests.codes.bad_request, response.text
+    assert "Cannot decode the request body" in response.text
+
+
+def test_remote_read_undecodable_body():
+    response = requests.get(
+        f"http://{node.ip_address}:9093/read_auth_ok",
+        data=b"this is not a compressed protobuf",
+        headers={
+            "Content-Encoding": "snappy",
+            "Accept-Encoding": "snappy",
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Read-Version": "0.1.0",
+        },
+    )
+    assert response.status_code == requests.codes.bad_request, response.text
+    assert "Cannot decode the request body" in response.text
+
+
 def _send_write_v2(time_series, content_encoding="snappy", metadata=None):
     protobuf = convert_time_series_to_write_v2_protobuf(time_series)
     if metadata:

@@ -6,9 +6,9 @@ title: 'Prometheus HTTP API and PromQL'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
-<CloudNotSupportedBadge/>
+<PrivatePreviewBadge/>
 
 ClickHouse implements the Prometheus HTTP API over a [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table. One handler serves remote write, remote read, instant PromQL queries, and range PromQL queries.
 
@@ -16,7 +16,17 @@ To expose ClickHouse's own metrics for a Prometheus server to scrape, see the [P
 
 ## Prerequisites {#prerequisites}
 
-### Enable the TimeSeries setting {#enable-the-timeseries-setting}
+The setup steps differ between ClickHouse Cloud and self-managed ClickHouse. Follow the section for your deployment.
+
+### ClickHouse Cloud {#prerequisites-cloud}
+
+<Note>
+PromQL support in ClickHouse Cloud is in private preview. The services that take part in the private preview already have the `enable_time_series_table` setting and the Prometheus API endpoints configured. Other ClickHouse Cloud services do not have this configuration, and you cannot enable the feature yourself on such a service. The `SET enable_time_series_table` statement and the `http_handlers` configuration in the next sections apply to self-managed deployments.
+</Note>
+
+On a service that takes part in the private preview, continue at [Create a TimeSeries table](#create-a-timeseries-table). The service serves the endpoint paths listed in the [endpoint table](#configure-prometheus-api).
+
+### Self-managed: enable the TimeSeries setting {#enable-the-timeseries-setting}
 
 Enable the `enable_time_series_table` setting for the user that creates and accesses the table:
 
@@ -26,7 +36,7 @@ SET enable_time_series_table = 1;
 
 For HTTP API requests, enable `enable_time_series_table` in the profile of the API user. To accept Remote Write 2.0, also enable `enable_prometheus_remote_write_v2` in that profile.
 
-### Configure the Prometheus API endpoints {#configure-prometheus-api}
+### Self-managed: configure the Prometheus API endpoints {#configure-prometheus-api}
 
 Configure one prefix-routed handler on the main ClickHouse HTTP port:
 
@@ -162,6 +172,19 @@ curl --user default:<password> --get \
   --data-urlencode "table=metrics"
 ```
 
+The query endpoints also accept the parameters in a form body. Without `--get`, curl sends the parameters as `application/x-www-form-urlencoded` over `POST`:
+
+```bash
+curl --user default:<password> \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query_range" \
+  --data-urlencode "query=rate(http_requests_total[5m])" \
+  --data-urlencode "start=2026-08-15T12:00:00Z" \
+  --data-urlencode "end=2026-08-15T13:00:00Z" \
+  --data-urlencode "step=60s" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
 Use the format-query endpoint to parse and format a PromQL expression without evaluating it:
 
 ```bash
@@ -188,13 +211,15 @@ datasources:
     basicAuth: true
     basicAuthUser: default
     jsonData:
-      httpMethod: GET
+      httpMethod: POST
       customQueryParameters: database=prometheus&table=metrics
     secureJsonData:
       basicAuthPassword: <password>
 ```
 
 Grafana appends `/api/v1/query` or `/api/v1/query_range` to this base URL and adds `customQueryParameters` to each request.
+
+With `httpMethod: POST`, Grafana sends the query parameters in the request body. ClickHouse reads the request body and the URL query string, so `customQueryParameters` still applies. Use `POST` for long PromQL expressions, because a URL has a length limit.
 
 <Note>
 Only the query endpoints `/api/v1/query`, `/api/v1/query_range`, and `/api/v1/format_query` and the metadata endpoints `/api/v1/series`, `/api/v1/labels`, `/api/v1/label/<name>/values`, and `/api/v1/metadata` are implemented. `/api/v1/series` requires at least one `match[]` series selector, supports the optional `start`, `end`, and `limit` parameters, and returns the union of the series matched by each selector. `/api/v1/labels` accepts the same parameters, with `match[]` being optional, and returns the sorted label names of the matched series (or of all series when no selectors are given). `/api/v1/label/<name>/values` accepts the same parameters as `/api/v1/labels` and returns the sorted values of one label, with `<name>` optionally using the Prometheus `U__...` escaping of label names that contain characters outside `[a-zA-Z0-9_]`. These endpoints cover what a Grafana Prometheus datasource uses for label browsing, template variables, and query-builder autocomplete.
