@@ -21,6 +21,7 @@
 #include <DataTypes/Serializations/SerializationInfo.h>
 
 #include <expected>
+#include <functional>
 #include <optional>
 #include <list>
 
@@ -126,6 +127,12 @@ public:
     /// of the rows read from such a storage carry the name of the table that actually produced
     /// each row, which is not necessarily the name of this storage.
     virtual bool readsFromOtherTables() const { return false; }
+
+    /// Storages whose rows this storage returns as its own on read, e.g. the target of `Alias`.
+    /// Their row policies apply to reads from this storage as well, so only a wrapper that exposes
+    /// the target's schema unchanged and reads it in the caller's context may list one here.
+    /// `Merge` is not listed: it resolves the policies of its children itself, per child.
+    virtual std::vector<StoragePtr> getUnderlyingStorages() const { return {}; }
 
     /// Returns true if the storage is a view of a table or another view.
     virtual bool isView() const { return false; }
@@ -342,6 +349,18 @@ protected:
     RWLockImpl::LockHolder tryLockTimed(
         const RWLock & rwlock, RWLockImpl::Type type, const String & query_id, const Poco::Timespan & acquire_timeout) const;
 
+    /// The same, but waits in slices of `check_period` and polls `need_stop` between them (see the public
+    /// `tryLockForShare` overload with `need_stop` below). Returns a nullptr only if `need_stop` returned true.
+    RWLockImpl::LockHolder tryLockTimedSliced(
+        const RWLock & rwlock,
+        RWLockImpl::Type type,
+        const String & query_id,
+        const Poco::Timespan & acquire_timeout,
+        const std::function<bool()> & need_stop,
+        const Poco::Timespan & check_period) const;
+
+    [[noreturn]] void throwLockTimedOut(const RWLock & rwlock, RWLockImpl::Type type, const Poco::Timespan & acquire_timeout) const;
+
 public:
     /// Lock table for share. This lock must be acquired if you want to be sure,
     /// that table will be not dropped while you holding this lock. It's used in
@@ -356,6 +375,19 @@ public:
     /// Similar to lockForShare, but returns a nullptr if the table is dropped while
     /// acquiring the lock instead of raising a TABLE_IS_DROPPED exception
     TableLockHolder tryLockForShare(const String & query_id, const Poco::Timespan & acquire_timeout);
+
+    /// Similar to tryLockForShare, but waits for the lock in slices of `check_period`, calling `need_stop`
+    /// between the slices, so that a query that is cancelled (or runs into its time limit) while a concurrent
+    /// DDL query holds the drop lock does not sit in the lock queue for the whole `acquire_timeout`.
+    /// The slicing happens below the throwing API boundary: an expired slice is a plain non-throwing retry,
+    /// and only the exhaustion of the whole `acquire_timeout` throws DEADLOCK_AVOIDED, with the total wait
+    /// in the message. A zero `acquire_timeout` means an infinite wait, as in the other locking methods.
+    /// Returns a nullptr if the table is dropped while acquiring the lock or if `need_stop` returned true.
+    TableLockHolder tryLockForShare(
+        const String & query_id,
+        const Poco::Timespan & acquire_timeout,
+        const std::function<bool()> & need_stop,
+        const Poco::Timespan & check_period);
 
     /// Lock table for alter. This lock must be acquired in ALTER queries to be
     /// sure, that we execute only one simultaneous alter. Doesn't affect share lock.

@@ -56,7 +56,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace ErrorCodes
@@ -231,22 +230,6 @@ ASTPtr convertRequiredExpressions(
     return conversion_expr_list;
 }
 
-std::optional<ActionsDAG> createExpressions(
-    const Block & header,
-    ASTPtr expr_list,
-    bool save_unneeded_columns,
-    ContextPtr context)
-{
-    if (!expr_list)
-        return {};
-
-    auto syntax_result = TreeRewriter(context).analyze(expr_list, header.getNamesAndTypesList());
-    auto expression_analyzer = ExpressionAnalyzer{expr_list, syntax_result, context};
-    ActionsDAG dag(header.getNamesAndTypesList());
-    auto actions = expression_analyzer.getActionsDAG(true, !save_unneeded_columns);
-    return ActionsDAG::merge(std::move(dag), std::move(actions));
-}
-
 std::optional<ActionsDAG> createExpressionsAnalyzer(
     const Block & header,
     ASTPtr expr_list,
@@ -309,11 +292,7 @@ void performRequiredConversions(
     if (conversion_expr_list->children.empty())
         return;
 
-    std::optional<ActionsDAG> dag;
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
-    else
-        dag = createExpressions(block, conversion_expr_list, true, context);
+    std::optional<ActionsDAG> dag = createExpressionsAnalyzer(block, conversion_expr_list, true, context);
 
     if (dag)
     {
@@ -344,10 +323,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
         return {};
 
     ASTPtr expr_list = defaultRequiredExpressions(header, required_columns, columns, null_as_default, context);
-    if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
-        return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
-
-    return createExpressions(header, expr_list, save_unneeded_columns, context);
+    return createExpressionsAnalyzer(header, expr_list, save_unneeded_columns, context);
 }
 
 /// Checks that a type-directed `enumerateStreams` walk over `column` cannot meet a column class

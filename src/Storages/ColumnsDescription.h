@@ -44,8 +44,7 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    Streaming = 4,
-    All = Reader | Plan | Streaming,
+    All = Reader | Plan,
 };
 
 struct GetColumnsOptions
