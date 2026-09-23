@@ -1,5 +1,5 @@
-#include <optional>
 #include <Interpreters/SystemLog.h>
+#include <Interpreters/SystemLogSettingsFromConfig.h>
 #include <Common/Exception.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Daemon/BaseDaemon.h>
@@ -128,30 +128,6 @@ void flushAsyncTextLogsIfPossible()
 constexpr size_t DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
 constexpr size_t DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS = 1000;
-
-template <class R>
-R getConfigOptionTemplated(const Poco::Util::AbstractConfiguration & config, const std::string & path)
-{
-    if constexpr (std::is_same_v<std::string, R>)
-        return config.getString(path);
-    if constexpr (std::is_same_v<size_t, R>)
-        return config.getUInt64(path);
-    if constexpr (std::is_same_v<bool, R>)
-        return config.getBool(path);
-}
-template <class R>
-std::optional<R> getSystemTableOption(const char * directive, const Poco::Util::AbstractConfiguration & config, const std::string & table_prefix)
-{
-    const std::string table_config_path = fmt::format("{}.{}", table_prefix, directive);
-    if (config.has(table_config_path))
-        return std::make_optional(getConfigOptionTemplated<R>(config, table_config_path));
-
-    const std::string system_config_path = fmt::format("system_tables.{}", directive);
-    if (config.has(system_config_path))
-        return std::make_optional(getConfigOptionTemplated<R>(config, system_config_path));
-
-    return std::nullopt;
-}
 
 bool getSystemTableSkipAliasColumnsOption(const Poco::Util::AbstractConfiguration & config)
 {
@@ -308,28 +284,7 @@ std::shared_ptr<TSystemLog> createSystemLog(
                             " at least one of 'merge_rotated_tables' and 'cluster' has to be specified");
     }
 
-    log_settings.queue_settings.flush_interval_milliseconds = getSystemTableOption<size_t>("flush_interval_milliseconds", config, config_prefix).value_or(TSystemLog::getDefaultFlushIntervalMilliseconds());
-
-    log_settings.queue_settings.max_size_rows = getSystemTableOption<size_t>("max_size_rows", config, config_prefix).value_or(TSystemLog::getDefaultMaxSize());
-    if (log_settings.queue_settings.max_size_rows < 1)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "max_size_rows for {} is {} should be 1 at least",
-                        log_settings.queue_settings.table,
-                        log_settings.queue_settings.max_size_rows);
-
-    log_settings.queue_settings.reserved_size_rows = getSystemTableOption<size_t>("reserved_size_rows", config, config_prefix).value_or(TSystemLog::getDefaultReservedSize());
-
-    if (log_settings.queue_settings.max_size_rows < log_settings.queue_settings.reserved_size_rows)
-    {
-         throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                         "max_size_rows for {} is {} should be >= reserved_size_rows ({})",
-                         log_settings.queue_settings.table,
-                         log_settings.queue_settings.max_size_rows,
-                         log_settings.queue_settings.reserved_size_rows);
-    }
-
-    log_settings.queue_settings.buffer_size_rows_flush_threshold = getSystemTableOption<size_t>("buffer_size_rows_flush_threshold", config, config_prefix).value_or(log_settings.queue_settings.max_size_rows / 2);
-
-    log_settings.queue_settings.notify_flush_on_crash = getSystemTableOption<bool>("flush_on_crash", config, config_prefix).value_or(TSystemLog::shouldNotifyFlushOnCrash());
+    readSystemLogQueueSettingsFromConfig<TSystemLog>(log_settings.queue_settings, config, config_prefix);
 
     if constexpr (std::is_same_v<TSystemLog, TraceLog>)
         log_settings.symbolize_traces = config.getBool(config_prefix + ".symbolize", true);
