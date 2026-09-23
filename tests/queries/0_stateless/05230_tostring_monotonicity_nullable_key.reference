@@ -4,6 +4,9 @@ nullable_enum_no_primary_key	1
 nullable_enum_cast	1
 nullable_datetime_equals	1
 lc_nullable_datetime_equals	1
+nullable_utc_formatted_in_new_york	1
+plain_utc_formatted_in_new_york	1
+new_york_formatted_in_utc_prunes	1
 nullable_time_equals	1
 nullable_string_range	1
 nullable_string_prunes	1

@@ -15,6 +15,9 @@ DROP TABLE IF EXISTS tab_dt;
 DROP TABLE IF EXISTS tab_dt_ref;
 DROP TABLE IF EXISTS tab_lc;
 DROP TABLE IF EXISTS tab_lc_ref;
+DROP TABLE IF EXISTS tab_utc;
+DROP TABLE IF EXISTS tab_utc_ref;
+DROP TABLE IF EXISTS tab_utc_plain;
 DROP TABLE IF EXISTS tab_time;
 DROP TABLE IF EXISTS tab_time_ref;
 DROP TABLE IF EXISTS tab_str;
@@ -65,6 +68,25 @@ CREATE TABLE tab_lc_ref ENGINE = Log AS SELECT * FROM tab_lc;
 
 SELECT 'lc_nullable_datetime_equals', (SELECT count() FROM tab_lc WHERE toString(d) = '2021-11-07 01:30:00')
     = (SELECT count() FROM tab_lc_ref WHERE toString(d) = '2021-11-07 01:30:00');
+
+-- The constant time zone of `toString(d, tz)` formats the value, whatever the key's own zone: a UTC key
+-- formatted in America/New_York repeats 01:xx, and a New York key formatted in UTC does not.
+CREATE TABLE tab_utc (d Nullable(DateTime('UTC'))) ENGINE = MergeTree ORDER BY d
+    SETTINGS allow_nullable_key = 1, index_granularity = 2;
+INSERT INTO tab_utc SELECT d FROM tab_dt;
+CREATE TABLE tab_utc_ref ENGINE = Log AS SELECT * FROM tab_utc;
+CREATE TABLE tab_utc_plain (d DateTime('UTC')) ENGINE = MergeTree ORDER BY d SETTINGS index_granularity = 2;
+INSERT INTO tab_utc_plain SELECT d FROM tab_dt WHERE d IS NOT NULL;
+
+SELECT 'nullable_utc_formatted_in_new_york', (SELECT count() FROM tab_utc WHERE toString(d, 'America/New_York') = '2021-11-07 01:30:00')
+    = (SELECT count() FROM tab_utc_ref WHERE toString(d, 'America/New_York') = '2021-11-07 01:30:00');
+SELECT 'plain_utc_formatted_in_new_york', (SELECT count() FROM tab_utc_plain WHERE toString(d, 'America/New_York') = '2021-11-07 01:30:00')
+    = (SELECT count() FROM tab_utc_ref WHERE toString(d, 'America/New_York') = '2021-11-07 01:30:00');
+SELECT 'new_york_formatted_in_utc_prunes', (SELECT sum(granules_read) < sum(granules_total)
+    FROM (SELECT toUInt64OrZero(extract(explain, 'Granules: (\\d+)/')) AS granules_read,
+                 toUInt64OrZero(extract(explain, 'Granules: \\d+/(\\d+)')) AS granules_total
+          FROM (EXPLAIN indexes = 1 SELECT count() FROM tab_dt WHERE toString(d, 'UTC') = '2021-11-07 06:00:00'
+                SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0)));
 
 -- Hours take as many digits as needed, so '100:00:00' sorts before '99:00:00' as a string.
 CREATE TABLE tab_time (t Nullable(Time)) ENGINE = MergeTree ORDER BY t
@@ -135,6 +157,9 @@ DROP TABLE tab_dt;
 DROP TABLE tab_dt_ref;
 DROP TABLE tab_lc;
 DROP TABLE tab_lc_ref;
+DROP TABLE tab_utc;
+DROP TABLE tab_utc_ref;
+DROP TABLE tab_utc_plain;
 DROP TABLE tab_time;
 DROP TABLE tab_time_ref;
 DROP TABLE tab_str;
