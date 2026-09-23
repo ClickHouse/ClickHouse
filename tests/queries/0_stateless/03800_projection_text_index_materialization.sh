@@ -31,11 +31,12 @@ function run_test()
         WHERE explain ILIKE '%filter column%'
     "
 
+    # `use_skip_indexes_on_data_read = 1` would defer the index to the read and show all granules.
     $CLICKHOUSE_CLIENT --enable_analyzer 1 -q "
         SELECT trim(explain) FROM
         (
             EXPLAIN indexes = 1 SELECT count() FROM t_text_index_materialization WHERE text LIKE '%v322%'
-            SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 1, query_plan_text_index_add_hint = 1, query_plan_direct_read_from_text_index = 1, enable_full_text_index = 1
+            SETTINGS optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1, use_skip_indexes = 1, use_skip_indexes_on_data_read = 0, query_plan_text_index_add_hint = 1, query_plan_direct_read_from_text_index = 1, enable_full_text_index = 1
         )
         WHERE explain ILIKE '%Granules%'
     "
