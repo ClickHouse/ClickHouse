@@ -40,3 +40,9 @@ EXPLAIN SYNTAX SELECT CAST((1e19) AS UInt256), CAST(0xFF AS UInt8), CAST(inf AS 
 -- Formatting a query and parsing it back gives the same query.
 SELECT formatQuerySingleLine('SELECT CAST(- 1 AS Int128), CAST([0.1 /* c */, 0.2] AS Array(Decimal256(76))), CAST(0xFF AS Decimal32(2)), CAST(0b101 AS UInt128), CAST((0.1) AS Decimal256(76)), CAST(+1 AS Int128), CAST(-0 AS UInt128), CAST((-0.0) AS Decimal32(2)), 0xFF::UInt128, (0.1)::Decimal32(2), -0::UInt128, CAST(inf AS Decimal32(2)), CAST(0xFF AS UInt8), CAST([1, NULL] AS Array(UInt8))') AS formatted,
     formatQuerySingleLine(formatted) = formatted;
+
+-- A minus in front of a fractional zero is kept: it is the floating-point negative zero. A minus in
+-- front of an integer zero is dropped: it is the integer `0`.
+SELECT -0.0::Float64, -0e0::Float64, CAST(-0.0 AS Float64), (-0.0::BFloat16), -0::Float64, -0::UInt8, CAST(-0.0 AS Decimal32(2));
+SELECT formatQuerySingleLine('SELECT -0.0::Float64, CAST([-0.0, -0] AS Array(Decimal32(2))), CAST((-0.0) AS Decimal32(2)), -0::UInt8') AS formatted,
+    formatQuerySingleLine(formatted) = formatted;

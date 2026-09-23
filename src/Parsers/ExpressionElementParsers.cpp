@@ -1125,19 +1125,14 @@ static bool isIntegerNumeral(std::string_view text)
     return text.find_first_of(".eE") == std::string_view::npos;
 }
 
-/// True if a plain decimal numeral stands for zero, whatever its exponent: `0`, `0.00`, `00e5`.
-/// A minus in front of it is dropped from the text: it does not make the value negative - `-0` is
-/// the number `0`, and is written back as `0` - and an unsigned type does not read the sign.
-static bool isZeroNumeral(std::string_view text)
+/// True if a plain decimal numeral is an integer zero: `0`, `00`. A minus in front of it is dropped
+/// from the text: it does not make the value negative - `-0` is the integer `0`, and is written back
+/// as `0` - and an unsigned type does not read the sign. A fractional zero such as `-0.0` or `-0e0`
+/// keeps its minus: it is the floating-point negative zero, written back as `-0.`, and a
+/// floating-point type reads it as such.
+static bool isIntegerZeroNumeral(std::string_view text)
 {
-    for (const char c : text)
-    {
-        if (c == 'e' || c == 'E')
-            break;
-        if (c != '0' && c != '.')
-            return false;
-    }
-    return true;
+    return isIntegerNumeral(text) && text.find_first_not_of('0') == std::string_view::npos;
 }
 
 static std::string_view tokenText(IParser::Pos pos)
@@ -1225,7 +1220,7 @@ static bool scanCollectionOfLiteralsAsText(IParser::Pos & pos, LiteralAsText & l
                 return false;
             literal.all_integers &= isIntegerNumeral(text);
             holds_own_scalar |= own;
-            if (last_token == Minus && !isZeroNumeral(text))
+            if (last_token == Minus && !isIntegerZeroNumeral(text))
             {
                 literal.all_non_negative = false;
                 literal.text += '-';
@@ -1294,7 +1289,7 @@ bool parseLiteralAsText(IParser::Pos & pos, LiteralAsText & literal)
 
         const std::string_view text = tokenText(pos);
         result.all_integers = isIntegerNumeral(text);
-        if (!isZeroNumeral(text))
+        if (!isIntegerZeroNumeral(text))
         {
             result.all_non_negative = false;
             result.text += '-';
