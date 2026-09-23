@@ -56,6 +56,9 @@ namespace
         /// The aggregate function returns a sample's value (can be Float32), a sample's timestamp (a DateTime type) or a count (UInt64)
         /// instead of Float64, so the result must be cast.
         bool needs_cast_to_float64 = false;
+
+        /// The aggregate function takes the optional parameter `exact_rate` (see setting `promql_exact_rate`).
+        bool supports_exact_rate = false;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -67,12 +70,16 @@ namespace
              {
                  "timeSeriesRateToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
+                 /* supports_exact_rate = */ true,
              }},
 
             {"increase",
              {
                  "timeSeriesIncreaseToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
+                 /* supports_exact_rate = */ true,
              }},
 
             {"irate",
@@ -85,6 +92,8 @@ namespace
              {
                  "timeSeriesDeltaToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
+                 /* supports_exact_rate = */ true,
              }},
 
             {"idelta",
@@ -246,12 +255,18 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    ASTPtr aggregate_values = addParametersToAggregateFunction(
+    auto aggregate_function = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    /// The mode is passed explicitly rather than read by the aggregate function from the settings, so it is a part of the function's type.
+    if (impl_info->supports_exact_rate && context.exact_rate)
+        aggregate_function = addParametersToAggregateFunction(std::move(aggregate_function), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+
+    ASTPtr aggregate_values = std::move(aggregate_function);
 
     if (impl_info->needs_cast_to_float64)
     {
