@@ -600,6 +600,9 @@ Only the following subset is supported so far; anything else is rejected with an
 - `GLOBAL` is not supported.
 - The lateral subquery must reference at least one column of the left side. Use a regular join for a
   non-correlated subquery.
+- The lateral subquery is evaluated once per distinct value of the left-side columns it references, not
+  once per left row, so it must not contain functions that are non-deterministic within a query, such as
+  `rand` or `generateUUIDv4`. Functions that are constant within a query, such as `now`, are allowed.
 - Only a subquery is supported as the lateral table expression. The PostgreSQL table-source forms
   `LATERAL unnest(...)` and `CROSS JOIN UNNEST(...)` are not supported - use the
   [`ARRAY JOIN`](/reference/statements/select/array-join) clause instead.

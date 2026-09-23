@@ -258,6 +258,31 @@ bool containsNonDeterministicFunction(const QueryTreeNodePtr & node)
     return false;
 }
 
+/// Whether the `LATERAL` subquery contains a function whose value may differ between two evaluations
+/// within one query (`rand`, `generateUUIDv4`, `rowNumberInAllBlocks`, ...). Decorrelation evaluates the
+/// subquery once per distinct value of the correlated columns, not once per outer row, so two outer rows
+/// with the same correlated values would share one result. Unlike `containsNonDeterministicFunction`, this
+/// uses `isDeterministicInScopeOfQuery`, so `now` and server constants such as `hostName` are accepted.
+bool containsFunctionVolatileInScopeOfQuery(const QueryTreeNodePtr & node)
+{
+    if (!node)
+        return false;
+
+    if (const auto * function_node = node->as<FunctionNode>())
+    {
+        if (auto function = function_node->getFunction();
+            function && (!function->isDeterministicInScopeOfQuery() || function->isStateful()))
+            return true;
+    }
+
+    for (const auto & child : node->getChildren())
+    {
+        if (containsFunctionVolatileInScopeOfQuery(child))
+            return true;
+    }
+    return false;
+}
+
 /// AST-level counterpart of containsNonDeterministicFunction. Used for predicates that the
 /// pushdown injects as shard-side filters but that are NOT present in the outer query tree the
 /// QueryTree-based check above runs on: the view's row policy and view-keyed
@@ -3767,6 +3792,15 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                     throw Exception(ErrorCodes::NOT_IMPLEMENTED,
                         "LATERAL JOIN subquery must reference at least one column from the left side. "
                         "Use a regular JOIN for non-correlated subqueries");
+
+                /// The subquery is evaluated once per distinct value of the correlated columns, not once
+                /// per left row, so a function that is volatile within the query would silently share
+                /// one result between left rows with the same correlated values.
+                if (containsFunctionVolatileInScopeOfQuery(right_table_expression))
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must not contain functions that are non-deterministic within "
+                        "a query (e.g. rand, generateUUIDv4, rowNumberInAllBlocks), because it is not "
+                        "evaluated separately for every row of the left side");
 
                 ColumnIdentifiers correlated_column_identifiers;
                 correlated_column_identifiers.reserve(correlated_columns.size());
