@@ -198,7 +198,7 @@ SELECT normalizedQueryHashUnordered('SELECT a, b FROM t WHERE x = 1') = normaliz
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
@@ -244,7 +244,7 @@ SELECT normalizedQueryHashUnorderedOrNull('SELECT * FROM') AS res;
         )"
     }
     };
-    FunctionDocumentation::IntroducedIn introduced_in = {26, 9};
+    FunctionDocumentation::IntroducedIn introduced_in = {26, 10};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
 
