@@ -73,7 +73,8 @@ enum class EpollNesting : int
 class Epoll
 {
 public:
-    explicit Epoll(EpollNesting nesting = EpollNesting::Leaf);
+    /// Not defaulted: a nesting site left at `Leaf` is rejected only on macOS, only for some orders.
+    explicit Epoll(EpollNesting nesting);
 
     Epoll(const Epoll &) = delete;
     Epoll & operator=(const Epoll &) = delete;
