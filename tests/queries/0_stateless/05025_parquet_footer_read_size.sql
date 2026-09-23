@@ -29,8 +29,8 @@ select count(), sum(x), min(s), max(s) from file(currentDatabase() || '_data_050
 select count(), sum(x), min(s), max(s) from file(currentDatabase() || '_data_05025.parquet', auto, 'x UInt64, s String')
     settings input_format_parquet_footer_read_size = 1;
 
--- Compatibility contract: the setting is new in 26.9 and its SettingsChangesHistory row records the
+-- Compatibility contract: the setting is new in 26.10 and its SettingsChangesHistory row records the
 -- pre-26.9 behavior as the fixed 64 KiB footer read. SET compatibility to an older version must
 -- restore that fixed 65536, not leak the new adaptive default (0) through.
-set compatibility = '26.8';
+set compatibility = '26.9';
 select getSetting('input_format_parquet_footer_read_size');
