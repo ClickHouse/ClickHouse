@@ -39,6 +39,7 @@ namespace SetSetting
 
 namespace ErrorCodes
 {
+    extern const int CORRUPTED_DATA;
     extern const int DEADLOCK_AVOIDED;
     extern const int FAULT_INJECTED;
     extern const int INCORRECT_FILE_NAME;
@@ -342,6 +343,15 @@ void StorageSetOrJoinBase::completeMutation(UInt64 mutation_id)
     static constexpr auto file_suffix = ".bin";
     static constexpr auto file_suffix_size = std::string_view(file_suffix).size();
 
+    /// Once the mutation is committed, the files it replaces may already be gone, and its replacement
+    /// is the only durable copy of the table. If it is neither staged nor in place, the state is broken:
+    /// removing anything or clearing the marker would silently lose the data, so refuse instead.
+    const String replacement_file_name = toString(mutation_id) + file_suffix;
+    if (!disk->existsFile(path + mutation_data_file_name) && !disk->existsFile(path + replacement_file_name))
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "The mutation of {} is committed with the replacement file {}, but neither {} nor {} exists",
+            path, mutation_id, mutation_data_file_name, replacement_file_name);
+
     std::vector<std::string> files;
     disk->listFiles(path, files);
     for (const auto & file_name : files)
@@ -360,7 +370,7 @@ void StorageSetOrJoinBase::completeMutation(UInt64 mutation_id)
     });
 
     if (disk->existsFile(path + mutation_data_file_name))
-        disk->replaceFile(path + mutation_data_file_name, path + toString(mutation_id) + file_suffix);
+        disk->replaceFile(path + mutation_data_file_name, path + replacement_file_name);
 
     disk->removeFileIfExists(path + mutation_commit_file_name);
 }

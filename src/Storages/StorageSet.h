@@ -79,7 +79,8 @@ protected:
       * itself, and it is idempotent, so it is also how the load finishes a swap that was interrupted:
       * the files numbered below `mutation_id` are removed, the replacement is put in place as
       * `<mutation_id>.bin` when it is still staged, and the marker is cleared. Files numbered above
-      * `mutation_id` are inserts made after the mutation was committed and are kept.
+      * `mutation_id` are inserts made after the mutation was committed and are kept. If the replacement
+      * is neither staged nor in place, nothing is touched and an exception is thrown.
       */
     void completeMutation(UInt64 mutation_id);
 

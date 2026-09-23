@@ -1,0 +1,6 @@
+persisted: 4.bin 
+staged: mut.bin mut.commit 
+staged: mut.commit 
+CORRUPTED_DATA
+persisted: 4.bin 
+staged: mut.commit 
