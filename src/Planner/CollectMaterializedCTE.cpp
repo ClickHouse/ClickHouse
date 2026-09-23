@@ -22,11 +22,34 @@ namespace
 
 struct MaterializedCteWithLevel
 {
-    QueryTreeNodePtr table_node;
+    QueryTreeNodePtr subquery;
     size_t level;
 };
 
 using CTEToLevelMap = std::unordered_map<MaterializedCTEPtr, MaterializedCteWithLevel>;
+
+/// Registers one occurrence of `cte`. The deepest level wins, because that is the level whose gate
+/// dominates every shallower reader; a null `subquery` is upgraded by any occurrence carrying a body,
+/// which is what a writer can be built from. Returns true iff the entry is new or its level rose.
+bool registerMaterializedCTE(
+    CTEToLevelMap & materialized_ctes,
+    const MaterializedCTEPtr & cte,
+    const QueryTreeNodePtr & subquery,
+    size_t level)
+{
+    auto [it, inserted] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{subquery, level});
+    if (inserted)
+        return true;
+
+    if (!it->second.subquery && subquery)
+        it->second.subquery = subquery;
+
+    if (it->second.level >= level)
+        return false;
+
+    it->second.level = level;
+    return true;
+}
 
 }
 
@@ -39,7 +62,6 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
     OrderedMaterializedCTEs ctes_by_level;
 
     size_t level = 0;
-    size_t max_level = 0;
     traverseQueryTree(node, Everything{},
     [&](const QueryTreeNodePtr & current_node)
     {
@@ -53,11 +75,7 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
             if (cte && (table_node->isMaterializedCTE() || cte->hasPlanOrBuilt()
                         || select_query_options.force_materialize_cte))
             {
-                auto [it, _] = materialized_ctes.emplace(cte, MaterializedCteWithLevel{current_node, level});
-
-                it->second.level = std::max(it->second.level, level);
-                max_level = std::max(max_level, level);
-
+                registerMaterializedCTE(materialized_ctes, cte, table_node->getMaterializedCTESubquery(), level);
                 ++level;
             }
         }
@@ -76,11 +94,39 @@ OrderedMaterializedCTEs collectMaterializedCTEs(const QueryTreeNodePtr & node, c
     if (materialized_ctes.empty())
         return ctes_by_level;
 
+    /// A by-name reference carries no body, so the CTEs that body reads are invisible to the walk
+    /// above. They belong one level deeper than the CTE reading them, so that their gate dominates.
+    for (size_t iteration = 0;; ++iteration)
+    {
+        std::vector<std::pair<MaterializedCTEPtr, size_t>> known;
+        known.reserve(materialized_ctes.size());
+        for (const auto & [cte, entry] : materialized_ctes)
+            known.emplace_back(cte, entry.level);
+
+        bool level_changed = false;
+        for (const auto & [cte, cte_level] : known)
+            for (const auto & dependency : cte->dependencies)
+                level_changed |= registerMaterializedCTE(materialized_ctes, dependency, nullptr, cte_level + 1);
+
+        if (!level_changed)
+            break;
+
+        /// A level can only keep rising past one round per CTE if the dependencies contain a cycle,
+        /// which no ordering of writers satisfies.
+        if (iteration >= materialized_ctes.size())
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Dependencies of materialized CTEs form a cycle, their materialization cannot be ordered");
+    }
+
+    size_t max_level = 0;
+    for (const auto & [_, entry] : materialized_ctes)
+        max_level = std::max(max_level, entry.level);
+
     ctes_by_level.resize(max_level + 1);
-    for (const auto & [_, future_table] : materialized_ctes)
+    for (const auto & [cte, entry] : materialized_ctes)
     {
         /// Deepest materialized CTEs should be executed first, because CTEs with lower levels depend on them.
-        ctes_by_level[future_table.level].push_back(future_table.table_node);
+        ctes_by_level[entry.level].push_back(CollectedMaterializedCTE{cte, entry.subquery});
     }
 
     return ctes_by_level;
@@ -152,13 +198,12 @@ void addBuildSubqueriesForMaterializedCTEsIfNeeded(
         std::vector<MaterializedCTEPtr> ctes;
         ctes.reserve(cte_level.size());
 
-        for (const auto & cte_node : cte_level)
+        for (const auto & collected_cte : cte_level)
         {
-            auto * cte_table_node = cte_node->as<TableNode>();
-            auto materialized_cte = cte_table_node->getMaterializedCTE();
+            const auto & materialized_cte = collected_cte.cte;
             if (!materialized_cte->hasPlanOrBuilt())
             {
-                auto cte_subquery = cte_table_node->getMaterializedCTESubquery();
+                const auto & cte_subquery = collected_cte.subquery;
                 /// A by-name reference carries no subquery, but a standalone pipeline still needs a
                 /// gate for it, and the handle alone is enough to build one. The writer stays with
                 /// whoever holds the subquery.

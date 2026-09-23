@@ -2,6 +2,7 @@
 
 #include <unordered_map>
 #include <unordered_set>
+#include <vector>
 
 #include <Analyzer/TableNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
@@ -122,6 +123,48 @@ MaterializedCTEUseCount mergeDuplicateMaterializedCTEs(const QueryTreeNodePtr & 
     return use_count;
 }
 
+/// Records on every materialized CTE which materialized CTEs its own body reads.
+///
+/// Must run after `mergeDuplicateMaterializedCTEs` returns: that pass redirects pointers with
+/// `adoptMaterializedCTE` on leave, so an edge recorded during it can land on a pointer that is about
+/// to be replaced. Only CTEs in `reused` qualify; the rest are inlined below, so at run time they have
+/// no temporary table and nothing to order.
+void recordMaterializedCTEDependencies(const QueryTreeNodePtr & node, const ReusedMaterializedCTEs & reused)
+{
+    /// Both lambdas must accept exactly the same nodes, or the stack stops tracking the enclosing CTE.
+    auto is_recorded = [&reused](const QueryTreeNodePtr & current_node) -> MaterializedCTEPtr
+    {
+        auto * table_node = current_node->as<TableNode>();
+        /// Only a definition-bearing occurrence has a body below it to attribute reads to; a by-name
+        /// occurrence (see `TableNode`'s `extractCTE`) carries no subquery child.
+        if (!table_node || !table_node->isMaterializedCTE())
+            return nullptr;
+
+        const auto & cte = table_node->getMaterializedCTE();
+        return reused.contains(cte) ? cte : nullptr;
+    };
+
+    std::vector<MaterializedCTEPtr> enclosing;
+
+    traverseQueryTree(node, Everything{},
+    [&](const QueryTreeNodePtr & current_node)
+    {
+        auto cte = is_recorded(current_node);
+        if (!cte)
+            return;
+
+        /// A self-edge is a level no ordering can satisfy; self-reference is a separate feature.
+        if (!enclosing.empty() && enclosing.back() != cte)
+            enclosing.back()->dependencies.insert(cte);
+        enclosing.push_back(std::move(cte));
+    },
+    [&](const QueryTreeNodePtr & current_node)
+    {
+        if (is_recorded(current_node))
+            enclosing.pop_back();
+    });
+}
+
 class InlineMaterializedCTEsVisitor : public InDepthQueryTreeVisitorWithContext<InlineMaterializedCTEsVisitor>
 {
     using Base = InDepthQueryTreeVisitorWithContext<InlineMaterializedCTEsVisitor>;
@@ -194,6 +237,9 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
     {
         reused_materialized_cte.clear();
     }
+
+    /// While the bodies are still in the tree, i.e. before the inline stage rewrites it below.
+    recordMaterializedCTEDependencies(node, reused_materialized_cte);
 
     InlineMaterializedCTEsVisitor visitor(reused_materialized_cte, std::move(context));
     visitor.visit(node);
