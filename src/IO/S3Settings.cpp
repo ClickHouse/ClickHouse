@@ -61,6 +61,12 @@ void S3Settings::updateIfChanged(const S3Settings & settings)
     request_settings.updateIfChanged(settings.request_settings);
 }
 
+bool S3Settings::hasChangesAffectingClient(const S3Settings & settings) const
+{
+    return auth_settings.hasUpdates(settings.auth_settings)
+        || request_settings.hasChangesAffectingClient(settings.request_settings);
+}
+
 void S3SettingsByEndpoint::loadFromConfig(
     const Poco::Util::AbstractConfiguration & config,
     const std::string & config_prefix,
