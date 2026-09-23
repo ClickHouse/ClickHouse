@@ -244,7 +244,8 @@ void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & o
 Strings makeListOfShardsForReadStep(const IQueryPlanStep * read_step);
 String dumpQueryPlanShort(const QueryPlan & query_plan);
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes nodes, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings);
-std::optional<PreformattedMessage> getReasonAggregationCannotBeDistributed(QueryPlan::Node & node, bool enable_cascades_optimizer);
+std::optional<PreformattedMessage>
+getReasonAggregationCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings);
 std::optional<PreformattedMessage> getReasonCascadesCannotDistribute(const IQueryPlanStep & step);
 std::optional<PreformattedMessage> getReasonStepCannotBeDistributed(const IQueryPlanStep & step);
 std::optional<PreformattedMessage>
@@ -312,11 +313,26 @@ std::optional<PreformattedMessage> getReasonReadCannotBeDistributed(const ReadFr
 /// `force_aggregation_in_order` is set). It relies on its input arriving ordered by the
 /// group keys, which the exchanges do not preserve.
 /// Also true if contains a global GROUP BY limit since it can't be enforced once aggregation is split per bucket.
-std::optional<PreformattedMessage> getReasonAggregationCannotBeDistributed(QueryPlan::Node & node, bool enable_cascades_optimizer)
+std::optional<PreformattedMessage>
+getReasonAggregationCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * aggregating_step = typeid_cast<AggregatingStep *>(node.step.get());
     if (!aggregating_step)
         return {};
+
+    const bool enable_cascades_optimizer = optimization_settings.enable_cascades_optimizer;
+
+    /// Both the rule-based `tryMakeDistributedAggregation` and the Cascades `TwoStageAggregationTransformation`
+    /// clone the step into a partial first stage and force it to emit its result in bucket order for the
+    /// memory-efficient merge. The per-block streaming flush of `group_by_each_block_no_merge` pushes its
+    /// chunks directly, bypassing the bucket-ordering protocol of `GroupingAggregatedTransform`, so that first
+    /// stage cannot be built; `AggregatingStep::transformPipeline` refuses it. Reject the combination here, in
+    /// the pre-optimization check, so the query falls back to local execution instead of throwing.
+    if (aggregating_step->getParams().group_by_each_block_no_merge
+        && (optimization_settings.distributed_aggregation_memory_efficient || aggregating_step->shouldProduceResultsInBucketOrder()))
+        return PreformattedMessage::create(
+            "make_distributed_plan does not support `group_by_each_block_no_merge` with the memory-efficient "
+            "(bucket-ordered) merge of aggregation results");
 
     /// An in-order aggregation (or one that requires explicit sorting, `force_aggregation_in_order`)
     /// relies on its input arriving ordered by the group keys, which neither the rule-based exchanges
@@ -425,7 +441,7 @@ getReasonNodeCannotBeDistributed(QueryPlan::Node & node, const QueryPlanOptimiza
     if (auto reason = getReasonStepCannotBeDistributed(step); reason.has_value())
         return reason;
 
-    if (auto reason = getReasonAggregationCannotBeDistributed(node, optimization_settings.enable_cascades_optimizer); reason.has_value())
+    if (auto reason = getReasonAggregationCannotBeDistributed(node, optimization_settings); reason.has_value())
         return reason;
 
     if (optimization_settings.enable_cascades_optimizer)
