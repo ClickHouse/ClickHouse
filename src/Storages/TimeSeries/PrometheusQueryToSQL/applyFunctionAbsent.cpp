@@ -111,6 +111,8 @@ SQLQueryPiece applyFunctionAbsent(const PrometheusQueryTree::Function * function
 
     SQLQueryPiece res = argument;
     res.node = function_node;
+    /// absent() makes a new series, so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
     res.start_time = node_range.start_time;
     res.end_time = node_range.end_time;
     res.step = node_range.step;

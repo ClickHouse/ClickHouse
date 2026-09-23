@@ -115,6 +115,8 @@ SQLQueryPiece applyFusedAggregationBinaryOperator(
     auto res = argument;
     res.node = operator_node;
     res.type = operator_node->result_type;
+    /// Aggregation makes new series, so an order fixed by an inner sort*() call no longer applies.
+    res.sort_rank_subquery.clear();
 
     /// Step 1:
     /// SELECT <group> AS new_group,

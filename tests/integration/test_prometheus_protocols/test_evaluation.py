@@ -2851,6 +2851,28 @@ def test_sort_functions():
         ],
     )
 
+    # Functions making new series drop the order fixed by an inner sort call instead of losing the series.
+    do_query_test(
+        'count_values("value", sort(http_errors{http_code="401"}))',
+        200,
+        '{"resultType": "vector", "result": [{"metric": {"value": "4"}, "value": [200, "1"]}]}',
+        [["[('value','4')]", "1970-01-01 00:03:20.000", 1]],
+    )
+
+    do_query_test(
+        "sum(sort(http_errors)) / count(sort(http_errors))",
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "4.5"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 4.5]],
+    )
+
+    do_query_test(
+        'absent(sort(nonexistent_metric_name{job="api"}))',
+        200,
+        '{"resultType": "vector", "result": [{"metric": {}, "value": [200, "1"]}]}',
+        [["[]", "1970-01-01 00:03:20.000", 1]],
+    )
+
 
 def test_alignment_with_subquery_step():
     do_query_test(
