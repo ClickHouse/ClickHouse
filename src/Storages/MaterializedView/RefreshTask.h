@@ -10,6 +10,7 @@
 #include <Core/UUID.h>
 #include <IO/Progress.h>
 
+#include <map>
 #include <random>
 
 
@@ -91,9 +92,8 @@ public:
         std::string last_attempt_replica;
         std::string last_attempt_error;
         bool last_attempt_succeeded = false;
-        /// Whether the last started attempt was an out-of-schedule refresh (`SYSTEM REFRESH VIEW`)
-        /// rather than a scheduled one. Kept in the znode so that `SYSTEM WAIT VIEW` on a stopped
-        /// view reports a failed hand-requested refresh on every replica, not just the one that ran it.
+        /// Whether the last started attempt was a `SYSTEM REFRESH VIEW`. In the znode so that
+        /// `SYSTEM WAIT VIEW` on a stopped view reports such a failed refresh from every replica.
         bool last_attempt_out_of_schedule = false;
         /// If an attempt is in progress, this contains error from the previous attempt.
         /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
@@ -164,7 +164,7 @@ public:
     /// Called at most once.
     void startup();
     void finalizeRestoreFromBackup();
-    /// Call after CREATE OR REPLACE committed the view under its final name. Lifts the refresh hold.
+    /// Call after `CREATE OR REPLACE` committed the view under its final name. Lifts the refresh hold.
     void finalizeCreateOrReplace();
     /// Permanently disable task scheduling and remove this table from RefreshSet.
     /// Ok to call multiple times, including in parallel.
@@ -194,7 +194,7 @@ public:
     void startReplicated();
     void stopReplicated(const String & reason);
 
-    /// Schedule task immediately
+    /// Schedule task immediately. For a coordinated view, records the request in Keeper first (may throw).
     void run();
     /// Cancel task execution
     void cancel();
@@ -202,7 +202,9 @@ public:
     /// Waits for the currently running refresh attempt to complete, either on this replica
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
-    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
+    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed, unless it was
+    /// cancelled, or the view is disabled on this replica and the attempt was not a `SYSTEM REFRESH VIEW`.
+    /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
     /// Wait for background work (refreshing or scheduling) on this replica to complete.
@@ -245,6 +247,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
+        /// ├── ["requested-<replica>-<seq>"] (persistent sequential; one pending `SYSTEM REFRESH VIEW` made on that replica, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -255,6 +258,24 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
+        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; `replica` comes from the znode data, so that no
+        /// replica name can be mistaken for a prefix of another, see `doScheduling`.
+        struct PendingRequest
+        {
+            String replica;
+            std::optional<std::chrono::system_clock::time_point> pending_since {};
+        };
+        std::map<String, PendingRequest> pending_requests;
+        /// Numbers an uncoordinated view's requests, which have no Keeper to name them; their `replica` stays empty
+        /// like `replica_name`, so `doScheduling` treats them all as own.
+        UInt64 requests_made = 0;
+        /// `wait` needs a read of the znodes that started after it began, i.e. one that makes
+        /// `znode_reads_finished` exceed the `znode_reads_started` it saw. Or a failed pass, to fail instead of hanging.
+        UInt64 znode_reads_started = 0;
+        UInt64 znode_reads_finished = 0;
+        UInt64 scheduling_keeper_errors = 0;
+        /// Bumped by `wait`: the next completed read must have synced with the Keeper leader first, see `readZnodesIfNeeded`.
+        UInt64 syncs_requested = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -299,7 +320,7 @@ private:
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
-        /// `out_of_schedule_refreshes_requested`, etc.
+        /// `pending_requests`, etc.
         std::atomic_bool interrupt_execution {false};
         CompletedPipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
@@ -325,16 +346,14 @@ private:
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
         /// We shouldn't start new scheduled refreshes, but pre-existing refresh attempt may keep going.
         bool stop_requested = false;
-        /// The view is not ready to refresh yet (restore from backup, CREATE OR REPLACE).
+        /// Held while restoring from a backup or as the temporary view of a `CREATE OR REPLACE`. Unlike `stop_requested`,
+        /// a `SYSTEM REFRESH VIEW` does not bypass it, and `SYSTEM START VIEW` lifts only the restore one, see `start`.
         bool not_ready = false;
-        /// The table is shutting down (DROP/DETACH/server stop). Unlike `stop_requested`, blocks even
-        /// SYSTEM REFRESH VIEW, so a request racing with shutdown can't start a refresh.
+        /// The table is shutting down (`DROP`/`DETACH`/server stop). Unlike `stop_requested`, blocks even
+        /// `SYSTEM REFRESH VIEW`, so a request racing with shutdown can't start a refresh.
         bool shutdown_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
-        /// Decremented when the refresh starts.
-        UInt64 out_of_schedule_refreshes_requested = 0;
-
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
         /// View Y: REFRESH AFTER 20 SECOND DEPENDS ON X.
@@ -405,7 +424,7 @@ private:
     /// It runs whenever anything changes (e.g. znodes change, or refresh completes, or retry timer fires).
     /// It looks at the state of everything and decides what needs to be done.
     /// Public methods just provide inputs for the doScheduling()'s decisions
-    /// (e.g. stop_requested, out_of_schedule_refreshes_requested), they don't do anything significant themselves.
+    /// (e.g. stop_requested, pending_requests), they don't do anything significant themselves.
     /// If is_shutdown, both background tasks were stopped, and we only need to write to zookeeper
     /// to reflect that this replica is not running a refresh anymore.
     ///
@@ -448,12 +467,16 @@ private:
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
-    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
+    /// If `request_znode` is given, that "requested-*" znode is removed in the same multi: the started refresh consumes it.
+    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, const String & request_znode = {});
 
     /// Enter the permanent, non-resumable "coordination unavailable" state (sets
     /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
     /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
     void markCoordinationUnavailable();
+
+    /// Children of the coordination znode, one per pending `SYSTEM REFRESH VIEW`, see `run`.
+    static constexpr std::string_view request_znode_prefix = "requested-";
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

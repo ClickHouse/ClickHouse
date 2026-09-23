@@ -413,6 +413,13 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Takes no name. Listed explicitly rather than left to the `default` below,
+            /// which would accept `ON CLUSTER` - fail points are node-local state, and none
+            /// of the other `SYSTEM ... FAILPOINT` statements accept it either.
+            break;
+        }
         case Type::WAIT_FAILPOINT:
         {
             ASTPtr ast;
@@ -1926,7 +1933,7 @@ SYSTEM STOP VIEWS
 
 ### SYSTEM START [REPLICATED] VIEW, START VIEWS {#start-view-start-views}
 
-Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered.
+Enable periodic refreshing for the given view or all refreshable views. No immediate refresh is triggered, other than one that became due meanwhile or a `SYSTEM REFRESH VIEW` request that the stop was holding back (e.g. `START REPLICATED VIEW` after `STOP REPLICATED VIEW`).
 
 If the view is in a Replicated or Shared database, `START VIEW` undoes the effect of `STOP VIEW`, and `START REPLICATED VIEW` undoes the effect of `STOP REPLICATED VIEW`. `START VIEW` also undoes the effect of `PAUSE VIEW`.
 
@@ -1940,7 +1947,7 @@ SYSTEM START VIEWS
 ### SYSTEM PAUSE VIEW, PAUSE VIEWS {#pause-view-pause-views}
 
 Disable periodic refreshing of the given view or all refreshable views.
-Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent refreshes are prevented.
+Unlike `SYSTEM STOP VIEW`, `SYSTEM PAUSE VIEW` does not interrupt a refresh that is already in progress: the running refresh is allowed to finish, and only subsequent scheduled refreshes are prevented.
 
 Undo with `SYSTEM START VIEW` or `SYSTEM START VIEWS`.
 
@@ -1958,10 +1965,12 @@ SYSTEM PAUSE VIEWS
 
 ### SYSTEM REFRESH VIEW {#refresh-view}
 
-Trigger an immediate out-of-schedule refresh of a given view.
+Trigger an immediate out-of-schedule refresh of a given view. It runs even if the view is stopped or paused with `SYSTEM STOP VIEW` or `SYSTEM PAUSE VIEW`, and every call runs one refresh.
+
+If the view is in a Replicated or Shared database, the request is shared with all replicas: the refresh may run on another replica, e.g. if the current one is read-only.
 
 <Note>
-In Replicated or Shared databases, the refresh does not run while the view is stopped with `SYSTEM STOP REPLICATED VIEW`. It runs once `SYSTEM START REPLICATED VIEW` resumes it.
+In Replicated or Shared databases, the refresh does not run while the view is stopped with `SYSTEM STOP REPLICATED VIEW`. It runs once `SYSTEM START REPLICATED VIEW` resumes it. A view still being restored from a backup holds the request until the restore finishes or `SYSTEM START REPLICATED VIEW` (`SYSTEM START VIEW` for a view with `all_replicas`).
 </Note>
 
 ```sql
@@ -1970,11 +1979,11 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error.
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error, unless it was cancelled. On a replica where the view is disabled (stopped, paused, read-only or stopped cluster-wide), only a failed `SYSTEM REFRESH VIEW` is reported.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 
-If the view is in a Replicated or Shared database, and refresh is running on another replica, waits for that refresh to complete.
+If the view is in a Replicated or Shared database, also waits for a refresh that is running or requested on any replica.
 
 ```sql
 SYSTEM WAIT VIEW [db.]name
@@ -2009,7 +2018,7 @@ None of these states persist across a server restart. After a restart, refreshab
 
 ### SYSTEM STOP {#stop-background}
 
-Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
+Stop the background activity and keep it stopped: interrupt what is running now, and run nothing further on its own until `SYSTEM START`. Equivalent to `PAUSE` + `CANCEL`.
 
 ```sql
 SYSTEM STOP [db.]table
@@ -2027,7 +2036,7 @@ SYSTEM START ALL BACKGROUND
 
 ### SYSTEM PAUSE {#pause-background}
 
-Prevent further background activity, but let whatever is running right now finish first.
+Prevent further background activity of its own, but let whatever is running right now finish first.
 
 ```sql
 SYSTEM PAUSE [db.]table
@@ -2063,6 +2072,26 @@ Blocks until the given file has been processed or permanently failed by the give
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
+
+## SYSTEM ENABLE|DISABLE FAILPOINT {#failpoint}
+
+Fail points are named places in the server code where a fault can be injected on demand - an error, a delay, or a pause of the executing thread - for testing. They are listed in the [`system.fail_points`](/reference/system-tables/fail_points) table together with their current state.
+
+```sql
+SYSTEM ENABLE FAILPOINT name
+SYSTEM DISABLE FAILPOINT name
+SYSTEM DISABLE ALL FAILPOINTS
+SYSTEM WAIT FAILPOINT name [PAUSE|RESUME]
+SYSTEM NOTIFY FAILPOINT name
+```
+
+`SYSTEM ENABLE FAILPOINT` arms a single fail point; `SYSTEM DISABLE FAILPOINT` disarms it and resumes any thread blocked on it, and is a no-op if it was not enabled.
+
+`SYSTEM DISABLE ALL FAILPOINTS` disables every fail point at once and resumes every thread blocked on a pauseable one. It takes no name and is idempotent, so a test harness can use it to return the server to a state that injects nothing without knowing which fail points the previous test enabled. On a build without fail point support the statement succeeds and does nothing.
+
+`SYSTEM WAIT FAILPOINT ... PAUSE` blocks until a thread pauses on the given pauseable fail point (or the fail point is disabled), `... RESUME` blocks until the paused thread is resumed, and `SYSTEM NOTIFY FAILPOINT` resumes the paused threads without disabling the fail point.
+
+Fail points are node-local state, so none of these statements accept `ON CLUSTER`. All of them require the `SYSTEM FAILPOINT` privilege.
 )DOCS_MD",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
@@ -2082,6 +2111,9 @@ SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
+SYSTEM ENABLE | DISABLE FAILPOINT name
+SYSTEM DISABLE ALL FAILPOINTS
+SYSTEM WAIT FAILPOINT name [PAUSE|RESUME] | NOTIFY FAILPOINT name
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
     });

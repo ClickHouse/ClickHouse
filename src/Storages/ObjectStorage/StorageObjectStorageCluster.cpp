@@ -243,7 +243,7 @@ void StorageObjectStorageCluster::checkMutationIsPossible(const MutationCommands
     configuration->checkMutationIsPossible(object_storage, CurrentThread::tryGetQueryContext(), commands);
 }
 
-void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/)
+void StorageObjectStorageCluster::alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & /*alter_lock_holder*/, DDLGuardPtr & /*ddl_guard*/)
 {
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     StorageInMemoryMetadata new_metadata = *metadata_snapshot;

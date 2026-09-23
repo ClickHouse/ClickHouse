@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel, zookeeper, no-fasttest
+# Tags: atomic-database, memory-engine, no-parallel, zookeeper
 
 # Uses `SYSTEM ENABLE FAILPOINT refresh_mv_pause_after_executor_published`, which is server-global
 # and would park every other refresh on the server, so it cannot run concurrently with other tests.

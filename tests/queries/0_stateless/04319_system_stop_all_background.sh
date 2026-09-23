@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: atomic-database, memory-engine, no-parallel
+# Tags: atomic-database, memory-engine, no-parallel, long
+# long: the many waits on view state put it near the flaky check's cap for untagged tests.
 
 # Uses `SYSTEM ... ALL BACKGROUND` commands, which affect all refreshable views
 # on the server, so it cannot run concurrently with other tests that create RMV
