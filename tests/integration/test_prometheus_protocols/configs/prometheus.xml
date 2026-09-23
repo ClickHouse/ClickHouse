@@ -94,6 +94,14 @@
                     <table>default.prometheus_multi</table>
                 </handler>
             </my_rule_15>
+            <!-- A table of an earlier version: its Metrics target names the column with the name of a metric family differently. -->
+            <my_rule_17>
+                <url>/v5/api/v1/metadata</url>
+                <handler>
+                    <type>query</type>
+                    <table>default.prometheus_v5</table>
+                </handler>
+            </my_rule_17>
 
             <my_rule_10>
                 <!-- This handler sets no database and no table, so both database and table names
