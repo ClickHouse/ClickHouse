@@ -54,6 +54,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"max_streams_per_hierarchical_merge", 0, 16, "New setting to merge streams produced by a full sort in a tree of `MergingSortedTransform` nodes instead of a single fan-in, spreading the contention on one node's mutex over many. previous_value=0 (a single merge) so `compatibility` with versions before 26.10 restores the pre-existing pipeline."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {

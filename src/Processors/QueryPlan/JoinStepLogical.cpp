@@ -2525,8 +2525,11 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
+    if (version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_HIERARCHICAL_MERGE_VALIDATION)
+        sorting_settings.checkMaxStreamsPerHierarchicalMerge();
+
     join_settings.updatePlanSettings(settings, version, join_operator);
-    sorting_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings, version);
 }
 
 static void serializeNodeList(
