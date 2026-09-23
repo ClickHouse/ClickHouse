@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-old-analyzer
 # ^ `QueryNormalizer` treats `max_ast_depth = 0` as a literal limit of zero instead of "no limit",
 #   so with the old analyzer every query below fails with `TOO_DEEP_AST` before it runs.
 

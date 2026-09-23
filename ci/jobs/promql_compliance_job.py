@@ -9,11 +9,15 @@ import traceback
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import Optional
 
 from ci.jobs.scripts.job_hooks.promql_compliance_s3 import (
+    SUITE_COMPLIANCE,
+    SUITE_EXTENDED,
     fetch_baseline_from_s3,
     master_track_commits,
     result_url_for_pr_commit,
+    suites_from_payload,
 )
 from ci.jobs.scripts.workflow_hooks.pr_labels_and_category import Labels
 from ci.praktika.gh import GH
@@ -24,32 +28,23 @@ COMMENT_OUT = Path("./ci/tmp/promql_compliance_comment.json")
 
 _EPS = 1e-4
 
-_ZERO_BASELINE = {
-    "pct": 0.0,
-    "passed": 0,
-    "failed": 0,
-    "unsupported": 0,
+_SUITE_TITLES = {
+    SUITE_COMPLIANCE: "Prometheus compliance",
+    SUITE_EXTENDED: "Extended support (upstream engine tests)",
 }
 
 
 def _finish_ok(info: str = "") -> int:
-    """Finalize Praktika job Result (pre-run leaves status RUNNING until we dump)."""
     Result.create_from(status=Result.Status.OK, info=info).dump()
     return 0
 
 
 def _finish_error(info: str) -> int:
-    """Record a visible handoff failure (job has allow_failure=True)."""
     Result.create_from(status=Result.Status.ERROR, info=info).dump()
     return 1
 
 
 def _http_get_json(url: str):
-    """Return parsed JSON, or None when the PR object is missing.
-
-    The bucket denies anonymous ``s3:ListBucket``, so S3 reports a missing key
-    as 403 (AccessDenied) rather than 404 — treat both as "missing".
-    """
     req = urllib.request.Request(
         url,
         headers={"User-Agent": "ClickHouse-CI-promql-compliance"},
@@ -82,6 +77,51 @@ def _pr_has_comp_promql(info: Info) -> bool:
     return False
 
 
+def _suite_row(suite_id: str, current: dict, baseline: Optional[dict]) -> dict:
+    new_pct = float(current["pct"])
+    cur_passed = int(current["passed"])
+    cur_failed = int(current["failed"])
+    cur_unsup = int(current["unsupported"])
+    if not math.isfinite(new_pct):
+        raise ValueError(f"non-finite pct in suite {suite_id}")
+    row = {
+        "id": suite_id,
+        "title": _SUITE_TITLES.get(suite_id, suite_id),
+        "has_baseline": baseline is not None,
+        "new_pct": new_pct,
+        "cur_passed": cur_passed,
+        "cur_failed": cur_failed,
+        "cur_unsup": cur_unsup,
+        "excluded_native_histogram": int(current.get("excluded_native_histogram") or 0),
+        "excluded_assertions": int(current.get("excluded_assertions") or 0),
+        "upstream_sha": current.get("upstream_sha"),
+    }
+    if baseline is None:
+        row.update(
+            {
+                "base_pct": None,
+                "base_passed": None,
+                "base_failed": None,
+                "base_unsup": None,
+                "delta": None,
+            }
+        )
+        return row
+    base_pct = float(baseline["pct"])
+    if not math.isfinite(base_pct):
+        raise ValueError(f"non-finite baseline pct in suite {suite_id}")
+    row.update(
+        {
+            "base_pct": base_pct,
+            "base_passed": int(baseline["passed"]),
+            "base_failed": int(baseline["failed"]),
+            "base_unsup": int(baseline["unsupported"]),
+            "delta": new_pct - base_pct,
+        }
+    )
+    return row
+
+
 def main() -> int:
     info = Info()
 
@@ -110,10 +150,6 @@ def main() -> int:
         return _finish_error(f"Failed to fetch PR compliance JSON: {e}")
 
     if new is None:
-        # The batch carrying test_compliance may not have executed for this
-        # commit (cache hit, filtered out, or skipped on a test-only PR).
-        # Real upload failures are raised by the upload post-hook in the
-        # integration job itself, so a missing JSON is not an error here.
         print(
             f"PromQL compliance job: no PR-scoped JSON in S3 at {url} "
             "(integration batches were cached, filtered, or skipped, or the "
@@ -121,32 +157,40 @@ def main() -> int:
         )
         return _finish_ok(f"No PR compliance JSON in S3 at {url}; nothing to report.")
 
-    for _k in ("pct", "passed", "failed", "unsupported"):
-        if _k not in new:
-            print(f"PromQL compliance job: result JSON missing key {_k!r}")
-            return _finish_error(f"Result JSON missing key {_k!r}.")
-
+    new_suites = suites_from_payload(new)
+    if SUITE_COMPLIANCE not in new_suites:
+        print("PromQL compliance job: result JSON missing compliance suite")
+        return _finish_error("Result JSON missing compliance suite.")
 
     commits = master_track_commits(info)
     base, s3_sha = fetch_baseline_from_s3(commits)
     if base is not None and s3_sha:
         baseline_source = f"S3 master `{s3_sha[:9]}`"
         from_zero = False
+        base_suites = suites_from_payload(base)
     else:
-        base = dict(_ZERO_BASELINE)
-        baseline_source = "none on S3 (baseline 0 — see note below)"
+        baseline_source = "none on S3 (baseline 0; see note below)"
         from_zero = True
         s3_sha = None
+        base_suites = {}
 
     try:
-        new_pct = float(new["pct"])
-        base_pct = float(base["pct"])
-        cur_passed = int(new["passed"])
-        cur_failed = int(new["failed"])
-        cur_unsup = int(new["unsupported"])
-        base_passed = int(base["passed"])
-        base_failed = int(base["failed"])
-        base_unsup = int(base["unsupported"])
+        rows = []
+        for suite_id in (SUITE_COMPLIANCE, SUITE_EXTENDED):
+            current = new_suites.get(suite_id)
+            if current is None:
+                continue
+            baseline = base_suites.get(suite_id)
+            if suite_id == SUITE_COMPLIANCE and from_zero:
+                baseline = {
+                    "pct": 0.0,
+                    "passed": 0,
+                    "failed": 0,
+                    "unsupported": 0,
+                }
+            elif suite_id != SUITE_COMPLIANCE and from_zero:
+                baseline = None
+            rows.append(_suite_row(suite_id, current, baseline))
     except (KeyError, TypeError, ValueError) as e:
         print(
             "PromQL compliance job: invalid result or baseline "
@@ -154,27 +198,12 @@ def main() -> int:
         )
         return _finish_error(f"Invalid numeric fields in result/baseline: {e}")
 
-    if not math.isfinite(new_pct) or not math.isfinite(base_pct):
-        print(
-            "PromQL compliance job: result or baseline has non-finite 'pct'; skip."
-        )
-        return _finish_error("Non-finite pct in result or baseline.")
-
-    delta = new_pct - base_pct
     payload = {
         "baseline_source": baseline_source,
         "from_zero": from_zero,
         "s3_sha": s3_sha,
-        "new_pct": new_pct,
-        "base_pct": base_pct,
-        "cur_passed": cur_passed,
-        "cur_failed": cur_failed,
-        "cur_unsup": cur_unsup,
-        "base_passed": base_passed,
-        "base_failed": base_failed,
-        "base_unsup": base_unsup,
-        "delta": delta,
         "result_json_url": url,
+        "suites": rows,
     }
 
     COMMENT_OUT.parent.mkdir(parents=True, exist_ok=True)

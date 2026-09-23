@@ -62,7 +62,9 @@ namespace ErrorCodes
     extern const int INCOMPATIBLE_SCHEMA;
     extern const int SUPPORT_IS_DISABLED;
     extern const int NOT_IMPLEMENTED;
+    extern const int SNAPPY_UNCOMPRESS_FAILED;
     extern const int UNSUPPORTED_MEDIA_TYPE;
+    extern const int ZSTD_DECODER_FAILED;
 }
 
 namespace TimeSeriesSetting
@@ -494,8 +496,19 @@ public:
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
-            if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            try
+            {
+                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+            }
+            catch (const Exception & e)
+            {
+                /// A body this server cannot decode is the sender's to fix, and a sender resends a 5xx for ever.
+                /// The decoders' own codes also cover reading stored files, so only this request retags them.
+                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED || e.code() == ErrorCodes::ZSTD_DECODER_FAILED)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                throw;
+            }
         }
 
         protocol.write(write_request.timeseries(), write_request.metadata());
@@ -537,8 +550,17 @@ public:
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{
                 std::make_unique<SnappyBasicReadBuffer>(wrapReadBufferPointer(request.getStream()))};
 
-            if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+            try
+            {
+                if (!read_request.ParseFromZeroCopyStream(&zero_copy_input_stream))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse ReadRequest");
+            }
+            catch (const Exception & e)
+            {
+                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                throw;
+            }
         }
 
         /// Prometheus remote-read uses raw snappy block compression (not the snappy framing format
