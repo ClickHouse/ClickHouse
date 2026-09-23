@@ -66,6 +66,22 @@ def expect_part_info(
     assert res[4] == removal_csn
 
 
+def held_txn_ephemerals(zk, txn_root="/clickhouse/txn"):
+    # The ephemeral znodes one TransactionManager::start() attempt takes: cleanupLockPath() and
+    # TransactionSession::replicaActivePath(). The sibling `_session` and `_tail_ptr` nodes under
+    # the same parent are persistent, hence the suffix filter.
+    #
+    # sync() first: this client is pinned to zoo1 while the server shuffles the three configured
+    # endpoints, so an unsynced read can still show a holder the server has already removed, or
+    # miss one it has just taken.
+    zk.sync(txn_root)
+    held = ["cleanup_lock"] if zk.exists(f"{txn_root}/cleanup_lock") else []
+    replicas = f"{txn_root}/replicas"
+    if zk.exists(replicas):
+        held += sorted(c for c in zk.get_children(replicas) if c.endswith("_active"))
+    return held
+
+
 def test_failed_start_releases_ephemeral_holders(start_cluster):
     # A failing TransactionManager::start() must leave no ephemeral node holder behind: the failed
     # attempt's instance is discarded and its ~TransactionManager -> shutdown() removes both holders
@@ -113,6 +129,15 @@ def test_failed_start_releases_ephemeral_holders(start_cluster):
         # well on a server that never tried, and nothing in this test would observe the startup path.
         assert int(node.count_in_log("Cannot initialize the transaction log at startup")) >= 1
 
+        # Arm 1 of 2: each failing attempt is checked on its own. A count aggregated over all three
+        # attempts cannot localize a leak, because tryAcquireCleanupLock treats an existing lease as
+        # a non-fatal skip and logs nothing, and createActiveNode removes a stale `_active` before
+        # taking its own -- one attempt's leak is therefore absorbed silently by the next.
+        leases_after_eager = int(node.count_in_log("Acquired cleanup lease"))
+        assert leases_after_eager >= 1, "the eager start() attempt never took the cleanup lease"
+        held = held_txn_ephemerals(zk)
+        assert held == [], f"the eager start() failure left ephemeral node holders behind: {held}"
+
         # A transaction log that cannot be initialized must not keep the server from starting.
         assert node.query("SELECT 1").strip() == "1"
 
@@ -126,14 +151,22 @@ def test_failed_start_releases_ephemeral_holders(start_cluster):
             f"published, so this test covers nothing. Got: {excinfo.value}"
         )
 
+        # Arm 2 of 2: the same pair of checks for the lazy attempt.
+        leases_after_lazy = int(node.count_in_log("Acquired cleanup lease"))
+        assert leases_after_lazy > leases_after_eager, (
+            "the lazy start() attempt did not take the cleanup lease, so the eager failure had "
+            "not released it"
+        )
+        held = held_txn_ephemerals(zk)
+        assert held == [], f"the lazy start() failure left ephemeral node holders behind: {held}"
+
         zk.delete(bad_entry)
 
-        # A third attempt, now unobstructed. It can only get the cleanup lease if the failed
-        # attempts actually removed the ephemeral node they took.
+        # A third attempt, now unobstructed.
         tx(102, "BEGIN TRANSACTION")
         tx(102, "ROLLBACK")
 
-        # Both counts below are absolute rather than a delta because
+        # The count below is absolute rather than a delta because
         # helpers/0_common_instance_config.xml sets <rotateOnOpen>, so the log file count_in_log
         # reads holds exactly the process started by the restart above, which is the whole window of
         # interest: every failing and succeeding start() happened in it.
@@ -142,10 +175,14 @@ def test_failed_start_releases_ephemeral_holders(start_cluster):
         # abortOnFailedAssertion, a release build from ~EphemeralNodeHolder's own handler.
         assert int(node.count_in_log("Current component is empty")) == 0
 
-        # Repeated acquisitions of an *ephemeral* znode in this window. One alone would only prove a
-        # holder existed; a later one is possible only because the earlier one was removed. The last
-        # is emitted by the successful attempt above, so this assert must come after it.
-        assert int(node.count_in_log("Acquired cleanup lease")) >= 2
+        # Liveness for both arms above: the published instance holds exactly what the failed
+        # attempts had to give up, so their empty results are an absence and not a path that never
+        # takes these znodes.
+        assert int(node.count_in_log("Acquired cleanup lease")) > leases_after_lazy
+        held = held_txn_ephemerals(zk)
+        assert "cleanup_lock" in held and len(held) == 2, (
+            f"the started instance does not hold both ephemerals, so the arms above prove nothing: {held}"
+        )
 
         # A transaction on the now-published singleton. Had a failed attempt's instance been reused
         # instead of discarded, a debug build would have aborted inside one of the attempts above, on
