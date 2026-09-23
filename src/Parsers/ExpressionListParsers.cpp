@@ -1713,7 +1713,7 @@ static ASTPtr buildExtractTimePartAST(IntervalKind interval_kind, ExtractUnit ex
 /// aliases that `parseIntervalKind` accepts as keywords for `EXTRACT`
 /// (plurals like `years`, `SQL_TSI_*` forms, and short forms like `yy`, `mm`,
 /// `ns`). Keep in sync with `parseIntervalKind.cpp`.
-static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind::Kind & result)
+static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, IntervalKind & result)
 {
     if (IntervalKind::tryParseString(unit_lower, result))
         return true;
@@ -1782,12 +1782,8 @@ static bool tryParseIntervalKindFromLowerString(const std::string & unit_lower, 
 static bool tryParseExtractUnitFromString(const std::string & unit_lower, IntervalKind & interval_kind, ExtractUnit & extract_unit)
 {
     extract_unit = ExtractUnit::None;
-    IntervalKind::Kind kind{};
-    if (tryParseIntervalKindFromLowerString(unit_lower, kind))
-    {
-        interval_kind = IntervalKind{kind};
+    if (tryParseIntervalKindFromLowerString(unit_lower, interval_kind))
         return true;
-    }
 
     if (unit_lower == "epoch")
         extract_unit = ExtractUnit::Epoch;
@@ -2629,9 +2625,9 @@ static std::optional<ParsedCompoundInterval> parseCompoundIntervalString(
         return {group.begin() + from_idx, group.begin() + to_idx + 1};
     };
 
-    auto range = extract_range(year_month_group, from_kind.kind, to_kind.kind);
+    auto range = extract_range(year_month_group, from_kind, to_kind);
     if (range.empty())
-        range = extract_range(day_time_group, from_kind.kind, to_kind.kind);
+        range = extract_range(day_time_group, from_kind, to_kind);
     if (range.empty())
         return {};
 
