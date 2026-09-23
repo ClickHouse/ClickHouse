@@ -41,7 +41,7 @@ function try_copy()
     shift 2
     echo "-- ${name}:"
     ${CLICKHOUSE_CLIENT} "${@}" -q "CREATE TABLE ${db}.${name} ON CLUSTER test_shard_localhost AS ${source}" 2>&1 \
-        | grep -oE "necessary to have the grant [A-Z ]+ ON ([A-Za-z]+|${db}\.[a-z_]+)" | head -n 1 | sed "s/${db}/db/"
+        | grep -oE "necessary to have the grant [A-Z ]+ ON ([A-Za-z0-9_]+|${db}\.[a-z_]+)" | head -n 1 | sed "s/creds_${db}/creds/;s/${db}/db/"
     ${CLICKHOUSE_CLIENT} -q "SELECT engine FROM system.tables WHERE database = '${db}' AND name = '${name}'"
 }
 
@@ -64,8 +64,20 @@ echo "with the oldest version and restore_replace_external_engines_to_null:"
 try_copy copy_oldest_plain "${db}.plain_src" --user "${user}" --distributed_ddl_output_mode throw \
     --distributed_ddl_entry_format_version 1 --restore_replace_external_engines_to_null 1
 
+# A collection the engine refers to needs its grant too, on both entry format versions.
+${CLICKHOUSE_CLIENT} -q "
+    DROP NAMED COLLECTION IF EXISTS creds_${db};
+    CREATE NAMED COLLECTION creds_${db} AS url = 'http://127.0.0.1:1/', format = 'CSV';
+    CREATE TABLE ${db}.collection_src (id UInt64) ENGINE = URL(creds_${db});
+    GRANT SHOW COLUMNS ON ${db}.collection_src TO ${user};
+    GRANT SELECT ON ${db}.collection_src TO ${user};
+"
+echo "without the grant for the collection:"
+try_copy copy_collection_legacy "${db}.collection_src" "${legacy[@]}"
+try_copy copy_collection_current "${db}.collection_src" "${current[@]}"
+
 # The engine comes along with the source, so it needs the grant for it as well.
 echo "with SELECT but without the grant for the engine:"
 try_copy copy_no_url "${db}.url_src" --user "${no_url}" --distributed_ddl_output_mode throw --distributed_ddl_entry_format_version 2
 
-${CLICKHOUSE_CLIENT} -q "DROP USER ${user}, ${no_url}"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE ${db}.collection_src; DROP NAMED COLLECTION creds_${db}; DROP USER ${user}, ${no_url}"

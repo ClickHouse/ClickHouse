@@ -17,6 +17,11 @@ URL
 with the oldest version and restore_replace_external_engines_to_null:
 -- copy_oldest_plain:
 MergeTree
+without the grant for the collection:
+-- copy_collection_legacy:
+necessary to have the grant NAMED COLLECTION ON creds
+-- copy_collection_current:
+necessary to have the grant NAMED COLLECTION ON creds
 with SELECT but without the grant for the engine:
 -- copy_no_url:
 necessary to have the grant TABLE ENGINE ON URL

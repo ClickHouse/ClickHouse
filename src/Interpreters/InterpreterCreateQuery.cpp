@@ -51,6 +51,7 @@
 #include <Storages/MaterializedView/RefreshTask.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageAlias.h>
+#include <Storages/NamedCollectionsHelpers.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
@@ -1511,6 +1512,15 @@ namespace
         create.reset(create.as_table_function);
         setNullTableEngine(*create.storage);
         return true;
+    }
+
+    /// A DDL worker builds the storage with no user, so the initiator resolves the named collection an
+    /// engine refers to the same way the storage constructor would, for its `NAMED COLLECTION` grant.
+    void checkAccessToNamedCollectionOfEngine(const ASTStorage * storage, ContextPtr context)
+    {
+        if (storage && storage->engine && storage->engine->arguments)
+            tryGetNamedCollectionWithOverrides(
+                storage->engine->arguments->children, context, /*throw_unknown_collection=*/false);
     }
 
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
@@ -3706,6 +3716,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 BlockIO InterpreterCreateQuery::executeQueryOnCluster(ASTCreateQuery & create)
 {
     prepareOnClusterQuery(create, getContext(), create.cluster);
+    checkAccessToNamedCollectionOfEngine(create.storage, getContext());
     DDLQueryOnClusterParams params;
     params.access_to_check = getRequiredAccess();
     return executeDDLQueryOnCluster(query_ptr, getContext(), params);
@@ -3755,6 +3766,7 @@ BlockIO InterpreterCreateQuery::execute()
                 InterpreterCreateQuery(inherited_query, preflight_context).setEngine(inherited);
                 if (inherited.storage && inherited.storage->engine)
                     getContext()->checkAccess(AccessType::TABLE_ENGINE, inherited.storage->engine->name);
+                checkAccessToNamedCollectionOfEngine(inherited.storage, getContext());
             }
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
