@@ -18,7 +18,7 @@ CREATE TABLE shard_1.ts_local ENGINE = TimeSeries;
 CREATE TABLE ts_dist AS shard_0.ts_local
     ENGINE = Distributed(test_cluster_two_shards_different_databases, '', ts_local, cityHash64(metric_name));
 
-INSERT INTO ts_dist (metric_name, tags, time_series)
+INSERT INTO ts_dist (metric_name, tags, samples)
     SELECT concat('metric_', toString(number)),
            map('host', toString(number)),
            [(toDateTime64('2026-01-01 00:00:00', 3), toFloat64(number))]
@@ -35,7 +35,7 @@ SELECT '--- both shards are really read, not just one answering for everything -
 SELECT uniqExact(_shard_num) FROM ts_dist;
 
 SELECT '--- the sample payload survives the round trip, not only the identifying columns ---';
-SELECT metric_name, tags['host'], time_series FROM ts_dist WHERE metric_name = 'metric_7';
+SELECT metric_name, tags['host'], samples FROM ts_dist WHERE metric_name = 'metric_7';
 
 -- Read routing only consults the sharding key when this is on; with it off the query is broadcast.
 -- If the key were evaluated differently on read than on write this would prune to the wrong shard
@@ -45,7 +45,7 @@ SELECT metric_name FROM ts_dist WHERE metric_name = 'metric_7'
     SETTINGS optimize_skip_unused_shards = 1, force_optimize_skip_unused_shards = 1;
 
 SELECT '--- an aggregate over the samples themselves is merged across shards ---';
-SELECT sum(arraySum(arrayMap(x -> x.2, time_series))) FROM ts_dist;
+SELECT sum(arraySum(arrayMap(x -> x.2, samples))) FROM ts_dist;
 
 SELECT '--- the TimeSeries table functions need a real TimeSeries table, not a Distributed one ---';
 SELECT count() > 0 FROM timeSeriesData('shard_0', 'ts_local');
