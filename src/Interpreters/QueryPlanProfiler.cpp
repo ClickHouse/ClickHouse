@@ -480,14 +480,11 @@ String QueryPlanProfiler::render()
     if (!captured)
         return {};
 
-    auto capture = std::move(*captured);
-    captured.reset();
-
     MemoryTrackerBlockerInThread block_memory_tracker;
 
     try
     {
-        return toJSONString(capturedPlanToJSON(capture));
+        return toJSONString(capturedPlanToJSON(*captured));
     }
     catch (...)
     {

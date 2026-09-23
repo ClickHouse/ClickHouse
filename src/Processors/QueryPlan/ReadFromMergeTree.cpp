@@ -4743,7 +4743,6 @@ bool ReadFromMergeTree::supportsSkipIndexesOnDataRead() const
 }
 
 
-static const char * indexTypeToString(ReadFromMergeTree::IndexType type);
 
 void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) const
 {
@@ -4805,8 +4804,8 @@ void ReadFromMergeTree::logPredicateStatistics(const AnalysisResult & result) co
             UInt64 total = prev_granules > 0 ? prev_granules : stat.num_granules_after;
             UInt64 after = stat.num_granules_after;
 
-            element.index_names.push_back(stat.name.empty() ? indexTypeToString(stat.type) : stat.name);
-            element.index_types.push_back(indexTypeToString(stat.type));
+            element.index_names.push_back(stat.name.empty() ? toString(stat.type) : stat.name);
+            element.index_types.push_back(toString(stat.type));
             element.total_granules.push_back(total);
             element.granules_after.push_back(after);
             element.index_selectivities.push_back(total > 0 ? static_cast<Float64>(after) / static_cast<Float64>(total) : 1.0);
@@ -5456,29 +5455,6 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         pipeline.setQueryIdHolder(std::move(query_id_holder));
 }
 
-static const char * indexTypeToString(ReadFromMergeTree::IndexType type)
-{
-    switch (type)
-    {
-        case ReadFromMergeTree::IndexType::None:
-            return "None";
-        case ReadFromMergeTree::IndexType::MinMax:
-            return "Min-Max";
-        case ReadFromMergeTree::IndexType::Partition:
-            return "Partition";
-        case ReadFromMergeTree::IndexType::Statistics:
-            return "Statistics";
-        case ReadFromMergeTree::IndexType::PrimaryKey:
-            return "PrimaryKey";
-        case ReadFromMergeTree::IndexType::Skip:
-            return "Skip";
-        case ReadFromMergeTree::IndexType::PrimaryKeyExpand:
-            return "PrimaryKeyExpand";
-        case ReadFromMergeTree::IndexType::NonIntersectingSplit:
-            return "NonIntersectingSplit";
-    }
-}
-
 static const char * readTypeToString(ReadFromMergeTree::ReadType type)
 {
     switch (type)
@@ -5683,22 +5659,6 @@ void ReadFromMergeTree::describeActions(JSONBuilder::JSONMap & map) const
         map.add("Virtual row conversions", virtual_row_conversion->toTree());
 }
 
-namespace
-{
-    std::string_view searchAlgorithmToString(const MarkRanges::SearchAlgorithm search_algorithm)
-    {
-        switch (search_algorithm)
-        {
-        case MarkRanges::SearchAlgorithm::BinarySearch:
-            return "binary search";
-        case MarkRanges::SearchAlgorithm::GenericExclusionSearch:
-            return "generic exclusion search";
-        default:
-            return "";
-        }
-    };
-}
-
 void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 {
     const auto & result = getAnalysisResult();
@@ -5720,7 +5680,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
             if (stat.type == IndexType::None)
                 continue;
 
-            format_settings.out << prefix << indent << indexTypeToString(stat.type) << '\n';
+            format_settings.out << prefix << indent << toString(stat.type) << '\n';
 
             if (!stat.name.empty())
                 format_settings.out << prefix << indent << indent << "Name: " << stat.name << '\n';
@@ -5748,7 +5708,7 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
                 format_settings.out << '/' << index_stats[i - 1].num_granules_after;
             format_settings.out << '\n';
 
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            auto search_algorithm = toString(stat.search_algorithm);
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
 
@@ -5772,81 +5732,8 @@ void ReadFromMergeTree::describeIndexes(FormatSettings & format_settings) const
 
 void ReadFromMergeTree::describeIndexes(JSONBuilder::JSONMap & map) const
 {
-    const auto & result = getAnalysisResult();
-    const auto & index_stats = result.index_stats;
-
-    if (!index_stats.empty())
-    {
-        /// Do not print anything if no indexes is applied.
-        if (index_stats.size() == 1 && index_stats.front().type == IndexType::None)
-            return;
-
-        auto indexes_array = std::make_unique<JSONBuilder::JSONArray>();
-
-        for (size_t i = 0; i < index_stats.size(); ++i)
-        {
-            const auto & stat = index_stats[i];
-            if (stat.type == IndexType::None)
-                continue;
-
-            auto index_map = std::make_unique<JSONBuilder::JSONMap>();
-
-            index_map->add("Type", indexTypeToString(stat.type));
-
-            if (!stat.name.empty())
-                index_map->add("Name", stat.name);
-
-            if (!stat.description.empty())
-                index_map->add("Description", stat.description);
-
-            if (!stat.used_keys.empty())
-            {
-                auto keys_array = std::make_unique<JSONBuilder::JSONArray>();
-
-                for (const auto & used_key : stat.used_keys)
-                    keys_array->add(used_key);
-
-                index_map->add("Keys", std::move(keys_array));
-            }
-
-            if (!stat.condition.empty())
-                index_map->add("Condition", stat.condition);
-
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
-            if (!search_algorithm.empty())
-                index_map->add("Search Algorithm", search_algorithm);
-
-            if (i)
-                index_map->add("Initial Parts", index_stats[i - 1].num_parts_after);
-            index_map->add("Selected Parts", stat.num_parts_after);
-
-            if (i)
-                index_map->add("Initial Granules", index_stats[i - 1].num_granules_after);
-            index_map->add("Selected Granules", stat.num_granules_after);
-
-            if (!stat.distributed.empty())
-            {
-                auto distributed_index_array = std::make_unique<JSONBuilder::JSONArray>();
-
-                for (const auto & node_stat : stat.distributed)
-                {
-                    auto node_stat_map = std::make_unique<JSONBuilder::JSONMap>();
-                    node_stat_map->add("Address", node_stat.address);
-                    node_stat_map->add("Parts send", node_stat.num_parts_send);
-                    node_stat_map->add("Parts received", node_stat.num_parts_received);
-                    node_stat_map->add("Granules send", node_stat.num_granules_send);
-                    node_stat_map->add("Granules received", node_stat.num_granules_received);
-                    distributed_index_array->add(std::move(node_stat_map));
-                }
-
-                index_map->add("Distributed", std::move(distributed_index_array));
-            }
-
-            indexes_array->add(std::move(index_map));
-        }
-
-        map.add("Indexes", std::move(indexes_array));
-    }
+    if (auto indexes_json = indexStatsToJSON(getIndexStats()))
+        map.add("Indexes", std::move(indexes_json));
 }
 
 void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) const
@@ -5870,7 +5757,7 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
             if (!stat.condition.empty())
                 format_settings.out << prefix << indent << indent << "Condition: " << stat.condition << '\n';
 
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
+            auto search_algorithm = toString(stat.search_algorithm);
             if (!search_algorithm.empty())
                 format_settings.out << prefix << indent << indent << "Search Algorithm: " << search_algorithm << "\n";
 
@@ -5894,38 +5781,18 @@ void ReadFromMergeTree::describeProjections(FormatSettings & format_settings) co
 
 void ReadFromMergeTree::describeProjections(JSONBuilder::JSONMap & map) const
 {
-    const auto & result = getAnalysisResult();
-    const auto & projection_stats = result.projection_stats;
+    if (auto projections_json = projectionStatsToJSON(getProjectionStats()))
+        map.add("Projections", std::move(projections_json));
+}
 
-    if (!projection_stats.empty())
-    {
-        auto projections_array = std::make_unique<JSONBuilder::JSONArray>();
-        for (const auto & stat : projection_stats)
-        {
-             auto projection_map = std::make_unique<JSONBuilder::JSONMap>();
-            projection_map->add("Name", stat.name);
+ReadFromMergeTree::IndexStats ReadFromMergeTree::getIndexStats() const
+{
+    return getAnalysisResult().index_stats;
+}
 
-            if (!stat.description.empty())
-                projection_map->add("Description", stat.description);
-
-            if (!stat.condition.empty())
-                projection_map->add("Condition", stat.condition);
-
-            auto search_algorithm = searchAlgorithmToString(stat.search_algorithm);
-            if (!search_algorithm.empty())
-                projection_map->add("Search Algorithm", search_algorithm);
-
-            projection_map->add("Selected Parts", stat.selected_parts);
-            projection_map->add("Selected Marks", stat.selected_marks);
-            projection_map->add("Selected Ranges", stat.selected_ranges);
-            projection_map->add("Selected Rows", stat.selected_rows);
-            projection_map->add("Filtered Parts", stat.filtered_parts);
-
-            projections_array->add(std::move(projection_map));
-        }
-
-        map.add("Projections", std::move(projections_array));
-    }
+ReadFromMergeTree::ProjectionStats ReadFromMergeTree::getProjectionStats() const
+{
+    return getAnalysisResult().projection_stats;
 }
 
 void ReadFromMergeTree::clearParallelReadingExtension()

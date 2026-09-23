@@ -4,6 +4,7 @@
 #include <Parsers/IAST_fwd.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
+#include <Processors/QueryPlan/CapturedPlan.h>
 #include <Processors/QueryPlan/QueryPlanToJSON.h>
 #include <mutex>
 namespace DB
@@ -84,7 +85,7 @@ public:
     /// failed before its pipeline did finishes at logging time instead.
     void finish();
 
-    /// Renders the plan as JSON
+    /// Renders the plan as JSON.
     String render();
 
     size_t getMaxDescriptionLength() const { return max_description_length; }
