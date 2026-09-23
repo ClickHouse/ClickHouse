@@ -15,7 +15,7 @@ DROP TABLE IF EXISTS ts_read_in_order;
 -- samples inner table (ordered by (id, bucket)). Without FINAL there is no aggregation: the rows of the samples
 -- table are returned as they are. With FINAL the rows of the same series and bucket are aggregated by
 -- GROUP BY id, bucket, so only the read with FINAL is checked below.
-CREATE TABLE ts_read_in_order ENGINE = TimeSeries SETTINGS version = 6, recent_samples_ttl_seconds = 0;
+CREATE TABLE ts_read_in_order ENGINE = TimeSeries SETTINGS version = 7, recent_samples_ttl_seconds = 0;
 
 -- Insert each series in several batches so the samples table has multiple parts. A plain hash
 -- aggregation over `GROUP BY id, bucket` would then interleave each series' rows across parts and buffer

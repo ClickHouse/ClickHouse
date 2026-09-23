@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 
--- Since version 6 of the TimeSeries table engine a row of the samples table contains the samples of one series
+-- Since version 7 of the TimeSeries table engine a row of the samples table contains the samples of one series
 -- within one time bucket: the columns `samples` (a sorted array of tuples (timestamp, value)), `bucket`, `min_time`, `max_time`.
 
 SET allow_experimental_time_series_table = 1;

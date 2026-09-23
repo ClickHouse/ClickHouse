@@ -1703,10 +1703,19 @@ namespace
                 }
 
                 bool is_samples = (inner_table_kind == ViewTarget::Samples);
-                set_merge_tree_setting("index_granularity",
-                    settings[is_samples ? TimeSeriesSetting::samples_index_granularity : TimeSeriesSetting::recent_samples_index_granularity]);
-                set_merge_tree_setting("index_granularity_bytes",
-                    settings[is_samples ? TimeSeriesSetting::samples_index_granularity_bytes : TimeSeriesSetting::recent_samples_index_granularity_bytes]);
+                const auto & index_granularity =
+                    settings[is_samples ? TimeSeriesSetting::samples_index_granularity : TimeSeriesSetting::recent_samples_index_granularity];
+                if (has_bucketed_samples || index_granularity.isChanged())
+                    set_merge_tree_setting("index_granularity", index_granularity);
+                else if (is_merge_tree() && !has_engine_setting("index_granularity"))
+                {
+                    /// Keep the defaults used by pre-bucketed tables when creating an older table version.
+                    set_engine_setting("index_granularity", is_samples ? 32768 : 8192);
+                }
+
+                if (has_bucketed_samples)
+                    set_merge_tree_setting("index_granularity_bytes",
+                        settings[is_samples ? TimeSeriesSetting::samples_index_granularity_bytes : TimeSeriesSetting::recent_samples_index_granularity_bytes]);
 
                 if (inner_table_kind == ViewTarget::Samples)
                 {
