@@ -6,7 +6,11 @@
 DROP TABLE IF EXISTS t;
 
 -- index_granularity: to be able to produce small blocks from reading
-CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128, default_compression_codec='LZ4', min_bytes_for_wide_part=0; -- parallel-replicas decision uses estimated bytes; force wide parts + pin codec so the estimate uses the on-disk LZ4 ratio, not the ZSTD(3) default fallback in the compact-part estimation path (both randomized server-side)
+-- The test observes how the query condition cache shrinks the read of `WHERE value = 42` from the whole table
+-- to a few granules. The implicit min-max index on `value` would prune the very first read to a single granule
+-- (1 of 7813), so no runtime dataflow statistics would be collected for it and there would be nothing left for
+-- the cache to shrink; the table opts out of the implicit index to keep the scenario.
+CREATE TABLE t(key String, value UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity=128, default_compression_codec='LZ4', min_bytes_for_wide_part=0, add_minmax_index_for_numeric_columns = 0; -- parallel-replicas decision uses estimated bytes; force wide parts + pin codec so the estimate uses the on-disk LZ4 ratio, not the ZSTD(3) default fallback in the compact-part estimation path (both randomized server-side)
 
 SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=1, parallel_replicas_local_plan=1, parallel_replicas_index_analysis_only_on_coordinator=1,
     parallel_replicas_for_non_replicated_merge_tree=1, max_parallel_replicas=3, cluster_for_parallel_replicas='parallel_replicas';

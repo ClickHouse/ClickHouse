@@ -27,7 +27,8 @@ SETTINGS storage_policy = 's3_no_fake_transaction',
          min_bytes_for_wide_part = 0,
          packed_skip_index_max_bytes = '1M',
          index_granularity = 1024,
-         columns_and_secondary_indices_sizes_lazy_calculation = 0;
+         columns_and_secondary_indices_sizes_lazy_calculation = 0,
+         add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO packed_drop_size SELECT number, number * 7, number * 11 FROM numbers(2000);
 
@@ -59,7 +60,8 @@ SETTINGS storage_policy = 's3_no_fake_transaction',
          min_bytes_for_wide_part = 0,
          packed_skip_index_max_bytes = '1M',
          index_granularity = 1024,
-         columns_and_secondary_indices_sizes_lazy_calculation = 0;
+         columns_and_secondary_indices_sizes_lazy_calculation = 0,
+         add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO packed_hardlink_size SELECT number, number * 7, toString(number % 50) FROM numbers(2000);
 

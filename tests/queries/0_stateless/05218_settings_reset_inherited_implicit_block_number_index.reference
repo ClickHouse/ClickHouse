@@ -1,0 +1,5 @@
+created with the gate closed	0
+live after RESET SETTING	auto_minmax_index__block_number
+live after closing the gate again	0
+live after = DEFAULT	auto_minmax_index__block_number
+merged part carries the index	all_1_2_1	1

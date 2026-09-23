@@ -12,7 +12,7 @@ CREATE TABLE t_sparse_pk_truncation
 )
 ENGINE = MergeTree
 ORDER BY (c0, c1)
-SETTINGS index_granularity = 1;
+SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_sparse_pk_truncation VALUES (1, 1), (2, 2), (3, 3), (4, 4);
 

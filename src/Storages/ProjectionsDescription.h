@@ -103,7 +103,11 @@ struct ProjectionDescription
         const ContextPtr & query_context,
         LoadingStrictnessLevel mode = LoadingStrictnessLevel::ATTACH,
         /// Of the `ATTACH` carrying this projection; leave the default when the definition is not attached
-        bool attach_short_syntax = true);
+        bool attach_short_syntax = true,
+        /// The table the projection belongs to. When given, the projection inherits the table's
+        /// implicit min-max index policy (`add_minmax_index_for_*`) for every such setting that its
+        /// own `WITH SETTINGS` does not set. Without it the projection uses the settings' defaults.
+        const StorageInMemoryMetadata * parent_metadata = nullptr);
 
     static void fillProjectionDescriptionByQuery(
         ProjectionDescription & result,
@@ -181,7 +185,8 @@ struct ProjectionsDescription : public IHints<>
         const String & str,
         const ColumnsDescription & columns,
         const KeyDescription * parent_partition_key,
-        const ContextPtr & query_context);
+        const ContextPtr & query_context,
+        const StorageInMemoryMetadata * parent_metadata = nullptr);
 
     /// Return common expression for all stored projections
     ExpressionActionsPtr getSingleExpressionForProjections(const ColumnsDescription & columns, ContextPtr query_context) const;

@@ -1142,6 +1142,11 @@ public:
         bool run_sanity_checks = true);
 
     std::pair<String, bool> getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const;
+
+    /// True iff a settings-only ALTER changed the set of implicitly created skip indices
+    /// (e.g. `enable_block_number_column` gating `add_minmax_index_for_block_number_column`),
+    /// so the recomputed metadata must be installed into the running table and not only persisted.
+    static bool implicitIndicesChanged(const StorageInMemoryMetadata & old_metadata, const StorageInMemoryMetadata & new_metadata);
     static void verifySortingKey(const KeyDescription & sorting_key);
 
     /// True iff the resolved sorting key (column list or data types) differs between two metadata snapshots.

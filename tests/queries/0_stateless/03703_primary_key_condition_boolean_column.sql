@@ -114,7 +114,7 @@ DROP TABLE IF EXISTS test_indexhint;
 CREATE TABLE test_indexhint (id Int32)
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 8;
+SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 
 -- 16 leading zeros (two full granules whose marks are both 0) followed by 8 non-zero ids.
 -- `RPNBuilder` descends into `indexHint`, so `indexHint(id)` is recognized exactly like

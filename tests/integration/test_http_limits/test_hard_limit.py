@@ -55,7 +55,7 @@ def test_disk_hard_limit_hit(clickhouse_cluster):
         ORDER BY id
         -- auto_statistics_types='': otherwise the new materialize_statistics_on_insert default writes an
         -- extra statistics file on INSERT, needing one more S3 connection that trips the hard limit.
-        SETTINGS storage_policy = 's3', min_bytes_for_wide_part=1000000, auto_statistics_types='';
+        SETTINGS storage_policy = 's3', min_bytes_for_wide_part=1000000, auto_statistics_types='', add_minmax_index_for_numeric_columns=0;
     """)
 
     node.query("SYSTEM STOP MERGES test_table")
