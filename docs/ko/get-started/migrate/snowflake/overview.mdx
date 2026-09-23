@@ -148,9 +148,9 @@ ClickHouse는 다음 영역에서 실시간 분석 애플리케이션에 대해 
   실제 배포에서는 새 데이터를 계속 삽입해야 합니다. ClickHouse의 쿼리 캐시는
   노드별로 동작하며 [트랜잭션 일관성](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)을
   보장하지 않기 때문에, [실시간 분석에 더 적합합니다](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design).
-  또한 사용자는 [쿼리별로](/ko/reference/settings/session-settings#use_query_cache) 사용 여부를 제어하고,
-  [정확한 크기](/ko/reference/settings/session-settings#query_cache_max_size_in_bytes),
-  [쿼리 캐시 여부](/ko/reference/settings/session-settings#enable_writes_to_query_cache)
+  또한 사용자는 [쿼리별로](/ko/reference/settings/session-settings/use-query#use_query_cache) 사용 여부를 제어하고,
+  [정확한 크기](/ko/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes),
+  [쿼리 캐시 여부](/ko/reference/settings/session-settings/enable#enable_writes_to_query_cache)
   (지속 시간 제한 또는 필요한 실행 횟수), 그리고 [수동적으로만 사용할지 여부](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design#using-logs-and-settings)까지
   세밀하게 제어할 수 있습니다.
 

@@ -1,0 +1,7 @@
+<test>
+    <!-- An old `compatibility` value changes hundreds of settings, and every query then pays for
+         applying them and for dumping them into `system.query_log`, which is logged by default.
+         That per-query cost is what this measures; the aggregation only keeps the query long
+         enough to time reliably. -->
+    <query>SELECT sum(number) FROM numbers(2000000) SETTINGS compatibility = '21.3', max_threads = 1</query>
+</test>

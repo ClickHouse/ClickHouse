@@ -680,7 +680,8 @@ void FunctionSecretArgumentsFinder::findRemoteFunctionSecretArguments()
     {
         /// remote(named_collection, ..., password = 'password', ...)
         findSecretNamedArgument("password", 1);
-        return;
+        /// An identifier is also a cluster name when no such collection exists, and that form keeps the
+        /// password in a positional slot, so the walk below has to run for it too.
     }
 
     /// We're going to replace 'password' with '[HIDDEN'] for the following signatures:
@@ -877,11 +878,13 @@ void FunctionSecretArgumentsFinder::findNATSTableEngineSecretArguments()
 {
     /// NATS(named_collection [, nats_password = 'password'] [, nats_token = 'token']
     ///      [, nats_credential_file = '/path'] [, nats_credentials = 'user JWT and seed']
-    ///      [, nats_url = 'nats://user:password@host:4222'], ...)
+    ///      [, nats_url = 'nats://user:password@host:4222']
+    ///      [, nats_server_list = 'nats://user:password@host:4222,...'], ...)
     /// The only positional argument the engine accepts is the name of a named collection, so the
     /// credentials can only appear as named overrides. The `SETTINGS` clause form is masked
     /// separately by `NATS::SETTINGS_TO_HIDE`, and this function masks the same keys the same way:
     /// the secrets are hidden whole, while `nats_url` keeps everything but its userinfo password.
+    /// `nats_server_list` is hidden whole because each list entry can carry userinfo credentials.
     /// Fail closed on a key we cannot read as a plain literal: it can name a secret setting.
     for (size_t i = 0; i < function->arguments->size(); ++i)
     {
@@ -1098,6 +1101,16 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
         /// PostgreSQL('host:port', 'database', 'user', 'password')
         findMySQLDatabaseSecretArguments();
     }
+    else if (engine_name == "Remote" || engine_name == "RemoteSecure")
+    {
+        /// Remote('addresses_expr', 'database', 'user', 'password')
+        /// RemoteSecure(...) - same as Remote(...)
+        /// The password is the last positional argument (or `password = ...` in the named-collection
+        /// form), exactly like the MySQL/PostgreSQL database engines. Note this differs from the
+        /// `Remote`/`RemoteSecure` *table* engine signature (which also has a table name), so the
+        /// database engine cannot reuse `findRemoteFunctionSecretArguments`.
+        findMySQLDatabaseSecretArguments();
+    }
     else if (engine_name == "S3")
     {
         /// S3('url', 'access_key_id', 'secret_access_key')
@@ -1110,6 +1123,11 @@ void FunctionSecretArgumentsFinder::findDatabaseEngineSecretArguments()
     else if (engine_name == "Backup")
     {
         findBackupDatabaseSecretArguments();
+    }
+    else if (engine_name == "URL")
+    {
+        /// URL('base_url')
+        findURLSecretArguments();
     }
 }
 
@@ -1162,6 +1180,20 @@ void FunctionSecretArgumentsFinder::findBackupDatabaseSecretArguments()
 
     auto storage_arg = function->arguments->at(1);
     auto storage_function = storage_arg->getFunction();
+
+    /// A locator that is not a function - a string literal holding its text, or an expression - carries
+    /// the destination as text this finder cannot parse, and that text can hold an access key, a secret
+    /// access key or a presigned URL. The engine accepts such a locator only while replaying its own
+    /// metadata, but a statement carrying it is formatted before the engine rejects it: by `PARALLEL WITH`,
+    /// by the distributed DDL queue, and by `query_log`. Hide it whole rather than let it through verbatim.
+    if (!storage_function)
+    {
+        result.start = 1;
+        result.count = 1;
+        result.replacement = "'[HIDDEN]'";
+        result.quote_replacement = false;
+        return;
+    }
 
     /// The nested S3 destination is not recognized as an S3 engine when the formatter recurses into it,
     /// so its secrets must be masked here. Handle both forms:

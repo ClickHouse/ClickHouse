@@ -353,7 +353,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 
     따라서 예시 테이블의 모든 그래뉼(마지막 그래뉼 제외)은 크기가 동일합니다.
 
-  * adaptive index granularity가 있는 테이블의 경우(index granularity는 [default](/ko/reference/settings/merge-tree-settings#index_granularity_bytes)로 adaptive임) 행 데이터 크기에 따라 일부 그래뉼의 크기가 8192개 행보다 작을 수 있습니다.
+  * adaptive index granularity가 있는 테이블의 경우(index granularity는 [default](/ko/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)로 adaptive임) 행 데이터 크기에 따라 일부 그래뉼의 크기가 8192개 행보다 작을 수 있습니다.
 
   * 프라이머리 키 컬럼(`UserID`, `URL`)의 일부 컬럼 값은 주황색으로 표시했습니다.
     이렇게 주황색으로 표시된 컬럼 값은 각 그래뉼의 첫 번째 행에 있는 프라이머리 키 컬럼 값입니다.
@@ -390,7 +390,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 <Accordion title="프라이머리 인덱스 내용 검사">
   자가 관리형 ClickHouse 클러스터에서는 예시 테이블의 프라이머리 인덱스 내용을 확인하기 위해 [file 테이블 함수](/ko/reference/functions/table-functions/file)를 사용할 수 있습니다.
 
-  이를 위해 먼저 실행 중인 클러스터의 노드 하나에 있는 [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings#user_files_path)로 프라이머리 인덱스 파일을 복사해야 합니다:
+  이를 위해 먼저 실행 중인 클러스터의 노드 하나에 있는 [user&#95;files&#95;path](/ko/reference/settings/server-settings/settings/user#user_files_path)로 프라이머리 인덱스 파일을 복사해야 합니다:
 
   **1단계: 프라이머리 인덱스 파일이 있는 part 경로 가져오기**
 
@@ -398,7 +398,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
   SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
   ```
 
-  테스트 머신에서는 `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`를 반환합니다.
+  테스트 머신에서는 `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4`를 반환합니다.
 
   **2단계: user&#95;files&#95;path 가져오기**
 
@@ -406,12 +406,12 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 
   Linux에서는 다음 명령으로 이 값이 변경되었는지도 확인할 수 있습니다: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-  테스트 머신에서 이 경로는 `/Users/tomschreiber/Clickhouse/user_files/`입니다.
+  테스트 머신에서 이 경로는 `/Users/tomschreiber/ClickHouse/user_files/`입니다.
 
   **3단계: 프라이머리 인덱스 파일을 user&#95;files&#95;path로 복사하기**
 
   ```bash
-  cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
+  cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
   ```
 
   이제 SQL로 프라이머리 인덱스의 내용을 확인할 수 있습니다:
@@ -513,7 +513,7 @@ Processed 8.19 thousand rows,
 
 이제 ClickHouse client 출력에는 전체 테이블 스캔을 수행하는 대신 8,190개 행만 ClickHouse로 스트리밍된 것으로 표시됩니다.
 
-<a href="/ko/reference/settings/server-settings/settings#logger" target="_blank">trace 로깅</a>이 활성화되어 있으면 ClickHouse 서버 로그 파일에는 ClickHouse가 `749927693` 값을 가진 UserID 컬럼의 행을 포함할 가능성이 있는 그래뉼을 식별하기 위해 1083개의 UserID 인덱스 마크를 대상으로 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색</a>을 수행했음이 표시됩니다. 여기에는 평균 시간 복잡도 `O(log2 n)`으로 19단계가 필요합니다:
+<a href="/ko/reference/settings/server-settings/settings/other#logger" target="_blank">trace 로깅</a>이 활성화되어 있으면 ClickHouse 서버 로그 파일에는 ClickHouse가 `749927693` 값을 가진 UserID 컬럼의 행을 포함할 가능성이 있는 그래뉼을 식별하기 위해 1083개의 UserID 인덱스 마크를 대상으로 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색</a>을 수행했음이 표시됩니다. 여기에는 평균 시간 복잡도 `O(log2 n)`으로 19단계가 필요합니다:
 
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
@@ -525,6 +525,10 @@ Processed 8.19 thousand rows,
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
+
+:::note
+최근 버전의 ClickHouse에서는 `Running binary search on index range`, `Found (LEFT) boundary mark`, `Found (RIGHT) boundary mark` 메시지가 `trace`가 아닌 `test` 수준(가장 높은 상세 수준)에서 로깅됩니다. 이를 확인하려면 로그 상세 수준을 `test`로 높이십시오(예: 클라이언트에서 `SET send_logs_level = 'test'`를 설정하거나 서버 구성에서 `<logger><level>test</level></logger>`를 설정). 위에 표시된 나머지 줄은 계속 `trace` 수준에서 로깅됩니다. 이는 이 가이드의 모든 이진 검색 로그 예시에 적용됩니다.
+:::
 
 위의 trace log에서 기존 1083개의 마크 중 1개가 쿼리 조건을 만족한 것을 확인할 수 있습니다.
 
@@ -630,11 +634,11 @@ ClickHouse가 쿼리에 일치하는 행을 포함할 가능성이 있는 그래
 그런 다음, 찾은 압축 해제된 그래뉼에 속한 8192개 행 전체가 추가 처리를 위해 ClickHouse로 스트리밍됩니다.
 
 <Note>
-  * [wide format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)을 사용하고 [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)를 사용하지 않는 테이블의 경우, ClickHouse는 위에 표시된 `.mrk` 마크 파일을 사용합니다. 이 파일에는 엔트리마다 길이 8바이트인 주소 두 개가 들어 있습니다. 이 엔트리들은 모두 같은 크기를 가진 그래뉼의 물리적 위치입니다.
+  * [wide format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)을 사용하고 [adaptive index granularity](/ko/resources/changelogs/oss/2019#experimental-features-1)를 사용하지 않는 테이블의 경우, ClickHouse는 위 그림에 표시된 것처럼 `.mrk` 마크 파일을 사용합니다. 이 파일에는 엔트리마다 길이가 8바이트인 주소 2개가 포함되어 있습니다. 이러한 엔트리는 모두 동일한 크기를 갖는 그래뉼의 물리적 위치를 나타냅니다.
 
-  인덱스 세분화 수준은 [default](/ko/reference/settings/merge-tree-settings#index_granularity_bytes)로 adaptive이지만, 이 예시 테이블에서는 adaptive index granularity를 비활성화했습니다(이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위함입니다). 이 테이블은 데이터 크기가 [min&#95;bytes&#95;for&#95;wide&#95;part](/ko/reference/settings/merge-tree-settings#min_bytes_for_wide_part)보다 크기 때문에 wide format을 사용합니다(자가 관리형 cluster에서는 기본값이 10 MB입니다).
+  인덱스 세분화 수준은 [default](/ko/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)로 적응형이지만, 이 가이드의 설명을 단순화하고 다이어그램과 결과를 재현 가능하게 만들기 위해 예시 테이블에서는 adaptive index granularity를 비활성화했습니다. 또한 이 테이블은 데이터 크기가 [min&#95;bytes&#95;for&#95;wide&#95;part](/ko/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part)보다 크기 때문에 wide format을 사용합니다(자가 관리형 clusters의 기본값은 10 MB입니다).
 
-  * wide format을 사용하고 adaptive index granularity를 사용하는 테이블의 경우, ClickHouse는 `.mrk2` 마크 파일을 사용합니다. 이 파일은 `.mrk` 마크 파일과 유사한 엔트리를 포함하지만, 엔트리마다 현재 엔트리가 연결된 그래뉼의 행 수를 나타내는 세 번째 값이 추가됩니다.
+  * wide format을 사용하고 adaptive index granularity를 사용하는 테이블의 경우, ClickHouse는 `.mrk2` 마크 파일을 사용합니다. 이 파일에는 `.mrk` 마크 파일과 유사한 엔트리가 들어 있지만, 각 엔트리마다 현재 엔트리에 연결된 그래뉼의 행 수를 나타내는 세 번째 값이 추가됩니다.
 
   * [compact format](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)을 사용하는 테이블의 경우, ClickHouse는 `.mrk3` 마크 파일을 사용합니다.
 </Note>
@@ -737,7 +741,7 @@ Processed 8.81 million rows,
 
 클라이언트 출력은 [URL 컬럼이 복합 기본 키의 일부임에도](#a-table-with-a-primary-key) ClickHouse가 거의 전체 테이블 스캔을 수행했음을 보여줍니다! ClickHouse는 테이블의 887만 행 중 881만 행을 읽습니다.
 
-[trace&#95;logging](/ko/reference/settings/server-settings/settings#logger)이 활성화되어 있으면 ClickHouse 서버 로그 파일에 ClickHouse가 1083개의 URL 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">일반 제외 검색</a>을 사용해 URL 컬럼 값이 &quot;http://public&#95;search&quot;인 행을 포함할 가능성이 있는 그래뉼을 식별했음이 표시됩니다:
+[trace&#95;logging](/ko/reference/settings/server-settings/settings/other#logger)이 활성화되어 있으면 ClickHouse 서버 로그 파일에 ClickHouse가 1083개의 URL 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">일반 제외 검색</a>을 사용해 URL 컬럼 값이 &quot;http://public&#95;search&quot;인 행을 포함할 가능성이 있는 그래뉼을 식별했음이 표시됩니다:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
@@ -974,7 +978,7 @@ Processed 319.49 thousand rows,
 UserID가 첫 번째, URL이 두 번째 키 컬럼인 [원본 테이블](#a-table-with-a-primary-key)의 프라이머리 인덱스에서는 ClickHouse가 해당 쿼리를 실행할 때 인덱스 마크에 대해 [일반 제외 검색](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm)을 사용했지만, UserID와 URL의 카디널리티가 비슷하게 높아 그다지 효과적이지 않았습니다.
 
 이제 URL이 프라이머리 인덱스의 첫 번째 컬럼이므로, ClickHouse는 인덱스 마크에 대해 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">이진 검색</a>을 수행합니다.
-이에 해당하는 trace 로그는 ClickHouse 서버 로그 파일에서 확인할 수 있습니다:
+해당 서버 로그에서 이를 확인할 수 있습니다(최근 버전에서는 이진 검색 메시지가 `test` 수준으로 기록됩니다. [위의 참고](#the-primary-index-is-used-for-selecting-granules)를 참조하세요):
 
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1057,7 +1061,7 @@ POPULATE
 AS SELECT * FROM hits_UserID_URL;
 ```
 
-응답은 다음과 같습니다.
+응답은 다음과 같습니다:
 
 ```response
 Ok.
@@ -1115,7 +1119,7 @@ Processed 335.87 thousand rows,
 
 실제로는 materialized view를 뒷받침하는 암시적으로 생성된 테이블(및 해당 프라이머리 인덱스(primary index))이 [명시적으로 생성한 보조 테이블(secondary table)](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일하므로, 쿼리는 명시적으로 생성한 테이블을 사용할 때와 사실상 같은 방식으로 실행됩니다.
 
-이에 해당하는 ClickHouse 서버 로그 파일의 trace 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다:
+해당 서버 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다(최신 버전에서는 이진 검색 메시지가 `test` 수준에서 기록됩니다. [위 참고 사항](#the-primary-index-is-used-for-selecting-granules)을 참조하십시오):
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1199,7 +1203,7 @@ Processed 319.49 thousand rows, 1
 
 실제로 PROJECTION이 생성한 숨겨진 테이블(및 그 프라이머리 인덱스)은 [명시적으로 생성한 보조 테이블](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables)과 동일하므로, 쿼리는 명시적으로 생성한 테이블을 사용할 때와 사실상 같은 방식으로 실행됩니다.
 
-이에 해당하는 ClickHouse 서버 로그 파일의 trace 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다:
+이에 해당하는 서버 로그를 보면, ClickHouse가 인덱스 마크에 대해 이진 검색을 수행하고 있음을 확인할 수 있습니다(최근 버전에서는 이진 검색 메시지가 `test` 수준에서 기록됩니다. [위의 참고](#the-primary-index-is-used-for-selecting-granules)를 참조하십시오):
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

@@ -222,11 +222,9 @@ public:
         nested_function->insertMergeResultInto(place, to, arena);
     }
 
-    UnorderedSetWithMemoryTracking<size_t> getArgumentsThatCanBeOnlyNull() const override
+    void rollbackInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const noexcept override
     {
-        auto arguments = nested_function->getArgumentsThatCanBeOnlyNull();
-        arguments.insert(key_col);
-        return arguments;
+        nested_function->rollbackInsertResult(place, to);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

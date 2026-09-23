@@ -204,6 +204,7 @@ The build job names are exactly as they appear in the CI Report:
 - `Build (riscv64)` - RISC-V 64-bit
 - `Build (s390x)` - IBM System/390 64-bit
 - `Build (loongarch64)` - LoongArch 64-bit
+- `Build (wasm64)` - WebAssembly 64-bit, through Emscripten. Experimental: builds the `clickhouse` binary and verifies that `clickhouse local` executes queries under Node.js ≥ 24 (the module also runs in browsers, but CI does not verify that yet)
 
 If the job succeeds, build results will be available in the `<repo_root>/ci/tmp/build` directory.
 
@@ -224,6 +225,10 @@ Runs [stateless functional tests](/resources/develop-contribute/contribute/tests
 Look at the report to see which tests fail, then reproduce the failure locally as described [here](/resources/develop-contribute/contribute/tests#functional-tests).
 Note that you have to use the correct build configuration to reproduce -- a test might fail under AddressSanitizer but pass in Debug.
 Download the binary from [CI build checks page](/get-started/setup/self-managed/advanced), or build it locally.
+
+In pull requests, most sanitizer jobs whose name ends with `selected tests` do not run the whole test suite.
+They run only the tests selected for the change: the tests the pull request adds or modifies, the tests that already failed in this pull request, and the tests covering the changed lines according to the coverage database.
+The whole suite runs in the debug and plain binary configurations, the builds with sanitizers are exercised by the [stress test](#stress-test), and the master branch runs the whole suite in every configuration.
 
 ## Integration tests {#integration-tests}
 
@@ -257,6 +262,19 @@ If it fails, ask a maintainer for help.
 Measure changes in query performance.
 This is the longest check that takes just below 6 hours to run.
 The performance test report is described in detail [here](https://github.com/ClickHouse/ClickHouse/blob/master/tests/performance/scripts/README.md#how-to-read-the-report).
+
+## Revert pull requests {#revert-pull-requests}
+
+A pull request that reverts a merged change gets a green light at once: every CI job except the style check is skipped, so that the revert can be merged as quickly as possible.
+The reasoning is that a revert restores a state of `master` that CI has already validated, while the state it replaces is broken, and every minute spent on the pull request's own checks is a minute `master` stays broken.
+The style check still runs because it is fast and catches a revert left unformatted by conflict resolution.
+The merge queue still runs its own (small) set of checks, and the full CI runs on `master` after the merge.
+
+A pull request counts as a revert by its canonical title shape only, which is what `git revert` and the GitHub "Revert" button produce: `Revert "<title of the reverted change>"`.
+Reverting a revert nests the wrappers (`Revert "Revert "..."`), so the nesting depth decides the net effect: an odd depth is a real revert and is skipped, while an even depth re-applies the original change and is tested as usual.
+A pull request that merely mentions a revert in prose is tested as usual.
+
+To run the full CI on a revert pull request anyway, for example when the revert had to resolve conflicts or you doubt it is the right fix, add the `ci-force-all` label and push an empty commit to restart the checks.
 
 ## Revert CI regressions {#revert-ci-regressions}
 

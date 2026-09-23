@@ -32,6 +32,8 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 
+#include <Access/ContextAccess.h>
+
 #include <Backups/BackupFactory.h>
 
 #include <Disks/DiskBackup.h>
@@ -41,6 +43,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/TablesLoader.h>
 #include <Databases/DatabaseOnDisk.h>
+#include <Databases/LoadingStrictnessLevel.h>
 
 
 namespace CurrentMetrics
@@ -69,6 +72,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
 }
 
@@ -462,8 +466,11 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The locator is emitted as the function it is, not as a string literal holding its text: this
+    /// definition is what `ALTER DATABASE ... MODIFY COMMENT` writes back into the metadata file, and
+    /// the load path parses the second argument with `BackupInfo::fromAST`, which takes a function.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -491,7 +498,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseBackup::getTablesForBackup(co
 namespace
 {
 
-DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
+DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool allow_locator_in_string_literal)
 {
     if (engine_args.size() != 2)
         throw Exception::createRuntime(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -500,11 +507,57 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
     DatabaseBackup::Configuration result;
 
     result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+
+    /** A locator held in a string literal (`Backup('db', 'File(\'backup.zip\')')`) is the form that
+      * metadata rewritten by an older server carries, so it has to keep loading - a server that cannot
+      * parse its own metadata does not start at all.
+      *
+      * Only there: in a statement a user writes the locator must be the function it is, because that is
+      * the form `FunctionSecretArgumentsFinder` knows how to redact, and a quoted one would carry its
+      * credentials verbatim into `query_log`, `SHOW PROCESSLIST` and the distributed DDL payload.
+      */
+    if (allow_locator_in_string_literal)
+    {
+        if (const auto * locator = engine_args[1]->as<ASTLiteral>(); locator && locator->value.getType() == Field::Types::String)
+        {
+            result.backup_info = BackupInfo::fromString(locator->value.safeGet<String>());
+            return result;
+        }
+    }
+
+    /// `BackupInfo::fromAST` puts the offending argument into its message, and that message reaches the
+    /// error log and the `exception` column of `query_log`. A locator held in a string literal is exactly
+    /// the text that can carry credentials, so refuse it here without echoing it.
+    if (!engine_args[1]->as<ASTFunction>())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Expected function as the backup destination of a `Backup` database. It must be spelled as the "
+            "function it is, such as `File('backup')` or `S3(...)`. The text given is not shown, because a "
+            "destination held in a string literal cannot be redacted and may carry credentials");
+
     result.backup_info = BackupInfo::fromAST(*engine_args[1]);
 
     return result;
 }
 
+}
+
+void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
+{
+    /** A locator that is not a function is refused right here rather than left to creation time.
+      *
+      * This preflight is the last point that still runs as the real user, and the creation it would
+      * otherwise rely on does not always run: `RESTORE DATABASE` issues `CREATE DATABASE IF NOT EXISTS`,
+      * which returns from `InterpreterCreateQuery::createDatabase` before `DatabaseFactory::get` when the
+      * target database already exists. With `allow_different_database_def = 1` the definition mismatch is
+      * waived as well, so a manifest an older server left holding a quoted locator would pass through the
+      * whole restore with its embedded source never authorized, while the function form of the same
+      * manifest is checked.
+      *
+      * Only `parseArguments` may formulate the refusal: the offending text can carry credentials and must
+      * not be echoed.
+      */
+    auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
+    BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
 }
 
 void registerDatabaseBackup(DatabaseFactory & factory);
@@ -519,13 +572,32 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         if (engine->arguments)
             engine_args = engine->arguments->children;
 
-        auto config = parseArguments(engine_args, args.context);
+        /// Authorize only a newly introduced definition: one read back from this server's metadata was
+        /// already validated, and a context with no user cannot be checked per user.
+        ///
+        /// Metadata is read back on three paths: the short `ATTACH DATABASE db`, a load under `force_restore_data`,
+        /// and the replay of the stored full `ATTACH DATABASE db ENGINE = Backup(...)` statement at server start.
+        /// The last one runs in plain `ATTACH` mode, so neither of the first two conditions covers it - and it is
+        /// exactly the path that has to load metadata an older server rewrote.
+        ///
+        /// The loader flag, not `internal`, is the discriminator: wrappers such as `PARALLEL WITH` run user
+        /// statements as internal ones, and a user's `ATTACH DATABASE ... ENGINE = Backup(...)` must neither
+        /// skip the source authorization nor get its locator accepted in the form the secret masker cannot redact.
+        const bool has_real_user = args.context->getAccess()->getUserID().has_value();
+        const bool is_internal_metadata_replay = args.is_metadata_replay && args.mode >= LoadingStrictnessLevel::ATTACH;
+        const bool from_existing_metadata
+            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax || is_internal_metadata_replay;
+
+        auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
+        if (has_real_user && !from_existing_metadata)
+            BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
+
         return std::make_shared<DatabaseBackup>(args.database_name, args.metadata_path, config, args.context);
     };
 
     factory.registerDatabase("Backup", create_fn, {.supports_arguments = true, .is_external = true}, Documentation{
         .description = R"DOCS_MD(
-Database backup allows to instantly attach table/database from [backups](/operations/backup/overview) in read-only mode.
+Database backup allows to instantly attach table/database from [backups](/concepts/features/backup-restore/overview) in read-only mode.
 
 Database backup works with both incremental and non-incremental backups.
 
@@ -536,7 +608,7 @@ CREATE DATABASE backup_database
 ENGINE = Backup('database_name_inside_backup', Disk('disk_name', 'backup_name'))
 ```
 
-The backup destination can be any valid backup [destination](/operations/backup/disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
+The backup destination can be any valid backup [destination](/concepts/features/backup-restore/local-disk#configure-backup-destinations-for-disk), such as `Disk`, `S3`, or `File`. It is passed as a function, for example `Disk('disk_name', 'backup_name')`.
 
 **Engine Parameters**
 

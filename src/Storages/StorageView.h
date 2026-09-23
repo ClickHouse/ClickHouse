@@ -39,6 +39,10 @@ public:
 
     StoragePtr getUnderlyingMergeTreeStorageForParallelReplicas(const ContextPtr & context) const;
 
+    /// If this is a trivial view over a Distributed table, returns the underlying StorageDistributed.
+    /// Returns nullptr otherwise.
+    StoragePtr tryGetUnderlyingDistributed(const StorageSnapshotPtr & snapshot, ContextPtr context) const;
+
     void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -50,7 +54,7 @@ public:
         size_t num_streams) override;
 
     void drop() override;
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
 
     static void replaceQueryParametersIfParameterizedView(ASTPtr & outer_query, const NameToNameMap & parameter_values);
 

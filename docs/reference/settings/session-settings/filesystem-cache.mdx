@@ -28,7 +28,7 @@ Allow filesystem cache to enqueue background downloads for data read from remote
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Filesystem cache boundary alignment. This setting is applied only for non-disk read (e.g. for cache of remote table engines / table functions, but not for storage configuration of MergeTree tables). Value 0 means no alignment.
+Filesystem cache boundary alignment. For non-disk read (e.g. for cache of remote table engines / table functions) value 0 means no alignment. For disk read (e.g. for MergeTree tables on a disk with cache) value 0 means that `boundary_alignment` from the cache configuration is used.
 
 ## filesystem_cache_enable_background_download_during_fetch {#filesystem_cache_enable_background_download_during_fetch}
 
@@ -93,6 +93,14 @@ Limit on size of a single batch of file segments that a read buffer can request 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "Rename of setting skip_download_if_exceeds_query_cache_limit"}]}]}/>
 
 Skip download from remote filesystem if exceeds query cache size
+
+## filesystem_cache_verbose_logging {#filesystem_cache_verbose_logging}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "New setting gating the per-buffer-refill TEST-level log messages of the filesystem cache read buffer, which were previously emitted unconditionally once the log level allowed them."}]}]}/>
+
+Emit `TEST`-level log messages for every filesystem cache buffer refill (state of the read, remaining size to read, bytes read). Only for debugging: the messages are formatted once per read, so enabling it on a query that does many small cached reads adds a large amount of logging overhead. The messages are only visible when the log level is `test` anyway (see `send_logs_level`).
 
 ## filesystem_cache_wait_for_concurrent_download_timeout_milliseconds {#filesystem_cache_wait_for_concurrent_download_timeout_milliseconds}
 

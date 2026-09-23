@@ -13,6 +13,27 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
+namespace
+{
+
+bool hasNonAdditiveByteSizeAt(const IColumn & column)
+{
+    if (column.getDataType() == TypeIndex::LowCardinality
+        || column.getDataType() == TypeIndex::AggregateFunction
+        || column.isReplicated()
+        || column.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    column.forEachSubcolumn([&](const ColumnPtr & subcolumn)
+    {
+        result = result || hasNonAdditiveByteSizeAt(*subcolumn);
+    });
+    return result;
+}
+
+}
+
 void MergedData::initialize(const Block & header, const IMergingAlgorithm::Inputs & inputs)
 {
     columns = header.cloneEmptyColumns();
@@ -53,21 +74,33 @@ void MergedData::insertRow(const ColumnRawPtrs & raw_columns, size_t row, size_t
 {
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        /// If the source is `ColumnReplicated` but the destination is not, wrap the destination
-        /// in `ColumnReplicated` so its `insertFrom` can consume both regular and replicated
-        /// sources through the same optimized path. This preserves the lazy replication
-        /// optimization instead of eagerly materializing the source.
-        ///
-        /// This can happen when `initialize` set the destination type based on the initial
-        /// inputs (none of which were `ColumnReplicated`), but a later chunk arrives via
-        /// `consume` with non-sort `ColumnReplicated` columns (for example, from a JOIN
-        /// with `enable_lazy_columns_replication = 1`).
-        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
-            columns[i] = ColumnReplicated::create(std::move(columns[i]));
 
-        columns[i]->insertFrom(*raw_columns[i], row);
+    /// Fast path: the merge cannot receive any `ColumnReplicated` source (e.g. a plain sort with
+    /// no JOIN), so skip the per-column wrapping check entirely. This is the hot path for wide
+    /// row-by-row sorts. See `mayHaveReplicatedColumns`.
+    if (!may_have_replicated_columns)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+            columns[i]->insertFrom(*raw_columns[i], row);
+    }
+    else
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            /// If the source is `ColumnReplicated` but the destination is not, wrap the destination
+            /// in `ColumnReplicated` so its `insertFrom` can consume both regular and replicated
+            /// sources through the same optimized path. This preserves the lazy replication
+            /// optimization instead of eagerly materializing the source.
+            ///
+            /// This can happen when `initialize` set the destination type based on the initial
+            /// inputs (none of which were `ColumnReplicated`), but a later chunk arrives via
+            /// `consume` with non-sort `ColumnReplicated` columns (for example, from a JOIN
+            /// with `enable_lazy_columns_replication = 1`).
+            if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+                columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
+            columns[i]->insertFrom(*raw_columns[i], row);
+        }
     }
 
     ++total_merged_rows;
@@ -79,16 +112,31 @@ void MergedData::insertRows(const ColumnRawPtrs & raw_columns, size_t start_inde
 {
     size_t num_columns = raw_columns.size();
     chassert(columns.size() == num_columns);
-    for (size_t i = 0; i < num_columns; ++i)
-    {
-        /// See comment in `insertRow` for why this wrapping is needed.
-        if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
-            columns[i] = ColumnReplicated::create(std::move(columns[i]));
 
-        if (length == 1)
-            columns[i]->insertFrom(*raw_columns[i], start_index);
-        else
-            columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+    /// Fast path: see `insertRow`. No `ColumnReplicated` source is possible, skip the wrap check.
+    if (!may_have_replicated_columns)
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
+    }
+    else
+    {
+        for (size_t i = 0; i < num_columns; ++i)
+        {
+            /// See comment in `insertRow` for why this wrapping is needed.
+            if (raw_columns[i]->isReplicated() && !columns[i]->isReplicated())
+                columns[i] = ColumnReplicated::create(std::move(columns[i]));
+
+            if (length == 1)
+                columns[i]->insertFrom(*raw_columns[i], start_index);
+            else
+                columns[i]->insertRangeFrom(*raw_columns[i], start_index, length);
+        }
     }
 
     total_merged_rows += length;
@@ -223,6 +271,62 @@ bool MergedData::hasEnoughRows() const
 
     size_t average = sum_blocks_granularity / merged_rows;
     return merged_rows >= average;
+}
+
+size_t MergedData::rowsToInsertBeforeFlush(
+    const ColumnRawPtrs & raw_columns,
+    size_t start_index,
+    size_t max_rows,
+    size_t block_size) const
+{
+    chassert(max_rows > 0);
+
+    size_t rows_to_insert = max_rows;
+
+    if (use_average_block_size)
+    {
+        for (size_t length = 1; length <= rows_to_insert; ++length)
+        {
+            const size_t merged_rows_after_insert = merged_rows + length;
+            const size_t average_block_size
+                = (sum_blocks_granularity + block_size * length) / merged_rows_after_insert;
+
+            if (merged_rows_after_insert >= average_block_size)
+            {
+                rows_to_insert = length;
+                break;
+            }
+        }
+    }
+
+    if (!max_block_size_bytes)
+        return rows_to_insert;
+
+    chassert(columns.size() == raw_columns.size());
+
+    /// `byteSizeAt` is not additive for dictionary/index-backed columns, so let
+    /// `hasEnoughRows` measure the actual size after inserting one row.
+    for (size_t i = 0; i < columns.size(); ++i)
+    {
+        if (hasNonAdditiveByteSizeAt(*columns[i]) || hasNonAdditiveByteSizeAt(*raw_columns[i]))
+            return 1;
+    }
+
+    size_t merged_bytes = 0;
+    for (const auto & column : columns)
+        merged_bytes += column->byteSize();
+
+    for (size_t length = 1; length <= rows_to_insert; ++length)
+    {
+        const size_t row = start_index + length - 1;
+        for (const auto * column : raw_columns)
+            merged_bytes += column->byteSizeAt(row);
+
+        if (merged_bytes >= max_block_size_bytes)
+            return length;
+    }
+
+    return rows_to_insert;
 }
 
 }
