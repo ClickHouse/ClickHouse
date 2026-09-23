@@ -426,9 +426,8 @@ void checkAccessRightsForSubquery(const QueryTreeNodePtr & subquery_node, const 
         if (!storage_id.hasDatabase())
             continue;
 
-        /** Check the columns the subquery actually names, not the whole table. Demanding `SELECT` on the table
-          * would reject a user who holds a valid column grant and wrote the very same read one level deeper,
-          * while the identical read spelled at the top level is accepted by the column-aware check below.
+        /** Check the columns the subquery names, so a column grant authorizes the same read at any nesting
+          * depth, matching the column-aware check the join tree applies to a top-level table.
           * An empty list means no column of this table is read (`SELECT count()`), which `checkAccessRights`
           * resolves with the same "at least one readable column" rule the join tree uses.
           */

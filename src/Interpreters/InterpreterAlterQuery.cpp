@@ -501,10 +501,9 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
             visitor.substituteDatabaseInTableFunctions(*alter.command_list);
         }
 
-        /// The initiator returns here without ever running `AlterCommand::apply`, so the body of a
-        /// `MODIFY QUERY` would never be analysed locally, and the hosts that do analyse it execute the
-        /// DDL entry without the initiator's user unless `distributed_ddl_use_initial_user_and_roles` is
-        /// on. That leaves the new body unauthorized on every node, so check it here before dispatching.
+        /// The hosts that apply this statement run the DDL entry without the initiator's user, unless
+        /// `distributed_ddl_use_initial_user_and_roles` is on, so the initiator is the only place the new
+        /// body can be authorized against the user who wrote it.
         if (modify_query)
             checkAccessForModifyQueryOnCluster(
                 *modify_query, table_id ? table_id.getDatabaseName() : getContext()->getCurrentDatabase());
@@ -675,10 +674,9 @@ bool InterpreterAlterQuery::isRowExistsLightweightDeleteMarker(const StoragePtr 
 }
 
 /** `MODIFY QUERY` replaces the body a view executes, and for `SQL SECURITY DEFINER` or `NONE` that body does
-  * not run with the caller's privileges. Writing it is therefore the same act that `CREATE` and
-  * `MODIFY SQL SECURITY` already gate in `processSQLSecurityOption`, so demand the same grants here.
-  * Without this, `ALTER VIEW MODIFY QUERY` alone lets a user author code that runs as a principal they may not
-  * impersonate, which bypasses that principal's row policies even when every table grant checks out.
+  * not run with the caller's privileges. Writing it is the same act of impersonation that `CREATE` and
+  * `MODIFY SQL SECURITY` gate behind `SET DEFINER` and `ALLOW SQL SECURITY NONE` in
+  * `processSQLSecurityOption`, so it takes the same grants.
   */
 void InterpreterAlterQuery::addRequiredAccessForModifyQuerySQLSecurity(
     AccessRightsElements & required_access, const StoragePtr & storage) const
