@@ -342,7 +342,7 @@ MergeSelectorChoices tryChooseTTLMerge(const ChooseContext & ctx)
     /// expired column is to rewrite the part - so this selector runs regardless of that setting.
     if (!ctx.merge_constraints.empty() && ctx.metadata_snapshot.hasAnyColumnTTL())
     {
-        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time);
+        TTLColumnDeleteMergeSelector delete_ttl_selector(ctx.next_delete_times, ctx.current_time, getAffordablePartsToMergeAtOnce(ctx));
 
         if (auto merge_ranges = delete_ttl_selector.select(ctx.ranges, ctx.merge_constraints, ctx.range_filter); !merge_ranges.empty())
             return pack(ctx, std::move(merge_ranges), MergeType::TTLDelete);

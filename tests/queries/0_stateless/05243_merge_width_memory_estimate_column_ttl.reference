@@ -1,0 +1,3 @@
+before	6
+capped	5
+TTLDeleteMerge	2
