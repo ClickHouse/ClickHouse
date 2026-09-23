@@ -71,7 +71,7 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 
 #include <base/scope_guard.h>
 #include <base/Decimal_fwd.h>
@@ -166,6 +166,33 @@ void checkMaterializedCTESubqueryIsNotCorrelated(
             "Materialized CTE '{}' cannot be correlated. In scope {}",
             cte_name,
             scope_node->formatASTForErrorMessage());
+}
+
+/// A named `APPLY (x -> untuple(x), 'prefix')` resolves to a list of `tupleElement(arg, name)`
+/// calls (see `untuple` handling in resolveFunction). Recognize that shape so the matcher can
+/// expand it into one prefixed projection column per element, matching the legacy analyzer.
+bool isUntupleExpansion(const QueryTreeNodes & nodes)
+{
+    for (const auto & element : nodes)
+    {
+        const auto * function = element->as<FunctionNode>();
+        if (!function || function->getFunctionName() != "tupleElement")
+            return false;
+
+        const auto & arguments = function->getArguments().getNodes();
+        if (arguments.size() != 2 || !arguments[1]->as<ConstantNode>())
+            return false;
+    }
+    return !nodes.empty();
+}
+
+/// The tuple field name a `tupleElement(arg, name)` node projects. The legacy path names an
+/// untupled element `<prefix><column>.<field>` (`f_a.1`, `f_a.id`); the field comes from the
+/// constant second argument.
+String getTupleElementName(const QueryTreeNodePtr & tuple_element_node)
+{
+    const auto & arguments = tuple_element_node->as<FunctionNode &>().getArguments().getNodes();
+    return arguments[1]->as<ConstantNode &>().getValue().safeGet<String>();
 }
 
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
@@ -995,12 +1022,12 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
     const auto & columns = storage_snapshot->metadata->getColumns();
 
     /// Watermark target column must exist in table.
-    const auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, watermark.column);
+    const auto column = columns.tryGetColumn(GetColumnsOptions::AllPhysical, watermark.time_attribute_column);
     if (!column)
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' not found in table {}", watermark.column, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' not found in table {}", watermark.time_attribute_column, storage_snapshot->storage.getStorageID().getFullNameNotQuoted());
 
     if (!isDateOrDate32OrDateTimeOrDateTime64(column->type))
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.column, column->type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK column '{}' must be of Date, Date32, DateTime or DateTime64 type, got {}", watermark.time_attribute_column, column->type->getName());
 
     /// Watermark expression's result type must match the column type.
     auto dummy_storage = std::make_shared<StorageDummy>(StorageID{"dummy", "dummy"}, storage_snapshot->metadata->getColumns());
@@ -1010,7 +1037,7 @@ void QueryAnalyzer::convertLimitOffsetExpression(QueryTreeNodePtr & expression_n
 
     auto expression_type = expression_node->getResultType();
     if (!expression_type->equals(*column->type))
-        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK expression result type {} does not match column '{}' type {}", expression_type->getName(), watermark.column, column->type->getName());
+        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK expression result type {} does not match column '{}' type {}", expression_type->getName(), watermark.time_attribute_column, column->type->getName());
 }
 
 void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope)
@@ -1058,7 +1085,12 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
 
                 if (stream_settings->watermark)
+                {
+                    if (stream_settings->unordered)
+                        throw Exception(ErrorCodes::ILLEGAL_STREAM, "WATERMARK is not supported for UNORDERED streams");
+
                     validateWatermarkSettings(*stream_settings->watermark, storage_snapshot, scope);
+                }
             }
         }
     }
@@ -2849,15 +2881,47 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
         else
             result_projection_names.push_back(column_name);
 
-        for (const auto & transformer : matcher_node_typed.getColumnTransformers().getNodes())
+        String apply_column_name_prefix;
+        /// Short-based accumulator for `APPLY (expr, 'prefix')`: the prefix must attach to the
+        /// short column name (`f_a`), not the qualified projection name (`f_t1.a`).
+        String apply_prefixed_projection_name = column_name;
+
+        const auto & column_transformers = matcher_node_typed.getColumnTransformers().getNodes();
+        for (const auto & transformer : column_transformers)
         {
+            /// The node this transformer starts from. After resolution we compare against it to
+            /// tell an identity lambda (`x -> x` resolves back to this same node) from a freshly
+            /// created node (a function/lambda that wraps it). Only a reused node may overwrite
+            /// its cached projection name.
+            const IQueryTreeNode * input_node_before_transformer = node.get();
+            /// The name this matched column carries into the transformer. A name the transformer
+            /// changes belongs to this chain alone and may not be published on a shared node.
+            const String projection_name_before_transformer = result_projection_names.back();
+            const bool is_last_transformer = transformer.get() == column_transformers.back().get();
+
             if (auto * apply_transformer = transformer->as<ApplyColumnTransformerNode>())
             {
                 const auto & expression_node = apply_transformer->getExpressionNode();
                 apply_transformer_was_used = true;
+                apply_column_name_prefix = apply_transformer->getColumnNamePrefix();
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
+                    /// A named `APPLY (x -> <matcher>, 'prefix')` whose lambda body is itself a
+                    /// bare matcher/asterisk (`*`, `t.*`, `COLUMNS(...)`) has no column to attach
+                    /// the prefix to. The legacy path rejects this with BAD_ARGUMENTS (it calls
+                    /// setAlias on a non-aliasable asterisk node); reject it here too, before the
+                    /// matcher is expanded into a column list and the reused column is silently
+                    /// renamed. A matcher nested inside a function (`x -> tuple(*)`) is not a bare
+                    /// matcher and stays allowed, matching the legacy path.
+                    if (!apply_column_name_prefix.empty()
+                        && expression_node->as<LambdaNode &>().getExpression()->getNodeType() == QueryTreeNodeType::MATCHER)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "APPLY transformer {} sets a name prefix on an asterisk or COLUMNS matcher, "
+                            "which does not name a single column. In scope {}",
+                            transformer->formatASTForErrorMessage(),
+                            scope.scope_node->formatASTForErrorMessage());
+
                     /// A lambda body can only learn a matched column's name from this map; the FUNCTION branch below also reads its alias.
                     node_to_projection_name.emplace(node, result_projection_names.back());
 
@@ -2918,6 +2982,19 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (!replace_expression)
                     continue;
 
+                /// `REPLACE (<matcher> AS a)` renames the matched column to the replacement's
+                /// name, but a bare matcher/asterisk replacement (`COLUMNS('a')`, `*`, `t.*`)
+                /// has no single name to carry. The legacy path rejects this with BAD_ARGUMENTS
+                /// (setAlias on a non-aliasable asterisk node); reject it here too instead of
+                /// expanding the matcher and renaming the reused column.
+                if (replace_expression->getNodeType() == QueryTreeNodeType::MATCHER)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "REPLACE transformer {} uses an asterisk or COLUMNS matcher as the replacement "
+                        "for column '{}', which does not name a single column. In scope {}",
+                        transformer->formatASTForErrorMessage(),
+                        column_name,
+                        scope.scope_node->formatASTForErrorMessage());
+
                 replace_transformer_was_used = true;
 
                 if (replace_transformer->isStrict())
@@ -2946,6 +3023,50 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     auto & node_list_nodes = node_list->getNodes();
                     size_t node_list_nodes_size = node_list_nodes.size();
 
+                    /// A named `APPLY (x -> untuple(x), 'prefix')` or a `REPLACE (untuple(a) AS a)`
+                    /// resolves to a list of `tupleElement` calls, one per tuple field. The legacy
+                    /// path expands each element (`f_a.1`/`f_a.id` for APPLY, `a.1`/`a.id` for
+                    /// REPLACE), so expand the whole list here as sibling projection columns.
+                    /// This also fires for a single-field tuple (a size-1 list): the legacy path
+                    /// keeps the field suffix there too (`f_a.id`, `a.1`), so we must not fall
+                    /// through to the generic single-node path that would drop it. Only when this
+                    /// is the terminal transformer: a transformer chained after `untuple` is
+                    /// rejected by both analyzers, so leave it to the throw below.
+                    const bool expand_named_untuple = is_last_transformer
+                        && isUntupleExpansion(node_list_nodes)
+                        && ((execute_apply_transformer && !apply_column_name_prefix.empty())
+                            || execute_replace_transformer);
+                    if (expand_named_untuple)
+                    {
+                        for (size_t i = 0; i < node_list_nodes_size; ++i)
+                        {
+                            /// Base each element on the display name feeding untuple. For APPLY that
+                            /// is the accumulated prefixed name (a direct untuple keeps `f_a.1`, a
+                            /// chained one follows the prior transformer: `q_p_a.1`, `q_identity(a).1`).
+                            /// For REPLACE the prefix is empty and the accumulator is the replaced
+                            /// column name, so this yields `a.1` (matching `ActionsVisitor::doUntuple`,
+                            /// which aliases the untuple to the REPLACE target name).
+                            String element_projection_name = apply_column_name_prefix + apply_prefixed_projection_name
+                                + '.' + getTupleElementName(node_list_nodes[i]);
+
+                            /// The first element reuses the name slot already pushed for this
+                            /// matched column; the rest add new sibling slots.
+                            if (i != 0)
+                                result_projection_names.push_back({});
+                            result_projection_names.back() = element_projection_name;
+
+                            node_to_projection_name.emplace(node_list_nodes[i], element_projection_name);
+
+                            /// Push all but the last element now; the last stays in `node` so
+                            /// the loop tail pushes it, keeping the node/name counts in sync.
+                            if (i + 1 < node_list_nodes_size)
+                                list->getNodes().push_back(node_list_nodes[i]);
+                        }
+                        node = node_list_nodes.back();
+                        node_projection_names.clear();
+                        break;
+                    }
+
                     if (node_list_nodes_size != 1)
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "{} transformer {} resolved as list node with size {}. Expected 1. In scope {}",
@@ -2960,8 +3081,63 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                 if (node_projection_names.size() != 1)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Matcher node expected 1 projection name. Actual: {}", node_projection_names.size());
 
-                result_projection_names.back() = std::move(node_projection_names[0]);
-                node_to_projection_name.emplace(node, result_projection_names.back());
+                /// The natural resolved name of `node` after this transformer (e.g. `toString(a)`,
+                /// `identity(a)`). A later chained transformer must see this as its argument name,
+                /// so this is what a freshly created node stores in node_to_projection_name.
+                String natural_projection_name = node_projection_names[0];
+
+                if (execute_apply_transformer && !apply_column_name_prefix.empty())
+                {
+                    /// `APPLY (expr, 'prefix')` names the result `prefix` + the short column name
+                    /// before this transformer, mirroring the legacy path (which prefixes
+                    /// ASTIdentifier::shortName(), not a qualified name). Chained prefixes
+                    /// accumulate: `q_` + `p_` + `a`.
+                    apply_prefixed_projection_name = apply_column_name_prefix + apply_prefixed_projection_name;
+                    result_projection_names.back() = apply_prefixed_projection_name;
+                }
+                else
+                {
+                    result_projection_names.back() = natural_projection_name;
+                    apply_prefixed_projection_name = natural_projection_name;
+                }
+                /// Whether the transformer resolved back to the very node it started from
+                /// (an identity lambda `x -> x`). A function/lambda that wraps the input is a
+                /// fresh node instead.
+                const bool node_pointer_reused = node.get() == input_node_before_transformer;
+                if (node_pointer_reused)
+                {
+                    /// The reused node is this column's canonical node, shared with every other
+                    /// expression in the query, so a name only this chain sees (an APPLY prefix, or
+                    /// an alias inside the lambda body) goes on a private copy, never on it.
+                    const bool node_is_private_copy = execute_apply_transformer
+                        && result_projection_names.back() != projection_name_before_transformer;
+                    if (node_is_private_copy)
+                        node = node->clone();
+
+                    /// Reused node: the legacy AST path has no equivalent (an identity lambda
+                    /// cannot be expressed there), so we carry the accumulated (prefixed) name.
+                    /// Overwrite, not emplace: the node may already be in the map, so a chained
+                    /// transformer must observe the updated name (`APPLY (identity, 'p_') APPLY toString`
+                    /// -> `toString(p_a)`).
+                    node_to_projection_name.insert_or_assign(node, result_projection_names.back());
+                    /// resolveExpressionNode reads resolved_expressions before node_to_projection_name,
+                    /// so the name must reach that cache too. A private copy has no entry yet.
+                    if (execute_apply_transformer)
+                    {
+                        if (node_is_private_copy)
+                            resolved_expressions.emplace(node, ProjectionNames{result_projection_names.back()});
+                        else if (auto resolved_it = resolved_expressions.find(node); resolved_it != resolved_expressions.end())
+                            resolved_it->second = {result_projection_names.back()};
+                    }
+                }
+                else
+                {
+                    /// Freshly created node: store its natural name, not the prefix alias, so a
+                    /// later unprefixed `APPLY f` formats its argument from the real expression
+                    /// (`toString(identity(a))`, `upper(toString(a))`), matching the legacy path.
+                    /// The prefix only affects this column's terminal display name above.
+                    node_to_projection_name.emplace(node, natural_projection_name);
+                }
                 node_projection_names.clear();
             }
         }
@@ -6146,9 +6322,8 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
-    auto row_policy_filter = scope.context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-    bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, scope.context);
+    bool has_row_policy = row_policy_filter != nullptr;
 
     /// Build the query tree from the view's inner query AST.
     ASTPtr view_ast = storage_snapshot->metadata->getSelectQuery().inner_query->clone();
@@ -6618,7 +6793,7 @@ void tryMoveNonAggregateHavingPredicatesToWhere(const QueryTreeNodePtr & query_n
 
     /// The parser builds left-associative binary `and` trees, so `(a AND b) AND c`
     /// arrives as `and(and(a, b), c)`. Flatten the whole chain into atomic conjuncts,
-    /// mirroring the legacy `splitConjunctionsAst` used by `PredicateExpressionsOptimizer`.
+    /// mirroring the legacy `splitConjunctionsAst` helper.
     /// Without this, a nested `and` containing an aggregate is classified as a single
     /// `KeepInHaving` conjunct and its non-aggregate siblings stay trapped in `HAVING`.
     QueryTreeNodes conjuncts;
