@@ -842,6 +842,26 @@ SELECT count() FROM table WHERE hasPhrase(comment, 'clickhouse olap');
 -- Does NOT match a row containing 'clickhouse fast olap' (non-consecutive)
 ```
 
+#### `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` {#functions-example-hastokenprefix-hastokenlike-hastokenmatch}
+
+Functions [hasTokenPrefix](/reference/functions/regular-functions/string-search-functions#hasTokenPrefix), [hasTokenLike](/reference/functions/regular-functions/string-search-functions#hasTokenLike) and [hasTokenMatch](/reference/functions/regular-functions/string-search-functions#hasTokenMatch) return true if any token of the column starts with a prefix, matches a `LIKE` pattern, or matches a regular expression.
+
+Unlike `LIKE`, `startsWith` and `match`, which apply the pattern to the whole value, these functions apply it to each token separately.
+The tokens of the index dictionary that match the pattern are therefore exactly the tokens the function looks for:
+ClickHouse finds them by a scan of the dictionary (a seek to the range of matching tokens for `hasTokenPrefix`), reads their posting lists, and answers the query with a [direct read](#direct-read).
+If too many tokens match (see setting [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
+
+The text index is used if the tokenizer of the function (the optional third argument, `splitByNonAlpha` by default) is the tokenizer of the index, and the index has no preprocessor or postprocessor.
+
+Example:
+
+```sql
+-- Instead of: arrayExists(t -> startsWith(t, 'charg'), tokens(comment))
+SELECT count() FROM table WHERE hasTokenPrefix(comment, 'charg');
+SELECT count() FROM table WHERE hasTokenLike(comment, 'ch%ed');
+SELECT count() FROM table WHERE hasTokenMatch(comment, '^err[0-9]+$');
+```
+
 #### `has` {#functions-example-has}
 
 Array function [has](/reference/functions/regular-functions/array-functions#has) matches against a single token in the array of strings.
@@ -1333,7 +1353,7 @@ Direct read is controlled by two settings:
 
 **Supported functions**
 
-The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
+The direct read optimization supports functions `hasToken`, `hasAllTokens`, `hasAnyTokens`, `hasTokenPrefix`, `hasTokenLike`, and `hasTokenMatch`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
 If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`).
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.

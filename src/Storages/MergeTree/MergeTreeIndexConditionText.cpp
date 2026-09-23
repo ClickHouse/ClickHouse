@@ -278,6 +278,9 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "hasAnyTokens"
         || function_name == "hasAllTokens"
         || function_name == "hasPhrase"
+        || function_name == "hasTokenPrefix"
+        || function_name == "hasTokenLike"
+        || function_name == "hasTokenMatch"
         || function_name == "equals"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsKeyLike"
@@ -297,10 +300,17 @@ bool MergeTreeIndexConditionText::isSupportedFunction(const String & function_na
         || function_name == "multiMatchAny";
 }
 
+/// `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` apply their needle to each token separately.
+static bool isPerTokenPatternFunction(const String & function_name)
+{
+    return function_name == "hasTokenPrefix" || function_name == "hasTokenLike" || function_name == "hasTokenMatch";
+}
+
 bool MergeTreeIndexConditionText::tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const
 {
     /// The third argument of hasToken is a start position, not a tokenizer.
-    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase")
+    if (function_name != "hasAnyTokens" && function_name != "hasAllTokens" && function_name != "hasPhrase"
+        && !isPerTokenPatternFunction(function_name))
         return false;
 
     Field const_value;
@@ -333,7 +343,8 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
-        || function_name == "hasAllTokens")
+        || function_name == "hasAllTokens"
+        || isPerTokenPatternFunction(function_name))
     {
         return TextIndexDirectReadMode::Exact;
     }
@@ -1773,6 +1784,45 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             for (auto & tokens : tokens_for_queries)
                 out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
         }
+        return true;
+    }
+    if (isPerTokenPatternFunction(function_name))
+    {
+        /// Unlike `like`, the needle is applied to each token and not to the whole value, so the dictionary tokens
+        /// matching it are exactly the tokens the function looks for, and the index answer is exact. This holds only
+        /// if the function tokenizes like the index (the tokenizer argument is checked in `traverseAtomNode`) and the
+        /// index does not rewrite values or tokens.
+        if (!value_data_type.isString() || has_preprocessor || has_postprocessor
+            || !settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
+            return false;
+
+        /// Without the tokenizer argument, the functions use `splitByNonAlpha`.
+        if (function_node.getArgumentsSize() == 2 && tokenizer->getType() != ITokenizer::Type::SplitByNonAlpha)
+            return false;
+
+        /// An empty needle matches either every token or none, a dictionary scan does not help.
+        const auto & needle = value_field.safeGet<String>();
+        if (needle.empty())
+            return false;
+
+        /// Compiled as the function does, so an invalid pattern raises an exception instead of being silently pruned.
+        /// A prefix becomes a `prefix%` pattern, whose dictionary scan seeks to the range of tokens with that prefix.
+        std::vector<OptimizedRegularExpression> patterns;
+        if (function_name == "hasTokenPrefix")
+            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(escapeForLikePattern(needle) + "%"));
+        else if (function_name == "hasTokenLike")
+            patterns.emplace_back(Regexps::createRegexp</*like*/ true, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+        else
+            patterns.emplace_back(Regexps::createRegexp</*like*/ false, /*no_capture*/ true, /*case_insensitive*/ false>(needle));
+
+        /// A UInt8 virtual column cannot carry the NULL the function returns for a NULL value, which NOT flips to true.
+        const auto pattern_read_mode = affix_patterns_allowed ? direct_read_mode : TextIndexDirectReadMode::None;
+
+        out.function = RPNElement::FUNCTION_LIKE;
+        out.text_search_queries.emplace_back(
+            std::make_shared<TextSearchQuery>(
+                function_name, TextSearchMode::Any, pattern_read_mode,
+                VectorWithMemoryTracking<String>(), std::move(patterns)));
         return true;
     }
     if (function_name == "has")
