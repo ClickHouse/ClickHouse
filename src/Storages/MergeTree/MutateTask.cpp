@@ -398,13 +398,12 @@ static NameSet collectIndicesRebuiltByMutation(
         /// `UNKNOWN_IDENTIFIER` on a schema the interpreter accepts.
         MaterializedColumnDependencies dependency_graph(columns, context);
 
+        /// Not restricted to the columns the part stores: the interpreter is built over every
+        /// physical column of the metadata, so it recomputes a `MATERIALIZED` column the part only
+        /// holds as a missing-column marker, or does not hold at all, and rebuilds the indices over it.
         std::unordered_map<String, NameSet> materialized_dependencies;
-        const auto & part_columns = part->getColumnsDescription();
         for (const auto & column : columns)
         {
-            if (!part_columns.has(column.name))
-                continue;
-
             const auto * materialized = dependency_graph.findNode(column.name);
 
             /// A column reading an EPHEMERAL one is never recomputed outside `INSERT`, so the
