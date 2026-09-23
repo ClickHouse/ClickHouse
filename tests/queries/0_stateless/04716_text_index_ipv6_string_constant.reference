@@ -24,3 +24,10 @@
 1
 -- a FixedString column keeps pruning for a constant wider than the column
 1
+-- a list of needles over a map element still uses the index
+1
+1
+1
+1
+0
+1

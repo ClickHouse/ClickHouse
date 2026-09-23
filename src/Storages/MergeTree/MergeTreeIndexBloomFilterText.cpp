@@ -337,6 +337,8 @@ static bool convertConstantToIndexDomain(
 
     if (WhichDataType(actual_type).isStringOrFixedString())
     {
+        if (constant.getType() != Field::Types::String)
+            return false;
         out_bytes = constant.safeGet<String>();
         return true;
     }
