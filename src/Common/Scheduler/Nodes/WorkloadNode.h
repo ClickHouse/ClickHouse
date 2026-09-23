@@ -67,6 +67,10 @@ struct WorkloadNodeTraits<ITimeSharedNode>
         static_cast<FifoQueue &>(*node).purgeQueue();
     }
 
+    static void onQueueDetached(const NodePtr &)
+    {
+    }
+
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority priority)
     {
         NodePtr result = std::make_shared<FairPolicy>(event_queue_, SchedulerNodeInfo{});
@@ -172,6 +176,11 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static void purgeQueue(const NodePtr & node)
     {
         static_cast<AllocationQueue &>(*node).purgeQueue();
+    }
+
+    static void onQueueDetached(const NodePtr & node)
+    {
+        static_cast<AllocationQueue &>(*node).processActivation();
     }
 
     static NodePtr makeFairPolicy(IWorkloadNode * workload, EventQueue & event_queue_, Priority precedence)
@@ -497,13 +506,14 @@ protected:
                 Traits::updateQueue(queue, settings, unit);
         }
 
-        /// Fails everything the queue still holds; a detached queue cannot process removals.
-        void purgeQueue()
+        /// The queue outlives this node while older versions reference it, and from now on it serves
+        /// its allocations on its own.
+        void detachQueue()
         {
             if (!queue)
                 return;
             detach(queue);
-            Traits::purgeQueue(queue);
+            Traits::onQueueDetached(queue);
         }
 
     private:
@@ -653,8 +663,7 @@ public:
     ~WorkloadNodeCommon() override
     {
         /// Queues and constraints outlive this node while older versions are still referenced by classifiers.
-        /// Their owners would wait forever for the removal a detached queue never processes.
-        impl.branch.purgeQueue();
+        impl.branch.detachQueue();
         forEachSchedulerNode([](ISchedulerNode * node) { node->workload = nullptr; });
     }
 

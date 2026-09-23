@@ -54,6 +54,8 @@ public:
 private:
     bool setIncrease();
     bool setDecrease();
+    void approveIncrease(IncreaseRequest & request);
+    void approveDecrease(DecreaseRequest & request);
     void applyReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total);
     void ensureUsable() const;
 

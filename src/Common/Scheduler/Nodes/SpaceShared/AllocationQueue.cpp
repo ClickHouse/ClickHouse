@@ -318,19 +318,27 @@ void AllocationQueue::approveIncrease()
 {
     std::lock_guard lock(mutex);
     chassert(increase);
-    ResourceAllocation & allocation = increase->allocation;
-    SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, increase->size, allocated);
+    approveIncrease(*increase);
+    increase = nullptr;
+
+    setIncrease();
+}
+
+void AllocationQueue::approveIncrease(IncreaseRequest & request) // TSA_REQUIRES(mutex)
+{
+    ResourceAllocation & allocation = request.allocation;
+    SCHED_DBG("{} -- approveIncrease(id={}, size={}, allocated={})", getPath(), allocation.id, request.size, allocated);
     if (allocation.increase.kind == IncreaseRequest::Kind::Pending)
     {
         pending_allocations.erase(pending_allocations.iterator_to(allocation));
         pending_allocations_size -= allocation.increase.size;
-        allocation.fair_key = increase->size;
+        allocation.fair_key = request.size;
         running_allocations.insert(allocation);
     }
     else
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-    apply(*increase);
-    allocation.allocated += increase->size;
+    apply(request);
+    allocation.allocated += request.size;
     // `apply` above incremented `allocations` for `Kind::Pending`/`Kind::Initial`. Mark the
     // allocation as admitted so its eventual removal propagates a matching `removing_allocation`
     // decrease (instead of underflowing `allocations` in the hierarchy).
@@ -339,10 +347,7 @@ void AllocationQueue::approveIncrease()
         allocation.admitted = true;
 
     // Notify allocation
-    increase->allocation.increaseApproved(*increase);
-    increase = nullptr;
-
-    setIncrease();
+    allocation.increaseApproved(request);
 }
 
 void AllocationQueue::approveDecrease()
@@ -350,8 +355,16 @@ void AllocationQueue::approveDecrease()
     std::lock_guard lock(mutex);
 
     chassert(decrease);
-    ResourceAllocation & allocation = decrease->allocation;
-    SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, decrease->size, allocated);
+    approveDecrease(*decrease);
+    decrease = nullptr;
+
+    setDecrease();
+}
+
+void AllocationQueue::approveDecrease(DecreaseRequest & request) // TSA_REQUIRES(mutex)
+{
+    ResourceAllocation & allocation = request.allocation;
+    SCHED_DBG("{} -- approveDecrease(id={}, size={}, allocated={})", getPath(), allocation.id, request.size, allocated);
     decreasing_allocations.erase(decreasing_allocations.iterator_to(allocation));
 
     // We need to remove from running/increasing allocations to update the key
@@ -360,9 +373,9 @@ void AllocationQueue::approveDecrease()
     if (is_increasing)
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
     // Update the key and other fields
-    apply(*decrease);
-    allocation.allocated -= decrease->size;
-    allocation.fair_key -= decrease->size;
+    apply(request);
+    allocation.allocated -= request.size;
+    allocation.fair_key -= request.size;
 
     if (allocation.reclaimable > allocation.allocated)
     {
@@ -371,7 +384,7 @@ void AllocationQueue::approveDecrease()
     }
 
     // Reinsert into the appropriate data structures unless this is a removal
-    if (!decrease->removing_allocation)
+    if (!request.removing_allocation)
     {
         running_allocations.insert(allocation);
         if (is_increasing)
@@ -379,14 +392,11 @@ void AllocationQueue::approveDecrease()
     }
 
     // Ordering of increasing allocations is changed - update the next increase request if needed and propagate the update
-    if (is_increasing && setIncrease())
+    if (is_increasing && setIncrease() && parent)
         propagate(Update().setIncrease(increase));
 
     // Notify allocation
-    decrease->allocation.decreaseApproved(*decrease);
-    decrease = nullptr;
-
-    setDecrease();
+    allocation.decreaseApproved(request);
 }
 
 ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & killer, ResourceCost limit, String & details)
@@ -432,8 +442,6 @@ ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_le
 
 void AllocationQueue::processActivation()
 {
-    if (!parent)
-        return; // Detached queue - nothing to do
     Update update;
     {
         std::lock_guard lock(mutex);
@@ -487,6 +495,25 @@ void AllocationQueue::processActivation()
                 if (!allocation.decreasing_hook.is_linked())
                     decreasing_allocations.push_back(allocation);
             }
+        }
+
+        // The queue is detached from the hierarchy by `DROP WORKLOAD`, but its allocations are still running
+        // and keep it alive through the version they hold. Nothing above enforces limits or approves anymore,
+        // so every request is approved here.
+        if (!parent)
+        {
+            while (!decreasing_allocations.empty())
+                approveDecrease(decreasing_allocations.front().decrease);
+            while (!increasing_allocations.empty())
+                approveIncrease(increasing_allocations.begin()->increase);
+            while (!pending_allocations.empty())
+                approveIncrease(pending_allocations.front().increase);
+            increase = nullptr;
+            decrease = nullptr;
+            pending_reclaimable_delta = 0;
+            pending_available_reclaimable_delta = 0;
+            pending_spilled_settled_bytes = 0;
+            return;
         }
 
         // Update requests
