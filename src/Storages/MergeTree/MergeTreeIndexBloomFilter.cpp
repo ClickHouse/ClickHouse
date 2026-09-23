@@ -301,6 +301,16 @@ std::optional<MapIndexInfo> tryResolveMapInfoFromNode(
             if (!second_argument.tryGetConstant(constant_value, constant_type))
                 return std::nullopt;
 
+            /// `m['k']` throws `UNKNOWN_ELEMENT_OF_ENUM` when `k` names no member of the `Enum` key type.
+            /// Decline the atom, so that the index cannot prune every granule and hide that exception.
+            /// This matters for an index on `mapValues(m)`, which does not look at the key at all.
+            if (const auto * map_dag_node = first_argument.getDAGNode())
+            {
+                const auto * map_type = typeid_cast<const DataTypeMap *>(map_dag_node->result_type.get());
+                if (map_type && stringConstantIsNotAnEnumMember(constant_value, *map_type->getKeyType()))
+                    return std::nullopt;
+            }
+
             return tryResolveMapIndexInfo(first_argument.getColumnName(), constant_value, header);
         }
     }
