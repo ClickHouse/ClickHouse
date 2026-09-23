@@ -98,7 +98,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceInName)
 {
-    /// A header name must be an RFC 7230 token, so whitespace in the name is rejected.
+    /// A header name must be an RFC 9110 token, so whitespace in the name is rejected.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-A B", "value"});
@@ -125,7 +125,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsEmptyName)
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsSeparatorInName)
 {
-    /// RFC 7230 separators such as '/' are not tchar, so a name containing one is rejected.
+    /// Characters such as '/' are not tchar (RFC 9110), so a name containing one is rejected.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X/Foo", "value"});

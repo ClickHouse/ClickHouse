@@ -20,7 +20,7 @@ void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
 
     for (const auto & entry : entries)
     {
-        /// A header name must be an RFC 7230 token: non-empty and built only from tchar bytes
+        /// A header name must be an RFC 9110 token: non-empty and built only from tchar bytes
         /// (letters, digits and "!#$%&'*+-.^_`|~"). A value must not contain CR or LF.
         const auto is_tchar = [](char c)
         {
@@ -33,7 +33,7 @@ void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
             || entry.value.contains('\r') || entry.value.contains('\n'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
 
-        /// Header names are case-insensitive (RFC 7230 3.2); the forbidden set is stored lower-cased.
+        /// Header names are case-insensitive (RFC 9110 5.1); the forbidden set is stored lower-cased.
         const std::string lower_name = Poco::toLower(entry.name);
 
         if (forbidden_headers.contains(lower_name))

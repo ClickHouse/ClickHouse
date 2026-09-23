@@ -55,7 +55,7 @@ bool isForbiddenForS3(const HTTPHeaderFilter & filter, const std::string & name)
 
 }
 
-/// HTTP header names are case-insensitive (RFC 7230 section 3.2). A forbidden
+/// HTTP header names are case-insensitive (RFC 9110 section 5.1). A forbidden
 /// exact header configured as "Authorization" must block every case variant,
 /// otherwise the http_forbid_headers blocklist is trivially bypassed.
 TEST(HTTPHeaderFilter, ExactMatchIsCaseInsensitive)
@@ -184,7 +184,7 @@ TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
     EXPECT_EQ(allowed.begin()->name, "x-amz-meta-owner");
 }
 
-/// A header name with whitespace or control characters is not a valid RFC 7230 token and is
+/// A header name with whitespace or control characters is not a valid RFC 9110 token and is
 /// rejected, in any case and whether or not it is on the blocklist.
 TEST(HTTPHeaderFilter, WhitespaceOrControlInNameRejected)
 {
