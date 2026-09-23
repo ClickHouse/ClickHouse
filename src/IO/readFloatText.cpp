@@ -4,7 +4,9 @@
 #include <IO/ReadBufferFromMemory.h>
 #include <Core/Defines.h>
 #include <base/shift10.h>
+#include <base/unaligned.h>
 #include <Common/StringUtils.h>
+#include <Common/intExp.h>
 
 #include <bit>
 #include <cstring>
@@ -118,6 +120,65 @@ inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
     val = (val * 10) + (val >> 8);
     val = (((val & mask) * mul1) + (((val >> 16) & mask) * mul2)) >> 32;
     return static_cast<uint32_t>(val);
+}
+
+/// Number of leading decimal digits in the 16 bytes at `p`.
+inline unsigned countLeadingDigits16(const char * p)
+{
+    using U8x16 = uint8_t __attribute__((vector_size(16)));
+    const auto is_digit = (unalignedLoad<U8x16>(p) - '0') < 10;
+#if defined(__aarch64__)
+    /// NEON has no movemask; `shrn` narrows the byte mask to 4 bits per byte.
+    using U16x8 = uint16_t __attribute__((vector_size(16)));
+    using U8x8 = uint8_t __attribute__((vector_size(8)));
+    const auto mask = __builtin_bit_cast(uint64_t, __builtin_convertvector(__builtin_bit_cast(U16x8, is_digit) >> 4, U8x8));
+    return std::countr_zero(~mask) / 4;
+#else
+    /// 1 bit per byte (`pmovmskb` on x86).
+    using Bool16 = bool __attribute__((ext_vector_type(16)));
+    const uint64_t mask = __builtin_bit_cast(uint16_t, __builtin_convertvector(is_digit, Bool16));
+    return std::countr_zero(~mask);
+#endif
+}
+
+/// Value of the `n` <= 15 decimal digits at `p`, reading 16 bytes.
+inline uint64_t parseDigits16(const char * p, unsigned n)
+{
+    if (n == 0)
+        return 0;
+    /// Move the digits to the end of the 16 bytes and fill the start with '0': "123..." -> "0000000000000123".
+    const unsigned __int128 zeros = (static_cast<unsigned __int128>(0x3030303030303030) << 64) | 0x3030303030303030;
+    const unsigned shift = 8 * (16 - n);
+    const unsigned __int128 digits = (unalignedLoad<unsigned __int128>(p) << shift) | (zeros >> (128 - shift));
+    return parse_eight_digits_unrolled(static_cast<uint64_t>(digits)) * 100000000ULL
+        + parse_eight_digits_unrolled(static_cast<uint64_t>(digits >> 64));
+}
+
+/// Bytes read from the start of a token by tryReadShortDecimal: sign, 16 bytes, dot, 16 bytes, and the next byte.
+constexpr ptrdiff_t short_decimal_read_bytes = 35;
+
+/// Parses a `[-+]digits[.digits]` token of at most 15 digits (7 for float). Such a mantissa and its power
+/// of ten are exact, so one division is correctly rounded (Clinger's fast path). Returns false for anything
+/// else, including exponents, for fast_float to handle.
+template <typename T>
+inline bool tryReadShortDecimal(T & x, const char * first, const char *& end)
+{
+    const bool negative = *first == '-';
+    const char * const int_begin = first + (negative || *first == '+');
+    const unsigned int_len = countLeadingDigits16(int_begin);
+    const bool has_dot = int_begin[int_len] == '.';
+    const char * const frac_begin = int_begin + int_len + 1;
+    const unsigned frac_len = has_dot ? countLeadingDigits16(frac_begin) : 0;
+    end = has_dot ? frac_begin + frac_len : int_begin + int_len;
+
+    constexpr unsigned max_digits = std::is_same_v<T, double> ? 15 : 7;
+    if (int_len + frac_len == 0 || int_len + frac_len > max_digits || (*end | 0x20) == 'e')
+        return false;
+
+    const uint64_t mantissa = parseDigits16(int_begin, int_len) * common::exp10_i64(frac_len) + parseDigits16(frac_begin, frac_len);
+    const T value = static_cast<T>(mantissa) / static_cast<T>(common::exp10_i64(frac_len));
+    x = negative ? -value : value;
+    return true;
 }
 
 /// A pure decimal integer of up to 38 digits fits exactly in unsigned __int128, and the conversion
@@ -457,6 +518,16 @@ ReturnType readFloatTextPreciseImpl(T & x, ReadBuffer & buf)
     {
         auto * initial_position = buf.position();
         auto * const buf_end = buf.buffer().end();
+
+        const char * short_decimal_end = nullptr;
+        if constexpr (std::endian::native == std::endian::little)
+        {
+            if (likely(buf_end - initial_position >= short_decimal_read_bytes && tryReadShortDecimal(x, initial_position, short_decimal_end)))
+            {
+                buf.position() += short_decimal_end - initial_position;
+                return ReturnType(true);
+            }
+        }
 
         auto res = parseFloatFromRange(x, initial_position, buf_end, float_fmt);
 
