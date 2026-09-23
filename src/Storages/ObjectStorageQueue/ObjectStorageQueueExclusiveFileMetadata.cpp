@@ -7,6 +7,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
     const std::string & path_,
     FileStatusPtr file_status_,
     size_t max_loading_retries_,
+    std::atomic<UInt64> & loading_retries_ref_,
     std::atomic<size_t> & metadata_ref_count_,
     ObjectStorageQueueMetadata & metadata_,
     const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
@@ -20,6 +21,7 @@ ObjectStorageQueueExclusiveFileMetadata::ObjectStorageQueueExclusiveFileMetadata
           /* failed_node_path */ std::string(),
           file_status_,
           max_loading_retries_,
+          loading_retries_ref_,
           metadata_ref_count_,
           /* use_persistent_processing_nodes */ false,
           processing_state_cache_ttl_seconds_,
@@ -91,7 +93,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     return std::pair{true, ObjectStorageQueueIFileMetadata::FileStatus::State::None};
 }
 
-void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/)
+void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/, bool /*clear_retriable*/)
 {
     releaseProcessingGuard();
 
@@ -117,7 +119,7 @@ void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out, bool * is_terminal_out) const
 {
     const auto state = file_status->state.load();
 
@@ -126,6 +128,12 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
         case FileStatus::State::Processed: return PathState::Processed;
         case FileStatus::State::Failed:
             failure_message = file_status->getException();
+            if (retries_out)
+                *retries_out = file_status->retries.load();
+            /// Exclusive mode has no `.retriable` marker concept - a Failed state here
+            /// is always the terminal, non-retryable outcome.
+            if (is_terminal_out)
+                *is_terminal_out = true;
             return PathState::Failed;
         default:
             return PathState::Unknown;
