@@ -312,6 +312,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP TEXT INDEX CACHES", Type::CLEAR_TEXT_INDEX_CACHES},
             {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
+            {"DROP QUERY PLAN CACHE", Type::CLEAR_QUERY_PLAN_CACHE},
             {"DROP ENCRYPTION HEADERS CACHE", Type::CLEAR_ENCRYPTION_HEADERS_CACHE},
             {"DROP QUERY CACHE", Type::CLEAR_QUERY_CACHE},
             {"DROP COMPILED EXPRESSION CACHE", Type::CLEAR_COMPILED_EXPRESSION_CACHE},
@@ -1374,6 +1375,12 @@ The compiled expression cache is enabled/disabled with the query/user/profile-le
 ## SYSTEM CLEAR|DROP QUERY CONDITION CACHE {#drop-query-condition-cache}
 
 Clears the query condition cache.
+
+## SYSTEM CLEAR|DROP QUERY PLAN CACHE {#drop-query-plan-cache}
+
+Clears the experimental [query plan cache](/concepts/features/performance/caches/query-plan-cache).
+The query plan cache is enabled/disabled with the query/user/profile-level setting `enable_query_plan_cache`.
+Its size can be configured using the server-level settings `query_plan_cache.max_size_in_bytes` and `query_plan_cache.max_entries`.
 
 ## SYSTEM CLEAR|DROP ENCRYPTION HEADERS CACHE {#drop-encryption-headers-cache}
 
