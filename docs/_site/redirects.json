@@ -40892,10 +40892,6 @@
     "source": "/sql-reference/table-functions/sqlite"
   },
   {
-    "destination": "/reference/functions/table-functions/timeSeriesHistograms",
-    "source": "/sql-reference/table-functions/timeSeriesHistograms"
-  },
-  {
     "destination": "/reference/functions/table-functions/timeSeriesMetricFamilies",
     "source": "/sql-reference/table-functions/timeSeriesMetrics"
   },
