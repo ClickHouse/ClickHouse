@@ -2,6 +2,7 @@
 
 #include <Common/Exception.h>
 #include <Common/HashTable/Hash.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
@@ -746,6 +747,9 @@ namespace
             auto it = remaining_uses.find(key);
             if (it == remaining_uses.end())
                 return false;
+            /// The entry outlives the query that stored it, so freeing it must not be credited to
+            /// whichever query happens to exhaust it.
+            MemoryTrackerBlockerInThread blocker;
             if (--it->second == 0)
                 remaining_uses.erase(it);
             return true;
@@ -758,6 +762,9 @@ namespace
             /// window another query is already consuming.
             if (remaining_uses.contains(key))
                 return;
+            /// Same reason as above, in the other direction: this entry outlives the query that
+            /// allocates it, and the eviction below frees entries other queries paid for.
+            MemoryTrackerBlockerInThread blocker;
             if (remaining_uses.size() >= MAX_ENTRIES)
                 remaining_uses.clear();
             remaining_uses.emplace(key, MAX_VERDICT_REUSES);
