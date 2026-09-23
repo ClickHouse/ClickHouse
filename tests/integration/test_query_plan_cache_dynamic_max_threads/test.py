@@ -37,7 +37,7 @@ def started_cluster():
         cluster.shutdown()
 
 
-def query_with_profile_events(enable_cache, min_free_per_thread):
+def run_query(enable_cache, min_free_per_thread):
     query_id = uuid.uuid4().hex
     result = node.query(
         QUERY.format(
@@ -46,6 +46,12 @@ def query_with_profile_events(enable_cache, min_free_per_thread):
         ),
         query_id=query_id,
     )
+    return result, query_id
+
+
+def get_profile_events(query_id):
+    # Must be called only after `SYSTEM FREE MEMORY`: flushing and reading `system.query_log`
+    # while most of the server memory is allocated can fail with `MEMORY_LIMIT_EXCEEDED`.
     node.query("SYSTEM FLUSH LOGS query_log")
     events = node.query(
         f"""
@@ -55,11 +61,10 @@ def query_with_profile_events(enable_cache, min_free_per_thread):
             ProfileEvents['QueryPlanCacheValidationMisses']
         FROM system.query_log
         WHERE query_id = '{query_id}'
-          AND current_database = currentDatabase()
           AND type = 'QueryFinish'
         """
     ).strip()
-    return result, tuple(map(int, events.split("\t")))
+    return tuple(map(int, events.split("\t")))
 
 
 def allocate_memory_for_single_effective_thread(min_free_per_thread):
@@ -83,6 +88,11 @@ def allocate_memory_for_single_effective_thread(min_free_per_thread):
 
 
 def test_cached_plan_across_dynamic_max_threads(started_cluster):
+    # The server memory limit of this test is 1 GB, which sanitizer builds exceed with their
+    # baseline RSS alone, so the effective thread count cannot be controlled there.
+    if node.is_built_with_sanitizer():
+        pytest.skip("The 1 GB server memory limit is too low for sanitizer builds")
+
     node.query("DROP TABLE IF EXISTS query_plan_cache_dynamic_threads")
     node.query(
         """
@@ -114,37 +124,30 @@ def test_cached_plan_across_dynamic_max_threads(started_cluster):
     min_free_per_thread = (hard_limit - tracked) // 5
     assert min_free_per_thread > 0
 
-    ground_truth, _ = query_with_profile_events(False, min_free_per_thread)
+    ground_truth, _ = run_query(False, min_free_per_thread)
 
     try:
         node.query("SYSTEM DROP QUERY PLAN CACHE")
         allocate_memory_for_single_effective_thread(min_free_per_thread)
-        low_seed, low_seed_events = query_with_profile_events(
-            True, min_free_per_thread
-        )
+        low_seed, low_seed_id = run_query(True, min_free_per_thread)
         node.query("SYSTEM FREE MEMORY")
-        high_hit, high_hit_events = query_with_profile_events(
-            True, min_free_per_thread
-        )
+        high_hit, high_hit_id = run_query(True, min_free_per_thread)
 
         assert low_seed == ground_truth
         assert high_hit == ground_truth
-        assert low_seed_events == (0, 1, 0)
-        assert high_hit_events == (1, 0, 0)
+        assert get_profile_events(low_seed_id) == (0, 1, 0)
+        assert get_profile_events(high_hit_id) == (1, 0, 0)
 
         node.query("SYSTEM DROP QUERY PLAN CACHE")
-        high_seed, high_seed_events = query_with_profile_events(
-            True, min_free_per_thread
-        )
+        high_seed, high_seed_id = run_query(True, min_free_per_thread)
         allocate_memory_for_single_effective_thread(min_free_per_thread)
-        low_hit, low_hit_events = query_with_profile_events(
-            True, min_free_per_thread
-        )
+        low_hit, low_hit_id = run_query(True, min_free_per_thread)
+        node.query("SYSTEM FREE MEMORY")
 
         assert high_seed == ground_truth
         assert low_hit == ground_truth
-        assert high_seed_events == (0, 1, 0)
-        assert low_hit_events == (1, 0, 0)
+        assert get_profile_events(high_seed_id) == (0, 1, 0)
+        assert get_profile_events(low_hit_id) == (1, 0, 0)
     finally:
         node.query("SYSTEM FREE MEMORY")
         node.query("DROP TABLE IF EXISTS query_plan_cache_dynamic_threads")

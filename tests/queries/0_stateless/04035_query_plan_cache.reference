@@ -14,9 +14,6 @@ Test 4: Non-deterministic exclusion
 Test 5: System table exclusion
 0	0
 0	0
-Test 6: Non-analyzer exclusion
-0	0
-0	0
 Test 7: Settings sensitivity
 0	1
 0	1

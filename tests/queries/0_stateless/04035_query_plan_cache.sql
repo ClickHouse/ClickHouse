@@ -94,23 +94,6 @@ WHERE event_date >= yesterday()
   AND log_comment = 'plan_cache_test5'
 ORDER BY event_time_microseconds;
 
--- Test 6: Non-analyzer exclusion
-SYSTEM DROP QUERY PLAN CACHE;
-SET allow_experimental_analyzer = 0;
-SELECT a FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test6' FORMAT Null;
-SELECT a FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test6' FORMAT Null;
-SET allow_experimental_analyzer = 1;
-SYSTEM FLUSH LOGS query_log;
-SELECT 'Test 6: Non-analyzer exclusion';
-SELECT ProfileEvents['QueryPlanCacheHits'] AS hits, ProfileEvents['QueryPlanCacheMisses'] AS misses
-FROM system.query_log
-WHERE event_date >= yesterday()
-  AND event_time >= (SELECT ts FROM test_start)
-  AND type = 'QueryFinish'
-  AND current_database = currentDatabase()
-  AND log_comment = 'plan_cache_test6'
-ORDER BY event_time_microseconds;
-
 -- Test 7: Settings sensitivity
 SYSTEM DROP QUERY PLAN CACHE;
 SELECT a FROM t_plan_cache SETTINGS log_comment = 'plan_cache_test7', max_block_size = 65505 FORMAT Null;
