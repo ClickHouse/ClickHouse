@@ -1805,6 +1805,9 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"text_index_like_max_postings_to_read",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 500)); }, {}, false)},
+    {"text_index_like_max_matched_tokens",
+     CHSetting(
+         [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.2, 0.2, 0, 20000)); }, {}, false)},
     {"text_index_like_min_pattern_length",
      CHSetting(
          [](RandomGenerator & rg, FuzzConfig &) { return std::to_string(rg.thresholdGenerator<uint64_t>(0.3, 0.3, 0, 20)); }, {}, false)},
