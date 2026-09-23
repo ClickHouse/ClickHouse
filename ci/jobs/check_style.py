@@ -616,7 +616,10 @@ FAILPOINT_STATEMENT_SEPARATORS = ";\"'`"
 # `SYSTEM DISABLE ALL FAILPOINTS` is server-wide in the other direction as well: it disarms the
 # fail points a concurrently running test armed, so it stands in for the per-name disables only in
 # a test that runs alone. `SYSTEM DROP` carries the same requirement, in `various_checks.sh`.
-NO_PARALLEL_TAG_RE = re.compile(r"(--|#)\s*[Tt]ags:.*\bno-parallel\b")
+# The trailing `(?!-)` matters: in Python regex `-` counts as a word boundary, so a plain
+# `\bno-parallel\b` also matches `no-parallel-replicas`, but clickhouse-test still runs such tests
+# in the parallel pass (only `no-parallel`/`sequential` from the parsed tag set run sequentially).
+NO_PARALLEL_TAG_RE = re.compile(r"(--|#)\s*[Tt]ags:.*\bno-parallel\b(?!-)")
 
 
 def failpoint_statements(text):
