@@ -1,6 +1,5 @@
 #include <Columns/IColumn.h>
 #include <Processors/Executors/StreamingFormatExecutor.h>
-#include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 
 #include <base/scope_guard.h>
 #include <Common/FailPoint.h>
@@ -54,9 +53,7 @@ MutableColumns StreamingFormatExecutor::getResultColumns()
 
 void StreamingFormatExecutor::setQueryParameters(const NameToNameMap & parameters)
 {
-    /// Query parameters make sense only for format Values.
-    if (auto * values_format = typeid_cast<ValuesBlockInputFormat *>(format.get()))
-        values_format->setQueryParameters(parameters);
+    format->setQueryParameters(parameters);
 }
 
 void StreamingFormatExecutor::preallocateResultColumns(size_t num_bytes, const Columns & reference_columns)
