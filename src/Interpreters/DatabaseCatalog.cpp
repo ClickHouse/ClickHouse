@@ -1611,11 +1611,14 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     String latest_metadata_dropped_path;
     TableMarkedAsDropped dropped_table;
 
-    const auto find_dropped_table = [this, &table_id]() -> TablesMarkedAsDropped::iterator
+    /// The queue is guarded by `tables_marked_dropped_mutex`, and the thread-safety analysis does
+    /// not see that mutex held inside a lambda that captures `this`, so it is passed in explicitly
+    /// and the lambda is only called with the lock held.
+    const auto find_dropped_table = [&table_id](TablesMarkedAsDropped & dropped_tables) -> TablesMarkedAsDropped::iterator
     {
         auto latest_drop_time = std::numeric_limits<time_t>::min();
-        auto it_dropped_table = tables_marked_dropped.end();
-        for (auto it = tables_marked_dropped.begin(); it != tables_marked_dropped.end(); ++it)
+        auto it_dropped_table = dropped_tables.end();
+        for (auto it = dropped_tables.begin(); it != dropped_tables.end(); ++it)
         {
             if (it->table_id.uuid == table_id.uuid)
                 return it;
@@ -1635,7 +1638,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
 
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
-        auto it_dropped_table = find_dropped_table();
+        auto it_dropped_table = find_dropped_table(tables_marked_dropped);
         if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
@@ -1661,7 +1664,7 @@ void DatabaseCatalog::undropTable(StorageID table_id, std::function<void()> thro
     {
         std::lock_guard lock(tables_marked_dropped_mutex);
         /// The entry may have been removed from the queue between the two critical sections.
-        auto it_dropped_table = find_dropped_table();
+        auto it_dropped_table = find_dropped_table(tables_marked_dropped);
         if (it_dropped_table == tables_marked_dropped.end())
             throw Exception(ErrorCodes::UNKNOWN_TABLE,
                 "Table {} is being dropped, has been dropped, or the database engine does not support UNDROP",
