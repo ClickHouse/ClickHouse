@@ -15,9 +15,11 @@ namespace DB::QueryPlanOptimizations
 /// has to be carried through every join above it. Merged into one DAG, such a value is just a node, and
 /// a caller is free to recompute it from the source columns instead of carrying it.
 ///
-/// A step whose expressions the DAG cannot represent - an aggregation, a window, an exchange - becomes
-/// an opaque source instead: its output header turns into DAG inputs and the subtree below it is left
-/// alone. That is also what keeps a caller inside one distributed fragment.
+/// The walk stops at any step whose expressions the DAG cannot represent - an aggregation, a window, an
+/// exchange, but also an `arrayJoin`, which changes the number of rows. Such a step becomes a source:
+/// its output header turns into the DAG's inputs and the subtree below it is left alone, so the columns
+/// above it can still be deferred even though nothing below it can. That is also what keeps a caller
+/// inside one distributed fragment.
 struct MergedPlanDAG
 {
     struct Source
@@ -37,6 +39,10 @@ struct MergedPlanDAG
         size_t side = 0;
     };
 
+    /// A list rather than a vector so that joining two of these is a splice and the pointers below stay
+    /// put, which saves renumbering every value's stuffing on the way up.
+    using Stuffings = std::list<Stuffing>;
+
     /// The DAG, plus the sources every node reads. See `getSources`.
     JoinExpressionActions expression_actions;
 
@@ -47,10 +53,10 @@ struct MergedPlanDAG
     /// Conditions the joins match rows on. A join computes them itself, so they are computed early too.
     ActionsDAG::NodeRawConstPtrs join_condition_nodes;
 
-    /// A position in this vector is the source index reported by `getSources`.
+    /// A position in this vector is the source index reported by `getSources`, which is how the sources
+    /// of a value are read off a `BitSet`, so this one has to stay indexable.
     std::vector<Source> sources;
-    /// A position in this vector is the stuffing index reported by `getNearestStuffing`.
-    std::vector<Stuffing> stuffings;
+    Stuffings stuffings;
 
     /// The values with a join above their own computation point, whatever its kind. Letting one of these
     /// cross the `LIMIT` means a column every join above it replicates, and a hash join copies into its
@@ -61,7 +67,7 @@ struct MergedPlanDAG
     /// because it cannot be recovered from the DAG afterwards, and it is the only one such a node needs:
     /// a mask column emitted at a join's unmatched side is carried through the joins above it and
     /// stuffed by them in turn, so it already answers "did every join above this point match".
-    std::unordered_map<const ActionsDAG::Node *, size_t> nearest_stuffing;
+    std::unordered_map<const ActionsDAG::Node *, const Stuffing *> nearest_stuffing;
 
     const ActionsDAG & getDAG() const { return *expression_actions.getActionsDAG(); }
 
@@ -81,16 +87,15 @@ struct MergedPlanDAG
     /// `(select k, c + 1 as y from C left join D) r`, joined again from the left, `y` is gated by the
     /// outer join only: at a row where the outer join matched but the inner one did not, `y` is a proper
     /// value computed from a stuffed `d`, and gating it on D's mask as well would throw it away.
-    std::optional<size_t> getNearestStuffing(const ActionsDAG::Node * node) const;
+    const Stuffing * getNearestStuffing(const ActionsDAG::Node * node) const;
 
     /// Whether a join sits above this value's own computation point. Not derivable from the stuffings: an
     /// `INNER JOIN` stuffs neither side and replicates all the same.
     bool hasJoinAbove(const ActionsDAG::Node * node) const { return nodes_with_join_above.contains(node); }
 };
 
-/// Returns nullopt when the subtree cannot be represented: it computes an `arrayJoin`, which changes the
-/// number of rows; it holds correlated expressions; or the DAG built for it does not reproduce the
-/// header of some step, which means the model of that step is wrong and the result cannot be trusted.
-std::optional<MergedPlanDAG> buildMergedPlanDAG(QueryPlan::Node & root);
+/// Always succeeds: where a step cannot be represented the walk stops and that step becomes a source, so
+/// the worst answer is a DAG of one source and no expressions, which a caller finds nothing to defer in.
+MergedPlanDAG buildMergedPlanDAG(QueryPlan::Node & root);
 
 }

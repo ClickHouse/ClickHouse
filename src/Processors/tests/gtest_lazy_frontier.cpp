@@ -99,26 +99,25 @@ TEST(LazyFrontier, ReusesAValueTheFilterAlreadyUsedWithoutAJoin)
         std::make_unique<FilterStep>(source.step->getOutputHeader(), std::move(dag), condition.result_name, true), source);
 
     const auto merged = buildMergedPlanDAG(filter);
-    ASSERT_TRUE(merged.has_value());
-    ASSERT_EQ(merged->sources.size(), 1u);
+    ASSERT_EQ(merged.sources.size(), 1u);
 
     /// ORDER BY a.
-    const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
+    const auto frontier = chooseLazyFrontier(merged, {outputPosition(merged, "a")}, {true});
 
     EXPECT_TRUE(frontier.defersAnything());
 
     /// `a + b` crosses the LIMIT: recomputing it would mean reading `b` for the surviving rows, and with
     /// no join above it there is nothing to gain by that.
-    const auto * sum_in_merged = findNodeContaining(*merged, "plus(");
+    const auto * sum_in_merged = findNodeContaining(merged, "plus(");
     ASSERT_TRUE(sum_in_merged != nullptr);
-    EXPECT_FALSE(merged->hasJoinAbove(sum_in_merged));
+    EXPECT_FALSE(merged.hasJoinAbove(sum_in_merged));
     EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Crossing);
     EXPECT_TRUE(frontier.at(sum_in_merged).computed_below);
 
     /// The heavy column is still read for the surviving rows only, and `b` is not read a second time.
-    const auto * a_input = merged->sources.front().inputs[0];
-    const auto * b_input = merged->sources.front().inputs[1];
-    const auto reads = collectLazyReads(*merged, frontier);
+    const auto * a_input = merged.sources.front().inputs[0];
+    const auto * b_input = merged.sources.front().inputs[1];
+    const auto reads = collectLazyReads(merged, frontier);
     ASSERT_EQ(reads.size(), 1u);
     EXPECT_EQ(reads[0].size(), 1u);
     EXPECT_FALSE(reads[0].contains(a_input));
@@ -147,27 +146,26 @@ TEST(LazyFrontier, RecomputesTheSameValueBelowAJoin)
         std::make_unique<FilterStep>(source.step->getOutputHeader(), std::move(dag), condition.result_name, true), source);
 
     auto merged = buildMergedPlanDAG(filter);
-    ASSERT_TRUE(merged.has_value());
 
     /// What the builder records for a subtree that a join sits above.
-    for (const auto & node : merged->getDAG().getNodes())
-        merged->nodes_with_join_above.insert(&node);
+    for (const auto & node : merged.getDAG().getNodes())
+        merged.nodes_with_join_above.insert(&node);
 
-    const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
+    const auto frontier = chooseLazyFrontier(merged, {outputPosition(merged, "a")}, {true});
 
-    const auto * sum_in_merged = findNodeContaining(*merged, "plus(");
+    const auto * sum_in_merged = findNodeContaining(merged, "plus(");
     ASSERT_TRUE(sum_in_merged != nullptr);
     EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
     EXPECT_TRUE(frontier.at(sum_in_merged).computed_below);
 
     /// Which means reading `b` again for the surviving rows, rather than carrying the sum past the join.
-    const auto * b_input = merged->sources.front().inputs[1];
+    const auto * b_input = merged.sources.front().inputs[1];
     EXPECT_EQ(frontier.at(b_input).above, Placement::Above::LazyRead);
-    EXPECT_EQ(collectLazyReads(*merged, frontier)[0].size(), 2u);
+    EXPECT_EQ(collectLazyReads(merged, frontier)[0].size(), 2u);
 
     /// Only the sort key crosses.
     EXPECT_EQ(countCrossing(frontier), 1u);
-    EXPECT_EQ(frontier.at(merged->sources.front().inputs[0]).above, Placement::Above::Crossing);
+    EXPECT_EQ(frontier.at(merged.sources.front().inputs[0]).above, Placement::Above::Crossing);
 }
 
 /// A value that does not answer the same twice crosses instead, even where the rule would rather
@@ -192,18 +190,17 @@ TEST(LazyFrontier, CarriesANonDeterministicValueBelowAJoin)
         std::make_unique<FilterStep>(source.step->getOutputHeader(), std::move(dag), condition.result_name, true), source);
 
     auto merged = buildMergedPlanDAG(filter);
-    ASSERT_TRUE(merged.has_value());
 
-    for (const auto & node : merged->getDAG().getNodes())
-        merged->nodes_with_join_above.insert(&node);
+    for (const auto & node : merged.getDAG().getNodes())
+        merged.nodes_with_join_above.insert(&node);
 
-    const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
+    const auto frontier = chooseLazyFrontier(merged, {outputPosition(merged, "a")}, {true});
 
     /// The filter already drew a number from `rand64` and the result has to agree with it, so that number
     /// crosses the LIMIT as a column and is never drawn again. What is computed from it is recomputed
     /// above the LIMIT, since that gives the same answer.
-    const auto * random_in_merged = findNodeContaining(*merged, "rand64");
-    const auto * mixed_in_merged = findNodeContaining(*merged, "plus(");
+    const auto * random_in_merged = findNodeContaining(merged, "rand64");
+    const auto * mixed_in_merged = findNodeContaining(merged, "plus(");
     ASSERT_TRUE(random_in_merged != nullptr);
     ASSERT_TRUE(mixed_in_merged != nullptr);
     EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Crossing);
@@ -211,9 +208,9 @@ TEST(LazyFrontier, CarriesANonDeterministicValueBelowAJoin)
     EXPECT_EQ(frontier.at(mixed_in_merged).above, Placement::Above::Recomputed);
 
     /// The heavy column has nothing to do with it and is still read for the surviving rows only.
-    const auto * heavy_input = merged->sources.front().inputs[2];
+    const auto * heavy_input = merged.sources.front().inputs[2];
     EXPECT_EQ(heavy_input->result_name, "heavy");
-    EXPECT_TRUE(collectLazyReads(*merged, frontier)[0].contains(heavy_input));
+    EXPECT_TRUE(collectLazyReads(merged, frontier)[0].contains(heavy_input));
 }
 
 /// Nothing can be deferred from a source that has no second read.
@@ -226,15 +223,14 @@ TEST(LazyFrontier, KeepsEverythingEagerWithoutALazySource)
     auto & source = plan.addSource(header);
 
     const auto merged = buildMergedPlanDAG(source);
-    ASSERT_TRUE(merged.has_value());
 
-    const auto frontier = chooseLazyFrontier(*merged, {0}, {false});
+    const auto frontier = chooseLazyFrontier(merged, {0}, {false});
 
     EXPECT_FALSE(frontier.defersAnything());
-    EXPECT_TRUE(collectLazyReads(*merged, frontier)[0].empty());
+    EXPECT_TRUE(collectLazyReads(merged, frontier)[0].empty());
 
     /// Every column crosses the LIMIT as a column of its own, computed below it as before.
-    for (const auto * output : merged->getOutputs())
+    for (const auto * output : merged.getOutputs())
         EXPECT_EQ(frontier.at(output).above, Placement::Above::Crossing);
 }
 
@@ -257,11 +253,10 @@ TEST(LazyFrontier, ComputesAnUnusedNonDeterministicValueLate)
     auto & expression = plan.addStep(std::make_unique<ExpressionStep>(source.step->getOutputHeader(), std::move(dag)), source);
 
     const auto merged = buildMergedPlanDAG(expression);
-    ASSERT_TRUE(merged.has_value());
 
-    const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
+    const auto frontier = chooseLazyFrontier(merged, {outputPosition(merged, "a")}, {true});
 
-    const auto * random_in_merged = findNodeContaining(*merged, "rand64");
+    const auto * random_in_merged = findNodeContaining(merged, "rand64");
     ASSERT_TRUE(random_in_merged != nullptr);
     EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Recomputed);
     EXPECT_FALSE(frontier.at(random_in_merged).computed_below);
