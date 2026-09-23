@@ -483,9 +483,6 @@ public:
 
     void setEnableLazyColumnsIndexing(bool value) { enable_lazy_columns_indexing = value; }
 
-    static bool isUsedByAnotherAlgorithm(const TableJoin & table_join);
-    static bool canRemoveColumnsFromLeftBlock(const TableJoin & table_join);
-
 private:
     friend class JoinSource;
     /// Uses a `HashJoin` as its schema delegate and row-store owner while building and probing its

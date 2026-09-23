@@ -16,7 +16,6 @@
 namespace DB
 {
 class TableJoin;
-class HashJoin;
 class PartitionedHashJoin;
 class MatchedRowsStats;
 

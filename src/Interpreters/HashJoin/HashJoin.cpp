@@ -655,25 +655,14 @@ size_t HashJoin::getTotalByteCountUnchecked() const
     return data->total_bytes.load(std::memory_order_relaxed);
 }
 
-bool HashJoin::isUsedByAnotherAlgorithm(const TableJoin & table_join)
-{
-    return table_join.isEnabledAlgorithm(JoinAlgorithm::AUTO)
-        || table_join.isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
-        || table_join.maxBytesBeforeExternalJoin() > 0;
-}
-bool HashJoin::canRemoveColumnsFromLeftBlock(const TableJoin & table_join)
-{
-    return !table_join.hasUsing() && !isUsedByAnotherAlgorithm(table_join) && table_join.strictness() != JoinStrictness::RightAny;
-}
-
 bool HashJoin::isUsedByAnotherAlgorithm() const
 {
-    return isUsedByAnotherAlgorithm(*table_join);
+    return JoinCommon::isUsedByAnotherAlgorithm(*table_join);
 }
 
 bool HashJoin::canRemoveColumnsFromLeftBlock() const
 {
-    return canRemoveColumnsFromLeftBlock(*table_join);
+    return JoinCommon::canRemoveColumnsFromLeftBlock(*table_join);
 }
 
 void HashJoin::initRightBlockStructure(Block & saved_block_sample)
