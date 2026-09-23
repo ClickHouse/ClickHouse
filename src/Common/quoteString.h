@@ -29,6 +29,8 @@ String doubleQuoteString(std::string_view x);
 /// whose `\"` does not escape the quote there: the identifier ends and the rest is parsed as SQL.
 String doubleQuoteStringPostgreSQL(std::string_view x);
 
+String doubleQuoteStringSQLite(std::string_view x);
+
 /// Quote the identifier with backquotes.
 String backQuote(std::string_view x);
 
