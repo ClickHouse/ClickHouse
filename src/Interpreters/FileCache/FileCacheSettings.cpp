@@ -143,7 +143,10 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
         ColumnDescription(
             "current_size",
             std::make_shared<DataTypeUInt64>(),
-            "Current cache size. By default this is the sum of the reserved sizes of the cache file segments. "
+            "Current cache size: the space currently charged to or held by the cache priority queue. "
+            "It consists of the reserved sizes of the cache file segments plus the space temporarily held "
+            "while a reservation or an eviction is in progress, so it can momentarily exceed the sum over "
+            "the file segments in `system.filesystem_cache`. "
             "If `use_real_disk_size` is enabled for this cache, the reservations are accounted in filesystem "
             "block-aligned units instead, so the value approximates the space the cache occupies on disk"));
     result.add(
