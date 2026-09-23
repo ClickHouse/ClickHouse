@@ -15,6 +15,10 @@ CROSS JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded, shard-local join), opti
 1
 optimization still fires for plain CROSS JOIN GROUP BY l.k (sharding key)
 1
+ARRAY JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded, shard-local join), optimize=1 equals optimize=0
+1
+optimization still fires for plain ARRAY JOIN GROUP BY l.k (sharding key)
+1
 RIGHT SEMI JOIN GROUP BY l.k, optimize=1 equals optimize=0
 1
 optimization still fires for LEFT SEMI JOIN GROUP BY l.k

@@ -105,6 +105,29 @@ SELECT
     (SELECT count() FROM (SELECT l.k FROM bug_dl AS l CROSS JOIN system.one AS s
         GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0));
 
+-- An ARRAY JOIN wraps its table the same way: in `bug_dl ARRAY JOIN [1] RIGHT JOIN bug_dr` the RIGHT
+-- JOIN pads everything reached through the array join, so bug_dl is still on a padded side. The two
+-- conditions of the FULL arm above apply here too, and for the same reasons: the join must run on the
+-- shards, and the ON condition must not equate the sharding key.
+SELECT 'ARRAY JOIN under RIGHT JOIN GROUP BY l.k (bug_dl padded, shard-local join), optimize=1 equals optimize=0';
+SELECT groupArray((k, c)) = (
+        SELECT groupArray((k, c)) FROM (
+            SELECT l.k AS k, count() AS c FROM bug_dl AS l ARRAY JOIN [1] AS x RIGHT JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+            GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 0, distributed_product_mode = 'local'))
+FROM (
+    SELECT l.k AS k, count() AS c FROM bug_dl AS l ARRAY JOIN [1] AS x RIGHT JOIN bug_dr AS r ON l.g = r.k % 3 AND r.k > 29
+    GROUP BY l.k ORDER BY ALL SETTINGS optimize_distributed_group_by_sharding_key = 1, distributed_product_mode = 'local');
+
+-- A plain ARRAY JOIN with no outer join does not pad either, so GROUP BY the sharding key must still
+-- take the shortcut: the shard-local result has more rows than the merged one.
+SELECT 'optimization still fires for plain ARRAY JOIN GROUP BY l.k (sharding key)';
+SELECT
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l ARRAY JOIN [1] AS x
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 1))
+    >
+    (SELECT count() FROM (SELECT l.k FROM bug_dl AS l ARRAY JOIN [1] AS x
+        GROUP BY l.k SETTINGS optimize_distributed_group_by_sharding_key = 0));
+
 -- RIGHT SEMI emits no default-padded l.k, so the padded-side guard exempts it by strictness. This
 -- shape is still blocked, by the provenance check: the analyzer resolves `l.k` to the join's right
 -- column, which from bug_dl's side is a foreign column. Blocking is conservative rather than
