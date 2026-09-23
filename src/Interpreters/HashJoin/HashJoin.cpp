@@ -640,6 +640,10 @@ HashJoin::~HashJoin()
     for (auto & clause : clauses)
         clause.releaseTable();
     destroyStoredBlocksInParallel();
+    if (data)
+        LOG_TEST(log, "Join data is being destroyed, {} bytes and {} rows in hash table", getTotalByteCountUnchecked(), getKeysToJoin());
+    else
+        LOG_TEST(log, "Join data has been already released");
     /// `data` and `used_flags` are declared before most members, so they would be destroyed after them. Their
     /// build-sized state goes here, in the same order and under the same timer. Nothing destroyed later reads it.
     data.reset();
@@ -647,14 +651,6 @@ HashJoin::~HashJoin()
     probe_scratch_pool.clear();
     for (auto & slot : probe_scratch_slots)
         delete slot.load(std::memory_order_acquire);
-
-    if (!data)
-    {
-        LOG_TEST(log, "Join data has been already released");
-        return;
-    }
-
-    LOG_TEST(log, "Join data is being destroyed, {} bytes and {} rows in hash table", getTotalByteCountUnchecked(), getKeysToJoin());
 }
 
 void HashJoin::destroyStoredBlocksInParallel()
