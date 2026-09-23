@@ -182,48 +182,26 @@ ASTPtr makeSelectFromTagsTable(const StorageID & tags_table_id, const ASTs & sel
     return select_query;
 }
 
-ASTPtr ifNonEmptyThenSingletonArray(ASTPtr value_ast, const String & name)
+ASTPtr makeTagsMapPerRowExpression(const std::unordered_map<String, String> & column_name_by_tag_name)
 {
-    return makeASTFunction(
-        "if",
-        makeASTFunction("notEquals", std::move(value_ast), make_intrusive<ASTLiteral>(String{})),
-        makeASTFunction("array", make_intrusive<ASTLiteral>(name)),
-        makeASTFunction("emptyArrayString"));
-}
-
-ASTPtr makeLabelNamesPerRowExpression(const std::unordered_map<String, String> & column_name_by_tag_name)
-{
-    auto keys = makeASTFunction(
-        "arrayConcat",
-        makeASTFunction("mapKeys", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags)),
-        ifNonEmptyThenSingletonArray(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName), TimeSeriesTagNames::MetricName));
+    ASTs args{
+        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
+        make_intrusive<ASTLiteral>(TimeSeriesTagNames::MetricName),
+        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricName)};
     for (const auto & [tag_name, column_name] : column_name_by_tag_name)
-        keys->arguments->children.push_back(ifNonEmptyThenSingletonArray(make_intrusive<ASTIdentifier>(column_name), tag_name));
-    return keys;
+    {
+        args.push_back(make_intrusive<ASTLiteral>(tag_name));
+        args.push_back(make_intrusive<ASTIdentifier>(column_name));
+    }
+    return makeASTFunction("timeSeriesTagsToMap", std::move(args));
 }
 
 ASTPtr makeLabelValuePerRowExpression(const String & label_name, const std::unordered_map<String, String> & column_name_by_tag_name)
 {
-    auto value_from_tags = makeASTFunction(
-        "arrayElement",
-        make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Tags),
-        make_intrusive<ASTLiteral>(label_name));
-
-    String column_name;
-    if (label_name == TimeSeriesTagNames::MetricName)
-        column_name = TimeSeriesColumnNames::MetricName;
-    else if (auto it = column_name_by_tag_name.find(label_name); it != column_name_by_tag_name.end())
-        column_name = it->second;
-    else
-        return value_from_tags;
-
-    /// A dedicated column which is empty (or NULL, as such a column is allowed to be Nullable) means the tag
-    /// is absent from that column, not that it has no value: a row written directly into the tags table can
-    /// keep the value in the `tags` Map only, e.g. the metric name under the `__name__` tag.
     return makeASTFunction(
-        "coalesce",
-        makeASTFunction("nullIf", make_intrusive<ASTIdentifier>(column_name), make_intrusive<ASTLiteral>(String{})),
-        std::move(value_from_tags));
+        "arrayElement",
+        makeTagsMapPerRowExpression(column_name_by_tag_name),
+        make_intrusive<ASTLiteral>(label_name));
 }
 
 /// Makes a "SELECT [DISTINCT] <expressions> FROM (<subquery>) [LIMIT <limit>]" query.
@@ -979,11 +957,12 @@ void PrometheusHTTPProtocolAPI::getLabels(
     QueryFinishCallback query_finish_callback)
 {
     /// SELECT arraySort(groupUniqArrayArray(keys)) AS labels FROM (
-    ///     SELECT arrayConcat(mapKeys(tags), if(metric_name != '', ['__name__'], []), ...) FROM <tags> WHERE ...
+    ///     SELECT mapKeys(timeSeriesTagsToMap(tags, '__name__', metric_name, ...)) FROM <tags> WHERE ...
     /// )
-    /// Dedicated tag columns and `metric_name` are merged in because older tags tables omit them from the `tags` Map.
-    auto keys_expression = makeLabelNamesPerRowExpression(
-        StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings()));
+    auto keys_expression = makeASTFunction(
+        "mapKeys",
+        makeTagsMapPerRowExpression(
+            StorageTimeSeriesSelector::makeColumnNameByTagNameMap(*time_series_storage->getStorageSettings())));
     keys_expression->setAlias("keys");
     auto source_query = makeFilteredTagsUnionQuery({keys_expression}, match_params, start_param, end_param);
 

@@ -81,9 +81,14 @@ def setup():
             "CREATE TABLE prometheus_no_bounds ENGINE=TimeSeries "
             "SETTINGS store_min_time_and_max_time = 0"
         )
+        node.query("CREATE TABLE prometheus_edge ENGINE=TimeSeries")
         node.query(
             "INSERT INTO prometheus_no_bounds (metric_name, tags, samples) VALUES "
             "('cpu_usage', {'host': 'server1'}, [(toDateTime64(1000, 3), 0.5)])"
+        )
+        node.query(
+            "INSERT INTO FUNCTION timeSeriesTags(prometheus_edge) (metric_name, tags) VALUES "
+            "('metric', {'empty_tag': '', 'present_tag': 'value'})"
         )
         send_test_data()
         assert_eq_with_retry(node, "SELECT count() > 0 FROM timeSeriesData(prometheus)", "1")
@@ -96,6 +101,13 @@ def test_labels_returns_all_label_names_sorted():
     # No `match[]` selectors: the label names of all the series, in sorted order.
     # `host` is stored in a dedicated column (`tags_to_columns`) but is reported under its tag name.
     assert get_json_from_api("/api/v1/labels")["data"] == ALL_LABELS
+
+
+def test_labels_omits_empty_tag_values():
+    assert get_json_from_api("/edge/api/v1/labels")["data"] == [
+        "__name__",
+        "present_tag",
+    ]
 
 
 def test_labels_match_selector_filters():
