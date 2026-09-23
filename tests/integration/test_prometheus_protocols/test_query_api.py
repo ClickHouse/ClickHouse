@@ -502,12 +502,13 @@ def test_table_query_param():
     assert "cannot be overridden" in error
 
 
-def test_generated_sql_always_runs_with_analyzer():
-    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which only the
-    # analyzer honors, so the handler runs it with the analyzer and with
-    # enable_materialized_cte. The materialization itself is covered by
-    # 04816_promql_shared_subqueries_materialized; here it is enough to check the settings
-    # the generated query ran with.
+def test_generated_sql_always_runs_with_materialized_cte():
+    # The SQL generated for PromQL marks shared subqueries AS MATERIALIZED, which the handler
+    # honors by turning enable_materialized_cte on. The materialization itself is covered by
+    # 04816_promql_shared_subqueries_materialized; here it is enough to check the setting the
+    # generated query ran with. `AS MATERIALIZED` also needs the analyzer, but that is no
+    # longer a setting the handler has to pin: the analyzer is the only query analysis since
+    # 26.9, so it is not in the changed settings this row records.
     for path, time_params in (
         ("/api/v1/query", "time=1000"),
         ("/api/v1/query_range", "start=999&end=1002&step=1"),
@@ -526,10 +527,9 @@ def test_generated_sql_always_runs_with_analyzer():
         # background interval. Retry for longer than that interval.
         assert_eq_with_retry(
             node,
-            "SELECT Settings['allow_experimental_analyzer'], "
-            "Settings['enable_materialized_cte'] "
+            "SELECT Settings['enable_materialized_cte'] "
             f"FROM system.query_log WHERE type = 'QueryFinish' AND query_id = '{query_id}'",
-            "1\t1\n",
+            "1\n",
             retry_count=30,
             sleep_time=1,
         )
