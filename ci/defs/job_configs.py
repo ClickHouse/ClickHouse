@@ -172,10 +172,29 @@ common_ft_job_config = Job.Config(
         include_paths=[
             "./ci/jobs/functional_tests.py",
             "./ci/jobs/scripts/clickhouse_proc.py",
+            # clickhouse_proc.py's "No such key" check runs this script, and so does
+            # check_logs_for_critical_errors in tests/docker_scripts/stress_tests.lib.
+            "./ci/jobs/scripts/s3_key_lifecycle.py",
             "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/server_cleanup.py",
             "./ci/jobs/scripts/functional_tests_results.py",
             "./ci/jobs/scripts/log_export.py",
+            # `find_tests.py` selects which tests this job runs, and
+            # `Result.complete_job` in `result.py` builds the summary the job
+            # publishes. Both are runner inputs, so the digest must cover them:
+            # `_filter_unaffected_jobs` skips this job before `find_tests.py`
+            # ever reads `_STATELESS_HARNESS_PATHS`, so an entry there only
+            # takes effect when the digest keeps the job alive.
+            "./ci/jobs/scripts/find_tests.py",
+            "./ci/praktika/result.py",
+            # `find_tests.py` selects the targeted and selected arms from CIDB
+            # (`get_all_relevant_tests_with_info` queries `CIDB` and reads
+            # `Info`), so both modules decide which tests this job runs and
+            # belong here for the same reason. The other CI-level entries of
+            # `_STATELESS_HARNESS_PATHS` stay out: they drive job orchestration
+            # and the job itself never reads them.
+            "./ci/praktika/cidb.py",
+            "./ci/praktika/info.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./tests/queries",
             "./tests/clickhouse-test",
@@ -212,6 +231,7 @@ common_stress_job_config = Job.Config(
             "./ci/jobs/stress_job.py",
             # stress_runner.sh drives the log export through clickhouse_proc.py
             "./ci/jobs/scripts/clickhouse_proc.py",
+            "./ci/jobs/scripts/s3_key_lifecycle.py",
             "./ci/jobs/scripts/log_cluster.py",
             "./ci/jobs/scripts/functional_tests/setup_log_cluster.sh",
             "./ci/jobs/scripts/stress/stress.py",
@@ -265,7 +285,10 @@ class JobConfigs:
         runs_on=RunnerLabels.ARM_TINY,
         command="python3 ./ci/jobs/check_style.py",
         run_in_docker="clickhouse/style-test",
-        enable_commit_status=True,
+        enable_gh_auth=True,
+        post_hooks=[
+            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
+        ],
     )
     code_review = Job.Config(
         name=JobNames.CODE_REVIEW,
@@ -273,9 +296,6 @@ class JobConfigs:
         command="python3 ./ci/jobs/copilot_review_job.py --codex",
         allow_failure=True,
         enable_gh_auth=True,
-        post_hooks=[
-            "python3 ./ci/jobs/scripts/job_hooks/set_sync_status_awaiting_hook.py"
-        ],
     )
     fast_test = Job.Config(
         name=JobNames.FAST_TEST,
@@ -599,6 +619,28 @@ class JobConfigs:
             runs_on=RunnerLabels.ARM_LARGE,
         ),
     )
+    # tests/fuzz/build.sh runs as a POST_BUILD step of the `fuzzers` target and
+    # stages the .options files, a source-derived fallback all.dict, and seed
+    # corpora repacked from tests/queries/0_stateless/*.sql into the build
+    # output (see ArtifactConfigs.fuzzers), so the produced artifact also
+    # depends on the inputs under tests/fuzz and on the stateless test queries,
+    # which the shared build digest does not cover. Extend the digest of the
+    # fuzzers build only, so that a dictionary generation or corpus change
+    # cannot cache-hit a stale artifact while the other builds are unaffected.
+    special_build_jobs = [
+        (
+            job.set_digest_config(
+                Job.CacheDigestConfig(
+                    include_paths=build_digest_config.include_paths
+                    + ["./tests/fuzz/", "./tests/queries/0_stateless/"],
+                    with_git_submodules=True,
+                )
+            )
+            if job.parameter == BuildTypes.AMD_FUZZERS
+            else job
+        )
+        for job in special_build_jobs
+    ]
     # The standalone WebAssembly build of the SQL parser (utils/wasm-parser). It cross-compiles to
     # `wasm32-wasip1` with a wasi-sdk toolchain, which cannot be mixed into a tree configured for
     # the host, so it is a CMake project of its own driven by its own script in its own image -
@@ -647,7 +689,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # Unpacking the packages needs ~4.4 GB, so reclaim another job's leftover
         # images before installing, not just afterwards. Best-effort: praktika does
         # not propagate a hook's exit code to the job status.
@@ -686,7 +728,7 @@ class JobConfigs:
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
             ],
         ),
-        timeout=900,
+        timeout=1800,
         # See install_check_jobs above.
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
@@ -1276,12 +1318,12 @@ class JobConfigs:
                 "./ci/jobs/stress_job.py",
                 "./ci/jobs/scripts/stress/stress.py",
                 "./tests/docker_scripts/",
+                "./ci/jobs/scripts/s3_key_lifecycle.py",
                 "./ci/docker/stress-test",
                 "./ci/jobs/scripts/log_parser.py",
-                # upgrade_runner.sh symlinks and runs both of these, and ./ci does
-                # not cover ./tests/ci.
-                "./tests/ci/get_previous_release_tag.py",
-                "./tests/ci/download_release_packages.py",
+                # upgrade_runner.sh symlinks and runs both of these
+                "./ci/tools/get_previous_release_tag.py",
+                "./ci/tools/download_release_packages.py",
             ]
         ),
         timeout=3600 * 2,
@@ -1942,11 +1984,24 @@ class JobConfigs:
         # artifact download and corpus upload. Praktika's default is exactly
         # five hours, which would kill the job mid-run.
         timeout=5.5 * 3600,
-        requires=[ArtifactNames.AMD_FUZZERS, ArtifactNames.FUZZERS_CORPUS],
+        # The release binary is used to generate the fuzzer dictionary (all.dict)
+        # from the actual set of functions, data types and keywords. It has to be the
+        # binary for the arch this job runs the fuzzers on.
+        requires=[
+            ArtifactNames.AMD_FUZZERS,
+            ArtifactNames.FUZZERS_CORPUS,
+            ArtifactNames.CH_AMD_RELEASE,
+        ],
         digest_config=Job.CacheDigestConfig(
             include_paths=[
                 "./ci/jobs/libfuzzer_test_check.py",
                 "./tests/fuzz/runner.py",
+                "./tests/fuzz/update_dict.sh",
+                # `update_dict.sh` shells out to the source-derived extractor for
+                # the source-vs-binary coverage check, so a change confined to the
+                # extractor has to re-run this job rather than take a cache hit.
+                "./tests/fuzz/generate_source_dict.sh",
+                "./tests/fuzz/dictionaries/old.dict",
             ],
         ),
     )
@@ -2006,12 +2061,7 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
-                "./.github/workflows/pull_request.yml",
                 "./ci/jobs/parser_memory_check.py",
-                "./ci/jobs/scripts/workflow_hooks/store_data.py",
-                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
@@ -2025,13 +2075,8 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
-                "./ci/defs/defs.py",
-                "./ci/defs/job_configs.py",
-                "./.github/workflows/pull_request.yml",
-                "./ci/jobs/parser_memory_check.py",
-                "./ci/jobs/scripts/workflow_hooks/store_data.py",
                 "./ci/jobs/storage_memory_check.py",
-                "./ci/workflows/pull_request.py",
+                "./ci/jobs/parser_memory_check.py",
                 "./utils/storage-memory-profiler/",
             ],
         ),
@@ -2113,6 +2158,7 @@ class JobConfigs:
                 "./ci/jobs/llvm_coverage_job.py",
                 "./ci/jobs/scripts/merge_llvm_coverage.sh",
                 "./ci/jobs/scripts/generate_diff_coverage_report.sh",
+                "./ci/jobs/scripts/coverage_ignore_paths.sh",
                 "./ci/jobs/scripts/print_uncovered_code.py",
                 "./ci/jobs/scripts/dedup_lcov_instantiations.py",
                 "./ci/jobs/scripts/job_hooks/llvm_coverage_hook.py",
