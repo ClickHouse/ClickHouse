@@ -464,6 +464,23 @@ public:
             #undef M
             }
         }
+
+        /// Runs `computeBucketPrefix` on two-level maps. Single-level maps need nothing.
+        void computeBucketPrefix(Type which)
+        {
+            switch (which)
+            {
+            #define M(NAME) \
+                case Type::NAME: \
+                    if (NAME) \
+                        NAME->computeBucketPrefix(); \
+                    break;
+                APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
+            #undef M
+                default:
+                    break;
+            }
+        }
 /// NOLINTEND(bugprone-macro-parentheses)
     };
 

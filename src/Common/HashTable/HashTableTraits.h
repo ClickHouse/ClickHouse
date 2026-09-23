@@ -19,8 +19,16 @@ struct HasConstructorOfNumberOfElements<HashMapTable<Ts...>> : std::true_type
 {
 };
 
-template <typename Key, typename Cell, typename Hash, typename Grower, typename Allocator, template <typename...> typename ImplTable>
-struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable>> : std::true_type
+template <
+    typename Key,
+    typename Cell,
+    typename Hash,
+    typename Grower,
+    typename Allocator,
+    template <typename...> typename ImplTable,
+    size_t BITS_FOR_BUCKET>
+struct HasConstructorOfNumberOfElements<TwoLevelHashMapTable<Key, Cell, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET>>
+    : std::true_type
 {
 };
 
@@ -29,8 +37,8 @@ struct HasConstructorOfNumberOfElements<HashSetTable<Ts...>> : std::true_type
 {
 };
 
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Ts...>> : std::true_type
+template <typename Key, typename TCell, typename Hash, typename Grower, typename Allocator, size_t BITS_FOR_BUCKET>
+struct HasConstructorOfNumberOfElements<TwoLevelHashSetTable<Key, TCell, Hash, Grower, Allocator, BITS_FOR_BUCKET>> : std::true_type
 {
 };
 
@@ -39,8 +47,18 @@ struct HasConstructorOfNumberOfElements<HashTable<Ts...>> : std::true_type
 {
 };
 
-template <typename... Ts>
-struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Ts...>> : std::true_type
+/// A type pack cannot bind the non-type `BITS_FOR_BUCKET`, so the parameters are spelled out.
+template <
+    typename Key,
+    typename Cell,
+    typename Hash,
+    typename Grower,
+    typename Allocator,
+    typename ImplTable,
+    size_t BITS_FOR_BUCKET,
+    typename BucketHash>
+struct HasConstructorOfNumberOfElements<TwoLevelHashTable<Key, Cell, Hash, Grower, Allocator, ImplTable, BITS_FOR_BUCKET, BucketHash>>
+    : std::true_type
 {
 };
 
