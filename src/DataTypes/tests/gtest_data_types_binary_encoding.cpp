@@ -147,19 +147,22 @@ GTEST_TEST(DataTypesCache, GetSerializationFromDeepType)
 
 GTEST_TEST(DataTypesCache, SerializeDeepDynamicValue)
 {
-    Field field = UInt64(1);
-    for (size_t i = 0; i < 301; ++i)
-        field = Array{std::move(field)};
-
-    for (size_t max_dynamic_types : {0, 1})
+    /// Use a distinct type for each check so every lookup starts with a cold cache.
+    for (size_t case_no = 0; case_no < 4; ++case_no)
     {
-        auto type = std::make_shared<DataTypeDynamic>(max_dynamic_types);
+        Field field = UInt64(1);
+        for (size_t i = 0; i < 301 + case_no; ++i)
+            field = Array{std::move(field)};
+
+        auto type = std::make_shared<DataTypeDynamic>(case_no % 2);
         auto column = type->createColumn();
         column->insert(field);
 
         WriteBufferFromOwnString ostr;
-        EXPECT_NO_THROW(type->getDefaultSerialization()->serializeBinary(*column, 0, ostr, {}));
-        EXPECT_NO_THROW(type->getDefaultSerialization()->serializeForHashCalculation(*column, 0, ostr));
+        if (case_no < 2)
+            EXPECT_NO_THROW(type->getDefaultSerialization()->serializeForHashCalculation(*column, 0, ostr));
+        else
+            EXPECT_NO_THROW(type->getDefaultSerialization()->serializeBinary(*column, 0, ostr, {}));
     }
 }
 
