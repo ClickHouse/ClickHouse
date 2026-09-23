@@ -700,6 +700,21 @@ static StoragePtr unwrapStorageProxy(const StoragePtr & storage)
 }
 
 
+/// Every node of a distributed write runs the whole INSERT over its own slice of the read, so the writes
+/// add up to a single logical INSERT only where each node's write becomes visible on all of them. Two
+/// target shapes break that even where the engine itself replicates.
+static bool targetAbsorbsDistributedWrite(const StoragePtr & table)
+{
+    /// `Alias` answers the engine predicates from the table it points at, and an insert into it also pushes
+    /// the views attached to the alias itself, which the walk below skips at that hop.
+    if (dynamic_cast<const StorageAlias *>(unwrapStorageProxy(table).get()))
+        return false;
+
+    /// A dependent view whose target does not replicate keeps a different subset of the rows on each node.
+    return !InsertDependenciesBuilder::forwardedInsertReachesDependentView(table);
+}
+
+
 std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelineParallelReplicas(ASTInsertQuery & query, StoragePtr table)
 {
     const Settings & settings = getContext()->getSettingsRef();
@@ -715,18 +730,13 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (!context->canUseParallelReplicasOnInitiator())
         return {};
 
-    /// Each replica runs the whole INSERT over the rows its own coordinated read produced, which adds up
-    /// to a single logical INSERT only where replication makes every replica's write visible on all of them.
-    /// Both answers must come from a concrete table: `StorageProxy` (a `lazy_load_tables` stand-in until
-    /// first access) does not forward `isMergeTree()`, and `Alias` forwards both plus owns dependent views.
+    /// `StorageProxy`, the stand-in a `lazy_load_tables` database keeps in the catalog until a table is
+    /// first accessed, does not forward `isMergeTree()`, so the classification resolves it first.
     auto target = unwrapStorageProxy(table);
-    if (!target || !target->isMergeTree() || !target->supportsReplication()
-        || dynamic_cast<const StorageAlias *>(target.get()))
+    if (!target || !target->isMergeTree() || !target->supportsReplication())
         return {};
 
-    /// Every replica also pushes its own slice through the target's dependent materialized views, so a
-    /// view target that does not replicate keeps a different subset of the rows on each replica.
-    if (InsertDependenciesBuilder::forwardedInsertReachesDependentView(table))
+    if (!targetAbsorbsDistributedWrite(table))
         return {};
 
     if (!isInsertSelectTrivialEnoughForDistributedExecution(query))
@@ -1081,6 +1091,9 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
 
     StoragePtr dst_storage = DatabaseCatalog::instance().getTable(query.table_id, local_context);
     if (!(dst_storage->isMergeTree() || dst_storage->isDataLake()) || !dst_storage->supportsReplication())
+        return {};
+
+    if (!targetAbsorbsDistributedWrite(dst_storage))
         return {};
 
     auto & select = query.select->as<ASTSelectWithUnionQuery &>();

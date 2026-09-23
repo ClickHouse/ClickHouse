@@ -1,0 +1,13 @@
+no view: distributed write	1
+no view: rows	30000
+view: distributed write	0
+view: distributed read	1
+view: rows	30000
+view: view rows	30000
+alias with a view on the alias: distributed write	0
+alias with a view on the alias: distributed read	1
+alias with a view on the alias: rows	30000
+alias with a view on the alias: view rows	30000
+alias without any view: distributed write	0
+alias without any view: distributed read	1
+alias without any view: rows	30000
