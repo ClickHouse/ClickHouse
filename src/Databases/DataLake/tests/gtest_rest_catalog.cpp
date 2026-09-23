@@ -661,7 +661,7 @@ TEST(RestCatalog, ApplySettingsChangesAuthHeaderMode)
     expectThrowsCode([&] { catalog.applySettingsChanges(mode_switch); }, DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
-TEST(RestCatalog, AuthHeaderNameIsNormalizedBeforeSending)
+TEST(RestCatalog, AuthHeaderNameIsValidatedBeforeSending)
 {
     /// getAuthHeaders is protected; expose it so the test can inspect what is actually sent.
     struct ExposeAuthHeaders : public RestCatalog
@@ -674,9 +674,25 @@ TEST(RestCatalog, AuthHeaderNameIsNormalizedBeforeSending)
     auto context = DB::Context::createCopy(getContext().context);
     context->makeQueryContext();
 
-    /// The stored auth_header keeps the user's bytes, but the header actually sent to the catalog
-    /// must carry the normalized name (whitespace stripped), matching the StorageURL path.
+    /// A valid auth_header name is sent unchanged; names are no longer normalized.
     ExposeAuthHeaders catalog(
+        "warehouse",
+        server.getUrl(),
+        /* catalog_credential */"",
+        /* auth_scope */"",
+        /* auth_header */"X-Custom: Bearer token",
+        /* oauth_server_uri */"",
+        /* oauth_server_use_request_body */false,
+        context);
+
+    const auto snapshot = catalog.getStateSnapshot();
+    ASSERT_TRUE(snapshot->auth_header.has_value());
+    const auto headers = catalog.getAuthHeaders(*snapshot, /* update_token */ false);
+    ASSERT_EQ(headers.size(), 1u);
+    EXPECT_EQ(headers[0].name, "X-Custom");
+
+    /// A name that is not a valid token (here, containing a space) is rejected, not normalized.
+    ExposeAuthHeaders invalid_catalog(
         "warehouse",
         server.getUrl(),
         /* catalog_credential */"",
@@ -686,11 +702,11 @@ TEST(RestCatalog, AuthHeaderNameIsNormalizedBeforeSending)
         /* oauth_server_use_request_body */false,
         context);
 
-    const auto snapshot = catalog.getStateSnapshot();
-    ASSERT_TRUE(snapshot->auth_header.has_value());
-    const auto headers = catalog.getAuthHeaders(*snapshot, /* update_token */ false);
-    ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[0].name, "X-AB");
+    const auto invalid_snapshot = invalid_catalog.getStateSnapshot();
+    ASSERT_TRUE(invalid_snapshot->auth_header.has_value());
+    expectThrowsCode(
+        [&] { (void)invalid_catalog.getAuthHeaders(*invalid_snapshot, /* update_token */ false); },
+        DB::ErrorCodes::BAD_ARGUMENTS);
 }
 
 TEST(RestCatalog, OneLakeApplySettingsChangesBearerMode)

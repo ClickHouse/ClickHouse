@@ -19,61 +19,36 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
 {
     std::lock_guard guard(mutex);
 
-    for (auto & entry : entries)
+    for (const auto & entry : entries)
     {
-        /// Keep the user-written name for error messages: normalization mutates entry.name below.
-        const std::string reported_name = entry.name;
+        /// A header name must be an RFC 7230 token: non-empty, without ':', whitespace or control
+        /// characters. A value must not contain CR or LF.
+        const bool name_has_invalid_char = std::any_of(
+            entry.name.begin(),
+            entry.name.end(),
+            [](char c) { return c == ':' || std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); });
+        if (entry.name.empty() || name_has_invalid_char || entry.value.contains('\r') || entry.value.contains('\n'))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has invalid character", entry.name);
 
-        /// Reject the characters that let a name inject or forge a header on the wire, checked on
-        /// the original bytes so a caller that validates and then sends its own copy of the entries
-        /// cannot emit them: CR and LF terminate the header line (request/response splitting), and
-        /// ':' ends the field name, so a name like "Cookie:x" would otherwise pass this filter yet
-        /// let a peer parse a forbidden "Cookie" header from it.
-        if (entry.name.contains('\r') || entry.name.contains('\n') || entry.name.contains(':'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its name", reported_name);
-
-        /// A bare CR or LF in a value terminates the header line, so a value carrying one could
-        /// smuggle a second header into the request (request/response splitting).
-        if (entry.value.contains('\n') || entry.value.contains('\r'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" has an invalid character in its value", reported_name);
-
-        /// Strip the remaining whitespace and control characters from the name before the
-        /// <http_forbid_headers> lookup: it canonicalises names like "Coo\tkie" so they cannot
-        /// evade the forbidden set, and preserves the historical behaviour for stored objects,
-        /// whose header names are re-validated on every ATTACH.
-        std::string & normalized_name = entry.name;
-        normalized_name.erase(
-            std::remove_if(
-                normalized_name.begin(),
-                normalized_name.end(),
-                [](char c) { return std::iscntrl(static_cast<unsigned char>(c)) || std::isspace(static_cast<unsigned char>(c)); }),
-            normalized_name.end());
-
-        /// A name that is only whitespace/control normalizes to "" here and is not rejected: an
-        /// empty name cannot forge a forbidden header or split the request, and rejecting it would
-        /// fail ATTACH of a table stored with such a name.
-        /// HTTP header names are case-insensitive (RFC 7230 3.2). The exact-set
-        /// entries are stored lower-cased, so lower-case the name for that lookup.
-        const std::string lower_name = Poco::toLower(normalized_name);
+        /// Header names are case-insensitive (RFC 7230 3.2); the forbidden set is stored lower-cased.
+        const std::string lower_name = Poco::toLower(entry.name);
 
         if (forbidden_headers.contains(lower_name))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
-                                                    "see <http_forbid_headers>", reported_name);
+                                                    "see <http_forbid_headers>", entry.name);
 
-        /// Match the regexp against the original-case name: patterns are compiled
-        /// case-insensitive by default, but an inline (?-i) scope must see the real
-        /// case (lower-casing here would stop existing (?-i) configs from matching).
+        /// Match against the original-case name so an inline (?-i) scope stays case-sensitive.
         for (const auto & header_regex : forbidden_headers_regexp)
-            if (re2::RE2::FullMatch(normalized_name, *header_regex))
+            if (re2::RE2::FullMatch(entry.name, *header_regex))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "HTTP header \"{}\" is forbidden in configuration file, "
-                                                        "see <http_forbid_headers>", reported_name);
+                                                        "see <http_forbid_headers>", entry.name);
     }
 }
 
 void HTTPHeaderFilter::checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const
 {
-    /// Mutable, because the check strips control characters from the name in place. That cannot
-    /// disturb this container's invariant, which is about case, so nothing needs re-applying.
+    /// The check only validates the entries; it does not modify them, so the container's
+    /// lower-case invariant is preserved.
     checkAndNormalizeHeaders(entries.entries);
 }
 

@@ -172,16 +172,21 @@ TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
     NormalizedHTTPHeaderEntries forbidden(HTTPHeaderEntries{{"Authorization", "Bearer token"}});
     EXPECT_THROW(filter.checkAndNormalizeHeaders(forbidden), Exception);
 
-    NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
+    /// A control character in the name is not a valid token and is rejected.
+    NormalizedHTTPHeaderEntries invalid(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(invalid), Exception);
+
+    /// A valid name passes and is kept lower-cased by the container.
+    NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta-Owner", "analytics"}});
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(allowed));
 
     ASSERT_EQ(allowed.size(), 1u);
-    EXPECT_EQ(allowed.begin()->name, "x-amz-metaowner");
+    EXPECT_EQ(allowed.begin()->name, "x-amz-meta-owner");
 }
 
-/// Case normalization must compose with whitespace/control-character stripping:
-/// a name padded with whitespace and in a different case is still forbidden.
-TEST(HTTPHeaderFilter, CaseInsensitiveComposesWithWhitespaceStripping)
+/// A header name with whitespace or control characters is not a valid RFC 7230 token and is
+/// rejected, in any case and whether or not it is on the blocklist.
+TEST(HTTPHeaderFilter, WhitespaceOrControlInNameRejected)
 {
     HTTPHeaderFilter filter;
     configure(filter, R"(
@@ -194,6 +199,7 @@ TEST(HTTPHeaderFilter, CaseInsensitiveComposesWithWhitespaceStripping)
 
     EXPECT_TRUE(isForbidden(filter, "  aUtHoRiZaTiOn  "));
     EXPECT_TRUE(isForbidden(filter, "Auth\torization"));
+    EXPECT_TRUE(isForbidden(filter, "X-Valid Name"));
 }
 
 /// Headers not on the blocklist must still be allowed, in any case.

@@ -45,8 +45,8 @@ public:
     const_iterator end() const { return entries.end(); }
 
 private:
-    /// `HTTPHeaderFilter` strips control characters from a name in place, which leaves the case,
-    /// and so the invariant, untouched.
+    /// `HTTPHeaderFilter` only validates these entries; it does not modify them, so the lower-case
+    /// invariant holds.
     friend class HTTPHeaderFilter;
 
     HTTPHeaderEntries entries;

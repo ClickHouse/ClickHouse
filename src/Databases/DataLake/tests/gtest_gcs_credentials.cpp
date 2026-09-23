@@ -96,30 +96,31 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
     EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
 }
 
-TEST_F(GCSCredentialsTest, HeaderValidationNormalizesWhitespaceInName)
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceInName)
 {
-    /// Whitespace/control in a name is still stripped rather than rejected, preserving the
-    /// historical behaviour for stored objects that are re-validated on ATTACH. Assert the
-    /// in-place normalized name, so a change that stopped normalizing would be caught here.
+    /// A header name must be an RFC 7230 token, so whitespace in the name is rejected.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-A B", "value"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
-    ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[0].name, "X-AB");
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
-TEST_F(GCSCredentialsTest, HeaderValidationAcceptsNameEmptyAfterNormalization)
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceOnlyName)
 {
-    /// A name that is only whitespace/control normalizes to "" and is accepted, not rejected: it
-    /// cannot forge a forbidden header or split the request, and rejecting it would break ATTACH
-    /// of a table stored with such a name. This matches the behaviour before this change.
+    /// A name made only of whitespace or control characters is not a valid token and is rejected.
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({" \t ", "value"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
-    ASSERT_EQ(headers.size(), 1u);
-    EXPECT_EQ(headers[0].name, "");
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+}
+
+TEST_F(GCSCredentialsTest, HeaderValidationRejectsEmptyName)
+{
+    /// An empty header name is not a valid token and is rejected.
+    DB::HTTPHeaderFilter filter;
+    DB::HTTPHeaderEntries headers;
+    headers.push_back({"", "value"});
+    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
 }
 
 }

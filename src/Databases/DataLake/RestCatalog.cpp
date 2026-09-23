@@ -295,7 +295,6 @@ void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
     /// `auth_header` first becomes a header sent to the catalog, so enforce `http_forbid_headers`
     /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
     /// validated and the original parsed header is kept.
-    /// Validation only (throws on an invalid or forbidden header); the stored header is kept as-is.
     DB::HTTPHeaderEntries header_to_check{header};
     getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
 }
@@ -311,9 +310,7 @@ DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_s
     /// Header has format: 'Authorization: <scheme> <token>'.
     if (catalog_state.auth_header.has_value())
     {
-        /// Normalize the header that is actually sent to the catalog (the stored setting is kept
-        /// verbatim for compatibility): the name that reaches the wire is the validated, normalized
-        /// one, not the raw stored bytes.
+        /// Validate the `auth_header` setting before it is sent to the catalog.
         DB::HTTPHeaderEntries header_entries{catalog_state.auth_header.value()};
         getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
         return header_entries;
