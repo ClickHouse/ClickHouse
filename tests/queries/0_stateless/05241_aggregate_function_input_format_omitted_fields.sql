@@ -49,3 +49,9 @@ SELECT countMerge(c), avgMerge(a) FROM format(JSONEachRow, 'k UInt8, c Aggregate
 -- `state` mode returns nan for the same input.
 SELECT 'known boundary of an element defaulted inside a present tuple';
 SELECT avgMerge(t.x) FROM format(JSONEachRow, 't Tuple(a UInt8, x AggregateFunction(avg, UInt32))', '{"t":{"a":1}}') SETTINGS input_format_json_defaults_for_missing_elements_in_named_tuple = 1;
+
+-- A third boundary: `JSONColumns` and its siblings discard the "this was a default, not a value" result
+-- of `JSONUtils::readField` that `JSONEachRowRowInputFormat` keeps, so an explicit null (or an empty
+-- field) is not reported there and the state is built from the default. `state` mode returns nan.
+SELECT 'known boundary of an explicit null in JSONColumns';
+SELECT avgMerge(a) FROM format(JSONColumns, 'k UInt8, a AggregateFunction(avg, UInt32)', '{"k":[1],"a":[null]}') SETTINGS input_format_null_as_default = 1;

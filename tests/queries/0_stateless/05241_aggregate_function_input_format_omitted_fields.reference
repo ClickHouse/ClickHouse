@@ -27,3 +27,5 @@ known boundary of input_format_defaults_for_omitted_fields = 0
 1	0
 known boundary of an element defaulted inside a present tuple
 0
+known boundary of an explicit null in JSONColumns
+0
