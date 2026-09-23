@@ -174,8 +174,8 @@ struct IdentifierResolveScope
 
     std::list<std::unordered_map<std::string, ColumnNodePtr> *> join_using_columns;
 
-    /// CTE name to query node
-    std::unordered_map<std::string, QueryTreeNodePtr> cte_name_to_query_node;
+    /// CTE name to its definitions in declaration order (several only with `analyzer_compatibility_allow_cte_redefinition`)
+    std::unordered_map<std::string, QueryTreeNodes> cte_name_to_query_node;
 
     /// Window name to window node
     std::unordered_map<std::string, QueryTreeNodePtr> window_name_to_window_node;
