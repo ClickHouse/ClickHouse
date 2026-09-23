@@ -70,6 +70,7 @@ namespace ProfileEvents
     extern const Event AsyncInsertQuery;
     extern const Event AsyncInsertBytes;
     extern const Event AsyncInsertRows;
+    extern const Event AsyncInsertFlush;
     extern const Event FailedAsyncInsertQuery;
 }
 
@@ -1189,6 +1190,10 @@ try
     }
     else
         query_scope = QueryScope::create(insert_context);
+
+    /// Count the flush inside its own query scope, so that it lands on the same
+    /// `system.query_log` row as the rest of the flush accounting, whatever triggered it.
+    ProfileEvents::increment(ProfileEvents::AsyncInsertFlush);
 
     LOG_TRACE(log, "Processing batch insert of {} async inserts with {} bytes of data", data->entries.size(), data->size_in_bytes);
     LOG_TEST(log, "Processing batch insert for the async inserts '{}'", fmt::join(getInsertQueryIds(*data), ", "));
