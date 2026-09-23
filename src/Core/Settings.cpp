@@ -10320,8 +10320,8 @@ An explicit `SETTINGS` clause in the query still takes precedence.
 )", EXPERIMENTAL, \
         {"26.9", false, false, "New setting to enable the `trino` value of the `dialect` setting, which translates Trino SQL syntax and maps Trino function names to ClickHouse equivalents."}) \
     DECLARE(Bool, enable_adaptive_memory_spill_scheduler, false, R"(
-Trigger processor to spill data into external storage adaptively. Hash joins that can spill are supported at present, both
-`grace_hash` and the adaptive `hash` / `parallel_hash` path.
+Adaptively spill eligible aggregation, sorting, `DISTINCT`, and hash-join processors to external storage under query memory pressure.
+Supported hash joins include `grace_hash` and the adaptive `hash` / `parallel_hash` path.
 )", EXPERIMENTAL, \
         {"25.2", false, false, "New setting. Enable spill memory data into external storage adaptively."}) \
     DECLARE_WITH_ALIAS(Bool, allow_delta_kernel_rs, true, R"(

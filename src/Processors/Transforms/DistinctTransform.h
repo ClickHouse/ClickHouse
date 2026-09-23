@@ -72,6 +72,7 @@ public:
 
     String getName() const override { return "DistinctTransform"; }
 
+    Status prepare() override;
     ISpillable * getSpillable() override { return allow_spilling ? this : nullptr; }
     ProcessorMemoryStats getMemoryStats() const override;
     size_t spill(size_t at_least_bytes) override;
@@ -80,6 +81,7 @@ protected:
     void transform(Chunk & chunk) override;
 
 private:
+    bool spillable_registered = false;
     /// An absent filter means subsequent chunks pass through without deduplication.
     std::optional<DistinctSetFilter> distinct_set;
     const UInt64 limit_hint;

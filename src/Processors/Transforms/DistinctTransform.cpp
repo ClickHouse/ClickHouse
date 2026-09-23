@@ -1,6 +1,7 @@
 #include <Processors/Transforms/DistinctTransform.h>
 
 #include <algorithm>
+#include <utility>
 
 #include <Common/MemoryTrackerUtils.h>
 #include <Common/ProfileEvents.h>
@@ -46,6 +47,19 @@ DistinctTransform::DistinctTransform(
 {
     if (allow_abandoning_)
         abandon_controller.emplace();
+    if (allow_spilling)
+    {
+        registerProcessor();
+        spillable_registered = true;
+    }
+}
+
+IProcessor::Status DistinctTransform::prepare()
+{
+    const auto status = ISimpleTransform::prepare();
+    if (status == Status::Finished && std::exchange(spillable_registered, false))
+        unregisterProcessor();
+    return status;
 }
 
 ProcessorMemoryStats DistinctTransform::getMemoryStats() const
