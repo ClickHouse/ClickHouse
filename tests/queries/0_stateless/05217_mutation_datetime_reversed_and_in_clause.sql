@@ -19,7 +19,10 @@
 --      (not a pre-evaluated Tuple literal) so tryWrapInLiterals can walk and
 --      wrap each string literal individually.
 
-SET session_timezone = 'UTC';
+-- America/Denver (UTC-7 in winter): a non-server timezone, so if the visitor
+-- stops wrapping literals, they parse in the server timezone (UTC) and the
+-- predicate shifts by 7 hours — the surviving rows below then change.
+SET session_timezone = 'America/Denver';
 SET mutations_sync = 1;
 
 -- === Scenario 1: reversed comparison ('literal' <= column) ===

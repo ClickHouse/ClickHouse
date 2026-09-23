@@ -65,6 +65,18 @@ SELECT v FROM t_topk_handle_ties
 ORDER BY v DESC LIMIT 5
 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
 
+-- Observability of tie extension (review feedback): the correct top-5 by
+-- (v ASC, id DESC) lives in the LAST tied granules (ids 199..195). If a
+-- regression kept only the first n*index_granularity granules, the result
+-- would be 79..75 instead — the queries above could not see that.
+SELECT id FROM t_topk_handle_ties
+ORDER BY v ASC, id DESC LIMIT 5
+SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
+
+SELECT id FROM t_topk_handle_ties
+ORDER BY v DESC, id DESC LIMIT 5
+SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
+
 DROP TABLE t_topk_handle_ties;
 
 -- === Scenario 2: multi-column ORDER BY (num_sort_columns > 1) with GRANULARITY 1 ===
@@ -99,6 +111,13 @@ WHERE explain LIKE '%TopK%';
 
 SELECT v, w FROM t_topk_multi_col
 ORDER BY v ASC, w ASC LIMIT 5
+SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
+
+-- Same observability for the multi-column trigger: correct answer requires
+-- the highest ids among rows tied on (v, w) = (0, 0), which span granules
+-- far beyond the first n selected.
+SELECT id FROM t_topk_multi_col
+ORDER BY v ASC, w ASC, id DESC LIMIT 5
 SETTINGS use_skip_indexes_for_top_k = 1, use_skip_indexes = 1, query_plan_max_limit_for_top_k_optimization = 0, use_top_k_dynamic_filtering = 0;
 
 DROP TABLE t_topk_multi_col;
