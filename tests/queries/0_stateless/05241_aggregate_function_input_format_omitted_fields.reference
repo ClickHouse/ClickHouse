@@ -25,3 +25,5 @@ control: an omitted array or map has no elements, a present array keeps all of t
 2	[5,6]	0
 known boundary of input_format_defaults_for_omitted_fields = 0
 1	0
+known boundary of an element defaulted inside a present tuple
+0

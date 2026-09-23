@@ -43,3 +43,9 @@ SELECT k, arrayMap(s -> finalizeAggregation(s), x), length(m) FROM format(JSONEa
 -- not to report which fields a row omitted, so nothing downstream can tell an omitted field from a value.
 SELECT 'known boundary of input_format_defaults_for_omitted_fields = 0';
 SELECT countMerge(c), avgMerge(a) FROM format(JSONEachRow, 'k UInt8, c AggregateFunction(count), a AggregateFunction(avg, UInt32)', '{"k":1}') SETTINGS input_format_defaults_for_omitted_fields = 0;
+
+-- A second boundary: the missing-value mask holds one bit per column per row, so an element defaulted
+-- inside a `Tuple` the row does contain is not reported, and the state is built from that default.
+-- `state` mode returns nan for the same input.
+SELECT 'known boundary of an element defaulted inside a present tuple';
+SELECT avgMerge(t.x) FROM format(JSONEachRow, 't Tuple(a UInt8, x AggregateFunction(avg, UInt32))', '{"t":{"a":1}}') SETTINGS input_format_json_defaults_for_missing_elements_in_named_tuple = 1;
