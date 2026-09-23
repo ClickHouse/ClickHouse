@@ -531,4 +531,24 @@ std::string expandSelectionGlobFirst(const std::string & path)
     result.append(tail);
     return result;
 }
+
+std::optional<std::string> tryExpandSelectionGlobFirstMatchedByRegexp(const std::string & path)
+{
+    if (!canExpandSelectionGlobFirst(path))
+        return {};
+
+    auto first = expandSelectionGlobFirst(path);
+
+    /// A selector glob and the regexp built for the same pattern do not always agree: an empty
+    /// alternative (`{,a}`) or an empty group (`{}`) is literal text for the regexp, and RE2 refuses
+    /// an alternation that is too large to compile. The first alternative is a sample of what the
+    /// regexp reader reads only when the regexp compiles and matches it.
+    re2::RE2::Options options;
+    options.set_log_errors(false);
+    re2::RE2 matcher(makeRegexpPatternFromGlobs(path), options);
+    if (!matcher.ok() || !re2::RE2::FullMatch(first, matcher))
+        return {};
+
+    return first;
+}
 }

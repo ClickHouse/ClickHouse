@@ -92,10 +92,12 @@ String StorageObjectStorageCluster::getPathSample(ContextPtr context)
                 return expanded.front() + archive_suffix;
         }
         /// A regexp is more permissive than a selector glob: a doubled brace like `{{a,b}}` is a
-        /// literal brace around an enum for it, and a comma outside a group is literal text. Such a
-        /// path is listed instead, rather than refused during analysis while the reader reads it.
-        else if (canExpandSelectionGlobFirst(path.path))
-            return expandSelectionGlobFirst(path.path) + archive_suffix;
+        /// literal brace around an enum for it, and a comma outside a group is literal text. It is
+        /// also stricter: an empty alternative is literal text for it, and RE2 refuses an alternation
+        /// too large to compile. Such a path is listed instead, the same way the reader lists it, so
+        /// the sample path is never one the reader would not read.
+        else if (auto first = tryExpandSelectionGlobFirstMatchedByRegexp(path.path))
+            return *first + archive_suffix;
     }
 
     auto query_settings = configuration->getQuerySettings(context);

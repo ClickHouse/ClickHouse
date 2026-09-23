@@ -213,6 +213,19 @@ TEST(Common, canExpandSelectionGlobFirst)
     }
 }
 
+TEST(Common, tryExpandSelectionGlobFirstMatchedByRegexp)
+{
+    /// The first alternative of every group, when the regexp reader would read it.
+    EXPECT_EQ(tryExpandSelectionGlobFirstMatchedByRegexp("dir/{a,b}/{c,d}.csv"), "dir/a/c.csv");
+    EXPECT_EQ(tryExpandSelectionGlobFirstMatchedByRegexp("{ab}/{c,d}"), "ab/c");
+
+    /// An empty alternative or group, or a group of one character, is literal text for the regexp, so
+    /// the first alternative is not a path the reader reads; neither are the patterns the selector
+    /// glob scanner refuses.
+    for (const auto & pattern : {"{,a}{b,c}", "{}{a,b}", "{a}{b,c}", "{{a,b}}", "a,b{c,d}{e,f}"})
+        EXPECT_EQ(tryExpandSelectionGlobFirstMatchedByRegexp(pattern), std::nullopt) << pattern;
+}
+
 TEST(Common, rangeGlobIsBounded)
 {
     /// A `{N..M}` range glob becomes an alternation of every number of the range, so the regexp is

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -35,4 +36,10 @@ namespace DB
     /// can be refused for a pattern the reader would go on to match as a regexp. It throws for a
     /// pattern `canExpandSelectionGlobFirst` rejects.
     std::string expandSelectionGlobFirst(const std::string & path);
+
+    /// `expandSelectionGlobFirst` for a caller whose reader matches the pattern as a regexp built by
+    /// `makeRegexpPatternFromGlobs`: the first path, when `canExpandSelectionGlobFirst` accepts the
+    /// pattern and that regexp compiles and matches the path, and nothing otherwise - the caller
+    /// then has to list the objects the same way the reader does.
+    std::optional<std::string> tryExpandSelectionGlobFirstMatchedByRegexp(const std::string & path);
 }
