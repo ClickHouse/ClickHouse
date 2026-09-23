@@ -1,4 +1,5 @@
--- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings
+-- Tags: no-replicated-database, no-parallel-replicas, no-random-merge-tree-settings, long
+-- long: it creates and drops dozens of tables, which takes over the 180 s flaky-check limit with `meta in keeper` and `s3 storage`.
 -- no-parallel-replicas: the assertions are about local `KeyCondition` part pruning; parallel replicas
 --   reshape the plan into a `Union` with `ReadFromRemoteParallelReplicas` and duplicated `Indexes` blocks.
 -- no-replicated-database: the DBReplicated job replaces engines and can change the plan shape.
