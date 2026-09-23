@@ -1,0 +1,10 @@
+optimize_pending_rename
+merge_algorithm
+Vertical
+count
+2
+select_t2
+1	('a',1)	a	1
+2	('b',2)	b	2
+check
+1

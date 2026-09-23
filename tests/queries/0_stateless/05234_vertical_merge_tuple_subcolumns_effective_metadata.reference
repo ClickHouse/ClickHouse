@@ -1,0 +1,44 @@
+=== excluded parent index does not pin ===
+2
+1
+Vertical
+
+=== disabled skip-index materialization does not pin ===
+2
+1
+Vertical
+
+=== active parent index pins ===
+2
+1
+Horizontal
+
+=== disabled multi-column index does not pin ===
+2
+1
+Vertical
+
+=== active multi-column index pins ===
+2
+1
+Horizontal
+
+=== leaf text index does not pin ===
+2
+1
+Vertical
+
+=== parent text expression pins ===
+2
+1
+Horizontal
+
+=== disabled statistics materialization does not pin ===
+2
+1
+Vertical
+
+=== persistent virtual-column indices do not pin ===
+2
+1
+Vertical

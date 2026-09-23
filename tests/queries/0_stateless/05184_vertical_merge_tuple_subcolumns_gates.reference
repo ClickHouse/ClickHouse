@@ -1,0 +1,24 @@
+=== Nullable(Tuple), Point, empty Tuple are not flattened ===
+1	('a','b')
+2	\N
+3	('c','d')
+4	\N
+1
+1	(1.5,2.5)
+2	(3.5,4.5)
+1
+1	()
+2	()
+3	()
+1
+
+=== leaf name collision with physical column t.x is rejected at CREATE ===
+1
+
+=== skip index on whole t pins the parent ===
+1	('a','b')
+2	('c','d')
+3	('e','f')
+4	('g','h')
+1
+1

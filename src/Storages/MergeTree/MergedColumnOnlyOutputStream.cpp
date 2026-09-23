@@ -109,6 +109,18 @@ MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::fillChecksums(M
     return checksums;
 }
 
+MergeTreeData::DataPart::Checksums MergedColumnOnlyOutputStream::collectChecksums(MergeTreeDataPartChecksums & all_checksums)
+{
+    MergeTreeData::DataPart::Checksums checksums;
+    NameSet checksums_to_remove;
+    writer->fillChecksums(checksums, checksums_to_remove);
+
+    for (const auto & filename : checksums_to_remove)
+        all_checksums.files.erase(filename);
+
+    return checksums;
+}
+
 void MergedColumnOnlyOutputStream::finish(bool sync)
 {
     writer->finish(sync);

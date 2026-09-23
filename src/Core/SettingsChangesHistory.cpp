@@ -1534,6 +1534,11 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
     static std::once_flag initialized_flag;
     std::call_once(initialized_flag, [&]
     {
+        addSettingsChanges(merge_tree_settings_changes_history, "26.10",
+        {
+            {"allow_experimental_vertical_merge_tuple_subcolumns", false, false, "New setting. When enabled, flattenable named Tuple leaves may be merged one at a time in Vertical merge. Nested flattenable Tuple fields count as separate leaves toward vertical_merge_algorithm_min_columns_to_activate. Disabled by default."},
+        });
+
         addSettingsChanges(merge_tree_settings_changes_history, "26.9",
         {
             {"min_partition_age_to_force_merge_seconds", 0, 0, "New setting to force merging of parts in partitions that no longer receive inserts"},

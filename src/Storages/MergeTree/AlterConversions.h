@@ -71,7 +71,10 @@ public:
         const ContextPtr & context) const;
 
     PatchPartsForReader getAllPatches() const { return patch_parts; }
-    PatchPartsForReader getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const;
+    PatchPartsForReader getPatchesForColumns(
+        const NamesAndTypesList & read_columns,
+        bool apply_deleted_mask,
+        bool record_profile_events = true) const;
 
 private:
     void addMutationCommand(const MutationCommand & command, const ContextPtr & context);

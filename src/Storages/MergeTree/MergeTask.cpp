@@ -54,6 +54,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularity.h>
 #include <Storages/MergeTree/MergeTreeSequentialSource.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVerticalMergeTupleSubcolumns.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <fmt/ranges.h>
 #include <Common/DimensionalMetrics.h>
@@ -129,6 +130,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_experimental_replacing_merge_with_cleanup;
+    extern const MergeTreeSettingsBool allow_experimental_vertical_merge_tuple_subcolumns;
     extern const MergeTreeSettingsBool allow_vertical_merges_from_compact_to_wide_parts;
     extern const MergeTreeSettingsMilliseconds background_task_preferred_step_execution_time_ms;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
@@ -879,7 +881,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
 
     /// Get list of skip indexes to exclude from merge
     std::unordered_set<String> exclude_index_names;
-    if ((*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    if (!(*merge_tree_settings)[MergeTreeSetting::materialize_skip_indexes_on_merge])
+    {
+        for (const auto & index : global_ctx->metadata_snapshot->getSecondaryIndices())
+            exclude_index_names.insert(index.name);
+    }
+    else
     {
         auto exclude_indexes_string = (*merge_tree_settings)[MergeTreeSetting::exclude_materialize_skip_indexes_on_merge].toString();
         if (!exclude_indexes_string.empty())
@@ -1075,6 +1082,27 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->sum_uncompressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
 
+    if ((*merge_tree_settings)[MergeTreeSetting::enable_vertical_merge_algorithm] != 0
+        && (*merge_tree_settings)[MergeTreeSetting::allow_experimental_vertical_merge_tuple_subcolumns])
+    {
+        NameSet columns_with_statistics_to_rebuild;
+        for (const auto & part_stats : global_ctx->statistics_to_build_by_part)
+        {
+            for (const auto & stats_entry : part_stats.second)
+                columns_with_statistics_to_rebuild.insert(stats_entry.first);
+        }
+        tryFlattenGatheringColumns(
+            global_ctx->gathering_columns,
+            global_ctx->storage_columns,
+            global_ctx->virtual_columns,
+            global_ctx->future_part->parts,
+            global_ctx->alter_conversions,
+            columns_with_statistics_to_rebuild,
+            global_ctx->skip_indexes_by_column,
+            global_ctx->text_indexes_to_merge,
+            ctx->log);
+    }
+
     global_ctx->chosen_merge_algorithm = chooseMergeAlgorithm();
     global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
 
@@ -1162,6 +1190,9 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
             std::map<String, UInt64> local_merged_column_to_size;
             for (const auto & part : global_ctx->future_part->parts)
                 part->accumulateColumnSizes(local_merged_column_to_size);
+
+            addVerticalMergeTupleSubcolumnSizes(
+                global_ctx->gathering_columns, global_ctx->future_part->parts, local_merged_column_to_size);
 
             ctx->column_sizes = ColumnSizeEstimator(
                 std::move(local_merged_column_to_size),
@@ -2275,11 +2306,27 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
     mergeBuiltStatistics(std::move(ctx->build_statistics_transforms), global_ctx);
 
     ctx->column_to->finalizeIndexGranularity();
-    auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->new_data_part->checksums);
-    global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
 
-    const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
-    global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
+    const bool flattened_leaf = ctx->it_name_and_type->isSubcolumn();
+    if (flattened_leaf)
+    {
+        auto changed_checksums = ctx->column_to->collectChecksums(global_ctx->new_data_part->checksums);
+        global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
+
+        if (!ctx->tuple_subcolumns_state)
+            ctx->tuple_subcolumns_state = std::make_shared<VerticalMergeTupleSubcolumnsState>();
+        ctx->tuple_subcolumns_state->addLeaf(
+            *ctx->it_name_and_type, ctx->column_to->getNewSerializationInfos());
+    }
+    else
+    {
+        auto changed_checksums = ctx->column_to->fillChecksums(global_ctx->new_data_part, global_ctx->new_data_part->checksums);
+        global_ctx->gathered_data.checksums.add(std::move(changed_checksums));
+
+        const auto & columns_substreams = ctx->column_to->getColumnsSubstreams();
+        global_ctx->gathered_data.columns_substreams = ColumnsSubstreams::merge(
+            global_ctx->gathered_data.columns_substreams, columns_substreams, global_ctx->new_data_part->getColumns().getNames());
+    }
 
     auto cached_marks = ctx->column_to->releaseCachedMarks();
     for (auto & [name, marks] : cached_marks)
@@ -2309,9 +2356,26 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
     /// NOTE: 'progress' is modified by single thread, but it may be concurrently read from MergeListElement::getInfo() (StorageSystemMerges).
 
-    global_ctx->merge_list_element_ptr->columns_written += 1;
     global_ctx->merge_list_element_ptr->bytes_written_uncompressed += bytes;
     global_ctx->merge_list_element_ptr->progress.store(ctx->progress_before + ctx->column_sizes->columnWeight(column_name), std::memory_order_relaxed);
+
+    if (flattened_leaf)
+    {
+        auto next = std::next(ctx->it_name_and_type);
+        const NameAndTypePair * next_column =
+            next == global_ctx->gathering_columns.end() ? nullptr : &*next;
+        if (ctx->tuple_subcolumns_state->commitIfComplete(
+                next_column,
+                global_ctx->storage_columns,
+                global_ctx->new_data_part,
+                global_ctx->rows_written,
+                *global_ctx->data_settings,
+                global_ctx->gathered_data.columns_substreams,
+                global_ctx->metadata_snapshot->getMetadataVersion()))
+            global_ctx->merge_list_element_ptr->columns_written += 1;
+    }
+    else
+        global_ctx->merge_list_element_ptr->columns_written += 1;
 
     /// This is the external loop increment.
     ++ctx->it_name_and_type;
@@ -2320,6 +2384,9 @@ void MergeTask::VerticalMergeStage::finalizeVerticalMergeForOneColumn() const
 
 bool MergeTask::VerticalMergeStage::finalizeVerticalMergeForAllColumns() const
 {
+    if (ctx->tuple_subcolumns_state)
+        ctx->tuple_subcolumns_state->assertComplete();
+
     for (auto & stream : ctx->delayed_streams)
         stream->finish(ctx->need_sync);
 
@@ -3247,7 +3314,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
         bool read_any_required_column = std::ranges::any_of(required_columns, [&](const auto & column_name)
         {
-            return read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns));
+            return read_column_names.contains(column_name)
+                || read_column_names.contains(getColumnNameInStorage(column_name, storage_columns, virtual_columns));
         });
 
         if (!read_any_required_column)

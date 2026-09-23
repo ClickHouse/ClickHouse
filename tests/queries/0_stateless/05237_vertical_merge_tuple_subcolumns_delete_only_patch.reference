@@ -1,0 +1,4 @@
+delete_only_patch	1
+merge_algorithm	Vertical
+1	('a','b')
+3	('e','f')

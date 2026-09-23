@@ -432,7 +432,10 @@ PrewhereExprSteps AlterConversions::getMutationSteps(
     return steps;
 }
 
-PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesList & read_columns, bool apply_deleted_mask) const
+PatchPartsForReader AlterConversions::getPatchesForColumns(
+    const NamesAndTypesList & read_columns,
+    bool apply_deleted_mask,
+    bool record_profile_events) const
 {
     PatchPartsForReader patches_to_read;
 
@@ -485,7 +488,7 @@ PatchPartsForReader AlterConversions::getPatchesForColumns(const NamesAndTypesLi
         }
     }
 
-    if (!patches_to_read.empty())
+    if (record_profile_events && !patches_to_read.empty())
     {
         ProfileEvents::increment(ProfileEvents::ReadTasksWithAppliedPatches);
         ProfileEvents::increment(ProfileEvents::PatchesAppliedInAllReadTasks, patches_to_read.size());
