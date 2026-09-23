@@ -944,28 +944,15 @@ ColumnPtr convertNumericToDateTime64OrTime64OrNull(const ColumnsWithTypeAndName 
     auto & vec_null_map_to = col_null_map_to->getData();
 
     const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<typename ToFieldType::NativeType>(scale);
-    time_t min_whole;
-    time_t max_whole;
-    Int64 min_ticks;
-    Int64 max_ticks;
-    if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-    {
-        min_whole = minWholeSecondsForDateTime64(scale_multiplier);
-        max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
-        min_ticks = minTicksForDateTime64(scale_multiplier);
-        max_ticks = maxTicksForDateTime64(scale_multiplier);
-    }
-    else
-    {
-        min_whole = -MAX_TIME_TIMESTAMP;
-        max_whole = MAX_TIME_TIMESTAMP;
-        min_ticks = minTicksForTime64(scale_multiplier);
-        max_ticks = maxTicksForTime64(scale_multiplier);
-    }
+    constexpr bool to_datetime64 = std::is_same_v<ToDataType, DataTypeDateTime64>;
+    const time_t min_whole = to_datetime64 ? minWholeSecondsForDateTime64(scale_multiplier) : -MAX_TIME_TIMESTAMP;
+    const time_t max_whole = to_datetime64 ? maxWholeSecondsForDateTime64(scale_multiplier) : MAX_TIME_TIMESTAMP;
+    const Int64 min_ticks = to_datetime64 ? minTicksForDateTime64(scale_multiplier) : minTicksForTime64(scale_multiplier);
+    const Int64 max_ticks = to_datetime64 ? maxTicksForDateTime64(scale_multiplier) : maxTicksForTime64(scale_multiplier);
 
     for (size_t i = 0; i < input_rows_count; ++i)
     {
-        bool representable;
+        bool representable = false;
         if constexpr (is_floating_point<FromFieldType>)
         {
             /// Compared in ticks so that the boundary second keeps its fraction; the product is computed in
