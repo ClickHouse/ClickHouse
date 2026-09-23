@@ -1682,8 +1682,7 @@ void StorageFileSource::beforeDestroy()
     if (storage->file_renamer.isEmpty())
         return;
 
-    /// Release our own read lock before the Write acquisition below: it takes the lock's fast path,
-    /// which refuses outright rather than waiting while this query still holds a read lock.
+    /// A Write acquisition takes the lock's fast path, which refuses outright while the same query holds a Read lock.
     read_lock.reset();
     int32_t cnt = storage->readers_counter.fetch_sub(1, std::memory_order_acq_rel);
 

@@ -212,12 +212,10 @@ private:
 
     bool supports_prewhere = false;
 
-    /// One query may read this table from several sources at once (one per stream, one for the
-    /// lazy-materialization pass, one per table expression in a self-join), so the lock must admit a
-    /// repeat Read by the query already holding it, which a plain shared mutex cannot.
+    /// One query may read this table from several sources at once: one per stream, one for the lazy-materialization
+    /// pass, one per table expression in a self-join. A repeat Read by the query already holding it is admitted.
     mutable RWLock rwlock = RWLockImpl::create();
 
-    /// Returns a null holder on timeout instead of throwing, for the callers that must not throw.
     RWLockImpl::LockHolder tryLockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
     RWLockImpl::LockHolder lockRwlock(RWLockImpl::Type type, const ContextPtr & context) const;
 
