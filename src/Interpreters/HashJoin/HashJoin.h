@@ -82,13 +82,6 @@ template <typename Key, typename Mapped, typename Hash = DefaultHash<Key>>
 using JoinHashMapWithSavedHash
     = std::conditional_t<is_join_set_mapped<Mapped>, HashSetWithSavedHash<Key, Hash>, HashMapWithSavedHash<Key, Mapped, Hash>>;
 
-/// A `PartitionedFixedHashTable` keeps one flat table under all its buckets, with no sub-table per bucket.
-template <typename Table>
-constexpr bool is_partitioned_fixed_table = false;
-
-template <typename Impl, size_t bits>
-constexpr bool is_partitioned_fixed_table<PartitionedFixedHashTable<Impl, bits>> = true;
-
 template <typename Key, typename Mapped, size_t size_bits = sizeof(Key) * 8>
 using JoinFixedHashMap = std::conditional_t<
     is_join_set_mapped<Mapped>,
