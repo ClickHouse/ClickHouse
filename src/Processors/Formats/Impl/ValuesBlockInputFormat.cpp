@@ -4,6 +4,9 @@
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
+#include <DataTypes/DataTypeString.h>
 #include <Parsers/TokenIterator.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
 #include <Formats/FormatFactory.h>
@@ -31,6 +34,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_named_tuple_conversion_with_extra_source_fields;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
 }
@@ -43,6 +47,7 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int CANNOT_READ_ALL_DATA;
+    extern const int CANNOT_CONVERT_TYPE;
 }
 
 
@@ -465,6 +470,117 @@ namespace
     }
 }
 
+/// With the explicit named tuple syntax (e.g. `tuple('b', 'a')(1, 2)`), the evaluated expression
+/// carries the element names in its type. Convert such a value to a destination named tuple with
+/// the same set of element names by matching the names (the source may list them in a different
+/// order), consistently with the CAST performed by `INSERT ... SELECT`. The value and its type are
+/// permuted into the destination order, and the positional `convertFieldToType` does the rest.
+/// If the sets of names differ, the conversion stays positional.
+/// Reorders the elements of a named tuple Field so that they match the destination tuple's element
+/// order, recursing into nested named tuples. This mirrors how `INSERT ... SELECT` converts named
+/// tuples (by name), keeping the interpreted `VALUES` path consistent with it: without it a nested
+/// tuple such as `tuple('n')(tuple('b', 'a')(1, 2))` inserted into `Tuple(n Tuple(a Int32, b Int32))`
+/// would keep `(1, 2)` positional. `src_type` is updated in place to reflect the new element order
+/// and names. Tuples that are not named on both sides, or whose names do not match one-to-one, are
+/// left untouched (and converted positionally by the subsequent `convertFieldToType`).
+static void reorderNamedTupleValueToDestinationOrder(Field & value, DataTypePtr & src_type, const IDataType & dst_type)
+{
+    if (value.getType() != Field::Types::Tuple)
+        return;
+
+    const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type.get());
+    const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(&dst_type);
+    if (!src_tuple_type || !dst_tuple_type || !src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+        return;
+
+    const auto & src_names = src_tuple_type->getElementNames();
+    const auto & dst_names = dst_tuple_type->getElementNames();
+    if (src_names.size() != dst_names.size())
+        return;
+
+    auto & src_value = value.safeGet<Tuple>();
+    if (src_value.size() != src_names.size())
+        return;
+
+    std::unordered_map<std::string_view, size_t> src_positions;
+    for (size_t i = 0; i < src_names.size(); ++i)
+        src_positions[src_names[i]] = i;
+
+    /// Every destination name must be present in the source exactly once, otherwise we cannot reorder
+    /// by name and leave the conversion to `convertFieldToType`.
+    std::vector<size_t> dst_to_src(dst_names.size());
+    for (size_t i = 0; i < dst_names.size(); ++i)
+    {
+        auto it = src_positions.find(dst_names[i]);
+        if (it == src_positions.end())
+            return;
+        dst_to_src[i] = it->second;
+    }
+
+    const auto & src_element_types = src_tuple_type->getElements();
+    const auto & dst_element_types = dst_tuple_type->getElements();
+
+    Tuple reordered_value(dst_names.size());
+    DataTypes reordered_types(dst_names.size());
+
+    for (size_t i = 0; i < dst_names.size(); ++i)
+    {
+        const size_t from = dst_to_src[i];
+        reordered_value[i] = src_value[from];
+        reordered_types[i] = src_element_types[from];
+        /// Recurse so nested named tuples are reordered by name too, even when the names at this
+        /// level already match (`src_names == dst_names`).
+        reorderNamedTupleValueToDestinationOrder(reordered_value[i], reordered_types[i], *dst_element_types[i]);
+    }
+
+    value = std::move(reordered_value);
+    src_type = std::make_shared<DataTypeTuple>(reordered_types, dst_names);
+}
+
+/// The interpreted `VALUES` path converts a `Field` with `convertFieldToType`, which matches tuple
+/// elements positionally and therefore cannot reject a conversion that drops source fields. Mirror
+/// the guard of `createTupleWrapper` (used by `INSERT ... SELECT`) for named tuples here: when both
+/// sides are explicitly named and their names overlap only partially, the conversion would silently
+/// lose the source fields that have no destination counterpart. Nested named tuples are checked too,
+/// following the same by-name matching as `reorderNamedTupleValueToDestinationOrder`.
+/// Named tuples with disjoint name sets are converted positionally and lose nothing, as in `CAST`.
+static void checkNamedTupleConversionDoesNotLoseFields(const DataTypePtr & src_type, const IDataType & dst_type)
+{
+    const auto * src_tuple_type = typeid_cast<const DataTypeTuple *>(src_type.get());
+    const auto * dst_tuple_type = typeid_cast<const DataTypeTuple *>(&dst_type);
+    if (!src_tuple_type || !dst_tuple_type || !src_tuple_type->hasExplicitNames() || !dst_tuple_type->hasExplicitNames())
+        return;
+
+    const auto & src_names = src_tuple_type->getElementNames();
+    const auto & dst_names = dst_tuple_type->getElementNames();
+
+    std::unordered_map<std::string_view, size_t> src_positions;
+    for (size_t i = 0; i < src_names.size(); ++i)
+        src_positions[src_names[i]] = i;
+
+    size_t common_names_count = 0;
+    for (const auto & dst_name : dst_names)
+        common_names_count += src_positions.contains(dst_name);
+
+    /// Disjoint name sets: positional conversion, nothing is lost.
+    if (common_names_count == 0)
+        return;
+
+    if (common_names_count < src_names.size())
+        throw Exception(
+            ErrorCodes::CANNOT_CONVERT_TYPE,
+            "Some fields from source tuple are lost when casting {} to {} (allow_named_tuple_conversion_with_extra_source_fields "
+            "is disabled)",
+            src_type->getName(),
+            dst_type.getName());
+
+    const auto & src_element_types = src_tuple_type->getElements();
+    const auto & dst_element_types = dst_tuple_type->getElements();
+    for (size_t i = 0; i < dst_names.size(); ++i)
+        checkNamedTupleConversionDoesNotLoseFields(src_element_types[src_positions[dst_names[i]]], *dst_element_types[i]);
+}
+
+
 bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx)
 {
     const Block & header = getPort().getHeader();
@@ -664,6 +780,14 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
 
     Field & expression_value = value_raw.first;
 
+    /// Reorder named tuple elements to the destination order first, so that `null_as_default` below
+    /// fills defaults against the right destination elements (e.g. `tuple('b', 'a')(NULL, NULL)` into
+    /// `Tuple(a UInt8, b String)` must default `a` to `0` and `b` to `''`, not the other way round).
+    reorderNamedTupleValueToDestinationOrder(expression_value, value_raw.second, type);
+
+    if (!settings[Setting::allow_named_tuple_conversion_with_extra_source_fields])
+        checkNamedTupleConversionDoesNotLoseFields(value_raw.second, type);
+
     if (format_settings.null_as_default)
         tryToReplaceNullFieldsInComplexTypesWithDefaultValues(expression_value, type);
 
@@ -692,8 +816,19 @@ bool ValuesBlockInputFormat::parseExpression(IColumn & column, size_t column_idx
     /// Instead try to create a column with single element and cast it to the destination type.
     if (type.hasDynamicStructure())
     {
-        ColumnPtr const_column = value_raw.second->createColumnConst(1, expression_value);
-        auto casted_column = castColumn(ColumnWithTypeAndName(const_column, value_raw.second, ""), type.getPtr(), nullptr);
+        ColumnWithTypeAndName from_argument(value_raw.second->createColumnConst(1, expression_value), value_raw.second, "");
+        /// Cast with the insert context so that the named-tuple insert guard
+        /// (`allow_named_tuple_conversion_with_extra_source_fields`) applies here too, consistently
+        /// with `INSERT ... SELECT`. `castColumn` would build the cast with a null context, falling
+        /// back to the permissive default and silently dropping differently named source tuple fields
+        /// (e.g. `Tuple(json JSON)` into `Tuple(data JSON)`).
+        auto cast_function = createInternalCast(from_argument, type.getPtr(), CastType::nonAccurate, {}, context);
+        ColumnsWithTypeAndName cast_arguments
+        {
+            from_argument,
+            {DataTypeString().createColumnConst(1, type.getName()), std::make_shared<DataTypeString>(), ""}
+        };
+        auto casted_column = cast_function->execute(cast_arguments, type.getPtr(), 1, /* dry_run = */ false);
         column.insertFrom(*casted_column->convertToFullColumnIfConst(), 0);
     }
     else

@@ -301,6 +301,7 @@ private:
     void sendDataFrom(ReadBuffer & buf, Block & sample,
                       const ColumnsDescription & columns_description, ASTPtr parsed_query, bool have_more_data = false);
     void sendDataFromPipe(Pipe && pipe, ASTPtr parsed_query, bool have_more_data = false);
+    ContextMutablePtr getContextForInsertInputFormat();
     void sendDataFromStdin(Block & sample, const ColumnsDescription & columns_description, ASTPtr parsed_query);
     void sendExternalTables(ASTPtr parsed_query);
 

@@ -54,6 +54,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_text_index_postings_cache", false, true, "Enabled the text index posting lists cache globally. Previously each query used a small private cache, which caused posting lists and phrase search results to be recomputed within a single query on large tables."},
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
+            {"enable_named_columns_in_function_tuple", false, false, "Keep the setting disabled pending usability improvements"},
+            {"allow_named_tuple_conversion_with_extra_source_fields", true, true, "New setting"},
+            {"allow_named_tuple_conversion_with_extra_source_fields_on_insert", true, false, "New setting. Before this version there was no INSERT-level guard, so named tuple conversions dropping extra source fields were allowed during INSERT. The compatibility value 'true' restores the previous permissive INSERT behavior under compatibility set to a version before 26.10."},
         });
         addSettingsChanges(settings_changes_history, "26.9",
         {
