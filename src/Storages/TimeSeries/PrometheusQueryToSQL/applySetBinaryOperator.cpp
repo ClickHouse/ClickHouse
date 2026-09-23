@@ -289,11 +289,17 @@ ASTPtr selectUnless(const String & left, const String & right, ConverterContext 
 
 ASTPtr selectOr(const String & left, const String & right, ConverterContext & context)
 {
-    /// The presence table is read twice - by the missing-group anti join and by the masking join.
-    String left_presence = materializeTable(selectPresenceByJoinGroup(left), context, SQLSubqueryType::MATERIALIZED_TABLE);
+    /// The presence of the left side is needed twice - by the missing-group anti join and by the masking join.
+    /// It is computed by two separate plain subqueries instead of one materialized CTE, because `left` itself is
+    /// a materialized CTE, and a materialized CTE reading another materialized CTE may be read before its
+    /// materialization completes when the plan is embedded by `prometheusQuery`/`prometheusQueryRange`
+    /// (e.g. `SELECT count() FROM prometheusQueryRange(..., 'a or b', ...) LIMIT 0`). Computing the presence
+    /// mask twice from the already materialized left grid does not read the samples table again.
+    String left_presence_for_groups = materializeTable(selectPresenceByJoinGroup(left), context);
+    String left_presence_for_steps = materializeTable(selectPresenceByJoinGroup(left), context);
     ASTPtr left_all = selectOriginalSeries(left);
-    ASTPtr right_unmatched_groups = selectLeftByMissingGroup(right, left_presence);
-    ASTPtr right_unmatched_steps = selectLeftMaskedByPresence(right, left_presence, /* keep_when_present = */ false, context);
+    ASTPtr right_unmatched_groups = selectLeftByMissingGroup(right, left_presence_for_groups);
+    ASTPtr right_unmatched_steps = selectLeftMaskedByPresence(right, left_presence_for_steps, /* keep_when_present = */ false, context);
     ASTPtr right_unmatched
         = selectUnion(std::move(right_unmatched_groups), std::move(right_unmatched_steps), context, /* combine_matching_groups = */ false);
     return selectUnion(std::move(left_all), std::move(right_unmatched), context, /* combine_matching_groups = */ true);
