@@ -202,6 +202,27 @@ TEST(HTTPHeaderFilter, WhitespaceOrControlInNameRejected)
     EXPECT_TRUE(isForbidden(filter, "X-Valid Name"));
 }
 
+/// A header name must be an RFC 9110 token: an empty name, ':' (which ends the field name), and
+/// other non-tchar characters such as '/' are rejected, while ':' stays legal in a value.
+TEST(HTTPHeaderFilter, NameMustBeToken)
+{
+    HTTPHeaderFilter filter;
+
+    auto rejects = [&](const std::string & name, const std::string & value)
+    {
+        HTTPHeaderEntries entries{{name, value}};
+        try { filter.checkHeaders(entries); }
+        catch (const Exception &) { return true; }
+        return false;
+    };
+
+    EXPECT_TRUE(rejects("Cookie:x", "y"));
+    EXPECT_TRUE(rejects("X/Foo", "1"));
+    EXPECT_TRUE(rejects("", "1"));
+    EXPECT_FALSE(rejects("Host", "example.com:8080"));
+    EXPECT_FALSE(rejects("X-Custom-Header", "1"));
+}
+
 /// Headers not on the blocklist must still be allowed, in any case.
 TEST(HTTPHeaderFilter, UnrelatedHeadersStillAllowed)
 {
@@ -265,5 +286,6 @@ TEST(HTTPHeaderFilter, RejectsCarriageReturnAndNewline)
     EXPECT_TRUE(rejects("Authorization", "Bearer token\nX-Injected: evil"));
     EXPECT_TRUE(rejects("Authorization", "Bearer token\r\nX-Injected: evil"));
     EXPECT_TRUE(rejects("Bad\rName", "value"));
+    EXPECT_TRUE(rejects("Bad\nName", "value"));
     EXPECT_FALSE(rejects("Authorization", "Bearer good-token"));
 }
