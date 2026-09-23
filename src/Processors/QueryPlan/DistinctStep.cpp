@@ -291,7 +291,7 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
 
             return std::make_shared<DistinctTransform>(
                 header, settings.set_size_limits, limit_hint, columns,
-                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold);
+                allow_abandoning, /*skip_null_keys_=*/ false, pass_through_threshold, /*allow_spilling_=*/ pre_distinct);
         });
 }
 
