@@ -9,7 +9,7 @@
     M(Query, "Number of executing queries") \
     M(ASTFuzzerAccumulatedFragments, "Number of AST fragments accumulated by the server-side AST fuzzer for use in future mutations.") \
     M(QueryNonInternal, "Number of executing non-internal queries (queries initiated by users, excluding internal queries from ClickHouse)") \
-    M(WaitingQuery, "Number of queries waiting for tables or databases to be loaded asynchronously, limited by the 'max_waiting_queries' server setting") \
+    M(WaitingQuery, "Number of queries waiting for asynchronous loading or startup to finish, limited by the 'max_waiting_queries' server setting") \
     M(Merge, "Number of executing background merges") \
     M(MergeParts, "Number of source parts participating in current background merges") \
     M(Move, "Number of currently executing moves") \

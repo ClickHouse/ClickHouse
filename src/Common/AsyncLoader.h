@@ -128,12 +128,10 @@ private:
     std::atomic<size_t> execution_pool_id;
     std::atomic<size_t> pool_id;
 
-    // Handlers that is called by every new waiting thread, just before going to sleep and after waking up.
+    // Handlers that is called by every new waiting thread, just before going to sleep.
     // If `on_waiters_increment` throws, then wait is canceled, and corresponding `on_waiters_decrement` will never be called.
     // It can be used for counting and limits on number of waiters.
-    // Note that `on_waiters_increment` is called under `LoadJob::mutex` and should be fast.
-    // Note that `on_waiters_decrement` is called without that mutex: it is where a waiter takes back what it
-    // gave up for the wait, so it is allowed to block and to throw, which cancels the wait in the same way.
+    // Note that implementations are called under `LoadJob::mutex` and should be fast.
     // Note that the cleanup wait in `AsyncLoader::remove` does not call them, because it runs in the noexcept `~LoadTask`.
     std::function<void(const LoadJobPtr & self)> on_waiters_increment;
     std::function<void(const LoadJobPtr & self)> on_waiters_decrement;

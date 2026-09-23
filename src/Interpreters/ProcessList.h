@@ -218,9 +218,9 @@ protected:
 
     bool is_internal;
 
-    /// `isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port`, as computed
-    /// by `insert`. Such a query is exempt from the concurrency limits.
-    bool is_unlimited = false;
+    /// `KILL ...` and introspection-port queries have to reach a server that is still loading, so they
+    /// are counted among the waiting queries but are never refused by `max_waiting_queries`.
+    bool is_waiting_limit_exempt = false;
 public:
     QueryStatus(
         ContextPtr context_,
@@ -312,9 +312,9 @@ public:
         return is_internal;
     }
 
-    bool isUnlimited() const
+    bool isWaitingLimitExempt() const
     {
-        return is_unlimited;
+        return is_waiting_limit_exempt;
     }
 
     /// Manually release all acquired workload resources.
@@ -370,9 +370,6 @@ struct ProcessListForUser
 
     /// Count network usage for all simultaneously running queries of single user.
     ThrottlerPtr user_throttler;
-
-    /// Number of queries of this user that are waiting for load jobs
-    std::atomic<UInt64> waiting_queries_amount{0};
 
     ProcessListForUserInfo getInfo(bool get_profile_events = false) const;
 
@@ -500,10 +497,8 @@ protected:
     /// limit for waiting queries. 0 means no limit. Otherwise, when limit exceeded, an exception is thrown.
     std::atomic<UInt64> max_waiting_queries_amount{0};
 
-    /// amounts of queries waiting for load jobs, excludes internal queries
+    /// amount of queries waiting for load jobs, excludes internal queries
     std::atomic<UInt64> waiting_queries_amount{0};
-    std::atomic<UInt64> waiting_insert_queries_amount{0};
-    std::atomic<UInt64> waiting_select_queries_amount{0};
 
     /// WARNING: for non-internal queries only
     void increaseQueryKindAmount(const IAST::QueryKind & query_kind);
@@ -514,14 +509,6 @@ protected:
     /// is reached, in which case the query does not become a waiter and must not be decreased.
     void increaseWaitingQueryAmount(const QueryStatusPtr & status);
     void decreaseWaitingQueryAmount(const QueryStatusPtr & status);
-
-    /// The description of a concurrency limit that has no room for `status` to run, if there is one.
-    /// `status` is still counted as waiting, so a limit has room exactly when it would admit one more query.
-    std::optional<String> limitWithoutRoomToResume(const QueryStatusPtr & status, const Settings & settings) const;
-
-    /// Take back the concurrency slot the query gave up when it started waiting, then stop counting it
-    /// as waiting. Blocks while the limits are full and refuses the query if they stay full.
-    void stopWaitingAndReacquireSlot(const QueryStatusPtr & status, const Settings & settings, bool wait_failed);
 
     /// An unset `expected_user_id` cancels whatever holds the key.
     CancellationCode sendCancelToQueryImpl(
@@ -559,8 +546,6 @@ public:
     {
         Lock lock(mutex);
         max_size = max_size_;
-        /// A raised limit can admit a query that is waiting for a slot, here or in `insert`.
-        have_space.notify_all();
     }
 
     size_t getMaxSize() const
@@ -573,7 +558,6 @@ public:
     {
         Lock lock(mutex);
         max_insert_queries_amount = max_insert_queries_amount_;
-        have_space.notify_all();
     }
 
     size_t getMaxInsertQueriesAmount() const
@@ -598,7 +582,6 @@ public:
     {
         Lock lock(mutex);
         max_select_queries_amount = max_select_queries_amount_;
-        have_space.notify_all();
     }
 
     size_t getMaxSelectQueriesAmount() const
@@ -618,14 +601,9 @@ public:
         return max_waiting_queries_amount.load();
     }
 
-    /// A query's cancellation is settled: `cancelled_cv` for a thread waiting for that cancellation to
-    /// finish, and `have_space` because a query waiting for a concurrency slot gives up when killed.
-    void notifyCancellationSettled() const { cancelled_cv.notify_all(); have_space.notify_all(); }
-
-    /// Register (unregister) `status` as waiting for load jobs. Unregistering waits for the
-    /// concurrency limits to have room for the query again, so it must run without `LoadJob::mutex`.
+    /// Register (unregister) `status` as waiting for load jobs. Both are plain counter updates.
     void incrementWaiters(const QueryStatusPtr & status);
-    void decrementWaiters(const QueryStatusPtr & status, const Settings & settings, bool wait_failed);
+    void decrementWaiters(const QueryStatusPtr & status);
 
     struct OwnQuery
     {

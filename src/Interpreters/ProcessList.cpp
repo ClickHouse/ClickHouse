@@ -10,7 +10,6 @@
 #include <Parsers/queryNormalization.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <base/scope_guard.h>
-#include <Common/AsyncLoader.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
@@ -20,10 +19,8 @@
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/logger_useful.h>
 #include <Common/saturatedDuration.h>
-#include <Common/scope_guard_safe.h>
 #include <array>
 #include <chrono>
-#include <limits>
 #include <memory>
 
 
@@ -82,14 +79,6 @@ namespace ErrorCodes
 }
 
 
-/// The limits are UInt64 settings with no maximum, so adding the waiting discount to one near the
-/// type's maximum would wrap and turn "no more than N" into "refuse everything".
-static UInt64 addWaitingDiscount(UInt64 limit, UInt64 waiting)
-{
-    return limit > std::numeric_limits<UInt64>::max() - waiting ? std::numeric_limits<UInt64>::max() : limit + waiting;
-}
-
-
 /// Should we execute the query even if max_concurrent_queries limit is exhausted
 static bool isUnlimitedQuery(const IAST * ast)
 {
@@ -144,6 +133,7 @@ ProcessList::EntryPtr ProcessList::insert(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query id cannot be empty");
 
     bool is_unlimited_query = isUnlimitedQuery(ast) || is_internal || client_info.is_from_introspection_port;
+    bool is_waiting_limit_exempt = (ast && ast->as<ASTKillQueryQuery>()) || client_info.is_from_introspection_port;
     std::shared_ptr<QueryStatus> query;
 
     // Acquire a query slot and a memory reservation from the resource scheduler if necessary.
@@ -197,35 +187,28 @@ ProcessList::EntryPtr ProcessList::insert(
         IAST::QueryKind query_kind = ast ? ast->getQueryKind() : IAST::QueryKind::Select;
 
         const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-        /// A query blocked waiting for an asynchronous load or startup job is not executing, so it
-        /// does not hold a slot in the limits below.
-        UInt64 waiting_queries = waiting_queries_amount.load();
-        if (!is_unlimited_query && max_size && non_internal_processes >= addWaitingDiscount(max_size, waiting_queries))
+        if (!is_unlimited_query && max_size && non_internal_processes >= max_size)
         {
             if (queue_max_wait_ms)
                 LOG_WARNING(getLogger("ProcessList"), "Too many simultaneous queries, will wait {} ms.", queue_max_wait_ms);
             if (!queue_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-                    [&]{ waiting_queries = waiting_queries_amount.load(); return non_internal_processes < addWaitingDiscount(max_size, waiting_queries); }))
+                    [&]{ return non_internal_processes < max_size; }))
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous queries. Maximum: {}{}",
-                                max_size, waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
+                                "Too many simultaneous queries. Maximum: {}",
+                                max_size);
         }
 
         if (!is_unlimited_query)
         {
             QueryAmount amount = getQueryKindAmount(query_kind);
-            UInt64 waiting_inserts = waiting_insert_queries_amount.load();
-            UInt64 waiting_selects = waiting_select_queries_amount.load();
-            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= addWaitingDiscount(max_insert_queries_amount, waiting_inserts))
+            if (max_insert_queries_amount && query_kind == IAST::QueryKind::Insert && amount >= max_insert_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous insert queries. Maximum: {}, current: {}{}",
-                                max_insert_queries_amount, amount,
-                                waiting_inserts == 0 ? "" : fmt::format(", waiting: {}", waiting_inserts));
-            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= addWaitingDiscount(max_select_queries_amount, waiting_selects))
+                                "Too many simultaneous insert queries. Maximum: {}, current: {}",
+                                max_insert_queries_amount, amount);
+            if (max_select_queries_amount && query_kind == IAST::QueryKind::Select && amount >= max_select_queries_amount)
                 throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                                "Too many simultaneous select queries. Maximum: {}, current: {}{}",
-                                max_select_queries_amount, amount,
-                                waiting_selects == 0 ? "" : fmt::format(", waiting: {}", waiting_selects));
+                                "Too many simultaneous select queries. Maximum: {}, current: {}",
+                                max_select_queries_amount, amount);
         }
 
         {
@@ -248,16 +231,14 @@ ProcessList::EntryPtr ProcessList::insert(
              * once is already processing 50+ concurrent queries (including analysts or any other users).
              */
 
-            waiting_queries = waiting_queries_amount.load();
             if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_all_users]
-                && non_internal_processes >= addWaitingDiscount(settings[Setting::max_concurrent_queries_for_all_users], waiting_queries))
+                && non_internal_processes >= settings[Setting::max_concurrent_queries_for_all_users])
                 throw Exception(
                     ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                     "Too many simultaneous queries for all users. "
-                    "Current: {}, maximum: {}{}",
+                    "Current: {}, maximum: {}",
                     non_internal_processes,
-                    settings[Setting::max_concurrent_queries_for_all_users].toString(),
-                    waiting_queries == 0 ? "" : fmt::format(", waiting: {}", waiting_queries));
+                    settings[Setting::max_concurrent_queries_for_all_users].toString());
         }
 
         /** Why we use current user?
@@ -275,17 +256,15 @@ ProcessList::EntryPtr ProcessList::insert(
 
             if (user_process_list != user_to_queries.end())
             {
-                UInt64 user_waiting_queries = user_process_list->second.waiting_queries_amount.load();
                 if (!is_unlimited_query && settings[Setting::max_concurrent_queries_for_user]
-                    && user_process_list->second.non_internal_queries >= addWaitingDiscount(settings[Setting::max_concurrent_queries_for_user], user_waiting_queries))
+                    && user_process_list->second.non_internal_queries >= settings[Setting::max_concurrent_queries_for_user])
                     throw Exception(
                         ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
                         "Too many simultaneous queries for user {}. "
-                        "Current: {}, maximum: {}{}",
+                        "Current: {}, maximum: {}",
                         client_info.current_user,
                         user_process_list->second.non_internal_queries,
-                        settings[Setting::max_concurrent_queries_for_user].toString(),
-                        user_waiting_queries == 0 ? "" : fmt::format(", waiting: {}", user_waiting_queries));
+                        settings[Setting::max_concurrent_queries_for_user].toString());
 
                 auto running_query = user_process_list->second.queries.find(client_info.current_query_id);
 
@@ -296,8 +275,6 @@ ProcessList::EntryPtr ProcessList::insert(
 
                     /// Ask queries to cancel. They will check this flag.
                     running_query->second->is_killed.store(true, std::memory_order_relaxed);
-                    /// One of the things they check it for is a wait for a concurrency slot.
-                    have_space.notify_all();
 
                     const auto replace_running_query_max_wait_ms = settings[Setting::replace_running_query_max_wait_ms].totalMilliseconds();
                     if (!replace_running_query_max_wait_ms || !have_space.wait_for(lock, saturatedMilliseconds(replace_running_query_max_wait_ms),
@@ -404,7 +381,7 @@ ProcessList::EntryPtr ProcessList::insert(
             settings,
             watch_start_nanoseconds,
             is_internal);
-        query->is_unlimited = is_unlimited_query;
+        query->is_waiting_limit_exempt = is_waiting_limit_exempt;
 
         auto process_it = processes.emplace(
             processes.end(),
@@ -636,11 +613,6 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
         cancellation_exception = exception ? copyMutableException(exception) : nullptr;
     }
 
-    /// A query waiting for a concurrency slot to resume gives up when killed, and the cancellation
-    /// paths that do not go through `ProcessList` reach this function too.
-    if (auto query_context = context.lock())
-        query_context->getProcessList().notifyCancellationSettled();
-
     std::vector<ExecutorHolderPtr> executors_snapshot;
 
     {
@@ -858,7 +830,7 @@ CancellationCode ProcessList::sendCancelToQueryImpl(
 
         Lock lock(mutex);
         elem->is_cancelling = false;
-        notifyCancellationSettled();
+        cancelled_cv.notify_all();
     });
 
     return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
@@ -893,7 +865,7 @@ CancellationCode ProcessList::sendCancelToQuery(QueryStatusPtr elem)
 
         Lock lock(mutex);
         elem->is_cancelling = false;
-        notifyCancellationSettled();
+        cancelled_cv.notify_all();
     });
 
     return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
@@ -946,7 +918,7 @@ CancellationCode ProcessList::sendCancelToPostgreSQLQuery(Int32 process_id, UInt
 
         Lock lock(mutex);
         elem->is_cancelling = false;
-        notifyCancellationSettled();
+        cancelled_cv.notify_all();
     });
 
     return elem->cancelQuery(CancelReason::CANCELLED_BY_USER);
@@ -961,7 +933,7 @@ void ProcessList::killAllQueries()
         LockAndBlocker lock(mutex);
         for (auto & cancelled_process : cancelled_processes)
             cancelled_process->is_cancelling = false;
-        notifyCancellationSettled();
+        cancelled_cv.notify_all();
     });
 
     {
@@ -1178,9 +1150,7 @@ ProcessList::QueryAmount ProcessList::getQueryKindAmount(const IAST::QueryKind &
 
 void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
 {
-    /// A query that the concurrency limits exempt is still counted, because the counters it is
-    /// counted in are the ones these amounts are subtracted from, but it is never refused.
-    const UInt64 limit = status->isUnlimited() ? 0 : max_waiting_queries_amount.load();
+    const UInt64 limit = status->isWaitingLimitExempt() ? 0 : max_waiting_queries_amount.load();
     UInt64 value = waiting_queries_amount.load();
     while (true)
     {
@@ -1196,31 +1166,11 @@ void ProcessList::increaseWaitingQueryAmount(const QueryStatusPtr & status)
     /// `decreaseWaitingQueryAmount` will never be called.
 
     CurrentMetrics::add(CurrentMetrics::WaitingQuery);
-
-    if (status->query_kind == IAST::QueryKind::Insert)
-        waiting_insert_queries_amount.fetch_add(1);
-    if (status->query_kind == IAST::QueryKind::Select)
-        waiting_select_queries_amount.fetch_add(1);
-
-    status->getUserProcessList()->waiting_queries_amount.fetch_add(1);
-
-    /// The query gives up its slot in the `max_concurrent_*` limits while it waits, so a query
-    /// parked on `have_space` may have become admissible.
-    have_space.notify_all();
 }
 
-void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr & status)
+void ProcessList::decreaseWaitingQueryAmount(const QueryStatusPtr &)
 {
     CurrentMetrics::sub(CurrentMetrics::WaitingQuery);
-
-    if (status->getUserProcessList()->waiting_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount for user: decrease to negative");
-
-    if (status->query_kind == IAST::QueryKind::Insert && waiting_insert_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong insert waiting query amount: decrease to negative");
-
-    if (status->query_kind == IAST::QueryKind::Select && waiting_select_queries_amount.fetch_sub(1) == 0)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong select waiting query amount: decrease to negative");
 
     if (waiting_queries_amount.fetch_sub(1) == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting query amount: decrease to negative");
@@ -1235,97 +1185,23 @@ void ProcessList::incrementWaiters(const QueryStatusPtr & status)
     ++status->waiting_threads;
 }
 
-std::optional<String> ProcessList::limitWithoutRoomToResume(const QueryStatusPtr & status, const Settings & settings) const
-{
-    /// `count` and `waiting` both include this query, so the check is the one `insert` runs for a new
-    /// query: full means one more running query does not fit.
-    auto full = [](UInt64 count, UInt64 limit, UInt64 waiting) { return limit && count >= addWaitingDiscount(limit, waiting); };
-    const UInt64 waiting_queries = waiting_queries_amount.load();
-
-    if (full(non_internal_processes, max_size, waiting_queries))
-        return fmt::format("too many simultaneous queries, running: {}, maximum: {}", non_internal_processes - waiting_queries, max_size);
-
-    const UInt64 all_users_limit = settings[Setting::max_concurrent_queries_for_all_users];
-    if (full(non_internal_processes, all_users_limit, waiting_queries))
-        return fmt::format("too many simultaneous queries for all users, running: {}, maximum: {}",
-                           non_internal_processes - waiting_queries, all_users_limit);
-
-    const QueryAmount amount = getQueryKindAmount(status->query_kind);
-    if (status->query_kind == IAST::QueryKind::Insert)
-    {
-        const UInt64 waiting_inserts = waiting_insert_queries_amount.load();
-        if (full(amount, max_insert_queries_amount, waiting_inserts))
-            return fmt::format("too many simultaneous insert queries, running: {}, maximum: {}",
-                               amount - waiting_inserts, max_insert_queries_amount);
-    }
-    if (status->query_kind == IAST::QueryKind::Select)
-    {
-        const UInt64 waiting_selects = waiting_select_queries_amount.load();
-        if (full(amount, max_select_queries_amount, waiting_selects))
-            return fmt::format("too many simultaneous select queries, running: {}, maximum: {}",
-                               amount - waiting_selects, max_select_queries_amount);
-    }
-
-    const auto * user_process_list = status->getUserProcessList();
-    const UInt64 user_limit = settings[Setting::max_concurrent_queries_for_user];
-    const UInt64 user_waiting_queries = user_process_list->waiting_queries_amount.load();
-    if (full(user_process_list->non_internal_queries, user_limit, user_waiting_queries))
-        return fmt::format("too many simultaneous queries for user {}, running: {}, maximum: {}",
-                           status->getClientInfo().current_user,
-                           user_process_list->non_internal_queries - user_waiting_queries, user_limit);
-
-    return {};
-}
-
-void ProcessList::stopWaitingAndReacquireSlot(const QueryStatusPtr & status, const Settings & settings, bool wait_failed)
-{
-    LockAndOverCommitTrackerBlocker<std::unique_lock, Mutex> locker(mutex); /// To avoid deadlock in case of OOM
-    auto & lock = locker.getUnderlyingLock();
-
-    /// The wait for the load job is over whatever happens below, and no later call decreases these
-    /// counters, so the query leaves the waiting set even if taking a slot back throws.
-    SCOPE_EXIT_SAFE(decreaseWaitingQueryAmount(status));
-
-    /// A query whose job failed has only that failure to report, so it does not queue for a slot.
-    if (status->isUnlimited() || wait_failed)
-        return;
-
-    /// The query stays counted as waiting until it holds a slot again, so its own discount keeps a
-    /// third query out of that slot meanwhile. The wait is bounded and refuses exactly as admission
-    /// does, because the query now holding the slot can be blocked on a lock this one holds.
-    auto full_limit = limitWithoutRoomToResume(status, settings);
-    const auto queue_max_wait_ms = settings[Setting::queue_max_wait_ms].totalMilliseconds();
-    if (full_limit && queue_max_wait_ms)
-    {
-        LOG_WARNING(getLogger("ProcessList"), "Query cannot resume after waiting for a load job, will wait {} ms.", queue_max_wait_ms);
-        have_space.wait_for(lock, saturatedMilliseconds(queue_max_wait_ms),
-            [&]{ return status->isKilled() || !(full_limit = limitWithoutRoomToResume(status, settings)); });
-    }
-
-    /// A cancelled query stops waiting for a slot it will never use, and reports the refusal it would
-    /// have got when the wait expired: one code out of this wait keeps every caller of it simple.
-    if (full_limit)
-        throw Exception(ErrorCodes::TOO_MANY_SIMULTANEOUS_QUERIES,
-                        "Cannot resume a query that was waiting for a load job: {}", *full_limit);
-}
-
-void ProcessList::decrementWaiters(const QueryStatusPtr & status, const Settings & settings, bool wait_failed)
+void ProcessList::decrementWaiters(const QueryStatusPtr & status)
 {
     std::lock_guard lock(status->waiting_mutex);
     if (status->waiting_threads == 0)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Wrong waiting thread amount: decrease to negative");
 
     if (--status->waiting_threads == 0)
-        stopWaitingAndReacquireSlot(status, settings, wait_failed);
+        decreaseWaitingQueryAmount(status);
 }
 
 /// The process list and the query to account for, or nullptr when the blocking thread is not one of
 /// the queries these counters cover: server or `clickhouse-local` startup, an AsyncLoader worker, or
 /// an internal query. All three inputs are fixed while the query's own thread is blocked, so the
 /// increment and the decrement of one wait always see the same verdict.
-static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status, ContextPtr & query_context)
+static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status)
 {
-    query_context = CurrentThread::tryGetQueryContext();
+    auto query_context = CurrentThread::tryGetQueryContext();
     if (!query_context)
         return nullptr;
     status = query_context->getProcessListElementSafe();
@@ -1337,17 +1213,15 @@ static ProcessList * getProcessListForWaitingQuery(QueryStatusPtr & status, Cont
 void onLoadJobWaitersIncrement(const LoadJobPtr &)
 {
     QueryStatusPtr status;
-    ContextPtr query_context;
-    if (auto * process_list = getProcessListForWaitingQuery(status, query_context))
+    if (auto * process_list = getProcessListForWaitingQuery(status))
         process_list->incrementWaiters(status);
 }
 
-void onLoadJobWaitersDecrement(const LoadJobPtr & job)
+void onLoadJobWaitersDecrement(const LoadJobPtr &)
 {
     QueryStatusPtr status;
-    ContextPtr query_context;
-    if (auto * process_list = getProcessListForWaitingQuery(status, query_context))
-        process_list->decrementWaiters(status, query_context->getSettingsRef(), job->exception() != nullptr);
+    if (auto * process_list = getProcessListForWaitingQuery(status))
+        process_list->decrementWaiters(status);
 }
 
 }

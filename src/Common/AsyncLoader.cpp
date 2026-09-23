@@ -863,27 +863,7 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
 
     if (run_waiter_callbacks && job->on_waiters_decrement)
-    {
-        // Called without the job mutex, because taking back what the wait gave up can block on
-        // another thread. The handler is copied: the last waiter to leave clears it, and with the
-        // mutex released that can happen while this call is in progress.
-        auto on_waiters_decrement = job->on_waiters_decrement;
-        std::exception_ptr refusal;
-        job_lock.unlock();
-        try
-        {
-            on_waiters_decrement(job);
-        }
-        catch (...) // Ok: rethrown below unless the job itself failed
-        {
-            refusal = std::current_exception();
-        }
-        job_lock.lock();
-        // A job that failed or was canceled is what this thread waited for and has to hear about, so
-        // the handler's refusal gives way to the job's own exception.
-        if (refusal && !job->load_exception)
-            std::rethrow_exception(refusal);
-    }
+        job->on_waiters_decrement(job);
 
     if (job->waiters == 0)
     {

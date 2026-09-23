@@ -8,7 +8,6 @@
 #include <list>
 #include <barrier>
 #include <chrono>
-#include <condition_variable>
 #include <mutex>
 #include <shared_mutex>
 #include <stdexcept>
@@ -739,122 +738,6 @@ TEST(AsyncLoader, WaitersLimit)
     ASSERT_EQ(success.load(), 5);
     ASSERT_EQ(failure.load(), 5);
     ASSERT_EQ(waiters_total.load(), 0);
-
-    t.loader.wait();
-}
-
-TEST(AsyncLoader, WaitersDecrementRunsWithoutJobMutex)
-{
-    AsyncLoaderTest t(1);
-    t.loader.unpause();
-
-    // A real `on_waiters_decrement` takes back what the waiting thread gave up for the wait
-    // (`ProcessList` takes back the query concurrency slot), so it can block on another thread. Under
-    // `LoadJob::mutex` that would block everything else touching the job, so this holds the handler
-    // and reads the job from another thread meanwhile: with the mutex held that read never returns.
-    std::mutex handler_mutex;
-    std::condition_variable handler_cv;
-    bool in_handler = false;
-    bool release_handler = false;
-
-    auto waiters_inc = [] (const LoadJobPtr &) {};
-    auto waiters_dec = [&] (const LoadJobPtr &) {
-        std::unique_lock lock{handler_mutex};
-        in_handler = true;
-        handler_cv.notify_all();
-        // No timeout: a handler that gave up on its own would release the mutex and let the probe
-        // below succeed even when this ran under it. The main thread releases it.
-        handler_cv.wait(lock, [&] { return release_handler; });
-    };
-
-    std::barrier<std::__empty_completion> sync(2);
-    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
-        sync.arrive_and_wait(); // (A)
-    };
-
-    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
-    auto task = t.schedule({job});
-
-    // The handler runs on the way out of the wait, so the job must still be pending when the waiter
-    // arrives: (A) needs this thread too.
-    std::thread waiter([&] { t.loader.wait(job); });
-    while (job->waitersCount() == 0)
-        std::this_thread::yield();
-
-    sync.arrive_and_wait(); // (A)
-
-    {
-        std::unique_lock lock{handler_mutex};
-        ASSERT_TRUE(handler_cv.wait_for(lock, std::chrono::seconds(60), [&] { return in_handler; }));
-    }
-
-    // `waitersCount` takes the job mutex, so it returns only if the blocked handler does not hold it.
-    std::atomic<bool> probed{false};
-    std::thread probe([&] { job->waitersCount(); probed.store(true); });
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(60);
-    while (!probed.load() && std::chrono::steady_clock::now() < deadline)
-        std::this_thread::yield();
-    EXPECT_TRUE(probed.load()) << "on_waiters_decrement is called under LoadJob::mutex";
-
-    {
-        std::lock_guard lock{handler_mutex};
-        release_handler = true;
-    }
-    handler_cv.notify_all();
-    probe.join();
-    waiter.join();
-
-    EXPECT_EQ(job->status(), LoadStatus::OK);
-
-    t.loader.wait();
-}
-
-TEST(AsyncLoader, WaitersDecrementDoesNotMaskJobFailure)
-{
-    AsyncLoaderTest t(1);
-    t.loader.unpause();
-
-    std::barrier<std::__empty_completion> sync(2);
-    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
-        sync.arrive_and_wait(); // (A)
-        throw std::runtime_error("the job itself failed");
-    };
-    auto waiters_inc = [] (const LoadJobPtr &) {};
-    // A real handler refuses the waiter when it cannot take its resource back. The failure of the job
-    // that the thread actually waited for is the more useful of the two, so it must win. The handler
-    // still has to run: it is what unregisters the waiter, and a failed job is no reason to leave it
-    // registered.
-    std::atomic<bool> decremented{false};
-    auto waiters_dec = [&] (const LoadJobPtr &)
-    {
-        decremented = true;
-        throw std::runtime_error("the waiter was refused");
-    };
-
-    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
-    auto task = t.schedule({job});
-
-    String message;
-    std::thread waiter([&] {
-        try
-        {
-            t.loader.wait(job);
-        }
-        catch (...) // Ok: the test asserts on which exception came out
-        {
-            message = getCurrentExceptionMessage(/* with_stacktrace = */ false);
-        }
-    });
-    while (job->waitersCount() == 0)
-        std::this_thread::yield();
-
-    sync.arrive_and_wait(); // (A)
-    waiter.join();
-
-    EXPECT_NE(message.find("the job itself failed"), String::npos) << message;
-    EXPECT_EQ(message.find("the waiter was refused"), String::npos) << message;
-    EXPECT_TRUE(decremented.load()) << "the job failure swallowed the decrement handler as well";
-    EXPECT_EQ(job->status(), LoadStatus::FAILED);
 
     t.loader.wait();
 }
