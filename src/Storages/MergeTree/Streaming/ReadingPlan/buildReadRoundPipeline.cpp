@@ -1,10 +1,12 @@
 #include <Storages/MergeTree/Streaming/ReadingPlan/buildReadRoundPipeline.h>
+#include <Storages/MergeTree/Streaming/ReadingPlan/AlignStreams.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionWatermarks.h>
 #include <Storages/MergeTree/Streaming/ReadingPlan/StampPartitionCursors.h>
 #include <Storages/MergeTree/Streaming/PartitionsClassification.h>
 #include <Storages/MergeTree/Streaming/Cursors/CursorUtils.h>
 #include <Storages/MergeTree/MergeTreeDataSelectExecutor.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageSnapshot.h>
 
 #include <Parsers/IAST.h>
@@ -32,9 +34,6 @@
 
 #include <Core/Block.h>
 #include <Core/SortDescription.h>
-#include <Core/Streaming/StreamingVirtualColumns.h>
-
-#include <Common/logger_useful.h>
 
 #include <algorithm>
 #include <memory>
@@ -42,65 +41,39 @@
 namespace DB
 {
 
-/// TODO: Split the read into
-///       1. A narrow stream (block_number, block_offset, watermark source columns) for cursor/watermark progress
-///       2. A wide stream with the predicate pushed down to the read,
-///       and do aligned join by (block_number, block_offset)
-
 namespace
 {
 
-Names extendWithAuxiliaryColumns(
-    Names columns,
-    const StreamSettings & stream_settings,
-    const FilterDAGInfoPtr & row_level_filter,
-    const StorageMetadataPtr & metadata,
-    const ContextPtr & context)
+/// Commit-order key + everything the watermark needs.
+Names metadataStreamColumns(const StreamSettings & stream_settings, const StorageMetadataPtr & metadata, const ContextPtr & context)
 {
-    for (const auto & aux_name : {PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name})
-        if (!std::ranges::contains(columns, aux_name))
-            columns.push_back(aux_name);
+    Names columns{PartitionIdColumn::name, BlockNumberColumn::name, BlockOffsetColumn::name};
 
-    if (stream_settings.watermark)
-    {
-        if (!std::ranges::contains(columns, stream_settings.watermark->column))
-            columns.push_back(stream_settings.watermark->column);
+    if (!std::ranges::contains(columns, stream_settings.watermark->time_attribute_column))
+        columns.push_back(stream_settings.watermark->time_attribute_column);
 
-        const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
-
-    if (row_level_filter)
-    {
-        const auto source_columns = row_level_filter->actions.getRequiredColumnsNames();
-        for (const auto & source_column : source_columns)
-            if (!std::ranges::contains(columns, source_column))
-                columns.push_back(source_column);
-    }
+    const auto source_columns = collectWatermarkSourceColumns(stream_settings.watermark->expression, metadata->getColumns().getAllPhysical(), context);
+    for (const auto & source_column : source_columns)
+        if (!std::ranges::contains(columns, source_column))
+            columns.push_back(source_column);
 
     return columns;
 }
 
-Pipe buildPartitionReadingPipeline(
+/// Read the partition in commit order.
+QueryPlanPtr buildPartitionCommitOrderReadPlan(
     const ReadRoundContext & reading_context,
     const ReadState & state,
     const String & partition_id,
     const Int64 & safe_block_number,
     const StorageSnapshotPtr & storage_snapshot,
-    const Names & inner_columns,
-    const QueryPlanOptimizationSettings & opt_settings,
-    QueryPlanResourceHolder & resources)
+    const Names & columns)
 {
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
-    const auto & prewhere_info = reading_context.prewhere_info;
-    const auto & row_level_filter = reading_context.row_level_filter;
-    const auto & output_header = reading_context.output_header;
 
     auto plan = MergeTreeDataSelectExecutor(reading_context.storage).read(
-        inner_columns,
+        columns,
         storage_snapshot,
         reading_context.query_info,
         context,
@@ -110,7 +83,7 @@ Pipe buildPartitionReadingPipeline(
         /*enable_parallel_reading=*/false);
 
     if (!plan || !plan->getRootNode())
-        return {};
+        return nullptr;
 
     /// Add cursor filter to read only the safe round slice.
     auto cursor_filter = buildPartitionFilter(partition_id, state.getPartitionCursor(partition_id), safe_block_number, *plan->getCurrentHeader(), context);
@@ -135,35 +108,54 @@ Pipe buildPartitionReadingPipeline(
             /*is_sorting_for_merge_join=*/false));
     }
 
-    /// Add cursor calculation step.
-    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), stream_settings.unordered));
+    return plan;
+}
 
-    /// Add watermark calculation step.
+Pipe buildPartitionReadingPipeline(
+    const ReadRoundContext & reading_context,
+    const ReadState & state,
+    const String & partition_id,
+    const Int64 & safe_block_number,
+    const StorageSnapshotPtr & storage_snapshot,
+    const QueryPlanOptimizationSettings & opt_settings,
+    QueryPlanResourceHolder & resources)
+{
+    const auto & stream_settings = reading_context.stream_settings;
+    const auto & context = reading_context.context;
+    const auto & output_header = reading_context.output_header;
+
+    auto plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, reading_context.columns_to_read);
+    if (!plan)
+        return {};
+
+    if (const auto & filter = reading_context.row_level_filter)
+        plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
+
+    if (const auto & filter = reading_context.prewhere_filter)
+        plan->addStep(std::make_unique<FilterStep>(plan->getCurrentHeader(), filter->actions.clone(), filter->column_name, filter->do_remove_column));
+
+    plan->addStep(std::make_unique<StampPartitionCursorsStep>(plan->getCurrentHeader(), partition_id, stream_settings.unordered));
+
+    /// The watermarks are computed on the unfiltered metadata stream and aligned with data stream.
     if (stream_settings.watermark)
     {
-        plan->addStep(std::make_unique<CalculateWatermarksStep>(plan->getCurrentHeader(), stream_settings.watermark, context));
-        plan->addStep(std::make_unique<RaiseWatermarksStep>(plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
-        plan->addStep(std::make_unique<StampPartitionWatermarksStep>(plan->getCurrentHeader(), partition_id));
-    }
+        const auto metadata_columns = metadataStreamColumns(stream_settings, storage_snapshot->metadata, context);
+        auto metadata_plan = buildPartitionCommitOrderReadPlan(reading_context, state, partition_id, safe_block_number, storage_snapshot, metadata_columns);
+        chassert(metadata_plan);
 
-    /// Add row policy filter built from the outer query analysis.
-    if (row_level_filter)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            row_level_filter->actions.clone(),
-            row_level_filter->column_name,
-            row_level_filter->do_remove_column));
-    }
+        metadata_plan->addStep(std::make_unique<StampPartitionCursorsStep>(metadata_plan->getCurrentHeader(), partition_id, stream_settings.unordered));
+        metadata_plan->addStep(std::make_unique<CalculateWatermarksStep>(metadata_plan->getCurrentHeader(), stream_settings.watermark, context));
+        metadata_plan->addStep(std::make_unique<RaiseWatermarksStep>(metadata_plan->getCurrentHeader(), state.getPartitionWatermark(partition_id)));
+        metadata_plan->addStep(std::make_unique<StampPartitionWatermarksStep>(metadata_plan->getCurrentHeader(), partition_id));
 
-    /// Add filter built from the outer query analysis.
-    if (prewhere_info)
-    {
-        plan->addStep(std::make_unique<FilterStep>(
-            plan->getCurrentHeader(),
-            prewhere_info->prewhere_actions.clone(),
-            prewhere_info->prewhere_column_name,
-            prewhere_info->remove_prewhere_column));
+        auto align_step = std::make_unique<AlignStreamsStep>(metadata_plan->getCurrentHeader(), plan->getCurrentHeader());
+
+        std::vector<QueryPlanPtr> plans;
+        plans.push_back(std::move(metadata_plan));
+        plans.push_back(std::move(plan));
+
+        plan = std::make_unique<QueryPlan>();
+        plan->unitePlans(std::move(align_step), std::move(plans));
     }
 
     /// Add projection to required header.
@@ -174,8 +166,6 @@ Pipe buildPartitionReadingPipeline(
         context);
     plan->addStep(std::make_unique<ExpressionStep>(plan->getCurrentHeader(), std::move(convert)));
 
-    /// Build pipeline. `buildQueryPipeline` optimizes internally, which also lets it decide the
-    /// distributed-to-local fallback before the optimization passes.
     auto builder = plan->buildQueryPipeline(opt_settings, BuildQueryPipelineSettings(context));
     return QueryPipelineBuilder::getPipe(std::move(*builder), resources);
 }
@@ -195,11 +185,9 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
     const auto & stream_settings = reading_context.stream_settings;
     const auto & context = reading_context.context;
     const auto & output_header = reading_context.output_header;
-
-    /// Fresh storage snapshot reused by every per-partition subplan in this iteration.
-    const auto metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
-    const auto storage_snapshot = reading_context.storage.getStorageSnapshot(metadata, context);
-    const auto columns_to_read = extendWithAuxiliaryColumns(reading_context.user_requested_columns, stream_settings, reading_context.row_level_filter, metadata, context);
+    const auto storage_metadata = reading_context.storage.getInMemoryMetadataPtr(context, /*bypass_metadata_cache=*/true);
+    const auto streaming_metadata = extendMetadataWithStream(storage_metadata, stream_settings);
+    const auto storage_snapshot = reading_context.storage.getStorageSnapshot(streaming_metadata, context);
     const auto classification = classifyPartitions(state, safe_block_numbers, stream_settings);
     const QueryPlanOptimizationSettings opt_settings(context);
 
@@ -214,7 +202,6 @@ std::optional<ReadRoundPipeline> buildReadRoundPipeline(
             partition_id,
             safe_block_numbers.at(partition_id),
             storage_snapshot,
-            columns_to_read,
             opt_settings,
             result.resources);
 
