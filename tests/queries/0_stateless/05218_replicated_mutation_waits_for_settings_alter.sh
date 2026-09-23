@@ -32,7 +32,7 @@ function cleanup()
 trap cleanup EXIT
 
 $CLICKHOUSE_CLIENT --query "DROP TABLE IF EXISTS $TABLE SYNC"
-$CLICKHOUSE_CLIENT --query "CREATE TABLE $TABLE (id UInt64, value String) ENGINE = ReplicatedMergeTree('$ZK_PATH', '1') ORDER BY id"
+$CLICKHOUSE_CLIENT --query "CREATE TABLE $TABLE (id UInt64, value String) ENGINE = ReplicatedMergeTree('/clickhouse/$CLICKHOUSE_TEST_ZOOKEEPER_PREFIX/$TABLE', '1') ORDER BY id"
 $CLICKHOUSE_CLIENT --query "INSERT INTO $TABLE VALUES (1, 'a')"
 
 $CLICKHOUSE_CLIENT --query "SYSTEM ENABLE FAILPOINT alter_settings_pause_before_metadata_write"
