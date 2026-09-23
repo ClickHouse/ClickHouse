@@ -1035,13 +1035,13 @@ private:
     template <typename Method, typename Table>
     requires MapAggregationMethod<Method>
     Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0) const;
 
     /// A set method skips the inline-count and compiled-function paths; it only emits keys.
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks
-    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block) const;
+    convertToBlockImpl(Method & method, Table & data, Arena * arena, Arenas & aggregates_pools, bool final, size_t rows, bool return_single_block, size_t max_rows_per_block = 0) const;
 
     template <typename Mapped>
     void insertAggregatesIntoColumns(
@@ -1061,7 +1061,7 @@ private:
     template <typename Method, typename Table>
     requires SetAggregationMethod<Method>
     Chunks convertToBlockImplKeysOnly(
-        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block) const;
+        Method & method, Table & data, Arenas & aggregates_pools, bool final, bool return_single_block, size_t max_rows_per_block) const;
 
     template <typename Method, typename Table>
     Chunks convertToBlockImplFinal(
@@ -1070,11 +1070,12 @@ private:
         Arena * arena,
         Arenas & aggregates_pools,
         bool use_compiled_functions,
-        bool return_single_block) const;
+        bool return_single_block,
+        size_t max_rows_per_block) const;
 
     template <typename Method, typename Table>
     Chunks
-    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block) const;
+    convertToBlockImplNotFinal(Method & method, Table & data, Arenas & aggregates_pools, size_t rows, bool return_single_block, size_t max_rows_per_block) const;
 
     /// `topk_full_key_bytes`, when non-null and the bucket goes through the Top-K conversion,
     /// receives the byte size all of the bucket's keys would occupy materialized: the runtime
@@ -1125,9 +1126,10 @@ private:
     AggregatedChunk prepareChunkAndFillWithoutKey(AggregatedDataVariants & data_variants, bool final, bool is_overflows) const;
     AggregatedChunks prepareChunksAndFillTwoLevel(AggregatedDataVariants & data_variants, bool final) const;
 
+    /// A non-zero `max_rows_per_block` caps the size of the emitted chunks below `max_block_size`.
     template <bool return_single_block>
     std::conditional_t<return_single_block, AggregatedChunk, AggregatedChunks>
-    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final) const;
+    prepareChunkAndFillSingleLevel(AggregatedDataVariants & data_variants, bool final, size_t max_rows_per_block = 0) const;
 
     template <typename Method>
     AggregatedChunks prepareChunksAndFillTwoLevelImpl(AggregatedDataVariants & data_variants, Method & method, bool final) const;

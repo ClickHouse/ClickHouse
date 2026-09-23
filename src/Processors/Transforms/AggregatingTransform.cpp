@@ -546,6 +546,7 @@ public:
         AggregatingTransformParamsPtr params_,
         ManyAggregatedDataVariantsPtr data_,
         size_t num_threads_,
+        bool split_single_level_result_,
         RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
         AdaptiveAggregationSessionPtr adaptive_session_)
         : IProcessor({}, {params_->getHeader()})
@@ -553,6 +554,7 @@ public:
         , data(std::move(data_))
         , shared_data(std::make_shared<ConvertingAggregatedToChunksWithMergingSource::SharedData>())
         , num_threads(num_threads_)
+        , split_single_level_result(split_single_level_result_)
         , updater(std::move(updater_))
         , adaptive_session(std::move(adaptive_session_))
     {
@@ -738,6 +740,23 @@ private:
         return std::bit_floor(std::clamp<size_t>(max_table_size / MIN_KEYS_PER_PARTITION, 1, max_partitions));
     }
 
+    /// A single-level result smaller than `max_block_size` is converted into one chunk, and the `Resize`
+    /// after the aggregation hands out whole chunks, so everything downstream of it (e.g. the probe of a
+    /// following join) would run in one thread. Returns a chunk size that splits the result into about
+    /// one chunk per thread, never below `MIN_ROWS_PER_CHUNK` rows, or 0 to leave the result as is.
+    size_t singleLevelResultMaxRowsPerBlock(size_t rows) const
+    {
+        if (!split_single_level_result || num_threads <= 1)
+            return 0;
+
+        static constexpr size_t MIN_ROWS_PER_CHUNK{512};
+        const size_t num_chunks = std::clamp<size_t>(rows / MIN_ROWS_PER_CHUNK, 1, num_threads);
+        if (num_chunks <= 1)
+            return 0;
+
+        return (rows + num_chunks - 1) / num_chunks;
+    }
+
     /// The partition sources emit finished chunks in no particular order; forward them as they come.
     IProcessor::Status preparePartitionMerge()
     {
@@ -907,6 +926,11 @@ private:
 
     size_t num_threads;
 
+    /// Whether `AggregatingStep` spreads the output of this transform over several streams. It does not
+    /// when the results must go out in bucket order: there is a single output stream then, and splitting
+    /// the single-level result would only produce more, smaller blocks.
+    bool split_single_level_result;
+
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
     AdaptiveAggregationSessionPtr adaptive_session;
 
@@ -1003,7 +1027,11 @@ private:
                 throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
         }
 
-        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final);
+        const size_t max_rows_per_block = singleLevelResultMaxRowsPerBlock(first->sizeWithoutOverflowRow());
+        if (max_rows_per_block)
+            LOG_TRACE(getLogger("AggregatingTransform"), "Split single level result into chunks of at most {} rows.", max_rows_per_block);
+
+        auto agg_chunks = params->aggregator.prepareChunkAndFillSingleLevel</* return_single_block */ false>(*first, params->final, max_rows_per_block);
         for (auto & agg_chunk : agg_chunks)
         {
             if (agg_chunk.chunk.getNumRows() > 0)
@@ -1409,7 +1437,12 @@ void AggregatingTransform::initGenerate()
                 std::move(many_data->variants), adaptive_context ? adaptive_context->session.get() : nullptr);
             auto prepared_data_ptr = std::make_shared<ManyAggregatedDataVariants>(std::move(prepared_data));
             processors.emplace_back(std::make_shared<ConvertingAggregatedToChunksTransform>(
-                params, std::move(prepared_data_ptr), max_threads, updater, adaptive_engaged ? adaptive_context->session : nullptr));
+                params,
+                std::move(prepared_data_ptr),
+                max_threads,
+                !should_produce_results_in_order_of_bucket_number,
+                updater,
+                adaptive_engaged ? adaptive_context->session : nullptr));
         }
         else
         {
