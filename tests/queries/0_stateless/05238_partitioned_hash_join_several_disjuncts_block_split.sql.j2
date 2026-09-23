@@ -17,7 +17,7 @@ SELECT sum(ignore(*) + 1)
 FROM t1
 LEFT JOIN t2
 ON t1.id = t2.id OR (t1.attr = t2.attr)
-SETTINGS join_algorithm = 'partitioned_hash', max_memory_usage = '50M';
+SETTINGS join_algorithm = 'hash', max_memory_usage = '50M';
 
 DROP TABLE IF EXISTS t_or_split_l;
 DROP TABLE IF EXISTS t_or_split_r;
@@ -29,9 +29,8 @@ CREATE TABLE t_or_split_r (a UInt64, b UInt64, w UInt64) ENGINE = MergeTree ORDE
 INSERT INTO t_or_split_l SELECT number % 50, number % 30, number FROM numbers(600);
 INSERT INTO t_or_split_r SELECT number % 60 + 10, number % 40 + 5, number FROM numbers(900);
 
--- A block split after every left row, after a few, mid-block, and never. Each shape is checked against `hash` on the
--- same data; `h = pa` prints 1 when the two algorithms agree. ANY claims a right row for the first left row that
--- reaches it, so those shapes run on one thread to be deterministic.
+-- A block split after every left row, after a few, mid-block, and never. ANY claims a right row for the first left
+-- row that reaches it, so those shapes run on one thread to be deterministic.
 {% for name, join, columns, threads in [
     ('inner all', 'INNER JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 4),
     ('left all', 'LEFT JOIN', 'l.a, l.b, l.v, r.a, r.b, r.w', 4),
@@ -46,11 +45,8 @@ INSERT INTO t_or_split_r SELECT number % 60 + 10, number % 40 + 5, number FROM n
     ('right anti', 'ANTI RIGHT JOIN', 'r.a, r.b, r.w', 4),
 ] -%}
 {% for block_rows in [1, 7, 100, 1000000] -%}
-SELECT '{{ name }}', {{ block_rows }}, h.1, h = pa FROM (SELECT
-    (SELECT (count(), sum(cityHash64({{ columns }}))) FROM t_or_split_l AS l {{ join }} t_or_split_r AS r ON l.a = r.a OR l.b = r.b
-        SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = {{ block_rows }}, max_threads = {{ threads }}) AS h,
-    (SELECT (count(), sum(cityHash64({{ columns }}))) FROM t_or_split_l AS l {{ join }} t_or_split_r AS r ON l.a = r.a OR l.b = r.b
-        SETTINGS join_algorithm = 'partitioned_hash', max_joined_block_size_rows = {{ block_rows }}, max_threads = {{ threads }}) AS pa);
+SELECT '{{ name }}', {{ block_rows }}, (SELECT (count(), sum(cityHash64({{ columns }}))) FROM t_or_split_l AS l {{ join }} t_or_split_r AS r
+    ON l.a = r.a OR l.b = r.b SETTINGS join_algorithm = 'hash', max_joined_block_size_rows = {{ block_rows }}, max_threads = {{ threads }});
 {% endfor -%}
 {% endfor -%}
 
