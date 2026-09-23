@@ -49,6 +49,16 @@ struct MergeTreeTemporaryPart
 
     std::vector<Stream> streams;
 
+    /// Marks of a projection whose stream was finalized, and released, before prewarmCaches() runs.
+    struct ProjectionMarks
+    {
+        String projection_name;
+        PlainMarksByName marks;
+        PlainMarksByName index_marks;
+    };
+
+    std::vector<ProjectionMarks> released_projection_marks;
+
     void cancel();
     void finalize();
     void prewarmCaches();

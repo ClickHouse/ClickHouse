@@ -471,13 +471,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
     auto prewarm_caches = part->storage.getCachesToPrewarm(part->getBytesUncompressedOnDisk());
 
     /// `streams` also holds the streams written for this part's projections.
-    auto streamOwner = [this](const Stream & stream) -> const IMergeTreeDataPart *
+    auto marksOwner = [this](const String & projection_name) -> const IMergeTreeDataPart *
     {
-        if (stream.projection_name.empty())
+        if (projection_name.empty())
             return part.get();
 
         const auto & projections = part->getProjectionParts();
-        auto it = projections.find(stream.projection_name);
+        auto it = projections.find(projection_name);
         return it == projections.end() ? nullptr : it->second.get();
     };
 
@@ -486,9 +486,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
         for (const auto & stream : streams)
         {
             auto marks = stream.stream->releaseCachedMarks();
-            if (const auto * owner = streamOwner(stream))
+            if (const auto * owner = marksOwner(stream.projection_name))
                 addMarksToCache(*owner, marks, prewarm_caches.mark_cache.get());
         }
+
+        for (const auto & projection : released_projection_marks)
+            if (const auto * owner = marksOwner(projection.projection_name))
+                addMarksToCache(*owner, projection.marks, prewarm_caches.mark_cache.get());
     }
 
     if (prewarm_caches.index_mark_cache)
@@ -496,9 +500,13 @@ void MergeTreeTemporaryPart::prewarmCaches()
         for (const auto & stream : streams)
         {
             auto index_marks = stream.stream->releaseCachedIndexMarks();
-            if (const auto * owner = streamOwner(stream))
+            if (const auto * owner = marksOwner(stream.projection_name))
                 addMarksToCache(*owner, index_marks, prewarm_caches.index_mark_cache.get());
         }
+
+        for (const auto & projection : released_projection_marks)
+            if (const auto * owner = marksOwner(projection.projection_name))
+                addMarksToCache(*owner, projection.index_marks, prewarm_caches.index_mark_cache.get());
     }
 
     if (prewarm_caches.primary_index_cache)
@@ -1174,7 +1182,15 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
                     /// part's precommitTransaction() will be handled later by the main
                     /// temp_part->finalize() which iterates part->getProjectionParts().
                     for (auto & stream : proj_temp_part->streams)
+                    {
                         stream.finalizer.finish();
+
+                        /// The stream does not outlive this iteration, so its marks are taken now.
+                        auto marks = stream.stream->releaseCachedMarks();
+                        auto index_marks = stream.stream->releaseCachedIndexMarks();
+                        if (!marks.empty() || !index_marks.empty())
+                            temp_part->released_projection_marks.push_back({projection.name, std::move(marks), std::move(index_marks)});
+                    }
                 }
                 else
                 {
