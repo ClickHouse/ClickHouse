@@ -242,6 +242,13 @@ AnalyzeStepsStats::AnalyzeStepsStats(QueryPipeline & pipeline, const QueryPlan &
         interval_timings.emplace(work_intervals, plan);
 }
 
+std::optional<ExecutionTimeBreakdown> AnalyzeStepsStats::executionTimeBreakdown() const
+{
+    if (!interval_timings)
+        return std::nullopt;
+    return interval_timings->executionTimeBreakdown(execution_query_time_ns);
+}
+
 void AnalyzeStepsStats::collectIOStats(const Processors & processors)
 {
     auto crosses_step_boundary = [](const IProcessor & owner, const IProcessor & neighbour)

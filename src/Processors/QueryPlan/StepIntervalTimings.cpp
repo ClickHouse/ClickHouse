@@ -1,4 +1,5 @@
 #include <Core/Types.h>
+#include <base/defines.h>
 #include <Processors/QueryPlan/StepIntervalTimings.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
@@ -66,6 +67,23 @@ const StepTimeAndConcurrency * StepIntervalTimings::findTiming(const IQueryPlanS
 {
     const auto it = timing_by_step.find(step);
     return it != timing_by_step.end() ? &it->second : nullptr;
+}
+
+ExecutionTimeBreakdown StepIntervalTimings::executionTimeBreakdown(UInt64 execution_time_ns) const
+{
+    const UInt64 active_time_ns = concurrency_profile.activeTime();
+
+    /// The intervals of the plan steps are a subset of all intervals, and all intervals lie inside the
+    /// execution: they are measured with the same monotonic clock, and the executor joins its threads
+    /// before the execution time is read. So the subtractions cannot underflow.
+    chassert(all_steps_time_ns <= active_time_ns);
+    chassert(active_time_ns <= execution_time_ns);
+
+    return {
+        .in_steps_ns = all_steps_time_ns,
+        .outside_steps_ns = active_time_ns - all_steps_time_ns,
+        .idle_ns = execution_time_ns - active_time_ns,
+    };
 }
 
 void StepIntervalTimings::collectPlanSteps(const QueryPlan & plan)
@@ -194,6 +212,9 @@ void StepIntervalTimings::computeBranchTime(const QueryPlan & plan, TimeInterval
 
         stack.pop_back();
     }
+
+    /// The root frame is processed last, so its branch unites the intervals of every step of the plan.
+    all_steps_time_ns = timing_by_step.at(plan.getRootNode()->step.get()).branch_time_ns;
 }
 
 std::vector<TimeIntervals> StepIntervalTimings::collectLowerBranchIntervals(TimeIntervals && current_step_intervals, const std::vector<QueryPlan::Node *> & children, const std::vector<QueryPlan *> & child_plans, TimeIntervalsByStep & branch_intervals_by_step) const

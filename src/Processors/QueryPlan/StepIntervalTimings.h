@@ -17,12 +17,17 @@ class IQueryPlanStep;
 /// the wall-clock time of the step itself and of its whole subtree, and, over the same two sets of
 /// intervals, the average number of threads the query kept busy while they were active.
 /// A step that owns no intervals has a zero time and no concurrency.
+/// For the query as a whole it splits the execution time into the part inside the steps of the plan,
+/// the part inside processors that belong to no step of the plan, and the idle part.
 class StepIntervalTimings
 {
 public:
     StepIntervalTimings(const WorkIntervalsPerThread & intervals_per_thread, const QueryPlan & plan);
 
     const StepTimeAndConcurrency * findTiming(const IQueryPlanStep * step) const;
+
+    /// `execution_time_ns` is the wall-clock time of the whole pipeline execution, the denominator of every time share.
+    ExecutionTimeBreakdown executionTimeBreakdown(UInt64 execution_time_ns) const;
 
 private:
 
@@ -41,6 +46,9 @@ private:
 
     std::unordered_map<const IQueryPlanStep *, StepTimeAndConcurrency> timing_by_step;
     ConcurrencyProfile concurrency_profile;
+
+    /// Length of the union of the intervals of every step of the plan: the branch time of the root step.
+    UInt64 all_steps_time_ns = 0;
 };
 
 }

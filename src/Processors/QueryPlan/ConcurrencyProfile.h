@@ -12,6 +12,7 @@ namespace DB
 ///  - concurrency (y-axis) -- number of threads running simultaniously at the moment of time
 ///  - times (x-axis) -- time slots related to the beginning of interval
 ///  - busy_integral -- prefix sum where busy_integral[x + 1] = busy_integral[x] + concurrency[x + 1] * times[x + 1]
+///  - active_time_ns -- total length of the slots where the concurrency is above zero
 /// c(t)
 /// 2 |         ┌─────┐
 /// 1 |  ┌──────┘     └───────────┐
@@ -26,12 +27,16 @@ public:
     /// Time-weighted number of busy threads over the given non-overlapping sequence
     UInt64 busyTimeIn(const TimeIntervals & intervals) const;
 
+    /// Length of the union of all intervals: the time during which at least one thread was busy.
+    UInt64 activeTime() const { return active_time_ns; }
+
 private:
     UInt64 integralAt(UInt64 time) const;
 
     std::vector<UInt64> times;
     std::vector<UInt64> concurrency;
     std::vector<UInt64> busy_integral;
+    UInt64 active_time_ns = 0;
 };
 
 }

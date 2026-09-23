@@ -71,6 +71,8 @@ ConcurrencyProfile::ConcurrencyProfile(const WorkIntervalsPerThread & intervals_
 
         if (time != times.back())
         {
+            if (concurrency.back() > 0)
+                active_time_ns += time - times.back();
             busy_integral.push_back(busy_integral.back() + concurrency.back() * (time - times.back()));
             times.push_back(time);
             concurrency.push_back(running);

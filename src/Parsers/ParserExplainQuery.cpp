@@ -912,7 +912,7 @@ Settings:
 - `pretty` — see [EXPLAIN PLAN](#explain-plan) section. Default: 1.
 - `processors` — For `EXPLAIN ANALYZE`, prints an additional line per stage with the per-processor elapsed time distribution: `min`, `median`, `max`, and `sum`. Useful to spot load skew across parallel processors. Default: 0.
 - `matches` — For `EXPLAIN ANALYZE`, makes join steps do the extra bookkeeping needed for the `matched`, `match rate` and `fanout` metrics in the cases where those numbers cannot be derived from what the join produces anyway. Where they can, they are reported without this option. See [Join steps](#explain-analyze-join-steps). Default: 0.
-- `time` — For `EXPLAIN ANALYZE`, prints per-step `Time` and `Concurrency` lines with the wall-clock time and the concurrency level of the step and of its branch. See [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency). Default: 0.
+- `time` — For `EXPLAIN ANALYZE`, prints per-step `Time` and `Concurrency` lines with the wall-clock time and the concurrency level of the step and of its branch. See [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency). Default: 1.
 
 <Note>
 Because `EXPLAIN ANALYZE` actually executes the wrapped query, it behaves like that
@@ -968,11 +968,13 @@ Let's examine the output. First let's look at the header.
 ```txt
    Query summary:
      Time:        <total> (planning <planning> · execution <execution>)
+     Execution:   in steps <t> (<share>%) · outside steps <t> (<share>%) · idle <t> (<share>%)
      Read:        <rows> rows, <bytes> (<rows/s>, <bytes/s>)
      Peak memory: <peak>
 ```
 
 - `Time` — total time split into planning (i.e. creation of plan + optimization of plan + pipeline construction) and execution (running the pipeline) phases.
+- `Execution` — printed only with `time = 1`. The execution time split by what the threads were doing: `in steps` is the time when at least one thread ran a processor of a step of the plan, `outside steps` is the time when threads ran only processors that belong to no step of the plan, and `idle` is the time when no thread ran any processor. The three parts add up to `execution`. `in steps` equals the `branch` time of the root step, see [Step and branch wall-clock time and concurrency levels](#explain-analyze-concurrency).
 - `Read` — rows and uncompressed bytes read from tables, with throughput - the same numbers the normal query footer reports as "Processed".
 - `Peak memory` — peak memory the query used.
 
@@ -1209,7 +1211,18 @@ Both metrics are derived from work intervals. Each time a thread finishes a piec
 
 `Time` of a step is the length of the union of that step's intervals. Gaps, where no thread worked on the step, do not count. `Time` of a branch unites the intervals of all steps of the subtree first.
 
-The `branch` share of the root step is normally below 100%. The query execution time also includes the start-up and shutdown of the executor, the moments when no thread executed a processor of any step, and the processors that belong to no plan step, such as the output sink, `Resize`, and converting transforms. The `Time` shares and the per-stage `time` shares use the same denominator, so they can be compared with each other.
+The `branch` of the root step is the whole plan, but its share is normally below 100%. The `Execution` line of the query summary shows where the rest of the execution time went:
+
+```txt
+Time:        3.92 ms (planning 1.02 ms · execution 2.90 ms)
+Execution:   in steps 1.56 ms (53.80%) · outside steps 0.01 ms (0.30%) · idle 1.33 ms (45.90%)
+```
+
+- `in steps` — the union of the intervals of every step of the plan. This is the `branch` time of the root step, and the share is the same number.
+- `outside steps` — the time when at least one thread ran a processor, but none of them belonged to a step of this plan: the output sink, `Resize`, converting transforms, and the steps of plans that are not reachable from this one.
+- `idle` — the time when no thread ran any processor: the start-up and shutdown of the executor, and the moments when every thread waited.
+
+The three parts add up to the execution time. The `Time` shares, the per-stage `time` shares, and the `Execution` shares use the same denominator, so they can be compared with each other.
 
 `Concurrency` is the total busy time of all query threads inside that union, divided by the length of the union. The numerator counts threads busy with *any* step of the query, not only with the step in question. This is the difference from the per-stage `parallelism` metric, which counts only the threads of the stage itself. In other words, `Concurrency` answers: "while this step (branch) was active, how busy was the query as a whole?" A value near `<m>` means the query stayed fully parallel during that step's lifetime. A value near `1` means the query serialized during that time: for `step`, the single busy thread was working on this step itself, which makes the step a serialization point; for `branch`, the thread was working somewhere in the subtree, not necessarily on this step. A serialized step is a real bottleneck only when its `Time` share is also significant.
 
