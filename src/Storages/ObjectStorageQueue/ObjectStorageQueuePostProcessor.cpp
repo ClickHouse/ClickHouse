@@ -240,6 +240,8 @@ static AzureBlobStorage::ConnectionParams getAzureConnectionParams(
     AzureBlobStorage::processURL(connection_url, container_name, connection_params.endpoint, connection_params.auth_method);
     connection_params.client_options = AzureBlobStorage::getClientOptions(local_context, local_context->getSettingsRef(), *request_settings, /*for_disk=*/ false);
 
+    connection_params.forbid_implicit_credentials = local_context->shouldRestrictUserQueryAzureCredentials();
+
     return connection_params;
 }
 

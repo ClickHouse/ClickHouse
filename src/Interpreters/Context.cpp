@@ -380,6 +380,7 @@ namespace Setting
     extern const SettingsBool filesystem_cache_skip_download_if_exceeds_per_query_cache_write_limit;
     extern const SettingsBool s3_allow_parallel_part_upload;
     extern const SettingsBool s3_allow_server_credentials_in_user_queries;
+    extern const SettingsBool azure_allow_server_credentials_in_user_queries;
     extern const SettingsBool use_reader_executor;
     extern const SettingsBool reader_executor_use_long_connections;
     extern const SettingsUInt64 reader_executor_window_size;
@@ -7963,6 +7964,15 @@ bool Context::shouldRestrictUserQueryS3Credentials() const
     /// A session setting, so a trusted administrative client can enable it for its own operations while a
     /// settings constraint keeps it disabled for untrusted users.
     return shouldRestrictUserQueryS3Credentials(getSettingsRef()[Setting::s3_allow_server_credentials_in_user_queries]);
+}
+
+bool Context::shouldRestrictUserQueryAzureCredentials() const
+{
+    /// In clickhouse-local the user is the operator, so the machine's own identity is theirs to use.
+    if (getApplicationType() != ApplicationType::SERVER)
+        return false;
+
+    return !getSettingsRef()[Setting::azure_allow_server_credentials_in_user_queries];
 }
 
 void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & config)

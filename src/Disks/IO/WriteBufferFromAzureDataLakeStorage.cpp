@@ -84,13 +84,14 @@ bool isAdlsGen2Endpoint(const AzureBlobStorage::Endpoint & endpoint)
 Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
     const AzureBlobStorage::Endpoint & endpoint,
     const AzureBlobStorage::AuthMethod & auth_method,
+    bool drop_credentials,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options,
     const String & blob_path)
 {
     using namespace Azure::Storage::Files::DataLake;
     auto datalake_options = toDataLakeOptions(blob_client_options);
 
-    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty())
+    if (!endpoint.sas_auth.empty() || !endpoint.additional_params.empty() || drop_credentials)
         return DataLakeFileClient(buildAdlsGen2FileUrl(endpoint, blob_path), datalake_options);
 
     return std::visit(
@@ -115,6 +116,7 @@ Azure::Storage::Files::DataLake::DataLakeFileClient makeAdlsGen2FileClient(
 WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     const AzureBlobStorage::Endpoint & endpoint_,
     const AzureBlobStorage::AuthMethod & auth_method_,
+    bool drop_credentials_,
     const Azure::Storage::Blobs::BlobClientOptions & blob_client_options_,
     const String & blob_path_,
     size_t buf_size_,
@@ -124,7 +126,7 @@ WriteBufferFromAzureDataLakeStorage::WriteBufferFromAzureDataLakeStorage(
     BlobStorageLogWriterPtr blob_log_)
     : WriteBufferFromFileBase(buf_size_, nullptr, 0)
     , log(getLogger("WriteBufferFromAzureDataLakeStorage"))
-    , file_client(makeAdlsGen2FileClient(endpoint_, auth_method_, blob_client_options_, blob_path_))
+    , file_client(makeAdlsGen2FileClient(endpoint_, auth_method_, drop_credentials_, blob_client_options_, blob_path_))
     , blob_path(blob_path_)
     , write_settings(write_settings_)
     , max_unexpected_write_error_retries(settings_->max_unexpected_write_error_retries)

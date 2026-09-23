@@ -203,7 +203,9 @@ static void registerAzureObjectStorage(ObjectStorageFactory & factory)
         {
             .endpoint = AzureBlobStorage::processEndpoint(config, config_prefix),
             .auth_method = AzureBlobStorage::getAuthMethod(config, config_prefix),
-            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true)
+            .client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *azure_settings, /*for_disk=*/ true),
+            /// A disk is configured by the operator, not by user SQL.
+            .forbid_implicit_credentials = false,
         };
 
         return std::make_shared<AzureObjectStorage>(

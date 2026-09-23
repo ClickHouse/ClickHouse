@@ -305,6 +305,7 @@ AzureObjectStorage::buildDataLakeFileClient(const String & blob_path) const
         makeAdlsGen2FileClient(
             params->endpoint,
             params->auth_method,
+            params->mustDropServerManagedCredentials(),
             params->client_options,
             blob_path));
 }
@@ -335,6 +336,7 @@ std::unique_ptr<WriteBufferFromFileBase> AzureObjectStorage::writeObject( /// NO
         return std::make_unique<WriteBufferFromAzureDataLakeStorage>(
             params->endpoint,
             params->auth_method,
+            params->mustDropServerManagedCredentials(),
             params->client_options,
             object.remote_path,
             /// The adaptive initial size must not exceed buf_size (the maximum); this writer
@@ -736,6 +738,8 @@ void AzureObjectStorage::applyNewSettings(
     params->endpoint = new_inputs.endpoint;
     params->auth_method = AzureBlobStorage::getAuthMethod(new_inputs.auth_config);
     params->client_options = AzureBlobStorage::getClientOptions(context, context->getSettingsRef(), *settings.get(), is_client_for_disk);
+    /// Endpoint and credentials come from the server configuration here, not from user SQL.
+    params->forbid_implicit_credentials = false;
 
     auto new_client = AzureBlobStorage::getContainerClient(*params, /*readonly=*/ true);
     client.set(std::move(new_client));

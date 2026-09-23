@@ -4862,6 +4862,61 @@ This setting has no effect in `clickhouse-local`, where the user is the operator
 
 `DataLakeCatalog` databases (Glue, BigLake) are also covered, with one difference. A catalog object is created once and shared by every user of the database, so the value cannot be read per query; it is captured from the session that runs `CREATE DATABASE` (or a user `ATTACH DATABASE`). A database created while this setting is enabled (for example in a trusted session or profile) may use the server's ambient credentials for its catalog, and every user able to query that database then shares them; created under the default, the catalog is restricted for everyone regardless of who queries it. When the server loads an already-created database from its own metadata (startup, `RESTORE`) the restriction is re-applied with the startup context, the same as for persistent `S3`/`S3Queue` tables: a catalog that resolves server-managed credentials is left unavailable and the database becomes inaccessible after a restart (the server still starts; the database loads with an unavailable catalog per `s3_load_table_anonymously_if_credentials_restricted`, and queries report the restriction). A catalog given explicit credentials (Glue: `aws_access_key_id` and `aws_secret_access_key`; BigLake: a complete Google ADC triple) works regardless and is durable across restart.
 )", 0) \
+    DECLARE(Bool, azure_allow_server_credentials_in_user_queries, false, R"(
+Allow Azure Blob Storage access that originates from user SQL to use server-managed credentials.
+
+When disabled (the default), the `azureBlobStorage`/`azureBlobStorageCluster` table functions, the
+`AzureBlobStorage`/`AzureQueue` engines, Azure named collections, `BACKUP`/`RESTORE TO AzureBlobStorage`, and
+DataLake table-data reads over Azure may not authenticate with the identity the server itself runs under: the
+AKS workload identity (a projected service-account token from `AZURE_FEDERATED_TOKEN_FILE`) or the Azure
+managed identity of the machine. Such a request is rejected with `ACCESS_DENIED`. Credentials supplied
+explicitly are unaffected: an `account_name`/`account_key` pair, a connection string, a SAS token, and static
+credentials in a named collection or in the server `<storage_configuration>` all keep working.
+
+This prevents an authenticated user from making the server authenticate to an endpoint of the user's choosing
+with the server's own identity. Azure binds a storage bearer token to the account it was minted for and not to
+the host it is sent to, so a request to a URL taken from the query both hands a usable token to whoever
+controls that URL and reads containers the user has no rights to.
+
+`extra_credentials(client_id = '...', tenant_id = '...')` is covered as well: it exchanges the server's own
+federated token for the named client, so it resolves a server-managed credential even though the query names
+the identity.
+
+Disks defined in the server configuration are unaffected and keep using workload or managed identity.
+
+Durability for persistent `AzureBlobStorage` and `AzureQueue` tables: when the server reloads such a table
+from its stored definition (startup or `RESTORE`) it re-applies the restriction with the startup context, so a
+table that relied on server-managed credentials is loaded with a client that has no credentials and stays
+inaccessible until its credentials resolve to a permitted source. The server itself still starts. See the
+server setting `azure_load_table_anonymously_if_credentials_restricted`. Give such tables explicit credentials
+for durable access.
+
+The recommended way to give user queries Azure access is a named collection with explicit credentials: the
+credentials stay out of the query text, and use of each collection is controlled with RBAC
+(`GRANT NAMED COLLECTION ON <name> TO <user>`), so you grant specific users specific containers instead of
+exposing the server's own identity.
+
+To keep it disabled for untrusted users, pin it in their profile by both setting the value explicitly to `0`
+and marking it `readonly`:
+
+```xml
+<profiles>
+    <untrusted>
+        <!-- The explicit value is required: a `readonly` constraint alone only blocks direct changes,
+             but `compatibility` with a version before this setting was introduced would otherwise
+             restore the old (allowing) default. Setting the value explicitly defeats `compatibility`. -->
+        <azure_allow_server_credentials_in_user_queries>0</azure_allow_server_credentials_in_user_queries>
+        <constraints>
+            <azure_allow_server_credentials_in_user_queries>
+                <readonly/>
+            </azure_allow_server_credentials_in_user_queries>
+        </constraints>
+    </untrusted>
+</profiles>
+```
+
+This setting has no effect in `clickhouse-local`, where the user is the operator.
+)", 0) \
     DECLARE(UInt64, max_parts_to_move, 1000, "Limit the number of parts that can be moved in one query. Zero means unlimited.", 0) \
     \
     DECLARE(UInt64, max_table_size_to_drop, default_max_size_to_drop, R"(

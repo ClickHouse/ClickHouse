@@ -1955,6 +1955,10 @@ public:
     /// cannot override the stricter value that applied when the object was created.
     bool shouldRestrictUserQueryS3Credentials(bool allow_server_credentials_in_user_queries) const;
 
+    /// Whether Azure access originating from user SQL must be denied the identity the server itself runs
+    /// under. True only in clickhouse-server with `azure_allow_server_credentials_in_user_queries` disabled.
+    bool shouldRestrictUserQueryAzureCredentials() const;
+
     /// Sets default_profile and system_profile, must be called once during the initialization
     void setDefaultProfiles(const Poco::Util::AbstractConfiguration & config);
     String getDefaultProfileName() const;

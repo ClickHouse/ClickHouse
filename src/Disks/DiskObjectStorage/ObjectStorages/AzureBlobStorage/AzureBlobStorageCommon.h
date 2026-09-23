@@ -156,11 +156,20 @@ struct ConnectionParams
     AuthMethod auth_method;
     BlobClientOptions client_options;
 
+    /// When true, the client must not authenticate with the AKS workload identity or the machine's managed identity.
+    bool forbid_implicit_credentials = true;
+
+    /// With `forbid_implicit_credentials`, build a client with no credentials instead of throwing.
+    bool anonymous_fallback_for_server_credentials = false;
+
     String getContainer() const { return endpoint.container_name; }
     String getConnectionURL() const;
 
     std::unique_ptr<ServiceClient> createForService() const;
     std::unique_ptr<ContainerClient> createForContainer() const;
+
+    /// Throws `ACCESS_DENIED` when the credential is off limits and the anonymous fallback is not allowed.
+    bool mustDropServerManagedCredentials() const;
 };
 
 void processURL(const String & url, const String & container_name, Endpoint & endpoint, AuthMethod & auth_method);
