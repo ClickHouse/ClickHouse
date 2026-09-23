@@ -87,19 +87,25 @@ L’enregistrement du tableau de bord ci-dessus montre l’ensemble du processus
 
 Un serveur ClickHouse utilise plusieurs [threads de fusion](/fr/reference/settings/server-settings/settings/background#background_pool_size) en arrière-plan pour exécuter des fusions de parts concurrentes :
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="FUSIONS DE PARTIES" />
+<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="FUSION DE PART" />
 
 <br />
 
 Chaque thread de fusion exécute une boucle :
 
-① Déterminer quelles parts fusionner ensuite, puis charger ces parts en mémoire.
+<Steps>
+  <Step title="Charger les parts en mémoire">
+    Déterminer quelles parts fusionner ensuite, puis charger ces parts en mémoire.
+  </Step>
 
-② Fusionner les parts en mémoire en une part plus grande.
+  <Step title="Fusionner les parts">
+    Fusionner les parts en mémoire en une part plus grande.
+  </Step>
 
-③ Écrire la part fusionnée sur disque.
-
-Revenir à ①
+  <Step title="Écrire sur disque">
+    Écrire la part fusionnée sur disque, puis revenir à l’étape 1.
+  </Step>
+</Steps>
 
 Notez que l’augmentation du nombre de cœurs CPU et de la quantité de RAM permet d’augmenter le débit des fusions en arrière-plan.
 
@@ -115,23 +121,33 @@ ClickHouse ne charge pas nécessairement en mémoire, d’un seul coup, toutes l
 
 Le schéma ci-dessous illustre comment un seul [thread de fusion](/fr/concepts/core-concepts/merges#concurrent-merges) en arrière-plan dans ClickHouse fusionne des parts (par défaut, sans [fusion verticale](/fr/concepts/core-concepts/merges#memory-optimized-merges)) :
 
-<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="FUSION DE PARTIES" />
+<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="FUSION DE PART" />
 
 <br />
 
 La fusion des parts s’effectue en plusieurs étapes :
 
-**① Décompression et chargement** : les [fichiers binaires de colonnes compressés](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) des parts à fusionner sont décompressés et chargés en mémoire.
+<Steps>
+  <Step title="Décompression et chargement">
+    Les [fichiers binaires de colonnes compressés](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) des parts à fusionner sont décompressés et chargés en mémoire.
+  </Step>
 
-**② Fusion** : les données sont fusionnées dans des fichiers de colonnes plus volumineux.
+  <Step title="Fusion">
+    Les données sont fusionnées dans des fichiers de colonnes plus volumineux.
+  </Step>
 
-**③ Indexation** : un nouvel [index primaire clairsemé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les fichiers de colonnes fusionnés.
+  <Step title="Indexation">
+    Un nouvel [index primaire clairsemé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes) est généré pour les fichiers de colonnes fusionnés.
+  </Step>
 
-**④ Compression et stockage** : les nouveaux fichiers de colonnes et l’index sont [compressés](/fr/reference/statements/create/table/codec) et enregistrés dans un nouveau [répertoire](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) représentant la part de données fusionnée.
+  <Step title="Compression et stockage">
+    Les nouveaux fichiers de colonnes et l’index sont [compressés](/fr/reference/statements/create/table/codec) et enregistrés dans un nouveau [répertoire](/fr/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) représentant la part de données fusionnée.
+  </Step>
+</Steps>
 
 D’autres [métadonnées des parts de données](/fr/concepts/core-concepts/parts), telles que des index secondaires d’élagage de données, des statistiques de colonnes, des sommes de contrôle et des index min-max, sont également recréées à partir des fichiers de colonnes fusionnés. Nous avons omis ces détails par souci de simplicité.
 
-Le mécanisme de l’étape ② dépend du [moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/index) utilisé, car les différents moteurs ne fusionnent pas les données de la même manière. Par exemple, les lignes peuvent être agrégées ou remplacées si elles sont obsolètes. Comme indiqué plus haut, cette approche **déporte tout le traitement des données vers les fusions en arrière-plan**, ce qui permet des **insertions ultra-rapides** en conservant des opérations d’écriture légères et efficaces.
+Le mécanisme de l’étape de fusion dépend du [moteur MergeTree](/fr/reference/engines/table-engines/mergetree-family/index) utilisé, car les différents moteurs ne fusionnent pas les données de la même manière. Par exemple, les lignes peuvent être agrégées ou remplacées si elles sont obsolètes. Comme indiqué plus haut, cette approche **déporte tout le traitement des données vers les fusions en arrière-plan**, ce qui permet des **insertions ultra-rapides** en conservant des opérations d’écriture légères et efficaces.
 
 Nous allons maintenant présenter brièvement le mécanisme de fusion de certains moteurs de la famille MergeTree.
 

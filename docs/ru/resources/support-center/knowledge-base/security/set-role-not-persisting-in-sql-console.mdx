@@ -1,5 +1,5 @@
 ---
-description: 'Узнайте, почему `SET ROLE` не сохраняется в SQL Console ClickHouse Cloud и как назначить постоянные разрешения для каждого пользователя.'
+description: 'Узнайте, почему `SET ROLE` не сохраняется в SQL Console ClickHouse Cloud и как назначить постоянные разрешения для отдельного пользователя.'
 sidebar_label: 'Почему `SET ROLE` не сохраняется в SQL Console'
 sidebar_position: 6
 slug: /resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console
@@ -10,7 +10,11 @@ tags: ['Безопасность и аутентификация', 'Управл
 keywords: ['SQL Console', 'SET ROLE', 'RBAC', 'Управление доступом']
 ---
 
-При выполнении `SET ROLE` в SQL Console ClickHouse Cloud может показаться, что роль меняется для одного запроса, а для следующего возвращается к прежней. Если разрешения должны сохраняться между запросами и сеансами, используйте роль SQL Console, назначенную пользователю.
+При выполнении `SET ROLE` в SQL Console ClickHouse Cloud может показаться, что роль меняется для одного запроса, а для следующего возвращается к прежней. Если разрешения должны сохраняться между запросами и сеансами, используйте роль SQL Console для пользователя.
+
+<Tip>
+  Для управления доступом к базе данных из консоли предпочтительно использовать [роли базы данных, управляемые Cloud](/ru/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (бета). Роли `sql-console-role:<email>` несовместимы с [JWT-аутентификацией](/ru/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+</Tip>
 
 <div id="symptoms">
   ## Симптомы

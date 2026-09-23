@@ -108,6 +108,7 @@
                 },
                 "pt-BR/reference/statements/create/masking-policy",
                 "pt-BR/reference/statements/create/function",
+                "pt-BR/reference/statements/create/handler",
                 "pt-BR/reference/statements/create/named-collection",
                 "pt-BR/reference/statements/create/quota",
                 "pt-BR/reference/statements/create/role",
@@ -185,8 +186,7 @@
             "pt-BR/reference/statements/truncate",
             "pt-BR/reference/statements/undrop",
             "pt-BR/reference/statements/update",
-            "pt-BR/reference/statements/use",
-            "pt-BR/reference/statements/watch"
+            "pt-BR/reference/statements/use"
           ]
         },
         {
@@ -557,6 +557,7 @@
                 "pt-BR/reference/functions/aggregate-functions/exponentialTimeDecayedSum",
                 "pt-BR/reference/functions/aggregate-functions/first_value",
                 "pt-BR/reference/functions/aggregate-functions/flame_graph",
+                "pt-BR/reference/functions/aggregate-functions/gini",
                 "pt-BR/reference/functions/aggregate-functions/groupArray",
                 "pt-BR/reference/functions/aggregate-functions/groupArrayArray",
                 "pt-BR/reference/functions/aggregate-functions/groupArrayInsertAt",
@@ -883,6 +884,7 @@
             "pt-BR/reference/formats/Parquet/ParquetMetadata"
           ]
         },
+        "pt-BR/reference/formats/PNG",
         "pt-BR/reference/formats/PostgreSQLWire",
         {
           "expanded": false,
@@ -910,6 +912,14 @@
             "pt-BR/reference/formats/Protobuf/Protobuf",
             "pt-BR/reference/formats/Protobuf/ProtobufList",
             "pt-BR/reference/formats/Protobuf/ProtobufSingle"
+          ]
+        },
+        {
+          "expanded": false,
+          "group": "Puffin",
+          "pages": [
+            "pt-BR/reference/formats/Puffin/Puffin",
+            "pt-BR/reference/formats/Puffin/PuffinMetadata"
           ]
         },
         "pt-BR/reference/formats/RawBLOB",
@@ -950,6 +960,15 @@
         "pt-BR/reference/formats/Values",
         "pt-BR/reference/formats/Vertical",
         "pt-BR/reference/formats/XML"
+      ]
+    },
+    {
+      "expandable": true,
+      "expanded": false,
+      "group": "Interfaces",
+      "pages": [
+        "pt-BR/reference/interfaces/specs/NativeProtocol",
+        "pt-BR/reference/interfaces/specs/NativeFormat"
       ]
     },
     {
@@ -1019,11 +1038,15 @@
         "pt-BR/reference/system-tables/detached_parts",
         "pt-BR/reference/system-tables/detached_tables",
         "pt-BR/reference/system-tables/dictionaries",
+        "pt-BR/reference/system-tables/dictionary_layouts",
+        "pt-BR/reference/system-tables/dictionary_sources",
         "pt-BR/reference/system-tables/dimensional_metrics",
         "pt-BR/reference/system-tables/disks",
+        "pt-BR/reference/system-tables/disk_types",
         "pt-BR/reference/system-tables/distributed_ddl_queue",
         "pt-BR/reference/system-tables/distribution_queue",
         "pt-BR/reference/system-tables/dns_cache",
+        "pt-BR/reference/system-tables/documentation",
         "pt-BR/reference/system-tables/dropped_tables",
         "pt-BR/reference/system-tables/dropped_tables_parts",
         "pt-BR/reference/system-tables/enabled_roles",
@@ -1043,6 +1066,7 @@
         "pt-BR/reference/system-tables/histogram_metric_log",
         "pt-BR/reference/system-tables/histogram_metrics",
         "pt-BR/reference/system-tables/hypothetical_indexes",
+        "pt-BR/reference/system-tables/iceberg_files",
         "pt-BR/reference/system-tables/iceberg_history",
         "pt-BR/reference/system-tables/iceberg_metadata_log",
         "pt-BR/reference/system-tables/information_schema",
@@ -1051,6 +1075,9 @@
         "pt-BR/reference/system-tables/jemalloc_stats",
         "pt-BR/reference/system-tables/jemalloc_profile_text",
         "pt-BR/reference/system-tables/kafka_consumers",
+        "pt-BR/reference/system-tables/keeper_changelogs",
+        "pt-BR/reference/system-tables/keeper_cluster",
+        "pt-BR/reference/system-tables/keeper_snapshots",
         "pt-BR/reference/system-tables/keeper_storage",
         "pt-BR/reference/system-tables/keywords",
         "pt-BR/reference/system-tables/licenses",
@@ -1113,6 +1140,7 @@
         "pt-BR/reference/system-tables/settings_profile_elements",
         "pt-BR/reference/system-tables/settings_profiles",
         "pt-BR/reference/system-tables/stack_trace",
+        "pt-BR/reference/system-tables/statements",
         "pt-BR/reference/system-tables/stemmers",
         "pt-BR/reference/system-tables/storage_policies",
         "pt-BR/reference/system-tables/symbols",

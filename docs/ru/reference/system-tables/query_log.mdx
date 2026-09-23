@@ -27,8 +27,31 @@ ClickHouse не удаляет данные из таблицы автомати
 
 Таблица `system.query_log` регистрирует два типа запросов:
 
-1. Начальные запросы, которые были запущены клиентом напрямую.
-2. Дочерние запросы, инициированные другими запросами (при выполнении распределённого запроса). Для таких запросов информация о родительских запросах отображается в столбцах `initial_*`.
+1. Начальные запросы (верхнего уровня).
+2. Дочерние запросы, инициированные другими запросами, включая запросы для распределённого выполнения и внутренние подзапросы, например при вычислении представлений. Для этих запросов информация об исходном начальном запросе отображается в столбцах `initial_*`.
+
+<Tip>
+  **По умолчанию фильтруйте начальные запросы**
+
+  Как правило, добавляйте `is_initial_query = 1` при каждом запросе к `system.query_log`. Это исключает дочерние запросы, чтобы отдельные этапы обработки не учитывались отдельно от начального запроса. Этот фильтр не означает, что запрос был отправлен клиентом, поскольку внутренняя работа сервера также может быть начальным запросом.
+
+  Вместо этого используйте `initial_query_id`, когда нужно отследить начальный запрос вместе с дочерними запросами, сохраняющими его ID. У начального запроса значения `initial_query_id` и `query_id` совпадают, тогда как дочерние запросы в той же цепочке сохраняют `initial_query_id` начального запроса и имеют собственный `query_id`. Не вся работа, порождённая начальным запросом, коррелируется таким образом: работа, запускаемая сервером, может начать новую цепочку начального запроса с новым `initial_query_id`, как при удалённом запуске [`QueryRunner`](/ru/reference/engines/table-engines/special/query-runner#cluster-mode).
+
+  ```sql
+  SELECT
+      hostname,
+      type,
+      query_id,
+      initial_query_id,
+      is_initial_query,
+      query
+  FROM system.query_log
+  WHERE initial_query_id = '<query_id_of_initial_query>'
+  ORDER BY event_time_microseconds;
+  ```
+
+  Если коррелированные дочерние запросы могут выполняться на других узлах, запрашивайте `system.query_log` на каждом узле, например с помощью [`clusterAllReplicas`](/ru/reference/functions/table-functions/cluster).
+</Tip>
 
 Каждый запрос создаёт одну или две строки в таблице `query_log` в зависимости от состояния запроса (см. столбец `type`):
 
@@ -75,19 +98,19 @@ ClickHouse не удаляет данные из таблицы автомати
 * `exception_code` ([Int32](/ru/reference/data-types/int-uint)) — Код исключения.
 * `exception` ([String](/ru/reference/data-types/string)) — Сообщение исключения.
 * `stack_trace` ([String](/ru/reference/data-types/string)) — Трассировка стека. Пустая строка, если запрос завершился успешно.
-* `is_initial_query` ([UInt8](/ru/reference/data-types/int-uint)) — Тип запроса. Возможные значения: 1 — запрос был инициирован клиентом, 0 — запрос был инициирован другим запросом в рамках выполнения распределённого запроса.
+* `is_initial_query` ([UInt8](/ru/reference/data-types/int-uint)) — Является ли запрос исходным. Возможные значения: 1 — исходный (верхнеуровневый) запрос, 0 — дочерний запрос, инициированный другим запросом, включая запросы для распределённого выполнения и внутренние подзапросы.
 * `connection_address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес клиента, с которого было установлено соединение. При подключении через прокси здесь будет указан адрес прокси-сервера.
 * `connection_port` ([UInt16](/ru/reference/data-types/int-uint)) — Порт клиента, с которого было установлено соединение. При подключении через прокси это будет порт прокси-сервера.
 * `user` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя пользователя, инициировавшего текущий запрос.
 * `query_id` ([String](/ru/reference/data-types/string)) — идентификатор запроса.
 * `address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес, использованный для выполнения запроса. При подключении через прокси и включённом параметре `auth_use_forwarded_address` здесь будет указан адрес клиента, а не прокси.
 * `port` ([UInt16](/ru/reference/data-types/int-uint)) — Порт клиента, который использовался для выполнения запроса. При подключении через прокси и включённом параметре `auth_use_forwarded_address` здесь будет указан порт клиента, а не прокси.
-* `initial_user` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя пользователя, который выполнил исходный запрос (для выполнения распределённого запроса).
-* `initial_query_id` ([String](/ru/reference/data-types/string)) — идентификатор исходного запроса (при выполнении распределённого запроса).
-* `initial_address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес, с которого был запущен родительский запрос.
-* `initial_port` ([UInt16](/ru/reference/data-types/int-uint)) — Клиентский порт, использованный для выполнения родительского запроса.
-* `initial_query_start_time` ([DateTime](/ru/reference/data-types/datetime)) — Время начала исходного запроса (для выполнения распределённого запроса).
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время начала исходного запроса с точностью до микросекунд (для выполнения распределённого запроса).
+* `initial_user` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя пользователя, выполнившего исходный запрос в той же цепочке запросов.
+* `initial_query_id` ([String](/ru/reference/data-types/string)) — идентификатор исходного запроса в той же цепочке запросов.
+* `initial_address` ([IPv6](/ru/reference/data-types/ipv6)) — IP-адрес, с которого был запущен исходный запрос в той же цепочке запросов.
+* `initial_port` ([UInt16](/ru/reference/data-types/int-uint)) — Клиентский порт, с которого был запущен исходный запрос в той же цепочке запросов.
+* `initial_query_start_time` ([DateTime](/ru/reference/data-types/datetime)) — Время начала исходного запроса в той же цепочке запросов.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время начала исходного запроса с точностью до микросекунд в той же цепочке запросов.
 * `authenticated_user` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя пользователя, аутентифицированного в этом сеансе.
 * `interface` ([UInt8](/ru/reference/data-types/int-uint)) — Интерфейс, через который был отправлен запрос. Возможные значения: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/ru/reference/data-types/int-uint)) — Флаг, показывающий, был ли запрос выполнен через защищённый интерфейс
@@ -150,7 +173,13 @@ ClickHouse не удаляет данные из таблицы автомати
 **Базовый пример**
 
 ```sql
-SELECT * FROM system.query_log WHERE type = 'QueryFinish' ORDER BY query_start_time DESC LIMIT 1 FORMAT Vertical;
+SELECT *
+FROM system.query_log
+WHERE type = 'QueryFinish'
+  AND is_initial_query = 1
+ORDER BY query_start_time DESC
+LIMIT 1
+FORMAT Vertical;
 ```
 
 ```text
