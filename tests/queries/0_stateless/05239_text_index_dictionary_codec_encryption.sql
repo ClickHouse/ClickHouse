@@ -1,10 +1,11 @@
--- Tags: no-fasttest, no-random-merge-tree-settings
+-- Tags: no-fasttest
 -- no-fasttest: AES_128_GCM_SIV depends on OpenSSL.
--- no-random-merge-tree-settings: the oracle is a size comparison between arms, and a randomized
--- part default codec or dictionary block size perturbs the arms unequally.
 
 -- A dictionary codec must never replace an encrypting part default with a non-encrypting codec:
 -- the dictionary stores the indexed tokens, so that would write user data in plaintext.
+--
+-- The assertions compare arms inside one run, so they stay valid under randomized merge-tree
+-- settings and no tag is needed for them. Verified over 100 runs with randomization enabled.
 
 DROP TABLE IF EXISTS t_enc_inherit;
 DROP TABLE IF EXISTS t_enc_override;

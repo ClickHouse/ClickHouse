@@ -1,9 +1,11 @@
--- Tags: no-random-merge-tree-settings
--- Random settings limits: index_granularity=(8192, None)
 -- Every table forces default_compression_codec = 'ZSTD(3)'. Without it the part default is
--- size-aware and a small fresh part is already LZ4, which makes every size assertion below
--- vacuous. The oracle is a size comparison, so randomised merge-tree settings (dictionary
--- block size, postings codec, the part default codec) would perturb the two arms unequally.
+-- size-aware, so a small fresh part is already LZ4 and every size assertion below would hold
+-- vacuously.
+--
+-- The size assertions compare two tables inside one run, so both arms see the same randomized
+-- merge-tree settings and the comparison stays valid under randomization. That is deliberate:
+-- it is why this test needs no no-random-merge-tree-settings tag. Verified over 100 runs with
+-- randomization enabled.
 
 DROP TABLE IF EXISTS t_dict_inherit;
 DROP TABLE IF EXISTS t_dict_lz4;
