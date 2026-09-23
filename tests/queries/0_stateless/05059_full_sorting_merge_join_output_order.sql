@@ -20,7 +20,6 @@ INSERT INTO fsmj_order_a SELECT number % 700, number FROM numbers(1000, 500);
 INSERT INTO fsmj_order_b SELECT number % 500 * 2, number FROM numbers(800);
 INSERT INTO fsmj_order_c SELECT number % 300 * 3, number FROM numbers(600);
 
-SET enable_analyzer = 1;
 SET join_algorithm = 'full_sorting_merge';
 SET max_threads = 4;
 SET optimize_read_in_order = 1;
@@ -55,6 +54,25 @@ FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(a.v) + sum(b.v) + sum(c.v)
     FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id);
 
+-- Every row of an INNER join has equal keys on both sides, so when only the key of the other side is kept
+-- above the join (`a.id` is not needed there), that key carries the order instead.
+SELECT 'inner chain other side plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
+FROM (EXPLAIN PLAN sorting = 1
+    SELECT sum(a.v) + sum(b.v) + sum(c.v)
+    FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id);
+
+SELECT 'inner other side', count(), sum(a.v), sum(b.v), sum(c.v), sum(b.id)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+SETTINGS join_algorithm = 'hash';
+SELECT 'inner other side', count(), sum(a.v), sum(b.v), sum(c.v), sum(b.id)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id;
+SELECT 'inner other side', count(), sum(a.v), sum(b.v), sum(c.v), sum(b.id)
+FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id INNER JOIN fsmj_order_c AS c ON b.id = c.id
+SETTINGS query_plan_join_shard_by_pk_ranges = 1;
+
+WITH (SELECT groupArray((id, v)) FROM (SELECT b.id AS id, a.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY b.id, a.v)) AS rows
+SELECT 'inner other side order by result', length(rows), rows = arraySort(rows);
+
 -- The key of the other side is not ordered after an outer join (non-matched rows carry defaults), and a
 -- FULL join orders neither side, so these keep one full sort.
 SELECT 'left chain other side plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
@@ -76,9 +94,8 @@ FROM (EXPLAIN PLAN sorting = 1
 WITH (SELECT groupArray((id, v)) FROM (SELECT a.id AS id, b.v AS v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b ON a.id = b.id ORDER BY a.id, b.v)) AS rows
 SELECT 'order by result', length(rows), rows = arraySort(rows);
 
--- `JOIN ... USING (k)` merges the two key columns into a single output column. The legacy planner names it
--- after the left table and renames the copy of the right side, so the merged column is still the ordered one
--- and the chain keeps merging instead of sorting from scratch.
+-- `JOIN ... USING (k)` merges the two key columns into a single output column, which is still the ordered
+-- one, so the chain keeps merging instead of sorting from scratch.
 SELECT 'using chain plan', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
 FROM (EXPLAIN PLAN sorting = 1
     SELECT sum(a.v) FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b USING (id) INNER JOIN fsmj_order_c AS c USING (id));
@@ -88,62 +105,6 @@ FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b USING (id) INNER JOIN fsmj_o
 SETTINGS join_algorithm = 'hash';
 SELECT 'using', count(), sum(a.v), sum(id)
 FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b USING (id) INNER JOIN fsmj_order_c AS c USING (id);
-
--- The same without the analyzer, where the key columns are named `id` and `b.id` instead of `__table1.id`
--- and `__table2.id`. It does not support a chain of `USING` clauses, so the order is observed by an
--- `ORDER BY` above a single join.
-SET enable_analyzer = 0;
-
-SELECT 'using order by plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
-FROM (EXPLAIN PLAN sorting = 1
-    SELECT id, b.v FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b USING (id) ORDER BY id, b.v);
-
-SELECT 'using old analyzer', count(), sum(a.v), sum(id)
-FROM fsmj_order_a AS a INNER JOIN fsmj_order_b AS b USING (id);
-
--- A RIGHT join is ordered by the right key, and `USING (id)` merges the two key columns into the single
--- output column of the left side, which the merge join fills from the right key for the rows without a match
--- on the left (`TableJoin::leftToRightKeyRemap`). So the ordered key reaches the output as `id` here.
-SELECT 'right using order by plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
-FROM (EXPLAIN PLAN sorting = 1
-    SELECT id, a.v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v);
-
-WITH (SELECT groupArray((id, v)) FROM (
-    SELECT id, a.v AS v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v)) AS rows
-SELECT 'right using order by result old analyzer', length(rows), rows = arraySort(rows);
-
-WITH (SELECT groupArray((id, v)) FROM (
-    SELECT id, a.v AS v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v)) AS rows
-SELECT 'right using order by result sharded old analyzer', length(rows), rows = arraySort(rows)
-SETTINGS query_plan_join_shard_by_pk_ranges = 1;
-
-SELECT 'right using old analyzer', count(), sum(a.v), sum(id)
-FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id)
-SETTINGS join_algorithm = 'hash';
-SELECT 'right using old analyzer', count(), sum(a.v), sum(id)
-FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id);
-SELECT 'right using old analyzer', count(), sum(a.v), sum(id)
-FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id)
-SETTINGS query_plan_join_shard_by_pk_ranges = 1;
-
--- Selecting the renamed copy of the right key keeps the two columns apart instead: `b.id` is then the ordered
--- one, while `id` holds the default for every right row without a match on the left, so a sort by `id` has to
--- stay a full sort.
-SELECT 'right using renamed key plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
-FROM (EXPLAIN PLAN sorting = 1
-    SELECT b.id, a.v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY b.id, a.v);
-
-SELECT 'right using renamed key other side plan old analyzer', countIf(explain LIKE '%Sort description:%'), countIf(explain LIKE '%Prefix sort description:%')
-FROM (EXPLAIN PLAN sorting = 1
-    SELECT id, b.id, a.v FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id) ORDER BY id, a.v);
-
-SELECT 'right using renamed key old analyzer', count(), sum(a.v), sum(b.id), countIf(id = 0)
-FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id)
-SETTINGS join_algorithm = 'hash';
-SELECT 'right using renamed key old analyzer', count(), sum(a.v), sum(b.id), countIf(id = 0)
-FROM fsmj_order_a AS a RIGHT JOIN fsmj_order_b AS b USING (id);
-
-SET enable_analyzer = 1;
 
 -- When the join keys are not the sorting key of the tables, the table-side sorts stay full sorts, but the
 -- sort above the first join is still a merge.

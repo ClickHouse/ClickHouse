@@ -102,6 +102,18 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
             right_key_to_merged_output.emplace(right_key, left_key);
     }
 
+    /// Every row of an INNER join has equal keys on both sides, so a key of the other side carries the same
+    /// order as the ordered key it is compared with. That matters when the ordered key itself is not needed
+    /// above the join and only the other one is kept, as in `a JOIN b ON a.id = b.id JOIN c ON b.id = c.id`.
+    /// It does not hold for the last key of an ASOF join, which is not compared for equality.
+    NameToNameMap ordered_key_to_equal_key;
+    if (isInner(kind) && table_join.strictness() != JoinStrictness::Asof)
+    {
+        for (size_t i = 0; i < clause.key_names_left.size(); ++i)
+            ordered_key_to_equal_key.emplace(clause.key_names_left[i], clause.key_names_right[i]);
+    }
+    const auto & ordered_input_header = *join_step.getInputHeaders()[ordered_child];
+
     size_t num_columns_in_output = 0;
     for (; num_columns_in_output < sort_description.size(); ++num_columns_in_output)
     {
@@ -118,7 +130,14 @@ static SortingProperty applyOrderToJoin(const JoinStep & join_step, const Sortin
         }
 
         if (!output_header.has(name))
-            break;
+        {
+            /// The equal key comes from the other side, so it must not be shadowed by the ordered side.
+            auto it = ordered_key_to_equal_key.find(name);
+            if (it == ordered_key_to_equal_key.end() || !output_header.has(it->second) || ordered_input_header.has(it->second))
+                break;
+            name = it->second;
+            continue;
+        }
         if (other_input_header.has(name) && (!ordered_side_is_left || table_join.renamedRightColumnName(name) == name))
             break;
     }
