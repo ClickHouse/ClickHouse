@@ -1,0 +1,2 @@
+AggregateFunction(groupArrayInsertAt(\'1.5\'::Decimal32(1), 3), Decimal(9, 1), UInt32)
+[2.5,1.5,1.5]

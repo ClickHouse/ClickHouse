@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# A parameter with no bare literal form is printed with its type, so a state that crosses the
+# Native protocol rebuilds the same parameter Field on the other side and is still accepted by a
+# column declared from the same expression. `prefer_localhost_replica = 0` is what forces a real
+# connection: `isLocalAddress` short-circuits a same-host, same-port shard.
+
+CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+# shellcheck source=../shell_config.sh
+. "$CURDIR"/../shell_config.sh
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS src_05239"
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS dst_05239"
+
+$CLICKHOUSE_CLIENT -q "CREATE TABLE src_05239 ENGINE = Memory AS
+    SELECT groupArrayInsertAtState(toDecimal32(1.5, 1), 3)(x, i) AS s
+    FROM (SELECT toDecimal32(2.5, 1) AS x, toUInt32(0) AS i)"
+$CLICKHOUSE_CLIENT -q "CREATE TABLE dst_05239 ENGINE = Memory AS SELECT * FROM src_05239 WHERE 0"
+
+$CLICKHOUSE_CLIENT -q "SELECT type FROM system.columns
+    WHERE database = currentDatabase() AND table = 'dst_05239'"
+
+$CLICKHOUSE_CLIENT -q "INSERT INTO dst_05239
+    SELECT s FROM remote('${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_TCP}', currentDatabase(), 'src_05239')
+    SETTINGS prefer_localhost_replica = 0"
+
+$CLICKHOUSE_CLIENT -q "SELECT finalizeAggregation(s) FROM dst_05239"
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE src_05239"
+$CLICKHOUSE_CLIENT -q "DROP TABLE dst_05239"
