@@ -1,4 +1,5 @@
--- Tags: no-old-analyzer
+-- Tags: no-old-analyzer, no-replicated-database
+-- Tag no-replicated-database: the DDL worker logs an extra row for `CREATE ... POPULATE`
 
 -- The rest of the cases of the join columns of `system.query_log`, whose main test is
 -- 04891_query_log_join_columns.sql. Three groups of them, in this order:
