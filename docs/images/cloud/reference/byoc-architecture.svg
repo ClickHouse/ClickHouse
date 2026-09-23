@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 820" role="img"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 762" role="img"
      aria-label="BYOC architecture: the ClickHouse control plane in the ClickHouse VPC manages a Kubernetes data plane inside the customer cloud account over a Tailscale tunnel; ClickHouse data, backups and monitoring stay in the customer account, and only bounded telemetry is exported."
      font-family="Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif">
   <title>ClickHouse BYOC architecture</title>
@@ -26,7 +26,7 @@
       <path d="M10,0 L0,5 L10,10 z" fill="#78909c"/></marker>
   </defs>
 
-  <rect width="1280" height="820" fill="#ffffff"/>
+  <rect width="1280" height="762" fill="#ffffff"/>
 
   <!-- ============ title ============ -->
   <text x="24" y="44" font-size="16" font-weight="700" fill="#212121">ClickHouse BYOC — control plane and data plane</text>
@@ -242,11 +242,4 @@
     <path d="M6,40 Q20,24 34,40" fill="none" stroke="#546e7a" stroke-width="1.4"/>
   </g>
   <text x="154" y="650" font-size="11" fill="#455a64" text-anchor="middle">ClickHouse engineers</text>
-
-  <g font-size="9.5" fill="#78909c">
-    <text x="24" y="756">No listener in your network faces the internet: the private API paths are dialled from the ClickHouse side, and the Tailscale agents in your cluster dial out to the coordination service.</text>
-    <text x="24" y="771">By default management reaches the Kubernetes API over its public endpoint, never openly: filtered by IP allowlist to ClickHouse egress</text>
-    <text x="24" y="786">ranges on AWS, authorized by Google Cloud IAM on GCP, and by Entra ID with Azure RBAC on Azure. The private connections are optional, enabled per deployment.</text>
-    <text x="24" y="801">Tailscale also carries metrics and dashboards, so it stays in place on every cloud even where the Kubernetes API path is private.</text>
-  </g>
 </svg>
