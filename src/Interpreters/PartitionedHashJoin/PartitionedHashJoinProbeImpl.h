@@ -424,10 +424,10 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
     };
 
     /// Whether the second pass is `word_loop`. Three conditions hold. The recorded word is the mapped
-    /// value itself. The output is lazy (one appended ref word per match). The join keeps no per-row
+    /// value itself. The output appends whole keys (one appended ref word per match). The join keeps no per-row
     /// state beyond the filter, the appended words and the replication offsets. Used-flag joins, ASOF
     /// and ANY keep the full loop.
-    constexpr bool second_pass_is_word_loop = AddedColumnsType::isLazy() && amac_mapped_fits_word<typename MapNonConst::mapped_type>
+    constexpr bool second_pass_is_word_loop = AddedColumnsType::appendsWholeKey() && amac_mapped_fits_word<typename MapNonConst::mapped_type>
         && !join_features.need_flags && !join_features.is_asof_join && !join_features.is_any_join;
 
     /// Under those conditions `processMatch` marks the row matched and appends one word. For ALL
@@ -655,7 +655,7 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
                     /// default row as before.
                     if constexpr (join_features.add_missing)
                     {
-                        if constexpr (!AddedColumnsType::isLazy())
+                        if constexpr (!AddedColumnsType::appendsWholeKey())
                             added_columns.appendDefaultRow();
                         else if constexpr (with_refs)
                             added_columns.lazy_output.addDefault();
@@ -754,7 +754,7 @@ void PartitionedHashJoin::joinRightColumns(const Map & table, AddedColumnsType &
                         flat_loop.template operator()<need_filter, with_skip, false, with_refs>();
                 };
                 /// Chosen once per block; the eager output never records refs, so it gets one instantiation.
-                if constexpr (AddedColumnsType::isLazy())
+                if constexpr (AddedColumnsType::appendsWholeKey())
                 {
                     if (added_columns.record_row_refs)
                         by_selector.template operator()<true>();
