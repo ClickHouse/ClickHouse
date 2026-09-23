@@ -7,7 +7,6 @@
 #include <IO/ReadBufferFromPocoSocket.h>
 #include <IO/ReadHelpers.h>
 #include <IO/ReadBuffer.h>
-#include <Server/HTTP/DeadlineReadBuffer.h>
 #include <Server/HTTP/HTTPServerResponse.h>
 #include <Server/HTTP/ReadHeaders.h>
 
@@ -45,37 +44,22 @@ HTTPServerRequest::HTTPServerRequest(HTTPContextPtr context, HTTPServerResponse 
     auto send_timeout = context->getSendTimeout();
     auto headers_read_timeout = context->getHeadersReadTimeout();
 
-    /// Use the smaller of headers_read_timeout and receive_timeout during header parsing
-    /// to enforce a total deadline on the entire handshake phase.
-    auto effective_timeout = (headers_read_timeout > Poco::Timespan(0) &&
-                              (receive_timeout <= Poco::Timespan(0) || headers_read_timeout < receive_timeout))
-        ? headers_read_timeout : receive_timeout;
-
-    session.socket().setReceiveTimeout(effective_timeout);
+    session.socket().setReceiveTimeout(receive_timeout);
     session.socket().setSendTimeout(send_timeout);
 
     auto socket_in = std::make_unique<ReadBufferFromPocoSocket>(session.socket(), read_event);
     socket = session.socket().impl();
 
-    /// Wrap the socket buffer with a deadline check if configured.
-    /// The deadline is enforced in DeadlineReadBuffer::nextImpl on every buffer refill,
-    /// which protects all parsing (request line, URI, headers) automatically.
+    /// The deadline bounds the request line, the URI and the headers: it is checked before every
+    /// read and holds the socket timeout at the time left, so neither a trickling client nor a
+    /// silent one outlasts it. Clearing it restores the receive timeout for the body.
     if (headers_read_timeout > Poco::Timespan(0))
-    {
-        auto deadline = std::chrono::steady_clock::now()
-            + std::chrono::microseconds(headers_read_timeout.totalMicroseconds());
-        DeadlineReadBuffer deadline_in(*socket_in, deadline);
-        readRequest(deadline_in);  /// Try parse according to RFC7230
-    }
-    else
-    {
-        readRequest(*socket_in);  /// Try parse according to RFC7230
-    }
+        socket_in->setHandshakeTimeout(headers_read_timeout.totalMilliseconds());
 
-    /// Restore the original receive timeout for body reads.
-    session.socket().setReceiveTimeout(receive_timeout);
+    readRequest(*socket_in);  /// Try parse according to RFC7230
 
-    /// Build the body stream from the underlying socket buffer (not the deadline wrapper).
+    socket_in->clearHandshakeTimeout();
+
     auto in = std::move(socket_in);
 
     /// If a client crashes, most systems will gracefully terminate the connection with FIN just like it's done on close().
