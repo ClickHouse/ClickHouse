@@ -14,7 +14,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkHeaders(HTTPHeaderEntries & entries) const
 {
     std::lock_guard guard(mutex);
 
@@ -48,11 +48,11 @@ void HTTPHeaderFilter::checkAndNormalizeHeaders(HTTPHeaderEntries & entries) con
     }
 }
 
-void HTTPHeaderFilter::checkAndNormalizeHeaders(NormalizedHTTPHeaderEntries & entries) const
+void HTTPHeaderFilter::checkHeaders(NormalizedHTTPHeaderEntries & entries) const
 {
     /// The check only validates the entries; it does not modify them, so the container's
     /// lower-case invariant is preserved.
-    checkAndNormalizeHeaders(entries.entries);
+    checkHeaders(entries.entries);
 }
 
 void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfiguration & config)
@@ -92,7 +92,7 @@ void HTTPHeaderFilter::setValuesFromConfig(const Poco::Util::AbstractConfigurati
             }
             else if (startsWith(key, "header"))
             {
-                /// Stored lower-cased so the case-insensitive lookup in checkAndNormalizeHeaders works.
+                /// Stored lower-cased so the case-insensitive lookup in checkHeaders works.
                 forbidden_headers.insert(Poco::toLower(config.getString("http_forbid_headers." + key)));
             }
         }

@@ -1127,7 +1127,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     /// check here also covers the DESCRIBE / INSERT..SELECT / format-detection paths that never
     /// reach the StorageURL ctor body. The check takes a mutable reference, so validate a copy.
     HTTPHeaderEntries headers_to_check(headers);
-    context->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers_to_check);
+    context->getHTTPHeaderFilter().checkHeaders(headers_to_check);
 
     Poco::Net::HTTPBasicCredentials credentials;
 
@@ -1632,7 +1632,7 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    context_->getHTTPHeaderFilter().checkHeaders(headers);
 }
 
 

@@ -30,7 +30,7 @@ void validateBearerToken(const DB::ContextPtr & context, const std::string & bea
         return;
 
     DB::HTTPHeaderEntries auth_header{{"Authorization", "Bearer " + bearer_token}};
-    context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(auth_header);
+    context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(auth_header);
 }
 
 DB::ReadWriteBufferFromHTTPPtr createReadBuffer(

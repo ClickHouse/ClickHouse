@@ -1455,7 +1455,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
             if (pos != std::string::npos)
             {
                 DB::HTTPHeaderEntries header_entries{{auth_header_str.substr(0, pos), auth_header_str.substr(pos + 1)}};
-                args.context->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_entries);
+                args.context->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(header_entries);
             }
             else
             {

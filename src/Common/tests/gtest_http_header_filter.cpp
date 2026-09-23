@@ -29,7 +29,7 @@ bool isForbidden(const HTTPHeaderFilter & filter, const std::string & name)
     HTTPHeaderEntries entries{{name, "value"}};
     try
     {
-        filter.checkAndNormalizeHeaders(entries);
+        filter.checkHeaders(entries);
     }
     catch (const Exception &)
     {
@@ -44,7 +44,7 @@ bool isForbiddenForS3(const HTTPHeaderFilter & filter, const std::string & name)
     NormalizedHTTPHeaderEntries entries(HTTPHeaderEntries{{name, "value"}});
     try
     {
-        filter.checkAndNormalizeHeaders(entries);
+        filter.checkHeaders(entries);
     }
     catch (const Exception &)
     {
@@ -170,15 +170,15 @@ TEST(HTTPHeaderFilter, ChecksNormalizedEntries)
     )");
 
     NormalizedHTTPHeaderEntries forbidden(HTTPHeaderEntries{{"Authorization", "Bearer token"}});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(forbidden), Exception);
+    EXPECT_THROW(filter.checkHeaders(forbidden), Exception);
 
     /// A control character in the name is not a valid token and is rejected.
     NormalizedHTTPHeaderEntries invalid(HTTPHeaderEntries{{"X-Amz-Meta\tOwner", "analytics"}});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(invalid), Exception);
+    EXPECT_THROW(filter.checkHeaders(invalid), Exception);
 
     /// A valid name passes and is kept lower-cased by the container.
     NormalizedHTTPHeaderEntries allowed(HTTPHeaderEntries{{"X-Amz-Meta-Owner", "analytics"}});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(allowed));
+    EXPECT_NO_THROW(filter.checkHeaders(allowed));
 
     ASSERT_EQ(allowed.size(), 1u);
     EXPECT_EQ(allowed.begin()->name, "x-amz-meta-owner");
@@ -256,7 +256,7 @@ TEST(HTTPHeaderFilter, RejectsCarriageReturnAndNewline)
     auto rejects = [&](const std::string & name, const std::string & value)
     {
         HTTPHeaderEntries entries{{name, value}};
-        try { filter.checkAndNormalizeHeaders(entries); }
+        try { filter.checkHeaders(entries); }
         catch (const Exception &) { return true; }
         return false;
     };

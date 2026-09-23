@@ -42,7 +42,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsNewline)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer token\nX-Injected: malicious"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturn)
@@ -50,7 +50,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturn)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer token\r\nX-Injected: malicious"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
@@ -58,7 +58,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsValidToken)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Authorization", "Bearer ya29.valid-gcs-token_1234"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    EXPECT_NO_THROW(filter.checkHeaders(headers));
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsColonInName)
@@ -68,7 +68,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsColonInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Cookie:j=\"x", "y\";session=abc"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturnInName)
@@ -76,7 +76,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsCarriageReturnInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-Foo\rX-Injected", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsLineFeedInName)
@@ -84,7 +84,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsLineFeedInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-Foo\nX-Injected", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
@@ -93,7 +93,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationAcceptsColonInValue)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"Host", "example.com:8080"});
-    EXPECT_NO_THROW(filter.checkAndNormalizeHeaders(headers));
+    EXPECT_NO_THROW(filter.checkHeaders(headers));
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceInName)
@@ -102,7 +102,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X-A B", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceOnlyName)
@@ -111,7 +111,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsWhitespaceOnlyName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({" \t ", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsEmptyName)
@@ -120,7 +120,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsEmptyName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 TEST_F(GCSCredentialsTest, HeaderValidationRejectsSeparatorInName)
@@ -129,7 +129,7 @@ TEST_F(GCSCredentialsTest, HeaderValidationRejectsSeparatorInName)
     DB::HTTPHeaderFilter filter;
     DB::HTTPHeaderEntries headers;
     headers.push_back({"X/Foo", "value"});
-    EXPECT_THROW(filter.checkAndNormalizeHeaders(headers), DB::Exception);
+    EXPECT_THROW(filter.checkHeaders(headers), DB::Exception);
 }
 
 }

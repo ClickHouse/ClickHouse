@@ -296,7 +296,7 @@ void RestCatalog::validateAuthHeaders(const DB::HTTPHeaderEntry & header) const
     /// here, before `loadConfig` issues any request. Mirrors the CREATE-path check: a copy is
     /// validated and the original parsed header is kept.
     DB::HTTPHeaderEntries header_to_check{header};
-    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkAndNormalizeHeaders(header_to_check);
+    getContext()->getGlobalContext()->getHTTPHeaderFilter().checkHeaders(header_to_check);
 }
 
 DB::HTTPHeaderEntries RestCatalog::getAuthHeaders(const CatalogState & catalog_state, bool update_token) const
