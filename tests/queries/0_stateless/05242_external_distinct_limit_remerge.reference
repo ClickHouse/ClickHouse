@@ -2,3 +2,7 @@
 4096	60416	64511	1
 60000	5536	65535	1
 65536	0	65535	1
+large_limit	1	1
+offset	1	1
+small_limit	1	1
+unbounded	1	1
