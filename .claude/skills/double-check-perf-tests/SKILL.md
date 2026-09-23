@@ -19,7 +19,10 @@ skill:
    synthesized report URL only returns HTTP 403. A `SKIPPED` shard that did
    publish its metrics abstained: it measured every query and judged none, so
    it is counted apart and the comparison is never called clean while one is
-   present. If *no* shard ran, the skill stops with an error rather
+   present. A shard that abstained and then failed for an unrelated reason
+   keeps that failing status, so abstention is read off the infinite
+   `changed_threshold` its rows carry as well as off the status.
+   If *no* shard ran, the skill stops with an error rather
    than reporting "no changes": "CI never ran the comparison" and "CI ran it
    and found nothing" are different answers, and only the second is a
    verdict. It stops the same way when shards ran but none of their reports

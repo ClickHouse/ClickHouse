@@ -37,6 +37,7 @@ import argparse
 import gzip
 import io
 import json
+import math
 import os
 import re
 import shutil
@@ -430,6 +431,31 @@ def count_tsv_columns(path):
             if line:
                 return line.count("\t") + 1
     return 0
+
+
+def file_not_judged(path):
+    """compare.sh exports BOTH bars (c12, c13) infinite for every row of a shard
+    that judged nothing, and `abstain_all` is shard-global, so the first row
+    carrying them settles it. One infinite bar is a zero baseline in eqmed.sql,
+    and NaN is a missing one: neither is an abstention. A shard that abstained and
+    then failed for an unrelated reason reports that failure, not SKIPPED, so only
+    its bars still say so."""
+    with open(path, "r") as f:
+        for line in f:
+            cols = line.rstrip("\n").split("\t")
+            if len(cols) < COLUMNS_WITH_THRESHOLDS:
+                return False
+            try:
+                return float(cols[11]) == math.inf and float(cols[12]) == math.inf
+            except ValueError:
+                continue
+    return False
+
+
+def unjudged_shards(downloaded):
+    """The downloaded shards that published no verdict. `shard_abstained` sees the
+    ones whose only problem was the abstention; the rest are found by their bars."""
+    return [s for s, path in downloaded if shard_abstained(s) or file_not_judged(path)]
 
 
 def _sql_escape(s):
@@ -961,10 +987,16 @@ def main():
         ]
         # An abstaining shard exports inf bars, so every count below is zero for
         # it -- indistinguishable from a shard that measured and found nothing.
-        not_judged = {s["name"] for s, _ in downloaded if shard_abstained(s)}
-        not_judged_keys = {
-            (s["arch"], s["shard_num"]) for s, _ in downloaded if shard_abstained(s)
-        }
+        unjudged = unjudged_shards(downloaded)
+        not_judged = {s["name"] for s in unjudged}
+        not_judged_keys = {(s["arch"], s["shard_num"]) for s in unjudged}
+        for s in unjudged:
+            if not shard_abstained(s):
+                print(
+                    f"  Not judged: {s['name']} (the gate abstained; the shard "
+                    f"reports {s.get('status')} for another reason)",
+                    file=sys.stderr,
+                )
         multi_shard = len(downloaded) > 1
 
         # Detect whether the report carries the per-query threshold columns.

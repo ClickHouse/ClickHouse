@@ -303,6 +303,20 @@ def shard_never_ran(shard: "PerfShard") -> bool:
     return shard.status.upper() in NOT_RUN_STATUSES and not shard_abstained(shard)
 
 
+def rows_not_judged(rows) -> bool:
+    """compare.sh exports BOTH bars infinite for every row of a shard that judged
+    nothing, and `abstain_all` is shard-global, so the first row carrying them
+    settles it. One infinite bar is a zero baseline in eqmed.sql, and NaN is a
+    missing one: neither is an abstention. A shard that abstained and then failed
+    for an unrelated reason reports that failure, not SKIPPED, so only its bars
+    still say so."""
+    for row in rows:
+        changed, unstable = row.get("changed_threshold"), row.get("unstable_threshold")
+        if changed is not None and unstable is not None:
+            return changed == math.inf and unstable == math.inf
+    return False
+
+
 # The only baseline this tool can reproduce. CI runs a second flavour of the
 # comparison, `release_base`, which measures against the latest release build
 # and checks out that release's `tests/performance` (see the
@@ -449,6 +463,10 @@ def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
             changed_thr = float(cols[9]) if len(cols) > 9 else None
         except ValueError:
             changed_thr = None
+        try:
+            unstable_thr = float(cols[10]) if len(cols) > 10 else None
+        except ValueError:
+            unstable_thr = None
         yield {
             "metric": cols[0],
             "left": left_v,
@@ -460,6 +478,7 @@ def parse_query_metrics_tsv(text: str, metric: str = "client_time"):
             "query_index": qi,
             "query_display_name": cols[8] if len(cols) > 8 else "",
             "changed_threshold": changed_thr,
+            "unstable_threshold": unstable_thr,
         }
 
 
@@ -531,7 +550,7 @@ def describe_unreadable(unreadable: list[tuple[str, int, int, str]]) -> str:
 def find_changed_queries(
     shards: list[PerfShard],
 ) -> tuple[list[ChangedQuery], int, list[tuple[str, int, str, int]],
-           list[tuple[str, int, int, str]]]:
+           list[tuple[str, int, int, str]], list[PerfShard]]:
     """Identify rows the CI report flags under "Changes in Performance".
 
     compare.sh computes the predicate at report time using per-test thresholds
@@ -544,16 +563,18 @@ def find_changed_queries(
     exactly the set the user sees in the report.
 
     Also returns how many shard reports were actually readable, the shards
-    that could not be read at all, and any row CI flagged whose numbers could
-    be read from neither source -- none of those may be silently dropped, or a
-    non-empty CI report turns into an all-clear: a shard whose report cannot be
-    fetched contributes no changed queries, exactly like a shard that had none,
-    and the caller must not read the second as the first.
+    that could not be read at all, any row CI flagged whose numbers could
+    be read from neither source, and the shards whose exported bars show they
+    judged nothing -- none of those may be silently dropped, or a non-empty CI
+    report turns into an all-clear: a shard whose report cannot be fetched
+    contributes no changed queries, exactly like a shard that had none, and the
+    caller must not read the second as the first.
     """
     changed: list[ChangedQuery] = []
     read_ok = 0
     unresolved: list[tuple[str, int, str, int]] = []
     unreadable: list[tuple[str, int, int, str]] = []
+    not_judged: list[PerfShard] = []
     for s in shards:
         try:
             html = http_get(f"{s.base_dir_url}/report.html")
@@ -563,10 +584,6 @@ def find_changed_queries(
             continue
         read_ok += 1
         flagged = parse_changes_in_performance(html)
-        if not flagged:
-            continue
-        html_rows = parse_changed_rows_from_html(html)
-        demoted = parse_report_table(html, "unconfirmed-changes")
 
         try:
             tsv = http_get(s.tsv_url)
@@ -580,6 +597,18 @@ def find_changed_queries(
         timings: dict[tuple[str, int], dict] = {}
         for row in parse_query_metrics_tsv(tsv):
             timings[(row["test"], row["query_index"])] = row
+
+        # changed_perf_report is `from queries where changed_show`, which
+        # abstain_all does not gate, so an abstaining shard still shows rows.
+        if rows_not_judged(timings.values()):
+            log(f"ignoring shard {s.arch}/{s.shard_num}: it measured every "
+                "query and judged none (the gate abstained)")
+            not_judged.append(s)
+            continue
+        if not flagged:
+            continue
+        html_rows = parse_changed_rows_from_html(html)
+        demoted = parse_report_table(html, "unconfirmed-changes")
 
         for test, qi in sorted(flagged):
             row = timings.get((test, qi))
@@ -623,7 +652,7 @@ def find_changed_queries(
                     numbers_from_html=from_html,
                 )
             )
-    return changed, read_ok, unresolved, unreadable
+    return changed, read_ok, unresolved, unreadable, not_judged
 
 
 # ---------------------------------------------------------------------------
@@ -2590,17 +2619,21 @@ def main() -> int:
     #     can't reproduce the ARM regression" is a meaningful result)
     # When the same (test, query_index) is flagged on more than one arch,
     # we keep one row per query and remember every arch it was flagged on.
-    local_changed, local_read, local_unresolved, local_unreadable = (
+    local_changed, local_read, local_unresolved, local_unreadable, local_nj = (
         find_changed_queries(arch_shards)
     )
     if other_arch_shards:
-        other_changed, other_read, other_unresolved, other_unreadable = (
+        other_changed, other_read, other_unresolved, other_unreadable, other_nj = (
             find_changed_queries(other_arch_shards)
         )
     else:
-        other_changed, other_read, other_unresolved, other_unreadable = [], 0, [], []
+        other_changed, other_read, other_unresolved, other_unreadable, other_nj = (
+            [], 0, [], [], []
+        )
     unresolved = local_unresolved + other_unresolved
     unreadable = local_unreadable + other_unreadable
+    # The partition above runs before any download, so it sees only the status.
+    abstained = abstained + local_nj + other_nj
     if local_read + other_read == 0:
         die(
             f"none of the {len(shards)} Performance Comparison shard(s) for "

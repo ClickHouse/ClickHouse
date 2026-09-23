@@ -340,6 +340,87 @@ def test_shard_partition_distinguishes_abstained_from_never_run():
     ]
 
 
+def test_not_judged_is_derived_from_the_exported_bars():
+    # A shard that fetched no learned thresholds and *also* failed for an
+    # unrelated reason (a report carrying "N errors" is the most common perf
+    # failure) keeps FAIL, so the status-based predicate cannot see it. Its
+    # exported bars can: every row is inf.
+    with tempfile.TemporaryDirectory() as d:
+        judged = os.path.join(d, "judged.tsv")
+        _write_fixture(judged)
+
+        abstained = os.path.join(d, "abstained.tsv")
+        with open(abstained, "w") as f:
+            for i, (name, diff, stat, _c, _u) in enumerate(ROWS):
+                f.write("\t".join([
+                    "amd", "1", "client_time", "1.0", f"{1.0 + diff}",
+                    f"{diff}", f"{abs(diff) + 1.0}", f"{stat}",
+                    "test_a", str(i), name, "inf", "inf",
+                ]) + "\n")
+
+        # A report predating the threshold columns has no bars to read, so it
+        # must not be mistaken for an abstention.
+        legacy = os.path.join(d, "legacy.tsv")
+        with open(legacy, "w") as f:
+            with open(judged) as src:
+                for line in src:
+                    f.write("\t".join(line.rstrip("\n").split("\t")[:11]) + "\n")
+
+        empty = os.path.join(d, "empty.tsv")
+        open(empty, "w").close()
+
+        # Only BOTH bars infinite is the sentinel. eqmed.sql divides by the
+        # baseline median, so a zero baseline gives an infinite diff, which
+        # raises changed_threshold alone; NaN is a missing bar. Neither is an
+        # abstention, and perf_api.py partitions them the same way.
+        def one_row(name, c_thr, u_thr, stat="0.40"):
+            p = os.path.join(d, f"{name}.tsv")
+            with open(p, "w") as f:
+                f.write("\t".join([
+                    "amd", "1", "client_time", "1.0", "1.0", "0.0", "1.0",
+                    stat, "test_a", "5", name, c_thr, u_thr,
+                ]) + "\n")
+            return p
+
+        assert fpr.file_not_judged(abstained)
+        assert not fpr.file_not_judged(judged)
+        assert not fpr.file_not_judged(legacy)
+        assert not fpr.file_not_judged(empty)
+        assert not fpr.file_not_judged(one_row("one_bar_inf", "inf", "0.25"))
+        assert not fpr.file_not_judged(one_row("other_bar_inf", "0.20", "inf"))
+        assert not fpr.file_not_judged(one_row("nan_bars", "nan", "nan"))
+        assert not fpr.file_not_judged(one_row("neg_inf", "-inf", "-inf"))
+        assert fpr.file_not_judged(one_row("both_inf", "inf", "inf"))
+
+        failed = {
+            "name": "Performance Comparison (arm_release, master_head, 1/6)",
+            "status": "FAIL", "arch": "arm", "shard_num": 1,
+            "has_metrics_artifact": True,
+        }
+        skipped = {
+            "name": "Performance Comparison (arm_release, master_head, 2/6)",
+            "status": "SKIPPED", "arch": "arm", "shard_num": 2,
+            "has_metrics_artifact": True,
+        }
+        ok = {
+            "name": "Performance Comparison (amd_release, master_head, 3/6)",
+            "status": "OK", "arch": "amd", "shard_num": 3,
+            "has_metrics_artifact": True,
+        }
+        # The set main() feeds to the output paths. The status term alone misses
+        # the FAIL shard, and that miss is the false clean.
+        assert not fpr.shard_abstained(failed), failed
+        # The SKIPPED shard is paired with a report predating the bar columns, so
+        # only the status term can see it and only the bar term can see the FAIL
+        # one: dropping either leaves a shard whose verdict does not exist.
+        assert [s["name"] for s in fpr.unjudged_shards(
+            [(failed, abstained), (skipped, legacy), (ok, judged)]
+        )] == [failed["name"], skipped["name"]]
+        # Reversal control: on a judged run the same FAIL shard is not unjudged,
+        # so the term did not simply mark every failing shard.
+        assert fpr.unjudged_shards([(failed, judged), (ok, judged)]) == []
+
+
 def test_output_discloses_unjudged_shards():
     # An abstaining shard scores zero on every count, so both output paths would
     # otherwise render it exactly like a shard that measured and found nothing.
@@ -747,6 +828,7 @@ if __name__ == "__main__":
     test_prefixed_reader_reassembles_stream()
     test_download_shard_isolates_failures()
     test_shard_partition_distinguishes_abstained_from_never_run()
+    test_not_judged_is_derived_from_the_exported_bars()
     test_output_discloses_unjudged_shards()
     test_detail_rows_disclose_unjudged_shards()
     test_tsv_rows_carry_the_abstention_marker()
