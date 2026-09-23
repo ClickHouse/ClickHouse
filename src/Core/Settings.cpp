@@ -2818,7 +2818,7 @@ Apply sharding for JOIN if join keys contain a prefix of PRIMARY KEY for both ta
 )", 0) \
     \
     DECLARE(Bool, query_plan_join_shard_by_partitions, false, R"(
-Execute a hash JOIN of two `MergeTree` tables partition by partition when both tables are partitioned by the same deterministic function of the join keys (e.g. both `PARTITION BY toYYYYMM(date)` and `ON l.date = r.date`). Rows with equal keys always lie in the same partition on both sides, so both tables are read as the same groups of partitions, one stream per group, and every group is joined with an independent hash table built only from the matching group of the right table. Partitions that cannot produce output (e.g. a partition present only in one table for an `INNER` join) are not read. Supported for the `hash` algorithm, and for `parallel_hash` except `LEFT` joins and joins with runtime filters, where a single `parallel_hash` join is faster. Not applied when the join may spill to disk (`max_bytes_before_external_join`, `max_bytes_ratio_before_external_join`).
+Join two `MergeTree` tables partition by partition when both are partitioned by the same function of the join keys, e.g. `PARTITION BY toYYYYMM(date)` and `ON l.date = r.date`. Partitions that cannot produce output are not read. Applies to the `hash` and `parallel_hash` algorithms when the join cannot spill to disk.
 )", 0) \
     \
     DECLARE(Bool, query_plan_display_internal_aliases, false, R"(
