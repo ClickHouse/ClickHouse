@@ -1070,14 +1070,20 @@ which have no samples in the time range of a query (see the [filter_by_min_time_
 A table of [version](#schema-versioning) 7 and later has this target when [store_min_time_and_max_time](#settings)
 is `true`; a table of version 6 and earlier keeps `min_time` and `max_time` in its [tags](#tags-table) table instead.
 
-The _tags min max_ table must have columns:
+The _tags min max_ table must use `AggregatingMergeTree` (or its `Replicated` or `Shared` variant),
+including when an external target is supplied. Its bounds must use `SimpleAggregateFunction(min, ...)`
+and `SimpleAggregateFunction(max, ...)` over the nullable sample timestamp type, so merges preserve the
+entire time range of each series. Plain timestamp columns and engines such as `ReplacingMergeTree`
+can discard earlier bounds and are rejected.
+
+The table must have columns:
 
 | Name | Mandatory? | Default type | Possible types | Description |
 |---|---|---|---|---|
 | `id` | [x] | `Tuple(UInt64, LowCardinality(UUID))` | any (must match the type of `id` in the [tags](#tags-table) table) | An `id` identifies a combination of a metric name and tags |
 | `metric_name` | [x] | `LowCardinality(String)` | `String` or `LowCardinality(String)` | The name of a metric |
-| `min_time` | [x] | `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` | `DateTime64(X)` or `Nullable(DateTime64(X))`, optionally wrapped in `SimpleAggregateFunction(min, ...)` | Minimum timestamp of time series with that `id` |
-| `max_time` | [x] | `SimpleAggregateFunction(max, Nullable(DateTime64(3)))` | `DateTime64(X)` or `Nullable(DateTime64(X))`, optionally wrapped in `SimpleAggregateFunction(max, ...)` | Maximum timestamp of time series with that `id` |
+| `min_time` | [x] | `SimpleAggregateFunction(min, Nullable(DateTime64(3)))` | `SimpleAggregateFunction(min, Nullable(<timestamp_type>))` | Minimum timestamp of time series with that `id` |
+| `max_time` | [x] | `SimpleAggregateFunction(max, Nullable(DateTime64(3)))` | `SimpleAggregateFunction(max, Nullable(<timestamp_type>))` | Maximum timestamp of time series with that `id` |
 
 ### Metric families table {#metric-families-table}
 

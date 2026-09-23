@@ -35,6 +35,9 @@ struct NormalizeTimeSeriesDefinitionParams
     /// Required for a new table.
     std::map<ViewTarget::Kind, ColumnsDescription> external_target_columns;
 
+    /// Engine names of external targets, used to validate the aggregation contract of `TAGS MIN MAX`.
+    std::map<ViewTarget::Kind, String> external_target_engines;
+
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
     /// Required for a new table.
     const Settings * query_settings = nullptr;

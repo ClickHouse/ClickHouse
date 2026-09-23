@@ -87,6 +87,9 @@ private:
     bool insert_metric_families = false;
     bool async_insert = false;
 
+    /// Stable across cache hits, unlike the number of times a target pipeline has been opened.
+    UInt64 input_block_number = 0;
+
     /// Source header for the tags pipeline WITHOUT the `id` column.
     Block tags_header_before_id;
 

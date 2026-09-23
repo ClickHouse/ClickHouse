@@ -1499,6 +1499,18 @@ namespace
         }
     }
 
+    void checkTagsMinMaxEngine(std::string_view engine_name, const StorageID & table_id)
+    {
+        if (engine_name != "AggregatingMergeTree" && engine_name != "ReplicatedAggregatingMergeTree"
+            && engine_name != "SharedAggregatingMergeTree")
+        {
+            throw Exception(ErrorCodes::INCORRECT_QUERY,
+                "{}: The tags min max target requires an AggregatingMergeTree engine "
+                "(including its Replicated and Shared variants) to preserve the union of time ranges, got {}",
+                table_id.getNameForLogs(), engine_name);
+        }
+    }
+
     /// Generates the engine of an inner table if it's not specified, and applies the TimeSeries settings to it,
     /// whether the engine was generated or specified by the user.
     /// The replication type of a generated engine (`MergeTree`, `ReplicatedMergeTree` or `SharedMergeTree`) is taken
@@ -1697,6 +1709,8 @@ namespace
                 /// doesn't apply here.
                 if (!inner_engine.engine)
                     set_engine("AggregatingMergeTree");
+
+                checkTagsMinMaxEngine(inner_engine.engine->name, table_id);
 
                 if (needs_sorting_key())
                 {
@@ -1902,29 +1916,28 @@ namespace
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
                 check_column_is_string(TimeSeriesColumnNames::MetricName);
 
-                /// The rows of a time series are merged by the engine, so an aggregate-function wrapper must merge
-                /// `min_time` with `min` and `max_time` with `max`: any other function would narrow or invert the bounds
-                /// and let a time-bounded read prune a live series.
+                /// `AggregatingMergeTree` keeps an arbitrary value for plain columns. The bounds must use
+                /// simple min/max aggregates over the nullable sample timestamp type, including when the
+                /// engine is generated later. Full aggregate states cannot be compared by the selector.
                 auto check_column_aggregated_by = [&](std::string_view column_name, std::string_view expected_function)
                 {
-                    check_column_min_max_time(column_name);
+                    check_column(column_name);
                     const auto & type = target_table_columns.get(String(column_name)).type;
-                    String function_name;
-                    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
-                        function_name = simple->getFunctionName();
-                    else if (const auto * aggregate = typeid_cast<const DataTypeAggregateFunction *>(type.get()))
-                        function_name = aggregate->getFunctionName();
-                    else
-                        return;
-                    if (function_name != expected_function)
+                    const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+                    auto expected_argument_type = makeNullable(resolved_types.timestamp_type);
+                    if (!simple || simple->getFunctionName() != expected_function || simple->getArgumentsDataTypes().size() != 1
+                        || !simple->getArgumentsDataTypes().front()->equals(*expected_argument_type))
+                    {
                         throw Exception(
                             ErrorCodes::BAD_TYPE_OF_FIELD,
-                            "{}: Column {} in the {} table has type {}, but its values must be aggregated with function {}",
+                            "{}: Column {} in the {} table has type {}, but expected SimpleAggregateFunction({}, {})",
                             table_id.getNameForLogs(),
                             column_name,
                             target_kind,
                             type->getName(),
-                            expected_function);
+                            expected_function,
+                            expected_argument_type->getName());
+                    }
                 };
 
                 check_column_aggregated_by(TimeSeriesColumnNames::MinTime, "min");
@@ -2339,6 +2352,14 @@ void normalizeTimeSeriesDefinitionImpl(ASTCreateQuery & create_query, const Norm
                 /// An external target table is specified - check it has all the required columns.
                 checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, tags_min_max_enabled,
                     create_query.getTargetTableID(kind));
+                if (kind == ViewTarget::TagsMinMax)
+                {
+                    auto engine = params.external_target_engines.find(kind);
+                    if (engine == params.external_target_engines.end())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR,
+                            "The engine of the external tags min max table is required to normalize a new TimeSeries table");
+                    checkTagsMinMaxEngine(engine->second, create_query.getTargetTableID(kind));
+                }
             }
             else
             {

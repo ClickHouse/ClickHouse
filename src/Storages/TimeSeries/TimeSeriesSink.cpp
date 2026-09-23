@@ -5,6 +5,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Core/Field.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -38,6 +39,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+extern const SettingsString insert_deduplication_token;
+}
 
 namespace TimeSeriesSetting
 {
@@ -383,6 +389,16 @@ std::unique_ptr<TimeSeriesSink::TargetPipeline> TimeSeriesSink::createTargetPipe
     pipeline->context = Context::createCopy(getContext());
     pipeline->context->setCurrentQueryId(fmt::format("{}:{}", getContext()->getCurrentQueryId(), kind));
 
+    /// Reopening a target pipeline restarts its internal block counter. Give each source block a
+    /// distinct user token so a deduplicating target does not discard later blocks as retries.
+    /// Source block numbers, rather than cache misses, keep these tokens stable when an insert is retried.
+    if (kind == ViewTarget::Tags || kind == ViewTarget::TagsMinMax)
+    {
+        const auto & token = getContext()->getSettingsRef()[Setting::insert_deduplication_token].value;
+        if (!token.empty())
+            pipeline->context->setSetting("insert_deduplication_token", fmt::format("{}:{}:{}", token, kind, input_block_number));
+    }
+
     InterpreterInsertQuery interpreter(
         insert_query,
         pipeline->context,
@@ -449,6 +465,8 @@ void TimeSeriesSink::consume(Chunk & chunk)
 
     if (insert_metric_families)
         consumeMetricFamilies(block);
+
+    ++input_block_number;
 }
 
 
@@ -769,11 +787,6 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
             }
         }
 
-        /// A block whose series are all cached or already pushed by this sink writes no tags, not even a
-        /// duplicate row. Pushing one wouldn't make the tags of the previous blocks committed before their
-        /// samples either: each target pipeline squashes its blocks independently (the samples one usually
-        /// fills its blocks first), so there is no such ordering between them until onFinish, which finishes
-        /// the tags pipeline before the samples pipeline.
         if (tags_to_write > 0)
         {
             if (tags_to_write < num_time_series)
@@ -785,20 +798,45 @@ void TimeSeriesSink::consumeTagsAndSamples(const Block & block)
                 }
             }
 
+            if (!tags_pipeline)
+                tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_block.cloneEmpty());
             tags_pipeline->push(std::move(tags_block));
+        }
+
+        /// A push is not a commit barrier: squashing and the target sink can both retain rows until
+        /// `finish`. Commit the tags before samples can advance, including when the cache became
+        /// enabled after a previous block. A later cache miss creates a new pipeline, while a hit
+        /// writes no duplicate rows merely to flush the previous block.
+        if (tags_pipeline)
+        {
+            tags_pipeline->executor->finish();
+            tags_pipeline.reset();
         }
     }
     else
     {
         /// Tags are pushed first so that if the samples insert fails,
         /// we don't end up with sample rows referencing IDs that were never written to the tags table.
+        if (!tags_pipeline)
+            tags_pipeline = createTargetPipeline(ViewTarget::Tags, tags_block.cloneEmpty());
         tags_pipeline->push(std::move(tags_block));
     }
 
     /// Step 4a. Push the min/max time block. It is pushed for every block, including one whose tags rows
     /// were all skipped above, because the time range of a time series changes with every block.
-    if (tags_min_max_pipeline)
+    if (store_min_max_in_separate_table)
+    {
+        if (!tags_min_max_pipeline)
+            tags_min_max_pipeline = createTargetPipeline(ViewTarget::TagsMinMax, tags_min_max_block.cloneEmpty());
         tags_min_max_pipeline->push(std::move(tags_min_max_block));
+        if (active_series_cache)
+        {
+            /// Cached tags also need committed bounds before their samples become visible to a
+            /// time-bounded selector; the bounds pipeline may squash fewer rows than the samples one.
+            tags_min_max_pipeline->executor->finish();
+            tags_min_max_pipeline.reset();
+        }
+    }
 
     /// Step 5. Assemble and push the samples block.
     if (total_samples)

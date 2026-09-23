@@ -22,28 +22,30 @@ namespace ErrorCodes
 
 namespace
 {
-    /// Reads the columns of a table, which must exist.
-    ColumnsDescription readTableColumns(const StorageID & table_id, const ContextPtr & context)
+    /// Resolves an existing target after checking access to its metadata.
+    StoragePtr readTargetTable(const StorageID & table_id, const ContextPtr & context)
     {
         auto resolved_table_id = context->tryResolveStorageID(table_id);
         context->checkAccess(AccessType::SHOW_COLUMNS, resolved_table_id.database_name, resolved_table_id.table_name);
         auto table = DatabaseCatalog::instance().tryGetTable(resolved_table_id, context);
         if (!table)
             throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", table_id.getNameForLogs());
-        auto metadata = table->getInMemoryMetadataPtr(context, false);
-        return metadata->columns;
+        return table;
     }
 
-    /// Reads the columns of the external target tables of a CREATE query.
-    std::map<ViewTarget::Kind, ColumnsDescription> readExternalTargetColumns(const ASTCreateQuery & create_query, const ContextPtr & context)
+    /// Reads the columns and engines of the external targets of a `CREATE` query.
+    void readExternalTargets(
+        const ASTCreateQuery & create_query, const ContextPtr & context, NormalizeTimeSeriesDefinitionParams & params)
     {
-        std::map<ViewTarget::Kind, ColumnsDescription> result;
         for (auto kind : StorageTimeSeries::getTargetKinds())
         {
             if (create_query.hasTargetTableID(kind))
-                result[kind] = readTableColumns(create_query.getTargetTableID(kind), context);
+            {
+                auto table = readTargetTable(create_query.getTargetTableID(kind), context);
+                params.external_target_columns[kind] = table->getInMemoryMetadataPtr(context, false)->columns;
+                params.external_target_engines[kind] = table->getName();
+            }
         }
-        return result;
     }
 
     /// Reads the stored CREATE query of the table from the clause `AS <other_table>` of `create_query`.
@@ -71,7 +73,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     if (params.isNewTable())
     {
         params.query_settings = &context->getSettingsRef();
-        params.external_target_columns = readExternalTargetColumns(create_query, context);
+        readExternalTargets(create_query, context, params);
 
         if (!create_query.as_table.empty())
             params.as_create_query = readASCreateQuery(create_query, context);
