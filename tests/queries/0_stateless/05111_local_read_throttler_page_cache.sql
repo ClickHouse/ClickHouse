@@ -1,4 +1,5 @@
--- Tags: no-object-storage
+-- Tags: no-object-storage, no-darwin
+-- no-darwin: only Linux can tell a read from the OS page cache (`preadv2` with `RWF_NOWAIT`).
 -- Reads served from the OS page cache produce no block device I/O, so they must not consume
 -- the tokens of the local read bandwidth throttler.
 
@@ -22,10 +23,14 @@ SETTINGS local_filesystem_read_method = 'pread_threadpool', min_bytes_to_use_dir
 
 SYSTEM FLUSH LOGS query_log;
 
--- The throttler must have accounted exactly the bytes that were read from the device.
+-- The throttler must account nothing but the reads that were not page cache hits. Besides the device reads of
+-- the thread pool, that includes the small metadata files read synchronously (e.g. with the `read`
+-- method, which cannot tell a cached read from a device read). It can be less than that when a
+-- prefetched buffer is discarded without being consumed.
 SELECT
     ProfileEvents['ThreadPoolReaderPageCacheHitBytes'] > 0 AS served_from_page_cache,
-    ProfileEvents['QueryLocalReadThrottlerBytes'] = ProfileEvents['ThreadPoolReaderPageCacheMissBytes'] AS throttled_exactly_the_device_reads
+    ProfileEvents['QueryLocalReadThrottlerBytes']
+        <= ProfileEvents['ReadBufferFromFileDescriptorReadBytes'] - ProfileEvents['ThreadPoolReaderPageCacheHitBytes'] AS page_cache_hits_not_throttled
 FROM system.query_log
 WHERE current_database = currentDatabase() AND type = 'QueryFinish'
     AND log_comment = '05111_local_read_throttler_page_cache';

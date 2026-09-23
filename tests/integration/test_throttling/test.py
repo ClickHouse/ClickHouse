@@ -464,6 +464,34 @@ def test_local_read_throttling_reload():
     _, took = elapsed(node, "select * from data", settings=local_read_settings())
     assert_took(took, 3)
 
+    # `pread_threadpool` serves the same (cached) data from the OS page cache, which must not be
+    # accounted in the server throttler created on reload, so this scan is not throttled.
+    query_id = f"page_cache_{uuid.uuid4().hex}"
+    node.query(
+        "select * from data",
+        query_id=query_id,
+        settings={
+            "local_filesystem_read_method": "pread_threadpool",
+            "use_page_cache_for_local_disks": 0,
+            "use_page_cache_for_disks_without_file_cache": 0,
+        },
+    )
+    node.query("SYSTEM FLUSH LOGS query_log")
+    duration, hit_bytes = map(
+        float,
+        node.query(
+            f"""
+            SELECT query_duration_ms / 1000.0, ProfileEvents['ThreadPoolReaderPageCacheHitBytes']
+            FROM system.query_log
+            WHERE type = 'QueryFinish' AND query_id = '{query_id}'
+            """
+        )
+        .strip()
+        .split("\t"),
+    )
+    assert hit_bytes > 0
+    assert duration < 3
+
     # update bandwidth back to 0
     node_update_config(
         "server", "max_local_read_bandwidth_for_server", "0", False
