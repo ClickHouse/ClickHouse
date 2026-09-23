@@ -20,7 +20,7 @@ SELECT
     (SELECT tuple(min(carrier), max(carrier), count()) FROM t_minmax_count_alter_r2 SETTINGS optimize_use_implicit_projections = 1)
     = (SELECT tuple(min(carrier), max(carrier), count()) FROM t_minmax_count_alter_r2 SETTINGS optimize_use_implicit_projections = 0);
 SELECT count() > 0
-FROM (EXPLAIN SELECT count() FROM t_minmax_count_alter_r2 SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1)
+FROM (EXPLAIN SELECT min(carrier), max(carrier), count() FROM t_minmax_count_alter_r2 SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1)
 WHERE explain ILIKE '%_minmax_count_projection%';
 
 ALTER TABLE t_minmax_count_alter_r1 MODIFY COLUMN carrier String;
@@ -29,6 +29,29 @@ SYSTEM SYNC REPLICA t_minmax_count_alter_r2;
 SELECT
     (SELECT tuple(min(carrier), max(carrier), count()) FROM t_minmax_count_alter_r2 SETTINGS optimize_use_implicit_projections = 1)
     = (SELECT tuple(min(carrier), max(carrier), count()) FROM t_minmax_count_alter_r2 SETTINGS optimize_use_implicit_projections = 0);
+SELECT count() > 0
+FROM (EXPLAIN SELECT min(carrier), max(carrier), count() FROM t_minmax_count_alter_r2 SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1)
+WHERE explain ILIKE '%_minmax_count_projection%';
+
+DROP TABLE t_minmax_count_alter_r1;
+DROP TABLE t_minmax_count_alter_r2;
+
+CREATE TABLE t_minmax_count_alter_r1 (carrier UInt64, value UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/minmax_count_alter_rename', 'r1') ORDER BY tuple();
+CREATE TABLE t_minmax_count_alter_r2 (carrier UInt64, value UInt64)
+ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/minmax_count_alter_rename', 'r2') ORDER BY tuple();
+
+INSERT INTO t_minmax_count_alter_r1 VALUES (1, 10), (2, 20);
+SYSTEM SYNC REPLICA t_minmax_count_alter_r2;
+
+ALTER TABLE t_minmax_count_alter_r1 RENAME COLUMN carrier TO renamed;
+SYSTEM SYNC REPLICA t_minmax_count_alter_r2;
+SELECT count() > 0
+FROM (EXPLAIN SELECT count() FROM t_minmax_count_alter_r2 SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1)
+WHERE explain ILIKE '%_minmax_count_projection%';
+
+ALTER TABLE t_minmax_count_alter_r1 DROP COLUMN renamed;
+SYSTEM SYNC REPLICA t_minmax_count_alter_r2;
 SELECT count() > 0
 FROM (EXPLAIN SELECT count() FROM t_minmax_count_alter_r2 SETTINGS optimize_trivial_count_query = 0, optimize_use_implicit_projections = 1)
 WHERE explain ILIKE '%_minmax_count_projection%';
