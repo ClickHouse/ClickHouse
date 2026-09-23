@@ -8,12 +8,26 @@
 #include <Interpreters/ArrayJoin.h>
 #include <Interpreters/SetSerialization.h>
 #include <Processors/QueryPlan/ArrayJoinStep.h>
+#include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
 
 using namespace DB;
 
+namespace DB
+{
+void registerArrayJoinStep(QueryPlanStepRegistry & registry);
+}
+
 namespace
 {
+
+/// The step version a writer picks for `ArrayJoin` at the given global plan version.
+UInt64 arrayJoinStepVersion(UInt64 version)
+{
+    QueryPlanStepRegistry registry;
+    registerArrayJoinStep(registry);
+    return registry.versionToWrite("ArrayJoin", version);
+}
 
 SharedHeader makeHeader()
 {
@@ -21,7 +35,7 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block({ColumnWithTypeAndName(type->createColumn(), type, "arr")}));
 }
 
-/// Serializes the step with the given negotiated version and returns the leading flags byte.
+/// Serializes the step with the given negotiated global version and returns the leading flags byte.
 UInt8 serializeAndGetFlags(const ArrayJoinStep & step, UInt64 version)
 {
     String buffer;
@@ -29,6 +43,7 @@ UInt8 serializeAndGetFlags(const ArrayJoinStep & step, UInt64 version)
     SerializedSetsRegistry registry;
     IQueryPlanStep::Serialization ctx{out, registry};
     ctx.version = version;
+    ctx.step_version = arrayJoinStepVersion(version);
     step.serialize(ctx);
     out.finalize();
     EXPECT_FALSE(buffer.empty());
@@ -44,6 +59,10 @@ UInt8 serializeAndGetFlags(const ArrayJoinStep & step, UInt64 version)
 /// its semantics did not change at all.
 TEST(ArrayJoinStep, UseNullsFlagIsNormalizedToLeftArrayJoin)
 {
+    /// The flag is carried by version 1 of the step, written from the global version that introduced it.
+    EXPECT_EQ(arrayJoinStepVersion(DBMS_QUERY_PLAN_SERIALIZATION_VERSION), 1);
+    EXPECT_EQ(arrayJoinStepVersion(DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS - 1), 0);
+
     auto header = makeHeader();
 
     /// Regular `ARRAY JOIN`: the flag is dropped, so the bit is not set and no version gate applies.

@@ -20,7 +20,7 @@ namespace ErrorCodes
 
 namespace QueryPlanSerializationSetting
 {
-    extern const QueryPlanSerializationSettingsUInt64 max_block_size;
+    extern const QueryPlanSerializationSettingsNonZeroUInt64 max_block_size;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -145,7 +145,8 @@ void ArrayJoinStep::serializeSettings(QueryPlanSerializationSettings & settings,
 void ArrayJoinStep::serialize(Serialization & ctx) const
 {
     /// The filter is only ever serialized locally (e.g. calculateHashTableCacheKeys); fusion bails for
-    /// distributed/serialized plans, so an older worker never receives it and no version bump is needed
+    /// distributed, serialized and plan-based parallel replicas plans, so an older worker or replica never
+    /// receives it and no version bump is needed
     const bool serialize_filter = element_filter.has_value();
 
     UInt8 flags = 0;
@@ -165,12 +166,12 @@ void ArrayJoinStep::serialize(Serialization & ctx) const
     if (array_join.array_join_use_nulls)
         flags |= 32;
 
-    /// The `array_join_use_nulls` flag exists only since query-plan serialization version
-    /// DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS. An older peer would ignore
-    /// the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s on its fragment, silently
+    /// The `array_join_use_nulls` flag exists only since version 1 of this step (written from global
+    /// version DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS). An older peer would
+    /// ignore the bit and pad `LEFT ARRAY JOIN` with defaults instead of `NULL`s on its fragment, silently
     /// changing the result; throw a clear error rather than let it run with different semantics
     /// (the deserialize side checks the same).
-    if (array_join.array_join_use_nulls && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS)
+    if (array_join.array_join_use_nulls && ctx.step_version < 1)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ARRAY JOIN with array_join_use_nulls requires query plan serialization version >= {}; "
             "all nodes must run a version that supports it",
@@ -206,10 +207,9 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
     bool remove_element_filter_column = bool(flags & 16);
     bool array_join_use_nulls = bool(flags & 32);
 
-    /// A writer negotiated below DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS never
-    /// sets this bit (its serializer fails closed); fail closed at the version boundary here as well
-    /// instead of executing with mismatched semantics.
-    if (array_join_use_nulls && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS)
+    /// A writer of step version 0 never sets this bit (its serializer fails closed); fail closed at the
+    /// version boundary here as well instead of executing with mismatched semantics.
+    if (array_join_use_nulls && ctx.step_version < 1)
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ARRAY JOIN with array_join_use_nulls requires query plan serialization version >= {}; "
             "all nodes must run a version that supports it",
@@ -247,7 +247,9 @@ QueryPlanStepPtr ArrayJoinStep::deserialize(Deserialization & ctx)
 void registerArrayJoinStep(QueryPlanStepRegistry & registry);
 void registerArrayJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize);
+    /// Version 1 adds the `array_join_use_nulls` flag (bit 32).
+    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ARRAY_JOIN_USE_NULLS}};
+    registry.registerStep("ArrayJoin", ArrayJoinStep::deserialize, versions);
 }
 
 }
