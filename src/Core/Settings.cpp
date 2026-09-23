@@ -9463,8 +9463,11 @@ If, at query planning time, the probe side of a JOIN is estimated to produce no 
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
-    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
-Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
+Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
+Only has an effect if `use_skip_indexes_on_data_read = 1`.
+Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
+If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 )", 0) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
