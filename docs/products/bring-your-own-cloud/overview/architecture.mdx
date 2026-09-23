@@ -72,12 +72,12 @@ These permissions are granted through a cross-account IAM role (AWS), service ac
 For detailed information about the specific permissions required, see the [BYOC Privilege Reference](/products/bring-your-own-cloud/reference/privilege).
 
 ### Tailscale Private Network Connection {#tailscale-private-network}
-Tailscale provides a secure, zero-trust private network connection between ClickHouse Cloud's management services and your BYOC deployment. This connection enables:
+Tailscale provides a secure, zero-trust private network between ClickHouse Cloud and your BYOC deployment. It carries ClickHouse engineer troubleshooting access and the metrics and dashboards ClickHouse uses to monitor your deployment, and it carries Kubernetes API traffic when a private API endpoint is enabled. This connection enables:
 
 - **Continuous monitoring**: ClickHouse engineers can access the Prometheus monitoring stack deployed in your BYOC VPC to monitor service health and performance
 - **Proactive maintenance**: Engineers can perform routine maintenance, upgrades, and troubleshooting operations
 - **Emergency support**: In case of service issues, engineers can quickly access your environment to diagnose and resolve problems
-- **Infrastructure management**: Management services can coordinate with your BYOC infrastructure for automated operations
+- **Infrastructure management**: When a private Kubernetes API endpoint is enabled, management services reach the Kubernetes API over this connection rather than over its public endpoint
 
 The Tailscale agents in your cluster make **outbound-only** connections: no inbound security group, firewall, or network security group rule is needed for Tailscale itself, which reduces your exposure. All access is:
 
