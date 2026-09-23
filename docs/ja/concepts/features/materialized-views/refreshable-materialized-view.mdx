@@ -21,7 +21,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## リフレッシャブルmaterialized viewはどのような場合に使用すべきですか？
+  ## リフレッシャブルmaterialized viewはどのような場合に使用すべきですか？ {#when-should-refreshable-materialized-views-be-used}
 </div>
 
 ClickHouseのインクリメンタルmaterialized viewは非常に強力で、通常はリフレッシャブルmaterialized viewで用いられるアプローチよりもはるかに高いスケーラビリティを発揮します。特に、単一テーブルに対する集約を実行する必要がある場合は、その傾向が顕著です。データの各ブロックが挿入されるたびにその集約のみを計算し、最終テーブルでインクリメンタルな状態をマージすることで、クエリが実行されるのは常にデータの一部に対してだけになります。この方法はPB級のデータまでスケール可能で、通常はこちらが推奨されます。
@@ -30,9 +30,7 @@ ClickHouseのインクリメンタルmaterialized viewは非常に強力で、�
 
 > リフレッシャブルmaterialized viewでは、非正規化のようなタスクを実行するバッチ処理を実行できます。リフレッシャブルmaterialized view間には依存関係を作成でき、あるビューが別のビューの結果に依存し、その完了後にのみ実行されるようにできます。これにより、スケジュールされたワークフローや、[dbt](https://www.getdbt.com/) job のような単純なDAGを置き換えられます。リフレッシャブルmaterialized view間の依存関係の設定方法について詳しくは、[CREATE VIEW](/ja/reference/statements/create/view#refresh-dependencies) の `Dependencies` セクションを参照してください。
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？
-</div>
+## リフレッシャブルmaterialized viewをリフレッシュするにはどうすればよいですか？ {#how-do-you-refresh-a-refreshable-materialized-view}
 
 リフレッシャブルmaterialized viewは、作成時に定義した間隔で自動的にリフレッシュされます。
 たとえば、次のmaterialized viewは1分ごとにリフレッシュされます。
@@ -52,8 +50,12 @@ SYSTEM REFRESH VIEW table_name_mv;
 ビューはキャンセル、停止、開始することもできます。
 詳しくは、[リフレッシャブルmaterialized viewの管理](/ja/reference/statements/system#managing-refreshable-materialized-views)のドキュメントを参照してください。
 
+<Warning>
+  リフレッシュが ClickHouse Keeper を介して調整されていないリフレッシャブルmaterialized viewは、最後にリフレッシュした時刻の情報が失われるため、サーバーの再起動後にすべてが一斉にリフレッシュされる可能性があります。影響を受けるビューと、それらを1つずつ順に再開する方法については、[サーバー再起動時にリフレッシャブルmaterialized viewはどうなるか](/ja/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts)を参照してください。
+</Warning>
+
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？
+  ## リフレッシャブルmaterialized view が最後にリフレッシュされたのはいつですか？ {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 リフレッシャブルmaterialized view が最後にいつリフレッシュされたかを確認するには、以下のように [`system.view_refreshes`](/ja/reference/system-tables/view_refreshes) システムテーブルをクエリします。
@@ -72,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## リフレッシュ間隔を変更するにはどうすればよいですか？
+  ## リフレッシュ間隔を変更するにはどうすればよいですか？ {#how-can-i-change-the-refresh-rate}
 </div>
 
 リフレッシャブルmaterialized viewのリフレッシュ間隔を変更するには、[`ALTER TABLE...MODIFY REFRESH`](/ja/reference/statements/alter/view#alter-table--modify-refresh-statement)構文を使用します。
@@ -91,7 +93,7 @@ MODIFY REFRESH EVERY 30 SECONDS;
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## `APPEND` を使用して新しい行を追加する
+  ## `APPEND` を使用して新しい行を追加する {#using-append-to-add-new-rows}
 </div>
 
 `APPEND` 機能を使うと、ビュー全体を置き換えるのではなく、テーブルの末尾に新しい行を追加できます。
@@ -197,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## 例
+  ## 例 {#examples}
 </div>
 
 それでは、いくつかの例となるデータセットを使って、リフレッシャブルmaterialized viewの使い方を見ていきましょう。
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 [データの非正規化ガイド](/ja/guides/clickhouse/data-modelling/denormalization)では、Stack Overflow データセットを使ってデータを非正規化するさまざまな手法を紹介しています。データは次のテーブルに格納します: `votes`、`users`、`badges`、`posts`、`postlinks`。
@@ -255,7 +257,7 @@ LEFT JOIN (
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 [dbt と ClickHouse のインテグレーションガイド](/ja/integrations/connectors/data-ingestion/etl-tools/dbt/index)では、IMDb データセットに `actors`、`directors`、`genres`、`movie_directors`、`movies`、`roles` の各テーブルを取り込みました。

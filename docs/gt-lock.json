@@ -7,37 +7,44 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-23T03:36:55.453Z",
+          "updatedAt": "2026-09-23T06:42:36.646Z",
           "fileName": "docs.json",
-          "postProcessHash": "ed2f0a9eac1948f67de2f0932197b41ba38d34c313ee8da1082d48c116a9f18a"
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ja": {
-          "updatedAt": "2026-09-23T03:36:54.926Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:35.431Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ru": {
-          "updatedAt": "2026-09-23T03:36:55.200Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:36.076Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "zh": {
-          "updatedAt": "2026-09-23T03:36:55.284Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:36.266Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-23T03:36:55.118Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:35.870Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ko": {
-          "updatedAt": "2026-09-23T03:36:55.021Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:35.639Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "es": {
-          "updatedAt": "2026-09-23T03:36:54.782Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:35.240Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ar": {
-          "updatedAt": "2026-09-23T03:36:55.366Z",
-          "fileName": "docs.json"
+          "updatedAt": "2026-09-23T06:42:36.450Z",
+          "fileName": "docs.json",
+          "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         }
       },
       "fileName": "docs.json"
@@ -11279,47 +11286,47 @@
     },
     {
       "fileId": "8e7e9622052b8c4468ed934250628305e729a37490776a4a6ad8952b45b098ac",
-      "versionId": "9d129dce3f976bbc0aeff86f4d9a746f01367f4bf58b9ab76f7eb9b4d78da177",
+      "versionId": "daafa00649ae9c9d93b78a8ed0a847ef4f12f76820f8aca50d41fbf807409e11",
       "translations": {
         "es": {
-          "updatedAt": "2026-08-26T08:10:25.624Z",
+          "updatedAt": "2026-09-23T06:42:41.843Z",
           "fileName": "es/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "20a03f4e41d414359cd4bb85dff4c17e4a008f8720fadc9a19add684c80ab06b"
-        },
-        "ja": {
-          "updatedAt": "2026-08-26T08:10:25.624Z",
-          "fileName": "ja/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "cc726382dc34ff9f6dfa54c766fcb7fa168754cb14f9158228c9ad7f22211ce6"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T08:10:25.625Z",
-          "fileName": "ko/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "97ea5970f904b54d61e9c24980fadff3263b81c4eb606f9566f7f3827a273173"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-26T08:10:25.626Z",
-          "fileName": "pt-BR/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "98fbd2d2125455a44f5d62bf09e794bd79b96e566c9f857bb847354b8374e566"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T08:10:25.628Z",
-          "fileName": "ru/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "66a3c827e2cd1c64d4e5315d553104e8eea0f8543e5b037879d8d6ecb2062071"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T08:10:25.629Z",
-          "fileName": "zh/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "32a1eb07f6c589bc82d7f536df592d1d02357ab46300cdf50abcd4fab8932b5a"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T08:10:25.630Z",
-          "fileName": "ar/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "86de22d8592c149414abef349f85306b0eb4fb8e1b11ed0291b9c62f64eb6a55"
+          "postProcessHash": "b99cd74e5eae931a4da7c6a3a78825192e051a19b2bda49a8c48b843bdd1e8eb"
         },
         "fr": {
-          "updatedAt": "2026-08-26T08:10:25.630Z",
+          "updatedAt": "2026-09-23T06:42:41.845Z",
           "fileName": "fr/get-started/sample-datasets/cell-towers.mdx",
-          "postProcessHash": "d49e1d0b19b75dd8b5ed7fd9c6790a9c14bc67a46b9680d89bb2058a72888979"
+          "postProcessHash": "475290fd436b02616063bdde0c81efac54a9b2a27c7bc560748b500fdc0eb9a6"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T06:42:41.846Z",
+          "fileName": "ja/get-started/sample-datasets/cell-towers.mdx",
+          "postProcessHash": "98d20209348aa3ecaae718c88913e604ae73f16407e83ae8dbb96b7437ae25cd"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T06:42:41.848Z",
+          "fileName": "zh/get-started/sample-datasets/cell-towers.mdx",
+          "postProcessHash": "39c7358501b84eaaa814f0294f4cf131cb0021abf91f84cd0fc8fa1e2825a82d"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T06:42:41.849Z",
+          "fileName": "ko/get-started/sample-datasets/cell-towers.mdx",
+          "postProcessHash": "6d6ef8d94b3fac0d31235b10b10941b6fde7e0d95df3d6784b27a6fa41876b0e"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T06:42:41.850Z",
+          "fileName": "pt-BR/get-started/sample-datasets/cell-towers.mdx",
+          "postProcessHash": "662f2c0ff2c823cd3b3f4cb297214f9ec69a6456c69290209dcdc7b445e6ddbd"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T06:42:41.850Z",
+          "fileName": "ar/get-started/sample-datasets/cell-towers.mdx",
+          "postProcessHash": "9072b14ba4b1f8bb5a75daef7d890ba1240fa037cf61bfbe7bf5b5018b856ba3"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T06:42:41.851Z",
+          "fileName": "ru/get-started/sample-datasets/cell-towers.mdx",
+          "postProcessHash": "74f26444111efaedce3f4273827aced3c23333499f9e14d7099aa94ce5b8dc64"
         }
       },
       "fileName": "get-started/sample-datasets/cell-towers.mdx"
@@ -31854,51 +31861,50 @@
     },
     {
       "fileId": "55f990faa685c278c025c9032389fdde8792fcbd50b32c701492f6a4a6385c73",
-      "versionId": "22e2da1134ae48a15a6dca3cdbf0ee044e340d16bb8b1339c3053676bc731c50",
+      "versionId": "35f9225be683b86d27b2f9978fe4a17eb0e585878ed1cbcac53d51d3544ade32",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
-          "fileName": "es/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "40de7c568a399e475fa350c16636fc9c0b59cc94eb41d2ad1c52c05c8c644662"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
-          "fileName": "ja/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "820deca1204ea581ca66e79e7f5ce06442ab8ddf1a8c5641d321800f77137132"
-        },
         "ko": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
+          "updatedAt": "2026-09-23T06:42:41.836Z",
           "fileName": "ko/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "87bac0d4b0b114443ebc44b3ec42600782758c18d1a7321fdce49608669cfae0"
+          "postProcessHash": "2f9d2ad9f09947144a1e2af7d4ce5d9ef531b13be5f0b7f52d96df63bb13e2cc"
         },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
-          "fileName": "pt-BR/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "aae47f932c6c15b1215d2f41a4c2aefbcc961d2eb81efb1fdc4178fca939c068"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
-          "fileName": "ru/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "1f207171ba0aac9de44df9b0387f762946f05f7f594c49c67d936eba135f144a"
+        "es": {
+          "updatedAt": "2026-09-23T06:42:41.837Z",
+          "fileName": "es/concepts/features/materialized-views/refreshable-materialized-view.mdx",
+          "postProcessHash": "6de2eed77daf6afa484bebc916db60e41642bd979492e11d3f45f90b5625a8dc"
         },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
+          "updatedAt": "2026-09-23T06:42:41.838Z",
           "fileName": "zh/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "f92274e0dd54ba00e0a7346448f7e4c5c92c1a844ea2837806689102bcd698f9"
+          "postProcessHash": "b263060d975f27a9efc31b09f0d9fe085f8a1bec24a67fb0db474bb48745420d"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T06:42:41.839Z",
+          "fileName": "ru/concepts/features/materialized-views/refreshable-materialized-view.mdx",
+          "postProcessHash": "f81a8007cd2ead9b4e7c81f3af963de3f9da971c223589f6f2338e7b6441e23d"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.396Z",
+          "updatedAt": "2026-09-23T06:42:41.840Z",
           "fileName": "ar/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "ff85ada56710bf223c963ee85d2be012fbe1d0aa847a2ae16d4227d42fb008e2"
+          "postProcessHash": "89a95dd8acb45dacf02ae5a0b9c039e37ac5c2af3db315d1339ae6acfeaabd22"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:06.397Z",
+          "updatedAt": "2026-09-23T06:42:41.841Z",
           "fileName": "fr/concepts/features/materialized-views/refreshable-materialized-view.mdx",
-          "postProcessHash": "1024b10648a7c82989d404bd4169b63c7bbe7788871bc7520fed29ee04002926"
+          "postProcessHash": "1ad4bfcf9d02828bfc877d0be375edccdf6ebf29801e0fb39a9c4f15edae0b19"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T06:42:41.842Z",
+          "fileName": "pt-BR/concepts/features/materialized-views/refreshable-materialized-view.mdx",
+          "postProcessHash": "50387143f8786c751d1701222582e490c3321ca1ce22a7e7c6955cd4895c693e"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T06:42:41.848Z",
+          "fileName": "ja/concepts/features/materialized-views/refreshable-materialized-view.mdx",
+          "postProcessHash": "aeedc70d861914b4a97dec0b28fb6b9a4af79bb040035c93498760d4f53bd2aa"
         }
       },
-      "fileName": "concepts/features/materialized-views/refreshable-materialized-view.mdx",
-      "staged": false
+      "fileName": "concepts/features/materialized-views/refreshable-materialized-view.mdx"
     },
     {
       "fileId": "8879c44e66ea7695fb7ca796e5529de215082a1e2ded43885f80c87a0767dcbb",
@@ -103782,47 +103788,47 @@
     },
     {
       "fileId": "b749ae4e6faf6838df2b0bba323bc2b926a113c16aa280174a4d057aba9d3a62",
-      "versionId": "eaeb51f555678b3c9094dd4780dabaacefc8beb3a426ef3d9967d59b7ff057c5",
+      "versionId": "4c309c1468c52f41a5a7e27f6e66a5c5b66f1ee65fb384669d237eec29f984b3",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-08-26T23:12:58.723Z",
-          "fileName": "snippets/fr/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "aa6f6d150113757b4a3555508743385369f6adab502f9b1c0c2da1457d72fd72"
-        },
-        "ru": {
-          "updatedAt": "2026-08-26T23:12:58.749Z",
-          "fileName": "snippets/ru/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "e9949fdb486a9fa75764541ef656a66b717e6a77c17703719bf942a0da4f62c5"
-        },
         "ja": {
-          "updatedAt": "2026-08-26T23:12:58.752Z",
+          "updatedAt": "2026-09-23T06:42:41.829Z",
           "fileName": "snippets/ja/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "813a4c64edd029ec3096752f060aae4d28a6321a92ca989d692ea6d429a914f8"
+          "postProcessHash": "6c554cbb4e2de5c7c5b9161f861059836e256442e36795581c89b568b8cde3e4"
+        },
+        "fr": {
+          "updatedAt": "2026-09-23T06:42:41.830Z",
+          "fileName": "snippets/fr/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "5e1cedbdb9e7735a41d7f16d0d65c81e11b33dbc646b3daee1b55bbc91218732"
         },
         "es": {
-          "updatedAt": "2026-08-26T23:12:58.754Z",
+          "updatedAt": "2026-09-23T06:42:41.831Z",
           "fileName": "snippets/es/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "aa65e0082c33ba085e6ab1d1cbc64c51a15b847f58de7a44f56c743bed556e0c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-26T23:12:58.755Z",
-          "fileName": "snippets/ko/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "5cfa503759e21fbff47959fb2624b92eda90eb480e3664af9bfa5be145ab3c26"
-        },
-        "zh": {
-          "updatedAt": "2026-08-26T23:12:58.758Z",
-          "fileName": "snippets/zh/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "a4596e79ba5fe2617845fdcb389640d48de711f4868ca5332f1c5b852c14be3d"
-        },
-        "ar": {
-          "updatedAt": "2026-08-26T23:12:58.759Z",
-          "fileName": "snippets/ar/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "8f9915b639f6db051c6da674f9b14a841a99611a26f602a1e2722a3ec57399ac"
+          "postProcessHash": "edc516de82e0f07d8da09ab423e08cc4e2e8f86123738ead1db611492b7b386b"
         },
         "pt-BR": {
-          "updatedAt": "2026-08-26T23:12:58.762Z",
+          "updatedAt": "2026-09-23T06:42:41.832Z",
           "fileName": "snippets/pt-BR/components/KBExplorer/kb-data.jsx",
-          "postProcessHash": "fc72d5857865df7832a97eb676a759925460643e78d25cfc3cb37770d54d2149"
+          "postProcessHash": "2758f648094ecd25c3fc7b1e09fc77fd81fc0943c3cafbdbeb579c48f48a385f"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T06:42:41.833Z",
+          "fileName": "snippets/ko/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "2d0b0e75386d1ba2994216906474e99e6dc529a63bb8a7564c3f592578d2297e"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T06:42:41.834Z",
+          "fileName": "snippets/ar/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "edd092bdce7f3593f1b3bf4f4c3d8bfabc51e73f483d2869ce88977b53946793"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T06:42:41.834Z",
+          "fileName": "snippets/ru/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "3e38e5d8fd8f31039e63173f7c2071543a05f839a5d9c1fad46c421d31a963a2"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T06:42:41.835Z",
+          "fileName": "snippets/zh/components/KBExplorer/kb-data.jsx",
+          "postProcessHash": "0acd3085d79b0104f4a9263c018d0f784cb6eb6efe69ed4d7caa9d132c1bae17"
         }
       },
       "fileName": "snippets/components/KBExplorer/kb-data.jsx"
@@ -139097,6 +139103,53 @@
         }
       },
       "fileName": "products/cloud/reference/billing/self-service-prepaid-credit-management.mdx"
+    },
+    {
+      "fileId": "efdca80d27c4a42d8c2d41a6b84469c52fc1d0b1cfd7a56284feb1dafaf39578",
+      "versionId": "df02b214d5f45a09010a0aa66adedd15b6ae5d4da61605e259eae7b90524ea1f",
+      "translations": {
+        "es": {
+          "updatedAt": "2026-09-23T06:42:41.837Z",
+          "fileName": "es/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "4793fa9d1c66793b1489721d36e15a7204e5dda312d70f0345ef5165d8a9a3a3"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T06:42:41.841Z",
+          "fileName": "zh/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "f3e4cccdd3c6fdcc7f7e735b8a4867a7da0e104ccd50beea7644dd4fe25ad907"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T06:42:41.843Z",
+          "fileName": "ru/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "44208b851ab11777b73e6011ae61f84ed5b3f486d948ffc5e941caa0109c40ef"
+        },
+        "fr": {
+          "updatedAt": "2026-09-23T06:42:41.844Z",
+          "fileName": "fr/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "faf37eea84c28a69332a4e8ddcc547eb6cc3cdca569345c2339fccf3d5481099"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T06:42:41.844Z",
+          "fileName": "pt-BR/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "0efd2a3e38422cc08871b0247e46181097c7139443960bc0f98a33b14912a6c6"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T06:42:41.846Z",
+          "fileName": "ar/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "782e368b49c2197399a24b16f7822722bc5c3a7b2b6ad994d1a1ca206ec8df1b"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T06:42:41.846Z",
+          "fileName": "ko/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "d8e8e01e6103023b537cc0734276d4a8481769596ae89abbc5bdc568c718ae99"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T06:42:41.847Z",
+          "fileName": "ja/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx",
+          "postProcessHash": "acf6234161e9162f5f222c065eba14c5b342693a7928d2561dca4d6f0368db09"
+        }
+      },
+      "fileName": "resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts.mdx"
     }
   ]
 }

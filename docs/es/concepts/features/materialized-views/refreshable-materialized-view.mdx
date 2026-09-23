@@ -21,7 +21,7 @@ También puede ver el siguiente video:
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## ¿Cuándo se deben usar las vistas materializadas actualizables?
+  ## ¿Cuándo se deben usar las vistas materializadas actualizables? {#when-should-refreshable-materialized-views-be-used}
 </div>
 
 Las vistas materializadas incrementales de ClickHouse son extremadamente potentes y, por lo general, escalan mucho mejor que el enfoque utilizado por las vistas materializadas actualizables, especialmente cuando se necesita realizar una agregación sobre una sola tabla. Al calcular la agregación únicamente sobre cada bloque de datos a medida que se inserta y fusionar los estados incrementales en la tabla final, la consulta solo se ejecuta sobre un subconjunto de los datos. Este método puede escalar hasta petabytes de datos y suele ser el método preferido.
@@ -30,9 +30,7 @@ Sin embargo, hay casos de uso en los que este proceso incremental no es necesari
 
 > Las vistas materializadas actualizables pueden ejecutar procesos por lotes que realizan tareas como la desnormalización. Se pueden crear dependencias entre vistas materializadas actualizables, de modo que una vista dependa de los resultados de otra y solo se ejecute cuando esta haya finalizado. Esto puede sustituir flujos de trabajo programados o DAG sencillos, como un job de [dbt](https://www.getdbt.com/). Para obtener más información sobre cómo establecer dependencias entre vistas materializadas actualizables, consulte [CREATE VIEW](/es/reference/statements/create/view#refresh-dependencies), sección `Dependencies`.
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## ¿Cómo se actualiza una vista materializada actualizable?
-</div>
+## ¿Cómo se actualiza una vista materializada actualizable? {#how-do-you-refresh-a-refreshable-materialized-view}
 
 Las vistas materializadas actualizables se actualizan automáticamente según un intervalo definido durante su creación.
 Por ejemplo, la siguiente vista materializada se actualiza cada minuto:
@@ -52,8 +50,12 @@ SYSTEM REFRESH VIEW table_name_mv;
 También puedes cancelar, detener o iniciar una vista.
 Para obtener más información, consulta la documentación sobre [la gestión de vistas materializadas actualizables](/es/reference/statements/system#managing-refreshable-materialized-views).
 
+<Warning>
+  Las vistas materializadas actualizables cuyas actualizaciones no se coordinan a través de ClickHouse Keeper no recuerdan cuándo se actualizaron por última vez, por lo que, tras reiniciar el servidor, pueden actualizarse todas a la vez. Consulta [Qué ocurre con las vistas materializadas actualizables cuando se reinicia el servidor](/es/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) para saber qué vistas se ven afectadas y cómo volver a iniciarlas de una en una.
+</Warning>
+
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## ¿Cuándo se actualizó por última vez una vista materializada actualizable?
+  ## ¿Cuándo se actualizó por última vez una vista materializada actualizable? {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 Para saber cuándo se actualizó por última vez una vista materializada actualizable, puede consultar la tabla del sistema [`system.view_refreshes`](/es/reference/system-tables/view_refreshes), como se muestra a continuación:
@@ -72,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## ¿Cómo puedo cambiar la frecuencia de actualización?
+  ## ¿Cómo puedo cambiar la frecuencia de actualización? {#how-can-i-change-the-refresh-rate}
 </div>
 
 Para cambiar la frecuencia de actualización de una vista materializada actualizable, utilice la sintaxis [`ALTER TABLE...MODIFY REFRESH`](/es/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -91,7 +93,7 @@ Una vez hecho esto, puedes usar la consulta [¿Cuándo se actualizó por última
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## Uso de `APPEND` para añadir nuevas filas
+  ## Uso de `APPEND` para añadir nuevas filas {#using-append-to-add-new-rows}
 </div>
 
 La funcionalidad `APPEND` permite añadir nuevas filas al final de la tabla en lugar de reemplazar toda la vista.
@@ -197,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## Ejemplos
+  ## Ejemplos {#examples}
 </div>
 
 Veamos ahora cómo usar vistas materializadas actualizables con algunos conjuntos de datos de ejemplo.
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 La [guía de desnormalización de datos](/es/guides/clickhouse/data-modelling/denormalization) muestra varias técnicas para desnormalizar datos usando un conjunto de datos de Stack Overflow. Cargamos datos en las siguientes tablas: `votes`, `users`, `badges`, `posts` y `postlinks`.
@@ -255,7 +257,7 @@ La vista se ejecutará de inmediato y, a partir de entonces, cada hora, según l
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 En la [guía de integración de dbt y ClickHouse](/es/integrations/connectors/data-ingestion/etl-tools/dbt/index) rellenamos un conjunto de datos de IMDb con las siguientes tablas: `actors`, `directors`, `genres`, `movie_directors`, `movies` y `roles`.
