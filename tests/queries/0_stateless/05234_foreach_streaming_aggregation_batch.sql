@@ -73,11 +73,13 @@ SELECT sumForEachIf(arr, if(grp = 2, NULL, cond)) FROM test_foreach_if;
 SELECT grp, sumForEachIf(arr, toNullable(cond)) FROM test_foreach_if GROUP BY grp ORDER BY grp;
 SELECT grp, sumForEachIf(arr, if(grp = 2, NULL, cond)) FROM test_foreach_if GROUP BY grp ORDER BY grp;
 
--- With `group_by_overflow_mode = 'any'` a key past the limit gets no place, so `Aggregator` calls
--- `addBatch` (not `addBatchWithNonNullPlaces`) and both batch paths must skip the null places.
-SELECT grp, sumForEach(arr), sumForEachIf(arr, cond), sumForEachIf(arr, toNullable(cond))
-FROM test_foreach_if GROUP BY grp ORDER BY grp
-SETTINGS max_rows_to_group_by = 1, group_by_overflow_mode = 'any', max_threads = 1;
+-- With `group_by_overflow_mode = 'any'` a key that arrives after the limit is reached gets no place, so
+-- `Aggregator` calls `addBatch` (not `addBatchWithNonNullPlaces`) and both batch paths must skip the null
+-- places. One-row blocks: keys 0 and 1 get places, and the rows of key 2 are dropped.
+SELECT k, sumForEach(arr), sumForEachIf(arr, c), sumForEachIf(arr, toNullable(c))
+FROM (SELECT number % 3 AS k, [toFloat64(number), 1.] AS arr, number % 2 AS c FROM numbers(12))
+GROUP BY k ORDER BY k
+SETTINGS max_block_size = 1, max_rows_to_group_by = 1, group_by_overflow_mode = 'any', max_threads = 1;
 
 DROP TABLE test_foreach_if;
 DROP TABLE test_foreach_batch;
