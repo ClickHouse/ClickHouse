@@ -13,6 +13,23 @@ namespace DB
 
 #if USE_AVRO
 
+/// Returns {} when a written column has no field of that name; the schema's own ids are kept then,
+/// and the format layer refuses such a write before any statistic is read.
+static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
+{
+    const auto & field_id_by_name = mapper.getStorageColumnEncoding();
+    std::vector<Int64> field_ids;
+    field_ids.reserve(written_block.columns());
+    for (const auto & column : written_block)
+    {
+        auto it = field_id_by_name.find(column.name);
+        if (it == field_id_by_name.end())
+            return {};
+        field_ids.push_back(it->second);
+    }
+    return field_ids;
+}
+
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
     UInt64 max_data_file_num_bytes_,
@@ -27,8 +44,8 @@ MultipleFileWriter::MultipleFileWriter(
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
     , schema(schema_)
-    , stats(schema_)
     , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
+    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -44,7 +61,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
-    current_file_stats = std::make_shared<DataFileStatistics>(schema);
+    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
     current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();

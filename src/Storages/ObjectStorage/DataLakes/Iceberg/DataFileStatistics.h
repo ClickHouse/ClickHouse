@@ -25,6 +25,10 @@ class DataFileStatistics
 public:
     explicit DataFileStatistics(Poco::JSON::Array::Ptr schema_);
 
+    /// Every statistic is accumulated in written-block order, so `field_ids[i]` must be the id of
+    /// block column `i` rather than of schema field `i`. An empty `written_field_ids` keeps the schema's ids.
+    DataFileStatistics(Poco::JSON::Array::Ptr schema_, std::vector<Int64> written_field_ids);
+
     void update(const Chunk & chunk);
     void addColumnSizesOnDisk(const std::unordered_map<String, size_t> & sizes_by_column_name, const Block & sample_block);
     void merge(const DataFileStatistics & other);
