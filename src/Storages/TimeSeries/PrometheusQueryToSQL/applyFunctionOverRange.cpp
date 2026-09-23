@@ -94,10 +94,31 @@ namespace
                  /* drop_metric_name = */ true,
              }},
 
+            {"first_over_time",
+             {
+                 "timeSeriesFirstToGrid",
+                 /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_first_over_time",
+             {
+                 "timeSeriesTimestampOfFirstToGrid",
+                 /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
             {"last_over_time",
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
+                 /* needs_cast_to_float64 = */ true,
+             }},
+
+            {"ts_of_last_over_time",
+             {
+                 "timeSeriesTimestampOfLastToGrid",
+                 /* drop_metric_name = */ true,
                  /* needs_cast_to_float64 = */ true,
              }},
 
@@ -108,16 +129,16 @@ namespace
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            {"min_over_time",
+            {"ts_of_max_over_time",
              {
-                 "timeSeriesMinToGrid",
+                 "timeSeriesTimestampOfMaxToGrid",
                  /* drop_metric_name = */ true,
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            {"ts_of_max_over_time",
+            {"min_over_time",
              {
-                 "timeSeriesTimestampOfMaxToGrid",
+                 "timeSeriesMinToGrid",
                  /* drop_metric_name = */ true,
                  /* needs_cast_to_float64 = */ true,
              }},
@@ -175,8 +196,10 @@ namespace
                  /* needs_cast_to_float64 = */ true,
              }},
 
-            /// TODO: stddev_over_time, stdvar_over_time, mad_over_time,
-            /// ts_of_last_over_time, first_over_time, ts_of_first_over_time.
+            /// TODO:
+            /// stddev_over_time
+            /// stdvar_over_time
+            /// mad_over_time
         };
 
         auto it = impl_map.find(function_name);
