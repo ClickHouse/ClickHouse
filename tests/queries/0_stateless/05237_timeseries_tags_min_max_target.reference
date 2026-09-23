@@ -19,7 +19,9 @@ AggregatingMergeTree	1
 3
 -- a series with no bounds row is pruned while filtering is on, and returns once it is off
 0
+2
 1
+3
 -- the bounds are always aggregated, aggregate_min_time_and_max_time is ignored from version 7
 AggregatingMergeTree	1
 min_time	SimpleAggregateFunction(min, Nullable(DateTime64(3)))

@@ -416,8 +416,7 @@ namespace
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
         const DataTypePtr & table_timestamp_type,
-        const std::optional<StorageID> & tags_min_max_table_id,
-        bool allow_time_superset = false)
+        const std::optional<StorageID> & tags_min_max_table_id)
     {
         ASTs asts;
         const PrometheusQueryTree::Matcher * name_matcher = nullptr;
@@ -437,15 +436,12 @@ namespace
         if (!min_max_time_conditions.empty() && tags_min_max_table_id)
         {
             /// The metric name makes the subquery a primary-key range; the other matchers are applied to
-            /// the tags table by the conditions above. A samples read can omit the subquery without
-            /// that matcher because its timestamp filter is exact. ID-only callers must retain it.
-            if (name_matcher || !allow_time_superset)
-            {
-                if (name_matcher)
-                    min_max_time_conditions.insert(
-                        min_max_time_conditions.begin(), matcherToAST(*name_matcher, column_name_by_tag_name));
-                asts.push_back(makeMinMaxTimeSubqueryCondition(*tags_min_max_table_id, std::move(min_max_time_conditions)));
-            }
+            /// the tags table by the conditions above. Without it the subquery reads the whole target, but it
+            /// is kept anyway: it prunes the series outside the time range as the tags table did before the split.
+            if (name_matcher)
+                min_max_time_conditions.insert(
+                    min_max_time_conditions.begin(), matcherToAST(*name_matcher, column_name_by_tag_name));
+            asts.push_back(makeMinMaxTimeSubqueryCondition(*tags_min_max_table_id, std::move(min_max_time_conditions)));
         }
         else
         {
@@ -496,8 +492,7 @@ namespace
         const std::optional<DateTime64> & min_time,
         const std::optional<DateTime64> & max_time,
         const DataTypePtr & table_timestamp_type,
-        const std::optional<StorageID> & tags_min_max_table_id,
-        bool allow_time_superset = false)
+        const std::optional<StorageID> & tags_min_max_table_id)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -540,8 +535,7 @@ namespace
         /// WHERE <filter>
         {
             auto where_filter = makeWhereFilterForTagsTable(
-                matchers, column_name_by_tag_name, min_time, max_time, table_timestamp_type, tags_min_max_table_id,
-                allow_time_superset);
+                matchers, column_name_by_tag_name, min_time, max_time, table_timestamp_type, tags_min_max_table_id);
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
@@ -1104,7 +1098,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids,
-        config.table_timestamp_type, tags_min_max_table_id, /* allow_time_superset = */ true);
+        config.table_timestamp_type, tags_min_max_table_id);
 
     auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);

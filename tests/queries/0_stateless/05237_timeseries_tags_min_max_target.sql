@@ -66,9 +66,12 @@ INSERT INTO FUNCTION timeSeriesSamples(currentDatabase(), 'ts_v7') (id, timestam
     WHERE metric_name = 'orphan_series';
 
 SELECT count() FROM timeSeriesSelector(ts_v7, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
+-- Without an exact metric name the bounds are still consulted: only the two samples of `http_requests{job="api"}`.
+SELECT count() FROM timeSeriesSelector(ts_v7, '{job="api"}', toDateTime64(0, 3), toDateTime64(9000, 3));
 
 ALTER TABLE ts_v7 MODIFY SETTING filter_by_min_time_and_max_time = 0;
 SELECT count() FROM timeSeriesSelector(ts_v7, 'orphan_series', toDateTime64(0, 3), toDateTime64(9000, 3));
+SELECT count() FROM timeSeriesSelector(ts_v7, '{job="api"}', toDateTime64(0, 3), toDateTime64(9000, 3));
 
 DROP TABLE ts_v7;
 
