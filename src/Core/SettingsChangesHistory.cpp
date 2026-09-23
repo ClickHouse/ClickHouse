@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.10",
         {
+            {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},
             {"ai_function_max_input_tokens_per_query", 1000000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
             {"ai_function_max_output_tokens_per_query", 500000, 0, "The AI function per-query quotas are disabled by default: 0 means no limit."},
@@ -55,6 +56,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"output_format_arrow_unsupported_types", "binary", "binary", "New setting superseding `output_format_arrow_unsupported_types_as_binary`, adding a `text` mode. Its default matches the previous behavior, so `compatibility` must not change it."},
             {"input_format_parquet_min_bytes_to_split", 0, 2ULL * 1024 * 1024 * 1024, "New setting: a single local Parquet file is only parallelized across multiple sources if the query reads at least this many compressed bytes, avoiding per-source overhead on short queries. The previous value `0` (no floor) reproduces the pre-26.10 behavior where the split was driven only by the row-group count, so `compatibility` set to an earlier version keeps parallelizing regardless of read size."},
             {"input_format_parquet_bytes_per_split_bucket", 0, 64 * 1024 * 1024, "New setting: target minimum compressed bytes per bucket when a single local Parquet file is parallelized across multiple sources. The previous value `0` (do not bound the number of buckets by size) reproduces the pre-26.10 behavior where the bucket count was driven only by the row-group count, so `compatibility` set to an earlier version keeps the old split fan-out."},
+            {"validate_mutation_query", true, true, "Obsolete setting: mutation queries are always validated before being accepted. The recorded value does not change, because validation was already enabled by default and `compatibility` must not turn it back off."},
             {"analyzer_compatibility_allow_cte_redefinition", false, false, "New compatibility setting. When enabled, the analyzer accepts a CTE name defined more than once in a single `WITH` clause and lets a later definition shadow the earlier ones, as the query analysis before v24.3 did."},
         });
         addSettingsChanges(settings_changes_history, "26.9",

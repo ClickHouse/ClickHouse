@@ -1916,7 +1916,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"use_with_fill_by_sorting_prefix", trueOrFalseSetting},
     {"validate_enum_literals_in_operators", trueOrFalseSettingNoOracle},
     {"validate_experimental_and_suspicious_types_inside_nested_types", trueOrFalseSettingNoOracle},
-    {"validate_mutation_query", trueOrFalseSettingNoOracle},
     {"validate_polygons", trueOrFalseSettingNoOracle},
     {"variant_throw_on_type_mismatch", trueOrFalseSettingNoOracle},
     {"vector_search_filter_strategy",
