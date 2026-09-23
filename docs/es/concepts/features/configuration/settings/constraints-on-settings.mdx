@@ -97,15 +97,15 @@ de lo contrario, no se permite cambiar configuraciones en el modo `readonly=1`.
 ### No permitas que `readonly` sea modificable en modo de solo lectura {#readonly-changeable-in-readonly}
 
 <Warning>
-  Mantén `readonly` fuera de la lista `changeable_in_readonly` en todos los perfiles y recuerda que las restricciones de perfil se aplican a todo el sistema, no por usuario.
+  Mantén `readonly` fuera de la lista `changeable_in_readonly` en todos los perfiles, incluidos los que no asignes a nadie: cualquier sesión puede seleccionar un perfil por su nombre.
 </Warning>
 
-No marques el propio `readonly` como `changeable_in_readonly`. Si lo haces, una sesión que comienza con `readonly = 1` podrá ejecutar `SET readonly = 0` y recuperar la capacidad de lanzar las consultas de escritura que sus privilegios actuales ya le permiten.
+No marques el propio `readonly` como `changeable_in_readonly`. Si lo haces, una sesión que comienza con `readonly = 1` podrá ejecutar `SET readonly = 0` y recuperar la capacidad de lanzar las consultas de escritura que sus privilegios actuales ya le permiten, salvo que la misma restricción también prohíba `0`.
 
-Esto importa en todos los casos, no solo en el perfil asignado al usuario:
+Esto importa en todos los perfiles que definas, no solo en los que asignes:
 
-* Cualquier sesión puede cambiar a cualquier perfil mediante `SET profile`, ya que la selección de perfil no pasa por una comprobación de acceso (solo la limitan las restricciones de configuración que ya estén activas).
-* Por HTTP, las solicitudes `GET` se fuerzan a `readonly = 2` únicamente cuando el valor efectivo sería `0`. Así, un perfil que establece `readonly = 1` pero además permite modificar `readonly` en modo de solo lectura anula esa protección: una solicitud `GET` puede cambiarlo a `0` y escribir.
+* `SET profile` no pasa por una comprobación de acceso, por lo que cualquier sesión puede seleccionar cualquier perfil por su nombre. Un perfil es accesible aunque no se lo asignes a nadie, si bien lo que modifique se sigue comprobando frente a las restricciones ya activas en esa sesión.
+* Por HTTP, las solicitudes `GET` se fuerzan a `readonly = 2` únicamente cuando el valor efectivo sería `0`. Así, un perfil que establece `readonly = 1` pero además permite modificar `readonly` en modo de solo lectura anula esa protección, porque una solicitud `GET` puede cambiarlo a `0` y escribir.
 
 ## Varios perfiles de restricciones {#multiple-constraint-profiles}
 

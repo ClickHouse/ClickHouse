@@ -97,15 +97,15 @@ caso contrário, não é permitido alterar configurações no modo `readonly=1`.
 ### Não torne `readonly` alterável em modo somente leitura {#readonly-changeable-in-readonly}
 
 <Warning>
-  Mantenha `readonly` fora da lista `changeable_in_readonly` em todos os perfis e lembre-se de que as restrições de perfil valem para todo o sistema, e não por usuário.
+  Mantenha `readonly` fora da lista `changeable_in_readonly` em todos os perfis, inclusive naqueles que você não atribui a ninguém: qualquer sessão pode selecionar um perfil pelo nome.
 </Warning>
 
-Não marque o próprio `readonly` como `changeable_in_readonly`. Se fizer isso, uma sessão que inicia com `readonly = 1` poderá executar `SET readonly = 0` e voltar a executar as consultas de escrita que seus privilégios já permitem.
+Não marque o próprio `readonly` como `changeable_in_readonly`. Se fizer isso, uma sessão que inicia com `readonly = 1` poderá executar `SET readonly = 0` e voltar a executar as consultas de escrita que seus privilégios já permitem, a menos que a mesma restrição também proíba `0`.
 
-Isso vale para todos os casos, não apenas para o perfil atribuído ao usuário:
+Isso vale para todos os perfis que você define, e não apenas para os que você atribui:
 
-* Qualquer sessão pode alternar para qualquer perfil via `SET profile`, já que a seleção de perfil não passa por verificação de acesso (só é limitada pelas CONSTRAINTs de settings já ativas).
-* Via HTTP, requisições `GET` são forçadas a `readonly = 2` apenas quando o valor efetivo seria `0`. Portanto, um perfil que define `readonly = 1` mas também permite alterar `readonly` em modo somente leitura anula essa proteção — uma requisição `GET` pode mudá-lo para `0` e gravar dados.
+* `SET profile` não passa por verificação de acesso, portanto qualquer sessão pode selecionar qualquer perfil pelo nome. Um perfil continua acessível mesmo quando você não o atribui a ninguém, embora o que ele altera ainda seja verificado em relação às restrições já ativas nessa sessão.
+* Via HTTP, requisições `GET` são forçadas a `readonly = 2` apenas quando o valor efetivo seria `0`. Portanto, um perfil que define `readonly = 1` mas também permite alterar `readonly` em modo somente leitura anula essa proteção, pois uma requisição `GET` pode mudá-lo para `0` e gravar dados.
 
 ## Vários perfis de restrição {#multiple-constraint-profiles}
 

@@ -97,15 +97,15 @@ autrement, les paramètres ne peuvent pas être modifiés en mode `readonly=1`.
 ### Ne rendez pas `readonly` modifiable en mode lecture seule {#readonly-changeable-in-readonly}
 
 <Warning>
-  Gardez `readonly` en dehors de la liste `changeable_in_readonly` dans chaque profil, et rappelez-vous que les restrictions de profil s&#39;appliquent à l&#39;échelle du système, et non par utilisateur.
+  Gardez `readonly` en dehors de la liste `changeable_in_readonly` dans chaque profil, y compris dans les profils que vous n&#39;affectez à personne : n&#39;importe quelle session peut sélectionner un profil par son nom.
 </Warning>
 
-Ne marquez pas `readonly` lui-même comme `changeable_in_readonly`. Si vous le faites, une session démarrée avec `readonly = 1` peut exécuter `SET readonly = 0` et retrouver ainsi la possibilité d&#39;exécuter les requêtes d&#39;écriture que ses privilèges existants autorisent déjà.
+Ne marquez pas `readonly` lui-même comme `changeable_in_readonly`. Si vous le faites, une session démarrée avec `readonly = 1` peut exécuter `SET readonly = 0` et retrouver ainsi la possibilité d&#39;exécuter les requêtes d&#39;écriture que ses privilèges existants autorisent déjà, à moins que la même contrainte n&#39;interdise également `0`.
 
-Ce point est valable partout, et pas seulement pour le profil affecté à l&#39;utilisateur :
+Ce point concerne chaque profil que vous définissez, et pas seulement ceux que vous affectez :
 
-* N&#39;importe quelle session peut basculer vers n&#39;importe quel profil via `SET profile`, car la sélection du profil n&#39;est pas soumise à un contrôle d&#39;accès (elle est uniquement limitée par les contraintes de paramètres déjà actives).
-* En HTTP, les requêtes `GET` sont forcées à `readonly = 2` uniquement lorsque la valeur effective serait autrement `0`. Ainsi, un profil qui définit `readonly = 1` mais autorise aussi la modification de `readonly` en mode lecture seule réduit à néant cette protection : une requête `GET` peut le repasser à `0` et écrire.
+* `SET profile` n&#39;est pas soumis à un contrôle d&#39;accès : n&#39;importe quelle session peut donc sélectionner n&#39;importe quel profil par son nom. Un profil reste accessible même si vous ne l&#39;affectez à personne, bien que les modifications qu&#39;il applique restent soumises aux contraintes déjà actives dans cette session.
+* En HTTP, les requêtes `GET` sont forcées à `readonly = 2` uniquement lorsque la valeur effective serait autrement `0`. Ainsi, un profil qui définit `readonly = 1` mais autorise aussi la modification de `readonly` en mode lecture seule réduit à néant cette protection, car une requête `GET` peut le repasser à `0` et écrire.
 
 ## Plusieurs profils de contraintes {#multiple-constraint-profiles}
 
