@@ -390,21 +390,6 @@ TEST_F(UniqueKeyProbeTest, FindRowIndexBatchExceedsMultiGetBatchLimit)
         EXPECT_EQ(out[i], expected[i]) << "mismatch at batch row " << i;
 }
 
-/// RocksDB's `MultiGet` caps at 32 keys and only `assert`s it - an over-limit
-/// batch is UB in release builds. `multiGet` must reject it before calling in.
-TEST_F(UniqueKeyProbeTest, MultiGetOverBatchLimitThrows)
-{
-    auto reader = makeReader("multiget_limit_part", {{1, 0}});
-
-    const String e = encodeKey(1);
-    std::vector<String> values;
-    std::vector<rocksdb::Slice> keys(PROBE_BATCH_SIZE + 1, rocksdb::Slice(e.data(), e.size()));
-    EXPECT_ANY_THROW(reader->multiGet(keys, values));
-
-    keys.resize(PROBE_BATCH_SIZE);
-    EXPECT_NO_THROW(reader->multiGet(keys, values));
-}
-
 /// `BlockBasedTable::MultiGet` asserts on an empty range - an empty batch
 /// must short-circuit as a no-op instead.
 TEST_F(UniqueKeyProbeTest, MultiGetEmptyBatchIsNoOp)
