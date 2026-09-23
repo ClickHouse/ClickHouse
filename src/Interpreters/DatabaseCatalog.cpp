@@ -681,12 +681,16 @@ CurrentDatabaseInfo DatabaseCatalog::splitTablePrefixFromDatabaseName(const Stri
 {
     /// dot-less names (the overwhelmingly common case) cost nothing
     CurrentDatabaseInfo info(name);
-    if (!info.hasTablePrefix())
+    if (!info.hasTablePrefix() && info.getFullName() == name)
         return info;
 
-    /// an existing dotted database always wins, quoting makes the name one literal component
+    /// an existing database always wins, also over a quoted spelling; quoting makes the name one literal component
     if (isDatabaseExist(name))
         return CurrentDatabaseInfo(doubleQuoteString(name));
+
+    /// a quoted single component with no such literal database is the unquoted name
+    if (!info.hasTablePrefix())
+        return info;
 
     auto database = tryGetDatabase(info.getDatabasePart());
     if (!database || database->getTableNamespaceSupport() == TableNamespaceSupport::None)
