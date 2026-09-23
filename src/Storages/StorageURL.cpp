@@ -43,6 +43,7 @@
 #include <Interpreters/ClusterFunctionReadTask.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -75,6 +76,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char url_glob_defer_path_filter[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_url_wildcard_from_index_pages;
@@ -473,6 +479,9 @@ private:
             if (!filter_actions)
             {
                 filter_deferred = !VirtualColumnUtils::buildSetsForDAG(*filter_dag, filter_context);
+                /// A local read builds its sets in `applyFilters`, before plan optimization moves their
+                /// subquery plans away, so tests need this to reach the deferred path deterministically.
+                fiu_do_on(FailPoints::url_glob_defer_path_filter, { filter_deferred = true; });
                 filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
             }
 
