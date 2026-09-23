@@ -865,7 +865,9 @@ Field Field::resolveNumberLiteral() const
         return num.toFloat64();
     }
 
-    /// Integer literal → resolve to the smallest fitting integer type.
+    /// Integer literal → resolve to the smallest fitting integer type, walking the same
+    /// `UInt64`/`Int64` → 128 → 256 ladder as `ParserNumber`, so that `FieldToDataType` infers
+    /// the usual narrow type (e.g. `UInt8` for `1`) rather than a wide one.
     /// tryReadIntText doesn't detect overflow for wide integers, so we verify
     /// by converting back to string and comparing with the original.
     bool negative = !s.empty() && s[0] == '-';
@@ -884,6 +886,12 @@ Field Field::resolveNumberLiteral() const
     {
         {
             ReadBufferFromString buf(s);
+            Int64 value;
+            if (tryReadIntText(value, buf) && buf.eof() && value < 0 && verifyRoundtrip(value, s))
+                return value;
+        }
+        {
+            ReadBufferFromString buf(s);
             Int128 value;
             if (tryReadIntText(value, buf) && buf.eof() && value < 0 && verifyRoundtrip(value, s))
                 return value;
@@ -897,6 +905,12 @@ Field Field::resolveNumberLiteral() const
     }
     else
     {
+        {
+            ReadBufferFromString buf(s);
+            UInt64 value;
+            if (tryReadIntText(value, buf) && buf.eof() && verifyRoundtrip(value, s))
+                return value;
+        }
         {
             ReadBufferFromString buf(s);
             UInt128 value;

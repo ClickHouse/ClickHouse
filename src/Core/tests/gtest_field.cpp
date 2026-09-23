@@ -398,3 +398,20 @@ GTEST_TEST(Field, CompareUUID)
     ASSERT_TRUE(one == one_again);
     ASSERT_FALSE(one == two);
 }
+
+
+GTEST_TEST(Field, ResolveNumberLiteral)
+{
+    /// Integer literals resolve to the smallest fitting integer Field type,
+    /// so a literal that fits in 64 bits must not become a wide integer.
+    ASSERT_EQ(Field(NumberLiteral("1")).resolveNumberLiteral(), Field(UInt64(1)));
+    ASSERT_EQ(Field(NumberLiteral("-1")).resolveNumberLiteral(), Field(Int64(-1)));
+    ASSERT_EQ(Field(NumberLiteral("18446744073709551615")).resolveNumberLiteral(), Field(std::numeric_limits<UInt64>::max()));
+    ASSERT_EQ(Field(NumberLiteral("-9223372036854775808")).resolveNumberLiteral(), Field(std::numeric_limits<Int64>::min()));
+
+    ASSERT_EQ(Field(NumberLiteral("18446744073709551616")).resolveNumberLiteral().getType(), Field::Types::UInt128);
+    ASSERT_EQ(Field(NumberLiteral("-9223372036854775809")).resolveNumberLiteral().getType(), Field::Types::Int128);
+    ASSERT_EQ(Field(NumberLiteral("340282366920938463463374607431768211456")).resolveNumberLiteral().getType(), Field::Types::UInt256);
+
+    ASSERT_EQ(Field(NumberLiteral("1.5")).resolveNumberLiteral(), Field(Float64(1.5)));
+}
