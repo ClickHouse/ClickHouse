@@ -280,7 +280,6 @@ namespace Setting
     extern const SettingsBool use_statistics_cache;
     extern const SettingsBool use_partition_pruning;
     extern const SettingsBool optimize_mutations_with_partition_pruning;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsBool use_constant_folding_in_index_analysis;
     extern const SettingsBool use_skip_indexes;
 }
@@ -1671,7 +1670,12 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 
     if (level >= MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY)
         if (!partition_key.column_names.empty())
+        {
             columns = partition_key.expression->getRequiredColumnsWithTypes();
+            /// Min-max index slots are addressed by position and a loaded part keeps the order it was
+            /// built with, so this order must not follow the mutable table column order.
+            columns.sort();
+        }
 
     if (level >= MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET)
     {
@@ -6493,8 +6497,17 @@ static bool hasTextIndexMaterialization(const MutationCommands & commands, Stora
     return false;
 }
 
-void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & /*settings*/) const
+void MergeTreeData::checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const
 {
+    /// Every command that passes `hasNonEmptyMutationCommands` rewrites parts on disk.
+    /// Callers that synthesize an ALTER on behalf of a lightweight write relax the setting
+    /// on their own context copy, so provenance is decided there, not by command shape.
+    if (!settings[Setting::allow_non_metadata_alters] && commands.hasNonEmptyMutationCommands())
+        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                        "The following mutation commands: '{}' will modify data on disk, "
+                        "but setting `allow_non_metadata_alters` is disabled",
+                        commands.ast()->formatForErrorMessage());
+
     for (const auto & disk : getDisks())
         if (!disk->supportsHardLinks())
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Mutations are not supported for immutable disk '{}'", disk->getName());
@@ -10428,12 +10441,7 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsAffectedByCommands
     std::unordered_set<String> * analyzed_partition_ids) const
 {
     std::set<String> affected_partition_ids;
-    /// When validation is disabled, mutation predicates may deliberately reference objects that
-    /// do not exist yet. Do not run the pruning analysis then: it would eagerly validate the
-    /// predicate and change `validate_mutation_query = 0` from deferred validation into a
-    /// submission-time exception.
-    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning]
-        && query_context->getSettingsRef()[Setting::validate_mutation_query];
+    bool optimize_with_pruning = query_context->getSettingsRef()[Setting::optimize_mutations_with_partition_pruning];
 
     /// Each pruned command analyzes its own snapshot of the local parts, taken at a slightly
     /// different time. A partition counts as analyzed only if every pruned command has seen it,
