@@ -61,7 +61,7 @@ SQLQueryPiece applySimpleFunction(
 
             case StoreMethod::CONST_SCALAR:
             {
-                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type));
+                function_args.push_back(timeSeriesScalarToAST(argument.scalar_value));
 
                 if (res.store_method != StoreMethod::SCALAR_GRID && res.store_method != StoreMethod::VECTOR_GRID)
                     res.store_method = StoreMethod::SINGLE_SCALAR;
