@@ -125,6 +125,14 @@ public:
         throw Exception(ErrorCodes::CANNOT_CONVERT_TYPE, "Cannot convert CustomType to {}", demangle(typeid(T).name()));
     }
 
+    T operator() (const NumberLiteral & x) const
+    {
+        /// Resolve to a concrete numeric type first: an integer literal wider than 2^53 would lose
+        /// precision if it went through Float64.
+        const Field resolved = Field(x).resolveNumberLiteral();
+        return applyVisitor(*this, resolved);
+    }
+
     template <typename U>
     requires is_big_int_v<U>
     T operator() (const U & x) const
