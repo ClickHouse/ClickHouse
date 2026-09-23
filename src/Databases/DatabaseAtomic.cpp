@@ -369,16 +369,17 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
     if (dictionary && !table->isDictionary())
         throw Exception(ErrorCodes::INCORRECT_QUERY, "Use RENAME/EXCHANGE TABLE (instead of RENAME/EXCHANGE DICTIONARY) for tables");
 
-    /// A table nothing has loaded yet is asked through its stored definition rather than loaded under the lock.
+    /// A loaded table answers for the macros it was loaded with, the stored definition for the current ones, which
+    /// `SYSTEM RELOAD CONFIG` may have changed since. A table nothing has loaded is not loaded under the lock to be asked.
     auto check_can_be_renamed = [this](const DatabaseAtomic & db, const String & name, const StoragePtr & storage, const StorageID & new_id)
     {
         const auto * proxy = typeid_cast<const StorageTableProxy *>(storage.get());
-        if (proxy && !proxy->isLoaded())
+        if (!proxy || proxy->isLoaded())
+            storage->checkTableCanBeRenamed(new_id);
+        if (proxy || storage->supportsReplication())
             checkStoredDefinitionCanBeRenamed(
                 parseQueryFromMetadata(log, getContext(), db.getDisk(), db.getObjectMetadataPath(name)),
                 storage->getStorageID(), new_id, /*whole_database=*/ false, getContext());
-        else
-            storage->checkTableCanBeRenamed(new_id);
     };
 
     StorageID old_table_id = table->getStorageID();
@@ -846,26 +847,26 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
-    /// Refused before anything is moved. A table nothing has loaded and a detached one are answered from their
-    /// stored definitions; editing the metadata of a detached table is the way to move one whose path binds the
-    /// database name, and the check reads the edited file. While the server starts, the Ordinary-to-Atomic
-    /// conversion renames its temporary database back to the name the definitions were written under, so a stored
-    /// definition is not asked then, as `StorageReplicatedMergeTree::checkTableCanBeRenamed` does not ask either.
+    /// Refused before anything is moved. A loaded table answers for the macros it was loaded with, and every table's
+    /// stored definition for the current ones, which `SYSTEM RELOAD CONFIG` may have changed since; that is also the
+    /// only answer for a table nothing has loaded and for a detached one. Editing the metadata of a detached table
+    /// is the way to move one whose path binds the database name, and the check reads the edited file. While the
+    /// server starts, the Ordinary-to-Atomic conversion renames its temporary database back to the name the
+    /// definitions were written under, so a stored definition is not asked then, as
+    /// `StorageReplicatedMergeTree::checkTableCanBeRenamed` does not ask either.
     const bool server_starting = getContext()->getApplicationType() == Context::ApplicationType::SERVER
         && !getContext()->isServerCompletelyStarted();
     for (const auto & table : tables)
     {
         const auto * proxy = typeid_cast<const StorageTableProxy *>(table.second.get());
-        if (proxy && !proxy->isLoaded())
-        {
-            if (!server_starting)
-                checkStoredDefinitionCanBeRenamed(
-                    parseQueryFromMetadata(log, getContext(), getDisk(), getObjectMetadataPath(table.first)),
-                    table.second->getStorageID(), StorageID(new_name, table.first, table.second->getStorageID().uuid),
-                    /*whole_database=*/ true, getContext());
-        }
-        else
+        if (!proxy || proxy->isLoaded())
             table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+        /// Asking a proxy whether it replicates would load it.
+        if (!server_starting && (proxy || table.second->supportsReplication()))
+            checkStoredDefinitionCanBeRenamed(
+                parseQueryFromMetadata(log, getContext(), getDisk(), getObjectMetadataPath(table.first)),
+                table.second->getStorageID(), StorageID(new_name, table.first, table.second->getStorageID().uuid),
+                /*whole_database=*/ true, getContext());
     }
     if (!server_starting)
         for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
