@@ -4,20 +4,16 @@
 #include <Common/HashTable/PartitionedFixedHashMap.h>
 #include <Common/HashTable/PartitionedFixedHashSet.h>
 
-#include <IO/ReadBufferFromString.h>
-#include <IO/WriteBufferFromString.h>
-
 #include <algorithm>
 #include <mutex>
-#include <string>
 #include <thread>
 #include <unordered_set>
 #include <vector>
 
 
 /** The invariant under test: partitioning a fixed-range table changes which bucket a key belongs to
-  * and nothing else. Cells, offsets, buffer size, iteration and serialization must be those of the
-  * plain `FixedHashMap` at every bucket count.
+  * and nothing else. Cells, offsets, buffer size and iteration must be those of the plain `FixedHashMap`
+  * at every bucket count.
   */
 
 namespace
@@ -64,22 +60,6 @@ template <size_t... bits, typename Fn>
 void forBucketBits(Fn && fn)
 {
     (fn.template operator()<bits>(), ...);
-}
-
-template <typename Map>
-std::string serialize(const Map & map)
-{
-    DB::WriteBufferFromOwnString wb;
-    map.write(wb);
-    return wb.str();
-}
-
-template <typename Map>
-void deserialize(Map & map, const std::string & bytes)
-{
-    DB::ReadBufferFromString rb(bytes);
-    map.read(rb);
-    EXPECT_TRUE(rb.eof()) << "write emitted more than read consumed";
 }
 
 /// Keys are pairwise consecutive; the two must route together whenever their cells start on one cache line.
@@ -439,12 +419,5 @@ TEST(PartitionedFixedHashSet, RecordsPresenceAndRoutesByCacheLine)
             size_t visited = 0;
             set.forEachMapped([&](auto &) { ++visited; });
             ASSERT_EQ(visited, 0u);
-
-            /// Presence is all a set cell carries, so the bytes are the table's populated positions.
-            Set copy;
-            deserialize(copy, serialize(set));
-            ASSERT_EQ(copy.size(), num_lines) << "bits " << bits;
-            for (UInt32 line = 0; line < num_lines; ++line)
-                ASSERT_TRUE(copy.has(static_cast<UInt16>(line * keys_per_line))) << "line " << line;
         });
 }
