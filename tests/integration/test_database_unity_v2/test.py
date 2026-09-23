@@ -180,6 +180,20 @@ def started_cluster():
         cluster.shutdown()
 
 
+def skip_if_no_delta_kernel(node):
+    # The Delta kernel (Rust) is not built under Memory Sanitizer, so the DeltaLake engine is absent.
+    has_delta_lake = (
+        int(
+            node.query(
+                "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
+            ).strip()
+        )
+        > 0
+    )
+    if not has_delta_lake:
+        pytest.skip("Build does not support DeltaLake (Delta kernel is unavailable)")
+
+
 def unique_name(prefix):
     return f"{prefix}_{uuid.uuid4()}".replace("-", "_")
 
@@ -364,17 +378,7 @@ def test_unreadable_table_is_hidden(started_cluster):
 
 def test_uniform_table_reads_as_delta(started_cluster):
     node = started_cluster.instances["node1"]
-    # The Delta kernel (Rust) is not built under Memory Sanitizer, so the DeltaLake engine is absent.
-    has_delta_lake = (
-        int(
-            node.query(
-                "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
-            ).strip()
-        )
-        > 0
-    )
-    if not has_delta_lake:
-        pytest.skip("Build does not support DeltaLake (Delta kernel is unavailable)")
+    skip_if_no_delta_kernel(node)
 
     db_name = unique_name("v2_uniform")
     create_database(node, db_name)
@@ -448,6 +452,7 @@ def test_create_and_insert_delta_table(started_cluster):
     """A table created through the database is registered in Unity, and rows
     written through the database read back."""
     node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
     schema_name = unique_name("v2_write")
     table_name = "created"
     db_name = unique_name("v2_write_db")
