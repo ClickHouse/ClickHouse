@@ -14,6 +14,7 @@
 #include <Common/thread_local_rng.h>
 #include <Common/SensitiveDataMasker.h>
 #include <Common/FailPoint.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/SignalHandlers.h>
 #include <Common/Stopwatch.h>
@@ -1352,16 +1353,13 @@ static String convertSortToOrderBy(const String & sort)
 /// be any numeric type or a quoted string.
 static Float64 fieldToLimitOffsetFloat(const Field & f)
 {
-    switch (f.getType())
-    {
-        case Field::Types::Float64: return f.safeGet<Float64>();
-        case Field::Types::UInt64: return static_cast<Float64>(f.safeGet<UInt64>());
-        case Field::Types::Int64: return static_cast<Float64>(f.safeGet<Int64>());
-        case Field::Types::String: return parseFromString<Float64>(f.safeGet<String>());
-        default:
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Expected a numeric or string value for `limit` / `offset` setting, got {}", f.getTypeName());
-    }
+    const auto type = f.getType();
+    if (type == Field::Types::String)
+        return parseFromString<Float64>(f.safeGet<String>());
+    if (type == Field::Types::Float64 || type == Field::Types::UInt64 || type == Field::Types::Int64 || Field::isWideInteger(type))
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), f);
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "Expected a numeric or string value for `limit` / `offset` setting, got {}", f.getTypeName());
 }
 
 /// Translate the `page` setting into `limit` / `offset` (`offset = limit * (page - 1)`), in place.
