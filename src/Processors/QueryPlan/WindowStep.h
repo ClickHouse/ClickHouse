@@ -1,5 +1,6 @@
 #pragma once
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
 
 #include <Interpreters/WindowDescription.h>
 
@@ -11,10 +12,15 @@ class WindowTransform;
 class WindowStep : public ITransformingStep
 {
 public:
+    /// With `hash_partitioning_settings` the functions are computed by `PartitionAggregateTransform` without
+    /// sorting, see `canUseHashPartitioning`. The settings control spilling.
     explicit WindowStep(const SharedHeader & input_header_,
             const WindowDescription & window_description_,
             const std::vector<WindowFunctionDescription> & window_functions_,
-            bool streams_fan_out_);
+            bool streams_fan_out_,
+            std::optional<SortingStep::Settings> hash_partitioning_settings_ = {});
+
+    static bool canUseHashPartitioning(const WindowDescription & window_description, const Block & input_header);
 
     String getName() const override { return "Window"; }
 
@@ -53,6 +59,7 @@ public:
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
 
+    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
     void serialize(Serialization & ctx) const override;
     bool isSerializable() const override { return true; }
 
@@ -65,6 +72,13 @@ public:
     /// After the last window the pipeline is resized back to `max_threads` for downstream parallelism.
     bool hasStreamsFanOut() const { return streams_fan_out; }
 
+    bool usesHashPartitioning() const { return hash_partitioning_settings.has_value(); }
+
+    Names getPartitionByColumnNames() const;
+
+    /// The input streams already carry whole partitions.
+    void skipScatterByPartition() { skip_scatter_by_partition = true; }
+
     QueryPlanStepPtr clone() const override;
 
 private:
@@ -73,6 +87,8 @@ private:
     WindowDescription window_description;
     std::vector<WindowFunctionDescription> window_functions;
     bool streams_fan_out;
+    std::optional<SortingStep::Settings> hash_partitioning_settings;
+    bool skip_scatter_by_partition = false;
 };
 
 }

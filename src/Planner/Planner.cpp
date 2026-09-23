@@ -151,6 +151,7 @@ namespace Setting
     extern const SettingsQueryResultCacheSystemTableHandling query_cache_system_table_handling;
     extern const SettingsSeconds query_cache_ttl;
     extern const SettingsBool query_plan_enable_multithreading_after_window_functions;
+    extern const SettingsBool query_plan_window_functions_hash_partitioning;
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
     extern const SettingsFloat totals_auto_threshold;
@@ -1880,6 +1881,7 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
 void addWindowSteps(QueryPlan & query_plan,
     const PlannerContextPtr & planner_context,
     WindowAnalysisResult & window_analysis_result,
+    const SortDescription & query_sort_description,
     size_t max_step_description_length)
 {
     const auto & query_context = planner_context->getQueryContext();
@@ -1889,6 +1891,7 @@ void addWindowSteps(QueryPlan & query_plan,
     sortWindowDescriptions(window_descriptions);
 
     size_t window_descriptions_size = window_descriptions.size();
+    bool previous_uses_hash_partitioning = false;
 
     for (size_t i = 0; i < window_descriptions_size; ++i)
     {
@@ -1903,14 +1906,23 @@ void addWindowSteps(QueryPlan & query_plan,
           */
 
         bool need_sort = !window_description.full_sort_description.empty();
-        if (need_sort && i != 0)
+        if (need_sort && i != 0 && !previous_uses_hash_partitioning)
         {
             const size_t effective_max_threads = getMaxThreadsForAvailableMemory(
                 settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
             need_sort = !sortDescriptionIsPrefix(window_description.full_sort_description, window_descriptions[i - 1].full_sort_description)
                 || (effective_max_threads != 1 && window_description.partition_by.size() != window_descriptions[i - 1].partition_by.size());
         }
-        if (need_sort)
+
+        /// Hash partitioning replaces a sort, unless the sort would also serve the final ORDER BY. The
+        /// distributed plan only distributes windows over a sort (`tryPushWindowBelowSortedGather`).
+        const bool use_hash_partitioning = need_sort && settings[Setting::query_plan_window_functions_hash_partitioning]
+            && !settings[Setting::make_distributed_plan]
+            && !sortDescriptionIsPrefix(window_description.partition_by, query_sort_description)
+            && WindowStep::canUseHashPartitioning(window_description, *query_plan.getCurrentHeader());
+        previous_uses_hash_partitioning = use_hash_partitioning;
+
+        if (need_sort && !use_hash_partitioning)
         {
             SortingStep::Settings sort_settings(query_context->getSettingsRef());
 
@@ -1946,11 +1958,18 @@ void addWindowSteps(QueryPlan & query_plan,
 
         // Fan out streams only for the last window to preserve the ordering between windows,
         // and WindowTransform works on single stream anyway.
-        const bool streams_fan_out
-            = settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == window_descriptions_size);
+        const bool streams_fan_out = !use_hash_partitioning
+            && settings[Setting::query_plan_enable_multithreading_after_window_functions] && ((i + 1) == window_descriptions_size);
 
-        auto window_step
-            = std::make_unique<WindowStep>(query_plan.getCurrentHeader(), window_description, window_description.window_functions, streams_fan_out);
+        std::optional<SortingStep::Settings> hash_partitioning_settings;
+        if (use_hash_partitioning)
+            hash_partitioning_settings.emplace(query_context->getSettingsRef());
+        auto window_step = std::make_unique<WindowStep>(
+            query_plan.getCurrentHeader(),
+            window_description,
+            window_description.window_functions,
+            streams_fan_out,
+            std::move(hash_partitioning_settings));
         window_step->setStepDescription("Window step for window '" + window_description.window_name + "'", max_step_description_length);
         query_plan.addStep(std::move(window_step));
     }
@@ -3002,7 +3021,12 @@ void Planner::buildPlanForQueryNode()
                         "Before window functions",
                         useful_sets);
 
-                addWindowSteps(query_plan, planner_context, window_analysis_result, select_query_options.max_step_description_length);
+                addWindowSteps(
+                    query_plan,
+                    planner_context,
+                    window_analysis_result,
+                    query_analysis_result.sort_description,
+                    select_query_options.max_step_description_length);
             }
 
             if (expression_analysis_result.hasQualify())
