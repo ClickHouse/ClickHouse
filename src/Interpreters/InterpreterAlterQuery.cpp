@@ -23,8 +23,10 @@
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
@@ -39,6 +41,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
+#include <Storages/StorageSet.h>
 
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
@@ -114,6 +117,41 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
             if (payload)
                 replaceLegacyToTime(*payload);
         }
+    }
+}
+
+void checkSetRowPoliciesForReplicatedMutation(
+    const ASTAlterQuery & alter, const String & database_name, const ContextPtr & context)
+{
+    ASTPtr command_list = alter.command_list->clone();
+    AddDefaultDatabaseVisitor visitor(context, database_name);
+    visitor.visit(command_list);
+
+    const auto check_expression = [&](const ASTPtr & ast, const auto & self) -> void
+    {
+        if (const auto * function = ast->as<ASTFunction>();
+            function && functionIsInOrGlobalInOperator(function->name) && function->arguments
+            && function->arguments->children.size() == 2)
+        {
+            const auto & right_operand = function->arguments->children[1];
+            if (right_operand->as<ASTTableIdentifier>())
+            {
+                auto table_id = context->resolveStorageID(right_operand);
+                auto storage = DatabaseCatalog::instance().tryGetTable(table_id, context);
+                if (auto * storage_set = storage ? dynamic_cast<StorageSet *>(storage.get()) : nullptr)
+                    storage_set->checkNoRowPolicy(context);
+            }
+        }
+
+        for (const auto & child : ast->children)
+            self(child, self);
+    };
+
+    for (const auto & child : command_list->children)
+    {
+        const auto * command = child->as<ASTAlterCommand>();
+        if (command->type == ASTAlterCommand::DELETE || command->type == ASTAlterCommand::UPDATE)
+            check_expression(child, check_expression);
     }
 }
 
@@ -504,6 +542,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     DatabasePtr database = DatabaseCatalog::instance().getDatabase(table_id.database_name);
     if (database->shouldReplicateQuery(getContext(), query_ptr))
     {
+        /// Replicated DDL is replayed with an internal context, which has no user row policies.
+        /// Check the mutation's `Set` operands once with the submitting context before enqueueing it.
+        checkSetRowPoliciesForReplicatedMutation(alter, table_id.database_name, getContext());
+
         auto guard = DatabaseCatalog::instance().getDDLGuard(table_id.database_name, table_id.table_name, database.get());
         guard->releaseTableLock();
         return database->tryEnqueueReplicatedDDL(query_ptr, getContext(), {}, std::move(guard));
