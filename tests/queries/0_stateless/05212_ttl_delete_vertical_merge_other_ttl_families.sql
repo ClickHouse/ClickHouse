@@ -1,3 +1,6 @@
+-- Tags: no-object-storage
+-- An object-storage policy has no disk `default`, so the move TTL below could not be created there.
+
 -- A vertical TTL merge evaluates every TTL family's expression against the merged block, so the
 -- inputs of the move and recompression TTLs must be merged too, not gathered. Without that the
 -- merge throws `NOT_FOUND_COLUMN_IN_BLOCK` and the parts never merge.
