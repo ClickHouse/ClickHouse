@@ -5,6 +5,16 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+# `grep -c` prints only the count, so a run where the guard did not fire used to discard the
+# message that appeared instead of it.
+guard_message_count() {
+    local output count
+    output=$(cat)
+    count=$(grep -c -F 'nested too deeply' <<< "$output") || true
+    echo "$count"
+    [ "$count" = 1 ] || echo "FAIL: the depth guard did not fire, got: $(head -c 1000 <<< "$output" | tr '\n' ' ')"
+}
+
 # The Cap'n Proto schema parser is recursive, so a deeply nested type expression used to exhaust
 # the thread stack while the schema was being parsed.
 
@@ -17,7 +27,7 @@ SETTINGS
     format_schema_source = 'string',
     format_schema = '@0x844f048b15c12dab;\nstruct M { data @0 :${NESTED}; }',
     format_schema_message_name = 'M'
-" 2>&1 | grep -c -F 'nested too deeply'
+" 2>&1 | guard_message_count
 
 ${CLICKHOUSE_LOCAL} --logger.console=0 --query "
 DESC format(CapnProto, '')
@@ -50,7 +60,7 @@ with open(directory + '/imports_shallow.capnp', 'w') as f:
 
 ${CLICKHOUSE_LOCAL} --logger.console=0 --query "
 DESC format(CapnProto, '') SETTINGS format_schema = '${SCHEMA_DIR}/imports_deep.capnp:M'
-" 2>&1 | grep -c -F 'nested too deeply'
+" 2>&1 | guard_message_count
 
 ${CLICKHOUSE_LOCAL} --logger.console=0 --query "
 DESC format(CapnProto, '') SETTINGS format_schema = '${SCHEMA_DIR}/imports_shallow.capnp:M'
