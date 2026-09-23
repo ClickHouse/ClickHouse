@@ -156,8 +156,9 @@ SELECT count() FROM t_element_wise_json WHERE j <= '{"a":null}'::JSON(a Nullable
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_json WHERE j = '{"a":5}'::JSON(a Nullable(UInt32)) AND j >= '{"a":0}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 1, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 SELECT count() = 1 FROM (EXPLAIN QUERY TREE SELECT count() FROM t_element_wise_json WHERE j = '{"a":5}'::JSON(a Nullable(UInt32)) AND j >= '{"a":0}'::JSON(a Nullable(UInt32)) SETTINGS optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: greaterOrEquals,%';
 
--- 18) Such a comparison must also stay out of the `notEquals` merge into `NOT IN`, whose set membership
---     uses the same order it is not a point in. Three constants of one value at three declared types
+-- 18) Such a comparison must also stay out of the `notEquals` merge into `NOT IN`, which replaces it with
+--     set membership: a third notion of equality, which need not agree with the one the comparison
+--     applies. Three constants of one value at three declared types
 --     stay three entries here, because the merge deduplicates by node structure, and three is the
 --     threshold; the resulting `notIn` holds `nan` equal to `nan` where the element-wise `notEquals` it
 --     replaces does not. The threshold is pinned rather than left at its default so that changing that
