@@ -84,7 +84,7 @@ bool distinctStepCarriesSetting(
 
 JoinSettings makeJoinSettings(const String & codec, bool spill_codec_authorized, std::vector<JoinAlgorithm> algorithms)
 {
-    JoinSettings join_settings(QueryPlanSerializationSettings{});
+    JoinSettings join_settings(QueryPlanSerializationSettings{}, DBMS_QUERY_PLAN_SERIALIZATION_VERSION);
     join_settings.temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
     join_settings.temporary_files_codec = codec;
     join_settings.spill_codec_authorized = spill_codec_authorized;
@@ -100,7 +100,7 @@ bool joinCarriesSetting(
     const JoinSettings & join_settings, const JoinOperator & join_operator, UInt64 version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION)
 {
     QueryPlanSerializationSettings settings;
-    join_settings.updatePlanSettings(settings, join_operator, version);
+    join_settings.updatePlanSettings(settings, version, join_operator);
     return wireCarriesSetting(settings);
 }
 

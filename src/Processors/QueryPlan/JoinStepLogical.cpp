@@ -2467,7 +2467,7 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings, join_operator, version);
+    join_settings.updatePlanSettings(settings, version, join_operator);
 
     /// The sorting settings of a join are consumed only by the sorts the planner adds around a
     /// full-sorting-merge join or an IEJoin (`addSortingForMergeJoin`, `constructIEJoinStep`), so they must
@@ -2605,7 +2605,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
     auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
