@@ -277,7 +277,7 @@ void listFilesWithRegexpMatchingImpl(
 
     const std::string prefix_without_globs = path_for_ls + for_match.substr(1, end_of_path_without_globs);
 
-    if (!fs::exists(prefix_without_globs))
+    if (!existsOrFileNameTooLong([&] { return fs::exists(prefix_without_globs); }))
         return;
 
     const bool looking_for_directory = next_slash_after_glob_pos != std::string::npos;
@@ -416,10 +416,24 @@ void checkCreationIsAllowed(
 
     if (can_be_directory)
     {
-        auto table_path_stat = fs::status(table_path);
-        if (fs::exists(table_path_stat) && fs::is_directory(table_path_stat))
+        const bool is_existing_directory = existsOrFileNameTooLong([&]
+        {
+            const auto table_path_stat = fs::status(table_path);
+            return fs::exists(table_path_stat) && fs::is_directory(table_path_stat);
+        });
+        if (is_existing_directory)
             throw Exception(ErrorCodes::INCORRECT_FILE_NAME, "File {} must not be a directory", table_path);
     }
+}
+
+/// Every syscall a path is passed to (`stat`, `open`, `opendir`) stops at the first NUL byte, while the
+/// containment checks see the whole value. A path with an embedded NUL therefore addresses a location the
+/// checks never look at, so it is rejected before the first filesystem probe. The path is not echoed in the
+/// message: it would put the NUL byte into the logs.
+void throwIfPathContainsEmbeddedNul(const std::string & path)
+{
+    if (path.contains('\0'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "File path contains an embedded NUL byte");
 }
 
 /// Use this instead of checkCreationIsAllowed for a path that can still carry a `..`.
@@ -429,6 +443,9 @@ void checkCreationIsAllowedResolvingDotDot(
     const std::string & path,
     bool can_be_directory)
 {
+    /// The resolver below canonicalizes the head of the path on the filesystem.
+    throwIfPathContainsEmbeddedNul(path);
+
     std::error_code ec;
     const fs::path checked_path = resolveDotDotForContainmentCheck(path, ec);
     if (ec)
@@ -470,6 +487,10 @@ std::pair<String, String> splitToArchivePathAndPathInArchive(const String & sour
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
+    /// The listing below stats the path and expands its globs on the filesystem before the matched paths
+    /// are checked for containment in `user_files_path`, so the path must be rejected here, not there.
+    throwIfPathContainsEmbeddedNul(path_with_globs);
+
     fs::path user_files_absolute_path = fs::weakly_canonical(user_files_path);
     fs::path fs_pattern(path_with_globs);
     if (fs_pattern.is_relative())
@@ -490,7 +511,7 @@ Strings getPathsList(const String & path_with_globs, const String & user_files_p
     }
     else if (pattern.find_first_of("*?{") == std::string::npos)
     {
-        if (!fs::is_directory(pattern))
+        if (!existsOrFileNameTooLong([&] { return fs::is_directory(pattern); }))
         {
             std::error_code error;
             size_t size = fs::file_size(pattern, error);
@@ -1738,7 +1759,7 @@ Chunk StorageFileSource::generate()
                         if (archive.empty())
                             return {};
 
-                        if (!fs::exists(archive))
+                        if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                         {
                             if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                 continue;
@@ -1785,7 +1806,7 @@ Chunk StorageFileSource::generate()
                                 if (archive.empty())
                                     return {};
 
-                                if (!fs::exists(archive))
+                                if (!existsOrFileNameTooLong([&] { return fs::exists(archive); }))
                                 {
                                     if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                                         continue;
@@ -1847,7 +1868,7 @@ Chunk StorageFileSource::generate()
                     if (current_path.empty())
                         return {};
 
-                    if (!fs::exists(current_path))
+                    if (!existsOrFileNameTooLong([&] { return fs::exists(current_path); }))
                     {
                         if (getContext()->getSettingsRef()[Setting::engine_file_empty_if_not_exists])
                             continue;
@@ -3172,6 +3193,8 @@ void registerStorageFile(StorageFactory & factory)
         "File",
         [](const StorageFactory::Arguments & factory_args)
         {
+            checkStorageSettingNames(factory_args);
+
             auto context = factory_args.getLocalContext();
             StorageFile::CommonArguments storage_args
             {
@@ -3203,7 +3226,7 @@ void registerStorageFile(StorageFactory & factory)
             {
                 Settings settings = factory_args.getContext()->getSettingsCopy();
 
-                // Apply changes from SETTINGS clause, with validation.
+                // Applying the changes validates the values, not the names.
                 settings.applyChanges(factory_args.storage_def->settings->changes);
 
                 storage_args.format_settings = getFormatSettings(factory_args.getContext(), settings);
