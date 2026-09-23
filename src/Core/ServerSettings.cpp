@@ -2216,6 +2216,9 @@ void ServerSettings::checkUnknownSettings(const Poco::Util::AbstractConfiguratio
         "named_collections",
         "named_collections_storage",
 
+        /// SQL-managed clusters
+        "cluster_metadata",
+
         /// SQL-defined HTTP handlers
         "query_rules_storage",
 

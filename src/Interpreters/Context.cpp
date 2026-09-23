@@ -484,6 +484,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int CLUSTER_DOESNT_EXIST;
+    extern const int CLUSTER_ALREADY_EXISTS;
     extern const int SET_NON_GRANTED_ROLE;
     extern const int UNKNOWN_DISK;
     extern const int UNKNOWN_READ_METHOD;
@@ -6881,15 +6882,49 @@ void Context::reloadClusterConfig() const
         const auto & config = cluster_config ? *cluster_config : getConfigRef();
         auto new_clusters = std::make_shared<Clusters>(config, *settings, getMacros());
 
+        bool clusters_reloaded = false;
         {
             std::lock_guard lock(shared->clusters_mutex);
             if (shared->clusters_config.get() == cluster_config.get())
             {
+                /// Preserve SQL-managed clusters from the *current* map under the same lock as the
+                /// swap. Copying from a snapshot taken outside this lock races with `DROP CLUSTER`
+                /// and can resurrect a cluster that was already removed (seen as a non-zero
+                /// `system.clusters` count after DROP, then `CLUSTER_ALREADY_EXISTS` on CREATE).
+                if (shared->clusters)
+                {
+                    for (const auto & [name, cluster] : shared->clusters->getContainer())
+                    {
+                        if (cluster->getSourceId() != Cluster::SourceId::SQL)
+                            continue;
+
+                        /// Config and SQL cluster names must not collide. Reject here so a newly
+                        /// added `<remote_servers>` entry cannot silently hide behind an existing
+                        /// SQL cluster (and later vanish from view after `DROP CLUSTER`).
+                        if (new_clusters->getCluster(name))
+                        {
+                            throw Exception(
+                                ErrorCodes::CLUSTER_ALREADY_EXISTS,
+                                "Cannot load SQL cluster `{}`: a cluster with the same name already exists in server configuration",
+                                name);
+                        }
+
+                        new_clusters->setCluster(name, cluster);
+                    }
+                }
+
                 shared->clusters = std::move(new_clusters);
-                return;
+                ++shared->clusters_version;
+                clusters_reloaded = true;
             }
 
             // Clusters config has been suddenly changed, recompute clusters
+        }
+
+        if (clusters_reloaded)
+        {
+            notifyDDLWorkerAfterClustersChange();
+            return;
         }
     }
 }
@@ -6969,11 +7004,14 @@ void Context::setClustersConfig(const ConfigurationPtr & config, bool enable_dis
 
         ++shared->clusters_version;
     }
-    {
-        SharedLockGuard lock(shared->mutex);
-        if (shared->ddl_worker)
-            shared->ddl_worker->notifyHostIDsUpdated();
-    }
+    notifyDDLWorkerAfterClustersChange();
+}
+
+void Context::notifyDDLWorkerAfterClustersChange() const
+{
+    SharedLockGuard lock(shared->mutex);
+    if (shared->ddl_worker)
+        shared->ddl_worker->notifyHostIDsUpdated();
 }
 
 size_t Context::getClustersVersion() const
@@ -6985,12 +7023,25 @@ size_t Context::getClustersVersion() const
 
 void Context::setCluster(const String & cluster_name, const std::shared_ptr<Cluster> & cluster)
 {
-    std::lock_guard lock(shared->clusters_mutex);
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        getClustersImpl(lock)->setCluster(cluster_name, cluster);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
+}
 
-    if (!shared->clusters)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Clusters are not set");
+void Context::removeCluster(const String & cluster_name)
+{
+    {
+        std::lock_guard lock(shared->clusters_mutex);
+        if (!shared->clusters)
+            return;
 
-    shared->clusters->setCluster(cluster_name, cluster);
+        shared->clusters->removeCluster(cluster_name);
+        ++shared->clusters_version;
+    }
+    notifyDDLWorkerAfterClustersChange();
 }
 
 
