@@ -1,0 +1,12 @@
+key range tracking
+pk, use_primary_key = 1	Key range tracking: 1
+pk, use_primary_key = 0	Key range tracking: 0
+pk + minmax, use_primary_key = 0	Key range tracking: 1
+results
+50	251225
+50	251225
+50	251225
+granules considered and dropped
+05249_pk_off	0	0
+05249_pk_off_minmax	1	1
+05249_pk_on	1	1

@@ -2952,8 +2952,9 @@ void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String
     const auto & settings = context->getSettingsRef();
     const auto & metadata = *storage_snapshot->metadata;
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
-    const bool is_primary_key_column
-        = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
+    /// `use_primary_key = 0` switches off every pruning by the primary key, this one included.
+    const bool is_primary_key_column = settings[Setting::use_primary_key]
+        && std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
 
     /// The primary-key path only needs the data-read safety checks above; the secondary skip-index
     /// part is additionally gated by `use_skip_indexes` and `ignore_data_skipping_indices`.
@@ -5329,12 +5330,17 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         /// Need to check ignore_data_skipping_indices
         const auto ignored_index_names = getIgnoredDataSkippingIndices(context->getSettingsRef());
 
+        /// Same gate as the ordinary primary key analysis in `buildIndexes`, and as the registration in
+        /// `addJoinRuntimeFilterIndexAnalysisOnDataRead`: a key column of a table read with `use_primary_key = 0`
+        /// is pruned only by a skip index covering it.
+        const bool use_primary_key = context->getSettingsRef()[Setting::use_primary_key];
+
         const auto & metadata = *storage_snapshot->metadata;
         const auto & pk_columns = metadata.getPrimaryKey().column_names;
         std::unordered_set<String> seen_index_names;
         for (const auto & descr : join_runtime_filters_for_index_analysis)
         {
-            if (std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
+            if (use_primary_key && std::find(pk_columns.begin(), pk_columns.end(), descr.key_column_name) != pk_columns.end())
             {
                 runtime_prune_primary_key = true;
                 continue;
