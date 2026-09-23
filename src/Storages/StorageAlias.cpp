@@ -86,10 +86,18 @@ NameSet StorageAlias::filterColumnsGrantedThroughChain(
 
     while (!granted.empty())
     {
-        std::erase_if(granted, [&](const String & column_name)
-        { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
-        if (granted.empty())
-            break;
+        /// A table-level grant covers every column of that table, so one table-level question answers
+        /// the whole per-column pass. Asking it is only a saving where it replaces more than one check.
+        const bool whole_table_granted
+            = granted.size() > 1 && alias->isDeclaredTargetGranted(query_context, access_type, {});
+
+        if (!whole_table_granted)
+        {
+            std::erase_if(granted, [&](const String & column_name)
+            { return !alias->isDeclaredTargetGranted(query_context, access_type, column_name); });
+            if (granted.empty())
+                break;
+        }
 
         /// A cyclic chain is loadable state, so a repeated name means there is no final table left to
         /// reach, and every name in the chain is authorized.
