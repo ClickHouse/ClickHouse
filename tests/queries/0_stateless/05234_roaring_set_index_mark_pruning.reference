@@ -49,6 +49,16 @@
 4
 --- Transformed key: toDayOfMonth on Nullable(DateTime) whose timezone differs from the session ---
 2026-12-05 12:00:00
+--- Transformed key: custom-week functions on DateTime whose timezone differs from the session ---
+toDayOfWeek	2026-06-07 05:00:00
+toDayOfWeek	2026-06-07 20:00:00
+toDayOfWeek IN	2026-06-07 05:00:00
+toDayOfWeek IN	2026-06-07 20:00:00
+toStartOfWeek	2026-06-07 05:00:00
+toStartOfWeek	2026-06-07 20:00:00
+toStartOfWeek	2026-06-08 05:00:00
+toYearWeek	2026-06-06 20:00:00
+toLastDayOfWeek	2026-06-06 20:00:00
 --- UInt64 ids on both sides of the 32-bit bucket boundary ---
 5
 4294967296

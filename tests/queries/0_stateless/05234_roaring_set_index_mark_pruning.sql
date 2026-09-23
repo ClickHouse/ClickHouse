@@ -60,6 +60,28 @@ SELECT dt FROM t_roaring_tz_nullable WHERE toDayOfMonth(dt) IN (5);
 DROP TABLE t_roaring_tz_nullable;
 SET session_timezone = DEFAULT;
 
+SELECT '--- Transformed key: custom-week functions on DateTime whose timezone differs from the session ---';
+-- Same as above for `IFunctionCustomWeek`. Each part is one granule. The second one spans Sunday 20:00 ..
+-- Monday 05:00 in Tokyo, which is Sunday 11:00 .. 20:00 in UTC. With the session timezone both ends
+-- fall into one Monday-based week, so `toDayOfWeek` would be treated as monotonic, map to [7, 1], and
+-- the granule would be pruned, losing the Sunday 20:00 row. For `IN` the fast path above treats the
+-- inverted range conservatively, so only the comparison shows it. `toStartOfWeek`, `toYearWeek` and
+-- `toLastDayOfWeek` are always monotonic, so the first part, whose ends are in different local weeks,
+-- is kept for them either way.
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS t_roaring_tz_week;
+CREATE TABLE t_roaring_tz_week (ts DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 8;
+SYSTEM STOP MERGES t_roaring_tz_week;
+INSERT INTO t_roaring_tz_week VALUES ('2026-06-06 20:00:00'), ('2026-06-07 05:00:00');
+INSERT INTO t_roaring_tz_week VALUES ('2026-06-07 20:00:00'), ('2026-06-08 05:00:00');
+SELECT 'toDayOfWeek', ts FROM t_roaring_tz_week WHERE toDayOfWeek(ts) = 7 ORDER BY ts;
+SELECT 'toDayOfWeek IN', ts FROM t_roaring_tz_week WHERE toDayOfWeek(ts) IN (7) ORDER BY ts;
+SELECT 'toStartOfWeek', ts FROM t_roaring_tz_week WHERE toStartOfWeek(ts) IN ('2026-06-07') ORDER BY ts;
+SELECT 'toYearWeek', ts FROM t_roaring_tz_week WHERE toYearWeek(ts) IN (202622) ORDER BY ts;
+SELECT 'toLastDayOfWeek', ts FROM t_roaring_tz_week WHERE toLastDayOfWeek(ts) IN ('2026-06-06') ORDER BY ts;
+DROP TABLE t_roaring_tz_week;
+SET session_timezone = DEFAULT;
+
 SELECT '--- UInt64 ids on both sides of the 32-bit bucket boundary ---';
 -- `Roaring64Map` keeps one 32-bit bitmap per high word, so everything above only exercises bucket 0.
 -- These ids sit in three different buckets and the ranges below cross the 2^32 seam.

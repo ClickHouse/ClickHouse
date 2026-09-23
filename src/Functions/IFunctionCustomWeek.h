@@ -66,8 +66,13 @@ public:
 
         const IFunction::Monotonicity is_monotonic = {.is_monotonic = true};
 
-        /// This method is called only if the function has one argument. Therefore, we do not care about the non-local time zone.
-        const DateLUTImpl & date_lut = DateLUT::instance();
+        /// This method is called only if the function has one argument, so the transform is executed in
+        /// the time zone of the argument type (see `extractTimeZoneFromFunctionArguments`), which can
+        /// differ from the session time zone, e.g. for `DateTime('Asia/Tokyo')` with `session_timezone = 'UTC'`.
+        const DateLUTImpl * date_lut_ptr = &DateLUT::instance();
+        if (const auto * timezone = dynamic_cast<const TimezoneMixin *>(type_ptr))
+            date_lut_ptr = &timezone->getTimeZone();
+        const DateLUTImpl & date_lut = *date_lut_ptr;
 
         /// The function is monotonous on the [left, right] segment, if the factor transformation returns the same values for them.
 
