@@ -110,6 +110,7 @@ String FieldVisitorToString::operator() (const MacAddress & x) const { return fo
 String FieldVisitorToString::operator() (const AggregateFunctionStateData & x) const { return formatQuoted(x.data); }
 String FieldVisitorToString::operator() (const bool & x) const { return x ? "true" : "false"; }
 String FieldVisitorToString::operator() (const CustomType & x) const { return x.toString(); }
+String FieldVisitorToString::operator() (const NumberLiteral & x) const { return x.value; }
 
 String FieldVisitorToString::operator() (const Array & x) const
 {

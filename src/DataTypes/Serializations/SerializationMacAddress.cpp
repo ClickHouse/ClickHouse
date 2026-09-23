@@ -167,7 +167,7 @@ void SerializationMacAddress::serializeBinaryBulk(const IColumn & column, WriteB
     ostr.write(reinterpret_cast<const char *>(&x[offset]), sizeof(MacAddress) * limit);
 }
 
-void SerializationMacAddress::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t /*rows_offset*/, size_t limit, double /*avg_value_size_hint*/) const
+void SerializationMacAddress::deserializeBinaryBulk(IColumn & column, ReadBuffer & istr, size_t limit, double /*avg_value_size_hint*/) const
 {
     auto & x = typeid_cast<ColumnVector<MacAddress> &>(column).getData();
     const auto initial_size = x.size();

@@ -1690,8 +1690,9 @@ std::optional<Field> IntConverter::convertField(std::span<const char> data, bool
     }
     else if (field_mac_address)
     {
-        if (val <= 0xFFFFFFFFFFFFULL)
-            out = Field(MacAddress(val));
+        if (val > 0xFFFFFFFFFFFFULL)
+            return std::nullopt;
+        return Field(MacAddress(val));
     }
     else if (field_timestamp_from_millis)
     {
