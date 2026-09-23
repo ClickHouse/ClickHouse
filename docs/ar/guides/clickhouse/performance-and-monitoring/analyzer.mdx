@@ -273,26 +273,35 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-### أسماء تعبيرات الجدول الشائعة المكررة {#duplicate-cte-names}
+### تكرار أسماء CTE {#duplicate-cte-names}
 
 الخطأ: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. رمز الاستثناء: 179
 
-السبب: كان المُحلِّل القديم يسمح بتعريف عدة تعبيرات جدول شائعة (WITH ...) بالاسم نفسه، بحيث يطغى التعريف اللاحق على السابق. ويمنع المُحلِّل هذا الالتباس.
+السبب: كان المحلّل القديم يسمح بتعريف عدة تعابير جداول شائعة (WITH ...) بالاسم نفسه، بحيث يحجب التعريف اللاحق التعريف السابق. أما المحلّل الجديد فيرفض هذا الالتباس افتراضيًا.
 
-الحل: أعد تسمية تعبيرات الجدول الشائعة المكررة لتكون فريدة.
+الحل: أعد تسمية تعابير الجدول الشائعة المكررة بحيث يصبح لكلٍّ منها اسم مميز. ولتسهيل الترحيل، يمكنك تفعيل `analyzer_compatibility_allow_cte_redefinition = 1` (متاح منذ ClickHouse `26.10`) لاستعادة السلوك القديم، إذ يرتبط كل مرجع بأحدث تعريف للاسم لا يجري تحليله في تلك اللحظة. وبذلك يمكن لإعادة التعريف أن تقرأ التعريف السابق، بينما يقرأ متن الاستعلام التعريف الأخير.
+
+القيود: لا يمكن إعادة تعريف تعبير الجدول الشائع المُعلَن بوصفه `MATERIALIZED`، ولا تعبير الجدول الشائع الوارد في عبارة `WITH RECURSIVE`، حتى مع تفعيل هذا الإعداد. وثمة حالة واحدة يختلف فيها السلوك عن المحلّل القديم: فتعبير الجدول الشائع المُعلَن بين تعريفين للاسم نفسه يرتبط هو أيضًا بالتعريف الأخير، في حين كان المحلّل القديم يربطه بالتعريف المرئي عند موضع إعلانه.
 
 ```sql
 /* ORIGINAL QUERY */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Redefined
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
 /* FIXED QUERY */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### معرّفات الأعمدة الملتبسة {#ambiguous-column-identifiers}

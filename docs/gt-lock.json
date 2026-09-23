@@ -7,36 +7,36 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-22T22:45:45.685Z",
+          "updatedAt": "2026-09-23T02:01:39.288Z",
           "fileName": "docs.json",
           "postProcessHash": "ed2f0a9eac1948f67de2f0932197b41ba38d34c313ee8da1082d48c116a9f18a"
         },
         "ja": {
-          "updatedAt": "2026-09-22T22:45:44.838Z",
+          "updatedAt": "2026-09-23T02:01:38.247Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-22T22:45:45.259Z",
+          "updatedAt": "2026-09-23T02:01:38.768Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-22T22:45:45.398Z",
+          "updatedAt": "2026-09-23T02:01:38.941Z",
           "fileName": "docs.json"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-22T22:45:45.119Z",
+          "updatedAt": "2026-09-23T02:01:38.591Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-22T22:45:44.978Z",
+          "updatedAt": "2026-09-23T02:01:38.426Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-22T22:45:44.652Z",
+          "updatedAt": "2026-09-23T02:01:38.061Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-22T22:45:45.546Z",
+          "updatedAt": "2026-09-23T02:01:39.118Z",
           "fileName": "docs.json"
         }
       },
@@ -12470,51 +12470,50 @@
     },
     {
       "fileId": "b46d0b97ca94140c7c2a70ef90755d8f21c8552f4c047884ddab82303836e39c",
-      "versionId": "a1a3c4cad487fea14dc45423595e679dab92e70c2c5842179d8370fa014416a5",
+      "versionId": "51c1a23884dded64a45848c8537a5947a95b22e137ed2847cbbd73a7db81e5fd",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:05.929Z",
-          "fileName": "es/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "ea0a76d75b57c9b317d965abaf53d6cca093e3c4b058ff5b27877fa5b1e11167"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:05.930Z",
-          "fileName": "ja/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "72e30b1b2ffd78e44b05e9892c08bcf38fc174f7d5a89dec932e167c09aec395"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:05.930Z",
-          "fileName": "ko/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "8f728fdbc50c81ccf5f8ffc1c34142c3926c5f308babd0625755154600ef8736"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:05.930Z",
-          "fileName": "pt-BR/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "71b45e3564a4eec8cad9cc7d73ac7b4b48c33096af1391ff6b5d3810f0995ba5"
-        },
-        "ru": {
-          "updatedAt": "2026-08-14T10:41:05.930Z",
-          "fileName": "ru/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "44cbc5db9801a77671b697419d31aad30970866b0b2433833ed87244c093872e"
-        },
         "zh": {
-          "updatedAt": "2026-08-14T10:41:05.930Z",
+          "updatedAt": "2026-09-23T02:01:44.690Z",
           "fileName": "zh/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "09098930652ade514f84a49cfc798b855e316c5ecbd1696bd6f68c34134d0d34"
-        },
-        "ar": {
-          "updatedAt": "2026-08-14T10:41:05.930Z",
-          "fileName": "ar/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "4d22d0322e66f3988d3cac60368aaf84a3127093134555198bb364de6d596c12"
+          "postProcessHash": "240960ab5500cb08300de540379b3d00a25309014d0a036ca0d52e8ccadde62b"
         },
         "fr": {
-          "updatedAt": "2026-08-14T10:41:05.931Z",
+          "updatedAt": "2026-09-23T02:01:44.695Z",
           "fileName": "fr/get-started/sample-datasets/uk-price-paid.mdx",
-          "postProcessHash": "316bca449923aa6ec51f57eaecdefaaca71c6990a7089041e397adc3e0e8ccda"
+          "postProcessHash": "a8bd04958699b94e8c2f0925f12825525c837034238e133ab9048411cf0e9ca6"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.705Z",
+          "fileName": "pt-BR/get-started/sample-datasets/uk-price-paid.mdx",
+          "postProcessHash": "56ce8d3b452eb6ef974cd3bd67185c7b4a46e555e0c1d5aa3d1acd7a9d14988b"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.706Z",
+          "fileName": "es/get-started/sample-datasets/uk-price-paid.mdx",
+          "postProcessHash": "7fc25ec2b6abcb09278bf5e6c1b9b8e4bc65e1510152727f58b3c60525a8dead"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.713Z",
+          "fileName": "ko/get-started/sample-datasets/uk-price-paid.mdx",
+          "postProcessHash": "e7208f00bcae0fd29c8757610eacf3544391ba39ed3bdef3b02b636bc375a759"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.714Z",
+          "fileName": "ru/get-started/sample-datasets/uk-price-paid.mdx",
+          "postProcessHash": "ce63f30f204f77de111a624dc6db9ff27a43558f5ed8908dd10ea7376ecd52eb"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T02:01:44.716Z",
+          "fileName": "ar/get-started/sample-datasets/uk-price-paid.mdx",
+          "postProcessHash": "7b8a8c35d290f5c843c15779433df62b1817027dabd787a48a2ca1d83747104b"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.727Z",
+          "fileName": "ja/get-started/sample-datasets/uk-price-paid.mdx",
+          "postProcessHash": "6f6e982a634d31e98ab2924936791ded5c988fca6a6caf0e655b7aa20f7e1892"
         }
       },
-      "fileName": "get-started/sample-datasets/uk-price-paid.mdx",
-      "staged": false
+      "fileName": "get-started/sample-datasets/uk-price-paid.mdx"
     },
     {
       "fileId": "aaf461fd082f3494eef961a3cb73006df5456e53481c8ec05326301c40329590",
@@ -35151,47 +35150,47 @@
     },
     {
       "fileId": "a66ca07daba1e1b0eebba1c3c37c32c2975eef420c6d4d09a15af486d11423d1",
-      "versionId": "5452b0dfb2a12a8fc1b41659fb5f071abf2e1d38e11a1890e25bc0a3681c1635",
+      "versionId": "83de8effac8621603d820285fec20495b1af59b822c78630853425ea82438a83",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-09-21T00:56:04.315Z",
-          "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "847c8e8f9e3fe28e3a61fc2d9b9a5758a1dbaecdb8e2f8b3288784acb8457967"
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.696Z",
+          "fileName": "es/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
+          "postProcessHash": "f5e4bd886cb9421b9f1ab984cb4e20db72198e0639a755a5f5042767daeb8ab6"
         },
         "zh": {
-          "updatedAt": "2026-09-21T00:56:04.316Z",
+          "updatedAt": "2026-09-23T02:01:44.701Z",
           "fileName": "zh/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "3880060fbdef301ccb8aa479f124857c8cfff48d22f4d6054e887da98e9893ed"
+          "postProcessHash": "2852bb784eed07f8c2a705f2b55c9b905f3db2adedec0dc78aa3fd823bedbb18"
         },
-        "ru": {
-          "updatedAt": "2026-09-21T00:56:04.316Z",
-          "fileName": "ru/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "15f4e91ad0afb8fa9ae0b79187a098d804f77e692a9405d438a2e9310932e841"
-        },
-        "ja": {
-          "updatedAt": "2026-09-21T00:56:04.317Z",
-          "fileName": "ja/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "be818ef9d97ca762eee10770fce1a14ff5534da87db09aaada91da4689484477"
-        },
-        "ar": {
-          "updatedAt": "2026-09-21T00:56:04.317Z",
-          "fileName": "ar/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "b71a168641ec79b3f07b9d13d8d833b6fb15afb70f09652ea0a987a8195c3a5e"
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.701Z",
+          "fileName": "pt-BR/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
+          "postProcessHash": "3f7c1a3aae93e49b664696ee5330e417ef69db7c4f98413ccf12020899319b20"
         },
         "fr": {
-          "updatedAt": "2026-09-21T00:56:04.318Z",
+          "updatedAt": "2026-09-23T02:01:44.703Z",
           "fileName": "fr/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "028266260b28bf3a74b043c6ee87644a6ac0be5ec25f64112992541f0b80f37f"
+          "postProcessHash": "023750a940c961acf2be7886461762ff6f4672b63a68fd5ebda853716087fdf5"
         },
         "ko": {
-          "updatedAt": "2026-09-21T00:56:04.320Z",
+          "updatedAt": "2026-09-23T02:01:44.704Z",
           "fileName": "ko/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "1560124055064520f0d0da240e0be41ffa763949da1d33fb1cc3caaa233c5247"
+          "postProcessHash": "7acb5d9b32d272f6f2bb258f99bfa3da71bdece221703883c5e901b1050c2cd0"
         },
-        "es": {
-          "updatedAt": "2026-09-21T00:56:04.321Z",
-          "fileName": "es/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
-          "postProcessHash": "2e421ee1b39db1a54bb77eca9ab548144596d1bb6fdbd629aa5797c0cadb17ee"
+        "ar": {
+          "updatedAt": "2026-09-23T02:01:44.715Z",
+          "fileName": "ar/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
+          "postProcessHash": "c04e4e141e55c80ee6bfbef5c1b60102fb221d04d489a625bdd1712e9b7e6d53"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.722Z",
+          "fileName": "ru/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
+          "postProcessHash": "e1781b18d1202f249e2d6b9ec6f222333bcf71de1e17f4bd1754c8b4bc31cf32"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.725Z",
+          "fileName": "ja/guides/clickhouse/performance-and-monitoring/analyzer.mdx",
+          "postProcessHash": "e366864942d91450a9cdd0eefeb68fc49decc015ffbf88fd3f23304b6ae21fd7"
         }
       },
       "fileName": "guides/clickhouse/performance-and-monitoring/analyzer.mdx"
@@ -41707,330 +41706,329 @@
     },
     {
       "fileId": "cbc928d795dcd1c4aa168b933949cf293616e699a561c5f3d4ca96663ec70ef5",
-      "versionId": "7decf13480fc5ede55f6147d38e6d06ee35a5312cfa602ad33d43ea42cab25c5",
+      "versionId": "b9631e8437a1b2e5fed2a793dfbca70a70d92d547feef06c189eb436a193f2c4",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.599Z",
-          "fileName": "es/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "765fc28a9c0aad546b4ddfcfd03623d55c42739644f2767a6981c05b79470af3"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:41.599Z",
-          "fileName": "ja/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "d5c7ab93384a9f5f85570727208cef688e4318f805c92e2305fadca0640b5a83"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:41.600Z",
-          "fileName": "ko/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "9f42773cf1ea4b9950379ee026d84ad02e275efac3d9860d5375bc224fa88192"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.600Z",
-          "fileName": "pt-BR/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "f4992cfb2115663bf2e107920aaed28d6d769f6233bc74ea8a8fbd82b51fe3b3"
+        "fr": {
+          "updatedAt": "2026-09-23T02:01:44.700Z",
+          "fileName": "fr/integrations/language-clients/python/additional-options.mdx",
+          "postProcessHash": "d4e916155f00b4deb803984d22e62380752066a99e1533123682707f622cc263"
         },
         "ru": {
-          "updatedAt": "2026-09-15T11:36:41.600Z",
+          "updatedAt": "2026-09-23T02:01:44.703Z",
           "fileName": "ru/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "4e4043ad151c5b4baf21a0c051d78a373aa169d1f0fb80258ce6f09006fcae9b"
+          "postProcessHash": "4be3ab45c506ba3a9f1599a8ffe3df745109529c068a8bdf4d444d6a05f4022c"
         },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:41.601Z",
-          "fileName": "zh/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "1f431452952abb4e0edf01227aa2102c66318abb83027d2f500057dc8cd044c9"
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.709Z",
+          "fileName": "pt-BR/integrations/language-clients/python/additional-options.mdx",
+          "postProcessHash": "32700f2970e496763bb39931d5144c9c3cd2e9040a04ff974539250542fd2bb2"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.717Z",
+          "fileName": "es/integrations/language-clients/python/additional-options.mdx",
+          "postProcessHash": "31ec0b802a4708c6c3c233f1b6db790c3279229a123b921da500324aac3c4c2a"
         },
         "ar": {
-          "updatedAt": "2026-09-15T11:36:41.601Z",
+          "updatedAt": "2026-09-23T02:01:44.723Z",
           "fileName": "ar/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "038815e1dfb22e87857c88f6c5b2d5d906f641032f957d1216b23b1fa250acee"
+          "postProcessHash": "60ca51da57d8647c0abf80501e8d6a509788f0141f165cfe008fc8d00bb44a09"
         },
-        "fr": {
-          "updatedAt": "2026-09-15T11:36:41.601Z",
-          "fileName": "fr/integrations/language-clients/python/additional-options.mdx",
-          "postProcessHash": "dbf2188c97da5c3d45fb9e32a8a9e488bdec77ebe73b170de1bee748c77a6e41"
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.731Z",
+          "fileName": "zh/integrations/language-clients/python/additional-options.mdx",
+          "postProcessHash": "466ad506b89047665467d65106a7219d39190de837725303b2194eb740e9e5ed"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.738Z",
+          "fileName": "ko/integrations/language-clients/python/additional-options.mdx",
+          "postProcessHash": "55c3db8a13d1af203272746aeda8bdc02bdca834b7ed655d70b352fd417ab77c"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.742Z",
+          "fileName": "ja/integrations/language-clients/python/additional-options.mdx",
+          "postProcessHash": "2516e570f0e1b560a27dc17b475b468b6c7da46ec73ededa927e26f877273cc2"
         }
       },
       "fileName": "integrations/language-clients/python/additional-options.mdx"
     },
     {
       "fileId": "e5e20d6a6a6a69b4bbf18dc1d12b756b2bd88d5064c64157fd3c94c83b407692",
-      "versionId": "49f66cc27f94a445537db766be93272dcb99a23a7ded6e6c9044f505eed4eb1a",
+      "versionId": "82564b010788f5ce63d964eef883161d0320c6060dd682986b81b304de333d62",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.602Z",
-          "fileName": "es/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "69f726995559bb7917e559ac9f0b63792a3f458d533fe680fc0996e8e0f41f60"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:41.602Z",
-          "fileName": "ja/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "ae4394e77749157c872ad1ca66291a40c59b674dcdca5735f7a48735ab61e10e"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:41.602Z",
-          "fileName": "ko/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "8e4ef9ca2954986f12d0ce568a3b892696530c99bd9b66cca31d4d6d00a8ab00"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.603Z",
-          "fileName": "pt-BR/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "9865caf14b558dc13e2c29cab3ec7965f4de07bfe8b59f30598663ca07640f70"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:41.603Z",
-          "fileName": "ru/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "d422551c2e2c1a75c2d7297e3afc7068b03f165dabeccd12040bf5f2724967d1"
+        "ar": {
+          "updatedAt": "2026-09-23T02:01:44.697Z",
+          "fileName": "ar/integrations/language-clients/python/advanced-inserting.mdx",
+          "postProcessHash": "232f9f764a6a33caccb7c88edc370935088c1cf66baff6bf012e9d392bd0e613"
         },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:41.603Z",
+          "updatedAt": "2026-09-23T02:01:44.702Z",
           "fileName": "zh/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "43a2f820d3b1f0546032fe5df2e1ccf83599ad9b07a74cd9f3738ac1760c5ecd"
+          "postProcessHash": "4c7e26f4761e0e7ff6f07c8b0dd94562e4e7624ac30be61ecf2cba24a7fa695c"
         },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:41.604Z",
-          "fileName": "ar/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "ee68cfa000e7b7c41faafc60c1187026ef798e1e57e63a557fd3f739f0d1c334"
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.705Z",
+          "fileName": "ru/integrations/language-clients/python/advanced-inserting.mdx",
+          "postProcessHash": "eb94ef4b01328d64ca4ab35ea32271c7d4188dd5d96598f3428964d2ce607a07"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.718Z",
+          "fileName": "ja/integrations/language-clients/python/advanced-inserting.mdx",
+          "postProcessHash": "c4bbd7c15ff99eafbb53557582296943e9e4231e0f51e72d5ef9e8ac5af30cf2"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:41.604Z",
+          "updatedAt": "2026-09-23T02:01:44.719Z",
           "fileName": "fr/integrations/language-clients/python/advanced-inserting.mdx",
-          "postProcessHash": "574bb486ba957fef5d0d1de6acc6830c3c0d1cfb6748da6f51f544033993c14a"
+          "postProcessHash": "dea017e95bd3b39507d1522098715c521c819e06de1bd2e43373725c59bc2bd8"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.728Z",
+          "fileName": "es/integrations/language-clients/python/advanced-inserting.mdx",
+          "postProcessHash": "d7059e6267666f6ea2fdb6982a69d2364aeac136c638a9c95c4d5a3ee201c83a"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.741Z",
+          "fileName": "ko/integrations/language-clients/python/advanced-inserting.mdx",
+          "postProcessHash": "fdff3489651508a673cdf47c778f2e284b4c936a993b51f4b313e3bdffcdc4c1"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.741Z",
+          "fileName": "pt-BR/integrations/language-clients/python/advanced-inserting.mdx",
+          "postProcessHash": "96855ee7c20db26cf8f8cda3caa9f525ead8749784fd8778fa340471d70a26b6"
         }
       },
       "fileName": "integrations/language-clients/python/advanced-inserting.mdx"
     },
     {
       "fileId": "f003acb62ac4c63b30f1ccfdb0daf2067a05abeee9e77d604dcc22a808724948",
-      "versionId": "961416d953f453634171177c97a48165474293f73c5dc81784e5c28d3c80e0bc",
+      "versionId": "a9e501b86caced8338eddcb0ae657ffa9e9ea70445ad62ea772e2039f4fa50cc",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.604Z",
-          "fileName": "es/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "72d2fc58a342f02c56db0a9318fc6135971a88593497247faa529c1343f71314"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:41.605Z",
-          "fileName": "ja/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "719c4bf44fb7cd412fc7a35d22ac9253cbe68bd4bcae2967efade078a44a701d"
-        },
         "ko": {
-          "updatedAt": "2026-09-15T11:36:41.605Z",
+          "updatedAt": "2026-09-23T02:01:44.691Z",
           "fileName": "ko/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "f7cdcba2e11ff7573cbb7f90c51bfa1a1e7d920f79762869288844e57b01085e"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.605Z",
-          "fileName": "pt-BR/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "c78d484fc33b1a1491e3909a01c51a476b9364bb3e9f109d9206e3f458ab5fb5"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:41.606Z",
-          "fileName": "ru/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "11119d5d51fb1aafc50523762877f14af8ef47b7e3bcf18bf63e059cac601f5a"
-        },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:41.606Z",
-          "fileName": "zh/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "530986b6a5b4f095aaa5fba4787a4f8ec4e8c72fc37ac77258f0dffe426c9e7f"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:41.607Z",
-          "fileName": "ar/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "32aabc00d9045ec8b28f56d918d453ad009c0cf406f73323ee9e26b07084493c"
+          "postProcessHash": "254808d0deab58a108f6cd15833830d8556a277f2c11882c7432a8b616af7076"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:41.607Z",
+          "updatedAt": "2026-09-23T02:01:44.692Z",
           "fileName": "fr/integrations/language-clients/python/advanced-querying.mdx",
-          "postProcessHash": "ba5fca85400ce450e98381f76b6d8bfa0f3e68f865f862fb7a22d247c0e9a8e1"
+          "postProcessHash": "dccbbdcf69d5e3f03bcc77683ee9923cffe8a6f66e05bc72a14d3cde7230308a"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.694Z",
+          "fileName": "pt-BR/integrations/language-clients/python/advanced-querying.mdx",
+          "postProcessHash": "88186a238871153039066bbfcfbc6e943859a4e1dae601f8f181d353767f96bc"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.719Z",
+          "fileName": "ja/integrations/language-clients/python/advanced-querying.mdx",
+          "postProcessHash": "6c83db987405957d9a91ca99719f305bb82491c4ab6fe3871ee4cea47606cdb1"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.724Z",
+          "fileName": "zh/integrations/language-clients/python/advanced-querying.mdx",
+          "postProcessHash": "3e424bcc2cbaf8aed533ee60b6ac9af62962d2f3fad961fc1f076b8c7eaaf2e9"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T02:01:44.733Z",
+          "fileName": "ar/integrations/language-clients/python/advanced-querying.mdx",
+          "postProcessHash": "296f2feb35dc7f81a1ec7402be4f98971336a7ea851d04dc6d7e13c611ec3a8a"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.736Z",
+          "fileName": "es/integrations/language-clients/python/advanced-querying.mdx",
+          "postProcessHash": "6e307614d48cbdc1ee2bec0d4dbbca6aa396dd38e94db6e615a2540e6a87fb7a"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.751Z",
+          "fileName": "ru/integrations/language-clients/python/advanced-querying.mdx",
+          "postProcessHash": "6a16a8530a68b8a20e9dea042683ae29a10723e642d62aabdcf5e6d788e8a44e"
         }
       },
       "fileName": "integrations/language-clients/python/advanced-querying.mdx"
     },
     {
       "fileId": "fb1a279e5afdcd56b5ca5e082faeff5631e64d0b41e15498a685a9e1a526735a",
-      "versionId": "18ad95b0a6774f3ca48a28d92f337204340f0946a6c0b752cbea8c7483e62d8c",
+      "versionId": "4d926b932db64d9813fd430d8d3b39dd1726094556d173068af78494503ba0f2",
       "translations": {
-        "es": {
-          "updatedAt": "2026-08-14T10:41:06.641Z",
-          "fileName": "es/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "6e705cf4b9da497dfc89e953cf67de031743e3c1cd3a901ad8833b7c6631ff8c"
-        },
-        "ja": {
-          "updatedAt": "2026-08-14T10:41:06.641Z",
-          "fileName": "ja/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "e27073d10a748fcf4fda4b28bcaebc52c94336d159531c8dd94b19871903353c"
-        },
-        "ko": {
-          "updatedAt": "2026-08-14T10:41:06.641Z",
-          "fileName": "ko/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "e42ebbe305a517c14b8becf406e2ad4b999d44c06730b2c3e0187ede2c88f2f0"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-08-14T10:41:06.641Z",
-          "fileName": "pt-BR/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "d2b24143035d4e69187babf0ba612dbeb64edb1270e4dcbc65f7b4b0d0853671"
+        "fr": {
+          "updatedAt": "2026-09-23T02:01:44.693Z",
+          "fileName": "fr/integrations/language-clients/python/advanced-usage.mdx",
+          "postProcessHash": "cab664b2468a6eb3960f79c3db886a59fe13bda03a98358b666b67e81e98c830"
         },
         "ru": {
-          "updatedAt": "2026-08-14T10:41:06.642Z",
+          "updatedAt": "2026-09-23T02:01:44.697Z",
           "fileName": "ru/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "038595f1c58c3d70d21ebfc127dec226dab6ca81dd1a624ebaade26c1218ec42"
+          "postProcessHash": "c0912e9164625c79781fc92861b89e72253abe03337fa898db9f55d79db14f43"
         },
-        "zh": {
-          "updatedAt": "2026-08-14T10:41:06.642Z",
-          "fileName": "zh/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "2c4adde17be538ef38d930d9f86b4c904634309a5c0bd58bdc7e70a56927eecf"
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.714Z",
+          "fileName": "ja/integrations/language-clients/python/advanced-usage.mdx",
+          "postProcessHash": "f0443d3a0419b84e4981c5ce9109198c0cee375532d7b13d60d5dbee2d4c3920"
         },
         "ar": {
-          "updatedAt": "2026-08-14T10:41:06.642Z",
+          "updatedAt": "2026-09-23T02:01:44.733Z",
           "fileName": "ar/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "b5f70f824625a45a9cd33aebad4096426cd8dff885e64ff3a6a3a9696a708536"
+          "postProcessHash": "490d1f908a26236343ebbd179fc44231fa9ddd8af89e159cad98f8f9de40834c"
         },
-        "fr": {
-          "updatedAt": "2026-08-14T10:41:06.642Z",
-          "fileName": "fr/integrations/language-clients/python/advanced-usage.mdx",
-          "postProcessHash": "91e13e9bbbc0aaf3f1034e832fced3c6156b2397326549305d64def788462d95"
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.734Z",
+          "fileName": "es/integrations/language-clients/python/advanced-usage.mdx",
+          "postProcessHash": "6127fa17d6d4d1bef25d98110ef9ff62eeccda57becadd94bb7b3e0d519ec4c3"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.736Z",
+          "fileName": "zh/integrations/language-clients/python/advanced-usage.mdx",
+          "postProcessHash": "782e9ed93d4d27259767b59cb9e7140b42cb514bdf50f25923ff2ff0a56aac1d"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.737Z",
+          "fileName": "pt-BR/integrations/language-clients/python/advanced-usage.mdx",
+          "postProcessHash": "b9d5c2ad8afc306cbcbc602839a2b9c30db07e952001ea8ed9643fc52654fb5c"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.737Z",
+          "fileName": "ko/integrations/language-clients/python/advanced-usage.mdx",
+          "postProcessHash": "b099920dc2fb9f5c90a30e113f27e213d68f30b73ef2f6f4a297ca75970cb4e6"
         }
       },
-      "fileName": "integrations/language-clients/python/advanced-usage.mdx",
-      "staged": false
+      "fileName": "integrations/language-clients/python/advanced-usage.mdx"
     },
     {
       "fileId": "a1090f71543aad22f66b5781b66fbed4a45698068e3a2ac49179600a7caf49ce",
-      "versionId": "4722a647f113110e43a2a6fda727204ede9fc8779e9ddfdcc0cc0d6c3b3eb94f",
+      "versionId": "5197215618770394a2f079fca8355c03bc2cd5e9b7db9590135543fcd69f5f1f",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.609Z",
-          "fileName": "es/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "da514c58cc78c03adf369ce41b813222cfc1e3dc43cb00c57ad3b53418deafdd"
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.730Z",
+          "fileName": "ru/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "cba87174690b13a3f38118404ed7192b7febc738d5f4c8e176d6a9558459ca26"
         },
         "ja": {
-          "updatedAt": "2026-09-15T11:36:41.609Z",
+          "updatedAt": "2026-09-23T02:01:44.732Z",
           "fileName": "ja/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "ad2a01989fc031a44cf707ae8bd43e4a88f190a69c4ef2cea941f87d4f01c6fa"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:41.610Z",
-          "fileName": "ko/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "3f50a74bc3be162a3d2f8e48e2057b88f342bad91ca58e85b31a9ecca34224eb"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.611Z",
-          "fileName": "pt-BR/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "353a89440c404d3db41481ef378fd103aa08ad39c27cbe21f27b220075391cbc"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:41.612Z",
-          "fileName": "ru/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "eb8803c72137beb1fddd2a3180cf5463105a1d73bbc3359d8dc20b9923ca3954"
-        },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:41.612Z",
-          "fileName": "zh/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "4c2f1bf85e7cfbcb4e725628777bd2b4897dad358b3b2673ce5c6bcae515f8c7"
-        },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:41.613Z",
-          "fileName": "ar/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "4d1da7b8a42ce9c4df8b922e272f8316ff1c266270d6d8aa17f10741833db8e4"
+          "postProcessHash": "a439a0a4b0380a9d8720dc25e6a2d52fad3ec99c31fd920cca351d58662292ee"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:41.613Z",
+          "updatedAt": "2026-09-23T02:01:44.735Z",
           "fileName": "fr/integrations/language-clients/python/driver-api.mdx",
-          "postProcessHash": "f7a662dcfb75d5346a9adf8dc956cc613edf08b80e2f40d1aff07c7d6a4a7b59"
+          "postProcessHash": "4f7751ca33777db9ebf0487f923061084c2a9d5bab233a2e5912217a049ff028"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.745Z",
+          "fileName": "ko/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "31011c3a59959f0b40c5e9390868b04a7e485992f77f4e84213ddb0277a08438"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T02:01:44.748Z",
+          "fileName": "ar/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "75f3f9ce518d2724defe3171a9135ee88ab793bc0b47618d97a704046c6fb518"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.752Z",
+          "fileName": "zh/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "639f34fbfab8fbd5aaf2b3159364177791861b5c6497e995390471aa172cc167"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.753Z",
+          "fileName": "pt-BR/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "b7e5cacb1a1633b16795424ce396978ffef768c651334f18ae343081d715d5dc"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.753Z",
+          "fileName": "es/integrations/language-clients/python/driver-api.mdx",
+          "postProcessHash": "37c4f432f44480ea8eb6bdcdd5a473cd643aed120754c55b92f3826ffbacc622"
         }
       },
       "fileName": "integrations/language-clients/python/driver-api.mdx"
     },
     {
       "fileId": "f2a35df71240eb74c03e2fa58d0044b8fc335f7673f1d8380d6f3752cc159218",
-      "versionId": "d54795880b0ccc585dba12315e48b5526b7143587142852875e9d3691678d5af",
+      "versionId": "c3731d61a7e180f66c0619d4c7738865aca495c1ae9a5a713fc76e449a196f93",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.614Z",
-          "fileName": "es/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "bf32b361c416ce08bcada9a0bbf1e3d829008046243df06f76b9d5fcad9ad584"
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.699Z",
+          "fileName": "pt-BR/integrations/language-clients/python/index.mdx",
+          "postProcessHash": "fed4667b791e238d2e846fb440396ac28d5ff6208a772eedea53bc87c8575a26"
         },
         "ja": {
-          "updatedAt": "2026-09-15T11:36:41.614Z",
+          "updatedAt": "2026-09-23T02:01:44.700Z",
           "fileName": "ja/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "3cd181e44515738025dd387188a1519c44ecf794b3187301f6c70ba13bdc58dd"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:41.615Z",
-          "fileName": "ko/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "ea0ef67508e83ef139638cd08574936b2792e9c3d6052ab8c41eb6996a7dd78c"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.615Z",
-          "fileName": "pt-BR/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "f4cca314971bc0c71941f168eae394a27822990b0f42074ff0fe401182b5859e"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:41.615Z",
-          "fileName": "ru/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "9b7b9745967a39431aa3f2da95bd59eb117a47408273c9286872e42cb331f305"
+          "postProcessHash": "85382958f055b62eb6e4ef5153d47df8deea69142c2ea56e4d494b481ac943da"
         },
         "zh": {
-          "updatedAt": "2026-09-15T11:36:41.616Z",
+          "updatedAt": "2026-09-23T02:01:44.711Z",
           "fileName": "zh/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "1331a7263cd8e6b6662724ec9d335cc07208fd476dbf2dc34f78c665d4d00595"
+          "postProcessHash": "3ec30db15e75f6718b5477abcae9385eb46b9bb5667938049205abad38f34d39"
         },
         "ar": {
-          "updatedAt": "2026-09-15T11:36:41.616Z",
+          "updatedAt": "2026-09-23T02:01:44.717Z",
           "fileName": "ar/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "e8a1d2d4c7b95c9d2fae95537ea2b7f5b87135b47247d8592487b76b34eabc93"
+          "postProcessHash": "473d84cd138aa5c349abf7b592afc5f0e41c7a06058e2cb6b38babc3561265e4"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.720Z",
+          "fileName": "ru/integrations/language-clients/python/index.mdx",
+          "postProcessHash": "42ba5be49997c79915bc617a4b7d7c208b33057febe23c2075a5f9b8745c9ae4"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:41.616Z",
+          "updatedAt": "2026-09-23T02:01:44.728Z",
           "fileName": "fr/integrations/language-clients/python/index.mdx",
-          "postProcessHash": "7ca1334566498130e6c42a73999968d7580cd5621aff72900b2b897e21af8dd8"
+          "postProcessHash": "b4114b1a1e275c960bdd24bcd106788bfd15eed5b9c2e039690063ad2645103b"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.738Z",
+          "fileName": "ko/integrations/language-clients/python/index.mdx",
+          "postProcessHash": "780b0b5a279796bf928c3a942a6de28408f5fa2b0db0a63a1892d64c39dcbe96"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.745Z",
+          "fileName": "es/integrations/language-clients/python/index.mdx",
+          "postProcessHash": "c7f8b070aa655da06d39da9bb43564311b882f9723a1985480112c73fdf8925c"
         }
       },
       "fileName": "integrations/language-clients/python/index.mdx"
     },
     {
       "fileId": "738557a2a213484c9bf5e325949e95728a9e7590324f834478720c22b599a116",
-      "versionId": "c96baa9b9ccd9d4155e05e05610be8008fc8156aeb2e775c4e668df8e6e489d9",
+      "versionId": "97847cbcdcbb570208fe64e5dc6dfbd90151b9f61438b55a85c381ae1aec2085",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.619Z",
-          "fileName": "es/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "556f6ec6bb99100075c9f6e5175c9a83713e1463587a2ed35636671d6354c036"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:41.619Z",
-          "fileName": "ja/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "ab4738a039f570075f53b3d276f23bb9f3e0fe4ef3ddf50eb9ca232fe9ace745"
-        },
-        "ko": {
-          "updatedAt": "2026-09-15T11:36:41.620Z",
-          "fileName": "ko/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "73f674a15d2b0fe632e95d013e63b6fca030236cb8fed321425f9ca030523c65"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.620Z",
-          "fileName": "pt-BR/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "e98362bc3e324fb78d846a08f58e442f64d91b2e0e894a5a3f0b20405d628aca"
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.691Z",
+          "fileName": "zh/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "10f721cb83ddd0ee15d2c8a99658afb0bfe36513d164a1fdf758b977682040e7"
         },
         "ru": {
-          "updatedAt": "2026-09-15T11:36:41.620Z",
+          "updatedAt": "2026-09-23T02:01:44.698Z",
           "fileName": "ru/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "e139b2cd5697186d6f1b2a84686cb6382c5fc8759d2fbc53a33c1758a318762a"
+          "postProcessHash": "f27c97b62cf4f8afa0a3e8195b615a1fa21b7c19c48766f45b05d299c59c72ae"
         },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:41.621Z",
-          "fileName": "zh/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "e7fb2630e9ccb2cd1c225b963c7e3c17e7a53595ef78c961b18a6174a6a81eab"
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.721Z",
+          "fileName": "ja/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "0a0ea6666f147ad954e36e6ef341a7663821e3641e259555feb734f058dc8b1a"
         },
-        "ar": {
-          "updatedAt": "2026-09-15T11:36:41.621Z",
-          "fileName": "ar/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "f2d10b8692a18542e6bfdfef9b42e60ff94f69ea8562dabd3df82c2349b88648"
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.722Z",
+          "fileName": "pt-BR/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "65a691bf63226c1c60b7e51888bffe5e06c791e30f06a8495c9e2835d5a9e320"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.723Z",
+          "fileName": "es/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "4b74850118a9c087cbdf611f8edcede13f6f0961a90ec3185bbf69ec09cc56f2"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:41.621Z",
+          "updatedAt": "2026-09-23T02:01:44.727Z",
           "fileName": "fr/integrations/language-clients/python/sqlalchemy.mdx",
-          "postProcessHash": "988c4dc0a8cd4fc5a7e0e67e52af7ebffabcd70c454c6ca7a6d647871a8384fc"
+          "postProcessHash": "75e84e15d142ad26e5386fb35af35a655c423ef75548bdd170a22621d55da697"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.729Z",
+          "fileName": "ko/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "da6bbd835cac1a45a7f0164fc7568f8aaabf3c23155f1fb60b010dc723468a69"
+        },
+        "ar": {
+          "updatedAt": "2026-09-23T02:01:44.744Z",
+          "fileName": "ar/integrations/language-clients/python/sqlalchemy.mdx",
+          "postProcessHash": "627d2212a9e19423282615829355307c2208860b60407281c7ebd4f1fa4a002e"
         }
       },
       "fileName": "integrations/language-clients/python/sqlalchemy.mdx"
@@ -66057,47 +66055,47 @@
     },
     {
       "fileId": "63174a876bc3d4566fdf9cc0006da2448dd5a5865abe69e98b9b67f7f4ecc8ba",
-      "versionId": "dfa3e7fdc46c8fa619785c02aa627b3bb4593d79566da9579a212df65b2a60c2",
+      "versionId": "3c8a6110e73ba56aef2eafc3406f017758e43a2397382737268e95158844a05e",
       "translations": {
-        "pt-BR": {
-          "updatedAt": "2026-09-21T11:12:39.400Z",
-          "fileName": "pt-BR/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "8fb23c628ea89fd70eb80cf27977b91a49cc4930bcc2020558f21bb3a7bc317f"
-        },
-        "zh": {
-          "updatedAt": "2026-09-21T11:12:39.401Z",
-          "fileName": "zh/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "51327184c308341fba7333b3bfc9118ef19458020fc96b0d270111fdf41f4f74"
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.708Z",
+          "fileName": "es/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "cd7b9c86036821405256e32788421a3119371d6860d8d7d37ca48b3368c5fa0f"
         },
         "ru": {
-          "updatedAt": "2026-09-21T11:12:39.402Z",
+          "updatedAt": "2026-09-23T02:01:44.713Z",
           "fileName": "ru/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "21c4e85406ddb4b0fe5f507138cf2e5c1d0a5ffb8cdae6712cdc3a3989f52b6d"
-        },
-        "es": {
-          "updatedAt": "2026-09-21T11:12:39.403Z",
-          "fileName": "es/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "25fd4fb03f10f03bdc8330a4497bee0c46af475f1e5a32a49c47618a47a73dc9"
-        },
-        "fr": {
-          "updatedAt": "2026-09-21T11:12:39.404Z",
-          "fileName": "fr/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "65105f2865ec5a6a534170619316624bcc4859d4fe4e0ea31ecbf8f3b3531c04"
-        },
-        "ko": {
-          "updatedAt": "2026-09-21T11:12:39.405Z",
-          "fileName": "ko/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "e422919d5175ecdab62d3a1ff607720a6c13c22f75b9f7abf98a41b94f636d1b"
+          "postProcessHash": "12da3dbc3f17e35dd1742a40255d3eae7e90256b518fa0f587f5643bdb8ae403"
         },
         "ja": {
-          "updatedAt": "2026-09-21T11:12:39.405Z",
+          "updatedAt": "2026-09-23T02:01:44.726Z",
           "fileName": "ja/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "e5d138af16b1f3fb1451250c7c34fd465a66b21c1a89e8668b21c390b61b0902"
+          "postProcessHash": "107bd2333d5c73a338ef5fb7f6a7194c3f81e8d32fe874cf69d79f72032605b3"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.740Z",
+          "fileName": "zh/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "1d970b7c6fe9b8becac508823b454d499a7d434d2202c75260a7fe08978f1cf3"
+        },
+        "ko": {
+          "updatedAt": "2026-09-23T02:01:44.743Z",
+          "fileName": "ko/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "1007fc7ce1e42738b43e9b001f1fdd5a896b39e4e8a51506b751f6ec2e1815c7"
+        },
+        "fr": {
+          "updatedAt": "2026-09-23T02:01:44.747Z",
+          "fileName": "fr/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "599cb20cc254f1fbde84df11bb4e42303f7545522706e7c097c587c92605b6b1"
         },
         "ar": {
-          "updatedAt": "2026-09-21T11:12:39.406Z",
+          "updatedAt": "2026-09-23T02:01:44.749Z",
           "fileName": "ar/reference/interfaces/specs/NativeFormat.mdx",
-          "postProcessHash": "8c9767364583f167cada05f8079d8d8417dfbb5467d8d803e5d5b9f2e26ea042"
+          "postProcessHash": "cea1461e93ed2a2c1c9ecbc0b97702ffa26142accf2a3ca2be6820a240c00b2c"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.751Z",
+          "fileName": "pt-BR/reference/interfaces/specs/NativeFormat.mdx",
+          "postProcessHash": "598a0043da77eaf57731f21662e4f4bbd1b643d98ae2cb4c09cbca6d51729f86"
         }
       },
       "fileName": "reference/interfaces/specs/NativeFormat.mdx"
@@ -137692,47 +137690,47 @@
     },
     {
       "fileId": "49776416c05f968adf6ebf39748e40dc2be8596773f26f9ddcfc3ef4c00cbd78",
-      "versionId": "dfc5eb5b21152ab3c356b9b7eb2f7958171b1dee3c42d966e9b738c901e04ef9",
+      "versionId": "8f91307f53cad981beede9642b6fc75de6de2d6964576fa2d935aa22677d4a71",
       "translations": {
-        "es": {
-          "updatedAt": "2026-09-15T11:36:41.616Z",
-          "fileName": "es/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "1b1c31b6fe57d3a8ddec03d485983744267917d8c917186cee18704bef792319"
-        },
-        "ja": {
-          "updatedAt": "2026-09-15T11:36:41.617Z",
-          "fileName": "ja/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "adf3b4c3f2ce1996114748580e87d851d5f232c7ad14a0449f3cf65decae756f"
-        },
         "ko": {
-          "updatedAt": "2026-09-15T11:36:41.617Z",
+          "updatedAt": "2026-09-23T02:01:44.693Z",
           "fileName": "ko/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "d7c072f5271ba89bb298e58710c590a4d7cc53b03443a1fa2c61828f975a894f"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-15T11:36:41.617Z",
-          "fileName": "pt-BR/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "3fd1d3b209fdac5f6f6cbc174bf1aef29f34ca0f905ad0c37c855ba9b23c5b5a"
-        },
-        "ru": {
-          "updatedAt": "2026-09-15T11:36:41.618Z",
-          "fileName": "ru/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "87d884fcca0cd05dc56940952ee42593fbf89940a5510acb93a5c397cc665c0a"
-        },
-        "zh": {
-          "updatedAt": "2026-09-15T11:36:41.618Z",
-          "fileName": "zh/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "bc6b7eba94bcd56413a7d5b0fdd0f5d91a0db6556551db46b8e3b3fa31666f5a"
+          "postProcessHash": "6db489f9262658473415d8a412edc71ec4f2c8a3399d276462c4d9be9f0ddd8a"
         },
         "ar": {
-          "updatedAt": "2026-09-15T11:36:41.618Z",
+          "updatedAt": "2026-09-23T02:01:44.695Z",
           "fileName": "ar/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "593b126d4e2bc5cee10d5dbe11a15b3e1808cc212fa1d308bebb5b65e163da78"
+          "postProcessHash": "6c054da3966ad319b32bf5aa1a18a67c89c7765af7a03d0c143213bbc2b5d6a9"
+        },
+        "ru": {
+          "updatedAt": "2026-09-23T02:01:44.707Z",
+          "fileName": "ru/integrations/language-clients/python/rust-codec.mdx",
+          "postProcessHash": "21ab5733158e406136fda7a026d5df03d4c691f619cf0ebe62189806d0bda48e"
+        },
+        "es": {
+          "updatedAt": "2026-09-23T02:01:44.708Z",
+          "fileName": "es/integrations/language-clients/python/rust-codec.mdx",
+          "postProcessHash": "b0c1f3b1c0f985eb6c04472afb8fa70c2487c4db37b20240ed02956acb7eeff0"
+        },
+        "ja": {
+          "updatedAt": "2026-09-23T02:01:44.709Z",
+          "fileName": "ja/integrations/language-clients/python/rust-codec.mdx",
+          "postProcessHash": "55e67edec9bb3ec0506fe5937c8d3eb1850ae2828d524d9985561e5e0d16f297"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-23T02:01:44.710Z",
+          "fileName": "pt-BR/integrations/language-clients/python/rust-codec.mdx",
+          "postProcessHash": "972f6c1517182988f0916d1389e39400a9a615cc0b3b81b6d3c92f1c5f1e1b0f"
+        },
+        "zh": {
+          "updatedAt": "2026-09-23T02:01:44.711Z",
+          "fileName": "zh/integrations/language-clients/python/rust-codec.mdx",
+          "postProcessHash": "ac50b293bbab2f11fe37fbb545f2e9194b1d5b0e96e92c9622498a1e5952e45b"
         },
         "fr": {
-          "updatedAt": "2026-09-15T11:36:41.619Z",
+          "updatedAt": "2026-09-23T02:01:44.716Z",
           "fileName": "fr/integrations/language-clients/python/rust-codec.mdx",
-          "postProcessHash": "11b924c8dd0abe53886e067642308ea60a009d240cf318cee1781471c6bac05f"
+          "postProcessHash": "d1430468025157602710cec6a05afa62454908663e4e20992bc0eaeebec6da65"
         }
       },
       "fileName": "integrations/language-clients/python/rust-codec.mdx"

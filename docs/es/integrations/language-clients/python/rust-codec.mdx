@@ -75,13 +75,13 @@ Los payloads Native malformados que detecta el códec de Rust generan `DataError
 
 ## Control de versiones {#versioning}
 
-`clickhouse-connect-core` se versiona de forma independiente de `clickhouse-connect`. El driver declara un rango compatible mediante el extra `rust`, y el módulo exporta una versión de la API de vinculación que el driver comprueba cuando se selecciona un codec de Rust. Si el wheel instalado es demasiado antiguo para el driver, la creación del client lanza un `NotSupportedError` que indica el comando de upgrade:
+`clickhouse-connect-core` se versiona de forma independiente de `clickhouse-connect`. El driver declara un rango compatible mediante el extra `rust`, y el módulo exporta una versión de la API de vinculación que el driver comprueba cuando se selecciona un códec de Rust. Si el wheel instalado es demasiado antiguo para el driver, la creación del client lanza un `NotSupportedError` que indica el comando de upgrade:
 
 ```bash
 pip install --upgrade clickhouse-connect-core
 ```
 
-Las correcciones de códecs y las mejoras del rendimiento se publican como versiones de `clickhouse-connect-core` y pueden incorporarse con solo actualizar el wheel, sin esperar a una versión de `clickhouse-connect`.
+Las correcciones y las mejoras del rendimiento en el códec compilado se publican como versiones de `clickhouse-connect-core` y pueden incorporarse actualizando a un wheel de core compatible. Los cambios en la integración de Rust del driver requieren actualizar `clickhouse-connect`.
 
 ## Diferencias de comportamiento conocidas {#known-behavior-differences}
 

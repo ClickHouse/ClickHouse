@@ -39,37 +39,56 @@ assert qr.first_row[0] == 113
 
 #### 쓰기 포맷 옵션 {#write-format-options}
 
-| ClickHouse 유형         | 네이티브 Python 유형          | 쓰기 포맷             | 설명                                                                                                                                        |
-| --------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                           |
-| UInt64                | int                     |                   |                                                                                                                                           |
-| [U]Int[128,256]       | int                     |                   |                                                                                                                                           |
-| BFloat16              | float                   |                   |                                                                                                                                           |
-| Float32               | float                   |                   |                                                                                                                                           |
-| Float64               | float                   |                   |                                                                                                                                           |
-| Decimal               | decimal.Decimal         |                   |                                                                                                                                           |
-| Interval*             | int                     |                   | 값은 해당 인터벌 타입의 단위로 표현된 부호 있는 64비트 카운트입니다.                                                                                                  |
-| String                | str or bytes            |                   | 하나의 컬럼에는 텍스트 또는 bytes 중 하나만 일관되게 포함되어야 합니다.                                                                                               |
-| FixedString           | bytes                   | string            | String 값은 0 바이트로 채워집니다. 빈 bytes는 모두 0 바이트로 기록됩니다.                                                                                         |
-| Enum[8,16]            | str or int              |                   | 레이블은 문자열 또는 해당 내부 정수 값으로 삽입합니다.                                                                                                           |
-| Date                  | datetime.date           | int               | 정수 값은 1970-01-01 이후 경과한 일수로 해석됩니다.                                                                                                        |
-| Date32                | datetime.date           | int               | 정수 값은 부호 있는 일 오프셋으로 해석됩니다.                                                                                                                |
-| DateTime              | datetime.datetime       | int               | 정수 값은 epoch 초로 해석됩니다.                                                                                                                     |
-| DateTime64            | datetime.datetime       | int               | 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다.                                                                                                         |
-| Time                  | datetime.timedelta      | int, string, time | 정수 값은 초 단위로 해석됩니다.                                                                                                                        |
-| Time64                | datetime.timedelta      | int, string, time | scale 0부터 9까지 지원됩니다. 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다. NumPy timedelta 값과 데이터프레임 삽입은 모든 scale에서 동작합니다. Python time 타입은 마이크로초까지만 지원됩니다. |
-| IPv4                  | `ipaddress.IPv4Address` | string            | 올바른 포맷의 문자열은 IPv4 주소로 삽입할 수 있습니다                                                                                                          |
-| IPv6                  | `ipaddress.IPv6Address` | string            | 올바른 포맷의 문자열은 IPv6 주소로 삽입할 수 있습니다                                                                                                          |
-| Tuple                 | dict or tuple           |                   | `Tuple()`에는 `()`를 사용하십시오.                                                                                                                 |
-| Map                   | dict                    |                   |                                                                                                                                           |
-| Nested                | Sequence[dict]          |                   |                                                                                                                                           |
-| UUID                  | uuid.UUID               | string            | 올바른 포맷의 문자열은 ClickHouse UUID로 삽입할 수 있습니다                                                                                                  |
-| JSON                  | dict                    | string            | 딕셔너리와 JSON 객체 문자열을 지원합니다. 기존 `Object('json')` 타입은 지원되지 않습니다.                                                                              |
-| Variant               | object                  |                   | 값은 네이티브 멤버 직렬화를 사용합니다. Python 타입이 모호한 경우 `clickhouse_connect.datatypes.dynamic.typed_variant`를 사용하십시오.                                    |
-| Dynamic               | object                  |                   | 현재 값은 String 표현으로 삽입됩니다.                                                                                                                  |
-| MultiPoint            | Sequence[tuple]         |                   | 각 point는 2-튜플입니다. MultiPoint 값을 삽입하려면 ClickHouse 26.8 이상이 필요합니다.                                                                          |
-| Geometry              | tuple or list           |                   | Point 값은 2-튜플입니다. MultiPoint를 포함한 리스트 기반 값은 `typed_variant`로 감싸서 geometry 멤버를 선택하십시오.                                                     |
-| QBit                  | Sequence[float]         |                   | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                                                                |
+| ClickHouse 유형         | 네이티브 Python 유형                     | 쓰기 포맷             | 설명                                                                                                                                     |
+| --------------------- | ---------------------------------- | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                                |                   |                                                                                                                                        |
+| UInt64                | int                                |                   |                                                                                                                                        |
+| [U]Int[128,256]       | int                                |                   |                                                                                                                                        |
+| BFloat16              | float                              |                   |                                                                                                                                        |
+| Float32               | float                              |                   |                                                                                                                                        |
+| Float64               | float                              |                   |                                                                                                                                        |
+| Decimal               | decimal.Decimal                    |                   |                                                                                                                                        |
+| Interval*             | int                                |                   | 값은 해당 인터벌 타입의 단위로 표현된 부호 있는 64비트 카운트입니다.                                                                                               |
+| String                | str or bytes                       |                   | 하나의 컬럼에는 텍스트 또는 bytes 중 하나만 일관되게 포함되어야 합니다.                                                                                            |
+| FixedString           | bytes                              | string            | String 값은 0 바이트로 채워집니다. 빈 bytes는 모두 0 바이트로 기록됩니다.                                                                                      |
+| Enum[8,16]            | str or int                         |                   | 레이블은 문자열 또는 해당 내부 정수 값으로 삽입합니다.                                                                                                        |
+| Date                  | datetime.date or datetime.datetime | int               | 정수 값은 1970-01-01 이후 경과한 일수로 해석됩니다.                                                                                                     |
+| Date32                | datetime.date or datetime.datetime | int               | 정수 값은 부호 있는 일 오프셋으로 해석됩니다.                                                                                                             |
+| DateTime              | datetime.datetime                  | int               | 정수 값은 epoch 초로 해석됩니다.                                                                                                                  |
+| DateTime64            | datetime.datetime                  | int               | 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다.                                                                                                      |
+| Time                  | datetime.timedelta                 | int, string, time | 정수 값은 초 단위로 해석됩니다.                                                                                                                     |
+| Time64                | datetime.timedelta                 | int, string, time | scale 0부터 9까지 지원됩니다. 정수 값은 컬럼 precision 기준의 틱으로 해석됩니다. NumPy timedelta 값과 데이터프레임 삽입은 모든 scale에서 동작합니다. Python time 타입은 마이크로초까지만 지원됩니다. |
+| IPv4                  | `ipaddress.IPv4Address`            | string            | 올바른 포맷의 문자열은 IPv4 주소로 삽입할 수 있습니다                                                                                                       |
+| IPv6                  | `ipaddress.IPv6Address`            | string            | 올바른 포맷의 문자열은 IPv6 주소로 삽입할 수 있습니다                                                                                                       |
+| Tuple                 | dict or tuple                      |                   | `Tuple()`에는 `()`를 사용하십시오.                                                                                                              |
+| Map                   | dict                               |                   | `pairs` 읽기 포맷은 삽입 입력에 영향을 주지 않습니다. 중복 키를 손실 없이 왕복 처리하려면 Arrow를 사용하십시오.                                                                 |
+| Nested                | Sequence[dict]                     |                   |                                                                                                                                        |
+| UUID                  | uuid.UUID                          | string            | 올바른 포맷의 문자열은 ClickHouse UUID로 삽입할 수 있습니다                                                                                               |
+| JSON                  | dict                               | string            | 딕셔너리와 JSON 객체 문자열을 지원합니다. 기존 `Object('json')` 타입은 지원되지 않습니다.                                                                           |
+| Variant               | object                             |                   | 값은 네이티브 멤버 직렬화를 사용합니다. Python 타입이 모호한 경우 `clickhouse_connect.datatypes.dynamic.typed_variant`를 사용하십시오.                                 |
+| Dynamic               | object                             |                   | 현재 값은 String 표현으로 삽입됩니다.                                                                                                               |
+| MultiPoint            | Sequence[tuple]                    |                   | 각 point는 2-튜플입니다. MultiPoint 값을 삽입하려면 ClickHouse 26.8 이상이 필요합니다.                                                                       |
+| Geometry              | tuple or list                      |                   | Point 값은 2-튜플입니다. MultiPoint를 포함한 리스트 기반 값은 `typed_variant`로 감싸서 geometry 멤버를 선택하십시오.                                                  |
+| QBit                  | Sequence[float]                    |                   | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                                                             |
+
+#### Date 및 Date32 값 {#date-and-date32-values}
+
+네이티브 삽입(Native inserts)에서는 `Date` 또는 `Date32` 컬럼에 Python `date` 값과 `datetime` 값을 섞어서 사용할 수 있습니다. `datetime` 값은 `.date()`가 반환하는 해당 값 자체의 날짜로 저장되며, 시간대 변환은 수행되지 않습니다. 이는 `Nullable`, `Array`, `Tuple`, `LowCardinality` 컬럼 내부에서도 동일하게 적용됩니다.
+
+```python
+from datetime import date, datetime, timedelta, timezone
+
+value = datetime(2024, 1, 1, 0, 30, tzinfo=timezone(timedelta(hours=14)))
+client.command("CREATE TABLE event_dates (event_date Date) ENGINE Memory")
+client.insert("event_dates", [[value], [date(2024, 1, 2)]])
+
+result = client.query("SELECT event_date FROM event_dates ORDER BY event_date")
+assert result.result_rows == [(date(2024, 1, 1),), (date(2024, 1, 2),)]
+```
+
+이 규칙은 Pandas `object` 컬럼을 포함한 Python 객체에 적용됩니다. 시간대 정보가 포함된(timezone-aware) Pandas `datetime64` 컬럼은 UTC 기준 달력 날짜를 사용합니다. 원래 달력 날짜를 유지하려면 삽입 전에 해당 값을 Python `date` 객체로 변환하십시오. NumPy `datetime64` 값에는 시간대 메타데이터가 없습니다.
+
+Datetime 쿼리 매개변수는 [바인딩 규칙](/ko/integrations/language-clients/python/driver-api#parameters-argument)을 따릅니다. 시간대 정보가 포함된 `datetime`은 `Date` 또는 `Date32` 값으로 포맷팅되기 전에 서버 시간대로 변환되므로 달력 날짜가 바뀔 수 있습니다. 삽입 시와 바인딩된 매개변수에서 동일한 달력 날짜를 사용해야 한다면 `value.date()`를 명시적으로 전달하십시오.
 
 ### 특수화된 삽입 메서드 {#specialized-insert-methods}
 

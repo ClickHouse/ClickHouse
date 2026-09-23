@@ -19,10 +19,10 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 * تتولى حزمة `clickhouse_connect.datatypes` تسلسل أنواع ClickHouse وإلغاء تسلسلها باستخدام التنسيق الثنائي العمودي الأصلي لـ ClickHouse.
 * تُسرّع امتدادات Cython الاختيارية في `clickhouse_connect.driverc` مسارات التسلسل والتحويل والتخزين المؤقت الشائعة. ويظل مسار بايثون خالص متاحًا على المنصات التي يتعذر فيها بناء هذه الامتدادات. ويمكن لـ[برنامج ترميز Rust](/ar/integrations/language-clients/python/rust-codec) التجريبي الاختياري أن يحل محل معالجة التنسيق الأصلي بالكامل.
 * تتضمن الحزمة معلومات الأنواع وفق PEP 561، بحيث تتمكن أدوات التحقق من الأنواع اللاحقة من استخدام التعليقات التوضيحية الخاصة بالواجهات العامة لبرنامج التشغيل وDB-API وSQLAlchemy.
-* تدعم لهجة [SQLAlchemy](https://www.sqlalchemy.org/) في `clickhouse_connect.cc_sqlalchemy` واجهة SQLAlchemy Core، وانعكاس المخطط، وبنود الاستعلام ومحركات الجداول الخاصة بـ ClickHouse، وعمليات ترحيل Alembic. تعمل عمليات قراءة ORM الأساسية وعمليات الإدراج، لكن هذه اللهجة مصممة لأعباء العمل التحليلية لا لسلوك ORM الكامل القائم على وحدة العمل.
+* تشمل لهجات [SQLAlchemy](https://www.sqlalchemy.org/) في `clickhouse_connect.cc_sqlalchemy` اتصالات `clickhousedb://` المتزامنة واتصالات `clickhousedb+async://` غير المتزامنة. وهي تدعم واجهة SQLAlchemy Core، وانعكاس المخطط، وبنود الاستعلام ومحركات الجداول الخاصة بـ ClickHouse، وعمليات ترحيل Alembic. تعمل عمليات قراءة ORM الأساسية وعمليات الإدراج، لكن هذه اللهجة مصممة لأعباء العمل التحليلية لا لسلوك ORM الكامل القائم على وحدة العمل.
 * يُعد برنامج التشغيل الأساسي وتنفيذ [ClickHouse Connect SQLAlchemy](/ar/integrations/language-clients/python/sqlalchemy) الطريقة المفضلة لربط ClickHouse مع Apache Superset. استخدم اتصال قاعدة البيانات `ClickHouse Connect` أو سلسلة اتصال لهجة SQLAlchemy ‏`clickhousedb`.
 
-هذه الوثائق محدثة حتى الإصدار clickhouse-connect 1.6.0. إذا كنت تُجري ترقية من 0.15.x أو إصدار أقدم، فراجع [دليل الترحيل 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
+إذا كنت تُجري ترقية من 0.15.x أو إصدار أقدم، فراجع [دليل الترحيل 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
 
 <Note>
   تستخدم برامج ClickHouse Connect العميلة القياسية واجهة HTTP. ويدعم ذلك موازنات تحميل HTTP والوكيلات وضوابط الشبكات المؤسسية الشائعة. كما يوفّر ClickHouse Connect أيضًا واجهة خلفية [chDB](#embedded-chdb-backend) تجريبية تعمل داخل العملية.
@@ -34,13 +34,13 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 | ---------- | --------------------------------------------------------------------------------------------------------- |
 | بايثون     | من 3.10 إلى 3.14. تُدعَم تجريبيًا إصدارات البناء الحرة متعددة الخيوط مثل 3.14t.                           |
 | ClickHouse | إصدارات ClickHouse المدعومة حاليًا. تُجرى اختبارات CI على أحدث إصدارات LTS والإصدارات المستقرة من الخادم. |
-| SQLAlchemy | ‏1.4.40 أو أحدث، وأقل من 3.0                                                                              |
+| SQLAlchemy | ‏1.4.40 أو أحدث، وأقل من 3.0، للهجة المتزامنة. ‏2.0.44 أو أحدث، وأقل من 3.0، للهجة غير المتزامنة.         |
 | Pandas     | ‏2.x و3.x                                                                                                 |
 | Polars     | ‏1.0 أو أحدث                                                                                              |
 | aiohttp    | ‏3.9 أو أحدث                                                                                              |
 | المنصات    | Linux وmacOS وWindows على المعماريات التي تُنشر لها حزم wheel لكل إصدار من بايثون                         |
 
-تتضمن الحزمة حزم wheel مُصرَّفة حيثما كانت متاحة، وتلجأ إلى تنفيذ ببايثون خالص عندما يتعذر بناء امتدادات Cython. ‏PyArrow مدعوم على بايثون من 3.10 إلى 3.14. يتطلب بايثون 3.14 إصدار PyArrow 22 أو أحدث.
+تتضمن الحزمة حزم wheel مُصرَّفة حيثما كانت متاحة، وتلجأ إلى تنفيذ ببايثون خالص عندما يتعذر بناء امتدادات Cython. ‏PyArrow مدعوم على بايثون من 3.10 إلى 3.14. يتطلب بايثون 3.14 إصدار PyArrow 22 أو أحدث.
 
 ## التثبيت {#installation}
 
@@ -58,6 +58,7 @@ pip install "clickhouse-connect[pandas]"     # Pandas
 pip install "clickhouse-connect[arrow]"      # PyArrow
 pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup
@@ -67,7 +68,7 @@ pip install "clickhouse-connect[tzdata]"     # IANA time zones on minimal system
 يمكن أيضًا تثبيت ClickHouse Connect من المصدر:
 
 * نفّذ `git clone` لـ [مستودع GitHub](https://github.com/ClickHouse/clickhouse-connect).
-* انتقل إلى جذر المشروع وشغّل `pip install .`. يثبّت نظام البناء Cython تلقائيًا لتجميع امتدادات C الاختيارية.
+* انتقل إلى جذر المشروع وشغّل `pip install .`. يثبّت نظام البناء Cython تلقائيًا لتصريف امتدادات C الاختيارية.
 
 ### أوضاع البناء من المصدر {#source-build-modes}
 

@@ -7,7 +7,7 @@ title: 'SQLAlchemy 支持'
 doc_type: 'reference'
 ---
 
-ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQLAlchemy 方言。它支持 SQLAlchemy 1.4.40 及更高版本 (包括 SQLAlchemy 2.x) ，重点关注 Core 查询、ClickHouse DDL、反射以及简单的 ORM 插入。
+ClickHouse Connect 内置了一个基于核心驱动构建的 `clickhousedb` SQLAlchemy 方言。同步方言支持 SQLAlchemy 1.4.40 及更高版本 (包括 SQLAlchemy 2.x) ，重点关注 Core 查询、ClickHouse DDL、反射以及简单的 ORM 插入。异步方言要求 SQLAlchemy 2.0.44 或更高版本。
 
 通过包扩展安装 SQLAlchemy 依赖项：
 
@@ -31,9 +31,75 @@ with engine.connect() as conn:
     print(version)
 ```
 
-URL 查询参数可以包含 ClickHouse 设置、ClickHouse Connect 客户端选项 (例如 `compression`、`query_limit` 和超时设置) ，或 HTTP/TLS 选项 (例如 `ca_cert`) 。如有需要，可为 ClickHouse 设置添加 `ch_` 前缀，以强制将其识别为服务器设置，例如 `ch_http_max_field_name_size=99999`。
+### ClickHouse 会话 ID {#sqlalchemy-session-ids}
 
-可用的客户端选项请参见[连接参数和设置](/zh/integrations/language-clients/python/driver-api#connection-arguments)。
+默认情况下，无论使用同步还是异步方言，每个池化连接都会生成一个独立的 ClickHouse 会话 ID。只要该连接的请求到达同一个 ClickHouse 服务器进程，通过 `SET` 修改的设置以及临时表就会在该连接上持续保留。命名会话状态和同一会话的重叠检查仅在进程内生效。在同一个服务器进程上，针对相同用户和会话 ID 的重叠请求会被立即拒绝并返回服务器错误码 373，而不会进入队列等待。如果您配置了固定的 `session_id`，请使用 `pool_size=1, max_overflow=0`，或在请求到达 ClickHouse 之前将访问串行化。在 ClickHouse Cloud 或其他采用负载均衡的部署中，具有相同会话 ID 的请求可能会被路由到不同的服务器，因此请勿将固定的 `session_id` 用作分布式状态或分布式互斥锁。
+
+### 异步连接 {#sqlalchemy-async-connections}
+
+异步方言要求 SQLAlchemy 2.0.44 或更高版本，并使用 ClickHouse Connect 原生的 `AsyncClient`。请先安装所需的依赖项，然后使用 `clickhousedb+async://` URL 创建异步引擎：
+
+```bash
+pip install "clickhouse-connect[sqlalchemy-async]"
+```
+
+```python
+import asyncio
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+
+async def main():
+    engine = create_async_engine(
+        "clickhousedb+async://user:password@host:8123/mydb"
+    )
+    try:
+        async with engine.connect() as conn:
+            version = (await conn.execute(text("SELECT version()"))).scalar_one()
+            print(version)
+    finally:
+        await engine.dispose()
+
+
+asyncio.run(main())
+```
+
+结果会被缓冲。由于服务器端游标已禁用，`AsyncConnection.stream()` 会引发 `InvalidRequestError`。SQLAlchemy 虽然接受 `AsyncSession.stream()`，但该方言会先缓冲完整结果，然后再返回。对于大型结果集，请使用原生 `AsyncClient` 的流式方法。在对应的 SQLAlchemy 连接被签出期间，可通过 `driver_connection` 访问底层原生客户端：
+
+```python
+async def stream_events(engine):
+    async with engine.connect() as conn:
+        raw_connection = await conn.get_raw_connection()
+        client = raw_connection.driver_connection
+        async with await client.query_rows_stream("SELECT * FROM events") as rows:
+            async for row in rows:
+                print(row)
+```
+
+请勿在使用原始客户端的同时并发使用 SQLAlchemy 连接。在退出 SQLAlchemy 连接代码块之前，请先完成原始客户端的流式处理；连接归还到连接池后，也不要继续持有该原始客户端。所借出客户端的生命周期由 SQLAlchemy 管理，因此切勿调用 `client.close()` 或其任何私有生命周期方法。连接并发由 SQLAlchemy 的连接池负责管理。每个池化连接拥有一个原生异步客户端，其 aiohttp 连接器默认限制为总共一个连接、每个主机一个连接。可在 URL 或 `connect_args` 中设置 `connector_limit`、`connector_limit_per_host` 或 `keepalive_timeout` 来覆盖这些传输设置。启用 `pool_pre_ping=True` 后，SQLAlchemy 会在签出池化连接时使用 `SELECT 1` 检查被复用的连接。
+
+目前，异步 SQLAlchemy 的 executemany 插入会为每个参数集单独发送一个 HTTP 请求，而不会使用驱动程序的 Native 批量插入协议。此方式仅适用于小批量数据。对于大批量数据，请使用上文介绍的由连接池管理的 `driver_connection` 访问模式，并在将 SQLAlchemy 连接归还到连接池之前 await `client.insert()`。由于异步 executemany 使用查询参数绑定，不带时区的 `datetime` 值遵循 `naive_datetime_binding`，而非同步 Native executemany 所使用的 `naive_datetime_insert` 设置。带类型的 SQLAlchemy `DateTime64` 绑定无论使用客户端参数还是服务器端参数，均会保留小数秒。对于传递给 `exec_driver_sql()` 的无类型 `%s` 或 `%(name)s` 参数，不带时区的 `datetime` 值仍沿用默认的整秒格式。如需明确的时区行为，请使用带时区信息的值。如需 Native 批量语义，请使用 `client.insert()`。
+
+请在使用异步引擎的事件循环中创建并释放该引擎。在关闭时，以及在其他事件循环中使用该引擎之前，请先归还所有已签出的连接，然后 await `engine.dispose()`。如果引擎所属的事件循环已经关闭，请在复用前于当前循环中 await `engine.dispose()`。如果清理工作在所属循环关闭之后才开始，aiohttp 仍可能报告存在未关闭的传输，因此请尽可能在转移之前完成释放。在事件循环之间迁移池化异步引擎时，`pool_pre_ping=True` 不能替代释放操作。若要在多个事件循环之间共享同一个引擎，且不保留绑定到特定循环的连接，请配置 `poolclass=NullPool`。如果执行释放时仍有连接处于签出状态，方言会在该连接被归还或被垃圾回收时将其关闭。请勿在同步代码中调用 `engine.sync_engine.dispose()`，因为 SQLAlchemy 在此无法 await 异步连接的清理，可能只会记录错误日志，而不会关闭池化的传输。
+
+URL 查询参数可以包含 ClickHouse 设置、ClickHouse Connect 客户端选项 (例如 `compression`、`query_limit` 和各类超时) ，或 HTTP/TLS 选项 (例如 `ca_cert`) 。必要时，可为 ClickHouse 设置添加 `ch_` 前缀，强制将其视为服务器设置，例如 `ch_http_max_field_name_size=99999`。
+
+有关可用的客户端选项，请参阅[连接参数和设置](/zh/integrations/language-clients/python/driver-api#connection-arguments)。
+
+DDL、元数据检查等同步 SQLAlchemy 辅助操作需通过 `AsyncConnection.run_sync()` 运行：
+
+```python
+from sqlalchemy import inspect
+
+
+async def prepare_schema(engine, metadata):
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+        return await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_table_names()
+        )
+```
 
 ### 每个查询的设置 {#sqlalchemy-per-query-settings}
 
@@ -65,6 +131,34 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
+### 错误处理 {#sqlalchemy-error-handling}
+
+驱动通过 SQLAlchemy 连接引发的错误，使用的是从 `clickhouse_connect.dbapi` 导出的 DB-API 类。这些类与 `clickhouse_connect.driver.exceptions` 中的对应类是同一个类对象，因此 SQLAlchemy 会将其包装为相应的 `sqlalchemy.exc.DBAPIError` 子类。`StreamFailureError` 属于 `OperationalError`，会被包装为 `sqlalchemy.exc.OperationalError`。
+
+如果调用方的取消操作可能会中断显式调用的 `AsyncConnection.invalidate()`，请在自行管理的任务中执行失效操作，并等待该任务完成后再传播取消。这样 SQLAlchemy 便能完成连接记录的簿记工作：
+
+```python
+import asyncio
+
+
+async def invalidate_safely(connection):
+    invalidate_task = asyncio.create_task(connection.invalidate())
+    cancellation = None
+    while not invalidate_task.done():
+        try:
+            await asyncio.wait({invalidate_task})
+        except asyncio.CancelledError as ex:
+            cancellation = ex
+    if cancellation is not None:
+        try:
+            invalidate_task.result()
+        finally:
+            raise cancellation
+    invalidate_task.result()
+```
+
+在连接的失效处理任务仍在运行期间，请勿使用该连接。如果直接调用的 `await connection.invalidate()` 被取消，且 `connection.invalidated` 仍为 false，请再次 await `connection.invalidate()` 以完成清理，之后再使用或关闭该连接。
+
 ### 服务器端参数 {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy 通常会在客户端渲染参数。创建引擎时，可选择启用 ClickHouse 服务器端参数：
@@ -75,6 +169,8 @@ engine = create_engine(
     server_side_params=True,
 )
 ```
+
+对于异步方言，请在 `create_async_engine()` 中使用相同的 `server_side_params=True` 参数。
 
 在此模式下，每个绑定值都必须具有与 ClickHouse 兼容的 SQLAlchemy 类型。受支持的 `IN` 列表会变为带类型的 ClickHouse `Array` 参数。如果编译器无法推导出兼容的类型，或无法安全地处理绑定值，就会引发 `CompileError`。
 
@@ -118,6 +214,14 @@ with engine.connect() as conn:
 ### 字面量渲染 {#sqlalchemy-literal-rendering}
 
 当 SQLAlchemy 通过 `literal_binds` 或 `literal_execute` 内联绑定值时，方言会针对通用 String 类型和 ClickHouse 类型采用 ClickHouse 的引用规则。这同样适用于 `TypeDecorator` 包装器以及 `with_variant()` 选择。即使其他绑定参数保持不变，String 值中的百分号和反斜杠仍会保留。
+
+对于使用 ClickHouse `DateTime64` SQLAlchemy 类型的 Python `datetime` 值，其微秒部分会在客户端参数和内联字面量中得到保留，包括 Nullable 值以及嵌套在数组和元组中的值。ClickHouse 会按所声明的精度进行处理。Python `datetime` 最多提供六位小数。普通 `DateTime` 值仍按整秒格式输出。对于 `text()` 语句，请通过 `bindparam("ts", type_=DateTime64(6))` 显式指定类型，以保留小数秒。
+
+SQLAlchemy 列类型必须与服务器 schema 保持一致。若在服务器端类型为 `DateTime` 的列上声明 `DateTime64`，渲染结果会带有小数秒，并可能在 insert 时以及 `IN` 比较中引发转换出错。
+
+在 SQLAlchemy 2.x 中，若通用 `sqlalchemy.ARRAY` 类型包含 ClickHouse `Tuple` 元素，其内联字面量需要设置 `dimensions=1` (嵌套数组则需设置相应更高的维数) ，以便 SQLAlchemy 将每个元组视为单个元素。SQLAlchemy 1.4 不支持通用 `ARRAY` 类型的内联字面量。
+
+如果重复使用某个命名的 datetime 参数，则该参数每次出现时都需要兼容的 `DateTime64` 绑定类型，才能保留小数部分。只要有一处未指定类型或类型冲突，就会保持整秒格式。请在每个 `bindparam` 上设置 `type_=DateTime64(6)`，或改用具有相应类型的不同参数名。
 
 ### JSON type hints {#sqlalchemy-json-type-hints}
 
@@ -362,9 +466,22 @@ with engine.connect() as conn:
 
 MergeTree 键参数 (如 `order_by`、`partition_by`、`primary_key`、`sample_by` 和 `ttl`) 既接受 SQLAlchemy 列和 SQL 表达式，也接受普通字符串。
 
+`Memory()`、`Log()`、`StripeLog()`、`TinyLog()`、`Null()` 和 `Set()` 支持无参数调用，且在经过 Alembic 自动生成后能够保持往返一致。原有的字典参数形式仍然受支持。如需提供引擎设置，请使用 `settings={...}`。
+
+`SummingMergeTree` 和 `ReplicatedSummingMergeTree` 支持一个可选的 `columns` 参数，该参数只能以关键字形式传入。原有位置参数的含义保持不变，因此 `SummingMergeTree("id")` 仍会设置 `ORDER BY id`。
+
+```python
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
+
+engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
+# Sum delta and n_tx for rows with the same id.
+```
+
+可以传入字符串、SQLAlchemy 列、映射的列属性，或由上述值组成的非空列表或元组。列表和元组中的字符串项会作为标识符加引号。单个标量字符串则直接作为原始 SQL 使用，例如 `"delta"` 或 `"(delta, n_tx)"`。服务器要求这些列以标识符形式指定。省略 `columns` 时，由 ClickHouse 自行选择要求和的列。反射和 Alembic 自动生成会保留显式指定的列列表。
+
 ## 插入和基本 ORM 用法 {#sqlalchemy-inserts}
 
-支持 Core 插入以及简单的 ORM 模型。对于批量数据路径，优先使用 Core 插入。
+支持 Core 插入以及简单的 ORM 模型。对于同步方言，在兼容的批量数据路径中优先使用 Core executemany 插入。对于异步批量插入，请使用[异步连接](#sqlalchemy-async-connections)中介绍的原生 `AsyncClient.insert()` 路径。
 
 ```python
 with engine.connect() as conn:
@@ -376,6 +493,12 @@ with engine.connect() as conn:
         ],
     )
 ```
+
+对于同步方言，由 SQLAlchemy 编译器生成的普通 Core `executemany` 插入会通过一次 Native 批量插入完成。异步 executemany 则会为每个参数集各发送一个请求，详见 [异步连接](#sqlalchemy-async-connections)。原始 SQL，以及包含表达式或其他无法安全路由的语义的插入，会保留原始 SQL，并针对每个参数集各执行一次。如果后续某个参数集执行失败，之前的参数集已写入的行仍会保持已提交状态。
+
+显式多行 `insert(events).values([...])` 语句支持字典形式的行、按表列顺序排列的元组，以及逐行指定的 SQL 表达式。Pandas `to_sql(method="multi")` 采用的就是这种形式。它能够插入这些行，但会返回 `0`，因为文本形式的 INSERT 语句通过 DB-API 游标报告的行数始终为 `0`。SQLAlchemy 根据第一行确定列列表。后续行中多出的字典键，以及超出所选列列表范围的元组值，都会被忽略。如果后续某行缺少所选列的值，编译将会失败。请确保每一行都包含相同的列。
+
+在 ClickHouse 26.4 及更高版本的默认 HTTP 表单限制下，`server_side_params=True` 仅适用于小型显式批次，即绑定值少于约 1000 个，同时还需为其他字段预留余量。可以通过服务器配置提高这一上限。对于同步方言下的大型普通批次，请将行作为 `execute()` 的第二个参数传入，以便驱动程序走其 Native 批量插入路径。对于异步批量数据，请 await 原生的 `AsyncClient.insert()` 方法。
 
 ```python
 import sqlalchemy as db
@@ -412,7 +535,23 @@ ClickHouse Connect 提供了适用于 ClickHouse schema 迁移的 Alembic 集成
 pip install "clickhouse-connect[alembic]"
 ```
 
+如需通过异步方言执行迁移，请同时安装这两个 extras：
+
+```bash
+pip install "clickhouse-connect[alembic,sqlalchemy-async]"
+```
+
+创建一个异步 Alembic 项目，然后将其自动生成的环境替换为适配 ClickHouse 的示例：
+
+```bash
+alembic init -t async alembic
+```
+
+生成的 `alembic.ini` 使用 `script_location = %(here)s/alembic`。如果迁移目录名为 `alembic`，请保留该设置；否则，请将其改为传递给 `alembic init` 的目录。将 `alembic/env.py` 替换为仓库中提供的[异步 Alembic `env.py` 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)，然后在 `alembic.ini` 中设置 `sqlalchemy.url`。
+
 在 Alembic 的 `env.py` 中导入 `clickhouse_connect.cc_sqlalchemy.alembic`，以注册方言集成。自动生成支持常见的表结构变更，包括创建和删除表、添加/修改/删除列、默认值以及注释。表和列的重命名请使用手动操作。在应用每个生成的迁移之前，都应先进行审查。
+
+Alembic 的迁移函数仍然是同步的。异步环境会创建 `AsyncEngine`，打开 `AsyncConnection`，并将同步迁移函数传给 `await connection.run_sync(...)`。离线迁移则直接调用 `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})`，不会创建引擎。仓库中提供的[异步 Alembic `env.py` 示例](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)同时涵盖这两种路径，并通过 Alembic 标准的 `sqlalchemy.url` 配置读取连接 URL。该示例保留了完整示例中的 ClickHouse Alembic 钩子和选项，包括 `include_object`、`make_include_name(...)`、`clickhouse_writer` 和 `version_table`。请勿使用 `engine.sync_engine` 来运行异步迁移或释放其资源。
 
 ClickHouse 特有的 `op.*` 辅助方法涵盖：
 

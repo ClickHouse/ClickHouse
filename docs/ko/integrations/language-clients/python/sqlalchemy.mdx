@@ -7,7 +7,7 @@ title: 'SQLAlchemy 지원'
 doc_type: 'reference'
 ---
 
-ClickHouse Connect에는 핵심 드라이버를 기반으로 한 `clickhousedb` SQLAlchemy 방언이 포함되어 있습니다. 이 방언은 SQLAlchemy 1.4.40 이상(2.x 포함)을 지원하며, Core 쿼리, ClickHouse DDL, 리플렉션, 간단한 ORM 삽입에 중점을 둡니다.
+ClickHouse Connect에는 core driver를 기반으로 한 `clickhousedb` SQLAlchemy 방언이 포함되어 있습니다. 동기 방언은 SQLAlchemy 1.4.40 이상(2.x 포함)을 지원하며, Core 쿼리, ClickHouse DDL, 리플렉션, 간단한 ORM 삽입에 중점을 둡니다. 비동기 방언을 사용하려면 SQLAlchemy 2.0.44 이상이 필요합니다.
 
 package extra를 사용하여 SQLAlchemy 의존성을 설치하십시오:
 
@@ -31,9 +31,75 @@ with engine.connect() as conn:
     print(version)
 ```
 
-URL 쿼리 매개변수에는 ClickHouse 설정, `compression`, `query_limit`, 타임아웃과 같은 ClickHouse Connect 클라이언트 옵션 또는 `ca_cert`와 같은 HTTP/TLS 옵션이 포함될 수 있습니다. 필요할 때는 ClickHouse 설정 앞에 `ch_`를 붙여 서버 설정으로 간주되도록 하십시오. 예를 들어 `ch_http_max_field_name_size=99999`와 같이 지정합니다.
+### ClickHouse 세션 ID {#sqlalchemy-session-ids}
+
+동기(synchronous) 방언과 비동기(async) 방언 모두에서 풀의 각 연결은 기본적으로 고유한 ClickHouse 세션 ID를 생성합니다. 해당 연결의 요청이 동일한 ClickHouse 서버 프로세스에 도달하면 `SET`으로 변경한 설정과 임시 테이블이 그 연결에서 계속 유지됩니다. 이름이 지정된 세션의 상태와 동일 세션 중복 검사는 프로세스 내에서만 적용됩니다. 하나의 서버 프로세스에서 동일한 사용자와 세션 ID로 요청이 겹쳐 들어오면, 해당 요청은 큐에서 대기하지 않고 서버 코드 373과 함께 즉시 거부됩니다. 고정된 `session_id`를 구성하는 경우 `pool_size=1, max_overflow=0`을 사용하거나, 요청이 ClickHouse에 도달하기 전에 액세스를 직렬화하십시오. ClickHouse Cloud를 비롯한 로드 밸런싱 배포 환경에서는 동일한 세션 ID를 가진 요청이 서로 다른 서버로 전달될 수 있으므로, 고정된 `session_id`를 분산 상태나 분산 뮤텍스로 사용하지 마십시오.
+
+### 비동기 연결 {#sqlalchemy-async-connections}
+
+비동기 방언은 SQLAlchemy 2.0.44 이상이 필요하며, ClickHouse Connect의 네이티브 `AsyncClient`를 사용합니다. 필요한 의존성을 설치한 후 `clickhousedb+async://` URL로 비동기 엔진을 생성하세요.
+
+```bash
+pip install "clickhouse-connect[sqlalchemy-async]"
+```
+
+```python
+import asyncio
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+
+async def main():
+    engine = create_async_engine(
+        "clickhousedb+async://user:password@host:8123/mydb"
+    )
+    try:
+        async with engine.connect() as conn:
+            version = (await conn.execute(text("SELECT version()"))).scalar_one()
+            print(version)
+    finally:
+        await engine.dispose()
+
+
+asyncio.run(main())
+```
+
+결과는 버퍼링됩니다. 서버 측 커서(cursor)가 비활성화되어 있으므로 `AsyncConnection.stream()`을 호출하면 `InvalidRequestError`가 발생합니다. SQLAlchemy는 `AsyncSession.stream()` 호출을 허용하지만, 방언(dialect)이 전체 결과를 버퍼링한 후에 반환합니다. 대용량 결과를 처리하려면 네이티브 `AsyncClient` 스트리밍 메서드를 사용하십시오. SQLAlchemy 연결이 체크아웃되어 있는 동안에는 원시(raw) 네이티브 클라이언트에 `driver_connection`으로 접근할 수 있습니다.
+
+```python
+async def stream_events(engine):
+    async with engine.connect() as conn:
+        raw_connection = await conn.get_raw_connection()
+        client = raw_connection.driver_connection
+        async with await client.query_rows_stream("SELECT * FROM events") as rows:
+            async for row in rows:
+                print(row)
+```
+
+SQLAlchemy 연결과 해당 원시(raw) 클라이언트를 동시에 사용하지 마십시오. SQLAlchemy 연결 블록을 벗어나기 전에 원시 클라이언트 스트림을 완료하고, 연결이 풀로 반환된 후에는 원시 클라이언트를 계속 보관하지 마십시오. 빌려온 클라이언트의 수명 주기는 SQLAlchemy가 관리하므로 `client.close()`나 그 밖의 비공개 수명 주기 메서드를 절대 호출하지 마십시오. 연결 동시성은 SQLAlchemy의 풀이 관리합니다. 풀에 속한 각 연결은 하나의 네이티브 비동기 클라이언트를 소유하며, aiohttp 커넥터 제한은 기본적으로 전체 연결 1개, 호스트당 연결 1개로 설정됩니다. 이러한 전송 설정을 재정의하려면 URL 또는 `connect_args`에서 `connector_limit`, `connector_limit_per_host`, `keepalive_timeout`을 설정하십시오. `pool_pre_ping=True`를 사용하면 SQLAlchemy는 풀에서 연결을 체크아웃할 때 재사용되는 연결을 `SELECT 1`로 확인합니다.
+
+현재 비동기 SQLAlchemy executemany 삽입은 드라이버의 Native 대량 삽입 프로토콜을 사용하지 않고 매개변수 세트마다 HTTP 요청을 하나씩 전송합니다. 따라서 이 방식은 소규모 배치에만 사용하십시오. 대량 데이터를 처리할 때는 앞서 설명한 풀 소유 `driver_connection` 접근 패턴을 사용하고, SQLAlchemy 연결을 풀에 반환하기 전에 `client.insert()`를 await하십시오. 비동기 executemany는 쿼리 매개변수 바인딩을 사용하므로, 시간대 정보가 없는(naive) `datetime` 값은 동기 Native executemany에서 사용하는 `naive_datetime_insert` 설정이 아니라 `naive_datetime_binding`을 따릅니다. 타입이 지정된 SQLAlchemy `DateTime64` 바인딩은 클라이언트 측 매개변수와 서버 측 매개변수 모두에서 소수 초를 보존합니다. 반면 `exec_driver_sql()`에 전달되는 타입이 지정되지 않은 `%s` 또는 `%(name)s` 매개변수는 naive `datetime` 값을 기본 방식대로 초 단위(소수점 이하 제외)로 포맷합니다. 시간대가 모호하지 않도록 하려면 시간대 정보가 포함된 값을 사용하십시오. Native 대량 삽입 방식이 필요하면 `client.insert()`를 사용하십시오.
+
+비동기 엔진은 해당 엔진을 사용하는 이벤트 루프에서 생성하고 해제하십시오. 체크아웃한 모든 연결을 반환한 다음, 종료 시점 및 다른 이벤트 루프에서 엔진을 사용하기 전에 `engine.dispose()`를 await하십시오. 엔진을 소유한 루프가 이미 닫혔다면 재사용하기 전에 현재 루프에서 `engine.dispose()`를 await하십시오. 소유 루프가 닫힌 뒤에야 정리가 시작되면 aiohttp가 닫히지 않은 전송이 있다고 보고할 수 있으므로, 가능하면 엔진을 옮기기 전에 해제하십시오. 풀링된 비동기 엔진을 다른 이벤트 루프로 옮길 때 `pool_pre_ping=True`로 해제를 대신할 수는 없습니다. 루프에 바인딩된 연결을 남기지 않고 여러 이벤트 루프에서 하나의 엔진을 공유하려면 `poolclass=NullPool`을 설정하십시오. 연결이 아직 체크아웃된 상태에서 해제가 실행되면, 방언(dialect)은 해당 연결이 반환되거나 가비지 컬렉션될 때 연결을 닫습니다. 동기 코드에서는 `engine.sync_engine.dispose()`를 호출하지 마십시오. 이 경우 SQLAlchemy는 비동기 연결 정리를 await할 수 없으므로, 풀링된 전송을 닫지 못하고 오류만 로그로 남길 수 있습니다.
+
+URL 쿼리 매개변수에는 ClickHouse 설정, `compression`, `query_limit`, 타임아웃과 같은 ClickHouse Connect 클라이언트 옵션, 또는 `ca_cert`와 같은 HTTP/TLS 옵션을 포함할 수 있습니다. 필요한 경우 ClickHouse 설정 앞에 `ch_`를 붙이면 해당 설정을 강제로 서버 설정으로 처리할 수 있습니다(예: `ch_http_max_field_name_size=99999`).
 
 사용 가능한 클라이언트 옵션은 [연결 인수 및 설정](/ko/integrations/language-clients/python/driver-api#connection-arguments)을 참조하십시오.
+
+DDL 및 검사(inspection)와 같은 동기 SQLAlchemy 헬퍼는 `AsyncConnection.run_sync()`를 통해 실행하십시오:
+
+```python
+from sqlalchemy import inspect
+
+
+async def prepare_schema(engine, metadata):
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+        return await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_table_names()
+        )
+```
 
 ### 쿼리별 설정 {#sqlalchemy-per-query-settings}
 
@@ -65,6 +131,34 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
+### 오류 처리 {#sqlalchemy-error-handling}
+
+SQLAlchemy 연결을 통해 드라이버에서 발생하는 오류는 `clickhouse_connect.dbapi`에서 내보내는 DB-API 클래스를 사용합니다. 이 클래스들은 `clickhouse_connect.driver.exceptions`의 대응 클래스와 동일한 클래스 객체이므로, SQLAlchemy는 이를 해당하는 `sqlalchemy.exc.DBAPIError` 하위 클래스로 래핑합니다. `StreamFailureError`는 `OperationalError`의 일종이므로 `sqlalchemy.exc.OperationalError`로 래핑됩니다.
+
+호출자 측의 취소로 인해 명시적으로 호출한 `AsyncConnection.invalidate()`가 중단될 수 있다면, 무효화를 별도로 소유한 작업(task)에서 실행하고, 취소를 전파하기 전에 해당 작업이 완료될 때까지 기다리십시오. 이렇게 하면 SQLAlchemy가 연결 레코드 정리 작업을 끝까지 마칠 수 있습니다:
+
+```python
+import asyncio
+
+
+async def invalidate_safely(connection):
+    invalidate_task = asyncio.create_task(connection.invalidate())
+    cancellation = None
+    while not invalidate_task.done():
+        try:
+            await asyncio.wait({invalidate_task})
+        except asyncio.CancelledError as ex:
+            cancellation = ex
+    if cancellation is not None:
+        try:
+            invalidate_task.result()
+        finally:
+            raise cancellation
+    invalidate_task.result()
+```
+
+무효화 작업이 아직 실행 중일 때는 연결을 사용하지 마십시오. 직접 호출한 `await connection.invalidate()`가 취소되어 `connection.invalidated`가 여전히 false라면, 연결을 사용하거나 닫기 전에 `connection.invalidate()`를 다시 await하여 정리를 완료하십시오.
+
 ### 서버 측 매개변수 {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy는 일반적으로 매개변수를 클라이언트 측에서 렌더링합니다. 엔진을 생성할 때 ClickHouse 서버 측 매개변수를 사용하도록 설정하십시오:
@@ -76,9 +170,11 @@ engine = create_engine(
 )
 ```
 
+비동기 방언에서는 `create_async_engine()`에 동일한 `server_side_params=True` 인수를 지정하십시오.
+
 이 모드에서는 바인딩된 모든 값이 ClickHouse와 호환되는 SQLAlchemy 타입이어야 합니다. 지원되는 `IN` 목록은 타입이 지정된 ClickHouse `Array` 매개변수로 변환됩니다. 컴파일러는 호환되는 타입을 추론할 수 없거나 바인딩을 안전하게 처리할 수 없는 경우 `CompileError`를 발생시킵니다.
 
-바인딩 이름은 ClickHouse ASCII BareWord 이름이어야 합니다. 핵심 드라이버가 원시 바이너리 쿼리 매개변수용으로 예약하므로 `$`로 시작하고 끝나는 이름은 거부됩니다.
+바인딩 이름은 ClickHouse ASCII BareWord 이름이어야 합니다. core driver가 원시 바이너리 쿼리 매개변수용으로 예약하므로 `$`로 시작하고 끝나는 이름은 거부됩니다.
 
 ## Core 쿼리 {#sqlalchemy-core-queries}
 
@@ -118,6 +214,14 @@ with engine.connect() as conn:
 ### 리터럴 렌더링 {#sqlalchemy-literal-rendering}
 
 SQLAlchemy가 `literal_binds` 또는 `literal_execute`를 통해 바인딩된 값을 인라인으로 삽입하면, 방언은 일반 String 타입과 ClickHouse 타입에 ClickHouse 인용 규칙을 사용합니다. 이는 `TypeDecorator` 래퍼와 `with_variant()` 선택에도 적용됩니다. 다른 바인딩된 매개변수가 남아 있어도 문자열 값의 퍼센트 기호와 백슬래시는 유지됩니다.
+
+ClickHouse `DateTime64` SQLAlchemy 타입이 지정된 Python `datetime` 값은 클라이언트 측 매개변수와 인라인 리터럴에서 마이크로초가 유지되며, 널 허용 값과 배열 및 튜플 안에 중첩된 값도 마찬가지입니다. 정밀도는 ClickHouse가 선언된 값에 따라 적용합니다. Python `datetime`은 소수점 이하 최대 6자리까지 제공합니다. 일반 `DateTime` 값은 초 단위 포맷이 그대로 유지됩니다. `text()` SQL 문에서 소수 초를 보존하려면 `bindparam("ts", type_=DateTime64(6))`와 같이 타입을 명시적으로 지정하십시오.
+
+SQLAlchemy 컬럼 타입은 서버 스키마와 일치해야 합니다. 서버의 `DateTime` 컬럼에 `DateTime64`를 선언하면 소수 초가 렌더링되어, 삽입 시와 `IN` 비교에서 변환 오류가 발생할 수 있습니다.
+
+SQLAlchemy 2.x에서 ClickHouse `Tuple` 항목을 포함하는 일반 `sqlalchemy.ARRAY` 타입을 인라인 리터럴로 사용하려면 `dimensions=1`(중첩 배열이라면 그에 맞는 더 높은 차원 수)을 지정해야 SQLAlchemy가 각 튜플을 하나의 항목으로 처리합니다. SQLAlchemy 1.4는 일반 `ARRAY` 타입의 인라인 리터럴을 지원하지 않습니다.
+
+이름이 지정된 datetime 매개변수를 재사용할 때 소수 부분을 보존하려면, 해당 매개변수가 사용되는 모든 위치에 호환되는 `DateTime64` 바인드 타입을 지정해야 합니다. 타입이 지정되지 않은 위치가 있거나 타입이 충돌하면 초 단위 포맷이 유지됩니다. 각 `bindparam`에 `type_=DateTime64(6)`를 설정하거나, 서로 다른 매개변수 이름을 사용하여 각각 적절한 타입을 지정하십시오.
 
 ### JSON 타입 힌트 {#sqlalchemy-json-type-hints}
 
@@ -362,9 +466,22 @@ with engine.connect() as conn:
 
 `order_by`, `partition_by`, `primary_key`, `sample_by`, `ttl` 등의 MergeTree 키 인수는 일반 문자열은 물론 SQLAlchemy 컬럼과 SQL 표현식도 받을 수 있습니다.
 
+`Memory()`, `Log()`, `StripeLog()`, `TinyLog()`, `Null()`, `Set()`은 인수 없이 사용할 수 있으며, Alembic 자동 생성을 거쳐도 변경 없이 그대로 유지됩니다. 기존 딕셔너리 인수도 계속 지원됩니다. 엔진 설정을 지정하려면 `settings={...}`를 사용하십시오.
+
+`SummingMergeTree` 및 `ReplicatedSummingMergeTree`는 키워드 전용 선택 인수인 `columns`를 지원합니다. 기존 위치 인수의 의미는 그대로 유지되므로 `SummingMergeTree("id")`는 여전히 `ORDER BY id`를 설정합니다.
+
+```python
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
+
+engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
+# Sum delta and n_tx for rows with the same id.
+```
+
+문자열, SQLAlchemy 컬럼, 매핑된 컬럼 속성 또는 이러한 값으로 구성된 비어 있지 않은 리스트나 튜플을 전달하세요. 리스트 및 튜플의 문자열 항목은 식별자로 인용됩니다. 스칼라 문자열은 `"delta"` 또는 `"(delta, n_tx)"`와 같은 원시 SQL로 전달됩니다. 서버는 이러한 컬럼을 식별자로 지정해야 합니다. `columns`를 생략하면 ClickHouse가 합산할 컬럼을 선택합니다. 리플렉션과 Alembic 자동 생성은 명시적으로 지정된 컬럼 목록을 유지합니다.
+
 ## 삽입 및 기본 ORM 사용 {#sqlalchemy-inserts}
 
-Core 삽입과 간단한 ORM 모델이 지원됩니다. 대량 데이터 처리에는 Core 삽입을 우선적으로 사용하십시오.
+Core 삽입과 간단한 ORM 모델이 지원됩니다. 동기 방언에서는 호환되는 대량 데이터 처리에 Core executemany 삽입을 우선적으로 사용하십시오. 비동기 대량 삽입에는 [비동기 연결](#sqlalchemy-async-connections)에 설명된 네이티브 `AsyncClient.insert()` 경로를 사용하십시오.
 
 ```python
 with engine.connect() as conn:
@@ -376,6 +493,12 @@ with engine.connect() as conn:
         ],
     )
 ```
+
+동기 방언에서는 SQLAlchemy 컴파일러가 생성한 일반 Core `executemany` 삽입이 한 번의 Native 대량 삽입(bulk insert)으로 처리됩니다. 비동기 executemany는 [비동기 연결](#sqlalchemy-async-connections)에 설명된 대로 매개변수 집합마다 요청을 하나씩 전송합니다. Raw SQL, 그리고 표현식이나 안전하게 라우팅할 수 없는 기타 의미 체계를 포함하는 삽입은 원래 SQL을 그대로 유지한 채 매개변수 집합마다 한 번씩 실행됩니다. 이때 뒤쪽 매개변수 집합이 실패하더라도 앞선 매개변수 집합으로 기록된 행은 커밋된 상태로 남습니다.
+
+명시적인 다중 행 `insert(events).values([...])` SQL 문에는 딕셔너리 형태의 행, 테이블 컬럼 순서를 따르는 튜플, 행별 SQL 표현식을 사용할 수 있습니다. Pandas `to_sql(method="multi")`도 이 형식을 사용합니다. 이 방식은 행을 정상적으로 삽입하지만, 텍스트 형식의 INSERT 문은 DB-API 커서를 통해 행 수를 `0`으로 보고하므로 반환값은 `0`입니다. SQLAlchemy는 첫 번째 행을 기준으로 컬럼 목록을 결정합니다. 따라서 이후 행에 추가로 포함된 딕셔너리 키나 선택된 컬럼 목록을 벗어나는 튜플 값은 무시됩니다. 반대로 이후 행에 선택된 컬럼의 값이 없으면 컴파일이 실패합니다. 모든 행에 동일한 컬럼을 지정하십시오.
+
+ClickHouse 26.4 이상의 기본 HTTP 폼 제한에서는 `server_side_params=True`가 소규모 명시적 배치에만 적합하며, 다른 필드를 위한 여유분을 고려하면 바인드 값은 약 1000개 미만이어야 합니다. 이 상한은 서버 구성으로 높일 수 있습니다. 동기 방언으로 대규모 일반 배치를 처리하려면 드라이버가 Native 대량 삽입 경로를 사용할 수 있도록 행을 `execute()`의 두 번째 인수로 전달하십시오. 비동기 방식으로 대량 데이터를 처리하려면 네이티브 `AsyncClient.insert()` 메서드를 await하십시오.
 
 ```python
 import sqlalchemy as db
@@ -412,7 +535,23 @@ ClickHouse Connect에는 ClickHouse 스키마 마이그레이션을 위한 Alemb
 pip install "clickhouse-connect[alembic]"
 ```
 
+비동기 방언으로 마이그레이션을 수행하려면 두 extras를 모두 설치하십시오:
+
+```bash
+pip install "clickhouse-connect[alembic,sqlalchemy-async]"
+```
+
+async Alembic 프로젝트를 생성한 다음, 자동 생성된 환경 파일을 ClickHouse를 지원하는 예시로 교체하십시오:
+
+```bash
+alembic init -t async alembic
+```
+
+생성된 `alembic.ini`는 `script_location = %(here)s/alembic`을 사용합니다. 마이그레이션 디렉터리 이름이 `alembic`이면 이 설정을 그대로 유지하고, 그렇지 않으면 `alembic init`에 전달한 디렉터리로 변경하십시오. `alembic/env.py`를 저장소에 포함된 [비동기 Alembic `env.py` 예시](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)로 교체한 다음, `alembic.ini`에서 `sqlalchemy.url`을 설정하십시오.
+
 방언 통합을 등록하려면 Alembic의 `env.py`에서 `clickhouse_connect.cc_sqlalchemy.alembic`을 import하십시오. 자동 생성은 테이블 생성 및 제거, 컬럼 추가/수정/삭제, 기본값, 주석을 포함한 일반적인 테이블 스키마 변경을 지원합니다. 테이블 및 컬럼 이름 변경은 수동 작업을 사용하십시오. 생성된 모든 migration은 적용하기 전에 반드시 검토하십시오.
+
+Alembic의 마이그레이션 함수는 여전히 동기 방식으로 동작합니다. 비동기 환경에서는 `AsyncEngine`을 생성하고 `AsyncConnection`을 연 다음, 동기 마이그레이션 함수를 `await connection.run_sync(...)`에 전달합니다. 오프라인 마이그레이션은 `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})`를 직접 호출하며 엔진을 생성하지 않습니다. 저장소에 포함된 [비동기 Alembic `env.py` 예시](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py)에는 두 경로가 모두 포함되어 있으며, Alembic의 표준 `sqlalchemy.url` 구성을 통해 연결 URL을 읽습니다. 또한 `include_object`, `make_include_name(...)`, `clickhouse_writer`, `version_table` 등 단계별 예시에서 사용한 ClickHouse Alembic 훅과 옵션을 그대로 유지합니다. 비동기 마이그레이션을 실행하거나 정리할 때 `engine.sync_engine`을 사용하지 마십시오.
 
 ClickHouse 전용 `op.*` 헬퍼는 다음을 지원합니다.
 

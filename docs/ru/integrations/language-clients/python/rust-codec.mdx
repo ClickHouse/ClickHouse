@@ -75,13 +75,13 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 
 ## Versioning {#versioning}
 
-`clickhouse-connect-core` версионируется независимо от `clickhouse-connect`. Драйвер объявляет совместимый диапазон версий через extra `rust`, а модуль экспортирует версию binding API, которую драйвер проверяет при выборе кодека на Rust. Если установленный wheel слишком стар для драйвера, при создании клиента возникает `NotSupportedError` с указанием команды обновления:
+`clickhouse-connect-core` версионируется независимо от `clickhouse-connect`. Драйвер объявляет совместимый диапазон версий через дополнение `rust`, а модуль экспортирует версию binding API, которую драйвер проверяет при выборе кодека на Rust. Если установленный wheel-пакет слишком стар для драйвера, при создании клиента возникает `NotSupportedError` с указанием команды обновления:
 
 ```bash
 pip install --upgrade clickhouse-connect-core
 ```
 
-Исправления кодеков и повышение производительности выходят в составе релизов `clickhouse-connect-core`, и их можно получить простым обновлением wheel-пакета, не дожидаясь релиза `clickhouse-connect`.
+Исправления и повышение производительности скомпилированного кодека выходят в составе релизов `clickhouse-connect-core`, и их можно получить, обновив wheel-пакет core до совместимой версии. Изменения в интеграции драйвера с Rust требуют обновления `clickhouse-connect`.
 
 ## Известные различия в поведении {#known-behavior-differences}
 

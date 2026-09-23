@@ -19,10 +19,10 @@ ClickHouse Connect — это основной драйвер для подкл�
 * Пакет `clickhouse_connect.datatypes` сериализует и десериализует типы ClickHouse, используя бинарный столбцовый формат ClickHouse Native.
 * Необязательные расширения Cython в `clickhouse_connect.driverc` ускоряют типовые пути сериализации, преобразования и буферизации. На платформах, где эти расширения нельзя собрать, по-прежнему доступен вариант на чистом Python. Экспериментальный подключаемый [кодек на Rust](/ru/integrations/language-clients/python/rust-codec) может полностью заменить обработку формата Native.
 * Пакет поставляется с информацией о типах PEP 561, поэтому последующие инструменты проверки типов учитывают аннотации для публичного интерфейса драйвера, DB-API и поверхностей SQLAlchemy.
-* Диалект [SQLAlchemy](https://www.sqlalchemy.org/) в `clickhouse_connect.cc_sqlalchemy` поддерживает SQLAlchemy Core, отражение схемы, специфичные для ClickHouse секции запросов и движки таблиц, а также миграции Alembic. Базовые операции чтения и вставки ORM работают, но диалект рассчитан на аналитические рабочие нагрузки, а не на полноценную ORM-модель unit-of-work.
+* Диалекты [SQLAlchemy](https://www.sqlalchemy.org/) в `clickhouse_connect.cc_sqlalchemy` включают синхронные соединения `clickhousedb://` и асинхронные соединения `clickhousedb+async://`. Они поддерживают SQLAlchemy Core, отражение схемы, специфичные для ClickHouse секции запросов и движки таблиц, а также миграции Alembic. Базовые операции чтения и вставки ORM работают, но диалект рассчитан на аналитические рабочие нагрузки, а не на полноценную ORM-модель unit-of-work.
 * Основной драйвер и реализация [ClickHouse Connect SQLAlchemy](/ru/integrations/language-clients/python/sqlalchemy) — предпочтительный способ подключения ClickHouse к Apache Superset. Используйте подключение к базе данных `ClickHouse Connect` или строку подключения диалекта SQLAlchemy `clickhousedb`.
 
-Эта документация актуальна для clickhouse-connect 1.6.0. Если вы обновляетесь с версии 0.15.x или более ранней, см. [руководство по миграции на 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
+Если вы обновляетесь с версии 0.15.x или более ранней, см. [руководство по миграции на 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
 
 <Note>
   Стандартные клиенты ClickHouse Connect используют HTTP-интерфейс. Это позволяет работать с HTTP-балансировщиками нагрузки, прокси и распространёнными корпоративными средствами управления сетью. ClickHouse Connect также поддерживает экспериментальный backend chDB, работающий in-process [chDB](#embedded-chdb-backend).
@@ -34,7 +34,7 @@ ClickHouse Connect — это основной драйвер для подкл�
 | ---------- | -------------------------------------------------------------------------------------------------------------------------- |
 | Python     | От 3.10 до 3.14. Сборки без GIL, такие как 3.14t, поддерживаются в экспериментальном режиме.                               |
 | ClickHouse | Актуальные поддерживаемые релизы ClickHouse. В CI выполняется тестирование на последних LTS- и стабильных релизах сервера. |
-| SQLAlchemy | 1.4.40 или новее, ниже 3.0                                                                                                 |
+| SQLAlchemy | 1.4.40 или новее, но ниже 3.0 — для синхронного диалекта; 2.0.44 или новее, но ниже 3.0 — для асинхронного диалекта.       |
 | Pandas     | 2.x и 3.x                                                                                                                  |
 | Polars     | 1.0 или новее                                                                                                              |
 | aiohttp    | 3.9 или новее                                                                                                              |
@@ -50,7 +50,7 @@ ClickHouse Connect — это основной драйвер для подкл�
 pip install clickhouse-connect
 ```
 
-Дополнительные интеграции устанавливаются через extras:
+Дополнительные интеграции устанавливаются через дополнительные модули:
 
 ```bash
 pip install "clickhouse-connect[async]"      # Native asyncio client
@@ -58,6 +58,7 @@ pip install "clickhouse-connect[pandas]"     # Pandas
 pip install "clickhouse-connect[arrow]"      # PyArrow
 pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup

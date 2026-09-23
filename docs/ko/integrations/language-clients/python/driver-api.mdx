@@ -36,15 +36,15 @@ doc_type: 'reference'
 | `compress`                 | bool 또는 str                           | `True`                      | 압축을 활성화하거나 `"lz4"`, `"zstd"`, `"br"`, `"gzip"` 중 하나를 선택합니다. [Compression](/ko/integrations/language-clients/python/additional-options#compression)을 참조하세요.                                                                                                                                                                                         |
 | `query_limit`              | int                                   | `0`                         | 적용 가능한 쿼리에 기본 행 수 제한이 추가됩니다. 0은 무제한을 의미합니다. 큰 결과는 모두 메모리에 구체화하지 말고 스트리밍하십시오.                                                                                                                                                                                                                                                                    |
 | `query_retries`            | int                                   | `2`                         | 재시도 가능한 읽기 실패에 허용되는 재시도 한도입니다. 명령과 삽입 작업은 다시 실행할 경우 부수 효과가 중복될 수 있으므로 일반적으로 재시도하지 않습니다.                                                                                                                                                                                                                                                         |
-| `connect_timeout`          | int                                   | `10`                        | 초 단위의 연결 타임아웃입니다.                                                                                                                                                                                                                                                                                                                               |
-| `send_receive_timeout`     | int                                   | `300`                       | 초 단위의 소켓 읽기 타임아웃입니다.                                                                                                                                                                                                                                                                                                                            |
+| `connect_timeout`          | 동기는 int, 비동기는 float                   | `10`                        | 새 연결을 수립할 때 적용되는 초 단위 타임아웃입니다. 연결 풀의 빈 슬롯을 기다리는 시간은 포함되지 않습니다. 비동기 클라이언트는 소수점 이하 초 단위 값도 허용합니다.                                                                                                                                                                                                                                                 |
+| `send_receive_timeout`     | 동기는 int, 비동기는 float                   | `300`                       | 초 단위의 소켓 읽기 타임아웃입니다. 비동기 클라이언트는 소수점 이하 초 단위 값도 허용합니다.                                                                                                                                                                                                                                                                                           |
 | `client_name`              | str or None                           | `None`                      | `system.query_log`에서 식별할 수 있도록 HTTP User-Agent 앞에 추가되는 접두사입니다.                                                                                                                                                                                                                                                                                  |
 | `session_id`               | str 또는 None                           | 동기용으로 생성                    | 명시적으로 지정하는 ClickHouse session ID입니다. 동기 클라이언트는 기본적으로 이를 생성하지만, async 클라이언트는 생성하지 않습니다.                                                                                                                                                                                                                                                          |
 | `autogenerate_session_id`  | bool 또는 None                          | 동기에서는 전역 설정, 비동기에서는 `False` | 자동 session ID 생성을 재정의합니다. session 상태가 필요하지 않다면 동시 작업에서 공유되는 클라이언트에서는 이 기능을 비활성화하십시오.                                                                                                                                                                                                                                                            |
 | `autogenerate_query_id`    | bool 또는 None                          | 전역 설정, `True`               | 자동 UUID 쿼리 ID 생성 동작을 재정의합니다.                                                                                                                                                                                                                                                                                                                    |
 | `http_proxy`               | str 또는 None                           | 환경/기본값                      | 클라이언트별 HTTP 프록시 주소.                                                                                                                                                                                                                                                                                                                             |
 | `https_proxy`              | str 또는 None                           | 환경/기본값                      | 클라이언트별 HTTPS 프록시 주소.                                                                                                                                                                                                                                                                                                                            |
-| `pool_mgr`                 | `urllib3.PoolManager` 또는 None         | 공유 기본값                      | 동기식 클라이언트에만 사용하는 사용자 지정 풀 관리자.                                                                                                                                                                                                                                                                                                                  |
+| `pool_mgr`                 | `urllib3.PoolManager` 또는 None         | 프로세스 단위로 공유                 | 동기식 클라이언트에만 사용하는 사용자 지정 풀 관리자.                                                                                                                                                                                                                                                                                                                  |
 | `tz_source`                | str or None                           | `"auto"`                    | 시간대 메타데이터가 없는 컬럼에 사용할 폴백 시간대 소스: `"auto"`, `"server"`, 또는 `"local"`.                                                                                                                                                                                                                                                                            |
 | `tz_mode`                  | str or None                           | `"naive_utc"`               | UTC 결과 처리 정책: `"naive_utc"`, `"aware"`, 또는 `"schema"`입니다. [시간대](/ko/integrations/language-clients/python/advanced-querying#time-zones)를 참조하십시오.                                                                                                                                                                                                    |
 | `show_clickhouse_errors`   | bool, Boolean 문자열, `"scrub"`, 또는 None | `True`                      | 서버 오류, 전송 오류 및 스트림 도중 발생하는 `StreamFailureError`의 `str(exc)`를 제어합니다. `True`이면 요청 URL과 서버 버전 정보가 포함됩니다. `"scrub"`은 SQL 오류 텍스트와 심볼릭 이름은 유지하지만 호스트/URL 및 `(version ...)` 정보는 제거합니다. `False`는 일반 메시지를 반환합니다(서버 오류에서도 `code`는 설정됨). Boolean 문자열도 사용할 수 있습니다. 그 밖의 문자열은 `ProgrammingError`를 발생시킵니다. 전송 오류의 경우 `__cause__`와 트레이스백에는 원래 전송 예외가 계속 포함됩니다. |
@@ -53,7 +53,9 @@ doc_type: 'reference'
 | `native_codec`             | str 또는 None                           | 전역 설정, `"python"`           | 클라이언트가 관리하는 Native 형식 트래픽에 사용하는 실험적 코덱: `"python"`, `"rust"`, 또는 `"rust_strict"`. Rust 값을 사용하려면 `clickhouse-connect-core` 휠이 필요합니다. [Rust 코덱](/ko/integrations/language-clients/python/rust-codec)을 참조하십시오.                                                                                                                                        |
 | `rename_response_column`   | str 또는 None                           | `None`                      | 컬럼 이름 변경 방식: `"remove_prefix"`, `"to_camelcase"`, `"to_camelcase_without_prefix"`, `"to_underscore"`, 또는 `"to_underscore_without_prefix"`.                                                                                                                                                                                                      |
 
-비동기 팩토리에서는 aiohttp 연결 풀을 구성하기 위해 `connector_limit=100`, `connector_limit_per_host=20`, `keepalive_timeout=30.0`도 사용할 수 있습니다. `pool_mgr`는 사용할 수 없습니다. 동기식 chDB 백엔드에서는 `path`와 `chdb_options`를 사용할 수 있습니다. 자세한 내용은 [내장 chDB 백엔드](#embedded-chdb-backend)를 참조하십시오.
+동기 및 비동기 HTTP 팩토리는 모두 다음 클라이언트 옵션에 대해 DSN 쿼리 매개변수 또는 `generic_args`로 전달된 문자열 값을 변환합니다. `connect_timeout`, `send_receive_timeout`, `query_limit`, `query_retries`는 위에 표시된 숫자 타입으로, `autogenerate_query_id`, `autogenerate_session_id`, `form_encode_query_params`는 불리언(boolean)으로 변환됩니다. 이러한 옵션에 유효하지 않은 문자열 값을 지정하면 `ProgrammingError`가 발생합니다.
+
+비동기 팩토리는 aiohttp 연결 풀을 구성하기 위한 `connector_limit=100`, `connector_limit_per_host=20`, `keepalive_timeout=30.0`도 허용합니다. 이러한 값은 직접 키워드 인수, DSN 쿼리 매개변수 또는 `generic_args`를 통해 전달하십시오. `generic_args`는 내부적으로 SQLAlchemy `connect_args`에 사용됩니다. 이러한 커넥터 옵션의 문자열 값은 문서에 명시된 숫자 타입으로 변환되며, 유효하지 않은 문자열 값을 지정하면 `ProgrammingError`가 발생합니다. 우선순위는 `None`이 아닌 명시적 키워드 인수가 가장 높고, 그다음 `generic_args`, DSN 순입니다. `pool_mgr`는 허용되지 않습니다. 동기 chDB 백엔드는 `path`와 `chdb_options`를 허용합니다. 자세한 내용은 [내장 chDB 백엔드](#embedded-chdb-backend)를 참조하십시오.
 
 ### HTTPS/TLS 인수 {#httpstls-arguments}
 
@@ -197,7 +199,7 @@ for i in range(1000):
 ### 멀티스레드 애플리케이션 {#multi-threaded-applications}
 
 <Warning>
-  세션 ID를 사용하는 경우 클라이언트 인스턴스는 **스레드 안전하지 않습니다**. 기본적으로 클라이언트에는 자동 생성된 세션 ID가 있으며, 동일한 세션 내에서 동시 쿼리를 실행하면 `ProgrammingError`가 발생합니다.
+  세션 ID를 사용하는 경우 클라이언트 인스턴스는 **스레드 안전하지 않습니다**. 기본적으로 클라이언트에는 자동 생성된 세션 ID가 있습니다. 하나의 클라이언트에서 동일한 세션으로 쿼리를 동시에 실행할 때 클라이언트가 로컬에서 중첩을 감지하면 `ProgrammingError`가 발생합니다. 이름이 지정된 세션의 상태와 서버 측 세션 중첩 검사는 개별 ClickHouse 서버 프로세스 내에서만 유효합니다. 따라서 ClickHouse Cloud나 로드 밸런싱을 사용하는 기타 배포 환경에서는 고정된 `session_id`가 분산 상태나 분산 뮤텍스 역할을 하지 않습니다.
 </Warning>
 
 스레드 간에 클라이언트를 안전하게 공유하려면:
@@ -324,9 +326,7 @@ WHERE date >= '2022-10-01 15:20:05'
   AND string ILIKE 'a string with a single quote\''
 ```
 
-<Warning>
-  서버 측 바인딩은 `SELECT` 쿼리에서 지원됩니다. `ALTER`, `DELETE`, `INSERT` 또는 기타 문 유형에서는 지원되지 않습니다.
-</Warning>
+서버 측 바인딩은 `SELECT` 쿼리와 `INSERT ... VALUES` SQL 문에서 사용할 수 있습니다. 대량의 일반 삽입 배치에는 `Client.insert`를 사용하는 것이 좋습니다.
 
 #### 클라이언트 측 바인딩 {#client-side-binding}
 
@@ -382,7 +382,9 @@ WHERE metric >= 35200.44
 <Note>
   Datetime 바인딩은 naive 값을 wall time으로 처리합니다. 클라이언트는 naive `datetime`을 그대로 포맷합니다. ClickHouse는 `{dt:DateTime('Europe/Berlin')}`와 같은 서버 측 플레이스홀더에 선언된 시간대를 사용해 이를 해석하고, 없으면 설정된 `session_timezone`을 사용하며, 그마저 없으면 서버 시간대를 사용합니다. 시간대 인식 `datetime`은 플레이스홀더에 시간대가 선언되어 있으면 해당 시간대로 변환되고, 그렇지 않으면 연결 시 보고된 서버 시간대로 변환됩니다. `session_timezone` 설정이 보고된 서버 시간대와 다르면, 시간대 인식 값에서 의도한 시점을 유지하도록 플레이스홀더에 시간대를 선언하십시오.
 
-  이전 호스트 로컬 변환과의 임시 호환성을 위해 매개변수를 바인딩하기 전에 `common.set_setting("naive_datetime_binding", "legacy")`를 설정하십시오. 시점을 보존하려면 `datetime` 값을 매개변수로 전달하기 전에 의도한 `tzinfo`를 지정하십시오. `client.insert`를 통한 삽입은 기본적으로 naive `datetime` 값을 프로세스 로컬 시간대로 해석합니다. 컬럼 시간대의 wall time으로 해석하려면 전역 `naive_datetime_insert` 설정을 `"server"`로 지정하십시오. 컬럼에 시간대가 없으면 서버 시간대를 사용합니다. [시간대 정보가 없는 datetime 객체](/ko/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects)를 참조하십시오.
+  이전 호스트 로컬 변환과의 임시 호환성을 위해 매개변수를 바인딩하기 전에 `common.set_setting("naive_datetime_binding", "legacy")`를 설정하십시오. 시점을 보존하려면 `datetime` 값을 매개변수로 전달하기 전에 의도한 `tzinfo`를 지정하십시오. `client.insert`를 통해 `DateTime` 또는 `DateTime64` 컬럼에 삽입할 때는 기본적으로 naive `datetime` 값을 프로세스 로컬 시간대로 해석합니다. 컬럼 시간대의 wall time으로 해석하려면 전역 `naive_datetime_insert` 설정을 `"server"`로 지정하십시오. 컬럼에 시간대가 없으면 서버 시간대를 사용합니다. [시간대 정보가 없는 datetime 객체](/ko/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects)를 참조하십시오.
+
+  `Date` 및 `Date32` 컬럼에 네이티브 방식으로 삽입할 때는 시간대 변환 없이 Python `datetime` 값 자체의 달력 날짜를 사용합니다. 삽입과 쿼리 매개변수 모두에서 동일한 달력 날짜가 필요하면 `value.date()`를 명시적으로 전달하십시오. [Date 및 Date32 값](/ko/integrations/language-clients/python/advanced-inserting#date-and-date32-values)을 참조하십시오.
 
   서버 측 `{value:DateTime64(precision)}` 플레이스홀더의 경우 선언된 유형이 `Array` 및 `Tuple` 힌트 내부를 포함해 초 미만 정밀도를 자동으로 유지합니다.
 
@@ -526,12 +528,18 @@ result = client.command(
 
 `Client.query`는 ClickHouse Native 형식의 테이블형 데이터셋을 가져와 `QueryResult`를 반환합니다. 결과 속성에 접근하는 시점에 전체 결과가 구체화됩니다. 메모리에 보관하지 않아야 하는 결과에는 스트리밍 메서드를 사용하세요.
 
+<Note>
+  클라이언트가 쿼리 끝의 `LIMIT 0`을 인식하면 JSON 포맷의 컬럼 메타데이터를 요청합니다. 응답에 행이 포함되어 있으면 `clickhouse_connect.driver.exceptions.InternalError`를 발생시키며 쿼리를 다시 실행하지 않습니다. 이는 `LIMIT 0`으로 끝나는 `UNION`, `EXCEPT`, 또는 `EXPLAIN` 쿼리에서 발생할 수 있습니다.
+
+  이러한 쿼리에는 `fmt="JSON"`과 같은 출력 형식과 함께 [`raw_query`](/ko/integrations/language-clients/python/advanced-usage#client-rawquery-method)를 사용하세요. 이 메서드는 `bytes`를 반환하므로 애플리케이션에서 디코딩해야 합니다. 이 동작은 동기 HTTP, 비동기 HTTP 및 chDB 클라이언트에 적용됩니다.
+</Note>
+
 | 매개변수                 | 유형               | 기본값       | 설명                                                                                                                    |
 | -------------------- | ---------------- | --------- | --------------------------------------------------------------------------------------------------------------------- |
 | `query`              | str              | 필수        | 테이블형 결과를 반환하는 ClickHouse 쿼리이며, 대부분 `SELECT` 또는 `DESCRIBE`입니다. `context`에서 제공되는 경우 생략할 수 있습니다.                         |
 | `parameters`         | dict or sequence | `None`    | [매개변수 인수](#parameters-argument)를 참조하세요.                                                                               |
 | `settings`           | dict             | `None`    | [설정 인수](#settings-argument-1)를 참조하세요.                                                                                 |
-| `query_formats`      | dict             | `None`    | ClickHouse 유형별 읽기 포맷입니다. [Read formats](/ko/integrations/language-clients/python/advanced-querying#read-formats)을 참조하세요. |
+| `query_formats`      | dict             | `None`    | ClickHouse 타입별 읽기 포맷입니다. [읽기 포맷](/ko/integrations/language-clients/python/advanced-querying#read-formats)을 참조하세요. |
 | `column_formats`     | dict             | `None`    | Nested type 포맷 매핑을 포함한 결과 컬럼별 읽기 포맷입니다.                                                                               |
 | `encoding`           | str              | `None`    | String 컬럼 인코딩입니다. 기본값은 UTF-8입니다.                                                                                      |
 | `use_none`           | bool             | `True`    | SQL NULL에 대해 `None`을 반환합니다. `false`이면 해당 유형의 기본 NULL 값을 반환합니다. NumPy/Pandas 메서드는 성능 중심의 기본값을 선택합니다.                   |
@@ -799,6 +807,8 @@ client.insert(
 
 `clickhouse_connect.dbapi` 모듈은 PEP 249의 연결 및 cursor 인터페이스를 구현합니다. 이 모듈은 API 수준 2.0, `threadsafety=2`, `paramstyle="pyformat"`를 선언합니다. 또한 PEP 249 유형 생성자인 `Date`, `Time`, `Timestamp`, `Binary`와 `DateFromTicks`, `TimeFromTicks`, `TimestampFromTicks` 함수를 제공합니다.
 
+이 모듈은 PEP 249 예외 계층 구조인 `Warning`, `Error`, `InterfaceError`, `DatabaseError`, `DataError`, `OperationalError`, `IntegrityError`, `InternalError`, `ProgrammingError`, `NotSupportedError`를 내보냅니다. 이들은 `clickhouse_connect.driver.exceptions`에서 제공하는 것과 동일한 클래스 객체이므로, 어느 import 경로를 사용하더라도 드라이버 오류를 잡을 수 있습니다. 드라이버 전용 예외인 `StreamFailureError`는 여전히 `clickhouse_connect.driver.exceptions`에서 사용할 수 있으며, `OperationalError`의 하위 클래스입니다.
+
 ```python
 from clickhouse_connect import dbapi
 
@@ -823,7 +833,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` 및 `Cursor.executemany`는 추가 `settings` 및 `query_formats` 키워드 인수를 받습니다. `settings`는 ClickHouse 설정을 전달합니다. `query_formats`는 SQL 문이 행을 반환할 때 `Client.query`와 동일한 매핑을 사용하여 ClickHouse 타입별 읽기 포맷을 적용합니다. `Cursor.execute`는 키워드 전용 `pyformat_encoded` 인수도 받습니다. 기본값 `True`는 DB-API `pyformat` 규약을 따릅니다. SQLAlchemy 방언은 SQL 문 컴파일러가 원시 백분율 기호를 생성한 경우 이를 `False`로 설정하므로, 일반적으로 애플리케이션에서 설정할 필요가 없습니다. `executemany`는 행 시퀀스가 구체화된 호환 가능한 `INSERT ... VALUES` SQL 문에 대해 드라이버의 네이티브 대량 삽입 경로를 사용합니다. `fetchone`, `fetchmany`, `fetchall`은 현재 구체화된 결과에서 데이터를 가져옵니다.
+`Cursor.execute` 및 `Cursor.executemany`는 추가 `settings` 및 `query_formats` 키워드 인수를 받습니다. `settings`는 ClickHouse 설정을 전달합니다. `query_formats`는 SQL 문이 행을 반환할 때 `Client.query`와 동일한 매핑을 사용하여 ClickHouse 타입별 읽기 포맷을 적용합니다. 두 메서드 모두 키워드 전용 `pyformat_encoded` 인수도 받습니다. 기본값 `True`는 DB-API `pyformat` 규약을 따릅니다. SQLAlchemy 방언은 SQL 문 컴파일러가 원시 백분율 기호를 생성한 경우 이를 `False`로 설정하므로, 일반적으로 애플리케이션에서 설정할 필요가 없습니다. 매개변수화된 `Cursor.executemany` 작업은 SQL 바인딩 및 표현식 의미 체계를 유지하면서 매개변수 세트마다 한 번씩 실행됩니다. HTTP를 사용하는 경우 매개변수 세트마다 요청이 하나씩 전송됩니다. 뒤쪽의 매개변수 세트가 실패하더라도 앞서 수행된 쓰기는 커밋된 상태로 남습니다. 이러한 `executemany` 삽입에서 `Cursor.rowcount`는 ClickHouse가 보고한 `written_rows` 값의 합계이며, 해당 값을 사용할 수 없으면 `-1`입니다. `Cursor.execute`로 전송한 INSERT SQL 문은 `0`을 보고합니다. 플레이스홀더가 없는 `INSERT INTO table (columns) VALUES` 호환 형식은 네이티브 삽입을 사용합니다. `VALUES`로 끝나는 플레이스홀더 없는 INSERT가 이 호환 형식으로 인식되지 않으면 `ProgrammingError`가 발생합니다. 명시적인 네이티브 대량 삽입이 필요한 애플리케이션에서는 `Client.insert`를 사용하십시오. `fetchone`, `fetchmany`, `fetchall`은 현재 구체화된 결과에서 데이터를 가져옵니다.
 
 `Cursor.description`은 각 결과 컬럼 타입을 바탕으로 `null_ok`를 결정합니다. 널을 허용하지 않는 타입은 `False`를 보고하고, `Nullable` 래퍼, `Variant`, `Dynamic`을 포함한 널 허용 타입은 `True`를 보고합니다. `None`은 널 허용 여부를 알 수 없음을 의미합니다. 선행 주석을 무시하고 `SELECT` 또는 `WITH`로 시작하는 쿼리가 행이나 컬럼 메타데이터를 반환하지 않으면, cursor는 `description`을 채우기 위해 `LIMIT 0` 메타데이터 쿼리를 실행합니다. 해당 메타데이터 쿼리가 실패하면 `description`은 비어 있는 상태로 유지됩니다.
 
@@ -837,7 +847,7 @@ ClickHouse는 이 HTTP 인터페이스를 통해 전통적인 트랜잭션을 �
 
 ### 예외 {#exceptions}
 
-DB-API 2.0 예외 계층을 포함한 사용자 정의 예외는 `clickhouse_connect.driver.exceptions`에 정의되어 있습니다. `DatabaseError`와 `OperationalError`는 ClickHouse 오류 코드가 담긴 숫자 `code` 속성과 `UNKNOWN_TABLE` 같은 기호 이름이 담긴 `name` 속성을 제공하므로, 애플리케이션은 메시지를 파싱하지 않고 `exc.code`를 기준으로 분기할 수 있습니다. `show_clickhouse_errors`가 비활성화되어 있어도 `code`는 설정되지만, `name`을 사용하려면 오류 세부 정보(`True` 또는 `"scrub"`)가 필요합니다. 전송 오류처럼 사용할 수 없는 경우에는 둘 다 `None`입니다. 최종 사용자에게 호스트 또는 서버 버전 정보 없이 SQL 오류를 표시해야 하는 경우 `show_clickhouse_errors="scrub"`를 사용하십시오. 이 설정은 스트림 도중 발생하는 `StreamFailureError` 메시지와 일반 전송 메시지도 제어합니다. 이 설정은 `str(exc)`에만 적용됩니다. 전송 오류는 여전히 `__cause__`로 연결되며, 트레이스백에는 원래 호스트, URL 또는 라이브러리 오류 텍스트가 포함될 수 있습니다.
+`clickhouse_connect.dbapi`에서 다시 내보내는 DB-API 2.0 예외 계층을 포함한 사용자 정의 예외는 `clickhouse_connect.driver.exceptions`에 정의되어 있습니다. `DatabaseError`와 `OperationalError`는 ClickHouse 오류 코드가 담긴 숫자 `code` 속성과 `UNKNOWN_TABLE` 같은 기호 이름이 담긴 `name` 속성을 제공하므로, 애플리케이션은 메시지를 파싱하지 않고 `exc.code`를 기준으로 분기할 수 있습니다. `show_clickhouse_errors`가 비활성화되어 있어도 `code`는 설정되지만, `name`을 사용하려면 오류 세부 정보(`True` 또는 `"scrub"`)가 필요합니다. 전송 오류처럼 사용할 수 없는 경우에는 둘 다 `None`입니다. 최종 사용자에게 호스트 또는 서버 버전 정보 없이 SQL 오류를 표시해야 하는 경우 `show_clickhouse_errors="scrub"`를 사용하십시오. 이 설정은 스트림 도중 발생하는 `StreamFailureError` 메시지와 일반 전송 메시지도 제어합니다. 이 설정은 `str(exc)`에만 적용됩니다. 전송 오류는 여전히 `__cause__`로 연결되며, 트레이스백에는 원래 호스트, URL 또는 라이브러리 오류 텍스트가 포함될 수 있습니다.
 
 ### ClickHouse SQL 유틸리티 {#clickhouse-sql-utilities}
 

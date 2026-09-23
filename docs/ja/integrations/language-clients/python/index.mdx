@@ -19,10 +19,10 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 * `clickhouse_connect.datatypes` パッケージは、ClickHouse Native バイナリ列指向フォーマットを使用して、ClickHouse の型を serialize および deserialize します。
 * `clickhouse_connect.driverc` のオプションの Cython 拡張機能は、一般的なシリアライゼーション、変換、buffering の処理を高速化します。拡張機能をビルドできないプラットフォームでも、pure Python の経路は引き続き利用可能です。実験的にオプトインで利用できる [Rust codec](/ja/integrations/language-clients/python/rust-codec) を使うと、Native format の processing を完全に置き換えることができます。
 * このパッケージには PEP 561 の型情報が含まれているため、下流の型チェッカーは、公開ドライバー、DB-API、SQLAlchemy の各インターフェイスに対する annotations を利用できます。
-* `clickhouse_connect.cc_sqlalchemy` の [SQLAlchemy](https://www.sqlalchemy.org/) dialect は、SQLAlchemy Core、スキーマ reflection、ClickHouse 固有のクエリ clauses と table engines、そして Alembic の移行をサポートします。基本的な ORM の reads と inserts は動作しますが、この dialect は完全な unit-of-work ORM の振る舞いではなく、分析ワークロード向けに設計されています。
-* 中核ドライバーと [ClickHouse Connect SQLAlchemy](/ja/integrations/language-clients/python/sqlalchemy) 実装は、ClickHouse を Apache Superset に接続するための推奨される方法です。`ClickHouse Connect` データベース接続、または `clickhousedb` SQLAlchemy dialect 接続文字列を使用してください。
+* `clickhouse_connect.cc_sqlalchemy` の [SQLAlchemy](https://www.sqlalchemy.org/) ダイアレクトには、同期の `clickhousedb://` 接続と非同期の `clickhousedb+async://` 接続が含まれます。これらは SQLAlchemy Core、スキーマ reflection、ClickHouse 固有のクエリ clauses と table engines、そして Alembic の移行をサポートします。基本的な ORM の reads と inserts は動作しますが、このダイアレクトは完全な unit-of-work ORM の振る舞いではなく、分析ワークロード向けに設計されています。
+* 中核ドライバーと [ClickHouse Connect SQLAlchemy](/ja/integrations/language-clients/python/sqlalchemy) 実装は、ClickHouse を Apache Superset に接続するための推奨される方法です。`ClickHouse Connect` データベース接続、または `clickhousedb` SQLAlchemy ダイアレクト接続文字列を使用してください。
 
-このドキュメントは clickhouse-connect 1.6.0 時点の内容です。0.15.x 以前からアップグレードする場合は、[1.0 migration guide](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md) を参照してください。
+0.15.x 以前からアップグレードする場合は、[1.0 migration guide](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md) を参照してください。
 
 <Note>
   標準の ClickHouse Connect クライアントは HTTPインターフェイス を使用します。これにより、HTTP ロードバランサー、プロキシ、および一般的なエンタープライズ向けネットワーク制御に対応できます。ClickHouse Connect には、実験的なインプロセスの [chDB](#embedded-chdb-backend) バックエンドもあります。
@@ -34,7 +34,7 @@ ClickHouse Connect は、中核となるデータベースドライバーであ�
 | ---------- | ----------------------------------------------------------------------------- |
 | Python     | 3.10 〜 3.14。3.14t などのフリースレッドビルドは試験的にサポートされています。                               |
 | ClickHouse | 現在サポート中の ClickHouse リリース。最近の LTS および stable の server リリースに対して CI テストを実施しています。 |
-| SQLAlchemy | 1.4.40 以降、3.0 未満                                                              |
+| SQLAlchemy | 同期ダイアレクトの場合は 1.4.40 以降、3.0 未満。非同期ダイアレクトの場合は 2.0.44 以降、3.0 未満。                 |
 | Pandas     | 2.x および 3.x                                                                   |
 | Polars     | 1.0 以降                                                                        |
 | aiohttp    | 3.9 以降                                                                        |
@@ -58,6 +58,7 @@ pip install "clickhouse-connect[pandas]"     # Pandas
 pip install "clickhouse-connect[arrow]"      # PyArrow
 pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup

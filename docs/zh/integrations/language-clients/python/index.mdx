@@ -19,10 +19,10 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 * `clickhouse_connect.datatypes` 包使用 ClickHouse Native 二进制列式格式对 ClickHouse 类型进行序列化和反序列化。
 * `clickhouse_connect.driverc` 中的可选 Cython 扩展可加速常见的序列化、转换和 buffering 路径。在无法构建这些扩展的平台上，仍可使用纯 Python 路径。一个需要主动启用的 Experimental [Rust codec](/zh/integrations/language-clients/python/rust-codec) 可以完全替代 Native format 的处理过程。
 * 该包附带 PEP 561 类型信息，因此下游类型检查器可使用公共驱动、DB-API 和 SQLAlchemy 接口的 annotations。
-* `clickhouse_connect.cc_sqlalchemy` 中的 [SQLAlchemy](https://www.sqlalchemy.org/) dialect 支持 SQLAlchemy Core、schema reflection、ClickHouse 特有的查询 clauses 和 table engines，以及 Alembic migrations。基础的 ORM reads 和 inserts 可以正常工作，但该 dialect 的设计目标是分析型 workloads，而非完整的工作单元式 ORM 行为。
+* `clickhouse_connect.cc_sqlalchemy` 中的 [SQLAlchemy](https://www.sqlalchemy.org/) dialects 包括同步的 `clickhousedb://` 连接和异步的 `clickhousedb+async://` 连接。它们支持 SQLAlchemy Core、schema reflection、ClickHouse 特有的查询 clauses 和 table engines，以及 Alembic migrations。基础的 ORM reads 和 inserts 可以正常工作，但该 dialect 的设计目标是分析型 workloads，而非完整的工作单元式 ORM 行为。
 * 核心驱动和 [ClickHouse Connect SQLAlchemy](/zh/integrations/language-clients/python/sqlalchemy) 实现是将 ClickHouse 连接到 Apache Superset 的首选方法。请使用 `ClickHouse Connect` 数据库 connection，或 `clickhousedb` SQLAlchemy dialect connection string。
 
-本文档内容截至 clickhouse-connect 1.6.0。若你正从 0.15.x 或更早版本升级，请参阅 [1.0 migration guide](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md)。
+若你正从 0.15.x 或更早版本升级，请参阅 [1.0 migration guide](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md)。
 
 <Note>
   标准的 ClickHouse Connect 客户端 使用 HTTP interface。这支持 HTTP load balancers、proxies 以及常见的企业网络控制。ClickHouse Connect 还提供一个 Experimental 的 in-process [chDB](#embedded-chdb-backend) 后端。
@@ -30,15 +30,15 @@ ClickHouse Connect 是一个核心数据库驱动，可与多种 Python 应用�
 
 ## 要求与兼容性 {#requirements-and-compatibility}
 
-| 组件         | 支持的版本                                                 |
-| ---------- | ----------------------------------------------------- |
-| Python     | 3.10 至 3.14。实验性支持 3.14t 这类 free-threaded 构建。          |
-| ClickHouse | 当前仍受支持的 ClickHouse 发行版。CI 会针对较新的长期支持版和稳定版本服务器发行版进行测试。 |
-| SQLAlchemy | 1.4.40 或更高版本，但低于 3.0                                  |
-| Pandas     | 2.x 和 3.x                                             |
-| Polars     | 1.0 或更高版本                                             |
-| aiohttp    | 3.9 或更高版本                                             |
-| 平台         | Linux、macOS 和 Windows，支持范围限于各 Python 版本已发布 wheel 的架构  |
+| 组件         | 支持的版本                                                                      |
+| ---------- | -------------------------------------------------------------------------- |
+| Python     | 3.10 至 3.14。实验性支持 3.14t 这类 free-threaded 构建。                               |
+| ClickHouse | 当前仍受支持的 ClickHouse 发行版。CI 会针对较新的长期支持版和稳定版本服务器发行版进行测试。                      |
+| SQLAlchemy | 同步 dialect 需要 1.4.40 或更高版本 (低于 3.0) ；异步 dialect 需要 2.0.44 或更高版本 (低于 3.0) 。 |
+| Pandas     | 2.x 和 3.x                                                                  |
+| Polars     | 1.0 或更高版本                                                                  |
+| aiohttp    | 3.9 或更高版本                                                                  |
+| 平台         | Linux、macOS 和 Windows，支持范围限于各 Python 版本已发布 wheel 的架构                       |
 
 该软件包在可用时会提供已编译的 wheel；如果无法构建 Cython 扩展，则会回退为纯 Python 实现。PyArrow 支持 Python 3.10 至 3.14。Python 3.14 需要 PyArrow 22 或更高版本。
 
@@ -58,6 +58,7 @@ pip install "clickhouse-connect[pandas]"     # Pandas
 pip install "clickhouse-connect[arrow]"      # PyArrow
 pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup

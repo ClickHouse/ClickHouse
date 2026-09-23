@@ -36,15 +36,15 @@ doc_type: 'reference'
 | `compress`                 | bool または str                       | `True`                        | 圧縮を有効にするか、`"lz4"`、`"zstd"`、`"br"`、または`"gzip"`を選択します。詳しくは[圧縮](/ja/integrations/language-clients/python/additional-options#compression)を参照してください。                                                                                                                                                                                                                                  |
 | `query_limit`              | int                                | `0`                           | 対象のクエリに追加されるデフォルトの行数制限です。0 は無制限を意味します。大きな結果は、すべてをメモリにマテリアライズするのではなく、ストリームで処理してください。                                                                                                                                                                                                                                                                                           |
 | `query_retries`            | int                                | `2`                           | 再試行可能な読み取り失敗に対する再試行回数の上限です。コマンドやインサートは、再実行によって副作用が重複する可能性があるため、通常は再試行されません。                                                                                                                                                                                                                                                                                                   |
-| `connect_timeout`          | int                                | `10`                          | 接続タイムアウト (秒) 。                                                                                                                                                                                                                                                                                                                                                                |
-| `send_receive_timeout`     | int                                | `300`                         | ソケットの読み取りタイムアウト (秒) 。                                                                                                                                                                                                                                                                                                                                                         |
+| `connect_timeout`          | 同期の場合は int、非同期の場合は float           | `10`                          | 新しい接続を確立する際のタイムアウト (秒) 。接続プールの空きスロットを待つ時間は含まれません。非同期クライアントでは秒の小数値も指定できます。                                                                                                                                                                                                                                                                                                     |
+| `send_receive_timeout`     | 同期の場合は int、非同期の場合は float           | `300`                         | ソケットの読み取りタイムアウト (秒) 。非同期クライアントでは秒の小数値も指定できます。                                                                                                                                                                                                                                                                                                                                 |
 | `client_name`              | str or None                        | `None`                        | `system.query_log` での識別用に HTTP ユーザーエージェントに追加されるプレフィックス。                                                                                                                                                                                                                                                                                                                       |
 | `session_id`               | str または None                       | 同期時に生成                        | 明示的に指定する ClickHouse のセッション ID。同期 client ではデフォルトで生成されますが、async client では生成されません。                                                                                                                                                                                                                                                                                               |
 | `autogenerate_session_id`  | bool または None                      | 同期の場合はグローバル設定、非同期の場合は `False` | セッション ID の自動生成を上書きします。セッション状態が必要な場合を除き、同時実行の操作で共有される client では無効にしてください。                                                                                                                                                                                                                                                                                                      |
 | `autogenerate_query_id`    | bool または None                      | グローバル設定、`True`                | UUID のクエリ ID の自動生成を上書きします。                                                                                                                                                                                                                                                                                                                                                    |
 | `http_proxy`               | str または None                       | 環境変数/デフォルト                    | クライアントごとの HTTP プロキシアドレス。                                                                                                                                                                                                                                                                                                                                                      |
 | `https_proxy`              | str または None                       | 環境変数/デフォルト                    | クライアントごとの HTTPS プロキシのアドレス。                                                                                                                                                                                                                                                                                                                                                    |
-| `pool_mgr`                 | `urllib3.PoolManager` または None     | 共有の既定値                        | 同期クライアントでのみ使用するカスタムのプールマネージャー。                                                                                                                                                                                                                                                                                                                                                |
+| `pool_mgr`                 | `urllib3.PoolManager` または None     | プロセスごとに共有                     | 同期クライアントでのみ使用するカスタムのプールマネージャー。                                                                                                                                                                                                                                                                                                                                                |
 | `tz_source`                | str or None                        | `"auto"`                      | タイムゾーンのメタデータがないカラムに使用するフォールバックのタイムゾーンソース: `"auto"`、`"server"`、または `"local"`。                                                                                                                                                                                                                                                                                                  |
 | `tz_mode`                  | str or None                        | `"naive_utc"`                 | UTC の結果ポリシー: `"naive_utc"`、`"aware"`、または `"schema"`。詳細は[タイムゾーン](/ja/integrations/language-clients/python/advanced-querying#time-zones)を参照してください。                                                                                                                                                                                                                                 |
 | `show_clickhouse_errors`   | bool、ブール値を表す文字列、`"scrub"`、または None | `True`                        | サーバーエラー、トランスポートエラー、およびストリーム途中で発生する `StreamFailureError` における `str(exc)` の内容を制御します。`True` にはリクエスト URL とサーバーバージョン情報が含まれます。`"scrub"` は SQL エラーテキストとシンボリック名を保持しますが、ホスト/URL と `(version ...)` の情報を削除します。`False` は汎用的なメッセージを返します (サーバーエラーでは `code` は引き続き設定されます) 。ブール値を表す文字列も受け入れられます。その他の文字列では `ProgrammingError` が発生します。トランスポートエラーの場合、`__cause__` とトレースバックには引き続き元のトランスポート例外が含まれます。 |
@@ -53,7 +53,9 @@ doc_type: 'reference'
 | `native_codec`             | str または None                       | グローバル設定、`"python"`            | クライアントが管理する Native 形式の通信に使用する Experimental な codec: `"python"`、`"rust"`、または `"rust_strict"`。Rust の値には `clickhouse-connect-core` の wheel が必要です。詳細は [Rust codec](/ja/integrations/language-clients/python/rust-codec) を参照してください。                                                                                                                                                   |
 | `rename_response_column`   | str または None                       | `None`                        | カラム名の変更戦略: `"remove_prefix"`, `"to_camelcase"`, `"to_camelcase_without_prefix"`, `"to_underscore"`, または `"to_underscore_without_prefix"`。                                                                                                                                                                                                                                     |
 
-非同期ファクトリでは、aiohttp の接続プールを設定するために、`connector_limit=100`、`connector_limit_per_host=20`、`keepalive_timeout=30.0` も指定できます。`pool_mgr` は指定できません。同期 chDB バックエンドでは `path` と `chdb_options` を指定できます。詳しくは [埋め込み chDB バックエンド](#embedded-chdb-backend) を参照してください。
+同期および非同期の HTTP ファクトリーはいずれも、DSN のクエリパラメータまたは `generic_args` で指定された次のクライアントオプションについて、文字列値を変換します。`connect_timeout`、`send_receive_timeout`、`query_limit`、`query_retries` は上記の数値型に、`autogenerate_query_id`、`autogenerate_session_id`、`form_encode_query_params` はブール値に変換されます。これらのオプションに無効な文字列値を指定すると、`ProgrammingError` が発生します。
+
+非同期ファクトリーでは、aiohttp の接続プールを設定するための `connector_limit=100`、`connector_limit_per_host=20`、`keepalive_timeout=30.0` も指定できます。これらは、キーワード引数として直接指定するか、DSN のクエリパラメータとして指定するか、`generic_args` (内部的に SQLAlchemy の `connect_args` に使用されます) を介して渡します。これらのコネクタオプションの文字列値は、ドキュメントに記載された数値型に変換されます。対象となる文字列値が無効な場合は `ProgrammingError` が発生します。優先順位は、`None` 以外の値を明示的に指定したキーワード引数が最も高く、次に `generic_args`、最後に DSN となります。なお、`pool_mgr` は指定できません。同期の chDB バックエンドでは `path` と `chdb_options` を指定できます。詳細は [Embedded chDB backend](#embedded-chdb-backend) を参照してください。
 
 ### HTTPS/TLS 引数 {#httpstls-arguments}
 
@@ -197,7 +199,7 @@ for i in range(1000):
 ### マルチスレッドアプリケーション {#multi-threaded-applications}
 
 <Warning>
-  セッションIDを使用する場合、クライアントインスタンスは**スレッドセーフではありません**。クライアントにはデフォルトで自動生成されたセッションIDが割り当てられており、同じセッション内でクエリを同時実行すると `ProgrammingError` が発生します。
+  セッションIDを使用する場合、クライアントインスタンスは**スレッドセーフではありません**。クライアントにはデフォルトで自動生成されたセッションIDが割り当てられています。1つのクライアントを介して同じセッションでクエリを同時実行すると、クライアントがローカルで重複を検出した時点で `ProgrammingError` が発生します。名前付きセッションのセッション状態と、サーバー側でのセッション重複チェックは、個々のClickHouseサーバープロセス内でのみ有効です。そのため、ClickHouse Cloud やその他のロードバランサー配下のデプロイ環境では、固定の `session_id` を指定しても、分散された状態や分散ミューテックスとしては機能しません。
 </Warning>
 
 クライアントを複数のスレッド間で安全に共有するには、次のようにします。
@@ -324,9 +326,7 @@ WHERE date >= '2022-10-01 15:20:05'
   AND string ILIKE 'a string with a single quote\''
 ```
 
-<Warning>
-  サーバーサイドバインディングは `SELECT` クエリでサポートされています。`ALTER`、`DELETE`、`INSERT`、その他の種類のステートメントでは使用できません。
-</Warning>
+サーバーサイドバインディングは、`SELECT` クエリおよび `INSERT ... VALUES` ステートメントで使用できます。単純な挿入を大量のバッチで行う場合は、`Client.insert` を使用することを推奨します。
 
 #### クライアントサイドバインディング {#client-side-binding}
 
@@ -382,7 +382,9 @@ WHERE metric >= 35200.44
 <Note>
   Datetime バインディングでは、naive 値を wall time として扱います。クライアントは naive `datetime` をそのままフォーマットします。ClickHouse は、まず `{dt:DateTime('Europe/Berlin')}` のようなサーバーサイドプレースホルダーで宣言されたタイムゾーン、次に設定されている場合は `session_timezone`、最後にサーバーのタイムゾーンを使用して解釈します。タイムゾーン対応の `datetime` は、プレースホルダーにタイムゾーンが指定されている場合はそのタイムゾーンに変換され、指定されていない場合は接続時に報告されたサーバーのタイムゾーンに変換されます。`session_timezone` 設定が報告されたサーバーのタイムゾーンと異なる場合は、タイムゾーン対応の値で意図した時点を維持するために、プレースホルダーでタイムゾーンを宣言してください。
 
-  以前のホストローカル変換との一時的な互換性を確保するには、パラメータをバインドする前に `common.set_setting("naive_datetime_binding", "legacy")` を設定します。時点を保持するには、`datetime` 値をパラメータとして渡す前に、意図した `tzinfo` を付加してください。`client.insert` を介した挿入では、naive `datetime` 値はデフォルトでプロセスのローカルタイムゾーンで解釈されます。グローバルの `naive_datetime_insert` 設定を `"server"` にすると、カラムのタイムゾーンで wall time として解釈され、カラムにタイムゾーンがない場合はサーバーのタイムゾーンで解釈されます。[Timezone-naive datetime objects](/ja/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects) を参照してください。
+  以前のホストローカル変換との一時的な互換性を確保するには、パラメータをバインドする前に `common.set_setting("naive_datetime_binding", "legacy")` を設定します。時点を保持するには、`datetime` 値をパラメータとして渡す前に、意図した `tzinfo` を付加してください。`client.insert` を介した `DateTime` または `DateTime64` カラムへの挿入では、naive `datetime` 値はデフォルトでプロセスのローカルタイムゾーンで解釈されます。グローバルの `naive_datetime_insert` 設定を `"server"` にすると、カラムのタイムゾーンで wall time として解釈され、カラムにタイムゾーンがない場合はサーバーのタイムゾーンで解釈されます。[Timezone-naive datetime objects](/ja/integrations/language-clients/python/advanced-inserting#timezone-naive-datetime-objects) を参照してください。
+
+  `Date` および `Date32` カラムへのネイティブ insert では、Python の `datetime` 値が持つ暦日がタイムゾーン変換なしでそのまま使用されます。insert とクエリパラメータの両方で同じ暦日を使用する必要がある場合は、`value.date()` を明示的に渡してください。[Date and Date32 values](/ja/integrations/language-clients/python/advanced-inserting#date-and-date32-values) を参照してください。
 
   サーバーサイドの `{value:DateTime64(precision)}` プレースホルダーでは、宣言された型によって、`Array` や `Tuple` のヒント内であっても秒未満の精度が自動的に保持されます。
 
@@ -526,11 +528,17 @@ result = client.command(
 
 `Client.query` は、ClickHouse Native フォーマットの表形式データセットを取得し、`QueryResult` を返します。結果全体は、結果のプロパティにアクセスした時点で実体化されます。メモリに保持したくない結果には、ストリーミングメソッドを使用してください。
 
+<Note>
+  クエリの末尾に `LIMIT 0` があることをクライアントが認識すると、JSON フォーマットでカラムのメタデータを要求します。レスポンスに行が含まれていた場合は `clickhouse_connect.driver.exceptions.InternalError` を送出し、クエリの再実行は行いません。この現象は、`LIMIT 0` で終わる `UNION`、`EXCEPT`、`EXPLAIN` クエリで発生することがあります。
+
+  このようなクエリには、`fmt="JSON"` などの出力フォーマットを指定して [`raw_query`](/ja/integrations/language-clients/python/advanced-usage#client-rawquery-method) を使用してください。このメソッドは `bytes` を返すため、デコードはアプリケーション側で行う必要があります。この動作は、同期 HTTP、非同期 HTTP、chDB の各クライアントに共通です。
+</Note>
+
 | パラメータ                | 型                | デフォルト          | 説明                                                                                                                         |
 | -------------------- | ---------------- | -------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | `query`              | str              | 必須             | 表形式の結果を返す ClickHouse クエリです。通常は `SELECT` または `DESCRIBE` です。`context` で指定する場合は省略できます。                                        |
 | `parameters`         | dict or sequence | `None`         | [Parameters 引数](#parameters-argument)を参照してください。                                                                            |
-| `settings`           | dict             | `None`         | [Settings 引数](#settings-argument-1)を参照してください。                                                                              |
+| `settings`           | dict             | `None`         | [設定引数](#settings-argument-1)を参照してください。                                                                              |
 | `query_formats`      | dict             | `None`         | ClickHouse 型ごとの読み取りフォーマットです。[Read formats](/ja/integrations/language-clients/python/advanced-querying#read-formats)を参照してください。 |
 | `column_formats`     | dict             | `None`         | 結果カラムごとの読み取りフォーマットです。Nested 型のフォーマットマッピングも含まれます。                                                                           |
 | `encoding`           | str              | `None`         | String 型のカラムのエンコーディングです。デフォルトは UTF-8 です。                                                                                   |
@@ -799,6 +807,8 @@ client.insert(
 
 `clickhouse_connect.dbapi` モジュールは、PEP 249 で定義された接続およびカーソルのインターフェイスを実装しています。API レベル 2.0、`threadsafety=2`、および `paramstyle="pyformat"` を宣言しています。このモジュールは、PEP 249 の型コンストラクター `Date`、`Time`、`Timestamp`、および `Binary`、ならびに `DateFromTicks`、`TimeFromTicks`、および `TimestampFromTicks` 関数も提供します。
 
+このモジュールは、PEP 249 の例外階層である `Warning`、`Error`、`InterfaceError`、`DatabaseError`、`DataError`、`OperationalError`、`IntegrityError`、`InternalError`、`ProgrammingError`、および `NotSupportedError` をエクスポートします。これらは `clickhouse_connect.driver.exceptions` で公開されているものと同一のクラスオブジェクトであるため、どちらのパスからインポートしてもドライバーのエラーを捕捉できます。ドライバー固有の `StreamFailureError` は引き続き `clickhouse_connect.driver.exceptions` から利用でき、`OperationalError` のサブクラスです。
+
 ```python
 from clickhouse_connect import dbapi
 
@@ -823,7 +833,7 @@ finally:
     connection.close()
 ```
 
-`Cursor.execute` と `Cursor.executemany` は、追加の `settings` および `query_formats` キーワード引数を受け付けます。`settings` は ClickHouse 設定を渡します。`query_formats` は、ステートメントが行を返す場合に、`Client.query` と同じマッピングを使用して、ClickHouse 型ごとに読み取りフォーマットを適用します。`Cursor.execute` は、キーワード専用の `pyformat_encoded` 引数も受け付けます。デフォルト値の `True` は、DB-API の `pyformat` 契約に従います。SQLAlchemy dialect は、ステートメントコンパイラが生のパーセント記号を出力した場合にこれを `False` に設定するため、通常、アプリケーションで設定する必要はありません。`executemany` は、実体化済みの行シーケンスを伴う互換性のある `INSERT ... VALUES` ステートメントに対して、ドライバーの Native 一括挿入パスを使用します。`fetchone`、`fetchmany`、および `fetchall` は、現在の実体化済みの結果を消費します。
+`Cursor.execute` と `Cursor.executemany` は、追加の `settings` および `query_formats` キーワード引数を受け付けます。`settings` は ClickHouse 設定を渡します。`query_formats` は、ステートメントが行を返す場合に、`Client.query` と同じマッピングを使用して、ClickHouse 型ごとに読み取りフォーマットを適用します。どちらのメソッドも、キーワード専用の `pyformat_encoded` 引数を受け付けます。デフォルト値の `True` は、DB-API の `pyformat` 契約に従います。SQLAlchemy dialect は、ステートメントコンパイラが生のパーセント記号を出力した場合にこれを `False` に設定するため、通常、アプリケーションで設定する必要はありません。パラメータ化された `Cursor.executemany` 操作はパラメータセットごとに 1 回ずつ実行されるため、SQL のバインディングと式のセマンティクスはそのまま保持されます。HTTP の場合は、パラメータセットごとに 1 つのリクエストが送信されます。途中のパラメータセットで失敗しても、それより前の書き込みはコミット済みのまま残ります。こうした `executemany` による挿入では、`Cursor.rowcount` は ClickHouse が報告する `written_rows` 値の合計となり、その値を取得できない場合は `-1` になります。`Cursor.execute` 経由で送信された INSERT ステートメントは `0` を返します。プレースホルダーを含まない `INSERT INTO table (columns) VALUES` 互換形式では、Native 挿入が使用されます。プレースホルダーを含まず `VALUES` で終わる INSERT がこの互換形式として認識できない場合は、`ProgrammingError` が発生します。Native 一括挿入を明示的に行う必要があるアプリケーションでは、`Client.insert` を使用してください。`fetchone`、`fetchmany`、および `fetchall` は、現在の実体化済みの結果を消費します。
 
 `Cursor.description` は、各結果カラムの型から `null_ok` を導出します。null 非許容型は `False` を返し、`Nullable` ラッパー、`Variant`、および `Dynamic` を含む null 許容型は `True` を返します。`None` は null 許容性が不明であることを意味します。先頭のコメントを無視して `SELECT` または `WITH` で始まるクエリが、行もカラムメタデータも返さない場合、カーソルは `description` を設定するために `LIMIT 0` メタデータクエリを実行します。そのメタデータクエリが失敗した場合、`description` は空のままになります。
 
@@ -837,7 +847,7 @@ ClickHouse は、この HTTP インターフェイス経由では従来型のト
 
 ### Exceptions {#exceptions}
 
-DB-API 2.0 の例外階層を含むカスタム例外は、`clickhouse_connect.driver.exceptions` で定義されています。`DatabaseError` と `OperationalError` では、ClickHouse のエラーコードを表す数値の `code` 属性と、`UNKNOWN_TABLE` のようなシンボリック名を表す `name` 属性が公開されているため、アプリケーションはメッセージをパースする代わりに `exc.code` に基づいて分岐できます。`code` は `show_clickhouse_errors` が無効でも設定されますが、`name` を取得するにはエラーの詳細情報 (`True` または `"scrub"`) が必要です。どちらも、トランスポートエラーなどで利用できない場合は `None` になります。エンドユーザーにホストやサーバーバージョンの情報を含めずに SQL エラーを表示する場合は、`show_clickhouse_errors="scrub"` を使用してください。この設定は、ストリーム途中の `StreamFailureError` メッセージおよび汎用トランスポートメッセージも制御します。制御対象は `str(exc)` のみです。トランスポートエラーは引き続き `__cause__` として関連付けられ、トレースバックには元のホスト、URL、またはライブラリのエラーテキストが含まれる場合があります。
+`clickhouse_connect.dbapi` によって再エクスポートされる DB-API 2.0 の例外階層を含むカスタム例外は、`clickhouse_connect.driver.exceptions` で定義されています。`DatabaseError` と `OperationalError` では、ClickHouse のエラーコードを表す数値の `code` 属性と、`UNKNOWN_TABLE` のようなシンボリック名を表す `name` 属性が公開されているため、アプリケーションはメッセージをパースする代わりに `exc.code` に基づいて分岐できます。`code` は `show_clickhouse_errors` が無効でも設定されますが、`name` を取得するにはエラーの詳細情報 (`True` または `"scrub"`) が必要です。どちらも、トランスポートエラーなどで利用できない場合は `None` になります。エンドユーザーにホストやサーバーバージョンの情報を含めずに SQL エラーを表示する場合は、`show_clickhouse_errors="scrub"` を使用してください。この設定は、ストリーム途中の `StreamFailureError` メッセージおよび汎用トランスポートメッセージも制御します。制御対象は `str(exc)` のみです。トランスポートエラーは引き続き `__cause__` として関連付けられ、トレースバックには元のホスト、URL、またはライブラリのエラーテキストが含まれる場合があります。
 
 ### ClickHouse SQL ユーティリティ {#clickhouse-sql-utilities}
 

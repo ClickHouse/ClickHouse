@@ -277,22 +277,31 @@ SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 
 错误：`CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`。异常代码：179
 
-原因：旧版 analyzer 允许定义多个同名的公共表表达式 (WITH ...) ，后面的定义会遮蔽前面的定义。analyzer 不允许这种歧义。
+原因：旧版 analyzer 允许定义多个同名的公用表表达式 (WITH ...) ，后定义的会遮蔽先定义的。新版 analyzer 默认拒绝这种有歧义的写法。
 
-解决方案：将重复的 CTE 重命名为唯一名称。
+解决方案：重命名重复的 CTE，确保名称唯一。作为迁移过渡手段，可以启用 `analyzer_compatibility_allow_cte_redefinition = 1` (自 ClickHouse `26.10` 起可用) 来恢复旧版行为：引用会绑定到该名称下当前未在解析中的最新定义，因此重新定义时可以读取前一个定义，而查询主体读取的是最后一个定义。
+
+限制：即使启用该设置，声明为 `MATERIALIZED` 的 CTE 以及 `WITH RECURSIVE` 子句中的 CTE 仍无法重新定义。另有一种形态与旧版 analyzer 的行为不同：在同一名称的两个定义之间声明的 CTE 也会绑定到最后一个定义，而旧版 analyzer 会将其绑定到其声明处可见的定义。
 
 ```sql
-/* 原始查询 */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- 重新定义
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* 修复后的查询 */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### 歧义列标识符 {#ambiguous-column-identifiers}

@@ -39,37 +39,56 @@ assert qr.first_row[0] == 113
 
 #### 写入格式选项 {#write-format-options}
 
-| ClickHouse 类型         | 原生 Python 类型            | 写入格式              | 注释                                                                                                  |
-| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                     |
-| UInt64                | int                     |                   |                                                                                                     |
-| [U]Int[128,256]       | int                     |                   |                                                                                                     |
-| BFloat16              | float                   |                   |                                                                                                     |
-| Float32               | float                   |                   |                                                                                                     |
-| Float64               | float                   |                   |                                                                                                     |
-| Decimal               | decimal.Decimal         |                   |                                                                                                     |
-| Interval*             | int                     |                   | 值为以该时间间隔类型单位计量的有符号 64 位计数。                                                                          |
-| String                | str or bytes            |                   | 同一列中的值必须始终统一为文本或字节类型。                                                                               |
-| FixedString           | bytes                   | string            | 字符串值会以零字节填充。空字节会写入为全零字节。                                                                            |
-| Enum[8,16]            | str or int              |                   | 可将标签作为字符串插入，或插入其底层整数值。                                                                              |
-| Date                  | datetime.date           | int               | 整数值会被解释为自 1970-01-01 起的天数。                                                                          |
-| Date32                | datetime.date           | int               | 整数值会被解释为有符号的天数偏移。                                                                                   |
-| DateTime              | datetime.datetime       | int               | 整数值会被解释为纪元秒。                                                                                        |
-| DateTime64            | datetime.datetime       | int               | 整数值会被解释为按列精度表示的 tick。                                                                               |
-| Time                  | datetime.timedelta      | int, string, time | 整数值会被解释为秒。                                                                                          |
-| Time64                | datetime.timedelta      | int, string, time | 支持 0 到 9 的标度。整数值会被解释为按列精度表示的 tick。NumPy timedelta 值和 DataFrame 插入在所有标度下均可正常工作。Python time 类型仅支持到微秒。 |
-| IPv4                  | `ipaddress.IPv4Address` | string            | 格式正确的字符串可作为 IPv4 地址插入                                                                               |
-| IPv6                  | `ipaddress.IPv6Address` | string            | 格式正确的字符串可作为 IPv6 地址插入                                                                               |
-| Tuple                 | dict or tuple           |                   | 对于 `Tuple()`，请使用 `()`。                                                                              |
-| Map                   | dict                    |                   |                                                                                                     |
-| Nested                | Sequence[dict]          |                   |                                                                                                     |
-| UUID                  | uuid.UUID               | string            | 格式正确的字符串可作为 ClickHouse UUID 插入                                                                      |
-| JSON                  | dict                    | string            | 支持字典和 JSON 对象字符串。旧版 `Object('json')` 类型不受支持。                                                        |
-| Variant               | object                  |                   | 值使用原生成员序列化。在 Python 类型存在歧义时，请使用 `clickhouse_connect.datatypes.dynamic.typed_variant`。               |
-| Dynamic               | object                  |                   | 当前值通过其 String 表示形式插入。                                                                               |
-| MultiPoint            | Sequence[tuple]         |                   | 每个点为一个二元组。插入 MultiPoint 值需要 ClickHouse 26.8 或更高版本。                                                  |
-| Geometry              | tuple or list           |                   | Point 值为二元组。对于基于列表的值 (包括 MultiPoint) ，请使用 `typed_variant` 包装以选择相应的几何成员类型。                           |
-| QBit                  | Sequence[float]         |                   | 安装 NumPy 后，会自动使用它来更快地进行比特转置。                                                                        |
+| ClickHouse 类型         | 原生 Python 类型                       | 写入格式              | 注释                                                                                                  |
+| --------------------- | ---------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                                |                   |                                                                                                     |
+| UInt64                | int                                |                   |                                                                                                     |
+| [U]Int[128,256]       | int                                |                   |                                                                                                     |
+| BFloat16              | float                              |                   |                                                                                                     |
+| Float32               | float                              |                   |                                                                                                     |
+| Float64               | float                              |                   |                                                                                                     |
+| Decimal               | decimal.Decimal                    |                   |                                                                                                     |
+| Interval*             | int                                |                   | 值为以该时间间隔类型单位计量的有符号 64 位计数。                                                                          |
+| String                | str or bytes                       |                   | 同一列中的值必须始终统一为文本或字节类型。                                                                               |
+| FixedString           | bytes                              | string            | 字符串值会以零字节填充。空字节会写入为全零字节。                                                                            |
+| Enum[8,16]            | str or int                         |                   | 可将标签作为字符串插入，或插入其底层整数值。                                                                              |
+| Date                  | datetime.date or datetime.datetime | int               | 整数值会被解释为自 1970-01-01 起的天数。                                                                          |
+| Date32                | datetime.date or datetime.datetime | int               | 整数值会被解释为有符号的天数偏移。                                                                                   |
+| DateTime              | datetime.datetime                  | int               | 整数值会被解释为纪元秒。                                                                                        |
+| DateTime64            | datetime.datetime                  | int               | 整数值会被解释为按列精度表示的 tick。                                                                               |
+| Time                  | datetime.timedelta                 | int, string, time | 整数值会被解释为秒。                                                                                          |
+| Time64                | datetime.timedelta                 | int, string, time | 支持 0 到 9 的标度。整数值会被解释为按列精度表示的 tick。NumPy timedelta 值和 DataFrame 插入在所有标度下均可正常工作。Python time 类型仅支持到微秒。 |
+| IPv4                  | `ipaddress.IPv4Address`            | string            | 格式正确的字符串可作为 IPv4 地址插入                                                                               |
+| IPv6                  | `ipaddress.IPv6Address`            | string            | 格式正确的字符串可作为 IPv6 地址插入                                                                               |
+| Tuple                 | dict or tuple                      |                   | 对于 `Tuple()`，请使用 `()`。                                                                              |
+| Map                   | dict                               |                   | `pairs` 读取格式不会影响插入时的输入。如需在往返转换中无损保留重复键，请使用 Arrow。                                                   |
+| Nested                | Sequence[dict]                     |                   |                                                                                                     |
+| UUID                  | uuid.UUID                          | string            | 格式正确的字符串可作为 ClickHouse UUID 插入                                                                      |
+| JSON                  | dict                               | string            | 支持字典和 JSON 对象字符串。旧版 `Object('json')` 类型不受支持。                                                        |
+| Variant               | object                             |                   | 值使用原生成员序列化。在 Python 类型存在歧义时，请使用 `clickhouse_connect.datatypes.dynamic.typed_variant`。               |
+| Dynamic               | object                             |                   | 当前值通过其 String 表示形式插入。                                                                               |
+| MultiPoint            | Sequence[tuple]                    |                   | 每个点为一个二元组。插入 MultiPoint 值需要 ClickHouse 26.8 或更高版本。                                                  |
+| Geometry              | tuple or list                      |                   | Point 值为二元组。对于基于列表的值 (包括 MultiPoint) ，请使用 `typed_variant` 包装以选择相应的几何成员类型。                           |
+| QBit                  | Sequence[float]                    |                   | 安装 NumPy 后，会自动使用它来更快地进行比特转置。                                                                        |
+
+#### Date 和 Date32 值 {#date-and-date32-values}
+
+原生插入允许在 `Date` 或 `Date32` 列中混合写入 Python 的 `date` 和 `datetime` 值。对于 `datetime` 值，会直接取其自身的日历日期 (即 `.date()` 的返回值) ，不进行时区转换。这一规则同样适用于 `Nullable`、`Array`、`Tuple` 和 `LowCardinality` 列。
+
+```python
+from datetime import date, datetime, timedelta, timezone
+
+value = datetime(2024, 1, 1, 0, 30, tzinfo=timezone(timedelta(hours=14)))
+client.command("CREATE TABLE event_dates (event_date Date) ENGINE Memory")
+client.insert("event_dates", [[value], [date(2024, 1, 2)]])
+
+result = client.query("SELECT event_date FROM event_dates ORDER BY event_date")
+assert result.result_rows == [(date(2024, 1, 1),), (date(2024, 1, 2),)]
+```
+
+此规则适用于 Python 对象，包括 Pandas 的 `object` 列。带时区信息的 Pandas `datetime64` 列使用 UTC 日历日期。如需保留原始日历日期，请在插入前将这些值转换为 Python `date` 对象。NumPy `datetime64` 值不包含时区元数据。
+
+日期时间查询参数遵循[绑定规则](/zh/integrations/language-clients/python/driver-api#parameters-argument)。带时区信息的 `datetime` 在格式化为 `Date` 或 `Date32` 值之前，会先转换为服务器时区，这可能导致日历日期发生变化。如果插入操作与绑定参数必须使用相同的日历日期，请显式传入 `value.date()`。
 
 ### 专用插入方法 {#specialized-insert-methods}
 

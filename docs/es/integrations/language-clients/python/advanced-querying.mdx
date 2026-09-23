@@ -379,7 +379,7 @@ client.query(
 | IPv4                  | `ipaddress.IPv4Address` | string, int         | Las direcciones IP pueden leerse como cadenas o enteros.                                                                                                                                                                                         |
 | IPv6                  | `ipaddress.IPv6Address` | string              | Las direcciones IP pueden leerse como cadenas y, si tienen el formato adecuado, pueden insertarse como direcciones IP                                                                                                                            |
 | Tuple                 | dict or tuple           | tuple, dict, json   | Las tuplas con nombre devuelven diccionarios de forma predeterminada; las tuplas sin nombre devuelven tuplas. Un valor `Tuple()` devuelve `()`.                                                                                                  |
-| Map                   | dict                    | -                   |                                                                                                                                                                                                                                                  |
+| Map                   | dict                    | pairs               | `dict` es el valor predeterminado. `pairs` devuelve una lista de tuplas clave/valor y conserva las claves duplicadas.                                                                                                                            |
 | Nested                | Sequence[dict]          | -                   |                                                                                                                                                                                                                                                  |
 | UUID                  | uuid.UUID               | string              | Los UUIDs pueden leerse como cadenas con formato según RFC 4122<br />                                                                                                                                                                            |
 | JSON                  | dict                    | string              | De forma predeterminada, se devuelve un diccionario de Python. El formato `string` devolverá una cadena JSON                                                                                                                                     |
@@ -390,6 +390,23 @@ client.query(
 | QBit                  | list[float]             | -                   | NumPy se usa automáticamente para una transposición de bits más rápida cuando está instalado.                                                                                                                                                    |
 
 `query_np`, `query_np_stream`, `query_df` y `query_df_stream` admiten las escalas 0, 3, 6 y 9 de `Time64`. Las demás escalas generan `ProgrammingError` porque no tienen una unidad de tiempo equivalente en NumPy. Use una consulta estándar de Python con el formato de lectura `int` o `string` para preservar esas precisiones. El [códec de Rust](/es/integrations/language-clients/python/rust-codec#known-behavior-differences) experimental documenta una excepción para `Time64` almacenado dentro de `Dynamic`.
+
+### Valores Map con claves duplicadas {#map-pairs}
+
+Los valores Map de ClickHouse pueden contener claves duplicadas. De forma predeterminada, el diccionario de Python conserva solo el último valor de cada clave. Seleccione el formato de lectura `pairs` para conservar todos los pares en el orden en que los devuelve el servidor:
+
+```python
+result = client.query(
+    "SELECT map('key', 'X', 'key', 'Y') AS m",
+    query_formats={"Map": "pairs"},
+)
+print(result.first_item["m"])
+# [('key', 'X'), ('key', 'Y')]
+```
+
+El formato se aplica de forma recursiva a los Maps anidados dentro de otros tipos de ClickHouse, como Arrays, Tuples, rutas tipadas de JSON, Dynamic, Variant y otros Maps. También funciona con `query_np`, `query_df` y sus equivalentes de streaming. Para aplicarlo a los Maps de una sola columna del resultado, use `column_formats={"m": {"Map": "pairs"}}`. Para configurarlo globalmente, use `set_read_format("Map", "pairs")`.
+
+Se trata de un formato de lectura. Las inserciones nativas de Map siguen requiriendo diccionarios y no aceptan listas de pares. Para leer y volver a escribir claves duplicadas sin pérdida de datos, use `query_arrow` e `insert_arrow`. Los formatos de lectura no afectan a los métodos de Arrow. Al igual que con otras sobrescrituras del formato de lectura, `native_codec="rust"` recurre a Python, mientras que `native_codec="rust_strict"` lanza `NotSupportedError`.
 
 ## Datos externos {#external-data}
 

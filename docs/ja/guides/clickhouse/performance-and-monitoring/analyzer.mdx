@@ -272,26 +272,35 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-### 重複するCTE名 {#duplicate-cte-names}
+### CTE 名の重複 {#duplicate-cte-names}
 
 エラー: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`。Exception code: 179
 
-原因: 以前のアナライザでは、同じ名前の共通テーブル式 (WITH ...) を複数定義し、先に定義したものを後から定義したものでシャドーイングすることが許可されていました。アナライザでは、このような曖昧さは許可されません。
+原因: 旧アナライザでは、同じ名前の共通テーブル式 (WITH ...) を複数定義でき、後の定義によって前の定義が隠されていました。新しいアナライザは、デフォルトでこのような曖昧な定義を拒否します。
 
-解決策: 重複するCTEの名前を変更して、一意にしてください。
+解決策: 重複している CTE をリネームし、名前が一意になるようにしてください。移行を支援する手段として、`analyzer_compatibility_allow_cte_redefinition = 1` (ClickHouse `26.10` 以降で利用可能) を有効にすると、レガシーな動作を復元できます。この場合、参照は同名の定義のうち、その時点で解決中ではない最新の定義に束縛されます。そのため、再定義からは直前の定義を読み取ることができ、クエリのボディからは最後の定義が読み取られます。
+
+制限事項: `MATERIALIZED` として宣言された CTE と、`WITH RECURSIVE` 句内の CTE は、この設定を有効にしても再定義できません。また、旧アナライザと動作が異なるケースが 1 つあります。同じ名前の 2 つの定義の間で宣言された CTE も最後の定義に束縛されます。一方、旧アナライザでは、その CTE の宣言位置から参照できる定義に束縛されていました。
 
 ```sql
-/* 元のクエリ */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- 再定義
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* 修正後のクエリ */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### 曖昧なカラム識別子 {#ambiguous-column-identifiers}

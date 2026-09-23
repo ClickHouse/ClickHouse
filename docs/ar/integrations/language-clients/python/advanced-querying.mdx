@@ -379,9 +379,9 @@ client.query(
 | IPv4                  | `ipaddress.IPv4Address` | string, int       | يمكن قراءة عناوين IP كسلاسل نصية أو كأعداد صحيحة.                                                                                                                                            |
 | IPv6                  | `ipaddress.IPv6Address` | string            | يمكن قراءة عناوين IP كسلاسل نصية، وإذا كانت منسقة بشكل صحيح فيمكن إدراجها كعناوين IP                                                                                                         |
 | Tuple                 | dict or tuple           | tuple, dict, json | تعيد Tuples المسماة قواميس افتراضيًا؛ بينما تعيد Tuples غير المسماة tuples. وتعيد القيمة `Tuple()` الناتج `()`.                                                                              |
-| Map                   | dict                    | -                 |                                                                                                                                                                                              |
+| Map                   | dict                    | pairs             | `dict` هو الخيار الافتراضي. يُرجع `pairs` قائمة من tuples المفتاح/القيمة ويحافظ على المفاتيح المكررة.                                                                                        |
 | Nested                | Sequence[dict]          | -                 |                                                                                                                                                                                              |
-| معرّف UUID                  | uuid.UUID               | string            | يمكن قراءة معرّفات UUID كسلاسل نصية منسقة وفق RFC 4122<br />                                                                                                                                        |
+| معرّف UUID            | uuid.UUID               | string            | يمكن قراءة معرّفات UUID كسلاسل نصية منسقة وفق RFC 4122<br />                                                                                                                                 |
 | JSON                  | dict                    | string            | يُرجع قاموس بايثون افتراضيًا. ويُرجع تنسيق `string` JSON string                                                                                                                              |
 | Variant               | object                  | typed             | يُرجع `typed` القيمة `TypedVariant(value, type_name)` بحيث يُحفَظ نوع العضو الأصلي.                                                                                                          |
 | Dynamic               | object                  | -                 | يعيد نوع بايثون المطابق لنوع بيانات ClickHouse المخزَّن لهذه القيمة                                                                                                                          |
@@ -390,6 +390,23 @@ client.query(
 | QBit                  | list[float]             | -                 | يُستخدم NumPy تلقائيًا لتسريع تبديل مواضع البتات عند تثبيته.                                                                                                                                 |
 
 تدعم `query_np` و`query_np_stream` و`query_df` و`query_df_stream` قيم scale التالية لـ `Time64`: 0 و3 و6 و9. أما القيم الأخرى فتُطلق `ProgrammingError` لعدم وجود وحدة زمنية مطابقة لها في NumPy. استخدم query بايثون قياسيًا مع تنسيق القراءة `int` أو `string` للحفاظ على تلك القيم من precision. ويوثّق [Rust codec](/ar/integrations/language-clients/python/rust-codec#known-behavior-differences) التجريبي استثناءً لـ `Time64` المخزَّن داخل `Dynamic`.
+
+### قيم Map ذات المفاتيح المكررة {#map-pairs}
+
+قد تحتوي قيم Map في ClickHouse على مفاتيح مكررة، في حين لا يحتفظ قاموس بايثون الافتراضي إلا بآخر قيمة لكل مفتاح. للحفاظ على جميع الأزواج بالترتيب الذي يُعيدها به الخادم، اختر تنسيق القراءة `pairs`:
+
+```python
+result = client.query(
+    "SELECT map('key', 'X', 'key', 'Y') AS m",
+    query_formats={"Map": "pairs"},
+)
+print(result.first_item["m"])
+# [('key', 'X'), ('key', 'Y')]
+```
+
+تُطبَّق هذه الصيغة بشكل تعاودي على قيم Map المتداخلة داخل أنواع ClickHouse الأخرى، بما في ذلك Arrays وTuples والمسارات محددة النوع في JSON وDynamic وVariant وقيم Map الأخرى. كما تعمل مع `query_np` و`query_df` ونظيراتهما الخاصة بالدفق. لاختيار هذه الصيغة لقيم Map في عمود واحد من النتائج، استخدم `column_formats={"m": {"Map": "pairs"}}`. ولضبطها على المستوى العام، استخدم `set_read_format("Map", "pairs")`.
+
+هذا تنسيق قراءة فحسب، إذ لا تزال عمليات الإدراج الأصلية لقيم Map تتطلب قواميس ولا تقبل قوائم الأزواج. استخدم `query_arrow` و`insert_arrow` لقراءة المفاتيح المكررة وإعادة كتابتها دون فقدان أي بيانات. ولا تؤثر تنسيقات القراءة في طرق Arrow. وكما هو الحال مع تجاوزات تنسيقات القراءة الأخرى، يؤدي `native_codec="rust"` إلى الرجوع إلى تنفيذ بايثون، بينما يُثير `native_codec="rust_strict"` الاستثناء `NotSupportedError`.
 
 ## البيانات الخارجية {#external-data}
 

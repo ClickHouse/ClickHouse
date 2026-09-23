@@ -277,22 +277,31 @@ SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 
 Error: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Código de excepción: 179
 
-Causa: El analizador anterior permitía definir varias Common Table Expressions (WITH ...) con el mismo nombre, de modo que una ocultaba a la anterior. El analizador prohíbe esta ambigüedad.
+Causa: El analizador anterior permitía definir varias expresiones de tabla comunes (Common Table Expressions, WITH ...) con el mismo nombre, de modo que cada definición posterior ocultaba a la anterior. El analizador rechaza esta ambigüedad de forma predeterminada.
 
-Solución: Renombre los CTE duplicados para que tengan nombres únicos.
+Solución: Cambie el nombre de las CTE duplicadas para que sean únicos. Para facilitar la migración, puede habilitar `analyzer_compatibility_allow_cte_redefinition = 1` (disponible desde ClickHouse `26.10`) y restaurar así el comportamiento heredado: una referencia se vincula a la definición más reciente del nombre que no se esté resolviendo en ese momento, de modo que una redefinición puede leer la definición anterior y el cuerpo de la consulta lee la última.
+
+Limitaciones: una CTE declarada como `MATERIALIZED` y una CTE en una cláusula `WITH RECURSIVE` no pueden redefinirse, ni siquiera con el ajuste habilitado. Hay un caso en el que el comportamiento difiere del analizador anterior: una CTE declarada entre dos definiciones de un mismo nombre también se vincula a la última definición, mientras que el analizador anterior la vinculaba a la definición visible en el punto donde se declaraba.
 
 ```sql
-/* CONSULTA ORIGINAL */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Redefinida
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* CONSULTA CORREGIDA */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### Identificadores de columna ambiguos {#ambiguous-column-identifiers}

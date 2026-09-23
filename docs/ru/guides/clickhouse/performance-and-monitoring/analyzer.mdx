@@ -273,26 +273,35 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-### Дублирующиеся имена CTE {#duplicate-cte-names}
+### Повторяющиеся имена CTE {#duplicate-cte-names}
 
 Ошибка: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Код исключения: 179
 
-Причина: Старый анализатор допускал определение нескольких общих табличных выражений (WITH ...) с одним и тем же именем, когда более позднее выражение перекрывало предыдущее. Анализатор не допускает такой неоднозначности.
+Причина: старый анализатор позволял определять несколько общих табличных выражений (WITH ...) с одинаковым именем, при этом более позднее определение перекрывало предыдущее. Новый анализатор по умолчанию не допускает такой неоднозначности.
 
-Решение: Переименуйте повторяющиеся CTE, чтобы их имена были уникальными.
+Решение: переименуйте повторяющиеся CTE так, чтобы их имена стали уникальными. В качестве временной меры на период миграции можно включить `analyzer_compatibility_allow_cte_redefinition = 1` (доступно начиная с ClickHouse `26.10`) и тем самым восстановить прежнее поведение: ссылка привязывается к последнему определению имени, которое не разрешается в данный момент. Благодаря этому переопределение может обращаться к предыдущему определению, а тело запроса — к последнему.
+
+Ограничения: CTE, объявленное как `MATERIALIZED`, и CTE в предложении `WITH RECURSIVE` нельзя переопределить даже при включенной настройке. Кроме того, одна конструкция запроса обрабатывается иначе, чем в старом анализаторе: CTE, объявленное между двумя определениями одного и того же имени, тоже привязывается к последнему определению, тогда как старый анализатор привязывал его к определению, видимому в месте его объявления.
 
 ```sql
-/* ИСХОДНЫЙ ЗАПРОС */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Переопределено
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* ИСПРАВЛЕННЫЙ ЗАПРОС */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### Неоднозначные идентификаторы столбцов {#ambiguous-column-identifiers}

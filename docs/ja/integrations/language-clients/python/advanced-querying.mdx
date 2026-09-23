@@ -379,7 +379,7 @@ client.query(
 | IPv4                  | `ipaddress.IPv4Address` | string, int       | IP アドレスは文字列または整数として読み取れます。                                                                                                                |
 | IPv6                  | `ipaddress.IPv6Address` | string            | IP アドレスは文字列として読み取れ、適切な形式であれば IP アドレスとして挿入できます                                                                                             |
 | Tuple                 | dict or tuple           | tuple, dict, json | 名前付き Tuple は既定で辞書を返し、名前のない Tuple は tuple を返します。`Tuple()` の値は `()` を返します。                                                                  |
-| Map                   | dict                    | -                 |                                                                                                                                           |
+| Map                   | dict                    | pairs             | 既定は `dict` です。`pairs` はキーと値の tuple のリストを返し、重複するキーも保持されます。                                                                                 |
 | Nested                | Sequence[dict]          | -                 |                                                                                                                                           |
 | UUID                  | uuid.UUID               | string            | UUID は RFC 4122 に準拠した形式の文字列として読み取れます<br />                                                                                                |
 | JSON                  | dict                    | string            | 既定では Python の辞書が返されます。`string` フォーマットでは JSON 文字列が返されます                                                                                    |
@@ -390,6 +390,23 @@ client.query(
 | QBit                  | list[float]             | -                 | インストールされている場合、より高速なビット転置のために NumPy が自動的に使用されます。                                                                                           |
 
 `query_np`、`query_np_stream`、`query_df`、`query_df_stream` は `Time64` の scale 0、3、6、9 をサポートします。その他の scale は、対応する NumPy の時間単位が存在しないため `ProgrammingError` を送出します。これらの精度を保持するには、`int` または `string` の読み取りフォーマットを指定した通常の Python クエリを使用してください。実験的な [Rust codec](/ja/integrations/language-clients/python/rust-codec#known-behavior-differences) には、`Dynamic` 内に格納された `Time64` に関する例外が記載されています。
+
+### 重複キーを持つ Map の値 {#map-pairs}
+
+ClickHouse の Map には重複したキーを含めることができます。デフォルトの Python 辞書では、各キーに対して最後の値のみが保持されます。サーバーから返された順序のまますべてのペアを保持するには、読み取りフォーマットとして `pairs` を選択してください。
+
+```python
+result = client.query(
+    "SELECT map('key', 'X', 'key', 'Y') AS m",
+    query_formats={"Map": "pairs"},
+)
+print(result.first_item["m"])
+# [('key', 'X'), ('key', 'Y')]
+```
+
+このフォーマットは、Array、Tuple、JSON の型付きパス、Dynamic、Variant、さらに別の Map など、他の ClickHouse 型の内部にネストされた Map にも再帰的に適用されます。また、`query_np`、`query_df`、およびそれらのストリーミング版でも利用できます。特定の結果カラムの Map だけを対象にするには、`column_formats={"m": {"Map": "pairs"}}` を使用します。グローバルに設定するには、`set_read_format("Map", "pairs")` を使用します。
+
+これは読み取り用のフォーマットです。ネイティブの Map の挿入では引き続き辞書 (dict) が必要で、ペアのリストは受け付けません。重複キーを失わずにラウンドトリップさせるには、`query_arrow` と `insert_arrow` を使用してください。読み取りフォーマットは Arrow のメソッドには影響しません。他の読み取りフォーマットのオーバーライドと同様に、`native_codec="rust"` を指定した場合は Python 実装にフォールバックし、`native_codec="rust_strict"` を指定した場合は `NotSupportedError` が送出されます。
 
 ## 外部データ {#external-data}
 

@@ -19,10 +19,10 @@ ClickHouse Connect é um driver principal de banco de dados que oferece interope
 * O pacote `clickhouse_connect.datatypes` serializa e desserializa tipos do ClickHouse usando o formato colunar binário Native do ClickHouse.
 * As extensões opcionais em Cython em `clickhouse_connect.driverc` aceleram caminhos comuns de serialização, conversão e bufferização. Uma implementação em Python puro continua disponível em plataformas nas quais as extensões não podem ser compiladas. Um [codec Rust](/pt-BR/integrations/language-clients/python/rust-codec) experimental e opcional pode substituir totalmente o processamento do formato Native.
 * O pacote inclui informações de tipos do PEP 561, para que verificadores de tipo downstream consumam anotações para as interfaces públicas do driver, da DB-API e do SQLAlchemy.
-* O dialeto do [SQLAlchemy](https://www.sqlalchemy.org/) em `clickhouse_connect.cc_sqlalchemy` oferece suporte ao SQLAlchemy Core, reflexão de esquema, cláusulas de consulta específicas do ClickHouse e motores de tabela, além de migrações do Alembic. Leituras e inserts básicos com ORM funcionam, mas o dialeto foi projetado para workloads analíticas, e não para o comportamento ORM completo de unit-of-work.
-* O driver principal e a implementação [ClickHouse Connect SQLAlchemy](/pt-BR/integrations/language-clients/python/sqlalchemy) são o método preferido para conectar o ClickHouse ao Apache Superset. Use a conexão de banco de dados `ClickHouse Connect` ou a string de conexão do dialeto SQLAlchemy `clickhousedb`.
+* Os dialects do [SQLAlchemy](https://www.sqlalchemy.org/) em `clickhouse_connect.cc_sqlalchemy` incluem conexões síncronas `clickhousedb://` e conexões assíncronas `clickhousedb+async://`. Eles oferecem suporte ao SQLAlchemy Core, reflexão de esquema, cláusulas de consulta específicas do ClickHouse e motores de tabela, além de migrações do Alembic. Leituras e inserts básicos com ORM funcionam, mas o dialect foi projetado para workloads analíticas, e não para o comportamento ORM completo de unit-of-work.
+* O driver principal e a implementação [ClickHouse Connect SQLAlchemy](/pt-BR/integrations/language-clients/python/sqlalchemy) são o método preferido para conectar o ClickHouse ao Apache Superset. Use a conexão de banco de dados `ClickHouse Connect` ou a string de conexão do dialect SQLAlchemy `clickhousedb`.
 
-Esta documentação está atualizada até a versão 1.6.0 do clickhouse-connect. Se você estiver atualizando da versão 0.15.x ou anterior, consulte o [guia de migração 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
+Se você estiver atualizando da versão 0.15.x ou anterior, consulte o [guia de migração 1.0](https://github.com/ClickHouse/clickhouse-connect/blob/main/MIGRATION.md).
 
 <Note>
   Os clientes padrão do ClickHouse Connect usam a interface HTTP. Isso oferece suporte a balanceadores de carga HTTP, proxies e controles de rede corporativos comuns. O ClickHouse Connect também tem um backend [chDB](#embedded-chdb-backend) experimental in-process.
@@ -30,15 +30,15 @@ Esta documentação está atualizada até a versão 1.6.0 do clickhouse-connect.
 
 ## Requisitos e compatibilidade {#requirements-and-compatibility}
 
-| Componente  | Versões compatíveis                                                                                                   |
-| ----------- | --------------------------------------------------------------------------------------------------------------------- |
-| Python      | 3.10 a 3.14. Compilações free-threaded, como 3.14t, têm suporte experimental.                                         |
-| ClickHouse  | Lançamentos do ClickHouse com suporte ativo. A CI realiza testes com lançamentos recentes LTS e estáveis do servidor. |
-| SQLAlchemy  | 1.4.40 ou posterior, abaixo de 3.0                                                                                    |
-| Pandas      | 2.x e 3.x                                                                                                             |
-| Polars      | 1.0 ou posterior                                                                                                      |
-| aiohttp     | 3.9 ou posterior                                                                                                      |
-| Plataformas | Linux, macOS e Windows nas arquiteturas com wheels publicadas para cada versão do Python                              |
+| Componente  | Versões compatíveis                                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Python      | 3.10 a 3.14. Compilações free-threaded, como 3.14t, têm suporte experimental.                                               |
+| ClickHouse  | Lançamentos do ClickHouse com suporte ativo. A CI realiza testes com lançamentos recentes LTS e estáveis do servidor.       |
+| SQLAlchemy  | 1.4.40 ou posterior, abaixo de 3.0, para o dialect síncrono. 2.0.44 ou posterior, abaixo de 3.0, para o dialect assíncrono. |
+| Pandas      | 2.x e 3.x                                                                                                                   |
+| Polars      | 1.0 ou posterior                                                                                                            |
+| aiohttp     | 3.9 ou posterior                                                                                                            |
+| Plataformas | Linux, macOS e Windows nas arquiteturas com wheels publicadas para cada versão do Python                                    |
 
 O pacote inclui wheels compiladas quando disponíveis e usa uma implementação em Python puro quando as extensões Cython não podem ser compiladas. PyArrow é compatível com Python 3.10 a 3.14. Python 3.14 requer PyArrow 22 ou posterior.
 
@@ -58,6 +58,7 @@ pip install "clickhouse-connect[pandas]"     # Pandas
 pip install "clickhouse-connect[arrow]"      # PyArrow
 pip install "clickhouse-connect[polars]"     # Polars
 pip install "clickhouse-connect[sqlalchemy]" # SQLAlchemy dialect
+pip install "clickhouse-connect[sqlalchemy-async]" # Async SQLAlchemy dialect
 pip install "clickhouse-connect[alembic]"    # SQLAlchemy and Alembic
 pip install "clickhouse-connect[chdb]"       # Embedded chDB backend
 pip install "clickhouse-connect[rust,arrow]" # Experimental Rust codec evaluation setup

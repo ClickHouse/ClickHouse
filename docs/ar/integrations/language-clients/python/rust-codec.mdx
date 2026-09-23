@@ -81,7 +81,7 @@ client = clickhouse_connect.get_client(host="localhost", native_codec="rust")
 pip install --upgrade clickhouse-connect-core
 ```
 
-تُشحن إصلاحات codec وتحسينات الأداء ضمن إصدارات (releases) `clickhouse-connect-core`، ويمكن الحصول عليها بترقية (upgrade) حزمة wheel وحدها، دون انتظار إصدار (release) جديد من `clickhouse-connect`.
+تُشحن الإصلاحات وتحسينات الأداء في المرمِّز المُصرَّف ضمن إصدارات (releases) `clickhouse-connect-core`، ويمكن الحصول عليها بترقية (upgrade) حزمة wheel الأساسية إلى إصدار متوافق. أما التغييرات على تكامل driver مع Rust فتتطلب ترقية `clickhouse-connect`.
 
 ## اختلافات سلوكية معروفة {#known-behavior-differences}
 

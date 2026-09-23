@@ -379,7 +379,7 @@ client.query(
 | IPv4                  | `ipaddress.IPv4Address` | string, int       | IP 주소는 문자열 또는 정수로 읽을 수 있습니다.                                                                                                      |
 | IPv6                  | `ipaddress.IPv6Address` | string            | IP 주소는 문자열로 읽을 수 있으며, 올바른 포맷이면 IP 주소로 삽입할 수 있습니다                                                                                  |
 | Tuple                 | dict or tuple           | tuple, dict, json | 이름이 지정된 튜플은 기본적으로 딕셔너리를 반환하고, 이름이 없는 튜플은 튜플을 반환합니다. `Tuple()` 값은 `()`를 반환합니다.                                                     |
-| Map                   | dict                    | -                 |                                                                                                                                   |
+| Map                   | dict                    | pairs             | 기본값은 `dict`입니다. `pairs`는 키/값 튜플의 리스트를 반환하며 중복 키도 그대로 유지합니다.                                                                       |
 | Nested                | Sequence[dict]          | -                 |                                                                                                                                   |
 | UUID                  | uuid.UUID               | string            | UUID는 RFC 4122 형식의 문자열로 읽을 수 있습니다<br />                                                                                           |
 | JSON                  | dict                    | string            | 기본적으로 Python 딕셔너리가 반환됩니다. `string` 포맷은 JSON 문자열을 반환합니다                                                                            |
@@ -390,6 +390,23 @@ client.query(
 | QBit                  | list[float]             | -                 | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                                                        |
 
 `query_np`, `query_np_stream`, `query_df`, `query_df_stream`은 `Time64`의 scale 0, 3, 6, 9를 지원합니다. 다른 scale은 대응하는 NumPy 시간 단위가 없기 때문에 `ProgrammingError`를 발생시킵니다. 해당 precision을 유지하려면 `int` 또는 `string` 읽기 포맷을 사용하는 일반 Python 쿼리를 사용하세요. 실험적인 [Rust 코덱](/ko/integrations/language-clients/python/rust-codec#known-behavior-differences) 문서에는 `Dynamic` 내부에 저장된 `Time64`에 대한 예외가 설명되어 있습니다.
+
+### 중복 키가 있는 맵 값 {#map-pairs}
+
+ClickHouse 맵(Map)에는 중복 키가 포함될 수 있습니다. 기본 Python 딕셔너리는 키마다 마지막 값만 유지합니다. 서버가 반환한 순서대로 모든 쌍을 보존하려면 `pairs` 읽기 포맷을 선택하십시오.
+
+```python
+result = client.query(
+    "SELECT map('key', 'X', 'key', 'Y') AS m",
+    query_formats={"Map": "pairs"},
+)
+print(result.first_item["m"])
+# [('key', 'X'), ('key', 'Y')]
+```
+
+이 포맷은 배열(Array), 튜플(Tuple), JSON의 타입이 지정된 경로, Dynamic, Variant, 그리고 다른 Map 등 다른 ClickHouse 타입 내부에 중첩된 Map에도 재귀적으로 적용됩니다. 또한 `query_np`, `query_df` 및 이에 대응하는 스트리밍 메서드에서도 동작합니다. 특정 결과 컬럼 하나에서만 Map을 pairs로 받으려면 `column_formats={"m": {"Map": "pairs"}}`를 사용하세요. 전역으로 설정하려면 `set_read_format("Map", "pairs")`를 사용하세요.
+
+이 포맷은 읽기 전용 포맷입니다. 네이티브 Map 삽입에는 여전히 딕셔너리가 필요하며, 페어 목록은 허용되지 않습니다. 중복 키를 손실 없이 읽고 다시 삽입하려면 `query_arrow`와 `insert_arrow`를 사용하세요. 읽기 포맷은 Arrow 메서드에는 영향을 주지 않습니다. 다른 읽기 포맷 재정의와 마찬가지로 `native_codec="rust"`는 Python 구현으로 폴백되며, `native_codec="rust_strict"`는 `NotSupportedError`를 발생시킵니다.
 
 ## 외부 데이터 {#external-data}
 

@@ -277,22 +277,31 @@ SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 
 오류: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. 예외 코드: 179
 
-원인: 이전 분석기에서는 동일한 이름의 공통 테이블 표현식(WITH ...)을 여러 개 정의해, 나중에 정의한 표현식이 앞서 정의한 표현식을 가리도록 허용했습니다. 분석기는 이러한 모호성을 허용하지 않습니다.
+원인: 이전 분석기에서는 동일한 이름으로 여러 개의 공통 테이블 표현식(Common Table Expression, WITH ...)을 정의할 수 있었으며, 이때 나중에 정의된 것이 앞선 정의를 가렸습니다. 새 분석기는 기본적으로 이러한 모호성을 허용하지 않습니다.
 
-해결 방법: 중복된 CTE 이름을 각각 고유하게 변경합니다.
+해결 방법: 중복된 CTE의 이름을 서로 겹치지 않도록 변경하십시오. 마이그레이션 과정에서는 `analyzer_compatibility_allow_cte_redefinition = 1`(ClickHouse `26.10`부터 사용 가능)을 활성화하여 레거시 동작을 복원할 수 있습니다. 이 경우 참조는 해당 시점에 해석 중이지 않은 이름 중 가장 최근 정의에 바인딩됩니다. 따라서 재정의에서는 이전 정의를 읽을 수 있고, 쿼리 body에서는 마지막 정의를 읽습니다.
+
+제한 사항: `MATERIALIZED`로 선언된 CTE와 `WITH RECURSIVE` 절 내의 CTE는 이 설정을 활성화하더라도 재정의할 수 없습니다. 또한 한 가지 경우에는 이전 분석기와 동작이 다릅니다. 동일한 이름의 두 정의 사이에 선언된 CTE 역시 마지막 정의에 바인딩되지만, 이전 분석기에서는 해당 CTE가 선언된 시점에 보이는 정의에 바인딩되었습니다.
 
 ```sql
-/* 원본 쿼리 */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- 재정의됨
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* 수정된 쿼리 */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### 모호한 컬럼 식별자 {#ambiguous-column-identifiers}

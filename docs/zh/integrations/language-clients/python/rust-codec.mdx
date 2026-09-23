@@ -81,7 +81,7 @@ Rust 编解码器检测到格式错误的 Native payloads 时会引发 `DataErro
 pip install --upgrade clickhouse-connect-core
 ```
 
-编解码器修复和性能提升会随 `clickhouse-connect-core` 发行版一同发布，只需升级 wheel 即可获取，无需等待 `clickhouse-connect` 发行版。
+编译后编解码器的修复和性能提升会随 `clickhouse-connect-core` 发行版一同发布，只需将 core wheel 升级到兼容版本即可获取。而对驱动的 Rust 集成所做的更改，则需要升级 `clickhouse-connect`。
 
 ## 已知行为差异 {#known-behavior-differences}
 

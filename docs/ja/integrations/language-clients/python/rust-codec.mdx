@@ -81,7 +81,7 @@ Rust codecが検出した不正な形式のNativeペイロードは `DataError` 
 pip install --upgrade clickhouse-connect-core
 ```
 
-codec の修正やパフォーマンス改善は `clickhouse-connect-core` のリリースとして提供されるため、`clickhouse-connect` のリリースを待たずに、wheel のアップグレードだけで取り込めます。
+コンパイル済み codec の修正やパフォーマンス改善は `clickhouse-connect-core` のリリースとして提供されるため、互換性のある core wheel へのアップグレードで取り込めます。ドライバーの Rust インテグレーションに関する変更を取り込むには、`clickhouse-connect` のアップグレードが必要です。
 
 ## 既知の動作の相違点 {#known-behavior-differences}
 

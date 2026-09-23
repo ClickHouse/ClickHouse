@@ -379,7 +379,7 @@ client.query(
 | IPv4                  | `ipaddress.IPv4Address` | string, int       | IP 地址可以读取为字符串或整数。                                                                               |
 | IPv6                  | `ipaddress.IPv6Address` | string            | IP 地址可以读取为字符串；格式正确时，也可以作为 IP 地址插入                                                               |
 | Tuple                 | dict or tuple           | tuple, dict, json | 命名元组默认返回字典；未命名元组返回元组。`Tuple()` 值返回 `()`。                                                        |
-| Map                   | dict                    | -                 |                                                                                                 |
+| Map                   | dict                    | pairs             | 默认为 `dict`。`pairs` 返回由键/值元组组成的列表，并保留重复键。                                                        |
 | Nested                | Sequence[dict]          | -                 |                                                                                                 |
 | UUID                  | uuid.UUID               | string            | UUID 可以读取为符合 RFC 4122 格式的字符串<br />                                                              |
 | JSON                  | dict                    | string            | 默认返回 Python 字典。`string` 格式会返回 JSON string                                                       |
@@ -390,6 +390,23 @@ client.query(
 | QBit                  | list[float]             | -                 | 安装 NumPy 后，会自动使用它来加快位转置。                                                                        |
 
 `query_np`、`query_np_stream`、`query_df` 和 `query_df_stream` 支持 `Time64` 的标度 0、3、6 和 9。其他标度会引发 `ProgrammingError`，因为它们没有对应的 NumPy 时间单位。请使用标准的 Python 查询并配合 `int` 或 `string` 读取格式，以保留这些精度。实验性的 [Rust codec](/zh/integrations/language-clients/python/rust-codec#known-behavior-differences) 记录了存储于 `Dynamic` 中的 `Time64` 的一个例外情况。
+
+### 包含重复键的 Map 值 {#map-pairs}
+
+ClickHouse 的 Map 可以包含重复键，而默认的 Python 字典只会为每个键保留最后一个值。如需按服务器返回的顺序保留所有键值对，请选择 `pairs` 读取格式：
+
+```python
+result = client.query(
+    "SELECT map('key', 'X', 'key', 'Y') AS m",
+    query_formats={"Map": "pairs"},
+)
+print(result.first_item["m"])
+# [('key', 'X'), ('key', 'Y')]
+```
+
+该格式会递归应用于嵌套在其他 ClickHouse 类型中的 Map，包括 Array、Tuple、JSON 类型化路径、Dynamic、Variant 以及其他 Map。它同样适用于 `query_np`、`query_df` 及其对应的流式版本。若只想为某个结果列中的 Map 指定该格式，请使用 `column_formats={"m": {"Map": "pairs"}}`。若要全局设置，请使用 `set_read_format("Map", "pairs")`。
+
+这是一种读取格式。原生 Map 插入仍然要求使用字典，不接受键值对列表。如需在读写往返过程中无损保留重复键，请使用 `query_arrow` 和 `insert_arrow`。读取格式不影响 Arrow 方法。与其他读取格式覆盖设置一样，`native_codec="rust"` 会回退到 Python 实现，而 `native_codec="rust_strict"` 则会引发 `NotSupportedError`。
 
 ## 外部数据 {#external-data}
 

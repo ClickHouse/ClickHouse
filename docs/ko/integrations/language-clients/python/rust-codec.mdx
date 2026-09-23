@@ -75,13 +75,13 @@ Rust 코덱이 감지한 잘못된 형식의 Native 페이로드는 `DataError`�
 
 ## 버전 관리 {#versioning}
 
-`clickhouse-connect-core`는 `clickhouse-connect`와 별개로 버전이 관리됩니다. 드라이버는 `rust` extra를 통해 호환되는 버전 범위를 선언하며, 모듈은 Rust 코덱이 선택될 때 드라이버가 확인하는 바인딩 API 버전을 내보냅니다. 설치된 휠이 드라이버에 비해 너무 오래된 버전이면, 클라이언트 생성 시 업그레이드 명령을 안내하는 `NotSupportedError`가 발생합니다:
+`clickhouse-connect-core`는 `clickhouse-connect`와 별개로 버전이 관리됩니다. 드라이버는 `rust` 엑스트라를 통해 호환되는 버전 범위를 선언하며, 모듈은 Rust 코덱이 선택될 때 드라이버가 확인하는 바인딩 API 버전을 내보냅니다. 설치된 휠이 드라이버에 비해 너무 오래된 버전이면, 클라이언트 생성 시 업그레이드 명령을 안내하는 `NotSupportedError`가 발생합니다:
 
 ```bash
 pip install --upgrade clickhouse-connect-core
 ```
 
-코덱 수정 및 성능 개선 사항은 `clickhouse-connect-core` 릴리스로 제공되며, `clickhouse-connect` 릴리스를 기다리지 않고 휠(wheel) 업그레이드만으로 적용할 수 있습니다.
+컴파일된 코덱의 수정 및 성능 개선 사항은 `clickhouse-connect-core` 릴리스로 제공되며, 호환되는 core 휠(wheel)로 업그레이드하여 적용할 수 있습니다. 드라이버의 Rust 통합과 관련된 변경 사항을 적용하려면 `clickhouse-connect`를 업그레이드해야 합니다.
 
 ## 알려진 동작 차이 {#known-behavior-differences}
 

@@ -275,24 +275,33 @@ SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 
 ### Noms de CTE en double {#duplicate-cte-names}
 
-Erreur : `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Code d&#39;exception : 179
+Erreur : `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Code d&#39;exception : 179
 
-Cause : l&#39;ancien analyseur permettait de définir plusieurs expressions de table communes (WITH ...) portant le même nom, en masquant la précédente. L&#39;analyseur interdit cette ambiguïté.
+Cause : l&#39;ancien analyseur permettait de définir plusieurs Common Table Expressions (WITH ...) portant le même nom, chaque nouvelle définition masquant la précédente. Le nouvel analyseur rejette par défaut cette ambiguïté.
 
-Solution : renommez les CTE en double pour leur donner des noms uniques.
+Solution : renommez les CTE en double afin que leurs noms soient uniques. Pour faciliter la migration, activez `analyzer_compatibility_allow_cte_redefinition = 1` (disponible depuis ClickHouse `26.10`) afin de rétablir le comportement legacy : une référence est liée à la dernière définition du nom qui n&#39;est pas en cours de résolution à ce moment-là. Ainsi, une redéfinition peut lire la définition précédente, tandis que le corps de la requête lit la dernière.
+
+Limitations : une CTE déclarée comme `MATERIALIZED` et une CTE figurant dans une clause `WITH RECURSIVE` ne peuvent pas être redéfinies, même lorsque ce paramètre est activé. Un cas de figure diffère de l&#39;ancien analyseur : une CTE déclarée entre deux définitions d&#39;un même nom est elle aussi liée à la dernière définition, alors que l&#39;ancien analyseur la liait à la définition visible à l&#39;endroit de sa déclaration.
 
 ```sql
 /* ORIGINAL QUERY */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Redefined
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
 /* FIXED QUERY */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
 ### Identifiants de colonnes ambigus {#ambiguous-column-identifiers}

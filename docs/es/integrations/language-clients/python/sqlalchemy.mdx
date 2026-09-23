@@ -7,7 +7,7 @@ title: 'Compatibilidad con SQLAlchemy'
 doc_type: 'reference'
 ---
 
-ClickHouse Connect incluye el dialecto `clickhousedb` de SQLAlchemy basado en el driver principal. Es compatible con SQLAlchemy 1.4.40 y versiones posteriores, incluido SQLAlchemy 2.x, con especial atención a las consultas de Core, el DDL de ClickHouse, la reflexión y las inserciones simples de ORM.
+ClickHouse Connect incluye el dialecto `clickhousedb` de SQLAlchemy basado en el driver principal. El dialecto síncrono es compatible con SQLAlchemy 1.4.40 y versiones posteriores, incluido SQLAlchemy 2.x, con especial atención a las consultas de Core, el DDL de ClickHouse, la reflexión y las inserciones simples de ORM. El dialecto asíncrono requiere SQLAlchemy 2.0.44 o posterior.
 
 Instale las dependencias de SQLAlchemy con el extra del paquete:
 
@@ -31,9 +31,75 @@ with engine.connect() as conn:
     print(version)
 ```
 
-Los parámetros de consulta de la URL pueden contener ajustes de ClickHouse, opciones del client de ClickHouse Connect como `compression`, `query_limit` y tiempos de espera, u opciones de HTTP/TLS como `ca_cert`. Añada el prefijo `ch_` a un ajuste de ClickHouse para forzar que se trate como un ajuste del servidor cuando sea necesario; por ejemplo, `ch_http_max_field_name_size=99999`.
+### ID de sesión de ClickHouse {#sqlalchemy-session-ids}
 
-Consulte [Argumentos y ajustes de conexión](/es/integrations/language-clients/python/driver-api#connection-arguments) para ver las opciones de client disponibles.
+De forma predeterminada, cada conexión del grupo, tanto en el dialecto síncrono como en el asíncrono, genera su propio ID de sesión de ClickHouse. Cuando las solicitudes de esa conexión llegan al mismo proceso del servidor de ClickHouse, la configuración modificada con `SET` y las tablas temporales se conservan para esa conexión. El estado de las sesiones con nombre y las comprobaciones de solapamiento dentro de una misma sesión son locales a cada proceso. En un mismo proceso del servidor, una solicitud que se solape con otra del mismo usuario e ID de sesión se rechaza de inmediato con el código de servidor 373, en lugar de ponerse en cola. Si configura un `session_id` fijo, utilice `pool_size=1, max_overflow=0` o serialice el acceso antes de que las solicitudes lleguen a ClickHouse. En ClickHouse Cloud y en otras implementaciones con balanceo de carga, las solicitudes con el mismo ID de sesión pueden llegar a servidores diferentes, por lo que no debe usar un `session_id` fijo como estado distribuido ni como mutex distribuido.
+
+### Conexiones asíncronas {#sqlalchemy-async-connections}
+
+El dialecto asíncrono requiere SQLAlchemy 2.0.44 o una versión posterior y utiliza el `AsyncClient` nativo de ClickHouse Connect. Instale sus dependencias y cree un motor asíncrono con la URL `clickhousedb+async://`:
+
+```bash
+pip install "clickhouse-connect[sqlalchemy-async]"
+```
+
+```python
+import asyncio
+
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import create_async_engine
+
+
+async def main():
+    engine = create_async_engine(
+        "clickhousedb+async://user:password@host:8123/mydb"
+    )
+    try:
+        async with engine.connect() as conn:
+            version = (await conn.execute(text("SELECT version()"))).scalar_one()
+            print(version)
+    finally:
+        await engine.dispose()
+
+
+asyncio.run(main())
+```
+
+Los resultados se almacenan temporalmente en el búfer. Los cursores del lado del servidor están deshabilitados, por lo que `AsyncConnection.stream()` lanza `InvalidRequestError`. SQLAlchemy acepta `AsyncSession.stream()`, pero el dialecto almacena en el búfer el resultado completo antes de devolverlo. Para resultados de gran tamaño, utilice los métodos de streaming nativos de `AsyncClient`. El Client nativo subyacente está disponible como `driver_connection` mientras su conexión de SQLAlchemy esté extraída del grupo:
+
+```python
+async def stream_events(engine):
+    async with engine.connect() as conn:
+        raw_connection = await conn.get_raw_connection()
+        client = raw_connection.driver_connection
+        async with await client.query_rows_stream("SELECT * FROM events") as rows:
+            async for row in rows:
+                print(row)
+```
+
+No utilice la conexión de SQLAlchemy de forma concurrente con su Client sin procesar. Finalice los flujos del Client sin procesar antes de salir del bloque de conexión de SQLAlchemy y no conserve el Client sin procesar después de que la conexión vuelva al grupo. SQLAlchemy es responsable del ciclo de vida del Client prestado, por lo que nunca debe llamar a `client.close()` ni a ninguno de sus métodos privados de ciclo de vida. El grupo de SQLAlchemy gestiona la concurrencia de las conexiones. Cada conexión del grupo posee un Client asíncrono nativo y, de forma predeterminada, limita su connector de aiohttp a una conexión en total y a una conexión por host. Establezca `connector_limit`, `connector_limit_per_host` o `keepalive_timeout` en la URL o en `connect_args` para sobrescribir esa configuración de transporte. Con `pool_pre_ping=True`, SQLAlchemy comprueba las conexiones reutilizadas con `SELECT 1` cada vez que se obtiene una conexión del grupo.
+
+Actualmente, las inserciones executemany asíncronas de SQLAlchemy envían una solicitud HTTP por cada conjunto de parámetros en lugar de usar el protocolo Native de inserción masiva del driver. Utilice esta vía solo para lotes pequeños. Para cargas masivas de datos, utilice el patrón de acceso `driver_connection` gestionado por el grupo descrito anteriormente y espere (await) a `client.insert()` antes de devolver la conexión de SQLAlchemy al grupo. Dado que executemany asíncrono utiliza la vinculación de parámetros de consulta, los valores `datetime` sin zona horaria se rigen por `naive_datetime_binding`, no por el ajuste `naive_datetime_insert` que utiliza executemany Native síncrono. Las vinculaciones tipadas `DateTime64` de SQLAlchemy conservan las fracciones de segundo tanto con parámetros del lado del Client como del lado del servidor. Los parámetros sin tipo `%s` o `%(name)s` pasados a `exec_driver_sql()` mantienen el formato predeterminado en segundos enteros para los valores `datetime` sin zona horaria. Utilice valores con zona horaria para que el comportamiento de la zona horaria sea inequívoco. Utilice `client.insert()` para obtener la semántica de inserción masiva Native.
+
+Cree y libere un motor asíncrono en el mismo bucle de eventos en el que se utiliza. Devuelva todas las conexiones obtenidas y, a continuación, espere (await) a `engine.dispose()` durante el apagado y antes de usar el motor desde otro bucle de eventos. Si el bucle propietario del motor ya se ha cerrado, espere a `engine.dispose()` en el bucle actual antes de reutilizarlo. aiohttp puede seguir notificando un transporte no cerrado si la limpieza no comienza hasta después de que el bucle propietario se haya cerrado, por lo que conviene liberar el motor antes de transferirlo siempre que sea posible. `pool_pre_ping=True` no sustituye a la liberación al mover un motor asíncrono con grupo entre bucles de eventos. Para compartir un motor entre bucles de eventos sin retener conexiones vinculadas a un bucle, configure `poolclass=NullPool`. Si la liberación se ejecuta mientras una conexión sigue en uso, el dialecto cierra esa conexión cuando se devuelve o cuando el recolector de basura la elimina. No llame a `engine.sync_engine.dispose()` desde código síncrono: SQLAlchemy no puede esperar ahí la limpieza asíncrona de las conexiones y podría registrar el error en lugar de cerrar los transportes del grupo.
+
+Los parámetros de consulta de la URL pueden incluir ajustes de ClickHouse, opciones del Client de ClickHouse Connect como `compression`, `query_limit` y tiempos de espera, u opciones HTTP/TLS como `ca_cert`. Anteponga `ch_` a un ajuste de ClickHouse para forzar que se trate como ajuste del servidor cuando sea necesario; por ejemplo, `ch_http_max_field_name_size=99999`.
+
+Consulte [Argumentos de conexión y configuración](/es/integrations/language-clients/python/driver-api#connection-arguments) para ver las opciones del Client disponibles.
+
+Ejecute los helpers síncronos de SQLAlchemy, como DDL e inspección, mediante `AsyncConnection.run_sync()`:
+
+```python
+from sqlalchemy import inspect
+
+
+async def prepare_schema(engine, metadata):
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
+        return await conn.run_sync(
+            lambda sync_conn: inspect(sync_conn).get_table_names()
+        )
+```
 
 ### Ajustes por consulta {#sqlalchemy-per-query-settings}
 
@@ -65,6 +131,34 @@ with engine.connect() as conn:
     rows = conn.execute(stmt).all()
 ```
 
+### Gestión de errores {#sqlalchemy-error-handling}
+
+Los errores que genera el driver a través de una conexión de SQLAlchemy utilizan las clases DB-API exportadas desde `clickhouse_connect.dbapi`. Son los mismos objetos de clase que las clases correspondientes de `clickhouse_connect.driver.exceptions`, por lo que SQLAlchemy los envuelve en la subclase `sqlalchemy.exc.DBAPIError` correspondiente. `StreamFailureError` es un `OperationalError` y se envuelve como `sqlalchemy.exc.OperationalError`.
+
+Si una cancelación por parte del llamador puede interrumpir una llamada explícita a `AsyncConnection.invalidate()`, ejecute la invalidación en una tarea propia y espere a que finalice antes de propagar la cancelación. De este modo, SQLAlchemy puede completar la gestión interna del registro de conexión:
+
+```python
+import asyncio
+
+
+async def invalidate_safely(connection):
+    invalidate_task = asyncio.create_task(connection.invalidate())
+    cancellation = None
+    while not invalidate_task.done():
+        try:
+            await asyncio.wait({invalidate_task})
+        except asyncio.CancelledError as ex:
+            cancellation = ex
+    if cancellation is not None:
+        try:
+            invalidate_task.result()
+        finally:
+            raise cancellation
+    invalidate_task.result()
+```
+
+No utilice la conexión mientras su tarea de invalidación siga en ejecución. Si se cancela una llamada directa a `await connection.invalidate()` y `connection.invalidated` sigue siendo false, vuelva a ejecutar `await` sobre `connection.invalidate()` para completar la limpieza antes de usar o cerrar la conexión.
+
 ### Parámetros del lado del servidor {#sqlalchemy-server-side-parameters}
 
 SQLAlchemy normalmente procesa los parámetros del lado del cliente. Para usar parámetros del lado del servidor de ClickHouse, actívelos al crear el motor:
@@ -75,6 +169,8 @@ engine = create_engine(
     server_side_params=True,
 )
 ```
+
+Use el mismo argumento `server_side_params=True` con `create_async_engine()` para el dialecto asíncrono.
 
 En este modo, cada valor vinculado debe tener un tipo de SQLAlchemy compatible con ClickHouse. Las listas `IN` compatibles se convierten en parámetros `Array` tipados de ClickHouse. El compilador genera `CompileError` cuando no puede deducir un tipo compatible ni procesar de forma segura una vinculación.
 
@@ -118,6 +214,14 @@ with engine.connect() as conn:
 ### Representación de literales {#sqlalchemy-literal-rendering}
 
 Cuando SQLAlchemy inserta en línea un valor vinculado mediante `literal_binds` o `literal_execute`, el dialecto utiliza el entrecomillado de ClickHouse para los tipos String genéricos y los tipos de ClickHouse. Esto también se aplica a través de envolturas `TypeDecorator` y selecciones `with_variant()`. Los valores String conservan los signos de porcentaje y las barras invertidas, incluso cuando quedan otros parámetros vinculados.
+
+Los valores `datetime` de Python con un tipo SQLAlchemy `DateTime64` de ClickHouse conservan sus microsegundos en los parámetros del lado del Client y en los literales en línea, incluidos los valores Nullable y los valores anidados en arrays y tuplas. ClickHouse aplica la precisión declarada. El tipo `datetime` de Python admite hasta seis dígitos fraccionarios. Los valores `DateTime` simples mantienen el formato de segundos enteros. En una sentencia `text()`, especifique el tipo explícitamente con `bindparam("ts", type_=DateTime64(6))` para conservar las fracciones de segundo.
+
+Los tipos de columna de SQLAlchemy deben coincidir con el esquema del servidor. Si se declara `DateTime64` sobre una columna `DateTime` del servidor, se generan fracciones de segundo, lo que puede provocar errores de conversión durante la inserción y en las comparaciones `IN`.
+
+En SQLAlchemy 2.x, los literales en línea de tipos genéricos `sqlalchemy.ARRAY` que contienen elementos `Tuple` de ClickHouse requieren `dimensions=1` (o el número de dimensiones superior correspondiente en el caso de arrays anidados) para que SQLAlchemy trate cada tupla como un único elemento. SQLAlchemy 1.4 no admite literales en línea para tipos genéricos `ARRAY`.
+
+Si se reutiliza un parámetro datetime con nombre, cada aparición necesita un tipo de vinculación `DateTime64` compatible para conservar las fracciones. Una aparición sin tipo o con un tipo en conflicto mantiene el formato de segundos enteros. Establezca `type_=DateTime64(6)` en cada `bindparam` o utilice nombres de parámetro distintos con los tipos adecuados.
 
 ### Indicaciones de tipo en JSON {#sqlalchemy-json-type-hints}
 
@@ -362,9 +466,22 @@ Los valores String de las cláusulas `DEFAULT`, `MATERIALIZED`, `ALIAS` y `TTL` 
 
 Los argumentos de clave de MergeTree, como `order_by`, `partition_by`, `primary_key`, `sample_by` y `ttl`, aceptan columnas y expresiones SQL de SQLAlchemy, así como cadenas simples.
 
+`Memory()`, `Log()`, `StripeLog()`, `TinyLog()`, `Null()` y `Set()` pueden usarse sin argumentos y se conservan intactos en un ciclo completo con la autogeneración de Alembic. El argumento de diccionario existente sigue siendo compatible. Use `settings={...}` para proporcionar la configuración del motor.
+
+`SummingMergeTree` y `ReplicatedSummingMergeTree` aceptan un argumento `columns` opcional que solo puede pasarse por palabra clave. Los argumentos posicionales existentes conservan su significado, por lo que `SummingMergeTree("id")` sigue estableciendo `ORDER BY id`.
+
+```python
+from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import SummingMergeTree
+
+engine_clause = SummingMergeTree("id", columns=("delta", "n_tx"))
+# Sum delta and n_tx for rows with the same id.
+```
+
+Pase una cadena, una columna de SQLAlchemy, un atributo de columna mapeado o una lista o tupla no vacía de esos valores. Los elementos de cadena de las listas y tuplas se entrecomillan como identificadores. Una cadena escalar proporciona SQL sin procesar, como `"delta"` o `"(delta, n_tx)"`. El servidor requiere identificadores para estas columnas. Omita `columns` para que ClickHouse elija las columnas que se van a sumar. La reflexión y la autogeneración de Alembic conservan una lista de columnas explícita.
+
 ## Inserciones y uso básico de ORM {#sqlalchemy-inserts}
 
-Se admiten las inserciones con Core y los modelos ORM sencillos. Prefiera las inserciones con Core para rutas de datos de gran volumen.
+Se admiten las inserciones con Core y los modelos ORM sencillos. Para el dialecto síncrono, prefiera las inserciones con `executemany` de Core para las rutas de datos de gran volumen compatibles. Para inserciones masivas asíncronas, utilice la vía nativa `AsyncClient.insert()` descrita en [Conexiones asíncronas](#sqlalchemy-async-connections).
 
 ```python
 with engine.connect() as conn:
@@ -376,6 +493,12 @@ with engine.connect() as conn:
         ],
     )
 ```
+
+Para el dialecto síncrono, las inserciones simples de Core con `executemany` generadas por el compilador de SQLAlchemy utilizan una única inserción masiva Native. En el modo asíncrono, executemany envía una solicitud por cada conjunto de parámetros, tal como se describe en [Conexiones asíncronas](#sqlalchemy-async-connections). El SQL sin procesar y las inserciones con expresiones u otras semánticas que no pueden enrutarse de forma segura conservan el SQL original y se ejecutan una vez por cada conjunto de parámetros. Si falla un conjunto de parámetros posterior, las filas escritas por los conjuntos anteriores permanecen confirmadas.
+
+Las sentencias explícitas de varias filas `insert(events).values([...])` funcionan con filas de diccionario, tuplas en el orden de las columnas de la tabla y expresiones SQL por fila. Pandas `to_sql(method="multi")` utiliza esta forma. Inserta las filas, pero devuelve `0` porque las sentencias INSERT textuales informan de un recuento de filas de `0` a través del cursor de DB-API. SQLAlchemy determina la lista de columnas a partir de la primera fila. Se ignoran las claves de diccionario adicionales en filas posteriores y los valores de tupla que queden fuera de esa lista de columnas. Si a una fila posterior le falta un valor seleccionado, la compilación falla. Asigne las mismas columnas a todas las filas.
+
+Con los límites predeterminados de formularios HTTP en ClickHouse 26.4 y versiones posteriores, `server_side_params=True` solo es adecuado para lotes explícitos pequeños, por debajo de unos 1000 valores vinculados y con holgura para otros campos. La configuración del servidor permite elevar este límite. Para lotes simples de gran tamaño con el dialecto síncrono, pase las filas como segundo argumento de `execute()` para que el driver pueda utilizar su ruta de inserción masiva Native. Para datos masivos asíncronos, use `await` con el método nativo `AsyncClient.insert()`.
 
 ```python
 import sqlalchemy as db
@@ -412,7 +535,23 @@ ClickHouse Connect incluye integración con Alembic para las migraciones de esqu
 pip install "clickhouse-connect[alembic]"
 ```
 
+Para ejecutar migraciones con el dialecto asíncrono, instala ambos extras:
+
+```bash
+pip install "clickhouse-connect[alembic,sqlalchemy-async]"
+```
+
+Crea un proyecto asíncrono de Alembic y, a continuación, sustituye el entorno generado por el ejemplo compatible con ClickHouse:
+
+```bash
+alembic init -t async alembic
+```
+
+El archivo `alembic.ini` generado usa `script_location = %(here)s/alembic`. Mantén esa configuración si el directorio de migraciones se llama `alembic`; de lo contrario, cámbiala por el directorio que se haya pasado a `alembic init`. Reemplaza `alembic/env.py` por el [ejemplo de `env.py` de Alembic asíncrono](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) incluido en el repositorio y, a continuación, establece `sqlalchemy.url` en `alembic.ini`.
+
 Importa `clickhouse_connect.cc_sqlalchemy.alembic` en el archivo `env.py` de Alembic para registrar la integración del dialecto. La autogeneración admite las operaciones habituales de evolución de tablas, incluida la creación y eliminación de tablas, la adición/modificación/eliminación de columnas, los valores predeterminados y los comentarios. Usa operaciones manuales para cambiar el nombre de tablas y columnas. Revisa cada migración generada antes de aplicarla.
+
+Las funciones de migración de Alembic siguen siendo síncronas. Un entorno asíncrono crea un `AsyncEngine`, abre una `AsyncConnection` y pasa la función de migración síncrona a `await connection.run_sync(...)`. Las migraciones en modo offline llaman directamente a `context.configure(url=..., literal_binds=True, dialect_opts={"paramstyle": "named"})` y no crean ningún motor. El [ejemplo de `env.py` de Alembic asíncrono](https://github.com/ClickHouse/clickhouse-connect/blob/main/examples/alembic_async/env.py) incluido en el repositorio contempla ambos modos y lee la URL de conexión a través de la configuración estándar `sqlalchemy.url` de Alembic. Además, mantiene los hooks y las opciones de Alembic para ClickHouse del ejemplo completo, incluidos `include_object`, `make_include_name(...)`, `clickhouse_writer` y `version_table`. No uses `engine.sync_engine` para ejecutar o liberar migraciones asíncronas.
 
 Las funciones auxiliares específicas de ClickHouse `op.*` cubren:
 
