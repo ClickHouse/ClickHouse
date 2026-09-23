@@ -19,7 +19,7 @@ ClickHouse에서는 `SELECT` 쿼리와 함께 쿼리 처리에 필요한 데이�
 command-line client에서는 다음 포맷으로 매개변수 섹션을 지정할 수 있습니다.
 
 ```bash
---external --file=... [--name=...] [--format=...] [--types=...|--structure=...] [--scalar]
+--external --file=... [--name=...] [--format=...] [--types=...|--structure=...]
 ```
 
 이와 같은 섹션이 전송할 테이블 수만큼 여러 개 있을 수 있습니다.
@@ -30,7 +30,6 @@ stdin에서는 하나의 테이블만 읽어올 수 있습니다.
 
 다음 매개변수는 선택 사항입니다: **–name**– 테이블 이름입니다. 생략하면 &#95;data가 사용됩니다.
 **–format** – 파일의 데이터 포맷입니다. 생략하면 TabSeparated가 사용됩니다.
-**–scalar** – 데이터를 임시 테이블 대신 스칼라로 전송합니다. 데이터는 정확히 하나의 행만 포함해야 합니다. 여러 컬럼이 포함된 경우에는 하나의 tuple로 패킹됩니다. 값은 쿼리에서 `__getScalar('name')`를 통해 사용할 수 있습니다.
 
 다음 매개변수 중 하나는 필수입니다:**–types** – 쉼표로 구분된 컬럼 타입 목록입니다. 예시: `UInt64,String`. 컬럼 이름은 &#95;1, &#95;2, ...로 지정됩니다.
 **–structure**– `UserID UInt64`, `URL String` 포맷의 테이블 구조입니다. 컬럼 이름과 타입을 정의합니다.
@@ -48,8 +47,6 @@ $ cat /etc/passwd | sed 's/:/\t/g' | clickhouse-client --query="SELECT shell, co
 /bin/bash       4
 /usr/sbin/nologin       1
 /bin/sync       1
-$ echo 41 | clickhouse-client --query="SELECT __getScalar('threshold') + 1" --external --scalar --name=threshold --file=- --types=UInt64
-42
 ```
 
 HTTP 인터페이스를 사용할 때 외부 데이터는 multipart/form-data 포맷으로 전달됩니다. 각 테이블은 별도의 파일로 전송됩니다. 테이블 이름은 파일 이름에서 가져옵니다. `query_string`에는 `name_format`, `name_types`, `name_structure` 매개변수가 전달되며, 여기서 `name`은 각 매개변수가 대응하는 테이블 이름입니다. 이 매개변수의 의미는 command-line client를 사용할 때와 동일합니다.

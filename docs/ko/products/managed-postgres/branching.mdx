@@ -7,11 +7,11 @@ keywords: ['managed postgres', 'branching', 'pitr', 'point-in-time recovery', 's
 doc_type: 'guide'
 ---
 
-ClickHouse Managed Postgres는 Point-in-Time Recovery(PITR)를 사용해 격리된 데이터베이스 브랜치를 생성할 수 있습니다.
+Managed Postgres는 Point-in-Time Recovery(PITR)를 사용해 격리된 데이터베이스 브랜치를 생성할 수 있습니다.
 
 브랜치는 기존 데이터베이스의 특정 시점을 기준으로 생성되는 완전히 독립적인 PostgreSQL 배포입니다. 브랜치는 개발, 스테이징, 테스트, 디버깅, 데이터 검증 또는 복구 워크플로에 사용할 수 있으며, 원본 데이터베이스에 영향을 주지 않습니다.
 
-프라이머리 데이터베이스와 스토리지를 공유하는 쓰기 시 복사(copy-on-write) 방식과 달리, ClickHouse Managed Postgres 브랜치는 백업에서 복원되며 독립적인 PostgreSQL 배포로 실행됩니다.
+프라이머리 데이터베이스와 스토리지를 공유하는 쓰기 시 복사(copy-on-write) 방식과 달리, Managed Postgres 브랜치는 백업에서 복원되며 독립적인 PostgreSQL 배포로 실행됩니다.
 
 <div id="branching">
   ## 브랜치 작동 방식
@@ -19,7 +19,7 @@ ClickHouse Managed Postgres는 Point-in-Time Recovery(PITR)를 사용해 격리�
 
 브랜치 생성은 [Point-in-Time Recovery (PITR)](/ko/products/managed-postgres/backup-and-restore)에 사용되는 것과 동일한 백업 및 복구 인프라를 기반으로 합니다.
 
-브랜치를 생성하면 ClickHouse Managed Postgres가 객체 스토리지에서 기준 백업을 복원하고, 요청한 복구 시점에 도달하는 데 필요한 WAL 세그먼트를 재생한 다음, 복구된 상태를 바탕으로 새 PostgreSQL 배포를 프로비저닝합니다. 복구가 완료되면 브랜치는 원본 데이터베이스와 독립적으로 운영됩니다.
+브랜치를 생성하면 Managed Postgres가 객체 스토리지에서 기준 백업을 복원하고, 요청한 복구 시점에 도달하는 데 필요한 WAL 세그먼트를 재생한 다음, 복구된 상태를 바탕으로 새 PostgreSQL 배포를 프로비저닝합니다. 복구가 완료되면 브랜치는 원본 데이터베이스와 독립적으로 운영됩니다.
 
 생성된 브랜치는 선택한 시점의 원본 데이터베이스를 그대로 반영한 완전한 복사본입니다.
 
@@ -63,7 +63,7 @@ ClickHouse Managed Postgres는 Point-in-Time Recovery(PITR)를 사용해 격리�
   ## 브랜치 생성 시간
 </div>
 
-ClickHouse Managed Postgres는 NVMe 기반 PostgreSQL 스토리지를 사용하므로, 브랜치는 스토리지 수준의 copy-on-write 메커니즘을 통해 생성되는 것이 아니라 백업에서 복원됩니다. 따라서 브랜치 생성은 즉시 이루어지지 않습니다.
+Managed Postgres는 NVMe 기반 PostgreSQL 스토리지를 사용하므로, 브랜치는 스토리지 수준의 copy-on-write 메커니즘을 통해 생성되는 것이 아니라 백업에서 복원됩니다. 따라서 브랜치 생성은 즉시 이루어지지는 않습니다.
 
 일반적인 브랜치 생성 시간은 몇 분에서 수십 분까지 걸리며, 다음 요소에 따라 달라집니다.
 
@@ -73,9 +73,9 @@ ClickHouse Managed Postgres는 NVMe 기반 PostgreSQL 스토리지를 사용하�
 * 재생해야 하는 WAL의 양
 * 전체 클러스터 구성
 
-대부분의 배포에서는 브랜치를 몇 분 안에 사용할 수 있습니다. 더 큰 데이터베이스는 시간이 추가로 필요할 수 있습니다.
+대부분의 배포에서는 브랜치를 몇 분 안에 사용할 수 있습니다. 데이터베이스가 클수록 더 많은 시간이 필요할 수 있습니다.
 
-브랜치 생성 시간이 워크플로의 병목이 된다면 ClickHouse 팀에 문의하십시오. 많은 경우 워크로드 특성과 복구 요구 사항에 따라 브랜치 복구 성능을 최적화할 수 있습니다.
+브랜치 생성 시간이 워크플로에서 병목이 된다면 ClickHouse 팀에 문의하십시오. 많은 경우 워크로드 특성과 복구 요구 사항에 맞춰 브랜치 복구 성능을 최적화할 수 있습니다.
 
 <div id="branches-v-local-dev">
   ## 브랜치와 로컬 개발 비교

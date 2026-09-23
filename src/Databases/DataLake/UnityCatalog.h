@@ -51,30 +51,18 @@ public:
         return DB::DatabaseDataLakeCatalogType::UNITY;
     }
 
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::DELTA; }
-
-    /// Register a freshly created external DELTA table with Unity; `metadata_content` holds the Delta schema from `createInitial`.
-    /// The shared `ICatalog` parameter (a `vN.metadata.json` path for Iceberg) is the table's storage location for DeltaLake/Unity.
-    void createTable(
-        const String & namespace_name,
-        const String & table_name,
-        const String & table_location,
-        Poco::JSON::Object::Ptr metadata_content) const override;
-
 private:
     const std::filesystem::path base_url;
     const LoggerPtr log;
 
-    const std::string bearer_token;
+    DB::HTTPHeaderEntry auth_header;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
     std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
 
-    DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
+    Poco::Net::HTTPBasicCredentials credentials{};
 
-    /// Throw if the catalog `warehouse` has no schema `schema_name` (or the catalog itself does not exist), so
-    /// a misconfigured namespace stays an error instead of being reported as an absent table by `existsTable`.
-    void checkNamespaceExists(const std::string & schema_name) const;
+    DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 
     CatalogTables getTablesForSchema(const std::string & schema, size_t limit = 0) const;
     CatalogTables listTablesInNamespaceDirect(const std::string & namespace_name) const override;
@@ -90,8 +78,7 @@ private:
         const std::string & table_name,
         TableMetadata & result) const;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & table_id, const TableMetadata & table_metadata) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & table_id) override;
 };
 
 }
