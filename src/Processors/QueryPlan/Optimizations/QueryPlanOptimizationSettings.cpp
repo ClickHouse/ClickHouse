@@ -189,8 +189,7 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     merge_filters = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_merge_filters];
     push_limit_by_into_sort = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_push_limit_by_into_sort];
     filter_push_down = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_filter_push_down];
-    /// The push-down pass also runs on the join-runtime-filter rerun path with `filter_push_down`
-    /// off (`optimizeTree.cpp`), so this sub-gate must not be ANDed with it.
+    /// The filter push-down pass also runs with `filter_push_down` off, once a JOIN runtime filter has been added.
     filter_push_down_below_limit_by = from[Setting::query_plan_filter_push_down_below_limit_by];
     /// Without `use_primary_key` the copy would just be a full scan filter
     propagate_predicate_across_join = from[Setting::query_plan_enable_optimizations] && from[Setting::query_plan_propagate_predicate_across_join]
