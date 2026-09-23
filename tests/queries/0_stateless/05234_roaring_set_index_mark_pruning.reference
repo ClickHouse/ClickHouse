@@ -47,6 +47,8 @@
 20
 --- Transformed key: toDayOfMonth with timezone and Nullable ---
 4
+--- Transformed key: toDayOfMonth on Nullable(DateTime) whose timezone differs from the session ---
+2026-12-05 12:00:00
 --- UInt64 ids on both sides of the 32-bit bucket boundary ---
 5
 4294967296

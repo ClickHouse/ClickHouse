@@ -47,6 +47,19 @@ INSERT INTO t_roaring_tz SELECT toDateTime('2026-01-01 00:00:00', 'America/New_Y
 SELECT count() FROM t_roaring_tz WHERE toDayOfMonth(dt) IN (1, 3);
 DROP TABLE t_roaring_tz;
 
+SELECT '--- Transformed key: toDayOfMonth on Nullable(DateTime) whose timezone differs from the session ---';
+-- The monotonicity check must use the column timezone, not the session one, also through `Nullable`.
+-- The only granule spans 2026-11-30 22:00 .. 2026-12-31 12:00 in New York, which is 2026-12-01 03:00 ..
+-- 2026-12-31 17:00 in UTC. With the session timezone the range looks like a single month, so
+-- `toDayOfMonth` would be treated as monotonic, map to [30, 31], and the granule would be pruned,
+-- losing the row for day 5.
+SET session_timezone = 'UTC';
+CREATE TABLE t_roaring_tz_nullable (dt Nullable(DateTime('America/New_York'))) ENGINE = MergeTree ORDER BY dt SETTINGS index_granularity = 8, allow_nullable_key = 1;
+INSERT INTO t_roaring_tz_nullable VALUES (toDateTime('2026-11-30 22:00:00', 'America/New_York')), (toDateTime('2026-12-05 12:00:00', 'America/New_York')), (toDateTime('2026-12-31 12:00:00', 'America/New_York'));
+SELECT dt FROM t_roaring_tz_nullable WHERE toDayOfMonth(dt) IN (5);
+DROP TABLE t_roaring_tz_nullable;
+SET session_timezone = DEFAULT;
+
 SELECT '--- UInt64 ids on both sides of the 32-bit bucket boundary ---';
 -- `Roaring64Map` keeps one 32-bit bitmap per high word, so everything above only exercises bucket 0.
 -- These ids sit in three different buckets and the ranges below cross the 2^32 seam.
