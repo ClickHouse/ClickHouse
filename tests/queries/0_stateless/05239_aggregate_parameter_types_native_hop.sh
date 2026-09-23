@@ -2,7 +2,7 @@
 # A parameter with no bare literal form is printed with its type, so a state that crosses the
 # Native protocol rebuilds the same parameter Field on the other side and is still accepted by a
 # column declared from the same expression. `prefer_localhost_replica = 0` is what forces a real
-# connection: `isLocalAddress` short-circuits a same-host, same-port shard.
+# connection: a same-host, same-port shard is otherwise served locally, with no Native hop to cross.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
