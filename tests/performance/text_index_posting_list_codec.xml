@@ -15,6 +15,7 @@
         <query_plan_direct_read_from_text_index>1</query_plan_direct_read_from_text_index>
         <use_query_condition_cache>0</use_query_condition_cache>
         <query_plan_optimize_count_from_text_index>0</query_plan_optimize_count_from_text_index>
+        <use_text_index_postings_cache>0</use_text_index_postings_cache>
     </settings>
 
     <create_query>
