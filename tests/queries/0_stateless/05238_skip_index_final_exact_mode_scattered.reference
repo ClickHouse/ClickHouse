@@ -1,0 +1,17 @@
+single column key
+25	168806
+25	168806
+0
+1933
+Granules: 1933/25
+single column key with primary key condition
+15	48125
+15	48125
+974
+Granules: 974/14
+composite key
+7	1255	9
+7	1255	9
+0
+145
+Granules: 145/22
