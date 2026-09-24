@@ -523,7 +523,8 @@ def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, fin
         request.process.send_signal(signal.SIGINT)
         if subquery_kind == "scalar":
             wait_until_query_is_cancelled(node, query_id)
-        node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
+        else:
+            node.query(f"SYSTEM WAIT FAILPOINT {cancel_failpoint} PAUSE", timeout=60)
         if subquery_kind != "scalar":
             assert node.query(
                 f"SELECT is_cancelled FROM system.processes WHERE query_id='{query_id}'"
@@ -535,7 +536,8 @@ def test_partial_cancel_in_s3_subquery(s3_cancellation_table, subquery_kind, fin
         ).strip()
         # Let the callback return while the S3 reader is still paused, so the
         # executor must keep polling and observe a subsequent full cancellation.
-        node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
+        if subquery_kind != "scalar":
+            node.query(f"SYSTEM NOTIFY FAILPOINT {cancel_failpoint}")
         if subquery_kind != "scalar":
             if finish == "second-cancel":
                 request.process.send_signal(signal.SIGINT)
