@@ -67,9 +67,10 @@ private:
 
     enum class ProbeResult
     {
-        None, /// no (readable) entry for the key
+        None, /// no entry for the key
         Fresh, /// a non-stale, fully downloaded entry exists
-        StaleOrUnreadable /// an entry exists but it is stale, corrupt or was written by an incompatible version
+        InProgress, /// another query is writing an entry for the key
+        StaleOrUnreadable /// an entry exists but it is stale, corrupt, partially evicted or was written by an incompatible version
     };
 
     /// Parses and validates the fixed header. Returns std::nullopt if the data does not look like an entry of the on-disk query

@@ -18,6 +18,7 @@
 #include <Interpreters/FileCache/FileCache.h>
 #include <Interpreters/FileCache/FileCacheFactory.h>
 #include <Interpreters/FileCache/FileCacheKey.h>
+#include <Interpreters/FileCache/FileSegmentKeyType.h>
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/SipHash.h>
@@ -294,7 +295,20 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
 
     auto holder = file_cache->getDownloadedContiguousOrEmpty(cache_key, 0, FIXED_HEADER_SIZE, user_id);
     if (holder->empty())
-        return ProbeResult::None;
+    {
+        /// No readable header: either there is no entry, or another query is writing one (its segments are held and not
+        /// downloaded yet), or only the tail of a partially evicted entry is left. The tail must be removed, otherwise no
+        /// entry could be created for the key until it is evicted too.
+        const auto segments = file_cache->tryGetFileSegmentInfos(cache_key, user_id);
+        if (segments.empty())
+            return ProbeResult::None;
+        for (const auto & segment : segments)
+        {
+            if (segment.state != FileSegment::State::DOWNLOADED || segment.references > 1)
+                return ProbeResult::InProgress;
+        }
+        return ProbeResult::StaleOrUnreadable;
+    }
 
     try
     {
@@ -327,13 +341,20 @@ QueryResultCacheOnDisk::ProbeResult QueryResultCacheOnDisk::probeExistingEntry(c
 void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const QueryResultCache::Entry & entry, size_t max_entry_size_in_bytes) const
 {
     const FileCacheKey cache_key = makeFileCacheKey(key, key.is_shared);
-    const auto & origin = FileCache::getCommonOrigin();
+    /// A split filesystem cache reloads only data and system segments on startup, so the entries must not be general ones.
+    const auto origin = file_cache->getCommonOriginWithSegmentKeyType(FileSegmentKeyType::Data);
 
     switch (probeExistingEntry(cache_key))
     {
         case ProbeResult::Fresh:
         {
             LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because it contains a non-stale query result for query {}",
+                doubleQuoteString(key.query_string));
+            return;
+        }
+        case ProbeResult::InProgress:
+        {
+            LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because of a concurrent insert for query {}",
                 doubleQuoteString(key.query_string));
             return;
         }
@@ -438,21 +459,23 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
 
     try
     {
+        /// All file segments stay held until the whole entry is written: a held segment cannot be evicted, so reserving space
+        /// for a later segment cannot evict an earlier segment of the same entry. If the entry does not fit otherwise, the
+        /// reservation fails and nothing is stored.
         size_t offset = 0;
-        while (!holder->empty())
+        for (const auto & file_segment : *holder)
         {
-            FileSegment & file_segment = holder->front();
-            chassert(file_segment.range().left == offset);
+            chassert(file_segment->range().left == offset);
 
-            if (file_segment.getOrSetDownloader() != FileSegment::getCallerId())
+            if (file_segment->getOrSetDownloader() != FileSegment::getCallerId())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set a downloader for a newly created file segment: {}",
-                    file_segment.getInfoForLog());
+                    file_segment->getInfoForLog());
 
-            const size_t bytes_to_write = file_segment.range().size();
+            const size_t bytes_to_write = file_segment->range().size();
             chassert(offset + bytes_to_write <= data.size());
 
             std::string failure_reason;
-            if (!file_segment.reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
+            if (!file_segment->reserve(bytes_to_write, reserve_space_lock_wait_timeout_milliseconds, failure_reason))
             {
                 LOG_TRACE(logger, "Skipped insert into the on-disk query result cache because space reservation failed: {}, query: {}",
                     failure_reason, doubleQuoteString(key.query_string));
@@ -461,13 +484,13 @@ void QueryResultCacheOnDisk::write(const QueryResultCache::Key & key, const Quer
                 return;
             }
 
-            file_segment.write(data.data() + offset, bytes_to_write, offset);
-            file_segment.completePartAndResetDownloader();
+            file_segment->write(data.data() + offset, bytes_to_write, offset);
+            file_segment->completePartAndResetDownloader();
             offset += bytes_to_write;
-
-            holder->completeAndPopFront(/*allow_background_download=*/false, /*force_shrink_to_downloaded_size=*/false);
         }
         chassert(offset == data.size());
+
+        holder = nullptr; /// completes and releases all file segments
 
         ProfileEvents::increment(ProfileEvents::QueryCacheOnDiskWrittenBytes, data.size());
         LOG_TRACE(logger, "Stored query result of query {} on disk ({} bytes)", doubleQuoteString(key.query_string), data.size());
