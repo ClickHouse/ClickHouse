@@ -1252,10 +1252,11 @@ public:
 
 /// `mostSubtype(T1, T2, ...)` — finds the most specific common type. Used by
 /// `arrayIntersect` to compute the result element type as the type that fits
-/// in every input array. When the inputs share no common subtype (e.g. one
-/// input is `Nothing` — i.e. `Array(Nothing)` produced by `[]`), the result
-/// is `Nothing` rather than an exception, so `arrayIntersect([1], [])` keeps
-/// returning `Array(Nothing)` rather than throwing `NO_COMMON_TYPE`.
+/// in every input array. When one input is `Nothing` (i.e. `Array(Nothing)`
+/// produced by `[]`), the result is `Nothing`, so `arrayIntersect([1], [])` keeps
+/// returning `Array(Nothing)`. Otherwise inputs that share no common subtype
+/// (e.g. `String` and `UInt8`) throw `NO_COMMON_TYPE`, as the legacy
+/// `arrayIntersect` resolver does.
 class TypeFunctionMostSubtype : public ITypeFunction
 {
 public:
@@ -1264,8 +1265,12 @@ public:
         DataTypes types;
         types.reserve(args.size());
         for (const auto & arg : args)
+        {
+            if (isNothing(arg.type()))
+                return Value(DataTypePtr(std::make_shared<DataTypeNothing>()));
             types.emplace_back(arg.type());
-        return Value(getMostSubtype(types, /* throw_if_result_is_nothing */ false));
+        }
+        return Value(getMostSubtype(types, /* throw_if_result_is_nothing */ true));
     }
 
     std::string name() const override { return "mostSubtype"; }
