@@ -24,6 +24,9 @@ SET cluster_for_parallel_replicas = 'test_cluster_one_shard_three_replicas_local
 SET parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 1;
 SET parallel_replicas_min_number_of_rows_per_replica = 0;
+-- The query-based path is what this test is about: the plan-based one ships a plan fragment, and a
+-- condition spliced into a query text never reaches the replicas running it.
+SET parallel_replicas_plan_based = 0;
 SET enable_join_runtime_filters = 1;
 -- The runtime filter has to be built whatever the probe side is estimated to be.
 SET join_runtime_filter_min_probe_rows = 0;
@@ -34,6 +37,13 @@ SET optimize_aggregation_in_order = 1;
 -- Pin what decides whether the filter is folded into the read, so the plan below is stable.
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
+
+-- Pin what decides whether the condition reaches the replicas at all: the splice writes it into the
+-- query they are sent, so it never happens without
+-- `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes is not what they execute
+-- when they were given a serialized plan instead - the distributed-plan CI jobs set that in users.d.
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+SET serialize_query_plan = 0;
 
 -- Without this the remote replicas may get no marks at all, and then they never send a read request
 -- for the coordinator to check the mode of.

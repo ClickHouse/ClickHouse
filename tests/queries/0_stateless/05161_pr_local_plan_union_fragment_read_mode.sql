@@ -46,6 +46,13 @@ SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET optimize_read_in_order = 1;
 
+-- Pin what decides whether the condition reaches the replicas at all: the splice writes it into the
+-- query they are sent, so it never happens without
+-- `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes is not what they execute
+-- when they were given a serialized plan instead - the distributed-plan CI jobs set that in users.d.
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+SET serialize_query_plan = 0;
+
 -- Without this the remote replicas may get no marks at all, and then they never send a read request
 -- for the coordinator to check the mode of.
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
