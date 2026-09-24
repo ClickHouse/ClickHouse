@@ -136,6 +136,36 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE NOT hasToken(lower(s), 'error') 
 
 DROP TABLE tab;
 
+SELECT '-- Without a tokenizer argument, a function on the preprocessor expression uses the index tokenizer';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX idx s TYPE text(tokenizer = ngrams(3), preprocessor = lower(s))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'abcx'), (2, 'Abcd efg'), (3, 'zzz');
+
+SELECT id, hasAnyTokens(lower(s), 'abcd') FROM tab ORDER BY id;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') SETTINGS use_skip_indexes = 0;
+
+SELECT '-- The same with a second index defined on the expression';
+
+ALTER TABLE tab ADD INDEX idx_expr lower(s) TYPE text(tokenizer = ngrams(3));
+ALTER TABLE tab MATERIALIZE INDEX idx_expr SETTINGS mutations_sync = 2;
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') SETTINGS use_skip_indexes = 1, query_plan_direct_read_from_text_index = 0;
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'abcd') SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab;
+
 SELECT '-- A column named like the preprocessor expression is not taken for it';
 
 CREATE TABLE tab

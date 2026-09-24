@@ -114,6 +114,13 @@ public:
     const std::unordered_map<UInt128, TextSearchQueryPtr> & getAllSearchQueries() const { return all_search_queries; }
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
+    /// The preprocessor expression the index also answers predicates on, see `preprocessed_expression_condition`.
+    std::optional<String> getPreprocessedExpressionName() const
+    {
+        if (!preprocessed_expression_condition)
+            return std::nullopt;
+        return preprocessed_expression_condition->header.begin()->name;
+    }
 
     /// Create text search query for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;

@@ -112,5 +112,16 @@ Granules: 3/6
 [3]
 [3]
 [3]
+-- Without a tokenizer argument, a function on the preprocessor expression uses the index tokenizer
+1	1
+2	1
+3	0
+[1,2]
+[1,2]
+[1,2]
+-- The same with a second index defined on the expression
+[1,2]
+[1,2]
+[1,2]
 -- A column named like the preprocessor expression is not taken for it
 [2]
