@@ -657,6 +657,18 @@ profile_all_queries = args.profile_all_queries or root.attrib.get(
 # Opt-in per test: run every query. Honored only with --soft-max-queries.
 run_all_queries = root.attrib.get("run_all_queries", "0") not in ("0", "false", "")
 
+# Background merges are stopped on every server after the setup queries, so the
+# measured queries of both servers see the part layout the setup left, and no
+# merge competes with them for the CPU. A test whose measured queries write
+# (INSERT, OPTIMIZE, ALTER, ...) or run shell scripts needs merges, so they
+# keep running for it; `keep_merges_running="1"` on <test> opts out explicitly.
+READ_ONLY_KEYWORDS = {"SELECT", "WITH", "EXPLAIN", "SHOW", "DESCRIBE", "DESC", ""}
+stop_merges = root.attrib.get("keep_merges_running", "0") in ("0", "false", "") and all(
+    q["kind"] == "sql"
+    and all(first_keyword(s) in READ_ONLY_KEYWORDS for s in q["statements"])
+    for q in test_queries
+)
+
 reportStageEnd("before-connect")
 
 # Open connections
@@ -769,6 +781,11 @@ for i, s in enumerate(servers):
 
 reportStageEnd("connect")
 
+# The servers are shared by all tests of the run, so undo a `SYSTEM STOP MERGES`
+# left by a previous test that did not reach its teardown.
+for c in all_connections:
+    c.execute("SYSTEM START MERGES")
+
 if not args.use_existing_tables:
     # Run drop queries, ignoring errors. Do this before all other activity,
     # because clickhouse_driver disconnects on error (this is not configurable),
@@ -871,6 +888,11 @@ def purge_jemalloc_on_all_connections(reason):
 
 if args.jemalloc_purge != "disabled":
     purge_jemalloc_on_all_connections("after-fill")
+
+if stop_merges:
+    for c in all_connections:
+        c.execute("SYSTEM STOP MERGES")
+    reportStageEnd("stop-merges")
 
 
 # Let's sync the data to avoid writeback affects performance
@@ -1242,3 +1264,7 @@ if not args.keep_created_tables and not args.use_existing_tables:
             print(f"drop\t{conn_index}\t{c.last_query.elapsed}\t{tsv_escape(q)}")
 
     reportStageEnd("drop-2")
+
+if stop_merges:
+    for c in all_connections:
+        c.execute("SYSTEM START MERGES")
