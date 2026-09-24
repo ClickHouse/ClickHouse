@@ -124,6 +124,12 @@ namespace
         ///   expired would silently turn it into a password-less user on the next reload. Such a user keeps
         ///   its expired methods and simply cannot authenticate, which is the fail-closed state it is
         ///   already in.
+        ///
+        /// Loading a stored definition (`ATTACH USER`, from `AccessEntityIO::deserializeAccessEntity` - local
+        /// disk, replicated storage, backups) never prunes: only a real write decides what is dropped, so the
+        /// same stored definition always materializes the same way on every node and after every restart.
+        /// The stored methods arrive there as the statement's own methods, which the first restriction
+        /// already keeps, but the explicit check does not depend on that.
         auto is_expired = [current_time](const AuthenticationData & authentication_method)
         {
             const time_t valid_until = authentication_method.getValidUntil();
@@ -134,7 +140,7 @@ namespace
         for (const auto & authentication_method : user.authentication_methods)
             num_authentication_methods_left += !is_expired(authentication_method);
 
-        if (num_authentication_methods_left != 0)
+        if (!query.attach && num_authentication_methods_left != 0)
             std::erase_if(user.authentication_methods, is_expired);
 
         // max_number_of_authentication_methods == 0 means unlimited

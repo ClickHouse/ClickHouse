@@ -233,3 +233,31 @@ def test_alter_prunes_expired_methods_before_the_limit_check(started_cluster):
     )
 
     limited_node.query("DROP USER u_rotate_expired")
+
+
+def test_restart_does_not_prune_expired_methods(started_cluster):
+    # Pruning happens only on a real `ALTER USER`; loading the stored `ATTACH USER` definition at
+    # startup must materialize exactly what was written, so a user with one live and one expired
+    # method keeps both across a restart.
+    limited_node.query("DROP USER IF EXISTS u_restart_expired")
+    # A method added by the statement itself is never pruned, so this stores an already expired one.
+    limited_node.query(
+        "CREATE USER u_restart_expired IDENTIFIED WITH plaintext_password BY 'live', "
+        "plaintext_password BY 'old' VALID UNTIL '2020-01-01 00:00:00 UTC'"
+    )
+    query = "SELECT arrayMap(x -> toUInt32(x), valid_until) FROM system.users WHERE name = 'u_restart_expired'"
+    assert limited_node.query(query) == "[0,1577836800]\n"
+
+    limited_node.restart_clickhouse()
+
+    assert limited_node.query(query) == "[0,1577836800]\n"
+    assert (
+        limited_node.query("SELECT 1", user="u_restart_expired", password="live")
+        == "1\n"
+    )
+
+    # The next write prunes it.
+    limited_node.query("ALTER USER u_restart_expired DEFAULT ROLE NONE")
+    assert limited_node.query(query) == "[0]\n"
+
+    limited_node.query("DROP USER u_restart_expired")
