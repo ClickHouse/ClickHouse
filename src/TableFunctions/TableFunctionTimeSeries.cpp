@@ -286,7 +286,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `step`, `range`, `pi`, `absent` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 
@@ -365,7 +365,7 @@ Instant selectors, range selectors, label matchers (`=`, `!=`, `=~`, `!~`), offs
 | Label | `label_replace`, `label_join` |
 | Type | `scalar`, `vector` |
 | Histogram | `histogram_quantile` |
-| Other | `time`, `pi`, `absent` |
+| Other | `time`, `step`, `range`, `pi`, `absent` |
 
 **Note**: `histogram_quantile` uses linear interpolation on classic histogram buckets (identified by the `le` label). Native histograms are not supported. The `phi` (quantile level) argument must be a constant scalar. Expressions that vary per step, such as `histogram_quantile(time() / 1000, ...)`, are rejected with a `NOT_IMPLEMENTED` exception.
 

@@ -166,6 +166,8 @@ FUNCTION options {
     | 'resets'
     | 'round'
     | 'scalar'
+    | 'step'
+    | 'range'
     | 'sgn'
     | 'sort'
     | 'sort_desc'
