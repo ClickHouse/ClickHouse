@@ -103,6 +103,23 @@ Internal coordination settings are located in the `<keeper_server>.<coordination
 | `slow_member_backpressure_no_progress_timeout_ms` | How long the leader keeps waiting for a replica that makes no progress at all, while the backpressure is on with [`bpon`](#four-letter-word-commands), before leaving it behind. Progress means an accepted response - log entries taken, or a snapshot object saved - so a replica that is merely slow keeps resetting this and only one that is stuck stops being waited for. The default is five minutes, and it is meant to be that large: a replica applying a large snapshot can be quiet for minutes and is exactly the one worth waiting for. A replica the leader cannot reach at all is dropped straight away, without waiting for this. `0` means the leader never stops waiting for a replica it can reach. | `300000` |
 | `slow_member_backpressure_max_uncommitted_log_entries` | The value `nuraft_max_uncommitted_log_entries` takes while the slow member backpressure is switched on with [`bpon`](#four-letter-word-commands). Holding the commit index back does not stop the leader appending, so without a tighter limit the log runs further ahead and the replica falls further behind instead of catching up. Tightening it makes the leader refuse new requests with a retriable error until the replica closes the gap. `0` leaves the limit unchanged. | `0` |
 
+#### Per-server coordination settings {#per-server-coordination-settings}
+
+Coordination settings are normally identical on all servers of a cluster, and it is convenient to keep the whole `<keeper_server>` section identical too. If a setting has to differ on some servers, for example to migrate a cluster to a new storage engine one server at a time, put the overrides into the `<keeper_server>.<per_server_coordination_settings>` section. It contains one `<server-N>` element per server, where `N` is the `server_id` of the server the overrides apply to, with the settings to override inside. A server applies the overrides from its own element on top of `<coordination_settings>` and ignores the others. Setting names are validated on all servers, so a typo is reported everywhere. Settings that support hot reload also support it here.
+
+```xml
+<keeper_server>
+    <coordination_settings>
+        <use_lsmt_storage>false</use_lsmt_storage>
+    </coordination_settings>
+    <per_server_coordination_settings>
+        <server-1>
+            <use_lsmt_storage>true</use_lsmt_storage>
+        </server-1>
+    </per_server_coordination_settings>
+</keeper_server>
+```
+
 Quorum configuration is located in the `<keeper_server>.<raft_configuration>` section and contain servers description.
 
 The only parameter for the whole quorum is `secure`, which enables encrypted connection for communication between quorum participants. The parameter can be set `true` if SSL connection is required for internal communication between nodes, or left unspecified otherwise.

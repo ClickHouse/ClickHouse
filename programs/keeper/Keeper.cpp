@@ -505,7 +505,7 @@ try
                 "Keeper (tcp): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, global_context->getKeeperDispatcher(),
+                        global_context->getKeeperDispatcher(),
                         tcp_receive_timeout, tcp_send_timeout, false), server_pool, socket, tcp_params));
         });
 
@@ -527,7 +527,7 @@ try
                 "Keeper with secure protocol (tcp_secure): " + address.toString(),
                 std::make_unique<TCPServer>(
                     new KeeperTCPHandlerFactory(
-                        config_getter, global_context->getKeeperDispatcher(),
+                        global_context->getKeeperDispatcher(),
                         tcp_receive_timeout, tcp_send_timeout, true), server_pool, socket, tcp_params));
 #else
             UNUSED(port);

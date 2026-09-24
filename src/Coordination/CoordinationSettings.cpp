@@ -3,6 +3,7 @@
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Common/Exception.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <IO/WriteIntText.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
@@ -12,6 +13,8 @@
 
 #include "config.h"
 
+#include <optional>
+
 
 namespace DB
 {
@@ -19,6 +22,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_SETTING;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
 }
 
 /** These settings represent fine tunes for internal details of Coordination storages
@@ -144,23 +148,31 @@ DECLARE_SETTINGS_TRAITS(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTING
 
 struct CoordinationSettingsImpl : public BaseSettings<CoordinationSettingsTraits>
 {
-    void loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    void loadFromConfig(
+        const String & config_elem,
+        const Poco::Util::AbstractConfiguration & config,
+        const String & per_server_config_elem,
+        std::optional<int> server_id);
+
+private:
+    void loadSettings(const String & config_elem, const Poco::Util::AbstractConfiguration & config);
+    void loadPerServerOverrides(const String & config_elem, const Poco::Util::AbstractConfiguration & config, int server_id);
+    void applyCompatibilityAdjustments();
 };
 
 IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(CoordinationSettingsTraits, LIST_OF_COORDINATION_SETTINGS, CoordinationSettings, CoordinationSetting)
 
-void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
+void CoordinationSettingsImpl::loadFromConfig(
+    const String & config_elem,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & per_server_config_elem,
+    std::optional<int> server_id)
 {
-    if (!config.has(config_elem))
-        return;
-
-    Poco::Util::AbstractConfiguration::Keys config_keys;
-    config.keys(config_elem, config_keys);
-
     try
     {
-        for (const String & key : config_keys)
-            set(key, config.getString(config_elem + "." + key));
+        loadSettings(config_elem, config);
+        if (server_id)
+            loadPerServerOverrides(per_server_config_elem, config, *server_id);
     }
     catch (Exception & e)
     {
@@ -169,6 +181,67 @@ void CoordinationSettingsImpl::loadFromConfig(const String & config_elem, const 
         throw;
     }
 
+    applyCompatibilityAdjustments();
+}
+
+void CoordinationSettingsImpl::loadSettings(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
+{
+    if (!config.has(config_elem))
+        return;
+
+    Poco::Util::AbstractConfiguration::Keys config_keys;
+    config.keys(config_elem, config_keys);
+
+    for (const String & key : config_keys)
+        set(key, config.getString(config_elem + "." + key));
+}
+
+void CoordinationSettingsImpl::loadPerServerOverrides(
+    const String & config_elem, const Poco::Util::AbstractConfiguration & config, int server_id)
+{
+    if (!config.has(config_elem))
+        return;
+
+    static constexpr std::string_view prefix = "server-";
+
+    Poco::Util::AbstractConfiguration::Keys server_keys;
+    config.keys(config_elem, server_keys);
+    for (const String & server_key : server_keys)
+    {
+        /// Poco reports the second element with the same name as `server-1[1]`.
+        if (server_key.contains('['))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Element <{}> is listed more than once in '{}'",
+                server_key.substr(0, server_key.find('[')),
+                config_elem);
+
+        int id = 0;
+        const std::string_view id_str = std::string_view(server_key).substr(std::min(prefix.size(), server_key.size()));
+        if (!server_key.starts_with(prefix) || !tryParse(id, id_str) || std::to_string(id) != id_str)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Unexpected element <{}> in '{}', expected elements named <server-N> where N is a server id",
+                server_key,
+                config_elem);
+
+        const String server_elem = config_elem + "." + server_key;
+        Poco::Util::AbstractConfiguration::Keys setting_keys;
+        config.keys(server_elem, setting_keys);
+        for (const String & key : setting_keys)
+        {
+            /// Check the names for all servers, so that a typo is reported on every server, not only on the affected one.
+            if (!has(key))
+                throw Exception(ErrorCodes::UNKNOWN_SETTING, "Unknown setting '{}' in '{}'", key, server_elem);
+
+            if (id == server_id)
+                set(key, config.getString(server_elem + "." + key));
+        }
+    }
+}
+
+void CoordinationSettingsImpl::applyCompatibilityAdjustments()
+{
     /// for backwards compatibility we set max_requests_append_size to max_requests_batch_size
     /// if max_requests_append_size was not changed
     if (!(*this)[CoordinationSetting::max_requests_append_size].changed)
@@ -204,7 +277,16 @@ COORDINATION_SETTINGS_SUPPORTED_TYPES(CoordinationSettings, IMPLEMENT_SETTING_SU
 
 void CoordinationSettings::loadFromConfig(const String & config_elem, const Poco::Util::AbstractConfiguration & config)
 {
-    impl->loadFromConfig(config_elem, config);
+    impl->loadFromConfig(config_elem, config, /*per_server_config_elem*/ "", /*server_id*/ std::nullopt);
+}
+
+void CoordinationSettings::loadFromConfig(
+    const String & config_elem,
+    const Poco::Util::AbstractConfiguration & config,
+    const String & per_server_config_elem,
+    int server_id)
+{
+    impl->loadFromConfig(config_elem, config, per_server_config_elem, server_id);
 }
 
 void CoordinationSettings::dump(WriteBufferFromOwnString & buf) const
