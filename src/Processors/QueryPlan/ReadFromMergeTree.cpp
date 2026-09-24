@@ -5256,7 +5256,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// runtime-filter pruning above; `Nullable` and floating-point columns are left out, as NULLs and NaNs
     /// are placed by the query's NULLS FIRST/LAST rather than by the primary key order. A collated threshold
     /// (`ORDER BY s COLLATE ...`) is left out too: the primary key is in byte order, so a granule starting
-    /// beyond the collated threshold can still hold a later row that collates before it.
+    /// beyond the collated threshold can still hold a later row that collates before it. A key column in
+    /// descending order (`allow_experimental_reverse_key`) is left out: the pruning reads granule bounds
+    /// assuming the column ascends within a part.
     std::optional<size_t> top_k_primary_key_column_position;
     if (top_k_filter_info && top_k_filter_info->threshold_tracker
         && !top_k_filter_info->threshold_tracker->getCollator()
@@ -5274,7 +5276,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             && !isFloat(removeLowCardinality(column_type)))
         {
             const size_t position = it - primary_key.column_names.begin();
-            if (position < primary_key.data_types.size() && primary_key.data_types[position]->equals(*column_type))
+            const auto reverse_flags = storage_snapshot->metadata->getSortingKeyReverseFlags();
+            const bool is_reversed = position < reverse_flags.size() && reverse_flags[position];
+            if (!is_reversed && position < primary_key.data_types.size() && primary_key.data_types[position]->equals(*column_type))
                 top_k_primary_key_column_position = position;
         }
     }
