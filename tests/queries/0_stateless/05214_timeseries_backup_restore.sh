@@ -41,6 +41,8 @@ $CLIENT -q "INSERT INTO ts (metric_name, tags, samples, metric_family, type, uni
     ('memory_usage_bytes', {'job': 'test', 'instance': 'a'}, [(toDateTime64('2026-01-01 00:00:00', 3), 10.), (toDateTime64('2026-01-01 00:00:15', 3), 12.)], 'memory_usage_bytes', 'gauge', 'bytes', 'Memory usage'),
     ('disk_usage_bytes', {'job': 'test', 'instance': 'a'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)], 'disk_usage_bytes', 'gauge', 'bytes', 'Disk usage'),
     ('up', {'job': 'test'}, [(toDateTime64('2026-01-01 00:00:00', 3), 1.)], 'up', 'gauge', '', 'Whether the target is up')"
+$CLIENT -q "INSERT INTO ts (metric_name, tags, histograms.timestamp, histograms.count_int, histograms.sum, histograms.positive_spans, histograms.positive_values_int) VALUES
+    ('request_duration_seconds', {'job': 'test'}, [toDateTime64('2026-01-01 00:00:00', 3)], [3], [1.5], [[(0, 1)]], [[3]])"
 
 echo '--- the table has five inner tables ---'
 count_inner_tables
