@@ -184,7 +184,7 @@ ALTER TABLE table DROP INDEX text_idx;
   Compared to `ngrams(N)`, the `sparseGrams` tokenizer produces variable-length N-grams, allowing for a more flexible representation of the original text.
   For example, `tokenizer = sparseGrams(3, 5, 4)` internally generates 3-, 4-, 5-grams from the input string but only the 4- and 5-grams are returned.
 - `array` performs no tokenization, i.e. every row value is a token (see function [array](/reference/functions/regular-functions/array-functions#array)). For compatibility with other systems, `keyword` is available as an alias of `array`.
-- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
+- `keyValuePairs` combines the key-value pairs of a `Map` column to a single token. This helps to perform combined key-value lookups such as `WHERE map['key'] = 'value'` or `WHERE map['key'] IN ('value1', 'value2')` (see [the `keyValuePairs` tokenizer](#tokenizer-key-value-pairs)).
 
 All available tokenizers are listed in [system.tokenizers](/reference/system-tables/tokenizers).
 
@@ -905,11 +905,13 @@ SELECT count() FROM table WHERE mapContainsValueLike(map, '% clickhouse %');
 Access [operator[]](/reference/operators/index#access-operators) can be used with the text index to filter out keys and values.
 The text index is utilized if it uses a [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer on top of the `Map` column, or if it is built on a `mapKeys(map)` or `mapValues(map)` index expression.
 In the former case (`keyValuePairs` tokenizer), direct read can be used, otherwise direct read with hint.
+A `keyValuePairs` index also answers `IN` on a map element, as one index lookup per value of the list.
 
 Example:
 
 ```sql
 SELECT count() FROM table WHERE map['engine'] = 'clickhouse';
+SELECT count() FROM table WHERE map['engine'] IN ('clickhouse', 'mergetree');
 ```
 
 See the following examples for using columns of type `Array(T)` and `Map(K, V)` with the text index.
@@ -992,6 +994,9 @@ ALTER TABLE logs MATERIALIZE INDEX attributes_kv_idx;
 
 -- Finds all error logs:
 SELECT * FROM logs WHERE attributes['level'] = 'error'; -- fast, answered from the index alone
+
+-- Finds all logs of both severities:
+SELECT * FROM logs WHERE attributes['level'] IN ('error', 'warning'); -- one index lookup per value
 ```
 
 The tokenizer combines each `(key, value)` pair of a row into a single token, so the index knows which value belongs to which key.
@@ -1007,10 +1012,13 @@ The following restrictions apply:
   `FixedString` is rejected because the column stores the padding bytes while the searched constant does not, which would silently miss rows.
   `Nullable` is rejected because the encoding cannot distinguish an empty value from `NULL`.
 - The arguments `preprocessor`, `postprocessor` and `support_phrase_search` are rejected at table creation.
-- Only `=` on a map element is answered from the index so far.
-  Other map searches, such as `mapContainsKey`, `mapContainsValue`, their `*Like` variants and `IN`, fall back to a brute-force scan.
+- Only `=` and `IN` on a map element are answered from the index so far.
+  Other map searches, such as `mapContainsKey`, `mapContainsValue` and their `*Like` variants, fall back to a brute-force scan.
+- `map['key'] IN (...)` uses the index only when the map element is compared on its own: `(map['key'], id) IN (('error', 1))` falls back to a brute-force scan, because a token union cannot tell whether a row matched the other tuple components of the same set element.
+  A set that comes from a subquery is used to skip granules, but not for direct read.
+  A set that comes from an `ENGINE = Set` table is not used at all, because a concurrent `INSERT` into that table changes the set while the query runs.
 - `map['key']` returns the default value of the value type when the key is missing, so `map['key'] = ''` is also true for rows that do not contain the key and therefore have no token.
-  Such a predicate falls back to a brute-force scan.
+  Such a predicate falls back to a brute-force scan, as does an `IN` list that contains the empty string.
 - If a row contains the same key more than once, `map['key']` is the value of its first occurrence, and the index matches that occurrence.
 
 #### Key and value search with `mapKeys` and `mapValues` {#text-index-map-keys-and-values}
@@ -1335,7 +1343,7 @@ Direct read is controlled by two settings:
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
 If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
-If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` on a map element (`map['key'] = 'value'`).
+If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` and `IN` on a map element (`map['key'] = 'value'`, `map['key'] IN ('value1', 'value2')`); for `IN`, the set must be a list of constant values.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
 

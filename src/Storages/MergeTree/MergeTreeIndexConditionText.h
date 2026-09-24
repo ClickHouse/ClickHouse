@@ -189,13 +189,21 @@ private:
     /// index's column.
     std::optional<String> tryGetMapElementKeyForIndexColumn(const RPNBuilderTreeNode & node) const;
 
-    /// Everything a `keyValuePairs` index supports; currently only `m['key'] = 'value'`.
+    /// Everything a `keyValuePairs` index supports for a constant needle; currently only `m['key'] = 'value'`.
     bool traverseMapElementKeyValueNode(
         const String & function_name,
         const RPNBuilderTreeNode & index_column_node,
         TextIndexDirectReadMode direct_read_mode,
         const DataTypePtr & value_type,
         const Field & value_field,
+        RPNElement & out) const;
+
+    /// `m['key'] IN (...)` on a `keyValuePairs` index: one pair token per set element, searched as a
+    /// single `Any` query.
+    bool traverseMapElementKeyValueSetNode(
+        const RPNBuilderTreeNode & lhs,
+        const RPNBuilderTreeNode & rhs,
+        const String & function_name,
         RPNElement & out) const;
 
     VectorWithMemoryTracking<String> stringToTokens(const Field & field) const;

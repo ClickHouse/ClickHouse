@@ -327,9 +327,13 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     const bool is_array_tokenizer = (tokenizer->getType() == ITokenizer::Type::Array);
 
     /// One token per pair, so `m['key'] = 'value'` is a single-token lookup whose posting list is exactly
-    /// the matching rows. Nothing else is supported yet.
+    /// the matching rows, and `m['key'] IN (...)` is the union of one such list per set element.
+    /// Nothing else is supported yet.
     if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
-        return function_name == "equals" ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    {
+        const bool is_exact = function_name == "equals" || function_name == "in" || function_name == "globalIn";
+        return is_exact ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
+    }
 
     if (function_name == "hasToken"
         || function_name == "hasAnyTokens"
@@ -771,10 +775,11 @@ bool MergeTreeIndexConditionText::traverseAtomNode(const RPNBuilderTreeNode & no
         auto lhs_argument = function.getArgumentAt(0);
         auto rhs_argument = function.getArgumentAt(1);
 
+        /// `tryPrepareSetForTextSearch` sets `out.function` itself, as not every set becomes a
+        /// disjunction of per-element queries.
         if ((function_name == "in" || function_name == "globalIn")
             && tryPrepareSetForTextSearch(lhs_argument, rhs_argument, function_name, out))
         {
-            out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
             return true;
         }
         else if (isSupportedFunction(function_name))
@@ -2019,6 +2024,72 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyValueNode(
     return true;
 }
 
+bool MergeTreeIndexConditionText::traverseMapElementKeyValueSetNode(
+    const RPNBuilderTreeNode & lhs,
+    const RPNBuilderTreeNode & rhs,
+    const String & function_name,
+    RPNElement & out) const
+{
+    /// Rejects a tuple left-hand side, e.g. `(m['key'], x) IN (('value', 1))`, whose other components
+    /// must match within the same set element - a token union cannot express that.
+    auto key = tryGetMapElementKeyForIndexColumn(lhs);
+    if (!key)
+        return false;
+
+    auto future_set = rhs.tryGetPreparedSet();
+    if (!future_set)
+        return false;
+
+    auto prepared_set = future_set->buildOrderedSetInplace(rhs.getTreeContext().getQueryContext());
+    if (!prepared_set || !prepared_set->hasExplicitSetElements())
+        return false;
+
+    Columns columns = prepared_set->getSetElements();
+    /// A single-column set may arrive packed into a tuple.
+    if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
+        columns = typeid_cast<const ColumnTuple &>(*columns.front()).getColumnsCopy();
+
+    if (columns.size() != 1)
+        return false;
+
+    auto set_column_ptr = recursiveRemoveLowCardinality(columns.front());
+    const auto & set_column = *set_column_ptr;
+
+    /// A `FixedString` element carries its zero padding, which `IN` compares as part of the value, unlike
+    /// `equals`, which compares through the `String` supertype. Such an element matches no row and no token.
+    if (!WhichDataType(set_column.getDataType()).isString())
+        return false;
+
+    VectorWithMemoryTracking<String> tokens;
+    tokens.reserve(set_column.size());
+
+    for (size_t row = 0; row < set_column.size(); ++row)
+    {
+        std::string_view value = set_column.getDataAt(row);
+
+        /// `m['key'] = ''` also holds for the rows that do not have the key and therefore have no token.
+        if (value.empty())
+            return false;
+
+        /// `m['key']` is the key's first occurrence: is_rest = 0.
+        tokens.push_back(KeyValuePairsTokenizer::encodeToken(*key, value, false));
+    }
+
+    /// A query with no tokens reads as "nothing to search for", which direct read turns into an
+    /// always-true virtual column. An empty set matches no row.
+    if (tokens.empty())
+    {
+        out.function = RPNElement::ALWAYS_FALSE;
+        return true;
+    }
+
+    /// A row satisfies the predicate exactly when it holds one of these tokens.
+    out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+    out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(
+        function_name, TextSearchMode::Any, getDirectReadMode(function_name), std::move(tokens)));
+    return true;
+}
+
 bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTreeNode & node) const
 {
     /// Handle `arrayElement(map_col, 'key')` form (i.e., `map['key']`).
@@ -2108,6 +2179,22 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     const String & function_name,
     RPNElement & out) const
 {
+    /// The set is read once, here, and the decision derived from it is never revisited, while an
+    /// `ENGINE = Set` table keeps inserting into the very set held by the query. Exact direct read makes
+    /// the tokens the whole answer, so a value inserted afterwards would never match. See
+    /// `FutureSet::isMutableDuringQuery`, which states this requirement, and
+    /// `prepareSetsForDefaultValueEvaluation`, which refuses such a set for a weaker decision.
+    ///
+    /// The element checks below refuse a mutable set today anyway, because `StorageSet` keeps no
+    /// explicit elements, but that is a property of that storage rather than a rule of this analysis.
+    if (auto future_set = rhs.tryGetPreparedSet(); future_set && future_set->isMutableDuringQuery())
+        return false;
+
+    /// The generic path below tokenizes every set element as a string, which can never produce a token
+    /// in the pair format. Partition hard, as `traverseFunctionNode` does.
+    if (tokenizer->getType() == ITokenizer::Type::KeyValuePairs)
+        return traverseMapElementKeyValueSetNode(lhs, rhs, function_name, out);
+
     std::optional<size_t> set_key_position;
 
     auto has_index = [&](const RPNBuilderTreeNode & node)
@@ -2216,6 +2303,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
     }
 
+    out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
     return true;
 }
 
