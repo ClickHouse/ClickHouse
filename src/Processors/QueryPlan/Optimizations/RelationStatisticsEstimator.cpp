@@ -240,6 +240,9 @@ std::optional<RelationStats> estimateUnaryStepStats(const IQueryPlanStep & step,
             {
                 const bool may_truncate_rows = !input_stats.rows_exact || !input_stats.estimated_rows
                     || *input_stats.estimated_rows > sorting_step.getLimit();
+                /// A synthesized limit is not an exact row count when the input count is unknown.
+                if (!input_stats.estimated_rows)
+                    input_stats.rows_exact = false;
                 if (!input_stats.estimated_rows || input_stats.estimated_rows > sorting_step.getLimit())
                     input_stats.estimated_rows = sorting_step.getLimit();
                 if (may_truncate_rows)

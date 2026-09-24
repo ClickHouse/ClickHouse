@@ -577,6 +577,14 @@ TEST(ColumnStatsProvenance, LimitRecordsNonUniformSubsetAndTracksExactRows)
     ASSERT_TRUE(estimated.has_value());
     EXPECT_FALSE(estimated->rows_exact);
     EXPECT_TRUE(estimated->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+
+    auto unknown_input = inputRelationStats();
+    unknown_input.estimated_rows.reset();
+    auto unknown = estimateUnaryStepStats(estimated_limit, std::move(unknown_input));
+    ASSERT_TRUE(unknown.has_value());
+    EXPECT_EQ(unknown->estimated_rows, 10);
+    EXPECT_FALSE(unknown->rows_exact);
+    EXPECT_TRUE(unknown->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
 }
 
 TEST(ColumnStatsProvenance, SortingLimitRecordsNonUniformSubsetAndPreservesExactness)
@@ -611,6 +619,14 @@ TEST(ColumnStatsProvenance, SortingLimitRecordsNonUniformSubsetAndPreservesExact
     ASSERT_TRUE(unlimited.has_value());
     EXPECT_TRUE(unlimited->rows_exact);
     EXPECT_FALSE(unlimited->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
+
+    auto unknown_input = inputRelationStats();
+    unknown_input.estimated_rows.reset();
+    auto unknown = estimateUnaryStepStats(limited_sort, std::move(unknown_input));
+    ASSERT_TRUE(unknown.has_value());
+    EXPECT_EQ(unknown->estimated_rows, 10);
+    EXPECT_FALSE(unknown->rows_exact);
+    EXPECT_TRUE(unknown->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
 }
 
 TEST(ColumnStatsProvenance, AggregationPreservesPlainKeysAndRejectsGroupingSetsAndOverflow)
