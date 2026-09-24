@@ -1351,7 +1351,7 @@ One `ALTER TABLE` accepts several comma-separated actions, so work that would ot
 ALTER TABLE visits DROP COLUMN browser, DROP COLUMN referrer;
 ```
 
-A client that waits for each statement to finish then waits once instead of once per action. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for what that wait covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for a restriction on mixing actions of different kinds.
+When a client waits for an `ALTER` to finish, one combined statement means one wait instead of one wait per action. See [Synchronicity of ALTER Queries](#synchronicity-of-alter-queries) for what that wait covers, and [Combining `MATERIALIZE INDEX` clauses](#combining-materialize-index-clauses) for the restriction that applies when one statement mixes actions of different kinds on a `Replicated` database.
 
 ## Mutations {#mutations}
 
