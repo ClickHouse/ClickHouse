@@ -44,8 +44,7 @@ enum class VirtualsMaterializationPlace : UInt8
 {
     Reader = 1,
     Plan = 2,
-    Streaming = 4,
-    All = Reader | Plan | Streaming,
+    All = Reader | Plan,
 };
 
 struct GetColumnsOptions
@@ -186,6 +185,9 @@ public:
 
     using ColumnTTLs = std::unordered_map<String, ASTPtr>;
     ColumnTTLs getColumnTTLs() const;
+    /// Drops every column TTL, leaving the rest of each column as it is.
+    void clearColumnTTLs();
+    /// Drops every column TTL and puts each column back through the checks that `add` runs.
     void resetColumnTTLs();
 
     bool has(const String & column_name) const;
