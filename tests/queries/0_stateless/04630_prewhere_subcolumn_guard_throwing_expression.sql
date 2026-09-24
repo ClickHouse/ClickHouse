@@ -6,6 +6,11 @@ SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET enable_multiple_prewhere_read_steps = 1;
 SET move_all_conditions_to_prewhere = 1;
+-- The runtime filter cases below need the real cardinalities: clickhouse-test randomizes
+-- query_plan_optimize_join_order_randomize to a nonzero value in 95% of runs, and the
+-- substituted estimates both pick the join sides and decide whether a runtime filter is
+-- planted at all (join_runtime_filter_min_probe_rows).
+SET query_plan_optimize_join_order_randomize = 0;
 
 -- A guard predicate and a potentially throwing predicate over subcolumns of the same physical
 -- column must not share a PREWHERE read step, otherwise the throwing predicate is evaluated on
@@ -248,3 +253,113 @@ SELECT count() FROM t_prewhere_group_map
 PREWHERE tags['k0'] != '' AND tags['k1'] != '' AND tags['k2'] != '' AND tags['k3'] != '';
 
 DROP TABLE t_prewhere_group_map;
+
+-- A runtime join filter is pushed into the probe side's PREWHERE next to the subquery's own guard,
+-- so the join key expression must not be evaluated on the rows that guard rejects.
+
+DROP TABLE IF EXISTS t_prewhere_guard_rf_probe;
+DROP TABLE IF EXISTS t_prewhere_guard_rf_build;
+CREATE TABLE t_prewhere_guard_rf_probe (c1 Nullable(String), c2 Int32) ENGINE = MergeTree ORDER BY tuple();
+CREATE TABLE t_prewhere_guard_rf_build (c1 String, c2 Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_guard_rf_probe SELECT if(number % 3 = 0, NULL, toString(number % 100)), 1 FROM numbers(1000);
+INSERT INTO t_prewhere_guard_rf_build SELECT toString(number), 1 FROM numbers(50);
+
+SELECT 'runtime filter, cast guarded by IS NOT NULL';
+-- join_runtime_filter_min_probe_rows is pinned because at its default of 1000 this probe side is
+-- estimated at 666 rows, no runtime filter is planted at all, and the query would pass for an
+-- unrelated reason.
+SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_probe WHERE c1 IS NOT NULL) AS a
+INNER JOIN t_prewhere_guard_rf_build AS b ON b.c2 = a.c2 AND b.c1 = a.k
+SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0;
+
+SELECT 'runtime filter, cast guarded by IS NOT NULL, runtime filters off';
+SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_probe WHERE c1 IS NOT NULL) AS a
+INNER JOIN t_prewhere_guard_rf_build AS b ON b.c2 = a.c2 AND b.c1 = a.k
+SETTINGS enable_join_runtime_filters = 0;
+
+SELECT 'runtime filter reaches the probe side read';
+-- Liveness assertion for the two arms above. They assert values that a plan with no runtime filter
+-- at all also produces, so they would stay green if the filter stopped being planted or stopped
+-- reaching the read, and would then cover nothing. The annotation names the guarded CAST as the
+-- filter key, which is exactly the route these arms exercise. enable_parallel_replicas = 0 keeps
+-- the plan local, as in the map assertion above.
+SELECT count() = 1 FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_probe WHERE c1 IS NOT NULL) AS a
+    INNER JOIN t_prewhere_guard_rf_build AS b ON b.c2 = a.c2 AND b.c1 = a.k
+    SETTINGS enable_join_runtime_filters = 1, join_runtime_filter_min_probe_rows = 0, enable_parallel_replicas = 0
+) WHERE explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%';
+
+SELECT 'runtime filter absent when the feature is off';
+-- Negative control for the assertion above: it must be the runtime filter that makes the pattern
+-- match, not some line the plan prints either way.
+SELECT count() = 0 FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_probe WHERE c1 IS NOT NULL) AS a
+    INNER JOIN t_prewhere_guard_rf_build AS b ON b.c2 = a.c2 AND b.c1 = a.k
+    SETTINGS enable_join_runtime_filters = 0, enable_parallel_replicas = 0
+) WHERE explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%';
+
+SELECT 'guarded cast selected as an output, no join';
+-- The cast is only evaluated inside the read when it is a required output of it: the same query
+-- under an aggregate (count(), max(k)) never reaches the defect.
+SELECT k, c2 FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_probe WHERE c1 IS NOT NULL) AS a
+WHERE a.k > '' ORDER BY k, c2 LIMIT 1;
+
+DROP TABLE t_prewhere_guard_rf_probe;
+DROP TABLE t_prewhere_guard_rf_build;
+
+-- The guard is on the node, not on the type: a LowCardinality(Nullable(...)) key behaves the same.
+DROP TABLE IF EXISTS t_prewhere_guard_rf_lc;
+CREATE TABLE t_prewhere_guard_rf_lc (c1 LowCardinality(Nullable(String)), c2 Int32) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_prewhere_guard_rf_lc SELECT if(number % 3 = 0, NULL, toString(number % 100)), 1 FROM numbers(100000);
+
+SELECT 'runtime filter, LowCardinality(Nullable) key';
+SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_lc WHERE c1 IS NOT NULL) AS a
+INNER JOIN (SELECT toString(number) AS c1, 1 AS c2 FROM numbers(50)) AS b ON b.c2 = a.c2 AND b.c1 = a.k
+SETTINGS enable_join_runtime_filters = 1;
+
+SELECT 'runtime filter reaches the LowCardinality probe side read';
+SELECT count() = 1 FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM (SELECT CAST(c1, 'String') AS k, c2 FROM t_prewhere_guard_rf_lc WHERE c1 IS NOT NULL) AS a
+    INNER JOIN (SELECT toString(number) AS c1, 1 AS c2 FROM numbers(50)) AS b ON b.c2 = a.c2 AND b.c1 = a.k
+    SETTINGS enable_join_runtime_filters = 1, enable_parallel_replicas = 0
+) WHERE explain ILIKE '%Runtime filters:%' AND explain ILIKE '%CAST(c1%';
+
+DROP TABLE t_prewhere_guard_rf_lc;
+
+-- The same defect with a parsing conversion instead of a NULL cast: toUInt64(substring(...)) on the
+-- rows that `LIKE 'nmf-%'` rejects fails with CANNOT_PARSE_TEXT.
+DROP TABLE IF EXISTS t_prewhere_guard_rf_parse_build;
+DROP TABLE IF EXISTS t_prewhere_guard_rf_parse_probe;
+CREATE TABLE t_prewhere_guard_rf_parse_build (c1 UInt64, c2 Float64) ENGINE = MergeTree ORDER BY c1;
+CREATE TABLE t_prewhere_guard_rf_parse_probe (c1 String, c2 Float64) ENGINE = MergeTree ORDER BY c1;
+INSERT INTO t_prewhere_guard_rf_parse_build SELECT number, number % 1000 FROM numbers(200000);
+INSERT INTO t_prewhere_guard_rf_parse_probe
+SELECT if(number % 4 = 0, concat('nmf-', toString(number)), lower(hex(MD5(toString(number))))), number % 1000
+FROM numbers(200000);
+
+SELECT 'runtime filter, parsing conversion guarded by LIKE';
+SELECT count(), sum(h.c2 = t.c2)
+FROM (SELECT toUInt64(substring(c1, 5)) AS a1, c2 FROM t_prewhere_guard_rf_parse_probe WHERE c1 LIKE 'nmf-%') AS h
+INNER JOIN (SELECT c1, c2 FROM t_prewhere_guard_rf_parse_build WHERE c1 >= 50000 AND c1 <= 60000) AS t ON t.c1 = h.a1
+SETTINGS enable_join_runtime_filters = 1;
+
+SELECT 'runtime filter, parsing conversion guarded by LIKE, runtime filters off';
+SELECT count(), sum(h.c2 = t.c2)
+FROM (SELECT toUInt64(substring(c1, 5)) AS a1, c2 FROM t_prewhere_guard_rf_parse_probe WHERE c1 LIKE 'nmf-%') AS h
+INNER JOIN (SELECT c1, c2 FROM t_prewhere_guard_rf_parse_build WHERE c1 >= 50000 AND c1 <= 60000) AS t ON t.c1 = h.a1
+SETTINGS enable_join_runtime_filters = 0;
+
+SELECT 'runtime filter reaches the parsing conversion probe side read';
+SELECT count() = 1 FROM (
+    EXPLAIN actions = 1
+    SELECT count(), sum(h.c2 = t.c2)
+    FROM (SELECT toUInt64(substring(c1, 5)) AS a1, c2 FROM t_prewhere_guard_rf_parse_probe WHERE c1 LIKE 'nmf-%') AS h
+    INNER JOIN (SELECT c1, c2 FROM t_prewhere_guard_rf_parse_build WHERE c1 >= 50000 AND c1 <= 60000) AS t ON t.c1 = h.a1
+    SETTINGS enable_join_runtime_filters = 1, enable_parallel_replicas = 0
+) WHERE explain ILIKE '%Runtime filters:%' AND explain ILIKE '%toUInt64(substring(c1%';
+
+DROP TABLE t_prewhere_guard_rf_parse_build;
+DROP TABLE t_prewhere_guard_rf_parse_probe;

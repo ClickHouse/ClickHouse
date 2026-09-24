@@ -27,3 +27,23 @@ nested conjunction, WHERE moved into an existing PREWHERE, query_plan_merge_filt
 non throwing map conditions are rewritten to subcolumns
 1
 1000
+runtime filter, cast guarded by IS NOT NULL
+333
+runtime filter, cast guarded by IS NOT NULL, runtime filters off
+333
+runtime filter reaches the probe side read
+1
+runtime filter absent when the feature is off
+1
+guarded cast selected as an output, no join
+0	1
+runtime filter, LowCardinality(Nullable) key
+33333
+runtime filter reaches the LowCardinality probe side read
+1
+runtime filter, parsing conversion guarded by LIKE
+2501	2501
+runtime filter, parsing conversion guarded by LIKE, runtime filters off
+2501	2501
+runtime filter reaches the parsing conversion probe side read
+1
