@@ -7,6 +7,7 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnTuple.h>
 
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/Logger.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/typeid_cast.h>
@@ -277,16 +278,61 @@ void Set::appendSetElements(SetKeyColumns & holder)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid number of key columns for set. Expected {} got {} and {}",
                         keys_size, holder.key_columns.size(), set_elements.size());
 
+    /// The collected elements outlive a failed append: a JOIN runtime filter keeps its `Set` and reads
+    /// the elements back when the build-side filters are merged. Take checkpoints of every element
+    /// column before any modification, so a throw in the middle of the loop below cannot leave a column
+    /// whose nested data and offsets disagree, nor leave the element columns at different lengths.
+    ColumnCheckpoints checkpoints;
+    checkpoints.reserve(keys_size);
+    for (const auto & column : set_elements)
+        checkpoints.push_back(column->getCheckpoint());
+
+    /// An empty element column is replaced by the filtered column instead of being appended to, so its
+    /// checkpoint describes a different object; keep the replaced column to restore it instead.
+    MutableColumns replaced_columns(keys_size);
+
     size_t rows = holder.key_columns.at(0)->size();
-    for (size_t i = 0; i < keys_size; ++i)
+    try
     {
-        auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
-        if (set_elements[i]->empty())
-            set_elements[i] = IColumn::mutate(std::move(filtered_column));
-        else
-            set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
-        if (transform_null_in && holder.null_map_holder)
-            set_elements[i]->insert(Null{});
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            auto filtered_column = holder.key_columns[i]->filter(holder.filter->getData(), rows);
+            if (set_elements[i]->empty())
+            {
+                auto replacement = IColumn::mutate(std::move(filtered_column));
+                replaced_columns[i] = std::move(set_elements[i]);
+                set_elements[i] = std::move(replacement);
+            }
+            else
+                set_elements[i]->insertRangeFrom(*filtered_column, 0, filtered_column->size());
+            if (transform_null_in && holder.null_map_holder)
+                set_elements[i]->insert(Null{});
+        }
+    }
+    catch (...)
+    {
+        /// Ignore memory limits while rolling back: leaving inconsistent columns behind is worse than a
+        /// temporary overshoot. Log first, so the original exception keeps its context.
+        LockMemoryExceptionInThread temporarily_ignore_any_memory_limits(VariableContext::Global);
+        tryLogCurrentException(log, "Caught exception while collecting set elements, rolling back...");
+
+        try
+        {
+            for (size_t i = 0; i < keys_size; ++i)
+            {
+                if (replaced_columns[i])
+                    set_elements[i] = std::move(replaced_columns[i]);
+                else
+                    set_elements[i]->rollback(*checkpoints[i]);
+            }
+        }
+        catch (...)
+        {
+            /// A failed rollback would leave incorrect state in memory.
+            std::terminate();
+        }
+
+        throw;
     }
 }
 
