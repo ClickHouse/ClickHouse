@@ -36,7 +36,7 @@ run()
 XML
     ${CLICKHOUSE_LOCAL} --config-file "$users_config" --query "SELECT 1" 2>&1 \
         | grep -m1 -oE 'Code: [0-9]+\. DB::Exception: .*' \
-        | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' -e 's/ (version [^)]*)$//' \
+        | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' -e 's/ (version .*//' \
               -e 's/unsigned long long/unsigned long/'
 }
 
@@ -78,7 +78,7 @@ cat > "$users_config" <<XML
 XML
 ${CLICKHOUSE_LOCAL} --config-file "$users_config" --query "SELECT 1" 2>&1 \
     | grep -m1 -oE 'Code: [0-9]+\. DB::Exception: .*' \
-    | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' -e 's/ (version [^)]*)$//'
+    | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' -e 's/ (version .*//'
 echo "password echoed: $(${CLICKHOUSE_LOCAL} --config-file "$users_config" --query "SELECT 1" 2>&1 | grep -c 's3cret')"
 
 echo

@@ -14,7 +14,7 @@ run()
     ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" --data-binary "$1" 2>&1 \
         | grep -m1 -oE 'Code: [0-9]+\. DB::Exception: .*' \
         | sed -e 's/^Code: \([0-9]*\)\. DB::Exception: /Code: \1. /' \
-              -e 's/: While executing .*//' -e 's/ (version [^)]*)$//' \
+              -e 's/: While executing .*//' -e 's/ (version .*//' \
               -e 's/unsigned long long/unsigned long/'
 }
 
