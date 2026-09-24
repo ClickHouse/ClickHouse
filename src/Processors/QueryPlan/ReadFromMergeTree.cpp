@@ -62,7 +62,9 @@
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
 #include <Storages/MergeTree/MergeTreeReadPool.h>
 #include <Storages/MergeTree/IndexReadRangesRefiner.h>
+#include <Storages/MergeTree/MergeTreeInOrderSliceRouter.h>
 #include <Storages/MergeTree/MergeTreeReadPoolInOrder.h>
+#include <Storages/MergeTree/MergeTreeReadPoolInOrderSliced.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicas.h>
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
@@ -341,6 +343,7 @@ namespace Setting
     extern const SettingsNonZeroUInt64 merge_tree_min_read_task_size;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
+    extern const SettingsBool read_in_order_use_sliced_pool;
     extern const SettingsBool use_skip_indexes_if_final_exact_mode;
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool use_indexes_refiner_in_read_pools;
@@ -1078,6 +1081,87 @@ Pipe ReadFromMergeTree::readInOrder(
         });
     }
 
+    return pipe;
+}
+
+Pipe ReadFromMergeTree::readInOrderSliced(
+    RangesInDataParts parts_with_ranges,
+    const MergeTreeIndexBuildContextPtr & index_build_context,
+    const Names & required_columns,
+    const PoolSettings & pool_settings,
+    UInt64 read_limit)
+{
+    const auto & settings = context->getSettingsRef();
+    const size_t num_sources = std::max<size_t>(1, pool_settings.threads);
+
+    UInt64 total_rows = parts_with_ranges.getRowsCountAllParts();
+    if (query_info.trivial_limit > 0 && query_info.trivial_limit < total_rows)
+        total_rows = query_info.trivial_limit;
+    else if (read_limit > 0 && read_limit < total_rows)
+        total_rows = read_limit;
+
+    /// The primary key prefix the virtual rows announce, the same as in readInOrder.
+    const auto & primary_key = storage_snapshot->metadata->primary_key;
+    const size_t num_pk_columns = virtual_row_conversion->getRequiredColumnsWithTypes().size();
+    ColumnsWithTypeAndName pk_header_columns;
+    pk_header_columns.reserve(num_pk_columns);
+    for (size_t i = 0; i < num_pk_columns; ++i)
+        pk_header_columns.push_back({primary_key.data_types[i]->createColumn(), primary_key.data_types[i], primary_key.column_names[i]});
+    Block pk_header(std::move(pk_header_columns));
+
+    LOG_TRACE(log, "Reading {} parts in order with {} sources sharing a sliced pool, approx. {} rows",
+        parts_with_ranges.size(), num_sources, total_rows);
+
+    auto pool = std::make_shared<MergeTreeReadPoolInOrderSliced>(
+        std::move(parts_with_ranges),
+        mutations_snapshot,
+        shared_virtual_fields,
+        index_read_tasks,
+        storage_snapshot,
+        query_info.row_level_filter,
+        query_info.prewhere_info,
+        actions_settings,
+        reader_settings,
+        required_columns,
+        pool_settings,
+        block_size,
+        context,
+        dataflow_cache_updater,
+        num_sources,
+        pk_header);
+
+    pool->setReadRangesRefiner(createIndexReadRangesRefiner(index_build_context, storage_snapshot->metadata, settings));
+
+    Pipes pipes;
+    for (size_t i = 0; i < num_sources; ++i)
+    {
+        auto processor = std::make_unique<MergeTreeSelectProcessor>(
+            pool,
+            std::make_unique<MergeTreeThreadSelectAlgorithm>(i),
+            query_info.row_level_filter,
+            query_info.prewhere_info,
+            index_read_tasks,
+            actions_settings,
+            reader_settings,
+            index_build_context,
+            lazy_materializing_rows,
+            &storage_snapshot->metadata->getColumns());
+
+        processor->addPartLevelToChunk(isQueryWithFinal());
+        processor->enableSliceEndMarkers();
+        if (settings[Setting::read_in_order_use_virtual_row_per_block])
+            processor->setVirtualRowConversions(virtual_row_conversion, pk_header, /*read_in_reverse_order_=*/ false);
+
+        auto source = std::make_shared<MergeTreeSource>(std::move(processor), data.getLogName());
+        if (i == 0)
+            source->addTotalRowsApprox(total_rows);
+
+        pipes.emplace_back(std::move(source));
+    }
+
+    auto pipe = Pipe::unitePipes(std::move(pipes));
+    pipe.addTransform(std::make_shared<MergeTreeInOrderSliceRouter>(
+        pipe.getSharedHeader(), pool, virtual_row_conversion, read_limit, block_size.max_block_size_rows));
     return pipe;
 }
 
@@ -1997,6 +2081,23 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         .use_uncompressed_cache = info.use_uncompressed_cache,
         .total_query_nodes = total_query_nodes,
     };
+
+    /// The sliced pool needs the initial virtual rows to keep the merge from demanding every part at
+    /// once, and a merge that sees the parts directly, so it is not combined with preliminary merges.
+    const bool use_sliced_pool = settings[Setting::read_in_order_use_sliced_pool]
+        && read_type == ReadType::InOrder
+        && virtual_row_conversion
+        && !is_parallel_reading_from_replicas
+        && !need_preliminary_merge
+        && !output_each_partition_through_separate_port;
+
+    if (use_sliced_pool)
+    {
+        Pipe pipe = readInOrderSliced(std::move(parts_with_ranges), index_build_context, column_names, pool_settings, input_order_info->limit);
+        if (!pipe.empty() && have_input_columns_removed_after_prewhere)
+            out_projection = createProjection(pipe.getHeader());
+        return pipe;
+    }
 
     const bool is_local_plan_initiator = isParallelReplicasLocalPlanForInitiator();
     /// Split-stream topology requires both sides to speak the announcement-response protocol so

@@ -26,6 +26,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
+#include <Storages/MergeTree/MergeTreeSliceEndInfo.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 namespace
@@ -392,6 +393,18 @@ ChunkAndProgress MergeTreeSelectProcessor::buildVirtualRowFromIndex(
     return {std::move(chunk), 0, 0, false, {}};
 }
 
+ChunkAndProgress MergeTreeSelectProcessor::makeSliceEndMarker() const
+{
+    Columns empty_columns;
+    empty_columns.reserve(result_header.columns());
+    for (const auto & column : result_header)
+        empty_columns.push_back(column.type->createColumn());
+
+    Chunk chunk(std::move(empty_columns), 0);
+    chunk.getChunkInfos().add(std::make_shared<MergeTreeSliceEndInfo>());
+    return {std::move(chunk), 0, 0, false, {}};
+}
+
 ChunkAndProgress MergeTreeSelectProcessor::read()
 {
     if (pending_virtual_row)
@@ -407,6 +420,13 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
         {
             if (!task || algorithm->needNewTask(*task))
             {
+                /// Tell the router that the slice is fully read before asking for the next one.
+                if (emit_slice_end_markers && task && !slice_end_marker_sent)
+                {
+                    slice_end_marker_sent = true;
+                    return makeSliceEndMarker();
+                }
+
                 /// Update the query condition cache for filters in PREWHERE stage.
                 /// Skip the write when a reader earlier in the chain (skip-index or projection-index)
                 /// could have filtered marks before PREWHERE saw them, to avoid attributing those
@@ -450,7 +470,15 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                     }
                 }
 
-                task = algorithm->getNewTask(*pool, task.get());
+                auto new_task = algorithm->getNewTask(*pool, task.get());
+
+                /// Nothing is assigned to this source right now; the router wakes it up when there is.
+                /// The finished task is kept so that its readers can continue the segment.
+                if (!new_task && emit_slice_end_markers)
+                    return makeSliceEndMarker();
+
+                task = std::move(new_task);
+                slice_end_marker_sent = false;
             }
 
             if (!task)

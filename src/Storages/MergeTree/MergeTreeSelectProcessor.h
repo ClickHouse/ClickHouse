@@ -166,6 +166,10 @@ public:
     /// is emitted so that MergingSortedTransform can reprioritize sources.
     void setVirtualRowConversions(ExpressionActionsPtr virtual_row_conversions_, Block pk_block_header_, bool read_in_reverse_order_);
 
+    /// Emit an empty chunk with MergeTreeSliceEndInfo after the last chunk of every task, and stay alive
+    /// when the pool has no task for this source right now. Used with MergeTreeInOrderSliceRouter.
+    void enableSliceEndMarkers() { emit_slice_end_markers = true; }
+
     void onFinish() const;
 
 private:
@@ -212,6 +216,11 @@ private:
     std::optional<ChunkAndProgress> pending_virtual_row;
 
     ChunkAndProgress buildVirtualRowFromIndex(const MergeTreeReadTask & current_task, const MarkRanges & read_mark_ranges) const;
+
+    bool emit_slice_end_markers = false;
+    bool slice_end_marker_sent = false;
+
+    ChunkAndProgress makeSliceEndMarker() const;
 
     LoggerPtr log = getLogger("MergeTreeSelectProcessor");
     std::atomic<bool> is_cancelled{false};

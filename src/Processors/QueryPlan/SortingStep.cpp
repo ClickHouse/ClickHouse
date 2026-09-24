@@ -87,6 +87,7 @@ namespace Setting
     extern const SettingsUInt64 prefer_external_sort_block_bytes;
     extern const SettingsBool read_in_order_use_virtual_row;
     extern const SettingsBool read_in_order_use_virtual_row_per_block;
+    extern const SettingsBool read_in_order_use_sliced_pool;
     extern const SettingsBool read_in_order_use_buffering;
     extern const SettingsFloat remerge_sort_lowered_memory_bytes_ratio;
     extern const SettingsOverflowMode sort_overflow_mode;
@@ -163,6 +164,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_virtual_row_per_block = settings[Setting::read_in_order_use_virtual_row] && settings[Setting::read_in_order_use_virtual_row_per_block];
     read_in_order_use_buffering = settings[Setting::read_in_order_use_buffering];
+    read_in_order_use_sliced_pool = settings[Setting::read_in_order_use_sliced_pool];
     temporary_files_codec = settings[Setting::temporary_files_codec];
     temporary_files_buffer_size = settings[Setting::temporary_files_buffer_size];
 }
@@ -424,7 +426,10 @@ void SortingStep::mergingSorted(QueryPipelineBuilder & pipeline, const SortDescr
         /// virtual rows (and the prefetch window below keeps its meaning). Once the merge
         /// releases a source, buffering works for it as usual.
         bool use_virtual_row_per_block = apply_virtual_row_conversions && sort_settings.read_in_order_use_virtual_row_per_block;
-        if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block)
+        /// The sliced pool buffers per part in its router; buffering here would only ask the reading
+        /// side for far more rows than the merge needs.
+        bool use_sliced_pool = apply_virtual_row_conversions && sort_settings.read_in_order_use_sliced_pool;
+        if (use_buffering && sort_settings.read_in_order_use_buffering && !use_virtual_row_per_block && !use_sliced_pool)
         {
             pipeline.addSimpleTransform([&](const SharedHeader & header)
             {

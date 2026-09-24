@@ -54,6 +54,7 @@ public:
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
         bool read_in_order_use_virtual_row_per_block = false;
+        bool read_in_order_use_sliced_pool = false;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
 

@@ -712,6 +712,15 @@ private:
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
 
+    /// Reads in the order of the primary key with `pool_settings.threads` sources sharing all parts,
+    /// see MergeTreeReadPoolInOrderSliced. Returns a pipe with one output per part.
+    Pipe readInOrderSliced(
+        RangesInDataParts parts_with_ranges,
+        const MergeTreeIndexBuildContextPtr & index_build_context,
+        const Names & required_columns,
+        const PoolSettings & pool_settings,
+        UInt64 limit);
+
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
