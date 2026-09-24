@@ -43,6 +43,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int FILE_DOESNT_EXIST;
 extern const int LOGICAL_ERROR;
 extern const int LIMIT_EXCEEDED;
 extern const int NOT_IMPLEMENTED;
@@ -363,6 +364,22 @@ Iceberg::IcebergPathFromMetadata resolveFileIdentity(
     return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
 }
 
+Iceberg::IcebergPathFromMetadata resolveExistingFileIdentity(
+    const Iceberg::IcebergPathFromMetadata & path,
+    const ObjectStoragePtr & object_storage,
+    const PersistentTableComponents & persistent_table_components,
+    const ContextPtr & context,
+    ExternalStorageCache & external_storages)
+{
+    auto [storage, key] = resolveObjectStorageForPath(
+        persistent_table_components.path_resolver.getTableLocation(),
+        path.serialize(), object_storage, external_storages, context,
+        persistent_table_components.path_resolver);
+    if (!storage->exists(StoredObject(key)))
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Iceberg metadata file {} does not exist", path);
+    return Iceberg::IcebergPathFromMetadata::makeStorageIdentity(storage, key);
+}
+
 void collectAllFilePaths(
     const Iceberg::ManifestFileIterator::ManifestFileEntriesHandle & entries_handle,
     const ObjectStoragePtr & object_storage,
@@ -396,16 +413,16 @@ void collectRetainedFiles(
             continue;
 
         auto manifest_list_path = IcebergPathFromMetadata::deserialize(snapshot->getValue<String>(Iceberg::f_manifest_list));
-        retained_manifest_list_paths.insert(
-            resolveFileIdentity(manifest_list_path, object_storage, persistent_table_components, context, external_storages));
+        retained_manifest_list_paths.insert(resolveExistingFileIdentity(
+            manifest_list_path, object_storage, persistent_table_components, context, external_storages));
 
         auto manifest_keys = getManifestList(
             object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
 
         for (const auto & manifest_entry : manifest_keys)
         {
-            retained_manifest_paths.insert(
-                resolveFileIdentity(manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, external_storages));
+            retained_manifest_paths.insert(resolveExistingFileIdentity(
+                manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, external_storages));
             auto entries_handle = getManifestFileEntriesHandle(
                 object_storage, persistent_table_components, context, log,
                 manifest_entry, current_schema_id, external_storages);
@@ -478,7 +495,8 @@ ExpiredFiles collectExpiredFiles(
         Iceberg::IcebergPathFromMetadata manifest_list_id;
         try
         {
-            manifest_list_id = resolveFileIdentity(manifest_list_path, object_storage, persistent_table_components, context, external_storages);
+            manifest_list_id = resolveExistingFileIdentity(
+                manifest_list_path, object_storage, persistent_table_components, context, external_storages);
         }
         catch (...)
         {
@@ -507,7 +525,8 @@ ExpiredFiles collectExpiredFiles(
             Iceberg::IcebergPathFromMetadata manifest_id;
             try
             {
-                manifest_id = resolveFileIdentity(manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, external_storages);
+                manifest_id = resolveExistingFileIdentity(
+                    manifest_entry.manifest_file_path, object_storage, persistent_table_components, context, external_storages);
             }
             catch (...)
             {
