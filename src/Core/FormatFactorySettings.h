@@ -1342,16 +1342,22 @@ Path of the file used to record errors while reading text formats (CSV, TSV).
     DECLARE(Bool, input_format_netcdf_fill_value_as_null, false, R"(
 Read the values that are equal to the `_FillValue` or `missing_value` attribute of a variable of a `NetCDF` file as `NULL`, making the column [Nullable](/sql-reference/data-types/nullable.md).
 
-These attributes are how the [CF conventions](https://cfconventions.org/) mark the data that is missing, such as the sea surface temperature over land. Every value of either attribute is used when it has the same type as the variable.
+These attributes are how the [CF conventions](https://cfconventions.org/) mark the data that is missing, such as the sea surface temperature over land. An attribute is used only when it has the same type as the variable.
 
-When disabled (default), the column has the type of the variable and the value of the attribute is read as an ordinary number.
+The `_FillValue` attribute must be a single value: a file where it holds several values throws an exception. The `missing_value` attribute may hold several values, and each of them is read as `NULL`. A `char` variable that is read as a String column, because its last dimension is taken as the length of the strings, is the exception to both rules: each of its attributes is one string, of any length, which is compared with the strings of the column after its trailing zero bytes are removed. A `char` variable that is read as one character per row follows the rules of the other types, so its `_FillValue` must be a single character.
+
+When disabled (default), the attributes are ignored: the column has the type of the variable, not `Nullable`, and a value that is equal to an attribute is read as an ordinary value of the column - a number for a numeric variable and a string for a `char` variable.
 )", 0) \
     DECLARE(Bool, input_format_netcdf_add_dimension_columns, false, R"(
-Add a column with the index along every dimension of the row space of a `NetCDF` file.
+Add a column with the index along every axis of the row space of a `NetCDF` file that has no coordinate variable.
 
-A dimension that has a coordinate variable - a variable with the name of the dimension that is one-dimensional over it, which is the usual way a file stores the values along a dimension - is skipped, because that variable already becomes a column. A variable that merely shares the name of a dimension is not a coordinate variable, and then the column with the index is added under the name of the dimension with the suffix `_index`. This setting is for the files that have no coordinate variables, where without it there is no way to tell which point of the grid a row belongs to.
+A coordinate variable is a variable with the name of a dimension that is one-dimensional over it, which is the usual way a file stores the values along a dimension. It already becomes a column, so no column with the index is added for its axis. A variable that merely shares the name of a dimension is not a coordinate variable. Without this setting, there is no way to tell which point of the grid a row belongs to along an axis that has no coordinate variable.
 
 Whether a variable is one-dimensional is judged after the trailing string-length dimension of a `char` variable is taken as the length of the strings, so a variable of string labels such as `char station(station, nchar)` is a coordinate variable too: it is read as one string per index of the dimension, which are the values along the axis. When the last dimension of such a variable stays in the row space (see the description of the `NetCDF` format), the variable is two-dimensional and the column with the index is added.
+
+A variable may use the same dimension more than once, as in `correlation(instrument, instrument)`, and every use is then an axis of the row space of its own. A coordinate variable provides the values only along the first use of its dimension, so every other use gets a column with the index even when the file has a coordinate variable for that dimension.
+
+A column with the index has the name of its dimension when no variable and no other added column has it. Otherwise, the suffix `_index` is appended to the name of the dimension, and then `_index_2`, `_index_3` and so on, until the name is free. For example, the variables `instrument(instrument)` and `correlation(instrument, instrument)` give the column `instrument_index` for the second axis, and a variable `triple(t, t, t)` in a file without a variable `t` gives the columns `t`, `t_index` and `t_index_2`.
 
 The columns are added before the columns of the variables and have the type [UInt64](/sql-reference/data-types/int-uint.md).
 )", 0) \

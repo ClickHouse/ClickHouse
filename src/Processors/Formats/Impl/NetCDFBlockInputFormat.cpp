@@ -963,7 +963,7 @@ Every use is then an axis of the row space of its own, as if the uses were disti
 the same length: that file is read with `instrument * instrument` rows. A coordinate variable
 provides the values only along the first use of its dimension; along a repeated use the index is
 available through the setting `input_format_netcdf_add_dimension_columns`, in a column named after
-the dimension with the suffix `_index`.
+the dimension, with the suffix `_index`, `_index_2` and so on when that name is already taken.
 
 The classic format has no string type. A `char` variable is read as a String column whose length is
 the last dimension of the variable, so `char station_name(station, name_length)` is read as one
@@ -1096,9 +1096,9 @@ an exception.
 | Setting                                                                                                                     | Description                                                                                     | Default |
 |-----------------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------|
 | [`input_format_netcdf_fill_value_as_null`](/operations/settings/settings-formats#input_format_netcdf_fill_value_as_null)     | Read the values equal to the `_FillValue` or `missing_value` attribute of a variable as `NULL`. | `false` |
-| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every dimension that has no coordinate variable.              | `false` |
+| [`input_format_netcdf_add_dimension_columns`](/operations/settings/settings-formats#input_format_netcdf_add_dimension_columns) | Add a column with the index along every axis of the row space that has no coordinate variable. | `false` |
 )DOCS_MD",
-        .introduced_in = {26, 9},
+        .introduced_in = {26, 10},
         .related = {"Npy", "Parquet"}});
 }
 
