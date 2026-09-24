@@ -677,6 +677,13 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
     return plan.result;
 }
 
+void JoinStepLogical::addPassThroughColumn(const ColumnWithTypeAndName & column, JoinTableSide side)
+{
+    const auto * input = expression_actions.addInput(column.name, column.type, side == JoinTableSide::Left ? 0 : 1).getNode();
+    actions_after_join.push_back(input);
+    expression_actions.getActionsDAG()->getOutputs().push_back(input);
+}
+
 bool JoinStepLogical::canRemoveColumnsFromOutput() const
 {
     if (output_header == nullptr)
