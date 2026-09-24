@@ -2516,6 +2516,49 @@ def test_create_table_with_engine_arguments_not_representable(started_cluster):
     )
 
 
+def test_show_create_table_round_trip_with_fixed_storage_backend(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    suffix = uuid.uuid4().hex[:8]
+    namespace = f"test_show_create_round_trip_{suffix}"
+    source_table_name = f"source_{suffix}"
+    target_table_name = f"target_{suffix}"
+    settings = {
+        "allow_database_iceberg": 1,
+        "write_full_path_in_iceberg_metadata": 1,
+    }
+
+    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+    create_clickhouse_iceberg_table(
+        started_cluster,
+        node,
+        namespace,
+        source_table_name,
+        "(id Int64)",
+    )
+
+    source_table = f"{CATALOG_NAME}.`{namespace}.{source_table_name}`"
+    target_table = f"{CATALOG_NAME}.`{namespace}.{target_table_name}`"
+    create_query = node.query(
+        f"SHOW CREATE TABLE {source_table} FORMAT TSVRaw",
+        settings={"format_display_secrets_in_show_and_select": 1},
+    )
+    assert "ENGINE = Iceberg(" in create_query
+
+    create_query = create_query.replace(
+        f"`{namespace}.{source_table_name}`", f"`{namespace}.{target_table_name}`"
+    ).replace(
+        f"/{source_table_name}/", f"/{target_table_name}/"
+    )
+    node.query(create_query, settings=settings)
+
+    assert node.query(f"SELECT count() FROM {source_table}") == "0\n"
+    assert node.query(f"SELECT count() FROM {target_table}") == "0\n"
+
+    node.query(f"DROP TABLE {source_table}", settings=settings)
+    node.query(f"DROP TABLE {target_table}", settings=settings)
+
+
 def test_create_table_with_engine_virtual_hosted_location_rejected(started_cluster):
     node = started_cluster.instances["node1"]
 

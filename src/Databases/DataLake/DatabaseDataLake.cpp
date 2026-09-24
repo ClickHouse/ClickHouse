@@ -1083,11 +1083,6 @@ void DatabaseDataLake::validateCreateTableEngine(const ASTFunction & engine) con
 
     const auto catalog_storage_type = catalog->getStorageType();
 
-    if (engine.name == family_name && catalog_storage_type.has_value())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-            "The generic '{}' engine is not supported for a DataLakeCatalog with a fixed storage backend. "
-            "Use the matching backend-specific {} engine instead", family_name, family_name);
-
     std::optional<DatabaseDataLakeStorageType> engine_backend;
     const std::string_view backend_name = std::string_view(engine.name).substr(family_name.size());
     if (backend_name == "S3")
