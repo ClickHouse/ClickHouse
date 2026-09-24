@@ -65,9 +65,9 @@ INSERT INTO samples_table (id, timestamp, value) VALUES
 --     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
 --     FROM samples_table
 --     WHERE id IN (
---         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
---         FROM tags_table
---         WHERE metric_name = 'foo' AND id IN (SELECT id FROM time_ranges_table WHERE max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)))
+--         SELECT id FROM time_ranges_table
+--         WHERE id IN (SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table WHERE metric_name = 'foo')
+--           AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
 --       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS foo
 -- ANY INNER JOIN
@@ -75,9 +75,9 @@ INSERT INTO samples_table (id, timestamp, value) VALUES
 --     SELECT timeSeriesIdToGroup(id) AS group, timestamp, value
 --     FROM samples_table
 --     WHERE id IN (
---         SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name)
---         FROM tags_table
---         WHERE metric_name = 'bar' AND id IN (SELECT id FROM time_ranges_table WHERE max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3)))
+--         SELECT id FROM time_ranges_table
+--         WHERE id IN (SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name) FROM tags_table WHERE metric_name = 'bar')
+--           AND max_time >= toDateTime64(60, 3) AND min_time <= toDateTime64(150, 3))
 --       AND timestamp >= toDateTime64(60, 3) AND timestamp <= toDateTime64(150, 3)
 -- ) AS bar
 -- ON timeSeriesRemoveTag(foo.group, '__name__') = timeSeriesRemoveTag(bar.group, '__name__')

@@ -370,9 +370,46 @@ namespace
         return conditions;
     }
 
-    /// Makes the condition on the identifiers of the time series whose time range intersects the requested one:
-    /// `id IN (SELECT id FROM time_ranges_table WHERE max_time >= <min_time> AND min_time <= <max_time>)`.
-    ASTPtr makeIdInTimeRangesTableCondition(ASTs time_range_conditions, const StorageID & time_ranges_table_id)
+    /// Wraps a select query into ASTSelectWithUnionQuery.
+    ASTPtr wrapIntoSelectWithUnionQuery(ASTPtr select_query)
+    {
+        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
+        select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
+        auto list_of_selects = make_intrusive<ASTExpressionList>();
+        list_of_selects->children.push_back(std::move(select_query));
+        select_with_union_query->children.push_back(std::move(list_of_selects));
+        select_with_union_query->list_of_selects = select_with_union_query->children.back();
+        return select_with_union_query;
+    }
+
+    /// Makes the FROM clause of a select query reading a table (`table` is an ASTTableIdentifier) or a subquery (`table` is an ASTSubquery).
+    ASTPtr makeTablesInSelectQuery(ASTPtr table)
+    {
+        auto table_exp = make_intrusive<ASTTableExpression>();
+        if (table->as<ASTSubquery>())
+            table_exp->subquery = table;
+        else
+            table_exp->database_and_table_name = table;
+        table_exp->children.push_back(std::move(table));
+
+        auto element = make_intrusive<ASTTablesInSelectQueryElement>();
+        element->table_expression = table_exp;
+        element->children.push_back(element->table_expression);
+
+        auto tables = make_intrusive<ASTTablesInSelectQuery>();
+        tables->children.push_back(element);
+        return tables;
+    }
+
+    /// Wraps a query selecting identifiers of time series into a query keeping only the identifiers whose stored
+    /// time range intersects the requested one:
+    ///
+    ///     SELECT id FROM time_ranges_table
+    ///     WHERE id IN (<select_ids_query>) AND max_time >= <min_time> AND min_time <= <max_time>
+    ///
+    /// The identifiers are selected from the tags table first: the matchers usually select a small part of all
+    /// the time series, so the time ranges table is read by its primary key (`id`) instead of being scanned.
+    ASTPtr makeSelectIDsFilteredByTimeRangesTable(ASTPtr select_ids_query, const StorageID & time_ranges_table_id, ASTs time_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
@@ -383,32 +420,42 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list_exp);
         }
 
-        /// FROM time_ranges_table_id
-        {
-            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-            auto table_exp = make_intrusive<ASTTableExpression>();
-            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(time_ranges_table_id);
-            table_exp->children.emplace_back(table_exp->database_and_table_name);
-            table->table_expression = table_exp;
+        /// FROM time_ranges_table
+        select_query->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTTableIdentifier>(time_ranges_table_id)));
 
-            auto tables = make_intrusive<ASTTablesInSelectQuery>();
-            tables->children.push_back(table);
-            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+        /// WHERE id IN (<select_ids_query>) AND max_time >= <min_time> AND min_time <= <max_time>
+        {
+            ASTs conditions;
+            conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTSubquery>(std::move(select_ids_query))));
+            std::ranges::move(time_range_conditions, std::back_inserter(conditions));
+            select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(conditions)));
         }
 
-        /// WHERE max_time >= <min_time> AND min_time <= <max_time>
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTForLogicalAnd(std::move(time_range_conditions)));
-
-        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-        auto list_of_selects = make_intrusive<ASTExpressionList>();
-        list_of_selects->children.push_back(std::move(select_query));
-        select_with_union_query->children.push_back(std::move(list_of_selects));
-        select_with_union_query->list_of_selects = select_with_union_query->children.back();
-
-        return makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), make_intrusive<ASTSubquery>(std::move(select_with_union_query)));
+        return wrapIntoSelectWithUnionQuery(std::move(select_query));
     }
 
+    /// Applies the time range filter to a query selecting identifiers from the tags table:
+    /// if the time ranges are stored in the time ranges table, the query is wrapped (see makeSelectIDsFilteredByTimeRangesTable);
+    /// if the tags table stores them itself (tables of versions before 7), the conditions are already in the WHERE clause
+    /// of the query (see makeWhereFilterForTagsTable), so the query is returned as is.
+    ASTPtr applyTimeRangeFilterToSelectIDsQuery(
+        ASTPtr select_ids_query,
+        const StorageTimeSeriesSelector::TimeRangeFilter & time_range_filter,
+        const DataTypePtr & table_timestamp_type)
+    {
+        if (!time_range_filter.time_ranges_table_id)
+            return select_ids_query;
+
+        ASTs time_range_conditions = makeTimeRangeConditions(time_range_filter, table_timestamp_type);
+        if (time_range_conditions.empty())
+            return select_ids_query;
+
+        return makeSelectIDsFilteredByTimeRangesTable(std::move(select_ids_query), time_range_filter.time_ranges_table_id, std::move(time_range_conditions));
+    }
+
+    /// Makes the WHERE clause of a query selecting identifiers from the tags table.
+    /// The conditions on the time range are added only if the tags table stores it itself (tables of versions before 7),
+    /// otherwise the time range filter is applied by applyTimeRangeFilterToSelectIDsQuery.
     /// The bounds of `time_range_filter` must have the scale of `table_timestamp_type`.
     ASTPtr makeWhereFilterForTagsTable(
         const PrometheusQueryTree::MatcherList & matchers,
@@ -423,30 +470,10 @@ namespace
         if (asts.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Instant selector without matchers is not allowed");
 
-        ASTs time_range_conditions = makeTimeRangeConditions(time_range_filter, table_timestamp_type);
-        if (!time_range_conditions.empty())
-        {
-            /// The time range of a time series is stored in the time ranges table (tables of version 7 and later)
-            /// or in the tags table itself (tables of the earlier versions).
-            if (time_range_filter.time_ranges_table_id)
-                asts.push_back(makeIdInTimeRangesTableCondition(std::move(time_range_conditions), time_range_filter.time_ranges_table_id));
-            else
-                std::ranges::move(time_range_conditions, std::back_inserter(asts));
-        }
+        if (!time_range_filter.time_ranges_table_id)
+            std::ranges::move(makeTimeRangeConditions(time_range_filter, table_timestamp_type), std::back_inserter(asts));
 
         return makeASTForLogicalAnd(std::move(asts));
-    }
-
-    /// Wraps a select query into ASTSelectWithUnionQuery.
-    ASTPtr wrapIntoSelectWithUnionQuery(ASTPtr select_query)
-    {
-        auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
-        select_with_union_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-        auto list_of_selects = make_intrusive<ASTExpressionList>();
-        list_of_selects->children.push_back(std::move(select_query));
-        select_with_union_query->children.push_back(std::move(list_of_selects));
-        select_with_union_query->list_of_selects = select_with_union_query->children.back();
-        return select_with_union_query;
     }
 
     /// Makes `SELECT id FROM null('id <type>')`: a query returning no ids, with the result type of `makeSelectQueryFromTagsTable`.
@@ -521,7 +548,9 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
         }
 
-        return wrapIntoSelectWithUnionQuery(select_query);
+        /// The identifiers of the time series whose time range doesn't intersect the requested one are filtered out
+        /// by the time ranges table (tables of version 7 and later).
+        return applyTimeRangeFilterToSelectIDsQuery(wrapIntoSelectWithUnionQuery(std::move(select_query)), time_range_filter, table_timestamp_type);
     }
 
     /// `min_time` and `max_time` must have the scale of `table_timestamp_type`.
@@ -617,6 +646,8 @@ namespace
         ///
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
+        /// optionally wrapped into a query filtering the identifiers by the time ranges table
+        /// (see makeSelectIDsFilteredByTimeRangesTable).
         {
             auto where_filter = makeWhereFilterForDataTable(
                 select_query_from_tags_table, min_time, max_time, table_timestamp_type, std::move(whole_metric_id_range_conditions));
@@ -794,9 +825,9 @@ namespace
     ///    and the id generator used by the table is the canonical one for that type (a custom
     ///    generator gives no metric clustering).
     /// 3. The samples table physically stores `id` with exactly this type.
-    /// 4. A probe query on the tags table finds NO time-eligible series of the metric that either
-    ///    fails the remaining matchers (the matcher does not select the whole metric) or has an
-    ///    id outside the range (rows written before an `ALTER ... MODIFY SETTING id_generator`).
+    /// 4. A probe query on the tags table (and the time ranges table if any) finds NO time-eligible series
+    ///    of the metric that either fails the remaining matchers (the matcher does not select the whole metric)
+    ///    or has an id outside the range (rows written before an `ALTER ... MODIFY SETTING id_generator`).
     ASTs tryMakeWholeMetricIDRangeConditions(
         const PrometheusQueryTree::MatcherList & matchers,
         const std::unordered_map<String, String> & column_name_by_tag_name,
@@ -870,10 +901,15 @@ namespace
         /// 4. The probe: find one time-eligible series of the metric that contradicts the range
         /// emission, i.e. fails the remaining matchers or does not hash into the range.
         ///
-        ///     SELECT 1 FROM tags_table
-        ///     WHERE <__name__ matcher and the same time conditions as the tags subquery>
-        ///       AND (NOT (<other matchers>) OR tupleElement(id, 1) != <first_component>)
+        ///     SELECT 1 FROM (
+        ///         SELECT id FROM tags_table
+        ///         WHERE <__name__ matcher and the same time conditions as the tags subquery>
+        ///           AND (NOT (<other matchers>) OR tupleElement(id, 1) != <first_component>))
         ///     LIMIT 1
+        ///
+        /// The time conditions are applied the same way as in the tags subquery: in the WHERE clause above if
+        /// the tags table stores the time ranges, or by the time ranges table wrapping the inner query otherwise
+        /// (see applyTimeRangeFilterToSelectIDsQuery).
         ///
         /// One such series means the id set is not the whole metric's primary-key range: fall back.
         /// No such series means every series the tags subquery can select lies in the range. The
@@ -900,31 +936,29 @@ namespace
                 {makeWhereFilterForTagsTable(name_matcher_only, column_name_by_tag_name, time_range_filter, table_timestamp_type),
                  std::move(counterexample)});
 
+            /// SELECT id FROM tags_table WHERE <probe_where>
+            auto probe_select_ids = make_intrusive<ASTSelectQuery>();
+            {
+                auto select_list_exp = make_intrusive<ASTExpressionList>();
+                select_list_exp->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID));
+                probe_select_ids->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
+                probe_select_ids->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTTableIdentifier>(tags_table_id)));
+                probe_select_ids->setExpression(ASTSelectQuery::Expression::WHERE, std::move(probe_where));
+            }
+            ASTPtr probe_select_ids_query = applyTimeRangeFilterToSelectIDsQuery(
+                wrapIntoSelectWithUnionQuery(std::move(probe_select_ids)), time_range_filter, table_timestamp_type);
+
+            /// SELECT 1 FROM (<probe_select_ids_query>) LIMIT 1
             auto probe_select = make_intrusive<ASTSelectQuery>();
             {
                 auto select_list_exp = make_intrusive<ASTExpressionList>();
                 select_list_exp->children.push_back(make_intrusive<ASTLiteral>(UInt64{1}));
                 probe_select->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
-
-                auto tables = make_intrusive<ASTTablesInSelectQuery>();
-                auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-                auto table_exp = make_intrusive<ASTTableExpression>();
-                table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-                table_exp->children.emplace_back(table_exp->database_and_table_name);
-                table->table_expression = table_exp;
-                tables->children.push_back(table);
-                probe_select->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
-
-                probe_select->setExpression(ASTSelectQuery::Expression::WHERE, std::move(probe_where));
+                probe_select->setExpression(ASTSelectQuery::Expression::TABLES, makeTablesInSelectQuery(make_intrusive<ASTSubquery>(std::move(probe_select_ids_query))));
                 probe_select->setExpression(ASTSelectQuery::Expression::LIMIT_LENGTH, make_intrusive<ASTLiteral>(UInt64{1}));
             }
 
-            auto probe_query = make_intrusive<ASTSelectWithUnionQuery>();
-            probe_query->union_mode = SelectUnionMode::UNION_DEFAULT;
-            auto list_of_selects = make_intrusive<ASTExpressionList>();
-            list_of_selects->children.push_back(std::move(probe_select));
-            probe_query->children.push_back(std::move(list_of_selects));
-            probe_query->list_of_selects = probe_query->children.back();
+            ASTPtr probe_query = wrapIntoSelectWithUnionQuery(std::move(probe_select));
 
             LOG_DEBUG(log, "Probing whether selector matches the whole metric {}: {}", quoteString(metric_name), probe_query->formatForLogging());
 
