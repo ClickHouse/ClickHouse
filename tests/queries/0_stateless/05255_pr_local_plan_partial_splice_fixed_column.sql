@@ -46,10 +46,6 @@ SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
 SET parallel_replicas_plan_based = 0;
 
--- Without this the remote replicas may get no marks at all, and are then cancelled before they log
--- the query they were sent - which would make the check below pass on an empty set.
-SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
-
 SELECT 'the read orders itself off the condition';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (
@@ -61,26 +57,30 @@ WHERE explain LIKE '%Read type%';
 SELECT 'and answers correctly';
 SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND ts < 100000 ORDER BY ts LIMIT 3;
 
+-- The same query again for the query the replicas are sent, with the local plan off. With one, the
+-- initiator's own share covers the table and the replicas are cancelled before they start - their log
+-- rows are then written after the initiator has finished, and can miss the flush below. Without one
+-- the initiator has to consume their streams to the end, so by the time it returns they are logged.
+-- The splice does not depend on there being a local plan: it is the remote step that performs it.
 SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND ts < 100000 ORDER BY ts
-SETTINGS log_comment = '05255_pr_partial_splice' FORMAT Null;
+SETTINGS log_comment = '05255_pr_partial_splice', parallel_replicas_local_plan = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
 SELECT 'the replicas were sent that same condition';
--- `log_comment` travels with the query to the replicas, which is how their queries are found here;
--- `current_database` does not - a replica query is logged under `default`. Whatever the row's type:
--- the initiator cancels a replica once it has the rows it needs, and one cancelled before it started
--- logs `ExceptionBeforeStart` and no `QueryStart` - but it still logs the query it was sent, which is
--- the whole of what is checked here.
+-- A replica query is scoped by the database it reads, not by `current_database`: that one is logged
+-- as `default` for it, while `databases` holds this test's. `log_comment` travels with the query to
+-- the replicas, which is what separates this query's replicas from any other. Rows of every type
+-- count: the initiator cancels a replica once it has the rows it needs, and one cancelled before it
+-- started logs `ExceptionBeforeStart` and no `QueryStart` - but it still logs the query it was sent,
+-- which is the whole of what is checked here.
 SELECT
     count() > 0 AS replicas_were_sent_a_query,
     countIf(query LIKE '%HAVING%equals(%tenant%') = count() AS every_one_got_the_condition
 FROM system.query_log
-WHERE log_comment = '05255_pr_partial_splice' AND NOT is_initial_query
-  AND query LIKE '%t_pr_partial_splice%'
+WHERE has(databases, currentDatabase()) AND log_comment = '05255_pr_partial_splice'
+  AND NOT is_initial_query
 SETTINGS enable_parallel_replicas = 0;
-
-SYSTEM DISABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 DROP VIEW v_pr_partial_splice;
 DROP TABLE t_pr_partial_splice;
