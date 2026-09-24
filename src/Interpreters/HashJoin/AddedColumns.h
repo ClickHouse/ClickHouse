@@ -291,7 +291,10 @@ public:
     IColumn::Offsets offsets_to_replicate;
     IColumn::Filter filter;
     /// For every row with a match, if we set filter[row] = 1, we also add this row to `matched_rows` for faster ScatteredBlock::filter().
-    IColumn::Offsets matched_rows;
+    /// The per-row `push_back` reloads `c_end` and `c_end_of_storage` right after the previous row stored `c_end`. If the pair
+    /// crosses a cache line, store-to-load forwarding fails. On the stack that depended on the callers' frames, and it made a
+    /// 1-thread join 35% slower.
+    alignas(64) IColumn::Offsets matched_rows;
 
     /// for lazy
     // The default row is represented by a zero ref word, so that fixed-size blocks can be generated sequentially,
