@@ -6,11 +6,11 @@
 0
 0
 0
-05255_1_no_policy_1998	1000
-05255_2_no_policy_1999	0
-05255_3_table_policy_1998	1000
-05255_4_table_policy_1999	1000
-05255_5_merge_child_policy_1998	1000
-05255_6_merge_child_policy_1999	1000
-05255_7_alias_policy_1998	1000
-05255_8_alias_policy_1999	1000
+row_policy_probe_1_no_policy_1998	1000
+row_policy_probe_2_no_policy_1999	0
+row_policy_probe_3_table_policy_1998	1000
+row_policy_probe_4_table_policy_1999	1000
+row_policy_probe_5_merge_child_policy_1998	1000
+row_policy_probe_6_merge_child_policy_1999	1000
+row_policy_probe_7_alias_policy_1998	1000
+row_policy_probe_8_alias_policy_1999	1000

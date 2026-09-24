@@ -25,29 +25,29 @@ CREATE TABLE payroll_merge (id UInt64, dept String, salary UInt64) ENGINE = Merg
 CREATE TABLE payroll_alias ENGINE = Alias('payroll');
 
 -- Without a row policy the part is pruned when the predicate is out of the range of the statistics.
-SELECT count() FROM payroll WHERE salary > 1998 SETTINGS log_comment = '05255_1_no_policy_1998';
-SELECT count() FROM payroll WHERE salary > 1999 SETTINGS log_comment = '05255_2_no_policy_1999';
+SELECT count() FROM payroll WHERE salary > 1998 SETTINGS log_comment = 'row_policy_probe_1_no_policy_1998';
+SELECT count() FROM payroll WHERE salary > 1999 SETTINGS log_comment = 'row_policy_probe_2_no_policy_1999';
 
 CREATE ROW POLICY payroll_policy ON payroll FOR SELECT USING dept = 'public' TO CURRENT_USER;
 
-SELECT count() FROM payroll WHERE salary > 1998 SETTINGS log_comment = '05255_3_table_policy_1998';
-SELECT count() FROM payroll WHERE salary > 1999 SETTINGS log_comment = '05255_4_table_policy_1999';
+SELECT count() FROM payroll WHERE salary > 1998 SETTINGS log_comment = 'row_policy_probe_3_table_policy_1998';
+SELECT count() FROM payroll WHERE salary > 1999 SETTINGS log_comment = 'row_policy_probe_4_table_policy_1999';
 
-SELECT count() FROM payroll_merge WHERE salary > 1998 SETTINGS log_comment = '05255_5_merge_child_policy_1998';
-SELECT count() FROM payroll_merge WHERE salary > 1999 SETTINGS log_comment = '05255_6_merge_child_policy_1999';
+SELECT count() FROM payroll_merge WHERE salary > 1998 SETTINGS log_comment = 'row_policy_probe_5_merge_child_policy_1998';
+SELECT count() FROM payroll_merge WHERE salary > 1999 SETTINGS log_comment = 'row_policy_probe_6_merge_child_policy_1999';
 
 DROP ROW POLICY payroll_policy ON payroll;
 CREATE ROW POLICY payroll_alias_policy ON payroll_alias FOR SELECT USING dept = 'public' TO CURRENT_USER;
 
-SELECT count() FROM payroll_alias WHERE salary > 1998 SETTINGS log_comment = '05255_7_alias_policy_1998', enable_analyzer = 1;
-SELECT count() FROM payroll_alias WHERE salary > 1999 SETTINGS log_comment = '05255_8_alias_policy_1999', enable_analyzer = 1;
+SELECT count() FROM payroll_alias WHERE salary > 1998 SETTINGS log_comment = 'row_policy_probe_7_alias_policy_1998', enable_analyzer = 1;
+SELECT count() FROM payroll_alias WHERE salary > 1999 SETTINGS log_comment = 'row_policy_probe_8_alias_policy_1999', enable_analyzer = 1;
 
 SYSTEM FLUSH LOGS query_log;
 
 -- The number of rows read must not depend on the values of the hidden rows.
 SELECT log_comment, read_rows
 FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE '05255\_%'
+WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment LIKE 'row\_policy\_probe\_%'
 ORDER BY log_comment;
 
 DROP ROW POLICY payroll_alias_policy ON payroll_alias;
