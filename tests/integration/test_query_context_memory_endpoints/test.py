@@ -423,7 +423,7 @@ def test_prometheus_error_response_limit_and_recovery(
         assert response.json()["status"] == "error", response.text
 
 
-def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=None):
+def endpoint_cleanup_balance(endpoint, batching_limit, profile, expected_balance=None):
     with payload_user("max_memory_usage", batching_limit, profile) as user:
         # Keep retained `query_metric_log` bookkeeping out of the context balance.
         node.query(
@@ -451,7 +451,12 @@ def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=Non
                 f"WHERE query_id = '{sentinel_id}') FROM system.user_processes WHERE user = '{user}'"
             )
             # Protocol completion can precede context destruction on the server thread.
-            assert_eq_with_retry(node, f"SELECT abs(({balance_query})) < 65536", "1")
+            if expected_balance is not None:
+                assert_eq_with_retry(
+                    node,
+                    f"SELECT abs(({balance_query}) - ({expected_balance[0]})) < 65536",
+                    "1",
+                )
             before = int(node.query(balance_query))
             for _ in range(8):
                 run_endpoint(endpoint, user)
@@ -466,13 +471,13 @@ def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=Non
                 >= 16 * 1024 * 1024
             )
             delta_query = f"SELECT ({balance_query}) - ({before})"
-            if expected_drift is not None:
+            if expected_balance is not None:
                 assert_eq_with_retry(
                     node,
-                    f"SELECT abs(({delta_query}) - ({expected_drift})) < 65536",
+                    f"SELECT abs(({delta_query}) - ({expected_balance[1]})) < 65536",
                     "1",
                 )
-            return int(node.query(delta_query))
+            return before, int(node.query(delta_query))
         finally:
             node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
             sentinel.get_answer_and_error()
@@ -481,16 +486,20 @@ def endpoint_cleanup_delta(endpoint, batching_limit, profile, expected_drift=Non
 @pytest.mark.parametrize("endpoint", ENDPOINTS)
 @pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
 def test_endpoint_releases_context_memory(endpoint, batching_limit):
-    expected_drift = 0
-    if endpoint == "prometheus_write":
-        # Background inserts have accounting drift even without a large setup context.
-        # Compare identical writes with a small-context control, retaining the same
-        # tolerance for memory attributable to the copied 8 MiB setting.
-        expected_drift = endpoint_cleanup_delta(
+    # Initialize shared protocol state before measuring the copied context.
+    with payload_user(
+        "max_memory_usage", batching_limit, "context_memory_control"
+    ) as user:
+        node.query(f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0")
+        run_endpoint(endpoint, user)
+    expected_balance = (0, 0)
+    if endpoint in ("mysql_prepared", "flight_put", "prometheus_write"):
+        # Subtract insert execution drift to isolate the copied setup context.
+        expected_balance = endpoint_cleanup_balance(
             endpoint, batching_limit, "context_memory_control"
         )
-    endpoint_cleanup_delta(
-        endpoint, batching_limit, "context_memory_payload", expected_drift
+    endpoint_cleanup_balance(
+        endpoint, batching_limit, "context_memory_payload", expected_balance
     )
 
 
