@@ -6,15 +6,18 @@ import os
 import os.path as p
 import re
 import subprocess
+import sys
 import tempfile
 from contextlib import contextmanager
 from multiprocessing import Pool, cpu_count
+from pathlib import Path
 from time import sleep
 from typing import Any, List, Literal, Optional
 
 import __main__
 
-from ci_utils import Shell
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.utils import Shell
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +127,7 @@ def unshallow(thin: bool = True) -> None:
     Shell.check(
         f"git fetch --unshallow --prune --no-recurse-submodules {filter_arg}  origin",
         cwd=git_runner.cwd,
+        verbose=True,
     )
 
 
@@ -132,7 +136,9 @@ def checkout_submodule(name: str, retry: int = 3) -> None:
     start_sleep = 5
     for n in range(retry):
         if Shell.check(
-            f"git submodule update --depth=1 --single-branch {name}", cwd=git_runner.cwd
+            f"git submodule update --depth=1 --single-branch {name}",
+            cwd=git_runner.cwd,
+            verbose=True,
         ):
             return
         if n < retry - 1:
@@ -145,8 +151,8 @@ def checkout_submodule(name: str, retry: int = 3) -> None:
 def checkout_submodules() -> None:
     """Parallel checkout of submodules. Argument `--jobs` does not really parallelize"""
     jobs = min([cpu_count(), 20])
-    Shell.check("git submodule sync", cwd=git_runner.cwd)
-    Shell.check("git submodule init", cwd=git_runner.cwd)
+    Shell.check("git submodule sync", cwd=git_runner.cwd, verbose=True)
+    Shell.check("git submodule init", cwd=git_runner.cwd, verbose=True)
     # Get all submodule path
     submodules = {
         s.split("\n", maxsplit=1)[1]

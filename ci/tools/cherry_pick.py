@@ -38,6 +38,7 @@ import argparse
 import logging
 import os
 import shlex
+import sys
 import time
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -53,7 +54,6 @@ from cherry_pick_branches import (
     select_backport_branches,
 )
 from ci_buddy import CIBuddy
-from ci_utils import Shell
 from env_helper import (
     GITHUB_REPOSITORY,
     GITHUB_SERVER_URL,
@@ -75,6 +75,9 @@ from report import GITHUB_JOB_URL
 from s3_helper import S3Helper
 from ssh import SSHKey
 from synchronizer_utils import SYNC_PR_PREFIX
+
+sys.path.append(str(Path(__file__).resolve().parents[2]))
+from ci.praktika.utils import Shell
 
 
 class BackportException(Exception):
