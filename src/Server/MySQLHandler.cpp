@@ -59,8 +59,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
-    extern const SettingsBool prefer_column_name_to_alias;
     extern const SettingsSeconds receive_timeout;
     extern const SettingsSeconds send_timeout;
 }
@@ -885,13 +883,7 @@ void MySQLHandler::comQuery(ReadBuffer & payload, bool binary_protocol)
         auto query_context = session->makeQueryContext();
         query_context->setCurrentQueryId(fmt::format("mysql:{}:{}", connection_id, toString(UUIDHelpers::generateV4())));
 
-        /// --- Workaround for Bug 56173.
-        auto settings = query_context->getSettingsCopy();
-        if (!settings[Setting::allow_experimental_analyzer])
-        {
-            settings[Setting::prefer_column_name_to_alias] = true;
-            query_context->setSettings(settings);
-        }
+        const auto & settings = query_context->getSettingsRef();
 
         /// Update timeouts
         socket().setReceiveTimeout(settings[Setting::receive_timeout]);

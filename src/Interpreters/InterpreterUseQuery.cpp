@@ -16,7 +16,6 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_table_namespaces;
 }
 
@@ -39,11 +38,6 @@ BlockIO InterpreterUseQuery::execute()
         if (!getContext()->getSettingsRef()[Setting::allow_experimental_table_namespaces])
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                 "Table namespaces are an experimental feature; enable allow_experimental_table_namespaces to use `USE {}`",
-                logical_name);
-
-        if (!getContext()->getSettingsRef()[Setting::allow_experimental_analyzer])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Table namespaces require setting enable_analyzer set to 1 to use `USE {}`",
                 logical_name);
         database_name = identifier->name_parts[0];
     }

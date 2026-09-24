@@ -28,6 +28,7 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DataLake/UnityCatalog.h>
 #include <Databases/DataLake/RestCatalog.h>
+#include <Databases/DataLake/UnityV2Catalog.h>
 #include <Databases/DataLake/GlueCatalog.h>
 #include <Databases/DataLake/PaimonRestCatalog.h>
 #if USE_AWS_S3 && USE_SSL
@@ -66,6 +67,7 @@ namespace DatabaseDataLakeSetting
     extern const DatabaseDataLakeSettingsDatabaseDataLakeCatalogType catalog_type;
     extern const DatabaseDataLakeSettingsString warehouse;
     extern const DatabaseDataLakeSettingsString catalog_credential;
+    extern const DatabaseDataLakeSettingsBool use_unity_catalog_v2;
     extern const DatabaseDataLakeSettingsString auth_header;
     extern const DatabaseDataLakeSettingsString auth_scope;
     extern const DatabaseDataLakeSettingsString storage_endpoint;
@@ -357,10 +359,27 @@ void DatabaseDataLake::initialize() const
         }
         case DB::DatabaseDataLakeCatalogType::UNITY:
         {
-            catalog_impl = std::make_shared<DataLake::UnityCatalog>(
+            if (!settings[DatabaseDataLakeSetting::use_unity_catalog_v2])
+            {
+                catalog_impl = std::make_shared<DataLake::UnityCatalog>(
+                    settings[DatabaseDataLakeSetting::warehouse].value,
+                    url,
+                    settings[DatabaseDataLakeSetting::catalog_credential].value,
+                    Context::getGlobalContextInstance());
+                break;
+            }
+
+            /// Databricks OIDC expects `all-apis`; the default `auth_scope` value targets Iceberg REST catalogs.
+            const std::string unity_auth_scope = settings[DatabaseDataLakeSetting::auth_scope].changed
+                ? settings[DatabaseDataLakeSetting::auth_scope].value
+                : "all-apis";
+            catalog_impl = std::make_shared<DataLake::UnityV2Catalog>(
                 settings[DatabaseDataLakeSetting::warehouse].value,
                 url,
                 settings[DatabaseDataLakeSetting::catalog_credential].value,
+                unity_auth_scope,
+                settings[DatabaseDataLakeSetting::auth_header].value,
+                settings[DatabaseDataLakeSetting::oauth_server_uri].value,
                 Context::getGlobalContextInstance());
             break;
         }
@@ -504,12 +523,19 @@ void DatabaseDataLake::resetCatalog(String reason) const
 std::shared_ptr<StorageObjectStorageConfiguration> DatabaseDataLake::getConfiguration(
     DatabaseDataLakeStorageType type,
     DataLakeStorageSettingsPtr storage_settings,
-    DataLake::DataLakeTableFormat /* table_format */) const
+    DataLake::DataLakeTableFormat table_format) const
 {
     /// TODO: add tests for azure, local storage types.
 
     auto catalog = getCatalog();
-    switch (catalog->getCatalogType())
+    auto catalog_type = catalog->getCatalogType();
+
+    /// `UnityV2Catalog` serves both formats. Its Iceberg tables need the same configuration as an
+    /// Iceberg REST catalog, so route them to that arm; the legacy catalog never reports Iceberg.
+    if (catalog_type == DatabaseDataLakeCatalogType::UNITY && table_format == DataLake::DataLakeTableFormat::ICEBERG)
+        catalog_type = DatabaseDataLakeCatalogType::ICEBERG_REST;
+
+    switch (catalog_type)
     {
         case DatabaseDataLakeCatalogType::ICEBERG_ONELAKE:
         {
@@ -1061,7 +1087,7 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorWithHint(
 DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     ContextPtr context_,
     const FilterByNameFunction & filter_by_table_name,
-    bool skip_not_loaded,
+    bool /*skip_not_loaded*/,
     const TablesFilter & tables_filter,
     bool keep_unresolved_tables) const
 {
@@ -1083,7 +1109,9 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        /// Debug level: an error-level entry is forwarded to the client as an error of this query, which succeeds.
+        /// A direct log leaves the exception unmarked, so `~Exception` still escalates an important error code.
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     /// Skip tables ClickHouse cannot read (Delta/raw files in mixed catalogs like Glue/Unity)
@@ -1110,13 +1138,15 @@ DatabaseTablesIteratorPtr DatabaseDataLake::getTablesIteratorImpl(
             futures.emplace_back(promises.back()->get_future());
 
             pool.scheduleOrThrow(
-                [this, table_name, skip_not_loaded, context_, keep_unresolved_tables, promise=promises.back()]() mutable
+                [this, table_name, context_, keep_unresolved_tables, promise=promises.back()]() mutable
                 {
                     StoragePtr storage = nullptr;
                     try
                     {
                         LOG_INFO(log, "Get table information for table {}", table_name);
-                        storage = tryGetTableImpl(table_name, context_, false, skip_not_loaded);
+                        /// Tables marked unreadable at metadata time are skipped, not an error;
+                        /// direct access still reports the reason.
+                        storage = tryGetTableImpl(table_name, context_, /*lightweight*/ false, /*ignore_if_not_iceberg*/ true);
                     }
                     catch (...)
                     {
@@ -1232,7 +1262,7 @@ std::vector<LightWeightTableDetails> DatabaseDataLake::getLightweightTablesItera
     {
         if (context_->getSettingsRef()[Setting::show_data_lake_catalogs_in_system_tables])
             throw;
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     for (const auto & catalog_table : catalog_tables)
@@ -1270,7 +1300,7 @@ VectorWithMemoryTracking<String> DatabaseDataLake::getAllTableNames(ContextPtr /
     }
     catch (...)
     {
-        tryLogCurrentException(__PRETTY_FUNCTION__);
+        LOG_DEBUG(log, "Cannot list the tables of the DataLakeCatalog database: {}", getCurrentExceptionMessage(/* with_stacktrace = */ true));
     }
 
     return result;
@@ -1317,6 +1347,10 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     auto new_settings = std::make_unique<DatabaseDataLakeSettings>(*current_settings);
     new_settings->applyChanges(settings_changes);
 
+    /// Switching the Unity implementation replaces the catalog object rather than altering it in place.
+    const bool implementation_changed = (*new_settings)[DatabaseDataLakeSetting::use_unity_catalog_v2].value
+        != (*current_settings)[DatabaseDataLakeSetting::use_unity_catalog_v2].value;
+
     ASTPtr new_engine_definition;
     {
         std::lock_guard lock(mutex);
@@ -1344,7 +1378,17 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
         storage->set(storage->settings, storage_settings_ast);
     }
 
+    /// `use_unity_catalog_v2` is consumed by the database, not by the catalog object, so it is
+    /// never handed to the catalog. Re-applying the current value is a metadata-only no-op.
+    SettingsChanges catalog_settings_changes;
+    for (const auto & change : settings_changes)
+    {
+        if (change.name != DatabaseDataLakeSettings::getSettingName(DatabaseDataLakeSetting::use_unity_catalog_v2))
+            catalog_settings_changes.push_back(change);
+    }
+
     std::shared_ptr<DataLake::ICatalog> local_catalog_snapshot;
+    if (!implementation_changed)
     {
         std::lock_guard lock(catalog_mutex);
         local_catalog_snapshot = catalog_impl;
@@ -1353,8 +1397,9 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     /// Prepare the new catalog state without publishing it: validation, the eager token
     /// fetch and the config reload may throw, and then nothing has changed yet.
     DataLake::ICatalog::PreparedSettingsChangesPtr prepared_catalog_changes;
-    if (local_catalog_snapshot)
-        prepared_catalog_changes = local_catalog_snapshot->prepareSettingsChanges(settings_changes);
+    const bool alter_catalog = local_catalog_snapshot && !catalog_settings_changes.empty();
+    if (alter_catalog)
+        prepared_catalog_changes = local_catalog_snapshot->prepareSettingsChanges(catalog_settings_changes);
 
     /// Persist the new metadata before publishing anything: if the write fails, the live
     /// state is untouched and matches the old metadata on disk. The create query is built
@@ -1366,7 +1411,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
-    if (local_catalog_snapshot)
+    if (alter_catalog)
         local_catalog_snapshot->commitSettingsChanges(std::move(prepared_catalog_changes));
     database_settings.set(std::move(new_settings));
     {
@@ -1375,9 +1420,9 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     }
     if (!local_catalog_snapshot)
     {
-        /// The catalog was not built when the ALTER started. If a concurrent query
-        /// built it meanwhile, it used the old settings: drop it so the next access
-        /// rebuilds it with the new ones. Also clear a recorded construction failure
+        /// The catalog was not built when the ALTER started, or the implementation was switched.
+        /// If a concurrent query built it meanwhile, it used the old settings: drop it so the next
+        /// access rebuilds it with the new ones. Also clear a recorded construction failure
         /// (e.g. credentials lost on RESTORE) for the same reason.
         std::lock_guard lock(catalog_mutex);
         resetCatalog(/* reason */ "");
@@ -1734,6 +1779,7 @@ void registerDatabaseDataLake(DatabaseFactory & factory)
         .supports_arguments = true,
         .supports_settings = true,
         .is_external = true,
+        .has_builtin_setting_fn = DatabaseDataLakeSettings::hasBuiltin,
     }, Documentation{
         .description = R"DOCS_MD(
 The `DataLakeCatalog` database engine enables you to connect ClickHouse to external
@@ -1776,9 +1822,10 @@ The following settings are supported:
 
 | Setting                 | Description                                                                             |
 |-------------------------|-----------------------------------------------------------------------------------------|
-| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
+| `catalog_type`          | Type of catalog: `glue`, `unity` (Delta, or Delta and Iceberg with `use_unity_catalog_v2`), `rest` (Iceberg), `hive`, `onelake` (Iceberg), `delta_sharing` (Iceberg, flat namespaces), `horizon` (Snowflake Horizon Iceberg REST) |
 | `warehouse`             | The warehouse/database name to use in the catalog.                                      |
 | `catalog_credential`    | Authentication credential for the catalog (e.g., API key or token)                      |
+| `use_unity_catalog_v2`  | For `catalog_type = 'unity'`: use the new implementation, which serves both Delta Lake and Iceberg tables. Default: `false`. Set it on `CREATE`, or change it for an existing database with `ALTER DATABASE ... MODIFY SETTING`. |
 | `auth_header`           | Custom HTTP header for authentication with the catalog service                          |
 | `auth_scope`            | OAuth2 scope for authentication (if using OAuth)                                        |
 | `storage_endpoint`      | Endpoint URL for the underlying storage                                                 |
@@ -1873,8 +1920,7 @@ commands, and similar - fail with an error instead of silently targeting the
 database without the namespace. The same applies to unqualified parameterized
 views, the one-argument `merge` table function, and to disabling
 `allow_experimental_table_namespaces` itself. Switch to the plain database with
-`USE catalog_name` and use quoted canonical names for those operations. The
-selected scope also requires the analyzer (`enable_analyzer`, on by default).
+`USE catalog_name` and use quoted canonical names for those operations.
 
 A path component cannot contain a literal dot: a back-quoted component like
 `` catalog_name.`a.b`.table `` is rejected, because after parsing it would be
@@ -1892,6 +1938,22 @@ dot inside a table name lexically defines a namespace: a table named
 See below sections for examples of using the `DataLakeCatalog` engine:
 
 * [Unity Catalog](/guides/use-cases/data-warehousing/unity-catalog)
+* Unity Catalog with Delta Lake and Iceberg tables
+    With `use_unity_catalog_v2 = 1`, the `unity` catalog serves both Delta Lake and Iceberg tables,
+    detecting the format of each table.
+```sql
+CREATE DATABASE database_name
+ENGINE = DataLakeCatalog('https://<workspace>.cloud.databricks.com/api/2.1/unity-catalog')
+SETTINGS
+    catalog_type = 'unity',
+    use_unity_catalog_v2 = 1,
+    warehouse = 'my_catalog',
+    catalog_credential = '<client_id>:<client_secret>';
+SHOW TABLES FROM database_name;
+SELECT count() FROM database_name.`schema_name.table_name`;
+```
+    `catalog_credential` accepts an OAuth service principal as `<client_id>:<client_secret>`,
+    a personal access token (`dapi...`), or a pre-obtained OAuth token.
 * [Glue Catalog](/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
     Can be used by enabling `allow_database_iceberg`.
