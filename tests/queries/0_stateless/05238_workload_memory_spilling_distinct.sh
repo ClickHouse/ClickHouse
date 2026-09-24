@@ -33,7 +33,6 @@ settings=(
     --max_bytes_ratio_before_external_distinct 0
     --max_bytes_before_external_sort 0
     --max_bytes_ratio_before_external_sort 0
-    --enable_adaptive_memory_spill_scheduler 0
     --allow_preliminary_distinct_abandoning 0
     --optimize_distinct_in_order 0
     --enable_parallel_replicas 0

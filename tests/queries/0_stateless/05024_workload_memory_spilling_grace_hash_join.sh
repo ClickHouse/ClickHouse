@@ -21,7 +21,6 @@ trap cleanup EXIT
 
 settings=(
   --join_algorithm 'grace_hash'
-  --enable_adaptive_memory_spill_scheduler 1
   --max_threads 1
   --workload "$workload"
   --max_rows_to_read 0
