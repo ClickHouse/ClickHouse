@@ -2097,7 +2097,9 @@ namespace
 
         auto normalized = boost::static_pointer_cast<ASTCreateQuery>(as_create_query.clone());
         NormalizeTimeSeriesDefinitionParams params;
-        params.mode = LoadingStrictnessLevel::ATTACH;
+        /// The source definition comes from stored metadata, not from a user-supplied ATTACH.
+        /// Its external targets need not be loaded or accessible to the user creating the copy.
+        params.mode = LoadingStrictnessLevel::FORCE_ATTACH;
         normalizeTimeSeriesDefinitionImpl(*normalized, params);
         return normalized;
     }
