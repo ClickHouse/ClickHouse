@@ -1,0 +1,14 @@
+-- { echoOn }
+
+SELECT arrayMinIndex(a), arrayMaxIndex(a)
+FROM values(
+    'a Array(Int32)',
+    ([5, 3, 3, 7]),
+    ([]),
+    ([42]),
+    ([2, 8, 1])
+);
+2	1
+0	0
+1	1
+3	2
