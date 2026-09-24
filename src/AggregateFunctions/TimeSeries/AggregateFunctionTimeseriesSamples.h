@@ -67,7 +67,10 @@ public:
 
         size_t sample_count = 0;
         readBinaryLittleEndian(sample_count, buf);
-        buffer.reserve(sample_count);
+        /// The sample count is read from the state and cannot be trusted, so only a bounded amount is reserved
+        /// upfront and `add` grows the buffer while the samples are read. That way a corrupted count fails with
+        /// an end-of-buffer error instead of allocating memory for the claimed number of samples.
+        buffer.reserve(std::min(sample_count, MAX_SAMPLES_TO_RESERVE));
         for (size_t s = 0; s < sample_count; ++s)
         {
             TimestampType timestamp;
@@ -115,6 +118,9 @@ public:
     }
 
 private:
+    /// How many samples `deserialize` reserves before reading the data. Bigger buckets grow while they are read.
+    static constexpr size_t MAX_SAMPLES_TO_RESERVE = 4096;
+
     /// Samples keyed by timestamp. Uses `AllocatorWithMemoryTracking` so per-bucket sample memory is counted by
     /// the `MemoryTracker`, like the rest of the aggregate state.
     absl::flat_hash_map<
