@@ -33,3 +33,4 @@ Output: v
 \N
 tupleElement dotted name stays unoptimized
 Output: t.\'a.b\'
+Output: t
