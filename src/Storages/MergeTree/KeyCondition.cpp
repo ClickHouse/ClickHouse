@@ -2498,6 +2498,11 @@ std::vector<KeyCondition::DeterministicKeyDag> KeyCondition::collectKeyWrappingD
 
     for (const auto & key_node : dag.getNodes())
     {
+        /// An input depends only on itself. Reject unrelated inputs before allocating traversal
+        /// state, which otherwise adds one dependency walk per key column for every predicate.
+        if (key_node.type == ActionsDAG::ActionType::INPUT && !expr_set.contains(&key_node))
+            continue;
+
         auto it = key_columns.find(key_node.result_name);
         if (it == key_columns.end())
             continue;
