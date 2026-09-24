@@ -74,7 +74,6 @@ import os
 import statistics
 import subprocess
 import traceback
-from collections.abc import Mapping
 from typing import Dict, List, Optional
 
 from ci.jobs.scripts.log_cluster import BUILD_PROFILE_USER, LogCluster, LogClusterUnavailable
@@ -590,23 +589,19 @@ CLUSTER_READ_RESERVE_SECONDS = 550
 def cluster_read_budget_seconds(info):
     """Wall clock all CI logs cluster reads of this job may spend on retries, together.
 
-    None on a local run, which leaves the reads unbounded. `JOB_CONFIG` survives
-    serialization as a plain dict, so it is read as a mapping. A timeout smaller
-    than the reserve leaves a 1 s budget: one attempt per read and no retries.
+    None on a local run, which leaves the reads unbounded.
     """
     if info.is_local_run:
         return None
-    job_config = info.job_config
-    job_timeout = (
-        job_config.get("timeout")
-        if isinstance(job_config, Mapping)
-        else getattr(job_config, "timeout", None)
-    )
-    if not isinstance(job_timeout, (int, float)) or job_timeout <= 0:
-        raise RuntimeError(
-            f"Cannot derive the CI logs cluster read budget: job timeout is [{job_timeout!r}]"
-        )
-    return max(1, int(job_timeout) - CLUSTER_READ_RESERVE_SECONDS)
+    # Not at module scope: ci.defs.job_configs needs a bare `praktika`, which the
+    # documented local run resolves only via the sys.path entry ci.praktika adds.
+    from ci.defs.job_configs import JobConfigs
+
+    job_timeout = JobConfigs.build_profile_diff_job.timeout
+    assert (
+        CLUSTER_READ_RESERVE_SECONDS * 2 < job_timeout
+    ), f"CLUSTER_READ_RESERVE_SECONDS [{CLUSTER_READ_RESERVE_SECONDS}] leaves no usable read budget in a [{job_timeout}] s job"
+    return job_timeout - CLUSTER_READ_RESERVE_SECONDS
 
 
 def _elide_stream(text: str) -> str:
