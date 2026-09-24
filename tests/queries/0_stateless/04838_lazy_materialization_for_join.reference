@@ -51,7 +51,42 @@
 97	l97	45
 194	l194	45
 1
+-- join_use_nulls: the values of the side the join can leave unmatched are recomputed under a mask
+6	l6	r6!	3
+103	l103	\N	\N
+200	l200	\N	\N
+297	l297	r297!	11
+394	l394	\N	\N
+2	1
+0	l0	\N	\N
+97	l97	\N	\N
+194	l194	\N	\N
+291	l291	\N	\N
+388	l388	\N	\N
+96	l96	r96	r99
+193	l193	\N	\N
+290	l290	\N	\N
+387	l387	r387	r390
+484	l484	\N	\N
+581	l581	\N	\N
+-- a value that can throw is not computed for the rows the join left unmatched
+6	l6	r6	50
+103	l103		0
+200	l200		0
+297	l297	r297	10
+394	l394		0
 -- the same results without the optimization
+6	l6	r6!	3
+103	l103	\N	\N
+200	l200	\N	\N
+297	l297	r297!	11
+394	l394	\N	\N
+96	l96	r96	r99
+193	l193	\N	\N
+290	l290	\N	\N
+387	l387	r387	r390
+484	l484	\N	\N
+581	l581	\N	\N
 6	l6	r6	2
 103	l103		0
 200	l200		0
