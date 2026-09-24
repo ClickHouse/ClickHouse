@@ -108,8 +108,10 @@ public:
     bool tryInsert(const Field & x) override;
 #if !defined(DEBUG_OR_SANITIZER_BUILD)
     void insertFrom(const IColumn & src_, size_t n) override;
+    void insertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #else
     void doInsertFrom(const IColumn & src_, size_t n) override;
+    void doInsertManyFrom(const IColumn & src, size_t position, size_t length) override;
 #endif
     void insertDefault() override;
     void insertManyDefaults(size_t length) override;
@@ -198,6 +200,7 @@ public:
         data->forEachMutableSubcolumnRecursively(callback);
     }
 
+    ColumnPlanes getPlanes() const override;
     void forEachSubcolumn(ColumnCallback callback) const override
     {
         callback(offsets);

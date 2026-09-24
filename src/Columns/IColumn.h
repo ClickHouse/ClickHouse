@@ -53,6 +53,40 @@ struct EqualRange
     size_t size() const { return to - from; }
 };
 
+/// The planes a column's rows live in, for a reader that copies rows by number straight from
+/// memory. `shape` says how `data` and `aux` are read and what `children` are.
+struct ColumnPlanes
+{
+    enum class Shape : UInt8
+    {
+        Fixed, /// `data` holds the values, `stride` bytes each
+        Nullable, /// `data` is the null map, one byte per row; `children[0]` is the nested column
+        String, /// `data` is the offsets, one UInt64 per row; `aux` is the chars
+        Array, /// `data` is the offsets, one UInt64 per row; `children[0]` is the nested column
+        Tuple, /// `children` are the elements, all sharing the row numbers
+        Variant, /// `data` is the local discriminators, one byte per row; `aux` is the offsets, one UInt64
+        /// per row; `children[g]` is the variant with global discriminator `g`, and local
+        /// discriminator `d` is global `local_to_global[d]`
+        Map, /// `children[0]` is the nested `Array(Tuple(key, value))`, which is the whole of a `Map`
+        Rows, /// no planes: `data` is the column itself, whose rows only `insertRangeFrom` can copy
+    };
+
+    explicit ColumnPlanes(Shape shape_, const void * data_ = nullptr, const void * aux_ = nullptr, size_t stride_ = 0)
+        : shape(shape_)
+        , data(data_)
+        , aux(aux_)
+        , stride(stride_)
+    {
+    }
+
+    Shape shape = Shape::Rows;
+    const void * data = nullptr;
+    const void * aux = nullptr;
+    size_t stride = 0;
+    VectorWithMemoryTracking<const IColumn *> children;
+    VectorWithMemoryTracking<UInt8> local_to_global;
+};
+
 /// A checkpoint that contains size of column and all its subcolumns.
 /// It can be used to rollback column to the previous state, for example
 /// after failed parsing when column may be in inconsistent state.
@@ -82,15 +116,6 @@ struct ColumnCheckpointWithMultipleNested : public ColumnCheckpoint
     }
 
     ColumnCheckpoints nested;
-};
-
-struct ColumnsWithRowNumbers
-{
-    /// `columns` and `row_numbers` must have same size
-    VectorWithMemoryTracking<const StoredBlock *> columns;
-    VectorWithMemoryTracking<UInt32> row_numbers;
-    /// Whether `columns` contains any nullptr entry.
-    bool has_defaults = false;
 };
 
 struct RowStorePointers
@@ -149,14 +174,20 @@ public:
     /// If column is ColumnReplicated, transforms it to full column.
     [[nodiscard]] virtual Ptr convertToFullColumnIfReplicated() const { return getPtr(); }
 
-    /// Recursively strip internal representation wrappers (Const, Replicated, Sparse)
+    /// If column isn't ColumnBLOB, return itself.
+    /// If column is ColumnBLOB, deserializes the BLOB back into the column it holds.
+    [[nodiscard]] virtual Ptr convertToFullColumnIfDetached() const { return getPtr(); }
+
+    /// Recursively strip internal representation wrappers (Const, Detached, Replicated, Sparse)
     /// from this column and all its subcolumns. Does NOT strip LowCardinality — that is
     /// a semantic type, not a representation wrapper. Callers that also need LowCardinality
     /// removed should chain ->convertToFullColumnIfLowCardinality() for top-level removal,
     /// or use recursiveRemoveLowCardinality for recursive removal.
     [[nodiscard]] virtual Ptr convertToFullIfWrapped() const
     {
-        Ptr converted = convertToFullColumnIfConst()
+        /// Detached goes first: the BLOB holds the serialized form of everything below it.
+        Ptr converted = convertToFullColumnIfDetached()
+            ->convertToFullColumnIfConst()
             ->convertToFullColumnIfReplicated()
             ->convertToFullColumnIfSparse();
 
@@ -792,19 +823,6 @@ public:
         return getPtr();
     }
 
-    /// Fills column values from encoded join row refs (see RowRef / RowRefList in Interpreters/RowRefs.h).
-    /// `block_columns[block_no]` is the resolved source column for this output column in that block, and
-    /// `block_replicated[block_no]` is that column as ColumnReplicated* if it is one (else nullptr). Both
-    /// are pre-resolved per block by `StoredColumnsIndex::resolveEmitColumns`, so the inner loop is one indexed load.
-    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
-    virtual void fillFromRowRefs(
-        const DataTypePtr & type,
-        const UInt64 * row_refs_begin,
-        const UInt64 * row_refs_end,
-        bool row_refs_are_ranges,
-        const IColumn * const * block_columns,
-        const ColumnReplicated * const * block_replicated);
-
     /// Fills column values from row-store referenced by a RowRefList.
     virtual void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map);
 
@@ -812,9 +830,6 @@ public:
     {
         fillFromRowRefsWithRowStore(type, source_field_offset, source_field_size, row_refs_begin, row_refs_end, block_row_stores, /*null_map=*/ nullptr);
     }
-
-    /// Fills column values from list of blocks and row numbers
-    virtual void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers);
 
     /// Fills column values from pre-resolved row-store pointers.
     virtual void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map);
@@ -958,6 +973,10 @@ public:
 
     /// If valuesHaveFixedSize, returns size of value, otherwise throw an exception.
     [[nodiscard]] virtual size_t sizeOfValueIfFixed() const;
+
+    /// Where this column's rows live, for a reader that copies them by number straight from memory.
+    /// The default covers a fixed-width contiguous column; everything else reports `Rows`.
+    [[nodiscard]] virtual ColumnPlanes getPlanes() const;
 
     /// Appends n elements with unspecified values and returns a span pointing to their memory range.
     /// Can be used to decompress or deserialize data directly into the column.
@@ -1152,21 +1171,8 @@ private:
     /// Devirtualize updateAt.
     void updateInplaceFrom(const IColumn::Patch & patch) override;
 
-    /// Fills column values from encoded join row refs
-    /// If row_refs_are_ranges is true, then each entry represents >= 1 consecutive rows of one block
-    void fillFromRowRefs(
-        const DataTypePtr & type,
-        const UInt64 * row_refs_begin,
-        const UInt64 * row_refs_end,
-        bool row_refs_are_ranges,
-        const IColumn * const * block_columns,
-        const ColumnReplicated * const * block_replicated) override;
-
     /// Fills column values from row-store referenced by a RowRefList
     void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
-
-    /// Fills column values from list of columns and row numbers
-    void fillFromBlocksAndRowNumbers(const DataTypePtr & type, size_t source_column_index_in_block, const ColumnsWithRowNumbers & columns_with_row_numbers) override;
 
     /// Fills column values from pre-resolved row-store pointers
     void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
