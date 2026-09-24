@@ -4448,9 +4448,14 @@ static const auto identifier_lambda = [](std::pair<std::string, ASTPtr> & p)
     return id && !id->name_parts.empty() && !id->isParam();
 };
 
-/// Only the round-trippable infix IN spellings. The null* family (nullIn/notNullIn/...) formats as
-/// plain IN and reparses as in/notIn, so it would silently lose the mutation.
-static const Strings in_variants = {"in", "notIn", "globalIn", "globalNotIn"};
+/// The whole IN family, for nodes built here: `makeASTFunction` leaves `is_operator` unset, so every
+/// spelling formats as `f(x, y)` and reparses intact. The null* ones do not skip a NULL left operand,
+/// so they return 0/1 where plain IN returns NULL.
+static const Strings in_variants = {"in", "notIn", "globalIn", "globalNotIn", "nullIn", "notNullIn", "globalNullIn", "globalNotNullIn"};
+
+/// Only the spellings that survive renaming a node that came from infix `x IN y`: the null* family
+/// formats back as plain IN and reparses as in/notIn, so it would silently lose the mutation.
+static const Strings in_infix_variants = {"in", "notIn", "globalIn", "globalNotIn"};
 
 ASTPtr QueryFuzzer::generatePredicate()
 {
@@ -5041,8 +5046,17 @@ static const std::unordered_set<String> lambda_accepting_funcs = []
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
         {"ilike", "like", "match", "notILike", "notLike"},
-        /// Set membership operators (the shared IN family list)
-        std::unordered_set<String>(in_variants.begin(), in_variants.end()),
+        /// Set membership operators (renames an existing node, so only the infix-safe spellings)
+        std::unordered_set<String>(in_infix_variants.begin(), in_infix_variants.end()),
+        /// Their IgnoreSet variants; only the lambda injection below reaches these, never the rename
+        {"inIgnoreSet",
+         "notInIgnoreSet",
+         "globalInIgnoreSet",
+         "globalNotInIgnoreSet",
+         "nullInIgnoreSet",
+         "notNullInIgnoreSet",
+         "globalNullInIgnoreSet",
+         "globalNotNullInIgnoreSet"},
         /// Null predicate and conversion functions
         {"assumeNotNull", "isNotNull", "isNull", "isNullable", "isZeroOrNull", "toNullable"},
         /// Value selection / clamping / null-coalescing
@@ -5071,19 +5085,24 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Decimal-precision arithmetic (a, b, result_scale → Decimal)
         {"multiplyDecimal", "divideDecimal"},
         /// Date/time component extractors and truncators (date/datetime → numeric or date)
-        {"toDayOfMonth",
+        {"monthName",
+         "toDayOfMonth",
          "toDayOfWeek",
          "toDayOfYear",
+         "toDaysInMonth",
          "toDaysSinceYearZero",
          "toHour",
          "toISOWeek",
          "toISOYear",
          "toLastDayOfMonth",
          "toLastDayOfWeek",
+         "toMicrosecond",
          "toMillisecond",
          "toMinute",
          "toMonday",
          "toMonth",
+         "toMonthNumSinceEpoch",
+         "toNanosecond",
          "toQuarter",
          "toRelativeDayNum",
          "toRelativeHourNum",
@@ -5112,6 +5131,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "toUnixTimestamp",
          "toWeek",
          "toYear",
+         "toYearNumSinceEpoch",
          "toYearWeek",
          "toYYYYMM",
          "toYYYYMMDD",
@@ -5451,9 +5471,18 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Higher-order map functions (lambda, map → map or UInt8)
         higher_order_map_funcs,
         /// Binary encoding (bytes → encoded String)
-        {"hex", "bin", "base58Encode", "base64Encode", "base64URLEncode"},
+        {"hex", "bin", "base32Encode", "base58Encode", "base64Encode", "base64URLEncode"},
         /// Binary decoding (encoded String → bytes)
-        {"unhex", "unbin", "base58Decode", "tryBase58Decode", "base64Decode", "base64URLDecode", "tryBase64Decode", "tryBase64URLDecode"},
+        {"unhex",
+         "unbin",
+         "base32Decode",
+         "tryBase32Decode",
+         "base58Decode",
+         "tryBase58Decode",
+         "base64Decode",
+         "base64URLDecode",
+         "tryBase64Decode",
+         "tryBase64URLDecode"},
         /// Integer bitmask expansion (single number → array/list of set bits)
         {"bitPositionsToArray", "bitmaskToArray", "bitmaskToList"},
         /// Space-filling curve decoders (tuple_size, code → tuple)
@@ -5922,7 +5951,49 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// the hierarchy functions additionally require a hierarchical layout
         {"dictGetChildren", "dictGetDescendants", "dictGetHierarchy", "dictGetRoot", "dictHas", "dictIsIn"},
         /// Geometry intersection: Cartesian vs Spherical point model, identical (geom1, geom2) signature
-        {"geometryIntersectCartesian", "geometryIntersectSpherical"}};
+        {"geometryIntersectCartesian", "geometryIntersectSpherical"},
+        /// Empty array constructors (no arguments); every swap changes only the element type
+        {"emptyArrayDate",
+         "emptyArrayDateTime",
+         "emptyArrayFloat32",
+         "emptyArrayFloat64",
+         "emptyArrayInt16",
+         "emptyArrayInt32",
+         "emptyArrayInt64",
+         "emptyArrayInt8",
+         "emptyArrayString",
+         "emptyArrayUInt16",
+         "emptyArrayUInt32",
+         "emptyArrayUInt64",
+         "emptyArrayUInt8"},
+        /// Parser and formatter over a query string (query → text/JSON). The seeded ones
+        /// (fuzzQuery, obfuscateQueryWithSeed) are left out: they take two arguments and are random
+        {"formatQuery",
+         "formatQueryOrNull",
+         "formatQuerySingleLine",
+         "formatQuerySingleLineOrNull",
+         "highlightQuery",
+         "normalizeQuery",
+         "normalizeQueryKeepNames",
+         "obfuscateQuery",
+         "parseQueryToJSON"},
+        /// Iceberg partition transforms over a date/time (date → integer)
+        {"icebergDay", "icebergHour", "icebergMonth", "icebergYear"},
+        /// Iceberg partition transforms taking a width (value, n → bucket/truncated value)
+        {"icebergBucket", "icebergTruncate"},
+        /// Packed-decimal date/time constructors (integer → Date/DateTime)
+        {"YYYYMMDDToDate", "YYYYMMDDToDate32", "YYYYMMDDhhmmssToDateTime", "YYYYMMDDhhmmssToDateTime64"},
+        /// Colour space conversions (tuple of three components → tuple of three components)
+        {"colorOKLABToSRGB", "colorOKLCHToSRGB", "colorSRGBToOKLAB", "colorSRGBToOKLCH"},
+        /// Primality tests: exact vs Miller-Rabin
+        {"isPrime", "isProbablePrime"},
+        /// Substring up to the nth delimiter (s, delimiter, count); distinct from the `substring`
+        /// group above, whose second argument is an offset rather than a delimiter
+        {"substringIndex", "substringIndexUTF8"},
+        /// Byte-distribution measures over a string (String → number)
+        {"stringBytesEntropy", "stringBytesUniq"},
+        /// Area under the ROC or precision-recall curve (scores, labels)
+        {"arrayAUC", "arrayAUCPR", "arrayPRAUC", "arrayROCAUC"}};
 
 /// Rewrite a lightweight `DELETE FROM` / `UPDATE` into the equivalent `ALTER TABLE` mutation,
 /// feeding the same payload through the other pipeline; the trailing query `SETTINGS` clause is
