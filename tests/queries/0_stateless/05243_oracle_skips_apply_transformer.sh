@@ -95,6 +95,7 @@ probe()
     local select_list="$2"
     local before
     local after
+    local delta
 
     # A zero delta on its own does not prove the screen rejected the shape: it holds just as
     # well when the query never reached `QueryOracleChecker` at all. So first run the very same
@@ -117,13 +118,27 @@ probe()
         return
     fi
 
-    after=$(run_fuzzed_rounds "SELECT $select_list FROM oracle_apply_screen WHERE i > 1;")
+    # The two outcomes are not symmetric, so read the counter until it agrees with itself. A round
+    # can mutate the hazard OUT of the query - the select-list fuzzer may replace an element
+    # outright, for instance with a virtual column reference - and the oracle then checks a query
+    # with nothing left to reject. So a non-zero delta is inconclusive while a zero delta is not,
+    # and a screen that stopped reading the member moves the counter on every attempt.
+    for _ in $(seq 1 3)
+    do
+        after=$(run_fuzzed_rounds "SELECT $select_list FROM oracle_apply_screen WHERE i > 1;")
+        delta=$((after - before))
+        if [[ "$delta" -eq 0 ]]
+        then
+            break
+        fi
+        before=$(get_counter)
+    done
 
-    if [[ "$after" -eq "$before" ]]
+    if [[ "$delta" -eq 0 ]]
     then
         echo "$label not checked"
     else
-        echo "$label checked $((after - before)) times"
+        echo "$label checked $delta times"
     fi
 }
 
