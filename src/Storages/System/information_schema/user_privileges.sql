@@ -12,11 +12,11 @@ ATTACH VIEW user_privileges
      `table_catalog` String,
      `privilege_type` String,
      `is_grantable` String,
+     `grantee_type` String,
      `GRANTEE` String,
      `TABLE_CATALOG` String,
      `PRIVILEGE_TYPE` String,
      `IS_GRANTABLE` String,
-     `grantee_type` String,
      `GRANTEE_TYPE` String
 )
 SQL SECURITY INVOKER
@@ -25,11 +25,11 @@ AS SELECT
     'def'                         AS table_catalog,
     CAST(access_type, 'String')   AS privilege_type,
     if(grant_option, 'YES', 'NO') AS is_grantable,
+    if(user_name IS NOT NULL, 'USER', 'ROLE') AS grantee_type,
     grantee                       AS GRANTEE,
     table_catalog                 AS TABLE_CATALOG,
     privilege_type                AS PRIVILEGE_TYPE,
     is_grantable                  AS IS_GRANTABLE,
-    if(user_name IS NOT NULL, 'USER', 'ROLE') AS grantee_type,
     grantee_type                  AS GRANTEE_TYPE
 FROM system.grants
 WHERE (database IS NULL)
