@@ -188,6 +188,17 @@ private:
     Poco::JSON::Object::Ptr partititon_spec;
     Int64 partition_spec_id;
 
+    /// Generated once per insert so the manifests stay valid across commit retries.
+    Int64 snapshot_id = 0;
+
+    /// Manifests are written once and reused on commit retries.
+    Strings manifest_entries_in_storage;
+    std::vector<Iceberg::IcebergPathFromMetadata> manifest_entries;
+    std::vector<Int64> manifest_entry_sizes;
+    std::vector<Int64> manifest_entry_row_counts;
+    std::vector<Int64> manifest_entry_file_counts;
+    std::vector<std::vector<std::pair<Field, DataTypePtr>>> entry_partition_summaries;
+
     std::shared_ptr<DataLake::ICatalog> catalog;
     StorageID table_id;
     CompressionMethod metadata_compression_method;
