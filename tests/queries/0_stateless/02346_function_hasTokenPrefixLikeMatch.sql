@@ -69,6 +69,17 @@ SELECT
     countIf(hasTokenPrefix(s, 'ab'))
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][x % 7 + 1], range(number % 5)), '') AS s FROM numbers(1000));
 
+SELECT '-- many blocks and threads with a stateful tokenizer';
+SELECT
+    countIf(hasTokenPrefix(s, '12', 'sparseGrams(3, 5)') != arrayExists(t -> startsWith(t, '12'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasTokenLike(s, '1_3%', 'sparseGrams(3, 5)') != arrayExists(t -> like(t, '1_3%'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasTokenMatch(s, '^1.3', 'sparseGrams(3, 5)') != arrayExists(t -> match(t, '^1.3'), tokens(s, 'sparseGrams', 3, 5))),
+    countIf(hasTokenPrefix(s, '12', 'sparseGrams(3, 5)')),
+    countIf(hasTokenLike(s, '1_3%', 'sparseGrams(3, 5)')),
+    countIf(hasTokenMatch(s, '^1.3', 'sparseGrams(3, 5)'))
+FROM (SELECT toString(number * 7919) AS s FROM numbers_mt(100000))
+SETTINGS max_block_size = 100, max_threads = 4;
+
 SELECT '-- arrays in a full column, the first row included';
 SELECT n, hasTokenPrefix(arr, 'ab'), hasTokenLike(arr, 'a_c'), hasTokenMatch(arr, '^abc$')
 FROM values('n UInt8, arr Array(String)', (0, ['xy', 'abc']), (1, []), (2, ['ab']), (3, ['xy abc']), (4, ['xy'])) ORDER BY n;

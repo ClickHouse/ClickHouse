@@ -14,6 +14,9 @@
 #include <Interpreters/ITokenizer.h>
 #include <Interpreters/TokenizerFactory.h>
 
+#include <mutex>
+#include <optional>
+
 namespace DB
 {
 
@@ -103,21 +106,26 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const String needle(arguments[1].column->getDataAt(0));
-        const String tokenizer_name = arguments.size() < 3
-            ? String(SplitByNonAlphaTokenizer::getExternalName())
-            : String(arguments[2].column->getDataAt(0));
+        /// The needle and the tokenizer are constant, so they are parsed once per function object, as in `transform`.
+        std::call_once(init_flag, [&]
+        {
+            const String tokenizer_name = arguments.size() < 3
+                ? String(SplitByNonAlphaTokenizer::getExternalName())
+                : String(arguments[2].column->getDataAt(0));
+            shared_tokenizer = TokenizerFactory::instance().get(tokenizer_name);
+            matcher.emplace(String(arguments[1].column->getDataAt(0)));
+        });
 
-        /// A fresh instance per call, so stateful tokenizers are not shared between threads.
-        const auto tokenizer = TokenizerFactory::instance().get(tokenizer_name);
-        const Matcher matcher(needle);
+        /// Stateful tokenizers (`sparseGrams`, `japanese`) must not be shared between threads, as in `hasAnyTokens`.
+        const auto cloned_tokenizer = shared_tokenizer->isStateful() ? shared_tokenizer->clone() : nullptr;
+        const ITokenizer & tokenizer = cloned_tokenizer ? *cloned_tokenizer : *shared_tokenizer;
 
         auto has_matching_token = [&](std::string_view value)
         {
             bool found = false;
-            forEachToken(*tokenizer, value.data(), value.size(), [&](const char * token, size_t length)
+            forEachToken(tokenizer, value.data(), value.size(), [&](const char * token, size_t length)
             {
-                found = matcher(std::string_view(token, length));
+                found = (*matcher)(std::string_view(token, length));
                 return found;
             });
             return found;
@@ -165,6 +173,10 @@ private:
     {
         return checkAndGetColumn<ColumnString>(&column) || checkAndGetColumn<ColumnFixedString>(&column);
     }
+
+    mutable std::once_flag init_flag;
+    mutable std::unique_ptr<ITokenizer> shared_tokenizer;
+    mutable std::optional<Matcher> matcher;
 };
 
 using FunctionHasTokenPrefix = FunctionHasTokenPattern<TokenPrefixMatcher>;
