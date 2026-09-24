@@ -62,6 +62,7 @@ class FakeInfo:
         self.kv = kv or {}
         self.pr_labels = labels or []
         self.pr_body = ""
+        self.pr_title = "Some change"
         self.pr_number = 12345
         self.repo_name = "ClickHouse/ClickHouse"
         self.sha = "0000000000000000000000000000000000000000"
