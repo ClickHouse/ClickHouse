@@ -38,6 +38,17 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE if(s 
 SELECT count() FROM tab WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_index_by_date = 1;
 DROP TABLE tab;
 
+SELECT 'bloom filter on a map built by a lambda';
+-- The comparison is typed inside the lambda; the map entry paths of the bloom filter look the map up by name too.
+CREATE TABLE tab (m Map(String, String), INDEX idx mapValues(mapFilter((k, v) -> v != '', m)) TYPE bloom_filter) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
+INSERT INTO tab VALUES (map('k', 'abc')), (map('k', 'abc')), (map('k', 'v')), (map('k', ''));
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc') WHERE explain LIKE '%function_name: notEmpty%';
+SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc' SETTINGS force_data_skipping_indices = 'idx';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapFilter((k, v) -> v != '', m)['k'] = 'abc') WHERE explain LIKE '%Name: idx%' OR explain LIKE '%Granules:%';
+SELECT count() FROM tab WHERE mapContainsValue(mapFilter((k, v) -> v != '', m), 'abc') SETTINGS force_data_skipping_indices = 'idx';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE mapContainsValue(mapFilter((k, v) -> v != '', m), 'abc')) WHERE explain LIKE '%Granules:%';
+DROP TABLE tab;
+
 SELECT 'index on an alias column';
 CREATE TABLE tab (s String, a String ALIAS if(s = '', 'abc', s), INDEX idx a TYPE minmax) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 INSERT INTO tab VALUES (''), ('x'), ('y'), ('z');

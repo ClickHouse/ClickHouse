@@ -198,7 +198,7 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     expression = ExpressionAnalyzer(expr_list, syntax, context).getActions(true);
 
     sample_block = expression->getSampleBlock();
-    column_name_aliases = getColumnNameAliases(expression_list_ast);
+    column_name_aliases = getColumnNameAliases(expression_list_ast, *expression);
 }
 
 Field getFieldFromIndexArgumentAST(const ASTPtr & ast)

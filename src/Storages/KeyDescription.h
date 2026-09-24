@@ -127,7 +127,8 @@ struct KeyDescription
 /// The query analyzer rewrites `x = ''` to `empty(x)` and `x != ''` to `notEmpty(x)` (`optimize_empty_string_comparisons`),
 /// so a key or index expression holding such a comparison has another name in a query than in its declaration, and
 /// the query is matched to the key or index by that name. Maps the name each expression of the list has after the
-/// rewrite to its declared name, for the expressions whose name changes.
-NameToNameMap getColumnNameAliases(const ASTPtr & expression_list);
+/// rewrite to its declared name, for the expressions whose name changes. The rewrite follows the pass: only a
+/// `String` or `FixedString` is compared, typed by the built `expression_actions`, lambda bodies included.
+NameToNameMap getColumnNameAliases(const ASTPtr & expression_list, const ExpressionActions & expression_actions);
 
 }
