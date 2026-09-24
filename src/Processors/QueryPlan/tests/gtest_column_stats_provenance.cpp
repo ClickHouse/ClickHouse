@@ -912,6 +912,14 @@ TEST(ColumnStatsProvenance, PredicatesEstablishOnlyNamedGuarantees)
     EXPECT_TRUE(isValueRangeSuperset(row_subset));
     EXPECT_FALSE(isRepresentativeValueRange(row_subset));
 
+    auto value_rewriting_subset = row_subset;
+    value_rewriting_subset.add(Unsupported);
+    EXPECT_FALSE(isExactDistinctCount(value_rewriting_subset));
+    EXPECT_FALSE(isDistinctCountUpperBound(value_rewriting_subset));
+    EXPECT_FALSE(isExactValueRange(value_rewriting_subset));
+    EXPECT_FALSE(isValueRangeSuperset(value_rewriting_subset));
+    EXPECT_FALSE(isRepresentativeValueRange(value_rewriting_subset));
+
     auto non_uniform_subset = exact;
     non_uniform_subset.add(NonUniformRowSubset);
     EXPECT_FALSE(isExactValueRange(non_uniform_subset));

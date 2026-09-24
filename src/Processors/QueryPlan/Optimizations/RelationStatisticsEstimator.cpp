@@ -305,6 +305,7 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             ? static_cast<const ActionsDAG::Node *>(prewhere_info->prewhere_actions.tryFindInOutputs(prewhere_info->prewhere_column_name))
             : nullptr;
         const auto & query_info = reading->getQueryInfo();
+        const bool has_final = query_info.isFinal();
         const bool has_lightweight_deleted_rows
             = analyzed_result
             && std::ranges::any_of(
@@ -316,13 +317,15 @@ estimateDirectRelationStats(QueryPlan::Node & node, const ActionsDAG::Node * fil
             && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts());
         const bool has_masking_policy = reading->getMergeTreeData().hasEnabledMaskingPolicies(reading->getContext());
         /// These transformations can rewrite values, so the on-disk NDVs and ranges are no longer bounds.
-        const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy;
+        /// In particular, FINAL can synthesize values in SummingMergeTree, AggregatingMergeTree and
+        /// GraphiteMergeTree. Treat every FINAL read conservatively so new merge modes fail closed.
+        const bool has_unsupported_value_changes = has_on_fly_data_changes || has_masking_policy || has_final;
         /// Predicates cover explicit, deferred and row-policy filters; query modifiers cover `FINAL`,
         /// `SAMPLE`, stream reads and trivial limits; deleted rows, vector-index selection and the
         /// top-k skip-index threshold can prune rows without a filter step in the plan. A transaction
         /// snapshot is deliberately absent: the visible parts are the exact input for that read.
         const bool has_row_subset = filter || prewhere_info || reading->getRowLevelFilter() || reading->getFilterActionsDAG()
-            || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || query_info.isFinal() || query_info.isStream()
+            || reading->getDeferredPrewhereInfo() || reading->getDeferredRowLevelFilter() || has_final || query_info.isStream()
             || query_info.trivial_limit || has_lightweight_deleted_rows || reading->getVectorSearchParameters().has_value()
             || reading->isSelectedForTopKFilterOptimization()
             || (query_info.table_expression_modifiers && query_info.table_expression_modifiers->hasSampleSizeRatio());
