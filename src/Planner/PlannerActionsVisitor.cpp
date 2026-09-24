@@ -1102,7 +1102,6 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::makeSetForInFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
-    const bool ignore_set = function_node.getFunctionName().ends_with("IgnoreSet");
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
@@ -1122,7 +1121,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
-    if (!subquery_or_table && !ignore_set)
+    if (!subquery_or_table)
     {
         set_element_types = {in_first_argument->getResultType()};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
@@ -1135,14 +1134,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
-    else if (!ignore_set)
+    else
     {
         set = planner_context->getPreparedSets().findSubquery(set_key);
         if (!set)
             set = planner_context->getPreparedSets().findStorage(set_key);
     }
 
-    if (!set && !ignore_set)
+    if (!set)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
@@ -1278,9 +1277,15 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     if (actions_stack.size() == 1 && actions_stack.front().containsNode(function_node_name))
         return {function_node_name, Levels(0)};
 
+    const bool is_in_function = isNameOfInFunction(function_node.getFunctionName());
+
+    /// The `IgnoreSet` variants resolve types without a set: no set is registered for them, and they
+    /// take the left operand alone, which `FunctionIn`'s variadic arity accepts.
+    const bool ignore_set = is_in_function && function_node.getFunctionName().ends_with("IgnoreSet");
+
     std::optional<NodeNameAndNodeMinLevel> in_function_second_argument_node_name_with_level;
 
-    if (isNameOfInFunction(function_node.getFunctionName()))
+    if (is_in_function && !ignore_set)
         in_function_second_argument_node_name_with_level = makeSetForInFunction(node);
 
     /* Aggregate functions, window functions, and GROUP BY expressions were already analyzed in the previous steps.
@@ -1313,7 +1318,8 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     }
 
     const auto & function_arguments = function_node.getArguments().getNodes();
-    size_t function_arguments_size = function_arguments.size();
+    /// An in-function is resolved with exactly two arguments, so the left operand alone remains.
+    size_t function_arguments_size = ignore_set ? 1 : function_arguments.size();
 
     Names function_arguments_node_names;
     function_arguments_node_names.reserve(function_arguments_size);
@@ -1370,8 +1376,10 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
         /// non-Nullable arguments (because the function was resolved with pre-aggregation types).
         /// In this case, rebuild the function via FunctionFactory with the actual argument types
         /// so that the result type is correct.
-        bool argument_types_match = true;
-        if (auto function_base = function_node.getFunction())
+        /// An `IgnoreSet` call needs the same rebuild for a different reason: it is built from its
+        /// left operand alone, so its node has one child where the function has two argument types.
+        bool argument_types_match = !ignore_set;
+        if (auto function_base = function_node.getFunction(); function_base && argument_types_match)
         {
             const auto & expected_types = function_base->getArgumentTypes();
             for (size_t i = 0; argument_types_match && i < children.size() && i < expected_types.size(); ++i)
