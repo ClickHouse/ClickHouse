@@ -119,7 +119,7 @@ Type: `UInt8`.
 
 - `.*` — Matches any number of events. You do not need conditional arguments to match this element of the pattern.
 
-- `(?t operator value)` — Sets the time in seconds that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=`, `==` operators. The value is always in seconds, including for a `DateTime64` timestamp, so the same pattern keeps its meaning when the column's precision changes.
+- `(?t operator value)` — Sets the time that should separate two events. For example, pattern `(?1)(?t>1800)(?2)` matches events that occur more than 1800 seconds from each other. An arbitrary number of any events can lay between these events. You can use the `>=`, `>`, `<`, `<=`, `==` operators. For a `DateTime` or `DateTime64` timestamp the value is in seconds, whatever the precision of `DateTime64`, so the same pattern keeps its meaning when the column changes between `DateTime` and `DateTime64` of any scale. For a `Date` timestamp the value is in days, and for an unsigned integer timestamp it is in the units of the integer.
 
 **Examples**
 
