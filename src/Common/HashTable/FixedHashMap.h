@@ -62,12 +62,6 @@ struct FixedHashMapCell
     FixedHashMapCell() {} /// NOLINT
     FixedHashMapCell(const Key &, const State &) : full(true) {}
     FixedHashMapCell(const value_type & value_, const State &) : full(true), mapped(value_.second) {}
-    FixedHashMapCell(const FixedHashMapCell & other, const State &)
-        : full(other.full)
-        , mapped(other.mapped)
-        , padding(other.padding)
-    {
-    }
 
     const VoidKey getKey() const { return {}; } /// NOLINT
     Mapped & getMapped() { return mapped; }
