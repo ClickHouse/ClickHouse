@@ -29,6 +29,7 @@
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
@@ -774,12 +775,15 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
     {
         auto input_stats = estimateReadRowsCount(*source);
 
-        /// Use max NDV among GROUP BY keys as a lower-bound estimate for groups.
+        /// Use the maximum row-coverage-exact NDV among GROUP BY keys as a lower-bound estimate for groups.
+        /// A transformed NDV may only be an upper bound and cannot justify choosing the Shuffle strategy.
         std::optional<UInt64> estimated_groups;
         for (const auto & key : aggregation_keys)
         {
             auto it = input_stats.column_stats.find(key);
-            if (it != input_stats.column_stats.end() && it->second.num_distinct_values > 0)
+            if (it != input_stats.column_stats.end()
+                && it->second.num_distinct_values > 0
+                && isExactDistinctCount(it->second.ndv_provenance))
                 estimated_groups = std::max(estimated_groups.value_or(0), it->second.num_distinct_values);
         }
 
