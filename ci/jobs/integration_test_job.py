@@ -2532,6 +2532,12 @@ tar -czf ./ci/tmp/logs.tar.gz \
             ).do(),
         )
         R.results.append(export_result)
+        # The per-instance dumps, to check the merge against.
+        coverage_archive = f"{temp_path}/per_test_coverage.tar.gz"
+        if Shell.check(
+            f"tar -czf {coverage_archive} -C {temp_path} per_test_coverage", verbose=True
+        ):
+            R.files.append(coverage_archive)
         if not export_result.is_ok():
             has_error = True
             error_info.append("Per-module coverage export failed")
