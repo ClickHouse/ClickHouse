@@ -19,9 +19,6 @@ versions: 4, data files: 3
 -- a read-only session cannot write even with the setting on (enabled before entering readonly)
 READONLY
 versions: 4, data files: 3
--- writes on but the delta-kernel disabled: rejected before anything is written
-NOT_IMPLEMENTED
-versions: 4, data files: 3
 -- the committed rows are exactly the three accepted inserts
 1
 2

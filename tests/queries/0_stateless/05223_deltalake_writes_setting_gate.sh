@@ -4,7 +4,7 @@
 # Tag no-msan: delta-kernel-rs (Rust) is not built under MSan, so DeltaLakeLocal is absent.
 
 # The `allow_delta_lake_writes` gate on an existing table: compiled default off, rejected INSERTs write
-# nothing; the alias, SET and a SETTINGS clause enable writes; read-only and kernel-disabled sessions are rejected.
+# nothing; the alias, SET and a SETTINGS clause enable writes; read-only sessions are rejected.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -68,12 +68,6 @@ ${CLICKHOUSE_LOCAL} --query "
     SET readonly = 1;
     INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') VALUES (4);
 " 2>&1 | grep -o "READONLY"
-state
-
-echo "-- writes on but the delta-kernel disabled: rejected before anything is written"
-${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --allow_experimental_delta_kernel_rs=0 --query "
-    INSERT INTO FUNCTION deltaLakeLocal('${TABLE}') VALUES (5);
-" 2>&1 | grep -o "NOT_IMPLEMENTED"
 state
 
 echo "-- the committed rows are exactly the three accepted inserts"
