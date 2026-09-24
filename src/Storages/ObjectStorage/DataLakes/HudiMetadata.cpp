@@ -4,6 +4,7 @@
 #include <Storages/ObjectStorage/DataLakes/HudiMetadata.h>
 #include <base/find_symbols.h>
 #include <Poco/String.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
@@ -12,6 +13,12 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int INCORRECT_DATA;
+}
+
+namespace FailPoints
+{
+    extern const char hudi_pause_before_iterate[];
+    extern const char hudi_pause_in_listing_data_files[];
 }
 
 /**
@@ -43,6 +50,7 @@ namespace ErrorCodes
 Strings HudiMetadata::getDataFilesImpl() const
 {
     auto log = getLogger("HudiMetadata");
+    FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_in_listing_data_files);
     const auto keys = listFiles(*object_storage, table_path, "", Poco::toLower(format));
 
     using Partition = std::string;
@@ -102,6 +110,11 @@ Strings HudiMetadata::getDataFiles(const ActionsDAG *) const
     if (data_files.empty())
         data_files = getDataFilesImpl();
     return data_files;
+}
+
+void HudiMetadata::pauseBeforeIterate()
+{
+    FailPointInjection::pauseFailPoint(FailPoints::hudi_pause_before_iterate);
 }
 
 Strings HudiMetadata::getDataFilesIfListed() const

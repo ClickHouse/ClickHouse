@@ -37,6 +37,10 @@ public:
         return !this_data_files.empty() && !other_data_files.empty() && this_data_files == other_data_files;
     }
 
+    /// A failpoint for tests: `DataLakeConfiguration::iterate` passes it before it takes the current
+    /// metadata object, so that a test can let another query publish a newer object meanwhile.
+    static void pauseBeforeIterate();
+
     static void createInitial(
         const ObjectStoragePtr & /*object_storage*/,
         const StorageObjectStorageConfigurationWeakPtr & /*configuration*/,
