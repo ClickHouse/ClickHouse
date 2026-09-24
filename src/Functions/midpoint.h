@@ -435,33 +435,18 @@ struct MidpointImpl
             return b.CreateFDiv(sum, two);
         }
 
-        /// Integer: overflow-safe midpoint at the operand width, mirroring `apply`.
-        /// `(x & y) + ((x ^ y) >> 1)` is floor((x + y) / 2) and cannot overflow.
-        auto * and_xy = b.CreateAnd(left, right);
-        auto * xor_xy = b.CreateXor(left, right);
-        auto * half = is_signed ? b.CreateAShr(xor_xy, 1) : b.CreateLShr(xor_xy, 1);
-        auto * floor_avg = b.CreateAdd(and_xy, half);
+        /// Integer: widen to avoid overflow
+        unsigned bits = ty->getScalarSizeInBits();
+        auto * wide_ty = llvm::IntegerType::get(ty->getContext(), bits * 2);
 
-        /// Unsigned: trunc-toward-zero and floor coincide.
-        if (!is_signed)
-            return floor_avg;
+        llvm::Value * ext_l = is_signed ? b.CreateSExt(left, wide_ty) : b.CreateZExt(left, wide_ty);
+        llvm::Value * ext_r = is_signed ? b.CreateSExt(right, wide_ty) : b.CreateZExt(right, wide_ty);
 
-        /// Signed: `midpoint` rounds toward zero, which exceeds floor by one exactly when the
-        /// sum is odd and negative. The low bit of `x ^ y` is the low bit of the sum.
-        auto * zero = llvm::ConstantInt::get(ty, 0);
-        auto * one = llvm::ConstantInt::get(ty, 1);
-        auto * sum_odd = b.CreateICmpNE(b.CreateAnd(xor_xy, one), zero);
-        auto * left_negative = b.CreateICmpSLT(left, zero);
-        auto * right_negative = b.CreateICmpSLT(right, zero);
-        /// Equal signs: the sum has that sign. Opposite signs: `left + right` cannot overflow, so
-        /// its sign bit is the sign of the sum. IR is not lazy, so this add is evaluated even when
-        /// the signs are equal and must be allowed to wrap: no `nsw`/`nuw`.
-        auto * sum_negative = b.CreateSelect(
-            b.CreateICmpEQ(left_negative, right_negative),
-            left_negative,
-            b.CreateICmpSLT(b.CreateAdd(left, right), zero));
+        auto * sum = b.CreateAdd(ext_l, ext_r);
+        auto * two = llvm::ConstantInt::get(wide_ty, 2);
+        auto * avg = is_signed ? b.CreateSDiv(sum, two) : b.CreateUDiv(sum, two);
 
-        return b.CreateAdd(floor_avg, b.CreateZExt(b.CreateAnd(sum_odd, sum_negative), ty));
+        return b.CreateTrunc(avg, ty);
     }
 #endif
 };

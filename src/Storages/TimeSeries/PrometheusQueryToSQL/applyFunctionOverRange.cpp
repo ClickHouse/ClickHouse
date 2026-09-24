@@ -9,8 +9,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/NodeEvaluationRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/getToGridAggregateFunctionArguments.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/fixedAtModifier.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
 
@@ -52,10 +50,6 @@ namespace
     {
         std::string_view ch_function_name;
         bool drop_metric_name = true;
-
-        /// The aggregate function returns a sample's value (can be Float32), a sample's timestamp (a DateTime type) or a count (UInt64)
-        /// instead of Float64, so the result must be cast.
-        bool needs_cast_to_float64 = false;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -97,87 +91,25 @@ namespace
              {
                  "timeSeriesLastToGrid",
                  /* drop_metric_name = */ false,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"max_over_time",
-             {
-                 "timeSeriesMaxToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"min_over_time",
-             {
-                 "timeSeriesMinToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"ts_of_max_over_time",
-             {
-                 "timeSeriesTimestampOfMaxToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"ts_of_min_over_time",
-             {
-                 "timeSeriesTimestampOfMinToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"present_over_time",
-             {
-                 "timeSeriesPresentToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"deriv",
-             {
-                 "timeSeriesDerivToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"changes",
-             {
-                 "timeSeriesChangesToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"resets",
-             {
-                 "timeSeriesResetsToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
-             }},
-
-            {"sum_over_time",
-             {
-                 "timeSeriesSumToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"avg_over_time",
-             {
-                 "timeSeriesAvgToGrid",
-                 /* drop_metric_name = */ true,
-             }},
-
-            {"count_over_time",
-             {
-                 "timeSeriesCountToGrid",
-                 /* drop_metric_name = */ true,
-                 /* needs_cast_to_float64 = */ true,
              }},
 
             /// TODO:
+            /// resets
+            /// predict_linear
+            /// deriv
+            /// avg_over_time
+            /// min_over_time
+            /// max_over_time
+            /// sum_over_time
+            /// count_over_time
+            /// quantile_over_time
             /// stddev_over_time"
             /// stdvar_over_time
+            /// present_over_time
+            /// absent_over_time
             /// mad_over_time
+            /// ts_of_min_over_time
+            /// ts_of_max_over_time
             /// ts_of_last_over_time
             /// first_over_time
             /// ts_of_first_over_time
@@ -199,7 +131,7 @@ bool isFunctionOverRange(std::string_view function_name)
 
 
 SQLQueryPiece applyFunctionOverRange(
-    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     return applyFunctionOverRange(function_node, function_node->function_name, std::move(arguments), context);
 }
@@ -209,8 +141,7 @@ SQLQueryPiece applyFunctionOverRange(
     const Node * node,
     std::string_view function_name,
     std::vector<SQLQueryPiece> && arguments,
-    ConverterContext & context,
-    std::optional<bool> drop_metric_name)
+    ConverterContext & context)
 {
     const auto * impl_info = getImplInfo(function_name);
     chassert(impl_info);
@@ -228,17 +159,112 @@ SQLQueryPiece applyFunctionOverRange(
 
     auto argument = std::move(arguments[0]);
 
-    if (argument.store_method == StoreMethod::EMPTY)
-        return SQLQueryPiece{node, ResultType::INSTANT_VECTOR, StoreMethod::EMPTY}; /// The range vector is empty, so is the result.
+    SQLQueryPiece res = argument;
+    res.node = node;
+    res.type = ResultType::INSTANT_VECTOR;
 
-    ASTs aggregate_function_arguments = getToGridAggregateFunctionArguments(argument, context);
+    bool has_group = false;
+    ASTPtr timestamps;
+    ASTPtr values;
 
-    const auto * fixed_at_node = getFixedAtModifier(argument);
-    const auto aggregation_range = getRangeAggregationRange(fixed_at_node, node_range, context);
+    switch (argument.store_method)
+    {
+        case StoreMethod::EMPTY:
+        {
+            return res;
+        }
 
-    /// The result is a vector grid (one row per series, the aggregate function is calculated `GROUP BY group`) if the
-    /// range vector holds series, and a scalar grid if it was made from a scalar.
-    const bool has_group = (argument.store_method == StoreMethod::VECTOR_GRID) || (argument.store_method == StoreMethod::RAW_DATA);
+        case StoreMethod::CONST_SCALAR:
+        case StoreMethod::SINGLE_SCALAR:
+        {
+            /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
+            ///                             arrayResize([], <count_of_time_steps>, <scalar_value>)) AS values
+            /// FROM <subquery>
+            ASTPtr value = (argument.store_method == StoreMethod::CONST_SCALAR)
+                ? timeSeriesScalarToAST(argument.scalar_value, context.scalar_data_type)
+                : make_intrusive<ASTIdentifier>(ColumnNames::Value);
+
+            /// arrayResize([], <count_of_time_steps>, <scalar_value>)
+            values = makeASTFunction(
+                "arrayResize",
+                make_intrusive<ASTLiteral>(Array{}),
+                make_intrusive<ASTLiteral>(stepsInTimeSeriesRange(argument.start_time, argument.end_time, argument.step)),
+                value);
+
+            res.store_method = StoreMethod::SCALAR_GRID;
+            res.scalar_value = {};
+            break;
+        }
+
+        case StoreMethod::SCALAR_GRID:
+        {
+            /// SELECT <aggregate_function>(timeSeriesRange(<start_time>, <end_time>, <step>),
+            ///                             values)) AS values
+            /// FROM <scalar_grid>
+            values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+            break;
+        }
+
+        case StoreMethod::VECTOR_GRID:
+        {
+            /// SELECT group,
+            ///        <aggregate_function>((timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1,
+            ///                             time_series.2)) AS values
+            /// FROM <vector_grid>
+            /// GROUP BY group
+            has_group = true;
+
+            /// (timeSeriesFromGrid(<start_time>, <end_time>, <step>, values) AS time_series).1
+            ASTPtr ts = makeASTFunction(
+                "timeSeriesFromGrid",
+                timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
+                timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
+                timeSeriesDurationToAST(argument.step, context.timestamp_data_type),
+                make_intrusive<ASTIdentifier>(ColumnNames::Values));
+            ts->setAlias(ColumnNames::TimeSeries);
+            timestamps = makeASTFunction("tupleElement", std::move(ts), make_intrusive<ASTLiteral>(1));
+
+            /// time_series.2
+            values = makeASTFunction(
+                "tupleElement", make_intrusive<ASTIdentifier>(ColumnNames::TimeSeries), make_intrusive<ASTLiteral>(2));
+
+            break;
+        }
+
+        case StoreMethod::RAW_DATA:
+        {
+            /// SELECT group,
+            ///        <aggregate_function>(timestamp, value) AS values
+            /// FROM <raw_data>
+            /// GROUP BY group
+            has_group = true;
+
+            timestamps = make_intrusive<ASTIdentifier>(ColumnNames::Timestamp);
+            values = make_intrusive<ASTIdentifier>(ColumnNames::Value);
+            res.store_method = StoreMethod::VECTOR_GRID;
+
+            break;
+        }
+
+        case StoreMethod::CONST_STRING:
+        {
+            /// Can't get in here because the store method CONST_STRING is incompatible with the allowed
+            /// argument types (see checkArgumentTypes()).
+            throwUnexpectedStoreMethod(argument, context);
+        }
+    }
+
+    chassert(values);
+
+    if (!timestamps)
+    {
+        /// timeSeriesRange(<start_time>, <end_time>, <step>)
+        timestamps = makeASTFunction(
+            "timeSeriesRange",
+            timeSeriesTimestampToAST(argument.start_time, context.timestamp_data_type),
+            timeSeriesTimestampToAST(argument.end_time, context.timestamp_data_type),
+            timeSeriesDurationToAST(argument.step, context.timestamp_data_type));
+    }
 
     SelectQueryBuilder builder;
 
@@ -246,26 +272,13 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    ASTPtr aggregate_values = addParametersToAggregateFunction(
-        makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
-        timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
-        timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
-        timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
-        timeSeriesDurationToAST(window, context.result_timestamp_type));
+    builder.select_list.push_back(addParametersToAggregateFunction(
+        makeASTFunction(impl_info->ch_function_name, std::move(timestamps), std::move(values)),
+        timeSeriesTimestampToAST(start_time, context.timestamp_data_type),
+        timeSeriesTimestampToAST(end_time, context.timestamp_data_type),
+        timeSeriesDurationToAST(step, context.timestamp_data_type),
+        timeSeriesDurationToAST(window, context.timestamp_data_type)));
 
-    if (impl_info->needs_cast_to_float64)
-    {
-        /// CAST(<aggregate_function>(timestamp, value), 'Array(Nullable(Float64))')
-        /// See `needs_cast_to_float64`; a timestamp becomes seconds since 1970-01-01 as in Prometheus. The cast does nothing
-        /// for Float64 and is cheap anyway: the aggregated grid is much smaller than the raw data.
-        aggregate_values = makeASTFunction("CAST", std::move(aggregate_values), make_intrusive<ASTLiteral>("Array(Nullable(Float64))"));
-    }
-
-    if (fixed_at_node)
-        aggregate_values = repeatFixedAtResultOverGrid(
-            std::move(aggregate_values), aggregation_range, stepsInTimeSeriesRange(start_time, end_time, step));
-
-    builder.select_list.push_back(std::move(aggregate_values));
     builder.select_list.back()->setAlias(ColumnNames::Values);
 
     if (has_group)
@@ -278,18 +291,12 @@ SQLQueryPiece applyFunctionOverRange(
         builder.from_table = subqueries.back().name;
     }
 
-    SQLQueryPiece res = argument;
-    res.node = node;
-    res.scalar_value = {};
-
     res.select_query = builder.getSelectQuery();
-    res.type = ResultType::INSTANT_VECTOR;
-    res.store_method = has_group ? StoreMethod::VECTOR_GRID : StoreMethod::SCALAR_GRID;
     res.start_time = start_time;
     res.end_time = end_time;
     res.step = step;
 
-    if (has_group && drop_metric_name.value_or(impl_info->drop_metric_name))
+    if (has_group && impl_info->drop_metric_name)
         res = dropMetricName(std::move(res), context);
 
     return res;

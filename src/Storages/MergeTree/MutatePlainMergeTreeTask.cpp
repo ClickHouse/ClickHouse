@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>
@@ -120,7 +120,7 @@ bool MutatePlainMergeTreeTask::executeStep()
                 data_part_storage.setPreferredFileOrder(new_part->getPreferredFileOrder());
 #endif
                 if (data_part_storage.hasActiveTransaction())
-                    data_part_storage.commitTransaction();
+                    data_part_storage.precommitTransaction();
 
                 MergeTreeData::Transaction transaction(storage, merge_mutate_entry->txn.get());
                 /// Hold data_parts_lock across both renameTempPartAndReplace and commit to prevent
