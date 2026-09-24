@@ -24,6 +24,7 @@ CREATE VIEW v AS
           SELECT 'hasToken' AS predicate, arraySort(groupArray(id)) AS ids FROM tab WHERE hasToken(lower(s), 'error')
 UNION ALL SELECT 'hasToken, mixed case', arraySort(groupArray(id)) FROM tab WHERE hasToken(lower(s), 'Error')
 UNION ALL SELECT 'NOT hasToken', arraySort(groupArray(id)) FROM tab WHERE NOT hasToken(lower(s), 'error')
+UNION ALL SELECT 'NOT hasToken, mixed case', arraySort(groupArray(id)) FROM tab WHERE NOT hasToken(lower(s), 'Error')
 UNION ALL SELECT 'hasAnyTokens', arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'disk refused')
 UNION ALL SELECT 'hasAnyTokens, tokenizer argument', arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), 'disk refused', 'splitByNonAlpha')
 UNION ALL SELECT 'hasAnyTokens, array, mixed case', arraySort(groupArray(id)) FROM tab WHERE hasAnyTokens(lower(s), ['Disk', 'refused'])
@@ -182,5 +183,23 @@ SETTINGS index_granularity = 1;
 INSERT INTO tab VALUES (1, 'Error here', 'nothing'), (2, 'fine', 'error there');
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(`lower(s)`, 'error');
+
+DROP TABLE tab;
+
+SELECT '-- A preprocessor with constant arguments';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = replaceAll(lower(s), '_', ' '))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'Disk_Full'), (2, 'disk'), (3, 'fine');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(replaceAll(lower(s), '_', ' '), 'full') SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE tab;
