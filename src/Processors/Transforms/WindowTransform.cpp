@@ -1363,14 +1363,6 @@ static void assertSameColumns(const Columns & left_all, const Columns & right_al
 
 void WindowTransform::addInputBlock(Chunk chunk)
 {
-    if (!chunk.hasRows())
-    {
-        // Joins may generate empty input chunks when it's not yet end of
-        // input. Just ignore them. They probably shouldn't be sending empty
-        // chunks up the pipeline, but oh well.
-        return;
-    }
-
     blocks.push_back({});
     auto & block = blocks.back();
 
@@ -1697,7 +1689,13 @@ void WindowTransform::work()
     chassert(pending_input || input_is_finished);
 
     if (pending_input)
-        addInputBlock(std::exchange(pending_input, std::nullopt).value());
+    {
+        Chunk chunk = std::exchange(pending_input, std::nullopt).value();
+        if (!chunk.hasRows())
+            return;
+
+        addInputBlock(std::move(chunk));
+    }
 
     computeReadyRows();
     releaseUnusedBlocks();
