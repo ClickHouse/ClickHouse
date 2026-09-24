@@ -1300,8 +1300,8 @@ def test_api_call_quota_ignores_subquery_settings(started_cluster):
         )
         outer_wins = int(get_profile_events(qid)["api_calls"])
 
-        # The quota is set only in the subquery; the outer query leaves it at the default (far
-        # above 64). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
+        # The quota is set only in the subquery; the outer query leaves it at the default (0 -
+        # no limit). The subquery cap is ignored, so all 64 rows run rather than stopping at 5 -
         # a quota set only in a subquery has no effect.
         qid = unique_query_id("quota_levels_subquery_only")
         instance.query(
