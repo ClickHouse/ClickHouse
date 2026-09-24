@@ -17,6 +17,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int UNEXPECTED_DATA_AFTER_PARSED_VALUE;
+extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 UInt128 SerializationDateTime::getHash(const TimezoneMixin & time_zone_)
@@ -43,42 +44,50 @@ namespace
 inline void
 readText(time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
+    const auto overflow = settings.throwOnDateTimeOverflow()
+        ? DateTimeOverflow::Report
+        : DateTimeOverflow::Saturate;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            readDateTimeTextImpl<>(x, istr, time_zone);
+            readDateTimeTextImpl<>(x, istr, time_zone, nullptr, nullptr, overflow == DateTimeOverflow::Saturate);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
+            parseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, overflow);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
+            parseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, overflow);
             break;
     }
 
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
-inline void readAsIntText(time_t & x, ReadBuffer & istr)
+inline void readAsIntText(time_t & x, ReadBuffer & istr, bool saturate_on_overflow)
 {
     readIntText(x, istr);
+    if (!saturate_on_overflow && (x < 0 || x > static_cast<time_t>(0xFFFFFFFF)))
+        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", x);
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
 }
 
 inline bool tryReadText(
     time_t & x, ReadBuffer & istr, const FormatSettings & settings, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone)
 {
+    const auto overflow = settings.throwOnDateTimeOverflow()
+        ? DateTimeOverflow::Report
+        : DateTimeOverflow::Saturate;
     bool res = false;
     switch (settings.date_time_input_format)
     {
         case FormatSettings::DateTimeInputFormat::Basic:
-            res = tryReadDateTimeText(x, istr, time_zone);
+            res = tryReadDateTimeText(x, istr, time_zone, nullptr, nullptr, overflow == DateTimeOverflow::Saturate);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffort:
-            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone);
+            res = tryParseDateTimeBestEffort(x, istr, time_zone, utc_time_zone, overflow);
             break;
         case FormatSettings::DateTimeInputFormat::BestEffortUS:
-            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone);
+            res = tryParseDateTimeBestEffortUS(x, istr, time_zone, utc_time_zone, overflow);
             break;
     }
 
@@ -86,9 +95,11 @@ inline bool tryReadText(
     return res;
 }
 
-inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr)
+inline bool tryReadAsIntText(time_t & x, ReadBuffer & istr, bool saturate_on_overflow)
 {
     if (!tryReadIntText(x, istr))
+        return false;
+    if (!saturate_on_overflow && (x < 0 || x > static_cast<time_t>(0xFFFFFFFF)))
         return false;
     x = std::clamp<time_t>(x, 0, static_cast<time_t>(0xFFFFFFFF));
     return true;
@@ -185,7 +196,7 @@ void SerializationDateTime::deserializeTextQuoted(IColumn & column, ReadBuffer &
     }
     else /// Just 1504193808 or 01504193808
     {
-        readAsIntText(x, istr);
+        readAsIntText(x, istr, !settings.throwOnDateTimeOverflow());
     }
 
     /// It's important to do this at the end - for exception safety.
@@ -202,7 +213,7 @@ bool SerializationDateTime::tryDeserializeTextQuoted(IColumn & column, ReadBuffe
     }
     else /// Just 1504193808 or 01504193808
     {
-        if (!tryReadAsIntText(x, istr))
+        if (!tryReadAsIntText(x, istr, !settings.throwOnDateTimeOverflow()))
             return false;
     }
 
@@ -229,7 +240,7 @@ void SerializationDateTime::deserializeTextJSON(IColumn & column, ReadBuffer & i
     }
     else
     {
-        readAsIntText(x, istr);
+        readAsIntText(x, istr, !settings.throwOnDateTimeOverflow());
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<UInt32>(x));
@@ -245,7 +256,7 @@ bool SerializationDateTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer 
     }
     else
     {
-        if (!tryReadAsIntText(x, istr))
+        if (!tryReadAsIntText(x, istr, !settings.throwOnDateTimeOverflow()))
             return false;
     }
 

@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int TOO_DEEP_RECURSION;
     extern const int SYNTAX_ERROR;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 /// Converts num_bytes hex-encoded bytes from src to dst in a single pass, folding validity into
@@ -1672,8 +1673,9 @@ ReturnType readDateTimeTextFallback(
             second = (s[6] - '0') * 10 + (s[7] - '0');
         }
 
-        if constexpr (throw_exception)
+        if (saturate_on_overflow)
         {
+            /// Use saturating version - makeDateTime saturates out-of-range years
             if (unlikely(year == 0))
                 datetime = 0;
             else
@@ -1681,29 +1683,28 @@ ReturnType readDateTimeTextFallback(
         }
         else
         {
-            if (saturate_on_overflow)
+            /// Use non-saturating version - report out-of-range values instead of clamping them
+            auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+            if (!datetime_maybe)
             {
-                /// Use saturating version - makeDateTime saturates out-of-range years
-                if (unlikely(year == 0))
-                    datetime = 0;
+                if constexpr (throw_exception)
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime");
                 else
-                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-            }
-            else
-            {
-                /// Use non-saturating version - return false for out-of-range values
-                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                if (!datetime_maybe)
                     return false;
+            }
 
-                if constexpr (!dt64_mode)
+            if constexpr (!dt64_mode)
+            {
+                if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
                 {
-                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                    if constexpr (throw_exception)
+                        throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", *datetime_maybe);
+                    else
                         return false;
                 }
-
-                datetime = *datetime_maybe;
             }
+
+            datetime = *datetime_maybe;
         }
     }
     else
@@ -1734,6 +1735,8 @@ ReturnType readDateTimeTextFallback(
             else
                 return false;
         }
+
+        return checkParsedDateTimeRange<ReturnType, dt64_mode>(datetime, saturate_on_overflow);
 
     }
 

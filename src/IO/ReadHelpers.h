@@ -57,6 +57,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_STRING_SIZE;
     extern const int TOO_LARGE_ARRAY_SIZE;
     extern const int SIZE_OF_FIXED_STRING_DOESNT_MATCH;
+    extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
 }
 
 /// Helper functions for formatted input.
@@ -644,39 +645,40 @@ inline ReturnType readDateTextImpl(DayNum & date, ReadBuffer & buf, const DateLU
     LocalDate local_date;
 
     if constexpr (throw_exception)
-    {
         readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters);
+    else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
+        return false;
+
+    if (saturate_on_overflow)
+    {
+        /// Use saturating versions - makeDayNum saturates out-of-range years, convertToDayNum saturates to 0 or 0xFFFF
         ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
         convertToDayNum(date, ret);
+        return ReturnType(true);
     }
-    else
+
+    auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+    if (!ret)
     {
-        if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
-            return false;
-
-        if (saturate_on_overflow)
-        {
-            /// Use saturating versions - makeDayNum saturates out-of-range years, convertToDayNum saturates to 0 or 0xFFFF
-            ExtendedDayNum ret = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-            convertToDayNum(date, ret);
-        }
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
         else
-        {
-            /// Use non-saturating versions - return false for out-of-range values
-            auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
-            if (!ret)
-                return false;
-
-            if (!tryToConvertToDayNum(date, *ret))
-                return false;
-        }
-
-        return true;
+            return false;
     }
+
+    if (!tryToConvertToDayNum(date, *ret))
+    {
+        if constexpr (throw_exception)
+            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type Date", ret->toUnderType());
+        else
+            return false;
+    }
+
+    return ReturnType(true);
 }
 
 template <typename ReturnType = void>
-inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr)
+inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_delimiters = nullptr, bool saturate_on_overflow = true)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -687,7 +689,33 @@ inline ReturnType readDateTextImpl(ExtendedDayNum & date, ReadBuffer & buf, cons
     else if (!readDateTextImpl<ReturnType>(local_date, buf, allowed_delimiters))
         return false;
 
-    /// When the parameter is out of rule or out of range, Date32 uses 1925-01-01 as the default value (-DateLUT::instance().getDayNumOffsetEpoch(), -16436) and Date uses 1970-01-01.
+    if (!saturate_on_overflow)
+    {
+        /// Date32 covers [1900, 2299] here: a plausible date with a year outside it is a range error, while anything
+        /// else that fails (month 13, or garbage like 99999999) is a calendar-invalid date, as on master
+        const bool plausible = local_date.month() >= 1 && local_date.month() <= 12 && local_date.day() >= 1 && local_date.day() <= 31;
+        if (plausible && (local_date.year() < DATE_LUT_MIN_YEAR || local_date.year() > DATE_LUT_MAX_YEAR))
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year {} is out of bounds of type Date32", local_date.year());
+            else
+                return false;
+        }
+
+        auto ret = tryToMakeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day());
+        if (!ret)
+        {
+            if constexpr (throw_exception)
+                throw Exception(ErrorCodes::CANNOT_PARSE_DATE, "Cannot parse date");
+            else
+                return false;
+        }
+
+        date = *ret;
+        return ReturnType(true);
+    }
+
+    /// A calendar-invalid date (e.g. month 13) yields 1900-01-01 (-getDayNumOffsetEpoch(), -25567) for Date32 and 1970-01-01 for Date.
     date = makeDayNum(date_lut, local_date.year(), local_date.month(), local_date.day(), -static_cast<Int32>(getDayNumOffsetEpoch()));
     return ReturnType(true);
 }
@@ -698,14 +726,14 @@ inline void readDateText(LocalDate & date, ReadBuffer & buf)
     readDateTextImpl<void>(date, buf);
 }
 
-inline void readDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), bool saturate_on_overflow = true)
 {
-    readDateTextImpl<void>(date, buf, date_lut);
+    readDateTextImpl<void>(date, buf, date_lut, nullptr, saturate_on_overflow);
 }
 
-inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance())
+inline void readDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & date_lut = DateLUT::instance(), bool saturate_on_overflow = true)
 {
-    readDateTextImpl<void>(date, buf, date_lut);
+    readDateTextImpl<void>(date, buf, date_lut, nullptr, saturate_on_overflow);
 }
 
 inline bool tryReadDateText(LocalDate & date, ReadBuffer & buf, const char * allowed_delimiters = nullptr)
@@ -718,9 +746,9 @@ inline bool tryReadDateText(DayNum & date, ReadBuffer & buf, const DateLUTImpl &
     return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters, saturate_on_overflow);
 }
 
-inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr)
+inline bool tryReadDateText(ExtendedDayNum & date, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), const char * allowed_delimiters = nullptr, bool saturate_on_overflow = true)
 {
-    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters);
+    return readDateTextImpl<bool>(date, buf, time_zone, allowed_delimiters, saturate_on_overflow);
 }
 
 UUID parseUUID(std::span<const UInt8> src);
@@ -855,6 +883,23 @@ inline T parseFromStringWithoutAssertEOF(std::string_view str)
 template <typename ReturnType = void, bool dt64_mode = false>
 ReturnType readDateTimeTextFallback(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr, bool saturate_on_overflow = true);
 
+/// A digit-only timestamp is read as a plain integer, so its range has to be checked separately
+template <typename ReturnType, bool dt64_mode>
+inline ReturnType checkParsedDateTimeRange(time_t datetime [[maybe_unused]], bool saturate_on_overflow [[maybe_unused]])
+{
+    if constexpr (!dt64_mode)
+    {
+        if (!saturate_on_overflow && (datetime < 0 || datetime > static_cast<Int64>(UINT32_MAX)))
+        {
+            if constexpr (std::is_same_v<ReturnType, void>)
+                throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", datetime);
+            else
+                return false;
+        }
+    }
+    return ReturnType(true);
+}
+
 template <typename ReturnType = void, bool t64_mode = false>
 ReturnType readTimeTextFallback(time_t & time, ReadBuffer & buf, const DateLUTImpl & date_lut, const char * allowed_date_delimiters = nullptr, const char * allowed_time_delimiters = nullptr);
 
@@ -927,8 +972,9 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
                 second = (s[17] - '0') * 10 + (s[18] - '0');
             }
 
-            if constexpr (throw_exception)
+            if (saturate_on_overflow)
             {
+                /// Use saturating version - makeDateTime saturates out-of-range years
                 if (unlikely(year == 0))
                     datetime = 0;
                 else
@@ -936,30 +982,29 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             }
             else
             {
-                if (saturate_on_overflow)
+                /// Use non-saturating version - report out-of-range values instead of clamping them
+                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                if (!datetime_maybe)
                 {
-                    /// Use saturating version - makeDateTime saturates out-of-range years
-                    if (unlikely(year == 0))
-                        datetime = 0;
+                    if constexpr (throw_exception)
+                        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse datetime");
                     else
-                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-                }
-                else
-                {
-                    /// Use non-saturating version - return false for out-of-range values
-                    auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                    if (!datetime_maybe)
                         return false;
+                }
 
-                    /// For usual DateTime check if value is within supported range
-                    if constexpr (!dt64_mode)
+                /// For usual DateTime check if value is within supported range
+                if constexpr (!dt64_mode)
+                {
+                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
                     {
-                        if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                        if constexpr (throw_exception)
+                            throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Value {} is out of bounds of type DateTime", *datetime_maybe);
+                        else
                             return false;
                     }
-
-                    datetime = *datetime_maybe;
                 }
+
+                datetime = *datetime_maybe;
             }
 
             if (dt_long)
@@ -970,7 +1015,12 @@ inline ReturnType readDateTimeTextImpl(time_t & datetime, ReadBuffer & buf, cons
             return ReturnType(true);
         }
         /// Why not readIntTextUnsafe? Because for needs of AdFox, parsing of unix timestamp with leading zeros is supported: 000...NNNN.
-        return readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        if constexpr (throw_exception)
+            readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf);
+        else if (!readIntTextImpl<time_t, ReturnType, ReadIntTextCheckOverflow::CHECK_OVERFLOW>(datetime, buf))
+            return false;
+
+        return checkParsedDateTimeRange<ReturnType, dt64_mode>(datetime, saturate_on_overflow);
     }
     return readDateTimeTextFallback<ReturnType, dt64_mode>(datetime, buf, date_lut, allowed_date_delimiters, allowed_time_delimiters, saturate_on_overflow);
 }
@@ -1395,9 +1445,9 @@ inline ReturnType readTimeTextImpl(Time64 & time64, UInt32 scale, ReadBuffer & b
     return ReturnType(is_ok);
 }
 
-inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
+inline void readDateTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), bool saturate_on_overflow = true)
 {
-    readDateTimeTextImpl<void>(datetime, buf, time_zone);
+    readDateTimeTextImpl<void>(datetime, buf, time_zone, nullptr, nullptr, saturate_on_overflow);
 }
 
 inline void readTimeText(time_t & datetime, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance())
@@ -1650,8 +1700,8 @@ inline void readText(T & x, ReadBuffer & buf) { readFloatTextPrecise(x, buf); }
 
 inline void readText(String & x, ReadBuffer & buf) { readEscapedString(x, buf); }
 
-inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { readDateText(x, buf, time_zone); }
-inline bool tryReadText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance()) { return tryReadDateText(x, buf, time_zone); }
+inline void readText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), bool saturate_on_overflow = true) { readDateText(x, buf, time_zone, saturate_on_overflow); }
+inline bool tryReadText(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone = DateLUT::instance(), bool saturate_on_overflow = true) { return tryReadDateText(x, buf, time_zone, nullptr, saturate_on_overflow); }
 
 inline void readText(LocalDate & x, ReadBuffer & buf) { readDateText(x, buf); }
 inline bool tryReadText(LocalDate & x, ReadBuffer & buf) { return tryReadDateText(x, buf); }
@@ -1777,7 +1827,7 @@ inline ReturnType readCSVSimple(T & x, ReadBuffer & buf)
 
 // standalone overload for dates: to avoid instantiating DateLUTs while parsing other types
 template <typename T, typename ReturnType = void>
-inline ReturnType readCSVSimple(T & x, ReadBuffer & buf, const DateLUTImpl & time_zone)
+inline ReturnType readCSVSimple(T & x, ReadBuffer & buf, const DateLUTImpl & time_zone, bool saturate_on_overflow = true)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
@@ -1794,8 +1844,8 @@ inline ReturnType readCSVSimple(T & x, ReadBuffer & buf, const DateLUTImpl & tim
         ++buf.position();
 
     if constexpr (throw_exception)
-        readText(x, buf, time_zone);
-    else if (!tryReadText(x, buf, time_zone))
+        readText(x, buf, time_zone, saturate_on_overflow);
+    else if (!tryReadText(x, buf, time_zone, saturate_on_overflow))
         return ReturnType(false);
 
     if (maybe_quote == '\'' || maybe_quote == '\"')
@@ -1836,8 +1886,8 @@ inline bool tryReadCSV(LocalDate & x, ReadBuffer & buf) { return readCSVSimple<L
 
 inline void readCSV(DayNum & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(DayNum & x, ReadBuffer & buf) { return readCSVSimple<DayNum, bool>(x, buf); }
-inline void readCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { readCSVSimple(x, buf, time_zone); }
-inline bool tryReadCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone) { return readCSVSimple<DayNum, bool>(x, buf, time_zone); }
+inline void readCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone, bool saturate_on_overflow = true) { readCSVSimple(x, buf, time_zone, saturate_on_overflow); }
+inline bool tryReadCSV(DayNum & x, ReadBuffer & buf, const DateLUTImpl & time_zone, bool saturate_on_overflow = true) { return readCSVSimple<DayNum, bool>(x, buf, time_zone, saturate_on_overflow); }
 
 inline void readCSV(LocalDateTime & x, ReadBuffer & buf) { readCSVSimple(x, buf); }
 inline bool tryReadCSV(LocalDateTime & x, ReadBuffer & buf) { return readCSVSimple<LocalDateTime, bool>(x, buf); }
