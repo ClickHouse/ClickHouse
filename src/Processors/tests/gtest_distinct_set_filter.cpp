@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <bit>
 #include <optional>
 #include <set>
 #include <thread>
+#include <vector>
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnFixedString.h>
@@ -254,21 +257,31 @@ TEST(DistinctSetFilterExtraction, NullableKey)
 
 TEST(DistinctSetFilterExtraction, FloatBitPatternsSurviveExtraction)
 {
-    /// 0. and -0. are different distinct values (binary comparison); the extraction must preserve both.
+    /// 0. and -0. are one distinct value (negative zero is canonicalized before hashing, as `equals` treats
+    /// them as equal), while NaN values with different payloads stay apart (binary comparison);
+    /// the extraction must preserve exactly these distinct values.
     const Block header = {ColumnWithTypeAndName(std::make_shared<DataTypeFloat64>(), "k")};
 
+    const Float64 nan_1 = std::bit_cast<Float64>(UInt64(0x7FF8000000000001));
+    const Float64 nan_2 = std::bit_cast<Float64>(UInt64(0x7FF8000000000002));
+
     DistinctSetFilter filter(header, {}, SizeLimits{});
-    auto column = makeNumberColumn<ColumnFloat64, Float64>({0., -0., 0., -0.});
-    Chunk filtered = filter.filter(Chunk({column}, 4));
-    ASSERT_EQ(filtered.getNumRows(), 2u);
+    auto column = makeNumberColumn<ColumnFloat64, Float64>({0., -0., nan_1, nan_2, 0., -0., nan_1});
+    Chunk filtered = filter.filter(Chunk({column}, 7));
+    ASSERT_EQ(filtered.getNumRows(), 3u);
 
     auto extractor = std::move(filter).extractKeys();
-    auto batch = extractor->next(2, /*max_bytes=*/ 0);
+    auto batch = extractor->next(3, /*max_bytes=*/ 0);
     ASSERT_EQ(batch.size(), 1u);
-    EXPECT_TRUE(extractor->next(2, /*max_bytes=*/ 0).empty());
+    EXPECT_TRUE(extractor->next(3, /*max_bytes=*/ 0).empty());
     const auto & extracted = assert_cast<const ColumnFloat64 &>(*batch[0]).getData();
-    ASSERT_EQ(extracted.size(), 2u);
-    EXPECT_NE(std::signbit(extracted[0]), std::signbit(extracted[1]));
+    ASSERT_EQ(extracted.size(), 3u);
+
+    std::vector<UInt64> bits;
+    for (Float64 value : extracted)
+        bits.push_back(std::bit_cast<UInt64>(value));
+    std::sort(bits.begin(), bits.end());
+    EXPECT_EQ(bits, (std::vector<UInt64>{0, 0x7FF8000000000001, 0x7FF8000000000002}));
 }
 
 TEST(DistinctSetFilterSemantics, ThrowModeAllowsReachingTheLimitExactly)
