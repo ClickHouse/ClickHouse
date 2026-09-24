@@ -3,6 +3,7 @@ import json
 import logging
 import os
 import random
+import re
 import string
 import tempfile
 import threading
@@ -4920,15 +4921,16 @@ def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
     )
     assert "_delta_log" in error, f"unexpected insert error: {error}"
 
-    # O2: the removal that failed is reported, naming the data file it was left on.
-    # The message is the full one only the commit-failure cleanup emits; the cancel path
-    # logs a different one, and the path has to be on the matched line itself.
-    removal_log = instance.grep_in_log(
-        "Failed to remove uncommitted data file after a failed commit"
-    )
-    assert any(
-        f"{table_name}_data" in line and ".parquet" in line
-        for line in removal_log.splitlines()
+    # O2: the removal that failed is reported, naming the data file it was left on. The
+    # message is the full one only the commit-failure cleanup emits; the cancel path logs a
+    # different one. The path has to follow the message immediately: the injected removal
+    # exception carries the path too, so matching it anywhere on the line would also pass if
+    # the handler logged no path at all.
+    message = "Failed to remove uncommitted data file after a failed commit"
+    removal_log = instance.grep_in_log(message)
+    assert re.search(
+        re.escape(f"{message}: ") + rf"\S*{re.escape(table_name)}_data/\S+\.parquet",
+        removal_log,
     ), f"the failed data-file removal was not logged with its path: {removal_log}"
 
     # O3: the failed INSERT committed nothing, and left the committed data files alone.
