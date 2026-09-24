@@ -1960,7 +1960,6 @@ class SettingsRandomizer:
         "use_statistics": lambda: random.random() > 0.05,
         "use_statistics_cache": lambda: random.random() > 0.05,
         # More query plan optimizations
-        "enable_optimize_predicate_expression": lambda: random.random() > 0.05,
         "enable_optimize_predicate_expression_to_final_subquery": lambda: random.random() > 0.05,
         "enable_software_prefetch_in_aggregation": lambda: random.random() > 0.05,
         "allow_reorder_prewhere_conditions": lambda: random.random() > 0.05,
@@ -1986,7 +1985,7 @@ class SettingsRandomizer:
         "analyzer_compatibility_prefer_alias_over_subcolumn": lambda: random.randint(0, 1),
         "use_streaming_marks_compression": lambda: random.randint(0, 1),
         "text_index_posting_list_apply_mode": lambda: random.choice(["materialize", "lazy"]),
-        "text_index_lazy_intersection_density_threshold": threshold_generator(0.2, 0.2, 0.0, 1.0),
+        "text_index_postings_intersection_algorithm": lambda: random.choice(["auto", "bruteforce", "leapfrog"]),
         # Independent DISTINCT per MergeTree partition
         "allow_distinct_partitions_independently": lambda: random.random() > 0.05,
         "force_distinct_partitions_independently": lambda: random.random() < 0.3,
@@ -6893,6 +6892,8 @@ ORDER BY (test_name, callee_offset)
                     print(" done")
                     break
                 print(". ", end="")
+                # Paces the probes; the zero-hung path breaks above.
+                sleep(1)
         except Exception as e:
             print(
                 colored(
@@ -6998,9 +6999,6 @@ ORDER BY (test_name, callee_offset)
             clickhouse_execute(args, "SYSTEM SET COVERAGE TEST ''")
         except Exception as e:
             print("Cannot flush final coverage: ", str(e))
-        cov_rows = int(clickhouse_execute(args, "SELECT count() FROM system.coverage_log FINAL") or 0)
-        cov_tests = int(clickhouse_execute(args, "SELECT uniq(test_name) FROM system.coverage_log FINAL") or 0)
-        print(f"system.coverage_log: {cov_rows} rows, {cov_tests} distinct tests")
         try:
             ic_rows = int(
                 clickhouse_execute(

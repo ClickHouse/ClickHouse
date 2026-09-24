@@ -7,6 +7,7 @@
 #include <Common/MultiVersion.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <IO/HTTPHeaderEntries.h>
+#include <Databases/DataLake/HTTPBasedCatalogUtils.h>
 #include <Interpreters/Context_fwd.h>
 #include <base/defines.h>
 #include <chrono>
@@ -25,18 +26,8 @@ class ReadBuffer;
 namespace DataLake
 {
 
-struct AccessToken
-{
-    std::string token;
-    std::optional<std::chrono::system_clock::time_point> expires_at;
-
-    bool isExpired() const
-    {
-        if (!expires_at.has_value())
-            return false;
-        return std::chrono::system_clock::now() >= expires_at.value();
-    }
-};
+/// Parses "Name: value" into a header entry.
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header);
 
 struct VendedStorageCredentials
 {
