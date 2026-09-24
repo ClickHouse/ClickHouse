@@ -37,7 +37,7 @@ SELECT * FROM (SELECT number, 'payload' FROM numbers(2_000_000)) ORDER BY number
 SETTINGS enable_pco_codec = 1, temporary_files_codec = 'ZXC'
 FORMAT Null; -- { serverError BAD_ARGUMENTS }
 
-SET max_bytes_in_join = '1M';
+SET max_bytes_before_external_join = '2M';
 SET join_algorithm = 'grace_hash', grace_hash_join_initial_buckets = 32, grace_hash_join_max_buckets = 32;
 
 SELECT * FROM (SELECT number AS key, number AS val FROM numbers(200_000)) t1

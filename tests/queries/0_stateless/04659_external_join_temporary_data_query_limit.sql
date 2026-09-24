@@ -4,7 +4,7 @@
 
 SET enable_analyzer = 1;
 SET join_algorithm = 'grace_hash';
-SET max_bytes_in_join = 4000000;
+SET max_bytes_before_external_join = 4000000;
 SET max_threads = 1;
 
 SET max_temporary_data_on_disk_size_for_query = 1024;
