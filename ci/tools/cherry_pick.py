@@ -1605,6 +1605,10 @@ def run_once(args):
 
     gh = GitHub(token)
     temp_path = Path(TEMP_PATH)
+    if not IS_CI:
+        # `S3` reads and writes the real bucket unless local mode is set, and it
+        # keys that off its own variable rather than off `CI`.
+        os.environ["PRAKTIKA_LOCAL_RUN"] = "1"
     gh_cache = GitHubCache(gh.cache_path, temp_path, S3)
     gh_cache.download()
 
