@@ -116,6 +116,7 @@ public:
     DiskObjectStorageMetadataPtr readMetadataUnlocked(const std::string & path, std::shared_lock<SharedMutex> & lock) const;
 
     bool isReadOnly() const override { return disk->isReadOnly(); }
+    bool isRemote() const override { return disk->isRemote(); }
 
     void startup() override;
 

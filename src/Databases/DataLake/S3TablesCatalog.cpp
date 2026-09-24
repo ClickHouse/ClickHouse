@@ -39,7 +39,6 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
-    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsUInt64 s3_max_redirects;
     extern const SettingsUInt64 s3_retry_attempts;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
