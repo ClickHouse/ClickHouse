@@ -131,5 +131,6 @@ bool NATSSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(NATSSettings)
+IMPLEMENT_SETTINGS_NAME_AT_OFFSET(NATSSettings)
 
 }

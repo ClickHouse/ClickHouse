@@ -72,6 +72,18 @@ struct SettingsWithRecordedOrigin : public BaseSettings<TTraits>
         setOrigin(index, origin);
     }
 
+    /// The declared name of the setting whose field is at `offset`, for code that holds a typed `SettingIndex`
+    /// and has to name the setting it points at - matching a row of a described vector, which is keyed by name.
+    /// Defined here, where the traits are complete; a settings class surfaces it with
+    /// `IMPLEMENT_SETTINGS_NAME_AT_OFFSET`, since its header holds `Impl` behind an incomplete type.
+    static std::string_view nameAtOffset(size_t offset)
+    {
+        const auto & accessor = TTraits::Accessor::instance();
+        const size_t index = accessor.findByOffset(offset);
+        chassert(index != npos);
+        return accessor.getName(index);
+    }
+
     /// Records `origin` for a setting already assigned, without assigning it again: for an engine that applies a
     /// source through another path - a normalised copy of its definition, say - and records it afterwards. An
     /// unknown name is ignored, as `resetToDefault` ignores it.

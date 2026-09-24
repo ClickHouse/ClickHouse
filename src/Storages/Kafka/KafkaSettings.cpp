@@ -181,4 +181,5 @@ bool KafkaSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(KafkaSettings)
+IMPLEMENT_SETTINGS_NAME_AT_OFFSET(KafkaSettings)
 }

@@ -87,7 +87,9 @@ void setEffectiveValueWithConfigFallback(
 
 /// The same two, taking the setting's typed index rather than its name - which is how an engine should name
 /// one of its own settings. A name that is misspelled, or that a later release renames, then fails to compile
-/// rather than matching no row and leaving the value the engine does not use in the table.
+/// rather than matching no row and leaving the value the engine does not use in the table. The name itself is
+/// resolved from the offset, so the index stays one word wide: `nameAtOffset` reads it from the traits, which
+/// only the settings class's own .cpp can see.
 template <typename Owner, typename FieldType>
 void setEffectiveValue(
     SettingDescriptions & settings,
@@ -95,14 +97,14 @@ void setEffectiveValue(
     const String & value,
     std::optional<SettingOrigin> origin = {})
 {
-    setEffectiveValue(settings, setting.name, value, origin);
+    setEffectiveValue(settings, Owner::nameAtOffset(setting.offset), value, origin);
 }
 
 template <typename Owner, typename FieldType>
 void setEffectiveValueWithConfigFallback(
     SettingDescriptions & settings, SettingIndex<Owner, FieldType> setting, const String & stated, const String & value)
 {
-    setEffectiveValueWithConfigFallback(settings, setting.name, stated, value);
+    setEffectiveValueWithConfigFallback(settings, Owner::nameAtOffset(setting.offset), stated, value);
 }
 
 }

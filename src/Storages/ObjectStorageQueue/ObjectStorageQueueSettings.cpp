@@ -243,5 +243,6 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
+IMPLEMENT_SETTINGS_NAME_AT_OFFSET(ObjectStorageQueueSettings)
 
 }

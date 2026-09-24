@@ -171,11 +171,13 @@ namespace
 /// profile, which is what `Other` says; `StorageDistributed` reports what it copies from the server the same way.
 /// `metadata` is any `Settings` instance: what is read from it - the default, type, description and tier - is
 /// compiled in, so every instance answers alike, and the caller always has one at hand.
-template <typename FieldType>
-SettingDescription enumerateServerBackedJoinSetting(
-    const Settings & metadata, SettingIndex<Settings, FieldType> setting, String value)
+/// Named by string, not by `Setting::x`: these are the core settings' own names, and a typed index of the core
+/// `Settings` is the one thing that would make a settings class outside `Core` name one. A name that a later
+/// release renames does not go unnoticed - `metadata.getDefaultValueString` throws `UNKNOWN_SETTING` for a name
+/// the core does not have, and `hasBuiltinSetting` builds its list through here, so the first `Join` table with
+/// a `SETTINGS` clause raises it and the tests below cover that path.
+SettingDescription enumerateServerBackedJoinSetting(const Settings & metadata, String name, String value)
 {
-    String name{setting.name};
     SettingDescription described;
     described.value = std::move(value);
     described.default_value = metadata.getDefaultValueString(name);
@@ -201,15 +203,15 @@ struct ServerBackedJoinValues
 SettingDescriptions enumerateServerBackedJoinSettings(const Settings & metadata, const ServerBackedJoinValues & values)
 {
     return {
-        enumerateServerBackedJoinSetting(metadata, Setting::join_use_nulls, SettingFieldBool{values.use_nulls}.toString()),
-        enumerateServerBackedJoinSetting(metadata, Setting::max_rows_in_join, SettingFieldUInt64{values.limits.max_rows}.toString()),
-        enumerateServerBackedJoinSetting(metadata, Setting::max_bytes_in_join, SettingFieldUInt64{values.limits.max_bytes}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "join_use_nulls", SettingFieldBool{values.use_nulls}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "max_rows_in_join", SettingFieldUInt64{values.limits.max_rows}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "max_bytes_in_join", SettingFieldUInt64{values.limits.max_bytes}.toString()),
         enumerateServerBackedJoinSetting(
-            metadata, Setting::join_overflow_mode, SettingFieldOverflowMode{values.limits.overflow_mode}.toString()),
-        enumerateServerBackedJoinSetting(metadata, Setting::join_any_take_last_row, SettingFieldBool{values.overwrite}.toString()),
+            metadata, "join_overflow_mode", SettingFieldOverflowMode{values.limits.overflow_mode}.toString()),
+        enumerateServerBackedJoinSetting(metadata, "join_any_take_last_row", SettingFieldBool{values.overwrite}.toString()),
         enumerateServerBackedJoinSetting(
             metadata,
-            Setting::any_join_distinct_right_table_keys,
+            "any_join_distinct_right_table_keys",
             SettingFieldBool{values.any_join_distinct_right_table_keys}.toString()),
     };
 }

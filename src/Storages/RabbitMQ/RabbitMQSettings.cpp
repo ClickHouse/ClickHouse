@@ -124,5 +124,6 @@ bool RabbitMQSettings::hasBuiltin(std::string_view name)
 }
 
 IMPLEMENT_SETTINGS_ENUMERATION(RabbitMQSettings)
+IMPLEMENT_SETTINGS_NAME_AT_OFFSET(RabbitMQSettings)
 
 }

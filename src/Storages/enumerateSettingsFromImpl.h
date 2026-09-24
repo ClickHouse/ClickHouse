@@ -58,4 +58,9 @@ SettingDescriptions enumerateSettingsFromImpl(const SettingsWithRecordedOrigin<T
 #define IMPLEMENT_SETTINGS_ENUMERATION(TYPE) \
     SettingDescriptions TYPE::enumerateSettings() const { return enumerateSettingsFromImpl(*impl); }
 
+/// Defines `TYPE::nameAtOffset`, for a settings class whose engine names one of its settings by typed index.
+/// Belongs in the same .cpp, for the same reason.
+#define IMPLEMENT_SETTINGS_NAME_AT_OFFSET(TYPE) \
+    std::string_view TYPE::nameAtOffset(size_t offset) { return TYPE##Impl::nameAtOffset(offset); }
+
 }

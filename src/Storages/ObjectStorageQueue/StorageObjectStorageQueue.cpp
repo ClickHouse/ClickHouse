@@ -2279,7 +2279,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// rebuilt object carries its default. Report what `partitioning_mode` says, last, so it takes that
     /// setting's final origin - even when the value is the default, since after the fold they are one setting.
     const auto mode = std::ranges::find(
-        settings, ObjectStorageQueueSetting::partitioning_mode.name, &SettingDescription::name);
+        settings, ObjectStorageQueueSettings::nameAtOffset(ObjectStorageQueueSetting::partitioning_mode.offset), &SettingDescription::name);
     if (mode != settings.end())
         setEffectiveValue(
             settings, ObjectStorageQueueSetting::use_hive_partitioning, mode->value == "hive" ? "1" : "0", mode->origin);

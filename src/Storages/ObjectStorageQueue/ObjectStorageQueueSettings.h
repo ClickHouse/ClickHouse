@@ -84,6 +84,9 @@ struct ObjectStorageQueueSettings
     /// needs no adjustment. The result may be a view into `name`, so it does not outlive the argument.
     static std::optional<std::string_view> adjustSettingName(std::string_view name);
     SettingDescriptions enumerateSettings() const;
+    /// The declared name of the setting at `offset`, for an engine naming one of its settings by typed
+    /// index - `setEffectiveValue` matches a described row, which is keyed by name.
+    static std::string_view nameAtOffset(size_t offset);
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;
