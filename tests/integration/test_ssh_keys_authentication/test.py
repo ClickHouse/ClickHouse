@@ -106,13 +106,9 @@ def test_key_with_wrong_passphrase():
         ) == "lucy\n"
 
 
-# The native protocol lets a client ask for SSH-key authentication by prefixing the user name in
-# the Hello with this marker. The handshake that follows must not tell an unauthenticated client
-# whether the named user exists, or how it authenticates, before a signature has been checked.
 SSH_KEY_AUTHENTICAION_MARKER = " SSH KEY AUTHENTICATION "
 
-# Any revision at or above DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION; the handshake never gets as
-# far as the server Hello, so no later protocol feature is negotiated.
+# The lowest revision that may ask for SSH-key authentication.
 REVISION = 54466
 
 CLIENT_HELLO = 0
@@ -126,8 +122,7 @@ UNIFIED_FAILURE = (
     "Authentication failed: password is incorrect, or there is no user with such name"
 )
 
-# The names of the three user states the handshake must not distinguish. `default` is avoided
-# deliberately: its failure message carries an extra password-reset help text.
+# `default` is avoided: its failure message carries extra password-reset help text.
 SSH_USER = "john"
 PASSWORD_USER = "paul"
 UNKNOWN_USER = "nosuchuser_2f9c41"
@@ -172,9 +167,9 @@ def read_varstring(sock):
 
 
 def ssh_handshake(user):
-    """Ask for SSH-key authentication as `user` and answer the challenge with a signature that
-    cannot be valid. Returns what an unauthenticated client can observe: the type of the first
-    packet the server sends, then the error code and text it fails with."""
+    """Ask for SSH-key authentication as `user`, answering the challenge with a signature that
+    cannot be valid. Returns what an unauthenticated client observes: first packet type, then the
+    error code and text."""
     hello = (
         varuint(CLIENT_HELLO)
         + varstring("probe")  # client name
@@ -218,17 +213,14 @@ def read_exception(sock):
 
 def test_ssh_handshake_does_not_disclose_user_existence():
     """The three user states — SSH user, user authenticating some other way, and a user that does
-    not exist — must be indistinguishable to a client that holds no credential: each is challenged
-    and each then fails identically. Only the SSH user used to be challenged; the other two were
-    turned away before any signature was asked for, with `Expected authentication with SSH key`
-    and `There is no user ...` respectively, which made the handshake a user-existence oracle."""
+    not exist — must be indistinguishable to a client that holds no credential: each is challenged,
+    and each then fails with the same error."""
     observed = {
         user: ssh_handshake(user)
         for user in (SSH_USER, PASSWORD_USER, UNKNOWN_USER)
     }
 
-    # Collected rather than asserted per user, so that a server which distinguishes the states
-    # reports every one of them at once.
+    # Collected, not asserted per user, so that every distinguishable state is reported at once.
     answered_early = {
         user: message
         for user, (first_packet, _code, message) in observed.items()
@@ -243,8 +235,7 @@ def test_ssh_handshake_does_not_disclose_user_existence():
         assert code == AUTHENTICATION_FAILED, f"user {user}: unexpected error code {code}"
         assert UNIFIED_FAILURE in message, f"user {user}: unexpected error text {message}"
 
-    # The message echoes the name the client sent, which the client already knows; nothing else in
-    # it may vary between the three states.
+    # The name is echoed back to a client that already knows it; nothing else may vary.
     distinct = {
         message.replace(user, "<user>")
         for user, (_first_packet, _code, message) in observed.items()

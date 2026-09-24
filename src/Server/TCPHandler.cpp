@@ -2273,10 +2273,9 @@ void TCPHandler::receiveHello()
         if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_SSH_AUTHENTICATION)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD, "Cannot authenticate user with SSH key, because client version is too old");
 
-        /// Challenge the client without looking the user up first: whether a user exists and how
-        /// it authenticates must not be observable before a signature is checked. Reporting the
-        /// failure is left to the credential check below, which answers an unknown user and a
-        /// user that authenticates some other way the same way it answers a bad signature.
+        /// Challenge before looking the user up: whether a user exists and how it authenticates
+        /// must not be observable until a signature has been checked. The credential check below
+        /// answers an unknown user and a non-SSH user exactly as it answers a bad signature.
         readVarUInt(packet_type, *in);
         if (packet_type != Protocol::Client::SSHChallengeRequest)
             throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Server expected to receive a packet for requesting a challenge string");
