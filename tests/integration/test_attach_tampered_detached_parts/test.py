@@ -689,6 +689,9 @@ def test_attach_part_without_metadata_version(started_cluster):
 
             error = node.query_and_get_error(f"ALTER TABLE {table} ATTACH PARTITION tuple()")
             assert "has no metadata_version.txt" in error
+            assert "`a` was renamed to `b`" in error
+            # The message points at the detached directory that is still there after the failed attach.
+            assert f"{part_path}/metadata_version.txt" in error
             assert node.query(f"SELECT count() FROM {table}") == "0\n"
             assert (
                 node.query(
@@ -703,3 +706,38 @@ def test_attach_part_without_metadata_version(started_cluster):
             assert node.query(f"SELECT count(), sum(b) FROM {table}") == "1000\t499500\n"
 
         node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_part_without_metadata_version_after_add_column(started_cluster):
+    # Only renames and drops are replayed from the mutation history by metadata version; an added
+    # column is deduced from the difference between the part's columns and the table's. So a part
+    # without `metadata_version.txt` is still attachable after an `ADD COLUMN`, and after a rename of a
+    # column the part does not have, and reads the added column as its default.
+    table = "t_metadata_version_add_column"
+    node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+    node.query(
+        f"""
+        CREATE TABLE {table} (id UInt64, a UInt32)
+        ENGINE = ReplicatedMergeTree('/clickhouse/tables/{table}', '1')
+        ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, storage_policy = 'default'
+        """
+    )
+    node.query(f"INSERT INTO {table} SELECT number, number FROM numbers(1000)")
+    node.query(f"ALTER TABLE {table} DETACH PARTITION tuple()")
+    node.query(f"ALTER TABLE {table} ADD COLUMN c UInt32 DEFAULT 7")
+    node.query(f"ALTER TABLE {table} RENAME COLUMN c TO d")
+
+    part_path = (
+        node.query(
+            f"SELECT path FROM system.detached_parts WHERE database = 'default' AND table = '{table}'"
+        )
+        .strip()
+        .rstrip("/")
+    )
+    exec_root(f"rm {part_path}/metadata_version.txt")
+
+    node.query(f"ALTER TABLE {table} ATTACH PARTITION tuple()")
+    assert node.query(f"SELECT count(), sum(a), sum(d) FROM {table}") == "1000\t499500\t7000\n"
+
+    node.query(f"DROP TABLE {table} SYNC")
