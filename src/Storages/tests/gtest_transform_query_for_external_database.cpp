@@ -25,6 +25,7 @@
 
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableNode.h>
+#include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -164,6 +165,17 @@ static QueryTreeNodePtr findTableExpression(const QueryTreeNodePtr & node, const
         if (auto res = findTableExpression(node->as<JoinNode>()->getRightTableExpressionNode(), table_name))
             return res;
     }
+
+    if (node->getNodeType() == QueryTreeNodeType::CROSS_JOIN)
+    {
+        for (const auto & table_expression : node->as<CrossJoinNode>()->getTableExpressions())
+            if (auto res = findTableExpression(table_expression, table_name))
+                return res;
+    }
+
+    if (node->getNodeType() == QueryTreeNodeType::ARRAY_JOIN)
+        return findTableExpression(node->as<ArrayJoinNode>()->getTableExpressionNode(), table_name);
+
     return nullptr;
 }
 
@@ -349,6 +361,88 @@ TEST(TransformQueryForExternalDatabase, ForeignColumnInWhere)
           "JOIN test.table2 AS table2 ON (test.table.apply_id = table2.num) "
           "WHERE column > 2 AND apply_id = 1 AND table2.num = 1 AND table2.attr != ''",
           R"(SELECT "column", "apply_id" FROM "test"."table" WHERE ("column" > 2) AND ("apply_id" = 1))");
+}
+
+/// Analyzer only: the AST path never inspected the join tree.
+TEST(TransformQueryForExternalDatabase, NestedOuterJoin)
+{
+    const State & state = State::instance();
+
+    /// The non-preserving side of an outer join gets no filter, wherever the join sits in the join tree.
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 LEFT JOIN test.table AS t ON t2.num = t.column CROSS JOIN test.external_table AS e WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 LEFT JOIN test.table AS t ON t2.num = t.column, test.external_table AS e WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 LEFT JOIN test.table AS t ON t2.num = t.column "
+          "INNER JOIN test.external_table AS e ON e.ttt = t2.num WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 LEFT JOIN test.table AS t ON t2.num = t.column ARRAY JOIN [1, 2] AS elem WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t RIGHT JOIN test.table2 AS t2 ON t2.num = t.column CROSS JOIN test.external_table AS e WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t FULL JOIN test.table2 AS t2 ON t2.num = t.column CROSS JOIN test.external_table AS e WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+
+    /// The preserving side keeps its filter under the same wrappers.
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t LEFT JOIN test.table2 AS t2 ON t2.num = t.column CROSS JOIN test.external_table AS e WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 RIGHT JOIN test.table AS t ON t2.num = t.column ARRAY JOIN [1, 2] AS elem WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2, test.table AS t, test.external_table AS e WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+}
+
+TEST(TransformQueryForExternalDatabase, JoinStrictness)
+{
+    const State & state = State::instance();
+
+    /// The side a join picks one row per key from gets no filter; a side it keeps row by row does.
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 ANY INNER JOIN test.table AS t ON t2.num = t.column WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t ANY INNER JOIN test.table2 AS t2 ON t2.num = t.column WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t ANY LEFT JOIN test.table2 AS t2 ON t2.num = t.column WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t SEMI LEFT JOIN test.table2 AS t2 ON t2.num = t.column WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 ANY RIGHT JOIN test.table AS t ON t2.num = t.column WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+    checkNewAnalyzer(state, {"column", "field", "a"},
+          "SELECT column FROM test.table2 AS t2 ASOF JOIN test.table AS t ON t2.attr = t.field AND t2.num >= t.a WHERE t.column = 1",
+          R"(SELECT "column", "field", "a" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field", "a"},
+          "SELECT column FROM test.table AS t ASOF JOIN test.table2 AS t2 ON t.field = t2.attr AND t.a >= t2.num WHERE t.column = 1",
+          R"(SELECT "column", "field", "a" FROM "test"."table" WHERE "column" = 1)");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 PASTE JOIN test.table AS t WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 INNER JOIN test.table AS t ON t2.num = t.column WHERE t.field = 'x'",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
+
+    /// The legacy ANY pairs every left row with the first right row of its key.
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table2 AS t2 ANY RIGHT JOIN test.table AS t ON t2.num = t.column WHERE t.field = 'x' "
+          "SETTINGS any_join_distinct_right_table_keys = 1",
+          R"(SELECT "column", "field" FROM "test"."table")");
+    checkNewAnalyzer(state, {"column", "field"},
+          "SELECT column FROM test.table AS t ANY LEFT JOIN test.table2 AS t2 ON t2.num = t.column WHERE t.field = 'x' "
+          "SETTINGS any_join_distinct_right_table_keys = 1",
+          R"(SELECT "column", "field" FROM "test"."table" WHERE "field" = 'x')");
 }
 
 TEST(TransformQueryForExternalDatabase, TupleSurroundPredicates)

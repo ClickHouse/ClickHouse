@@ -806,17 +806,20 @@ def test_filter_pushdown(started_cluster):
 
     for kind in ["INNER", "LEFT", "RIGHT", "FULL", "ANY LEFT", "SEMI RIGHT"]:
         for value in [0, 10]:
-            compare_results(
-                "SELECT * FROM ch_table {kind} JOIN {pg_table} as p ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
-                kind=kind,
-                value=value,
-            )
+            for tail in ["", " CROSS JOIN (SELECT 1) AS x"]:
+                compare_results(
+                    "SELECT * FROM ch_table {kind} JOIN {pg_table} as p ON ch_table.pg_id = p.id{tail} WHERE value = {value} ORDER BY ALL",
+                    kind=kind,
+                    value=value,
+                    tail=tail,
+                )
 
-            compare_results(
-                "SELECT * FROM {pg_table} as p {kind} JOIN ch_table ON ch_table.pg_id = p.id WHERE value = {value} ORDER BY ALL",
-                kind=kind,
-                value=value,
-            )
+                compare_results(
+                    "SELECT * FROM {pg_table} as p {kind} JOIN ch_table ON ch_table.pg_id = p.id{tail} WHERE value = {value} ORDER BY ALL",
+                    kind=kind,
+                    value=value,
+                    tail=tail,
+                )
 
     cursor.execute("DROP SCHEMA test_filter_pushdown CASCADE")
     node1.query("DROP TABLE test_filter_pushdown_local_table")
