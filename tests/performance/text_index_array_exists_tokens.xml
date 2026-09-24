@@ -16,6 +16,7 @@
     ORDER BY id
   </create_query>
   <create_query>CREATE TABLE tab_no_index (id UInt64, message String) ENGINE = MergeTree ORDER BY id</create_query>
+  <create_query>CREATE TABLE tab_few_tokens (id UInt64, message String, INDEX idx(message) TYPE text(tokenizer = 'splitByNonAlpha')) ENGINE = MergeTree ORDER BY id</create_query>
 
   <!-- Log-like messages, one in 10000 mentions a charge. -->
   <fill_query>
@@ -30,6 +31,17 @@
   <fill_query>OPTIMIZE TABLE tab FINAL</fill_query>
   <fill_query>INSERT INTO tab_no_index SELECT id, message FROM tab</fill_query>
   <fill_query>OPTIMIZE TABLE tab_no_index FINAL</fill_query>
+  <!-- The same messages without the unique request number: about 1000 distinct tokens instead of 3 million. -->
+  <fill_query>
+    INSERT INTO tab_few_tokens
+    SELECT
+        number,
+        if(number % 10000 = 0,
+            concat('Payment charged twice for user ', toString(number % 997)),
+            concat('Request served in ', toString(number % 1000), ' ms for user ', toString(number % 997), ' status OK'))
+    FROM numbers(3000000)
+  </fill_query>
+  <fill_query>OPTIMIZE TABLE tab_few_tokens FINAL</fill_query>
 
   <!-- Every lambda shape the rewrite handles, over the index on message. -->
   <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
@@ -37,6 +49,12 @@
   <query>SELECT count() FROM tab WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message))</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message))</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
+
+  <!-- A small dictionary: patterns that are not a prefix are also answered from the dictionary quickly. -->
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> endsWith(t, 'rged'), tokens(message))</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message))</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message))</query>
+  <query>SELECT count() FROM tab_few_tokens WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
 
   <!-- A query over lower(message), served by the index on that expression. -->
   <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha'))</query>
@@ -56,4 +74,5 @@
 
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
   <drop_query>DROP TABLE IF EXISTS tab_no_index</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_few_tokens</drop_query>
 </test>
