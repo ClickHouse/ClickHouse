@@ -282,7 +282,7 @@ public:
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(
         std::reference_wrapper<Fn> callback,
         Priority priority = {},
-        std::optional<Int64> wait_microseconds = {}) = delete;
+        std::optional<uint64_t> wait_microseconds = {}) = delete;
     // If you hit this error, you're passing std::ref(lambda) or capturing by reference.
     // Change [&my_lambda] to [my_lambda] (capture by value).
     //
@@ -293,7 +293,7 @@ public:
     /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
     /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
     /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
-    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
         auto task = std::make_shared<Task>();
@@ -344,7 +344,7 @@ public:
     /// failure without risking a scheduled-but-untracked duplicate.
     void reserve(size_t n) { tasks.reserve(n); }
 
-    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
+    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }

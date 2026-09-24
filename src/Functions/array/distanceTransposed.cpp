@@ -23,7 +23,11 @@
 #include <algorithm>
 #include <optional>
 
+/// Include immintrin. Otherwise `simsimd` fails to build: `unknown type name '__bfloat16'`
 #if USE_SIMSIMD
+#    if defined(__x86_64__) || defined(__i386__)
+#        include <immintrin.h>
+#    endif
 #    include <simsimd/simsimd.h>
 #endif
 

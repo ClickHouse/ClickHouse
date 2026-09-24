@@ -77,11 +77,6 @@ void StackTrace::setShowAddresses(bool show)
     show_addresses.store(show, std::memory_order_relaxed);
 }
 
-bool StackTrace::showAddresses()
-{
-    return show_addresses.load(std::memory_order_relaxed);
-}
-
 std::string signalToErrorMessage(int sig, const siginfo_t & info, [[maybe_unused]] const ucontext_t & context)
 {
     std::string message = getSignalCodeDescription(sig, info.si_code);
@@ -345,40 +340,19 @@ resolveAddressImpl(const DB::SymbolIndex & symbol_index, const void * virtual_ad
 }
 #endif
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-namespace
-{
-StackTrace::ResolvedAddress resolveAddress(const DB::SymbolIndex & symbol_index, const void * virtual_addr)
-{
-    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
-
-    if (!object)
-        return {virtual_addr, {}, StackTrace::AddressKind::UnknownMapping};
-    if (object == symbol_index.thisObject())
-        return {reinterpret_cast<const void *>(address), {}, StackTrace::AddressKind::MainObject};
-    return {reinterpret_cast<const void *>(address), object->name, StackTrace::AddressKind::OtherObject};
-}
-}
-#endif
-
 StackTrace::ResolvedAddress StackTrace::resolveAddress(const void * virtual_addr)
 {
 #if defined(__ELF__) && !defined(OS_FREEBSD)
-    return ::resolveAddress(DB::SymbolIndex::instance(), virtual_addr);
+    const DB::SymbolIndex & symbol_index = DB::SymbolIndex::instance();
+    const auto [address, object] = resolveAddressImpl(symbol_index, virtual_addr);
+
+    if (!object)
+        return {virtual_addr, {}, AddressKind::UnknownMapping};
+    if (object == symbol_index.thisObject())
+        return {reinterpret_cast<const void *>(address), {}, AddressKind::MainObject};
+    return {reinterpret_cast<const void *>(address), object->name, AddressKind::OtherObject};
 #else
     return {virtual_addr, {}, AddressKind::Unsupported};
-#endif
-}
-
-std::optional<StackTrace::ResolvedAddress> StackTrace::tryResolveAddress(const void * virtual_addr)
-{
-#if defined(__ELF__) && !defined(OS_FREEBSD)
-    const DB::SymbolIndex * symbol_index = DB::SymbolIndex::instanceIfInitialized();
-    if (!symbol_index)
-        return std::nullopt;
-    return ::resolveAddress(*symbol_index, virtual_addr);
-#else
-    return ResolvedAddress{virtual_addr, {}, AddressKind::Unsupported};
 #endif
 }
 

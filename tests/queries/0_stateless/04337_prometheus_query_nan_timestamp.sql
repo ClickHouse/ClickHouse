@@ -28,11 +28,11 @@ CREATE TABLE ts_tags (
 ENGINE = AggregatingMergeTree ORDER BY (metric_name, id) SETTINGS allow_dimensions_outside_sorting_key = 1;
 
 CREATE TABLE ts_metrics (
-    metric_family String,
+    metric_family_name String,
     type String,
     unit String,
     help String)
-ENGINE = ReplacingMergeTree ORDER BY metric_family;
+ENGINE = ReplacingMergeTree ORDER BY metric_family_name;
 
 CREATE TABLE ts_ns ENGINE = TimeSeries
 DATA ts_data TAGS ts_tags METRICS ts_metrics;
@@ -44,12 +44,12 @@ SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', inf); -- { server
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', -inf); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', 0. / 0.); -- { serverError BAD_ARGUMENTS }
 
-SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toFloat64(9223372036.854776)); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', toFloat64(9223372036.854776)); -- { serverError DECIMAL_OVERFLOW }
 
 -- Duration path: getFromFloat<Decimal64> (the step argument of prometheusQueryRange).
 SELECT timestamp, value FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, 2000, nan); -- { serverError BAD_ARGUMENTS }
 SELECT timestamp, value FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, 2000, inf); -- { serverError BAD_ARGUMENTS }
-SELECT timestamp, value FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, 2000, toFloat64(9223372036.854776)); -- { serverError BAD_ARGUMENTS }
+SELECT timestamp, value FROM prometheusQueryRange('ts_ns', '1 + 2', 1000, 2000, toFloat64(9223372036.854776)); -- { serverError DECIMAL_OVERFLOW }
 
 -- A finite float timestamp still works (sanity: the guard does not reject valid input).
 SELECT timestamp, value FROM prometheusQuery('ts_ns', '1 + 2', 1704067200.0);

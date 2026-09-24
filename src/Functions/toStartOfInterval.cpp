@@ -50,8 +50,8 @@ enum class ToStartOfIntervalOverload
 };
 
 /// Clamps a rounded timestamp into a narrowing result type instead of wrapping, so that the result stays
-/// monotonic over the whole argument range. DateTime64 arguments, and a Date floored to whole days, round
-/// outside DateTime; the out-of-range rounding of the other argument types is defined in DateLUTImpl.
+/// monotonic over the whole argument range. Only DateTime64 arguments round outside Date and DateTime; the
+/// out-of-range rounding of the other argument types is defined in DateLUTImpl, so they pass saturate = false.
 template <bool saturate, typename FieldType>
 FieldType saturatingResultCast(Int64 value)
 {
@@ -401,11 +401,7 @@ private:
         }
         else // Overload: Default
         {
-            /// Flooring a `Date` to whole days yields seconds, and the top of the `Date` domain is past `UInt32`
-            /// seconds, so a narrowing `DateTime` result has to clamp here too. `Date32` is excluded: clamping its
-            /// pre-epoch values into an unsigned codomain would collapse distinct buckets.
-            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>
-                || (std::is_same_v<TimeDataType, DataTypeDate> && unit == IntervalKind::Kind::Day);
+            constexpr bool saturate = std::is_same_v<TimeDataType, DataTypeDateTime64>;
 
             if constexpr ((unit == IntervalKind::Kind::Second || unit == IntervalKind::Kind::Minute || unit == IntervalKind::Kind::Hour)
                 && (std::is_same_v<TimeColumnType, ColumnDateTime> || std::is_same_v<TimeColumnType, ColumnDateTime64>))
