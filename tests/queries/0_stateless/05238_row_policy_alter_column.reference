@@ -18,3 +18,16 @@ CREATE ROW POLICY pstale ON db.t FOR SELECT USING gone = 1 TO default
 -- a database-wide policy cannot follow a rename on one table
 ALTER_OF_COLUMN_IS_FORBIDDEN
 still readable	[1,3]
+-- a table-qualified column is renamed too
+qualified policy after rename	[1]
+CREATE ROW POLICY pq ON db.tq FOR SELECT USING (tq.tenant_id = 1) AND (db.tq.tenant_id = 1) TO default
+-- a subcolumn counts as a use of its column
+ALTER_OF_COLUMN_IS_FORBIDDEN
+subcolumn policy after rename	[1]
+CREATE ROW POLICY pj ON db.tj FOR SELECT USING data.user.name = \'a\' TO default
+-- dropping a Nested column used through its subcolumn is refused
+ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a column read inside a SQL function body cannot be dropped or renamed
+ALTER_OF_COLUMN_IS_FORBIDDEN
+ALTER_OF_COLUMN_IS_FORBIDDEN
+udf policy still works	[1]

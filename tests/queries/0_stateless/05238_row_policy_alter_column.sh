@@ -56,12 +56,63 @@ echo "-- a database-wide policy cannot follow a rename on one table"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pdb ON $DB.* FOR SELECT USING tenant = 1 TO CURRENT_USER"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t RENAME COLUMN tenant TO tenant2" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
 $CLICKHOUSE_CLIENT -q "SELECT 'still readable', arraySort(groupArray(id)) FROM t"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY pdb ON $DB.*"
+
+echo "-- a table-qualified column is renamed too"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tq (id UInt32, tenant UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tq VALUES (1, 1), (2, 2);
+CREATE ROW POLICY pq ON $DB.tq FOR SELECT USING tq.tenant = 1 AND $DB.tq.tenant = 1 TO CURRENT_USER;
+ALTER TABLE tq RENAME COLUMN tenant TO tenant_id;
+SELECT 'qualified policy after rename', arraySort(groupArray(id)) FROM tq;
+"
+$CLICKHOUSE_CLIENT -q "SHOW CREATE ROW POLICY pq ON $DB.tq" | sed "s/$DB/db/g"
+
+echo "-- a subcolumn counts as a use of its column"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tj (id UInt32, j JSON) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tj VALUES (1, '{\"user\":{\"name\":\"a\"}}'), (2, '{\"user\":{\"name\":\"b\"}}');
+CREATE ROW POLICY pj ON $DB.tj FOR SELECT USING j.user.name = 'a' TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tj DROP COLUMN j" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tj RENAME COLUMN j TO data"
+$CLICKHOUSE_CLIENT -q "SELECT 'subcolumn policy after rename', arraySort(groupArray(id)) FROM tj"
+$CLICKHOUSE_CLIENT -q "SHOW CREATE ROW POLICY pj ON $DB.tj" | sed "s/$DB/db/g"
+
+echo "-- dropping a Nested column used through its subcolumn is refused"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE TABLE tn (id UInt32, n Nested(x UInt32, y UInt32)) ENGINE = MergeTree ORDER BY id;
+CREATE ROW POLICY pn ON $DB.tn FOR SELECT USING n.x[1] = 1 TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tn DROP COLUMN n" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tn DROP COLUMN n.y"
+
+echo "-- a column read inside a SQL function body cannot be dropped or renamed"
+UDF="${DB}_udf"
+$CLICKHOUSE_CLIENT --multiquery -q "
+CREATE FUNCTION $UDF AS (x) -> x = tenant;
+CREATE TABLE tu (id UInt32, tenant UInt32, other UInt32) ENGINE = MergeTree ORDER BY id;
+INSERT INTO tu VALUES (1, 1, 0), (2, 2, 0);
+CREATE ROW POLICY pu ON $DB.tu FOR SELECT USING $UDF(1) TO CURRENT_USER;
+"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tu DROP COLUMN tenant" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tu RENAME COLUMN tenant TO tenant_id" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tu RENAME COLUMN other TO other2"
+$CLICKHOUSE_CLIENT -q "SELECT 'udf policy still works', arraySort(groupArray(id)) FROM tu"
 
 $CLICKHOUSE_CLIENT --multiquery -q "
-DROP ROW POLICY pdb ON $DB.*;
 DROP ROW POLICY p ON $DB.t;
 DROP ROW POLICY psub ON $DB.t2;
+DROP ROW POLICY pq ON $DB.tq;
+DROP ROW POLICY pj ON $DB.tj;
+DROP ROW POLICY pn ON $DB.tn;
+DROP ROW POLICY pu ON $DB.tu;
+DROP FUNCTION $UDF;
 DROP TABLE t;
 DROP TABLE t2;
 DROP TABLE allowed;
+DROP TABLE tq;
+DROP TABLE tj;
+DROP TABLE tn;
+DROP TABLE tu;
 "
