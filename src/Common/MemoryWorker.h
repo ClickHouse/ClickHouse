@@ -133,7 +133,13 @@ public:
 
     ~MemoryWorker();
 private:
-    uint64_t getMemoryUsage(bool log_error);
+    struct MemoryUsage
+    {
+        Int64 resident = 0;
+        Int64 allocated = 0;
+    };
+
+    MemoryUsage getMemoryUsage(bool log_error);
 
 #if USE_JEMALLOC
     /// The amount of live jemalloc allocations (`stats.allocated`) after refreshing the statistics epoch.
