@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -158,13 +159,17 @@ private:
             if (offset)
                 plain->seek(offset, SEEK_SET);
 
+            /// `allow_different_codecs = true`: the data file is append-only, so blocks written by
+            /// different inserts may use different codecs - in particular after a server upgrade that
+            /// changes the default compression codec (e.g. `LZ4` -> `ZSTD`). Each compressed block is
+            /// self-describing (the codec method byte is in its header), so a mixed-codec stream is valid.
             if (limited_by_file_size)
             {
                 limited.emplace(*plain, LimitReadBuffer::Settings{.read_no_more = file_size - offset});
-                compressed.emplace(*limited);
+                compressed.emplace(*limited, /* allow_different_codecs = */ true);
             }
             else
-                compressed.emplace(*plain);
+                compressed.emplace(*plain, /* allow_different_codecs = */ true);
         }
 
         std::unique_ptr<ReadBufferFromFileBase> plain;
@@ -180,7 +185,7 @@ private:
     DeserializeStates deserialize_states;
 
     void readPrefix(const NameAndTypePair & name_and_type, ISerialization::SubstreamsCache & cache, ISerialization::SubstreamsDeserializeStatesCache & deserialize_state_cache);
-    void readData(const NameAndTypePair & name_and_type, ColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
+    void readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column, size_t max_rows_to_read, ISerialization::SubstreamsCache & cache);
     void checkArrayOffsets(const IColumn & column, const String & column_name) const;
     bool isFinished();
 };
@@ -269,12 +274,12 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
     /// Second, read the data of all physical columns/subcolumns.
     for (const auto & name_type : physical_columns)
     {
-        ColumnPtr column;
+        MutableColumnPtr column;
         auto name_type_on_disk = getColumnOnDisk(name_type);
 
         try
         {
-            column = name_type_on_disk.type->createColumn();
+            column = name_type_on_disk.type->createColumn(*IDataType::getSerialization(name_type_on_disk));
             readData(name_type_on_disk, column, max_rows_to_read, caches[getCacheKey(name_type_on_disk)]);
         }
         catch (Exception & e)
@@ -286,22 +291,6 @@ void LogSource::fillPhysicalColumns(Columns & result_columns, size_t max_rows_to
         if (!column->empty())
             result_columns.emplace_back(std::move(column));
     }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-    /// Before the substreams caches and deserialize states go out of scope, verify that the reference
-    /// counts of the columns shared between them and the result columns account for all those holders.
-    /// `getCacheKey` deliberately shares a cache across the subcolumns of a `Nested` group, so a broken
-    /// copy-on-write reference count on a shared child (e.g. `Nested` array offsets) would free it here
-    /// while it is still referenced from the result, leading to use-after-free (issue #105626).
-    ColumnsOwnershipValidator ownership_validator;
-    for (const auto & [_, cache] : caches)
-        ownership_validator.add(cache);
-    for (const auto & [_, states] : deserialize_states_caches)
-        ownership_validator.add(states);
-    for (const auto & [_, state] : deserialize_states)
-        ownership_validator.add(state);
-    ownership_validator.validate(result_columns);
-#endif
 }
 
 void LogSource::fillVirtualColumns([[maybe_unused]] Columns & result_columns, [[maybe_unused]] UInt64 num_rows) const
@@ -320,7 +309,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     ISerialization::DeserializeBinaryBulkSettings settings;
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -340,7 +329,7 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     serialization->deserializeBinaryBulkStatePrefix(settings, deserialize_states[name_and_type.name], &deserialize_state_cache);
 }
 
-void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & column,
+void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr & column,
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
@@ -349,7 +338,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(path)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -366,7 +355,7 @@ void LogSource::readData(const NameAndTypePair & name_and_type, ColumnPtr & colu
         return &it->second.compressed.value();
     };
 
-    serialization->deserializeBinaryBulkWithMultipleStreams(column, 0, max_rows_to_read, settings, deserialize_states[name], &cache);
+    serialization->deserializeBinaryBulkWithMultipleStreams(*column, max_rows_to_read, settings, deserialize_states[name], &cache);
     if (column->getDataType() != name_and_type.type->getColumnType())
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
@@ -1004,7 +993,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)
@@ -1223,6 +1212,25 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
+bool StorageLog::hasNothingToBackUp() const
+{
+    if (!num_data_files)
+        return true;
+
+    /// Recorded bytes in any column mean there is something to preserve, whatever the row signal says:
+    /// a leading column can serialize to nothing while a later one holds the rows, and a table whose
+    /// marks file went missing still has its data on disk.
+    for (const auto & data_file : data_files)
+        if (file_checker.getFileSize(data_file.path))
+            return false;
+
+    /// No column occupies bytes, which is legitimate for a column of empty aggregate states. For `Log`
+    /// the marks are then what say whether there are rows; `TinyLog` keeps none and cannot tell.
+    return !use_marks_file
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty()
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows == 0;
+}
+
 std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
@@ -1249,7 +1257,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
+    if (hasNothingToBackUp())
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
@@ -1442,6 +1450,8 @@ void registerStorageLog(StorageFactory & factory)
 
     auto create_fn = [](const StorageFactory::Arguments & args)
     {
+        checkStorageSettingNames(args);
+
         if (!args.engine_args.empty())
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Engine {} doesn't support any arguments ({} given)",
                 args.engine_name, args.engine_args.size());

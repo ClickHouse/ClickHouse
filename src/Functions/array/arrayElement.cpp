@@ -4,6 +4,8 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnObject.h>
+#include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnQBit.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
@@ -14,6 +16,8 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -23,18 +27,27 @@
 #include <Functions/IFunction.h>
 #include <Functions/LowCardinalityExecutionHelpers.h>
 #include <Functions/castTypeToEither.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
+#include <base/TypeList.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <bit>
 #include <cstring>
+#include <limits>
 #include <optional>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool json_type_escape_dots_in_keys;
+}
 
 namespace ErrorCodes
 {
@@ -59,6 +72,27 @@ template <ArrayElementExceptionMode mode>
 class NullMapBuilder;
 }
 
+/// Array element types with a dedicated fast path. The dispatch ladders below try them in this
+/// order, so the most common types come first; the generic fallback handles everything else.
+using ElementTypesWithFastPath = TypeList<
+    UInt8, UInt16, UInt32, UInt64,
+    Int8, Int16, Int32, Int64,
+    Float32, Float64,
+    Decimal32, Decimal64, Decimal128, Decimal256,
+    DateTime64,
+    Int128, UInt128, Int256, UInt256>;
+
+/// Types the index (second) argument may have, in dispatch order.
+using IndexTypes = TypeList<UInt8, UInt16, UInt32, UInt64, Int8, Int16, Int32, Int64>;
+
+/// Calls try_one<T> for each T in the list until one call succeeds. The fold expands to the same
+/// short-circuit `||` chain as spelling out one call per type.
+template <typename... Ts, typename F>
+bool tryEachType(TypeList<Ts...>, F && try_one)
+{
+    return (try_one.template operator()<Ts>() || ...);
+}
+
 
 /** arrayElement(arr, i) - get the array element by index. If index is not constant and out of range - return default value of data type.
   * The index begins with 1. Also, the index can be negative - then it is counted from the end of the array.
@@ -70,9 +104,17 @@ public:
     static constexpr bool is_null_mode = (mode == ArrayElementExceptionMode::Null);
     static constexpr auto name = (mode == ArrayElementExceptionMode::Zero) ? "arrayElement" : "arrayElementOrNull";
 
+    explicit FunctionArrayElement(ContextPtr context_)
+        : escape_dots_in_json_keys(context_ && context_->getSettingsRef()[Setting::json_type_escape_dots_in_keys])
+    {
+    }
+
     String getName() const override;
 
     bool useDefaultImplementationForConstants() const override { return true; }
+    /// A lazily replicated array argument is consumed by gathering from the compact nested column.
+    /// When true it materializes the compacted representation to a full column.
+    bool useDefaultImplementationForReplicatedColumns() const override { return false; }
     /// `Nullable(QBit)` with an array of indices must produce `Array(Nullable(T))`,
     /// which cannot be represented by the default nullable wrapper around the result.
     bool useDefaultImplementationForNulls() const override { return false; }
@@ -85,6 +127,7 @@ public:
     /// overload declared below; FunctionWithLowCardinalityFastPath calls it by qualified name.
     using IFunction::getReturnTypeImpl;
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override;
 
     ColumnPtr
     executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override;
@@ -101,6 +144,19 @@ private:
         const DataTypePtr & result_type,
         ArrayImpl::NullMapBuilder<mode> & builder,
         size_t input_rows_count) const;
+
+    /// Element access over a lazily replicated array (Replicated(Array)) without materializing it.
+    ColumnPtr executeReplicated(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
+    template <typename IndexType>
+    static bool gatherReplicated(
+        const IColumn & index_column,
+        const ColumnIndex & replication_indexes,
+        const ColumnArray::Offsets & offsets,
+        const IColumn & data,
+        IColumn & result,
+        ArrayImpl::NullMapBuilder<mode> & builder);
 
     template <typename DataType>
     static ColumnPtr executeNumberConst(
@@ -187,6 +243,10 @@ private:
      */
     ColumnPtr executeMap(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
+    /** For a JSON (Object) column, extract the combined subcolumn for the given key.
+      */
+    ColumnPtr executeJSON(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
+
     ColumnPtr executeWithArrayIndex(
         const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const;
 
@@ -221,6 +281,19 @@ private:
     template <typename Matcher>
     static void
     executeMatchConstKeyToIndex(size_t num_rows, size_t num_values, PaddedPODArray<UInt64> & matched_idxs, const Matcher & matcher);
+
+    /// Escape dots in JSON key if json_type_escape_dots_in_keys setting is enabled.
+    String escapeJSONKeyIfNeeded(const String & key) const;
+
+    /// True for `Nullable(JSON)`, which supports the bracket syntax exactly like bare `JSON`.
+    static bool isNullableJSON(const DataTypePtr & type);
+
+    /// Fold the null map of a `Nullable(JSON)` first argument into the path extracted from its nested
+    /// column, so that the outer NULLs are visible in the result.
+    static ColumnPtr applyOuterNullMap(
+        const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column);
+
+    bool escape_dots_in_json_keys = false;
 };
 
 
@@ -1513,48 +1586,18 @@ ColumnPtr FunctionArrayElement<mode>::executeArgument(
         builder.initSink(index_data.size());
 
     ColumnPtr res;
-    if (!((res = executeNumber<IndexType, UInt8>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt16>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int8>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int16>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Float32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Float64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal32>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal128>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Decimal256>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, DateTime64>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int128>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt128>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, Int256>(arguments, result_type, index_data, builder))
-          || (res = executeNumber<IndexType, UInt256>(arguments, result_type, index_data, builder))
-          || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
-          || (res = executeString<IndexType>(arguments, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt8>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt16>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int8>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int16>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Float32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Float64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal32>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal128>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Decimal256>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, DateTime64>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int128>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt128>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, Int256>(arguments, result_type, index_data, builder))
-          || (res = executeArrayNumber<IndexType, UInt256>(arguments, result_type, index_data, builder))
-          || (res = executeArrayString<IndexType>(arguments, index_data, builder))
-          || (res = executeGeneric<IndexType>(arguments, index_data, builder))))
+    bool matched = tryEachType(
+                       ElementTypesWithFastPath{},
+                       [&]<typename T>() { return (res = executeNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; })
+        || (res = executeConst<IndexType>(arguments, result_type, index_data, builder, input_rows_count))
+        || (res = executeString<IndexType>(arguments, index_data, builder))
+        || tryEachType(
+               ElementTypesWithFastPath{},
+               [&]<typename T>() { return (res = executeArrayNumber<IndexType, T>(arguments, result_type, index_data, builder)) != nullptr; })
+        || (res = executeArrayString<IndexType>(arguments, index_data, builder))
+        || (res = executeGeneric<IndexType>(arguments, index_data, builder));
+
+    if (!matched)
         throw Exception(
             ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", arguments[0].column->getName(), getName());
 
@@ -1721,7 +1764,12 @@ ColumnPtr FunctionArrayElement<mode>::executeTuple(const ColumnsWithTypeAndName 
 
             Int64 idx = 0;
             if (index_field.getType() == Field::Types::UInt64)
-                idx = static_cast<Int64>(index_field.safeGet<UInt64>());
+            {
+                const UInt64 value = index_field.safeGet<UInt64>();
+                idx = value > static_cast<UInt64>(std::numeric_limits<Int64>::max())
+                    ? std::numeric_limits<Int64>::max()
+                    : static_cast<Int64>(value);
+            }
             else
                 idx = index_field.safeGet<Int64>();
 
@@ -2086,6 +2134,118 @@ bool FunctionArrayElement<mode>::matchKeyToIndexNumber(
                     return false;
                 });
         });
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeJSON(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    String key;
+    if (const auto * key_const = checkAndGetColumnConst<ColumnString>(arguments[1].column.get()))
+    {
+        key = key_const->getValue<String>();
+    }
+    else if (const auto * key_str = checkAndGetColumn<ColumnString>(arguments[1].column.get()); key_str && arguments[1].column->size() == 1)
+    {
+        key = String(key_str->getDataAt(0));
+    }
+    else
+    {
+        throw Exception(
+            ErrorCodes::ILLEGAL_COLUMN,
+            "Second argument of function {} for JSON type must be a constant String, got {}",
+            getName(), arguments[1].column->getName());
+    }
+
+    /// When json_type_escape_dots_in_keys is enabled, dots in individual path
+    /// elements are stored escaped as %2E. Apply the same escaping to the key.
+    key = escapeJSONKeyIfNeeded(key);
+
+    /// Form the combined subcolumn name: @`key`
+    auto subcolumn_name = DataTypeObject::getCombinedSubcolumnName(key);
+
+    /// Use the generic IDataType subcolumn API.
+    /// This calls DataTypeObject::getDynamicSubcolumnData internally,
+    /// handling typed paths, literal+sub-object merging, etc.
+    DataTypePtr object_type = arguments[0].type;
+    ColumnPtr col = arguments[0].column;
+
+    /// Unwrap ColumnConst - getSubcolumn works on the inner column.
+    bool is_const = isColumnConst(*col);
+    if (is_const)
+        col = assert_cast<const ColumnConst &>(*col).getDataColumnPtr();
+
+    /// Unwrap a `Nullable(JSON)` carrier and keep its null map to fold into the extracted path below.
+    ColumnPtr null_map_column;
+    if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get()))
+    {
+        null_map_column = nullable_col->getNullMapColumnPtr();
+        col = nullable_col->getNestedColumnPtr();
+        object_type = assert_cast<const DataTypeNullable &>(*object_type).getNestedType();
+    }
+
+    auto element_type = object_type->getSubcolumnType(subcolumn_name);
+    auto result_column = object_type->getSubcolumn(subcolumn_name, col);
+
+    if (null_map_column)
+        result_column = applyOuterNullMap(result_column, element_type, null_map_column);
+
+    /// The default `LowCardinality` handling rebuilds the dictionary itself and dispatches here with the
+    /// top-level wrapper already stripped from `result_type`, so a path stored as `LowCardinality(T)`
+    /// must give it up too. A wrapper nested in the path's type is part of the declared result and stays.
+    if (!result_type->lowCardinality())
+        result_column = result_column->convertToFullColumnIfLowCardinality();
+
+    /// Re-wrap in ColumnConst if the input was const.
+    if (is_const)
+        result_column = ColumnConst::create(std::move(result_column), input_rows_count);
+
+    return result_column;
+}
+
+template <ArrayElementExceptionMode mode>
+bool FunctionArrayElement<mode>::isNullableJSON(const DataTypePtr & type)
+{
+    const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type.get());
+    return nullable_type && checkAndGetDataType<DataTypeObject>(nullable_type->getNestedType().get());
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::applyOuterNullMap(
+    const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column)
+{
+    /// The same logic as in `tupleElement`: a path that can represent NULL -- `Dynamic`, `Variant`,
+    /// `Nullable`, `LowCardinality(Nullable)` or a type wrappable into `Nullable` -- gets the outer mask
+    /// OR-ed in, which keeps the (type, column) pair consistent with `getReturnTypeImpl` and with reading
+    /// the subcolumn directly.
+    if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
+        return NullableSubcolumnCreator(null_map_column).create(element_column);
+
+    /// A typed path that has no NULL representation at all (e.g. `Array`, `Map`) is default-filled for the
+    /// outer-NULL rows, matching the stored subcolumn, instead of leaking the payload hidden under the mask.
+    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+    auto result_column = element_type->createColumn();
+    result_column->reserve(element_column->size());
+
+    Field default_field = element_type->getDefault();
+    for (size_t i = 0; i < element_column->size(); ++i)
+    {
+        if (null_map[i])
+            result_column->insert(default_field);
+        else
+            result_column->insertFrom(*element_column, i);
+    }
+
+    return std::move(result_column);
+}
+
+template <ArrayElementExceptionMode mode>
+String FunctionArrayElement<mode>::escapeJSONKeyIfNeeded(const String & key) const
+{
+    if (escape_dots_in_json_keys)
+        return escapeDotInJSONKey(key);
+    return key;
 }
 
 template <ArrayElementExceptionMode mode>
@@ -2947,6 +3107,83 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 }
 
 template <ArrayElementExceptionMode mode>
+DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
+{
+    /// `Nullable(JSON)` supports the same path access as bare `JSON` (`json.a`, `tupleElement(json, 'a')`),
+    /// so the bracket syntax accepts it too. The outer null map is folded into the extracted path below.
+    const IDataType * source_type = arguments[0].type.get();
+    const bool source_is_nullable = isNullableJSON(arguments[0].type);
+    if (source_is_nullable)
+        source_type = assert_cast<const DataTypeNullable &>(*source_type).getNestedType().get();
+
+    if (const auto * object_type = checkAndGetDataType<DataTypeObject>(source_type))
+    {
+        if constexpr (is_null_mode)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} is not supported for JSON type, use arrayElement instead",
+                getName());
+
+        /// A NULL literal key follows the convention of the default adapter, as for every other source type.
+        if (arguments[1].type->onlyNull())
+            return makeNullable(std::make_shared<DataTypeNothing>());
+
+        /// A `Nullable(String)` key is accepted like for `Array` and `Map`: the key itself must still be a
+        /// constant, so it is resolved through its nested column. A constant NULL key cannot name a path
+        /// and gives a NULL of no particular type; `executeImpl` returns the NULL constant for it as well.
+        const bool key_is_nullable = arguments[1].type->isNullable();
+        ColumnWithTypeAndName key_argument = arguments[1];
+        if (key_is_nullable)
+        {
+            if (!key_argument.column)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {} with JSON type must be a constant String",
+                    getName());
+
+            if (isColumnConst(*key_argument.column) && key_argument.column->onlyNull())
+                return makeNullable(std::make_shared<DataTypeNothing>());
+
+            key_argument = columnGetNested(key_argument);
+        }
+
+        const auto * key_col = checkAndGetColumnConst<ColumnString>(key_argument.column.get());
+        if (!key_col)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Second argument of function {} with JSON type must be a constant String",
+                getName());
+
+        auto key = key_col->getValue<String>();
+        key = escapeJSONKeyIfNeeded(key);
+
+        /// Form combined subcolumn name: @`key`
+        auto combined_name = DataTypeObject::getCombinedSubcolumnName(key);
+
+        /// getSubcolumnType resolves through getDynamicSubcolumnData:
+        /// - typed path "a UInt32" -> returns UInt32
+        /// - non-typed path -> returns Dynamic
+        auto element_type = object_type->getSubcolumnType(combined_name);
+
+        /// For a `Nullable(JSON)` source, promote the path so it can represent the outer NULLs, using the
+        /// same rule as the subcolumn path (`json.a`) and `tupleElement`: a `Dynamic` path stays `Dynamic`
+        /// and carries them itself, a wrappable typed path becomes `Nullable(T)`.
+        /// A `Nullable(String)` key promotes the result in the same way, as the other source types do for
+        /// a nullable index: `executeImpl` evaluates the nested key and wraps the result back.
+        if (source_is_nullable || key_is_nullable)
+            element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
+
+        return element_type;
+    }
+
+    /// Fall through to existing DataTypes-only logic for Array/Map.
+    DataTypes data_types(arguments.size());
+    for (size_t i = 0; i < arguments.size(); ++i)
+        data_types[i] = arguments[i].type;
+    return getReturnTypeImpl(data_types);
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::tryExecuteLowCardinality(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
@@ -3013,6 +3250,11 @@ template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
 {
+    /// A replicated column can arrive in either position.
+    if (typeid_cast<const ColumnReplicated *>(arguments[0].column.get())
+        || typeid_cast<const ColumnReplicated *>(arguments[1].column.get()))
+        return executeReplicated(arguments, result_type, input_rows_count);
+
     const bool is_qbit = checkAndGetDataType<DataTypeQBit>(removeNullable(arguments[0].type).get());
 
     /// The default nullable implementation cannot preserve a NULL `QBit` source for an
@@ -3037,7 +3279,12 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
             /// without turning the result into Nullable.
             auto nested_arguments = arguments;
             nested_arguments[1] = columnGetNested(arguments[1]);
-            auto result = executeImpl(nested_arguments, removeNullable(result_type), input_rows_count);
+            auto result = executeImpl(nested_arguments, removeNullableOrLowCardinalityNullable(result_type), input_rows_count);
+            /// `Nullable` inside `LowCardinality` lives in the dictionary, so the promotion is a dictionary
+            /// rewrite, not an added null map. The only source that declares such a result here is a JSON
+            /// path, and its key must be a constant `String`, so no NULL index row needs merging.
+            if (result_type->isLowCardinalityNullable())
+                return makeNullableOrLowCardinalityNullableSafe(result);
             return result_type->isNullable()
                 ? wrapInNullable(result, arguments, result_type, input_rows_count)
                 : result;
@@ -3046,6 +3293,25 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 
     if (is_qbit)
         return executeQBit(arguments, input_rows_count);
+
+    const auto * col_object = checkAndGetColumn<ColumnObject>(arguments[0].column.get());
+    const auto * col_const_object = checkAndGetColumnConst<ColumnObject>(arguments[0].column.get());
+
+    /// `Nullable(JSON)` is routed to the same path, which unwraps the null map and folds it into the
+    /// extracted JSON path. The carrier is recognized by its type, because the column can be
+    /// `ColumnNullable(ColumnObject)` or a `ColumnConst` over it.
+    const bool is_nullable_json = isNullableJSON(arguments[0].type);
+
+    if (col_object || col_const_object || is_nullable_json)
+    {
+        if constexpr (is_null_mode)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Function {} is not supported for JSON type, use arrayElement instead",
+                name);
+
+        return executeJSON(arguments, result_type, input_rows_count);
+    }
 
     const auto * col_map = checkAndGetColumn<ColumnMap>(arguments[0].column.get());
     const auto * col_const_map = checkAndGetColumnConst<ColumnMap>(arguments[0].column.get());
@@ -3137,6 +3403,160 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
 }
 
 template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::executeReplicated(
+    const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const
+{
+    ColumnsWithTypeAndName args = arguments;
+
+    const auto * replicated_array = typeid_cast<const ColumnReplicated *>(args[0].column.get());
+    const auto * replicated_index = typeid_cast<const ColumnReplicated *>(args[1].column.get());
+
+    /// When the array and the index are replicated by the same indexes column (they came from the same expansion,
+    /// e.g. one ARRAY JOIN), row i reads nested_array[idx[i]][nested_index[idx[i]]], so the result is the nested
+    /// computation replicated by the same indexes.
+    if (replicated_array && replicated_index
+        && replicated_array->getIndexesColumn().get() == replicated_index->getIndexesColumn().get()
+        && replicated_array->getNestedColumn()->size() == replicated_index->getNestedColumn()->size())
+    {
+        /// Compute on the compact nested columns and stay lazy.(Remove unused indexes)
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns(
+            {replicated_array->getNestedColumn(), replicated_index->getNestedColumn()});
+
+        /// Now recurse on the internal rows
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
+        ColumnsWithTypeAndName nested_args
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {compact.compact_indexed_columns[1], args[1].type, args[1].name}};
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
+    }
+
+    /// The index argument is a per-row number and when it is replicated independently of the array,
+    /// its repetition has no structure, so materialize it.
+    args[1].column = args[1].column->convertToFullColumnIfReplicated();
+
+    if (!replicated_array)
+        return executeImpl(args, result_type, input_rows_count);
+
+    const auto * col_array = typeid_cast<const ColumnArray *>(replicated_array->getNestedColumn().get());
+
+    /// Fall back to materialization for the shapes the fast path does not cover:
+    /// Replicated over Map, and LowCardinality elements (their handling is layered above this function
+    bool fast_path_supported = col_array
+        && !typeid_cast<const ColumnLowCardinality *>(&col_array->getData())
+        && !typeid_cast<const ColumnMap *>(&col_array->getData());
+    if (!fast_path_supported)
+    {
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (isColumnConst(*args[1].column))
+    {
+        /// A constant index gives one value per nested row: execute on the compact nested array and replicate the result lazily.
+        /// Compact away nested rows the indexes never reference, so the nested work is proportional to the used rows.
+        auto compact = replicated_array->getIndexes().buildCompactIndexedColumns({replicated_array->getNestedColumn()});
+        size_t nested_rows_count = compact.compact_indexed_columns[0]->size();
+        ColumnsWithTypeAndName nested_args
+            = {{compact.compact_indexed_columns[0], args[0].type, args[0].name},
+               {args[1].column->cloneResized(nested_rows_count), args[1].type, args[1].name}};
+
+        /// Recurse on the internal rows
+        auto nested_res = executeImpl(nested_args, result_type, nested_rows_count);
+        /// Wrap the result in a new ColumnReplicated with the compacted indexes column
+        return convertToFullColumnIfReplicationNotUseful(
+            ColumnReplicated::create(std::move(nested_res), compact.compact_indexes));
+    }
+
+    const auto & offsets = col_array->getOffsets();
+    const IColumn * data = &col_array->getData();
+
+    ArrayImpl::NullMapBuilder<mode> builder;
+    bool is_array_of_nullable = isColumnNullable(*data);
+    if (is_array_of_nullable)
+    {
+        const auto & nullable_data = assert_cast<const ColumnNullable &>(*data);
+        builder.initSource(nullable_data.getNullMapData().data());
+        data = &nullable_data.getNestedColumn();
+    }
+
+    if (builder)
+        builder.initSink(input_rows_count);
+
+    auto result = data->cloneEmpty();
+    result->reserve(input_rows_count);
+
+    const auto & replication_indexes = replicated_array->getIndexes();
+    const auto & index_column = *args[1].column;
+    /// Core loop to build result by dispatching based on the index type
+    if (!tryEachType(
+            IndexTypes{},
+            [&]<typename T>() { return gatherReplicated<T>(index_column, replication_indexes, offsets, *data, *result, builder); }))
+    {
+        /// The index is not a plain numeric column (e.g. Nullable, or an array of indexes):
+        /// materialize the array and let the generic path handle it.
+        args[0].column = args[0].column->convertToFullColumnIfReplicated();
+        return executeImpl(args, result_type, input_rows_count);
+    }
+
+    if (is_array_of_nullable)
+        return ColumnNullable::create(
+            std::move(result), builder ? std::move(builder).getNullMapColumnPtr() : ColumnUInt8::create());
+
+    ColumnPtr immutable_result = std::move(result);
+    if (builder && immutable_result->canBeInsideNullable())
+        return ColumnNullable::create(immutable_result, std::move(builder).getNullMapColumnPtr());
+
+    return immutable_result;
+}
+
+template <ArrayElementExceptionMode mode>
+template <typename IndexType>
+bool FunctionArrayElement<mode>::gatherReplicated(
+    const IColumn & index_column,
+    const ColumnIndex & replication_indexes,
+    const ColumnArray::Offsets & offsets,
+    const IColumn & data,
+    IColumn & result,
+    ArrayImpl::NullMapBuilder<mode> & builder)
+{
+    const auto * index_vec = checkAndGetColumn<ColumnVector<IndexType>>(&index_column);
+    if (!index_vec)
+        return false;
+
+    const auto & indices = index_vec->getData();
+    size_t rows = indices.size();
+    /// Each output element is one insertFrom reading directly from the shared nested data
+    for (size_t i = 0; i < rows; ++i)
+    {
+        ssize_t nested_row = replication_indexes.getIndexAt(i);
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
+        ColumnArray::Offset begin = offsets[nested_row - 1];
+        ColumnArray::Offset end = offsets[nested_row];
+
+        IndexType index = indices[i];
+        /// Positive index is 1-based from the beginning of the array, negative counts from the end.
+        /// Any invalid index (zero, out of range) lands outside [begin, end) and produces a default value.
+        size_t insert_position = index > 0 ? begin + index - 1 : end + index;
+        if (begin <= insert_position && insert_position < end)
+        {
+            result.insertFrom(data, insert_position);
+            builder.update(insert_position);
+        }
+        else
+        {
+            result.insertDefault();
+            builder.update();
+        }
+    }
+
+    return true;
+}
+
+template <ArrayElementExceptionMode mode>
 ColumnPtr FunctionArrayElement<mode>::perform(
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & result_type,
@@ -3150,14 +3570,9 @@ ColumnPtr FunctionArrayElement<mode>::perform(
         return res;
     if (!isColumnConst(*arguments[1].column))
     {
-        if (!((res = executeArgument<UInt8>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<UInt16>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<UInt32>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<UInt64>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int8>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int16>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int32>(arguments, result_type, builder, input_rows_count))
-              || (res = executeArgument<Int64>(arguments, result_type, builder, input_rows_count))))
+        if (!tryEachType(
+                IndexTypes{},
+                [&]<typename T>() { return (res = executeArgument<T>(arguments, result_type, builder, input_rows_count)) != nullptr; }))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Second argument for function {} must have UInt or Int type", getName());
     }
     else
@@ -3181,46 +3596,17 @@ ColumnPtr FunctionArrayElement<mode>::perform(
             }
         }
 
-        if (!((res = executeNumberConst<UInt8>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt16>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int8>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int16>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Float32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Float64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal32>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal128>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Decimal256>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<DateTime64>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int128>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt128>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<Int256>(arguments, result_type, index, builder))
-              || (res = executeNumberConst<UInt256>(arguments, result_type, index, builder))
-              || (res = executeStringConst(arguments, index, builder))
-              || (res = executeArrayNumberConst<UInt8>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt16>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int8>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int16>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Float32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Float64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal32>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal128>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Decimal256>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<DateTime64>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int128>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt128>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<Int256>(arguments, result_type, index, builder))
-              || (res = executeArrayNumberConst<UInt256>(arguments, result_type, index, builder))
-              || (res = executeArrayStringConst(arguments, index, builder)) || (res = executeGenericConst(arguments, index, builder))))
+        bool matched = tryEachType(
+                           ElementTypesWithFastPath{},
+                           [&]<typename T>() { return (res = executeNumberConst<T>(arguments, result_type, index, builder)) != nullptr; })
+            || (res = executeStringConst(arguments, index, builder))
+            || tryEachType(
+                   ElementTypesWithFastPath{},
+                   [&]<typename T>() { return (res = executeArrayNumberConst<T>(arguments, result_type, index, builder)) != nullptr; })
+            || (res = executeArrayStringConst(arguments, index, builder))
+            || (res = executeGenericConst(arguments, index, builder));
+
+        if (!matched)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of first argument of function {}",
@@ -3247,28 +3633,34 @@ The index elements may be nullable. A `NULL` index produces `NULL` (and makes th
 wrapped in `Nullable`; for element types that cannot be inside `Nullable` (such as `Array`, `Map`), a `NULL` index produces the
 default value instead. This is the same behavior as for a scalar `NULL` index.
 
-:::note
+<Note>
 Arrays in ClickHouse are one-indexed.
-:::
+</Note>
 
 Negative indexes are supported. In this case, the corresponding element is selected, numbered from the end. For example, `arr[-1]` is the last item in the array.
 
 Operator `[n]` provides the same functionality.
 
-The first argument may also be a [QBit](/sql-reference/data-types/qbit): the n-th vector element is reconstructed at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+The first argument may also be:
+
+- a [`Map`](/sql-reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
+- a [`QBit`](/sql-reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
+- a [`JSON`](/sql-reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array) or [`QBit`](/reference/data-types/qbit)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
+        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit), [`JSON`](/reference/data-types/newjson) or `Nullable(JSON)`."},
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `JSON` argument, a constant [`String`](/reference/data-types/string) path."}
     };
-    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Array(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` returns the value of type `V`, for a `JSON` the value stored at the path.", {"Any", "Array(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples = {
         {"Usage example", "SELECT arrayElement(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElement(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
         {"Using [n] notation", "SELECT arr[2] FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Index out of array bounds", "SELECT arrayElement(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "0"},
-        {"Array of indices", "SELECT [10, 20, 30, 40][[2, 4, 1]]", "[20,40,10]"}
+        {"Array of indices", "SELECT [10, 20, 30, 40][[2, 4, 1]]", "[20,40,10]"},
+        {"Map key access", "SELECT map('a', 1, 'b', 2)['b']", "2"},
+        {"JSON bracket access", "SELECT json['a'] FROM (SELECT '{\"a\" : 42}'::JSON AS json)", "42"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {1, 1};
     FunctionDocumentation::Category category = FunctionDocumentation::Category::Array;
@@ -3286,23 +3678,27 @@ When `n` is an array of integers, returns an array of the elements at the specif
 This is equivalent to `arrayMap(i -> arrayElementOrNull(arr, i), n)`, but has a separate, more efficient implementation.
 Out-of-bounds positions and `NULL` indexes produce `NULL` values in the result array, following the same rule as for a scalar index.
 
-:::note
+<Note>
 Arrays in ClickHouse are one-indexed.
-:::
+</Note>
 
 Negative indexes are supported. In this case, it selects the corresponding element numbered from the end. For example, `arr[-1]` is the last item in the array.
+
+The first argument may also be a [`Map`](/sql-reference/data-types/map): an absent key gives `NULL` instead of the default value of the value type, as long as that type can be wrapped in `Nullable`.
+[`JSON`](/sql-reference/data-types/newjson) is not supported here, use `arrayElement` instead.
 )";
     FunctionDocumentation::Syntax syntax_null = "arrayElementOrNull(arr, n)";
     FunctionDocumentation::Arguments arguments_null = {
-        {"arr", "The array to search. [`Array(T)`](/reference/data-types/array)."},
-        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array)."}
+        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array) or [`Map(K, V)`](/reference/data-types/map)."},
+        {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`."}
     };
-    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`.", {"Any", "Nullable(T)", "Array(T)", "Array(Nullable(T))"}};
+    FunctionDocumentation::ReturnedValue returned_value_null = {"When `n` is a scalar, returns `Nullable(T)` if `T` can be wrapped in `Nullable`, otherwise `T`. When `n` is an array, returns `Array(Nullable(T))` if `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` the same rule applies to the value type `V`.", {"Any", "Nullable(T)", "Array(T)", "Array(Nullable(T))"}};
     FunctionDocumentation::Examples examples_null = {
         {"Usage example", "SELECT arrayElementOrNull(arr, 2) FROM (SELECT [1, 2, 3] AS arr)", "2"},
         {"Negative indexing", "SELECT arrayElementOrNull(arr, -1) FROM (SELECT [1, 2, 3] AS arr)", "3"},
-        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "NULL"},
-        {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"}
+        {"Index out of array bounds", "SELECT arrayElementOrNull(arr, 4) FROM (SELECT [1, 2, 3] AS arr)", "\\N"},
+        {"Array of indices", "SELECT arrayElementOrNull([10, 20, 30], [1, 5, 2])", "[10,NULL,20]"},
+        {"Absent map key", "SELECT arrayElementOrNull(map('a', 1), 'z')", "\\N"},
     };
     FunctionDocumentation::IntroducedIn introduced_in_null = {1, 1};
     FunctionDocumentation::Category category_null = FunctionDocumentation::Category::Array;

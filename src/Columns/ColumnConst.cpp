@@ -24,6 +24,20 @@ extern const int NOT_IMPLEMENTED;
 extern const int SIZES_OF_COLUMNS_DOESNT_MATCH;
 }
 
+void ColumnConst::setValue(const ColumnPtr & value)
+{
+    ColumnPtr new_data = value;
+    /// Squash Const of Const.
+    while (const ColumnConst * const_data = typeid_cast<const ColumnConst *>(new_data.get()))
+        new_data = const_data->getDataColumnPtr();
+
+    if (new_data->size() != 1)
+        throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH,
+                        "Incorrect size of nested column in ColumnConst::setValue: {}, must be 1.", new_data->size());
+
+    data = new_data;
+}
+
 ColumnConst::ColumnConst(const ColumnPtr & data_, size_t s_)
     : data(data_), s(s_)
 {
