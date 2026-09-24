@@ -1,3 +1,8 @@
+-- The stress profile fuzzes every query type: a successful `CREATE TABLE` is replayed under a
+-- `__fuzz_N` name and a `DROP TABLE` can be replayed as `UNDROP TABLE`. A `CHECK` constraint reading a
+-- table function cannot be analysed while a database loads, so either leftover stops the server starting.
+SET ast_fuzzer_any_query = 0;
+
 DROP TABLE IF EXISTS t_scalar_constraint_source;
 DROP TABLE IF EXISTS t_scalar_constraint_user;
 DROP TABLE IF EXISTS t_scalar_constraint_probe;
