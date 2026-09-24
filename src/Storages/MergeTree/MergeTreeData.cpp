@@ -12316,7 +12316,16 @@ MergeTreeData & MergeTreeData::checkStructureAndGetMergeTreeData(IStorage & sour
         return ast ? ast->formatIgnoringRedundantParentheses() : "";
     };
 
-    if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST()))
+    /// Compare the declared ORDER BY as text (so that redundant parentheses don't matter)
+    /// and additionally the effective sorting key columns and directions: some engines
+    /// append extra columns to the sorting key after parsing ORDER BY (VersionedCollapsing
+    /// appends the version column), and merges/FINAL of such tables rely on every part being
+    /// sorted by that effective key. ATTACH PARTITION ... FROM copies parts without
+    /// re-sorting, so comparing only the declared AST would accept a source sorted by a
+    /// weaker key and silently produce wrong merge results.
+    if (query_to_string(my_snapshot->getSortingKeyAST()) != query_to_string(src_snapshot->getSortingKeyAST())
+        || my_snapshot->getSortingKeyColumns() != src_snapshot->getSortingKeyColumns()
+        || my_snapshot->getSortingKeyReverseFlags() != src_snapshot->getSortingKeyReverseFlags())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tables have different ordering");
 
     if (query_to_string(my_snapshot->getPartitionKeyAST()) != query_to_string(src_snapshot->getPartitionKeyAST()))
