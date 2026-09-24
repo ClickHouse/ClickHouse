@@ -4741,14 +4741,9 @@ struct ToDateTimeMonotonicity
             /// wrapping default. `Date32` also needs a floor: its raw day 0 is negative ahead of UTC.
             if constexpr (std::is_same_v<T, DataTypeDateTime>)
             {
-                const auto * source_type = &type;
-                if (const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(source_type))
-                    source_type = low_cardinality->getDictionaryType().get();
-
-                const WhichDataType which_source(*source_type);
-                if (which_source.isDateOrDate32())
+                if (which.isDateOrDate32())
                 {
-                    const Int64 min_day_num = which_source.isDate32() ? 1 : 0;
+                    const Int64 min_day_num = which.isDate32() ? 1 : 0;
 
                     /// An absent or non-integer bound is outside the window: the range may then hold any day.
                     auto is_within_window = [&](const Field & bound)
