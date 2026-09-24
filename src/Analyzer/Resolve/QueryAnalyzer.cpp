@@ -5130,6 +5130,8 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
     if (!table_function_ptr)
     {
         auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, scope_context);
+        /// `db.view` binds to an explicit database, a bare `view` to the current one
+        const bool view_name_is_qualified = Identifier{table_function_name}.getPartsSize() == 2;
 
         /// Collect parameterized view arguments
         NameToNameMap view_params;
@@ -5168,6 +5170,13 @@ void QueryAnalyzer::resolveTableFunction(QueryTreeNodePtr & table_function_node,
         }
 
         auto context = scope_context->getQueryContext();
+
+        /// unqualified view name would bind to the parent database, ignoring the namespace
+        if (!view_name_is_qualified && context->getCurrentDatabase().hasTablePrefix())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Parameterized views are not supported while a table namespace is selected; "
+                "qualify the view with its database");
+
         auto parameterized_view_storage = context->buildParameterizedViewStorage(
             database_name,
             table_name,

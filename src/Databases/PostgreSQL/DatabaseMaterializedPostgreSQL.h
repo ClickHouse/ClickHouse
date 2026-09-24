@@ -28,6 +28,8 @@ class DatabaseMaterializedPostgreSQL : public DatabaseAtomic
 {
 
 public:
+    TableNamespaceSupport getTableNamespaceSupport() const override { return TableNamespaceSupport::None; }
+
     DatabaseMaterializedPostgreSQL(
         ContextPtr context_,
         const String & metadata_path_,

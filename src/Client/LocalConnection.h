@@ -44,6 +44,7 @@ struct LocalQueryState
     bool allow_settings_after_format_in_insert = false;
     bool implicit_select = false;
     bool enable_trino_dialect = false;
+    bool allow_experimental_table_namespaces = false;
     String promql_database;
     String promql_table;
     Field promql_evaluation_time;

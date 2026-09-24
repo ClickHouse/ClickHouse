@@ -28,7 +28,7 @@ TableNamesSet getLoadingDependenciesFromCreateQuery(ContextPtr global_context, c
 {
     chassert(global_context == global_context->getGlobalContext());
     TableLoadingDependenciesVisitor::Data data;
-    data.default_database = global_context->getCurrentDatabase();
+    data.default_database = global_context->getCurrentDatabase().getFullName();
     data.current_database = current_database;
     data.create_query = ast;
     data.global_context = global_context;

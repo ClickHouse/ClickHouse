@@ -352,6 +352,12 @@ DB::SettingsChanges CatalogSettings::allChanged() const
     return changes;
 }
 
+bool ICatalog::existsNamespace(const std::string & namespace_name) const
+{
+    const auto namespaces = getNamespaces();
+    return std::find(namespaces.begin(), namespaces.end(), namespace_name) != namespaces.end();
+}
+
 std::string_view ICatalog::getTableEngineName(const TableMetadata & table_metadata) const
 {
     if (!table_metadata.isDefaultReadableTable())

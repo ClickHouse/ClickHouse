@@ -1,0 +1,23 @@
+-- flag off: multipart FROM is a syntax error (master behavior)
+1
+-- direct children of the namespace, shown as stored
+ns.alpha
+ns.beta
+-- LIKE applies to the stored name
+ns.alpha
+-- FULL keeps the engine column
+ns.beta	Memory
+-- nested namespace
+ns.child.gamma
+-- session scope applies when FROM is omitted
+ns.alpha
+ns.beta
+-- the plain database listing is unchanged
+ns.alpha
+ns.beta
+ns.child.gamma
+plain
+-- a namespace with no tables fails like USE does
+1
+-- dictionaries have no namespaces
+1

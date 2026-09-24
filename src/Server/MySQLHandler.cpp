@@ -790,8 +790,10 @@ void MySQLHandler::comInitDB(ReadBuffer & payload)
     String database;
     readStringUntilEOF(database, payload);
     LOG_DEBUG(log, "Setting current database to {}", database);
-    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery).
-    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database);
+    /// Mirror the access check of the SQL `USE database` statement (InterpreterUseQuery):
+    /// a namespace selection ("db.ns") is checked against the physical database.
+    const auto database_info = DatabaseCatalog::instance().splitTablePrefixFromDatabaseName(database);
+    session->sessionContext()->checkAccess(AccessType::SHOW_DATABASES, database_info.getDatabasePart());
     /// ... and its settings-constraint check on the `database` setting.
     SettingsChanges database_change;
     database_change.setSetting("database", database);
@@ -805,7 +807,10 @@ void MySQLHandler::comFieldList(ReadBuffer & payload)
     ComFieldList packet;
     packet.readPayloadWithUnpacked(payload);
     const auto session_context = session->sessionContext();
-    String database = session_context->getCurrentDatabase();
+    /// The table is a stored name in the physical database: `SHOW TABLES` returns stored
+    /// names, and MySQL clients feed them straight back into `COM_FIELD_LIST`.
+    const auto database_info = session_context->getCurrentDatabase();
+    String database{database_info.getDatabasePart()};
     /// Mirror the access check of the SQL `DESCRIBE`/`SHOW COLUMNS` statements (InterpreterDescribeQuery).
     /// Check before getTable() so this command does not become a table-existence oracle.
     session_context->checkAccess(AccessType::SHOW_COLUMNS, database, packet.table);

@@ -96,7 +96,7 @@ void ExternalDictionariesLoader::updateObjectFromConfigWithoutReloading(IExterna
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase().getFullName());
 
     /// Check if we have a cancellable query context
     QueryStatusPtr process_list_element;
@@ -138,7 +138,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::getDictionary(co
 
 ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase().getFullName());
     auto dictionary = std::static_pointer_cast<const IDictionary>(tryLoad(resolved_dictionary_name));
 
     if (local_context->hasQueryContext() && local_context->getSettingsRef()[Setting::log_queries] && dictionary)
@@ -150,7 +150,7 @@ ExternalDictionariesLoader::DictPtr ExternalDictionariesLoader::tryGetDictionary
 
 void ExternalDictionariesLoader::reloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase().getFullName());
     loadOrReload(resolved_dictionary_name);
 }
 
@@ -162,7 +162,7 @@ void ExternalDictionariesLoader::reloadDictionary(const QualifiedTableName & dic
 
 bool ExternalDictionariesLoader::unloadDictionary(const std::string & dictionary_name, ContextPtr local_context) const
 {
-    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase());
+    std::string resolved_dictionary_name = resolveDictionaryName(dictionary_name, local_context->getCurrentDatabase().getFullName());
     return unload(resolved_dictionary_name);
 }
 
@@ -179,7 +179,7 @@ void ExternalDictionariesLoader::unloadAllDictionaries() const
 
 DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase().getFullName());
 
     auto load_result = getLoadResult(resolved_name);
 
@@ -197,7 +197,7 @@ DictionaryStructure ExternalDictionariesLoader::getDictionaryStructure(const std
 
 std::string ExternalDictionariesLoader::getDictionaryLayoutType(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase());
+    std::string resolved_name = resolveDictionaryName(dictionary_name, query_context->getCurrentDatabase().getFullName());
 
     auto load_result = getLoadResult(resolved_name);
     if (!load_result.config)
@@ -222,7 +222,7 @@ void ExternalDictionariesLoader::assertDictionaryStructureExists(const std::stri
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, ContextPtr query_context) const
 {
-    return qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase());
+    return qualifyDictionaryNameWithDatabase(dictionary_name, query_context->getCurrentDatabase().getFullName());
 }
 
 QualifiedTableName ExternalDictionariesLoader::qualifyDictionaryNameWithDatabase(const std::string & dictionary_name, const std::string & current_database_name) const

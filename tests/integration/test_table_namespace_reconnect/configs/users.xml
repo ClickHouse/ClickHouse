@@ -1,0 +1,7 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_table_namespaces>1</allow_experimental_table_namespaces>
+        </default>
+    </profiles>
+</clickhouse>

@@ -1,3 +1,5 @@
+#include <Common/quoteString.h>
+#include <unordered_set>
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCheckQuery.h>
@@ -90,6 +92,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool insert_allow_materialized_columns;
 }
 
@@ -97,6 +100,8 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_TYPE_OF_QUERY;
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 InterpreterFactory & InterpreterFactory::instance()
@@ -105,9 +110,9 @@ InterpreterFactory & InterpreterFactory::instance()
     return interpreter_fact;
 }
 
-void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn)
+void InterpreterFactory::registerInterpreter(const std::string & name, CreatorFn creator_fn, bool supports_table_namespace_scope)
 {
-    if (!interpreters.emplace(name, std::move(creator_fn)).second)
+    if (!interpreters.emplace(name, RegisteredInterpreter{std::move(creator_fn), supports_table_namespace_scope}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "InterpreterFactory: the interpreter name '{}' is not unique", name);
 }
 
@@ -403,9 +408,28 @@ InterpreterFactory::InterpreterPtr InterpreterFactory::get(ASTPtr & query, Conte
     if (!interpreters.contains(interpreter_name))
         throw Exception(ErrorCodes::UNKNOWN_TYPE_OF_QUERY, "Unknown type of query: {}", query->getID());
 
-    // creator_fn creates and returns a InterpreterPtr with the supplied arguments
-    auto creator_fn = interpreters.at(interpreter_name);
+    const auto & registered = interpreters.at(interpreter_name);
 
-    return creator_fn(arguments);
+    /// `SETTINGS allow_experimental_table_namespaces = 0` must not
+    /// retarget names to the parent database while the scope is active
+    if (const auto database_info = context->getCurrentDatabase(); database_info.hasTablePrefix())
+    {
+        if (!context->getSettingsRef()[Setting::allow_experimental_table_namespaces]
+            && interpreter_name != "InterpreterUseQuery" && interpreter_name != "InterpreterSetQuery")
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "allow_experimental_table_namespaces cannot be disabled while a table namespace is selected "
+                "(USE {}.{}); select the database itself with USE {} first",
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()),
+                backQuoteIfNeed(database_info.getDatabasePart()));
+
+        if (!registered.supports_table_namespace_scope)
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "This statement is not supported while a table namespace is selected (USE {}.{}); "
+                "select the database itself with USE {} and qualify table names with the full path",
+                backQuoteIfNeed(database_info.getDatabasePart()), backQuoteIfNeed(database_info.getTablePrefixPart()),
+                backQuoteIfNeed(database_info.getDatabasePart()));
+    }
+
+    return registered.creator_fn(arguments);
 }
 }

@@ -72,6 +72,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_table_namespaces;
     extern const SettingsBool allow_settings_after_format_in_insert;
     extern const SettingsBool calculate_text_stack_trace;
     extern const SettingsString format;
@@ -1003,7 +1004,8 @@ namespace
         const char * begin = query_text.data();
         const char * end = begin + query_text.size();
         ParserQuery parser(end, settings[Setting::allow_settings_after_format_in_insert]);
-        ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+        ast = parseQuery(parser, begin, end, "", settings[Setting::max_query_size], settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks],
+            settings[Setting::allow_experimental_table_namespaces]);
 
         /// Apply the query text's own `SETTINGS` clause to `query_context` now — before resolving the
         /// formats below and before `executeQuery`. `settings` is a live reference to the context's

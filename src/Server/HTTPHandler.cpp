@@ -570,7 +570,10 @@ void HTTPHandler::processQuery(
             context->applySettingsChanges(database_change);
             resolved_database = path_info.database;
         }
-        if (!resolved_database.empty())
+        /// Like `executeQuery`, re-apply the setting only when it differs from the current database:
+        /// the session's own value is mirrored into the setting, and re-applying it on every request
+        /// would re-evaluate a namespace scope (`USE db.ns`) that is decided once at `USE` time.
+        if (!resolved_database.empty() && resolved_database != context->getCurrentDatabase().getFullName())
         {
             try
             {
@@ -945,7 +948,7 @@ void HTTPHandler::processQuery(
         /// or `POST /db/path_table` with body `SELECT ... FROM other_table`.
         bool request_has_body = feeds_request_body_to_query
             && (request.getChunkedTransferEncoding() || request.getContentLength64() > 0);
-        const String table_db = path_info.database.empty() ? context->getCurrentDatabase() : path_info.database;
+        const String table_db = path_info.database.empty() ? context->getCurrentDatabase().getFullName() : path_info.database;
         bool table_name_is_simple = !path_info.table.contains('.');
         if (table_name_is_simple && !table_db.empty() && raw_query.empty() && !request_has_body)
         {

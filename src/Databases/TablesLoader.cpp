@@ -32,7 +32,7 @@ TablesLoader::TablesLoader(ContextMutablePtr global_context_, Databases database
     , all_loading_dependencies("LoadingDeps")
     , async_loader(global_context->getAsyncLoader())
 {
-    metadata.default_database = global_context->getCurrentDatabase();
+    metadata.default_database = global_context->getCurrentDatabase().getFullName();
     log = getLogger("TablesLoader");
 }
 
@@ -195,7 +195,7 @@ void TablesLoader::buildDependencyGraph()
         /// does - keeps the two graphs describing the same object, instead of guarding a
         /// `default.dict` which does not exist. The definitions of the dictionaries are not
         /// repaired, so they keep resolving against the default database of the server.
-        const String referential_database = is_dictionary ? global_context->getCurrentDatabase() : table_name.database;
+        const String referential_database = is_dictionary ? global_context->getCurrentDatabase().getFullName() : table_name.database;
         auto new_ref_dependencies = getDependenciesFromCreateQuery(global_context, table_name, ast, referential_database, /*can_throw*/ false, /*validate_current_database*/ false);
         auto new_loading_dependencies = getLoadingDependenciesFromCreateQuery(global_context, table_name, ast, table_name.database);
 
