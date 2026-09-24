@@ -129,12 +129,15 @@ bool canDumpIcebergStats(const Field & field, DataTypePtr type)
                 return false;
             return canDumpIcebergStats(field, assert_cast<const DataTypeNullable *>(type.get())->getNestedType());
         }
+        case TypeIndex::UInt8:
+            return isBool(type);
         case TypeIndex::Int32:
         case TypeIndex::Date:
         case TypeIndex::Date32:
         case TypeIndex::Int64:
         case TypeIndex::DateTime64:
         case TypeIndex::String:
+        case TypeIndex::FixedString:
         case TypeIndex::Decimal32:
         case TypeIndex::Decimal64:
         case TypeIndex::Decimal128:
@@ -270,6 +273,9 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::Int64:
             return dumpValue(field.safeGet<Int64>());
         case TypeIndex::UInt8:
+            if (isBool(type))
+                return dumpValue(static_cast<UInt8>(field.safeGet<UInt64>() != 0));
+            return dumpValue(static_cast<Int32>(applyVisitor(FieldVisitorConvertToNumber<Int64>(), field)));
         case TypeIndex::Int8:
         case TypeIndex::UInt16:
         case TypeIndex::Int16:
@@ -280,6 +286,7 @@ std::vector<uint8_t> dumpFieldToBytes(const Field & field, DataTypePtr type)
         case TypeIndex::DateTime64:
             return dumpValue(field.safeGet<Decimal64>().getValue().value);
         case TypeIndex::String:
+        case TypeIndex::FixedString:
         {
             auto value = field.safeGet<String>();
             std::vector<uint8_t> bytes;
