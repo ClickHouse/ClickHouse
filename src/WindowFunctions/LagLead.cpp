@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/getLeastSupertype.h>

@@ -1,5 +1,5 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
-#include <AggregateFunctions/WindowFunction.h>
+#include <WindowFunctions/IWindowFunction.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <Common/Exception.h>
 
