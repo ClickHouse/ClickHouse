@@ -108,3 +108,9 @@ Name: idx
 Granules: 3/6
 -- An index with a postprocessor is not used
 [1,4,5]
+-- NOT keeps excluding NULL rows of a Nullable preprocessor expression
+[3]
+[3]
+[3]
+-- A column named like the preprocessor expression is not taken for it
+[2]

@@ -167,7 +167,8 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
     bool has_positions_,
-    NameSet columns_shadowing_map_subcolumns_)
+    NameSet columns_shadowing_map_subcolumns_,
+    const ColumnsDescription & table_columns)
     : WithContext(context_)
     , header(index_sample_block)
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
@@ -189,8 +190,14 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
         RPNBuilderTreeContext tree_context(context_);
         Block expression_header{ColumnWithTypeAndName(expression->result_type, RPNBuilderTreeNode(expression, tree_context).getColumnName())};
 
-        preprocessed_expression_condition = std::make_shared<MergeTreeIndexConditionText>(
-            nullptr, context_, expression_header, std::nullopt, tokenizer, nullptr, nullptr, has_positions, NameSet{});
+        /// Direct read answers with a non-Nullable UInt8, so `NOT` over a Nullable expression would return NULL rows.
+        const bool is_nullable = isNullableOrLowCardinalityNullable(expression->result_type);
+        /// A query cannot tell a table column with the expression's name apart from the expression.
+        const bool is_shadowed = table_columns.hasColumnOrSubcolumn(GetColumnsOptions::All, expression_header.begin()->name);
+
+        if (!is_nullable && !is_shadowed)
+            preprocessed_expression_condition = std::make_shared<MergeTreeIndexConditionText>(
+                nullptr, context_, expression_header, std::nullopt, tokenizer, nullptr, nullptr, has_positions, NameSet{}, table_columns);
     }
 
     if (!predicate)

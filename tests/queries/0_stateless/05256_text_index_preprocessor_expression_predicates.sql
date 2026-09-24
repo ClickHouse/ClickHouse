@@ -115,3 +115,42 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(lower(s), 'error');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(lower(s), 'error') SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
 
 DROP TABLE tab;
+
+SELECT '-- NOT keeps excluding NULL rows of a Nullable preprocessor expression';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s Nullable(String),
+    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(s))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'Error x'), (2, NULL), (3, 'fine');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE NOT hasToken(lower(s), 'error') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE NOT hasAnyTokens(lower(s), 'error') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT arraySort(groupArray(id)) FROM tab WHERE NOT hasToken(lower(s), 'error') SETTINGS query_plan_direct_read_from_text_index = 0;
+
+DROP TABLE tab;
+
+SELECT '-- A column named like the preprocessor expression is not taken for it';
+
+CREATE TABLE tab
+(
+    id UInt32,
+    s String,
+    `lower(s)` String,
+    INDEX idx s TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(s))
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO tab VALUES (1, 'Error here', 'nothing'), (2, 'fine', 'error there');
+
+SELECT arraySort(groupArray(id)) FROM tab WHERE hasToken(`lower(s)`, 'error');
+
+DROP TABLE tab;
