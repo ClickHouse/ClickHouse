@@ -104,6 +104,18 @@ static constexpr auto NAMESPACES_ENDPOINT = "namespaces";
 /// so that they ask for a fresh one on the next request.
 static constexpr auto UNKNOWN_EXPIRATION_TOKEN_LIFETIME = std::chrono::minutes(1);
 
+DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
+{
+    /// Parse a string of format "Authorization: <auth_scheme> <auth_token>"
+    /// into a key-value header "Authorization", "<auth_scheme> <auth_token>"
+
+    auto pos = auth_header.find(':');
+    if (pos == std::string::npos)
+        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
+
+    return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
+}
+
 namespace
 {
 
@@ -127,18 +139,6 @@ std::pair<std::string, std::string> parseCatalogCredential(const std::string & c
         client_secret = catalog_credential.substr(pos + 1);
     }
     return std::pair(client_id, client_secret);
-}
-
-DB::HTTPHeaderEntry parseAuthHeader(const std::string & auth_header)
-{
-    /// Parse a string of format "Authorization: <auth_scheme> <auth_token>"
-    /// into a key-value header "Authorization", "<auth_scheme> <auth_token>"
-
-    auto pos = auth_header.find(':');
-    if (pos == std::string::npos)
-        throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Unexpected format of auth header");
-
-    return DB::HTTPHeaderEntry(auth_header.substr(0, pos), auth_header.substr(pos + 1));
 }
 
 std::string correctAPIURI(const std::string & uri)
@@ -757,8 +757,6 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
     /// https://github.com/apache/iceberg/blob/918f81f3c3f498f46afcea17c1ac9cdc6913cb5c/open-api/rest-catalog-open-api.yaml#L183C82-L183C99
 
     Poco::URI url;
-    DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
-    size_t body_size = 0;
     String body;
 
     if (oauth_server_uri.empty() && !oauth_server_use_request_body)
@@ -791,11 +789,6 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
             Poco::URI::encode(client_id, client_id, encoded_client_id);
             body += "&client_id=" + encoded_client_id;
         }
-        body_size = body.size();
-        out_stream_callback = [&](DB::WriteBuffer & out)
-        {
-            DB::writeString(body, out);
-        };
 
         if (oauth_server_uri.empty())
             url = Poco::URI(base_url / oauth_tokens_endpoint);
@@ -803,59 +796,7 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
             url = Poco::URI(oauth_server_uri);
     }
 
-    const auto & context = getContext();
-    context->getRemoteHostFilter().checkHostAndPort(url.getHost(), std::to_string(url.getPort()));
-    auto timeouts = DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings());
-    auto session = makeHTTPSession(DB::HTTPConnectionGroupType::HTTP, url, timeouts, {});
-
-    Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_POST, url.getPathAndQuery(),
-                                Poco::Net::HTTPMessage::HTTP_1_1);
-    request.setContentType("application/x-www-form-urlencoded");
-    request.setContentLength(body_size);
-    request.set("Accept", "application/json");
-
-    auto request_body = DB::sendHTTPRequest(*session, request);
-    /// The query-parameters flavor of the request has no body.
-    if (out_stream_callback)
-        out_stream_callback(*request_body);
-    request_body->finalize();
-
-    Poco::Net::HTTPResponse response;
-    auto response_body = DB::receiveHTTPResponse(*session, response);
-
-    std::string json_str;
-    DB::readStringUntilEOF(json_str, *response_body);
-
-    /// The body of a failed response is an OAuth error object, safe to show.
-    /// The URL is omitted: its query string can carry `client_secret`.
-    if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token request failed with status {} ({}): {}",
-            static_cast<int>(response.getStatus()), response.getReason(), json_str);
-
-    Poco::JSON::Parser parser;
-    Poco::Dynamic::Var res_json = parser.parse(json_str);
-    const Poco::JSON::Object::Ptr & object = res_json.extract<Poco::JSON::Object::Ptr>();
-
-    if (!object->has("access_token"))
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "OAuth token response has no `access_token` field: {}",
-            json_str);
-
-    AccessToken token;
-    token.token = object->getValue<String>("access_token");
-
-    if (object->has("expires_in"))
-    {
-        Int64 expires_in = object->getValue<Int64>("expires_in");
-        /// Use 90% of the token lifetime as the validity window so that short-lived tokens
-        /// (e.g. expires_in=300) still get a sensible buffer instead of going non-positive.
-        token.expires_at = std::chrono::system_clock::now() + std::chrono::seconds(expires_in * 9 / 10);
-    }
-
-    return token;
+    return requestOAuthToken(getContext(), url, body);
 }
 
 AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogState & catalog_state) const
