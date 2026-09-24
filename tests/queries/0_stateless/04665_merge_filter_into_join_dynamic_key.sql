@@ -12,10 +12,6 @@ SET query_plan_join_swap_table = 'false';
 SET enable_join_runtime_filters = 0;
 -- CI randomizes this to 0, which leaves `ON 1` reported as `inner` instead of `cross`.
 SET query_plan_optimize_join_order_limit = 10;
--- Same label, other route: CI randomizes this to 'a' or 'c', and a conflict detector lets
--- `dpsub` reorder `ON 1` into a plain `inner`. Only `dpsub` reads this setting, so pinning
--- it (rather than the algorithm) keeps `dpsub` itself in the randomization.
-SET query_plan_optimize_join_order_conflict_detector = '';
 
 CREATE TABLE t_int (a Int32) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t_dyn (d Dynamic) ENGINE = MergeTree ORDER BY tuple();

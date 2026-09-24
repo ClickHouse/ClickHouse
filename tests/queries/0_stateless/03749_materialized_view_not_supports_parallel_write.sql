@@ -1,9 +1,6 @@
 -- Tags: no-asan, no-tsan, no-msan, no-ubsan, no-sanitize-coverage, no-parallel-replicas, no-flaky-check
 
 SET parallel_view_processing = 1, max_insert_threads = 2;
--- Pin off: a ratio above 1.0 adds a ShrinkColumnsTransform to the insert chain,
--- which shows up in the EXPLAIN PIPELINE output below.
-SET shrink_over_allocated_columns_min_waste_ratio = 1.0;
 
 CREATE TABLE test_set (c0 Int) ENGINE = Set;
 CREATE TABLE test_table (c0 Int) ENGINE = MergeTree ORDER BY c0 PARTITION BY c0;

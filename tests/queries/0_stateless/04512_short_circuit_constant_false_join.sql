@@ -33,14 +33,11 @@ SELECT count() FROM (
     FULL JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND 1 = 2
 ) WHERE explain ILIKE '%ReadNothing%';
 
--- Folding the two contradictory equalities to a constant false is what
--- `optimize_redundant_comparisons` does, so pin it (CI randomizes it).
 SELECT 'Constant-false from predicate folding (a.t = ''A'' AND a.t = ''B'')';
 SELECT count() = 1 FROM (
     EXPLAIN SELECT * FROM (SELECT number AS x, toString(number) AS t FROM numbers(10)) a
     LEFT JOIN (SELECT number AS y FROM numbers(100)) b ON a.x = b.y AND a.t = 'A' AND a.t = 'B'
-) WHERE explain ILIKE '%ReadNothing%'
-SETTINGS optimize_redundant_comparisons = 1;
+) WHERE explain ILIKE '%ReadNothing%';
 
 SELECT 'A true ON condition is NOT short-circuited';
 SELECT count() FROM (

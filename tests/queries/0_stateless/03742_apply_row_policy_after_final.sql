@@ -1,10 +1,6 @@
 -- Test for apply_row_policy_after_final setting with ReplacingMergeTree, https://github.com/ClickHouse/ClickHouse/issues/90986
 SET explain_query_plan_default = 'legacy';
 
-SET query_plan_optimize_lazy_final = 0;
--- Pin the default: defer=0 legitimately changes FINAL results when the partition key is not in the sorting key.
-SET defer_partition_pruning_after_final = 1;
-
 DROP TABLE IF EXISTS tab;
 DROP ROW POLICY IF EXISTS pol1 ON tab;
 

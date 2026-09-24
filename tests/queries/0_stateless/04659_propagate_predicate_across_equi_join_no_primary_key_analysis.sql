@@ -1,8 +1,6 @@
 SET enable_analyzer = 1;
 -- Under parallel replicas the reads are remote and the pass bails
 SET enable_parallel_replicas = 0;
--- The pass under test is randomized in CI, so pin it on.
-SET query_plan_propagate_predicate_across_join = 1;
 
 DROP TABLE IF EXISTS prop_nopk_src;
 DROP TABLE IF EXISTS prop_nopk_dst;

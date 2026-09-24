@@ -7,7 +7,6 @@ SET enable_parallel_replicas = 0;
 -- 1. limit > 64 throws INVALID_SETTING_VALUE (BitSet is 64-bit).
 -- =====================================================================
 
-SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 CREATE TABLE lim_a (id UInt32) ENGINE = MergeTree() PRIMARY KEY id;
 CREATE TABLE lim_b (id UInt32, a_id UInt32) ENGINE = MergeTree() PRIMARY KEY id;
 INSERT INTO lim_a VALUES (1);

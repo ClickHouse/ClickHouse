@@ -8,34 +8,24 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --explain_query_plan_default=legacy"
-MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1 --use_text_index_like_evaluation_by_dictionary_scan 1"
-
-# The whole test is accumulated into SCRIPT and runs as a single client invocation:
-# on sanitizer builds dozens of client start-ups dominate the runtime and push the
-# test over the time limit.
-SCRIPT=""
-
-# TSVRaw, because the default TSV escapes the quotes inside the echoed query text.
-function echo_line()
-{
-    SCRIPT+="SELECT '${1//\'/\\\'}' FORMAT TSVRaw;
-"
-}
+MY_CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --enable_analyzer 1"
 
 function run_query()
 {
     local query=$1
-    echo_line "$query"
-    SCRIPT+="$query;
-    SELECT trimLeft(explain) FROM (
-        EXPLAIN indexes = 1 $query
-    )
-    WHERE explain LIKE '%Condition:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
-    LIMIT 3, 4;
-"
+    echo "$query"
+    $MY_CLICKHOUSE_CLIENT --query "$query"
+
+    $MY_CLICKHOUSE_CLIENT --query "
+        SELECT trimLeft(explain) FROM (
+            EXPLAIN indexes = 1 $query
+        )
+        WHERE explain LIKE '%Condition:%' OR explain LIKE '%Description:%' OR explain LIKE '%Parts:%' OR explain LIKE '%Granules:%'
+        LIMIT 3, 4;
+    "
 }
 
-SCRIPT+="
+$MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE IF EXISTS tab;
 
     CREATE TABLE tab
@@ -53,7 +43,7 @@ SCRIPT+="
     INSERT INTO tab VALUES (3, '{\"key1\": \"nothing special\", \"num\": 100}');
 "
 
-echo_line "-- Direct subcolumn access"
+echo "-- Direct subcolumn access"
 run_query "SELECT id FROM tab WHERE data.key1 = 'the quick brown fox' ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.num = 42 ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.key1 LIKE '%quick%' ORDER BY id"
@@ -61,7 +51,7 @@ run_query "SELECT id FROM tab WHERE startsWith(data.key1, 'lazy') ORDER BY id"
 run_query "SELECT id FROM tab WHERE endsWith(data.key1, 'fox') ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasToken(data.key1, 'quick') ORDER BY id"
 
-echo_line "-- CAST with ::String"
+echo "-- CAST with ::String"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.key1::String, 'the quick brown fox') ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.key1::String = 'the quick brown fox' ORDER BY id"
 run_query "SELECT id FROM tab WHERE data.key1::String LIKE '%quick%' ORDER BY id"
@@ -70,12 +60,12 @@ run_query "SELECT id FROM tab WHERE hasToken(data.key1::String, 'quick') ORDER B
 run_query "SELECT id FROM tab WHERE hasAnyTokens(data.key1::String, ['quick', 'lazy']) ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.key1::String, ['the', 'quick']) ORDER BY id"
 
-echo_line "-- IN operator"
+echo "-- IN operator"
 run_query "SELECT id FROM tab WHERE data.key1::String IN ('the quick brown fox', 'lazy dog jumps') ORDER BY id"
 
-echo_line "-- JSON values that are arrays"
+echo "-- JSON values that are arrays"
 
-SCRIPT+="
+$MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE tab;
 
     CREATE TABLE tab
@@ -97,9 +87,9 @@ run_query "SELECT id FROM tab WHERE data.tags = 'not_an_array' ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'foo') ORDER BY id"
 run_query "SELECT id FROM tab WHERE hasAllTokens(data.tags::String, 'not array') ORDER BY id"
 
-echo_line "-- Nested JSON subcolumns"
+echo "-- Nested JSON subcolumns"
 
-SCRIPT+="
+$MY_CLICKHOUSE_CLIENT --query "
     DROP TABLE tab;
 
     CREATE TABLE tab
@@ -118,7 +108,4 @@ SCRIPT+="
 
 run_query "SELECT id FROM tab WHERE data.a.b = 'deep value one' ORDER BY id"
 
-SCRIPT+="DROP TABLE tab;
-"
-
-$MY_CLICKHOUSE_CLIENT --query "$SCRIPT"
+$MY_CLICKHOUSE_CLIENT --query "DROP TABLE tab;"

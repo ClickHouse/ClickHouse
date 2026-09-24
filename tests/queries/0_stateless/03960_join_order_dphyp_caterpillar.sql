@@ -39,7 +39,6 @@ WHERE s1.id BETWEEN 0 AND 9
   AND l7.id = s7.id + 100  AND l8.id = s8.id + 100
 SETTINGS query_plan_optimize_join_order_algorithm = 'dphyp',
          query_plan_optimize_join_order_limit = 16,
-         query_plan_optimize_join_order_max_searched_plans = 0, -- disable budget: CI randomizes it small, which starves the DP-only algorithm (no greedy fallback -> error 717)
          enable_parallel_replicas = 0;
 
 SELECT 'K=8 caterpillar: DPsize result (must match)';
@@ -57,7 +56,6 @@ WHERE s1.id BETWEEN 0 AND 9
   AND l7.id = s7.id + 100  AND l8.id = s8.id + 100
 SETTINGS query_plan_optimize_join_order_algorithm = 'dpsize',
          query_plan_optimize_join_order_limit = 16,
-         query_plan_optimize_join_order_max_searched_plans = 0, -- disable budget: CI randomizes it small, which starves the DP-only algorithm (no greedy fallback -> error 717)
          enable_parallel_replicas = 0;
 
 -- ==========================================================================

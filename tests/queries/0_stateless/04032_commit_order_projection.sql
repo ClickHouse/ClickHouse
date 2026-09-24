@@ -1,12 +1,6 @@
 -- Tags: no-parallel-replicas
 SET explain_query_plan_default = 'legacy';
 
--- The plain reads below have no ORDER BY: they are meant to come back in table order, so that
--- they contrast with the `_commit_order` projection read that follows. `prefer_optimize_projection`
--- would take that projection for them too regardless of cost, and both sections would then print
--- the same commit order. The cost-based choice the index-lookup EXPLAIN relies on is unaffected.
-SET prefer_optimize_projection = 0;
-
 set enable_analyzer = 1;
 
 drop table if exists mt_with_commit_order sync;

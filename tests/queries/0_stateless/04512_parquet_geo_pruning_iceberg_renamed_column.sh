@@ -23,11 +23,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The table captures its format settings when it is created, so the setting randomizer turning
-# `input_format_parquet_spatial_filter_push_down` off for `CREATE TABLE` disables pruning for good -
-# a pin on the query under test cannot bring it back. Pin it for every query in the script instead.
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --allow_repeated_settings --input_format_parquet_spatial_filter_push_down 1"
-
 ICEBERG_PATH="${CLICKHOUSE_USER_FILES}/lakehouses/${CLICKHOUSE_DATABASE}_geo_evol"
 TEST_TABLE="t_ice_geo_evol"
 

@@ -6,10 +6,6 @@ SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10; -- needed for statistics-based row count estimates in EXPLAIN output
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False, preventing LEFT ANY → LEFT SEMI conversion that this test validates
--- CI randomizes this to 'a' or 'c', and either lets `dpsub` estimate the LEFT SEMI join at the
--- right side's cardinality instead of the left's, changing the `ResultRows` asserted below. Only
--- `dpsub` reads this setting, so pinning it (rather than the algorithm) keeps `dpsub` randomized.
-SET query_plan_optimize_join_order_conflict_detector = '';
 
 CREATE TABLE users1 (uid Int16, name String, age Int16) ENGINE=Memory;
 INSERT INTO users1 SELECT number as uid, 'Alice' as name, 30 as age FROM numbers(100000);

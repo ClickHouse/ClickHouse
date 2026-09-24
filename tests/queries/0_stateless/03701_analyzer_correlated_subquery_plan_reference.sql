@@ -11,7 +11,6 @@ SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- CI may inject False, keeping LEFT ANY instead of converting to LEFT SEMI
 SET query_plan_remove_unused_columns = 1; -- CI may inject False, keeping __table1.y/exists(__table2) in plan instead of pruning to __join_result_dummy
-SET query_plan_optimize_join_order_algorithm = 'greedy'; -- CI may inject a DP algorithm, which rebuilds the CROSS join as an INNER join on a constant `true`
 
 CREATE TABLE t(x Int, y Int) ORDER BY ()
 AS SELECT number as x, number % 2 as y FROM numbers(100);

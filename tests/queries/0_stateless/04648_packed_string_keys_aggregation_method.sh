@@ -1,8 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-random-settings
-# `no-random-settings`: the last case asserts what `compatibility` picks for
-# `enable_packed_string_keys_in_aggregation`, and an explicitly randomized value overrides
-# `compatibility` by design, so the legacy method is never selected.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

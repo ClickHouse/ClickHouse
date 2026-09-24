@@ -7,10 +7,6 @@
 -- Every query pins `optimize_and_compare_chain` (the test runner randomizes it, and it derives
 -- transitive conjuncts that change node counts) and `enable_analyzer = 1` (the pass is analyzer-only).
 
--- The runner randomizes that pass's hash-work budget too, and a budget of 1 stops it deriving the
--- conjunct section 7 asserts on. 0 means no budget, which is what every query here wants.
-SET optimize_and_compare_chain_max_hash_work = 0;
-
 -- 1) The fold happens with pruning disabled. Counting `equals` nodes rather than matching a constant's
 --    rendered value: 'Low' and 'Medium' also appear in the fixture's own arguments.
 SELECT count() = 0 FROM (EXPLAIN QUERY TREE SELECT s FROM values('s String', ('Low'), ('Medium')) WHERE (s = 'Low') AND (s = 'Medium') SETTINGS enable_analyzer = 1, optimize_redundant_comparisons = 0, optimize_and_compare_chain = 0) WHERE explain ILIKE '%function_name: equals,%';

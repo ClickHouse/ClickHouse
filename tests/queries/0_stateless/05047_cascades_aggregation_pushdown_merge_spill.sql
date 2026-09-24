@@ -34,8 +34,6 @@ INSERT INTO t_spill_dims SELECT number % 2, number FROM numbers(100000);
 SET make_distributed_plan = 1;
 SET enable_cascades_optimizer = 1;
 SET distributed_plan_execute_locally = 1;
--- The canary checks that the eager-aggregation rule fires, so it must not be randomized off.
-SET cascades_aggregation_pushdown = 1;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;

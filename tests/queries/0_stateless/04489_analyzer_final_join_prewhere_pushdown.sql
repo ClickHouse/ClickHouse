@@ -1,8 +1,5 @@
 -- FINAL is a per-table modifier: `<t1> FINAL JOIN <t2>` must read only `t1` with FINAL, not `t2`.
 
--- Lazy FINAL may legitimately plan the read without FINAL, breaking the plan-count checks below.
-SET query_plan_optimize_lazy_final = 0;
-
 DROP TABLE IF EXISTS t1_final_join;
 DROP TABLE IF EXISTS t2_final_join;
 

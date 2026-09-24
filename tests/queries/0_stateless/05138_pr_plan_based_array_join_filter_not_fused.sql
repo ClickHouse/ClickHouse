@@ -7,8 +7,6 @@
 SET enable_analyzer = 1;
 -- Fusion is skipped for serialized plans; pin it so the plan-shape checks below hold in every suite.
 SET serialize_query_plan = 0;
--- Pin (randomized in CI): the first check asserts the fusion happens at all.
-SET query_plan_fuse_filter_into_array_join = 1;
 
 DROP TABLE IF EXISTS t_pr_fuse;
 

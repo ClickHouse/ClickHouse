@@ -147,7 +147,7 @@ SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = tuple('V
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = toFixedString('V0', 4), [toFixedString('V0', 3)]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: has%';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 1, [1, 2]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: arrayExists%';
-SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 1, [1, 2]) SETTINGS optimize_rewrite_array_exists_to_has = 1, optimize_rewrite_has_to_in = 1) WHERE explain ILIKE '%function_name: in%';
+SELECT count() > 0 FROM (EXPLAIN QUERY TREE SELECT arrayExists(x -> x = 1, [1, 2]) SETTINGS optimize_rewrite_array_exists_to_has = 1) WHERE explain ILIKE '%function_name: in%';
 
 -- Direct membership calls keep their current semantics: this change is only about the rewrite.
 SELECT has(v, 'V0\0'), indexOf(v, 'V0\0'), countEqual(v, 'V0\0') FROM t_fs;

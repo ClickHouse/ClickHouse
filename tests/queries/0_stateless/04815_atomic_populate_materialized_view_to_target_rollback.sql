@@ -9,10 +9,6 @@
 -- to it stay there, exactly as after a failed `INSERT ... SELECT` into that table - so a retry may insert
 -- them again. This test pins down that narrowed rollback contract for an external target.
 
--- The atomic rollback is the contract under test and CI randomizes it off, which would leave the
--- view behind after the failed CREATE.
-SET materialized_views_populate_atomically = 1;
-
 DROP TABLE IF EXISTS src_04815;
 DROP TABLE IF EXISTS target_04815;
 DROP TABLE IF EXISTS mv_04815;

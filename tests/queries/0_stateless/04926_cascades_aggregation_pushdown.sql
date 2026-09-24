@@ -44,12 +44,6 @@ SET query_plan_optimize_prewhere = 1;
 SET query_plan_join_swap_table = 'auto';
 SET join_runtime_filter_min_probe_rows = 1000;
 SET query_plan_optimize_join_order_limit = 10;
--- Case 26 is the only three-join query, so the join-order search has freedom: an algorithm list
--- that leads with `dpsub` reaches a different but equally valid order and reshapes its plan.
-SET query_plan_optimize_join_order_algorithm = 'greedy';
--- `compatibility` only lowers settings the user has not set, and the harness passes
--- `cascades_aggregation_pushdown` explicitly, which would make case 1b measure nothing.
-SET cascades_aggregation_pushdown = DEFAULT;
 SET param__internal_cascades_cluster_node_count = 4;
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 

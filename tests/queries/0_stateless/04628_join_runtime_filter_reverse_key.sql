@@ -17,7 +17,6 @@
 
 SET enable_analyzer = 1;
 SET enable_join_runtime_filters = 1;
-SET join_runtime_filter_min_probe_rows = 0; -- probe sides here are a few thousand rows; a randomized threshold would skip the filter.
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';

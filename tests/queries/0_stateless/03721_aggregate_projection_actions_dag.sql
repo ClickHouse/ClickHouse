@@ -1,9 +1,6 @@
 SET explain_query_plan_default = 'legacy';
 SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
-SET query_plan_optimize_join_order_algorithm = 'greedy';        -- CI also randomizes these three
-SET query_plan_optimize_join_order_max_searched_plans = 100000; -- join-order settings, which change
-SET query_plan_optimize_join_order_limit = 10;                  -- the chosen order; pin to defaults
 CREATE TABLE test
 (
     `key` UInt64,

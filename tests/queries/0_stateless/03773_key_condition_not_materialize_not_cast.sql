@@ -4,7 +4,6 @@
 SET explain_query_plan_default = 'legacy';
 SET materialize_statistics_on_insert = 0; -- pin (randomized in CI): statistics built on INSERT change the plan
 
-
 DROP TABLE IF EXISTS t_cast_bug;
 
 CREATE TABLE t_cast_bug (val UInt8) ENGINE = MergeTree ORDER BY val  SETTINGS add_minmax_index_for_numeric_columns=0;

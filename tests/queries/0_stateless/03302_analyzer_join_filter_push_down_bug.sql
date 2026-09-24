@@ -1,8 +1,5 @@
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
--- Same reason: another search algorithm or conflict detector reaches a different plan, and the
--- CROSS join above is then printed as an INNER `ConstantJoin` instead.
-SET query_plan_optimize_join_order_algorithm = 'greedy', query_plan_optimize_join_order_conflict_detector = '';
 CREATE TABLE t1 (key Int32, value DateTime) ENGINE = Log;
 INSERT INTO  t1 select number, number from numbers(10000);
 create table t2 ENGINE = Log as select key as key1, value from t1;

@@ -1,12 +1,8 @@
--- Tags: long
--- (`long`: fast per run, but the flaky check reruns it ~100x on debug and the total exceeds the
--- 180s cap; the tag exempts it from that cap without cutting join-shape coverage.)
 -- Tests that the DPsub join-order algorithm correctly reorders non-Inner (LEFT/RIGHT) joins.
 -- For each shape we print the result twice: once with optimization disabled (the reference
 -- order) and once with 'dpsub'. The two must be identical row-for-row; a wrong join kind or
 -- orientation chosen by DPsub would change which rows get NULL-padded.
 
-SET query_plan_optimize_join_order_max_searched_plans = 100000; -- pin (randomized in CI): a small search budget starves DP-only algorithms
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;

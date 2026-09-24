@@ -1,8 +1,7 @@
 -- Tags: stateful
 SET use_primary_key = 1; -- test relies on PK index for monotonic function pruning and max_rows_to_read limits
 SET max_rows_to_read = 60000;
--- pinned: partition-minmax PK pruning is randomized by clickhouse-test (PR #106734) but changes read_rows/max_rows_to_read on the partitioned test.hits
-SET use_partition_minmax_for_primary_key_pruning = 1;
+
 SELECT count() FROM test.hits WHERE -CounterID = -1731;
 SELECT count() FROM test.hits WHERE abs(-CounterID) = 1731;
 SELECT count() FROM test.hits WHERE -abs(CounterID) = -1731;

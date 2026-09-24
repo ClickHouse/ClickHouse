@@ -1,7 +1,4 @@
 SET explain_query_plan_default = 'legacy';
--- The rewrite is what most of this test asserts, and CI randomizes it off; pin it on. The two
--- queries that need it off carry their own `SETTINGS optimize_rewrite_has_to_in = 0`.
-SET optimize_rewrite_has_to_in = 1;
 
 -- { echo }
 

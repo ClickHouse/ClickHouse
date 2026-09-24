@@ -3,9 +3,6 @@
 
 SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
--- Every assertion below needs the derivation to actually run, so the work budget cannot be
--- left to the test runner's randomization (a low budget makes the pass derive nothing).
-SET optimize_and_compare_chain_max_hash_work = 5000000;
 
 DROP TABLE IF EXISTS t_chain_hint;
 CREATE TABLE t_chain_hint (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a

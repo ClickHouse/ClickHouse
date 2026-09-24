@@ -1,9 +1,6 @@
 SET enable_analyzer = 1;
 SET optimize_and_compare_chain = 1;
 SET optimize_empty_string_comparisons = 1;
--- The EXPLAIN assertions expect the transitive-predicate rewrites to fire, which requires a work
--- budget large enough for these chains; pin it to the default against the runner's randomization.
-SET optimize_and_compare_chain_max_hash_work = 5000000;
 
 DROP TABLE IF EXISTS 04032_t;
 

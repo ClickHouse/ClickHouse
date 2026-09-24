@@ -5,9 +5,6 @@ SET enable_analyzer = 1;
 SET optimize_use_projections = 1;
 SET optimize_read_in_order = 1;
 SET optimize_move_to_prewhere = 1;
--- Pin (randomized in CI): `prefer_optimize_projection` takes a projection regardless of its
--- estimated cost, so the plans below would read the projection even where cost rejects it.
-SET prefer_optimize_projection = 0;
 
 DROP TABLE IF EXISTS t_proj_sort;
 

@@ -5,7 +5,6 @@ SET optimize_extract_common_expressions = 0;
 SET optimize_using_constraints = 0;
 SET enable_parallel_replicas = 0;
 SET optimize_and_compare_chain = 1;
-SET optimize_and_compare_chain_max_hash_work = 0; -- unlimited budget: the EXPLAIN output below relies on `optimize_and_compare_chain` being fully applied
 
 DROP TABLE IF EXISTS customer;
 DROP TABLE IF EXISTS part;

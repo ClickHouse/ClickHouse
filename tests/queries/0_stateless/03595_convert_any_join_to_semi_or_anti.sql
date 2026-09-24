@@ -9,7 +9,6 @@ SET correlated_subqueries_use_in_memory_buffer = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
 SET query_plan_convert_any_join_to_semi_or_anti_join = 1; -- test specifically validates ANY→SEMI/ANTI conversion
 SET query_plan_optimize_join_order_limit = 10; -- CI may inject 0, skipping chooseJoinOrder which normally eliminates intermediate "Project only used columns" Expression steps
-SET query_plan_optimize_join_order_algorithm = 'greedy'; -- CI may inject a DP algorithm, which rebuilds the CROSS join as an INNER join on a constant `true`
 SET query_plan_remove_unused_columns = 1; -- CI may inject False; exists(__table2) column not pruned/replaced by __join_result_dummy, changing actions/positions throughout the plan
 
 CREATE TABLE users1 (uid Int16, name String, age Int16) ENGINE=Memory;

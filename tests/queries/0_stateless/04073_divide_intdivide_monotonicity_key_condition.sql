@@ -2,8 +2,6 @@
 -- EXPLAIN output may differ
 
 SET explain_query_plan_default = 'legacy';
--- Pin off: folding partition constants changes the Min-Max parts count in the EXPLAIN (rows unchanged).
-SET use_constant_folding_in_index_analysis = 0;
 
 -- { echo }
 

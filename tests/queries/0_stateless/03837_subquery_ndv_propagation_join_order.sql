@@ -1,8 +1,5 @@
 SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
-SET query_plan_optimize_join_order_algorithm = 'greedy';        -- CI also randomizes these three
-SET query_plan_optimize_join_order_max_searched_plans = 100000; -- join-order settings, which change
-SET query_plan_optimize_join_order_limit = 10;                  -- the chosen order; pin to defaults
 SET allow_experimental_statistics = 1;
 
 DROP TABLE IF EXISTS test_sales;
