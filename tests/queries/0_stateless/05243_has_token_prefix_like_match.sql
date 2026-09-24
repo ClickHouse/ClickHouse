@@ -69,6 +69,12 @@ SELECT
     countIf(hasTokenPrefix(s, 'ab'))
 FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][x % 7 + 1], range(number % 5)), '') AS s FROM numbers(1000));
 
+SELECT '-- arrays in a full column, the first row included';
+SELECT n, hasTokenPrefix(arr, 'ab'), hasTokenLike(arr, 'a_c'), hasTokenMatch(arr, '^abc$')
+FROM values('n UInt8, arr Array(String)', (0, ['xy', 'abc']), (1, []), (2, ['ab']), (3, ['xy abc']), (4, ['xy'])) ORDER BY n;
+SELECT n, hasTokenLike(arr, 'a_c') FROM values('n UInt8, arr Array(Nullable(String))', (0, [NULL, 'abc']), (1, [NULL]), (2, ['xbc'])) ORDER BY n;
+SELECT n, hasTokenMatch(arr, '^cd$') FROM values('n UInt8, arr Array(FixedString(2))', (0, ['ab', 'cd']), (1, ['ab'])) ORDER BY n;
+
 SELECT '-- errors';
 SELECT hasTokenPrefix('abc'); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT hasTokenPrefix('abc', 'a', 'splitByNonAlpha', 1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

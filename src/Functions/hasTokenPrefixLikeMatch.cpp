@@ -139,15 +139,17 @@ public:
             const auto * col_nullable = checkAndGetColumn<ColumnNullable>(&col_array->getData());
             const IColumn & col_elements = col_nullable ? col_nullable->getNestedColumn() : col_array->getData();
 
+            size_t current_offset = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 res[i] = false;
-                for (size_t j = offsets[i - 1]; j < offsets[i] && !res[i]; ++j)
+                for (size_t j = current_offset; j < offsets[i] && !res[i]; ++j)
                 {
                     if (col_nullable && col_nullable->isNullAt(j))
                         continue;
                     res[i] = has_matching_token(col_elements.getDataAt(j));
                 }
+                current_offset = offsets[i];
             }
         }
         else

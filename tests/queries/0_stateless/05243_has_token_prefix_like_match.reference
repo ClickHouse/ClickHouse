@@ -55,4 +55,15 @@
 1
 -- same as arrayExists over tokens
 0	0	0	800
+-- arrays in a full column, the first row included
+0	1	1	1
+1	0	0	0
+2	1	0	0
+3	1	1	1
+4	0	0	0
+0	1
+1	0
+2	0
+0	1
+1	0
 -- errors
