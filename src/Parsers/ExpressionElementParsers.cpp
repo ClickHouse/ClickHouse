@@ -45,8 +45,6 @@
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/ParserExplainQuery.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 #include <Interpreters/StorageID.h>
 
@@ -881,50 +879,50 @@ static bool parseWindowDefinitionParts(IParser::Pos & pos,
 
 bool ParserWindowDefinition::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
+    auto result = make_intrusive<ASTWindowDefinition>();
+
     ParserToken parser_opening_bracket(TokenType::OpeningRoundBracket);
     if (!parser_opening_bracket.ignore(pos, expected))
     {
         return false;
     }
 
-    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
-
-    /// A parent window name comes first and is not cheaply distinguishable from the keyword that
-    /// starts the rest, so both readings are tried - each into its OWN node, since the parts parser
-    /// writes the frame before it can know the brackets close and `formatImpl` then cannot print it.
-    const auto body_begin = pos;
-
-    auto without_parent_window = make_intrusive<ASTWindowDefinition>();
-    if (parseWindowDefinitionParts(pos, *without_parent_window, expected)
-        && parser_closing_bracket.ignore(pos, expected))
+    // We can have a parent window name specified before all other things. No
+    // easy way to distinguish identifier from keywords, so just try to parse it
+    // both ways.
+    if (parseWindowDefinitionParts(pos, *result, expected))
     {
-        node = without_parent_window;
-        return true;
+        // Successfully parsed without parent window specifier. It can be empty,
+        // so check that it is followed by the closing bracket.
+        ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
+        if (parser_closing_bracket.ignore(pos, expected))
+        {
+            node = result;
+            return true;
+        }
     }
 
-    /// The abandoned subtree's literals must leave the token map with it.
-    forgetLiteralTokens(*without_parent_window, expected);
-    pos = body_begin;
-
-    auto with_parent_window = make_intrusive<ASTWindowDefinition>();
+    // Try to parse with parent window specifier.
+    ParserIdentifier parser_parent_window;
     ASTPtr window_name_identifier;
-    if (!ParserIdentifier().parse(pos, window_name_identifier, expected))
+    if (!parser_parent_window.parse(pos, window_name_identifier, expected))
     {
         return false;
     }
-    with_parent_window->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
+    result->parent_window_name = window_name_identifier->as<const ASTIdentifier &>().name();
 
-    if (!parseWindowDefinitionParts(pos, *with_parent_window, expected))
+    if (!parseWindowDefinitionParts(pos, *result, expected))
     {
         return false;
     }
 
+    ParserToken parser_closing_bracket(TokenType::ClosingRoundBracket);
     if (!parser_closing_bracket.ignore(pos, expected))
     {
         return false;
     }
 
-    node = with_parent_window;
+    node = result;
     return true;
 }
 
@@ -2814,115 +2812,6 @@ bool ParserAssignment::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         assignment->children.push_back(expression);
 
     return true;
-}
-
-}
-
-namespace DB
-{
-
-void registerStatementColumnsTransformers(StatementFactory & factory)
-{
-    factory.registerStatement("APPLY modifier",
-    {
-        .description = R"DOCS_MD(
-> Allows you to invoke some function for each row returned by an outer table expression of a query.
-
-## Syntax {#syntax}
-
-```sql
-SELECT <expr> APPLY( <func> ) FROM [db.]table_name
-```
-
-## Example {#example}
-
-```sql
-CREATE TABLE columns_transformers (i Int64, j Int16, k Int64) ENGINE = MergeTree ORDER by (i);
-INSERT INTO columns_transformers VALUES (100, 10, 324), (120, 8, 23);
-SELECT * APPLY(sum) FROM columns_transformers;
-```
-
-```response
-┌─sum(i)─┬─sum(j)─┬─sum(k)─┐
-│    220 │     18 │    347 │
-└────────┴────────┴────────┘
-```
-)DOCS_MD",
-        .syntax = R"(
-SELECT <expr> APPLY(<func>) FROM [db.]table_name
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "EXCEPT modifier", "REPLACE modifier"},
-    });
-
-    factory.registerStatement("EXCEPT modifier",
-    {
-        .description = R"DOCS_MD(
-> Specifies the names of one or more columns to exclude from the result. All matching column names are omitted from the output.
-
-## Syntax {#syntax}
-
-```sql
-SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
-```
-
-Parentheses are optional when excluding a single column.
-
-## Examples {#examples}
-
-```sql title="Query"
-SELECT * EXCEPT i FROM columns_transformers;
-```
-
-```response title="Response"
-┌──j─┬───k─┐
-│ 10 │ 324 │
-│  8 │  23 │
-└────┴─────┘
-```
-)DOCS_MD",
-        .syntax = R"(
-SELECT <expr> EXCEPT (col_name1 [, col_name2, col_name3, ...]) FROM [db.]table_name
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "APPLY modifier", "REPLACE modifier", "EXCEPT"},
-    });
-
-    factory.registerStatement("REPLACE modifier",
-    {
-        .description = R"DOCS_MD(
-> Allows you to specify one or more [expression aliases](/reference/syntax#expression-aliases).
-
-Each alias must match a column name from the `SELECT *` statement. In the output column list, the column that matches
-the alias is replaced by the expression in that `REPLACE`.
-
-This modifier does not change the names or order of columns. However, it can change the value and the value type.
-
-**Syntax:**
-
-```sql
-SELECT <expr> REPLACE( <expr> AS col_name) from [db.]table_name
-```
-
-**Example:**
-
-```sql
-SELECT * REPLACE(i + 1 AS i) from columns_transformers;
-```
-
-```response
-┌───i─┬──j─┬───k─┐
-│ 101 │ 10 │ 324 │
-│ 121 │  8 │  23 │
-└─────┴────┴─────┘
-```
-)DOCS_MD",
-        .syntax = R"(
-SELECT <expr> REPLACE(<expr> AS col_name) FROM [db.]table_name
-)",
-        .parent = "SELECT",
-        .related = {"SELECT", "APPLY modifier", "EXCEPT modifier"},
-    });
 }
 
 }

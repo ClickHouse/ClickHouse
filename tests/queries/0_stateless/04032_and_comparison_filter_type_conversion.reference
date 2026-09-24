@@ -4,7 +4,7 @@ int_str_eq_same
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, \'3\'), equals(__table1.i, 3))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.i, \'3\')\nSETTINGS optimize_redundant_comparisons = 1
 int_str_eq_diff
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, \'3\'), equals(__table1.i, \'5\'))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 int_str_range
 3	30	3	c	y	2024-06-15 12:00:00
@@ -17,7 +17,7 @@ float_int_eq_same
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.f, 3), equals(__table1.f, 3.))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.f, 3)\nSETTINGS optimize_redundant_comparisons = 1
 float_int_eq_diff
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.f, 3), equals(__table1.f, 4))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 float_int_range
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -42,7 +42,7 @@ float_str_and_int
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.f, \'3.0\'), less(__table1.f, 5))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.f, \'3.0\')\nSETTINGS optimize_redundant_comparisons = 1
 float_str_eq_diff
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.f, \'3.0\'), equals(__table1.f, \'5.0\'))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 float_str_range
 1	10	1.5	a	x	2024-01-01 00:00:00
@@ -57,7 +57,7 @@ dt_str_eq_same
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.dt, \'2024-06-15 12:00:00\'), equals(__table1.dt, \'2024-06-15 12:00:00\'))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.dt, \'2024-06-15 12:00:00\')\nSETTINGS optimize_redundant_comparisons = 1
 dt_str_eq_diff
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.dt, \'2024-06-15 12:00:00\'), equals(__table1.dt, \'2025-01-01 00:00:00\'))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 dt_str_range
 3	30	3	c	y	2024-06-15 12:00:00
@@ -78,7 +78,7 @@ dt_int_eq_prune
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.dt, 1718452800), greater(__table1.dt, 1704067200))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.dt, 1718452800)\nSETTINGS optimize_redundant_comparisons = 1
 dt_int_eq_conflict
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.dt, 1718452800), equals(__table1.dt, 1735689600))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 dt_int_range
 3	30	3	c	y	2024-06-15 12:00:00

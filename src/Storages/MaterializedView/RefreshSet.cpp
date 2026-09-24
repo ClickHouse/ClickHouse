@@ -85,14 +85,18 @@ RefreshSet::RefreshSet() = default;
 
 void RefreshSet::emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task)
 {
-    std::lock_guard guard(mutex);
-    const auto iter = addTaskLocked(id, task);
-    RefreshTaskList::iterator inner_table_iter;
-    if (inner_table_id)
-        inner_table_iter = addInnerTableLocked(*inner_table_id, task);
-    addDependenciesLocked(task, dependencies);
+    {
+        std::lock_guard guard(mutex);
+        const auto iter = addTaskLocked(id, task);
+        RefreshTaskList::iterator inner_table_iter;
+        if (inner_table_id)
+            inner_table_iter = addInnerTableLocked(*inner_table_id, task);
+        addDependenciesLocked(task, dependencies);
 
-    task->setRefreshSetHandleUnlock(Handle(this, id, inner_table_id, iter, inner_table_iter, dependencies));
+        task->setRefreshSetHandleUnlock(Handle(this, id, inner_table_id, iter, inner_table_iter, dependencies));
+    }
+
+    notifyDependents(id);
 }
 
 RefreshTaskList::iterator RefreshSet::addTaskLocked(StorageID id, RefreshTaskPtr task)

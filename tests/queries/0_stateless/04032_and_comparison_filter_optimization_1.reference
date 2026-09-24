@@ -4,10 +4,10 @@ eq_eq_same
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, 3), equals(__table1.i, 3))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.i, 3)\nSETTINGS optimize_redundant_comparisons = 1
 eq_eq_diff
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, 3), equals(__table1.i, 5))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 eq_eq_flip
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(3, __table1.i), equals(__table1.i, 5))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 eq_eq_cross_same
 3	30	3	c	y	2024-06-15 12:00:00
@@ -15,7 +15,7 @@ eq_eq_cross_same
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, 3), equals(__table1.i, toUInt8(3)))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE equals(__table1.i, 3)\nSETTINGS optimize_redundant_comparisons = 1
 eq_eq_cross_diff
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, 3), equals(__table1.i, toUInt8(5)))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1
 eq_eq_float_same
 3	30	3	c	y	2024-06-15 12:00:00
@@ -194,5 +194,5 @@ multi_expr
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(greater(__table1.i, 1), less(__table1.i, 5), greater(__table1.f, 2.), less(__table1.f, 6.))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(greater(__table1.i, 1), less(__table1.i, 5), greater(__table1.f, 2.), less(__table1.f, 6.))\nSETTINGS optimize_redundant_comparisons = 1
 multi_expr_conflict
-SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 0
+SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE and(equals(__table1.i, 3), equals(__table1.i, 5), greater(__table1.f, 1.))\nSETTINGS optimize_redundant_comparisons = 0
 SELECT\n    __table1.i AS i,\n    __table1.u AS u,\n    __table1.f AS f,\n    __table1.s AS s,\n    __table1.lc AS lc,\n    __table1.dt AS dt\nFROM default.`04032_t` AS __table1\nWHERE 0\nSETTINGS optimize_redundant_comparisons = 1

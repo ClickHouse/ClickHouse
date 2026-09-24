@@ -6,7 +6,6 @@
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
-#include <Common/FailPoint.h>
 #include <IO/HashingWriteBuffer.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction.h>
@@ -28,11 +27,6 @@ namespace ErrorCodes
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool enable_index_granularity_compression;
-}
-
-namespace FailPoints
-{
-    extern const char patch_part_index_write_empty[];
 }
 
 MergedBlockOutputStream::MergedBlockOutputStream(
@@ -386,19 +380,9 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
             /// throws `CORRUPTED_DATA` otherwise, including for empty covering parts.
             if (new_part->info.isPatch())
             {
-                /// Writes an index without source parts, which is the corruption shape the load path
-                /// rejects: a patch part that holds rows but names no part it patches. Only for tests.
-                bool write_empty_index = false;
-                fiu_do_on(FailPoints::patch_part_index_write_empty, { write_empty_index = true; });
-
                 write_hashed_file(PatchPartIndex::FILENAME, [&](auto & buffer)
                 {
-                    const auto & patch_part_index = new_part->getPatchPartIndex();
-
-                    if (write_empty_index)
-                        patch_part_index.cloneEmpty().writeBinary(buffer);
-                    else
-                        patch_part_index.writeBinary(buffer);
+                    new_part->getPatchPartIndex().writeBinary(buffer);
                 });
             }
         }
@@ -482,10 +466,7 @@ MergedBlockOutputStream::WrittenFiles MergedBlockOutputStream::finalizePartOnDis
     {
         write_plain_file(IMergeTreeDataPart::DEFAULT_COMPRESSION_CODEC_FILE_NAME, [&](auto & buffer)
         {
-            if (new_part->default_codec_is_approximate)
-                writeText(IMergeTreeDataPart::UNKNOWN_DEFAULT_COMPRESSION_CODEC, buffer);
-            else
-                writeText(default_codec->getFullCodecDescription()->formatWithSecretsOneLine(), buffer);
+            writeText(default_codec->getFullCodecDesc()->formatWithSecretsOneLine(), buffer);
         });
     }
     else

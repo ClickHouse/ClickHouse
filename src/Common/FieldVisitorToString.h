@@ -35,7 +35,6 @@ public:
     String operator() (const Decimal256 & x, UInt32 scale) const;
     String operator() (const AggregateFunctionStateData & x) const;
     String operator() (const CustomType & x) const;
-    String operator() (const NumberLiteral & x) const;
     String operator() (const bool & x) const;
 };
 
