@@ -348,9 +348,9 @@ def test_remote_write_v2_metadata():
         ),
     )
     assert node.query(
-        "SELECT metric_family_name, type, unit, help "
+        "SELECT metric_family, type, unit, help "
         "FROM timeSeriesMetrics(prometheus) "
-        "WHERE metric_family_name = 'rw2_metadata'"
+        "WHERE metric_family = 'rw2_metadata'"
     ) == "rw2_metadata\tcounter\trequests\tTotal number of remote write v2 requests\n"
 
 
@@ -373,7 +373,7 @@ def test_remote_write_v2_rejects_metadata_only():
     assert_remote_write_v2_written_headers(response, 0)
     assert node.query(
         "SELECT count() FROM timeSeriesMetrics(prometheus) "
-        f"WHERE metric_family_name = '{metric_name}'"
+        f"WHERE metric_family = '{metric_name}'"
     ) == "0\n"
 
 
@@ -446,7 +446,7 @@ def test_remote_write_v2_invalid_first_symbol():
     assert_remote_write_v2_written_headers(response, 0)
     assert node.query(
         "SELECT count() FROM timeSeriesMetrics(prometheus) "
-        f"WHERE metric_family_name = '{metric_name}'"
+        f"WHERE metric_family = '{metric_name}'"
     ) == "0\n"
 
 
