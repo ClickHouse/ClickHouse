@@ -90,6 +90,8 @@ DB::TLSHandler::TLSHandler(
             disabled_protocols |= Context::PROTO_TLSV1_1;
         else if (token == "tlsv1_2")
             disabled_protocols |= Context::PROTO_TLSV1_2;
+        else if (token == "tlsv1_3")
+            disabled_protocols |= Context::PROTO_TLSV1_3;
     }
 
     extended_verification = config.getBool(prefix + SSLManager::CFG_EXTENDED_VERIFICATION, false);

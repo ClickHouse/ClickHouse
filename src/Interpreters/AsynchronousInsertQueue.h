@@ -23,6 +23,8 @@ namespace DB
 class ThreadGroup;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 
+class AccessRightsElements;
+
 struct Settings;
 
 /// Statistics of a successfully flushed async insert entry,
@@ -85,9 +87,26 @@ public:
     {
     public:
         ASTPtr query;
-        String query_str;
+        /// Never log it, use `serializeQuery` on `query` instead.
+        String query_str_with_secrets;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
+        /// External (pushed) roles of the originating session. Re-applied via `setUser` on the flush
+        /// context so a role that exists only as an external role is not lost or rejected with
+        /// `SET_NON_GRANTED_ROLE`. It is not part of the batching key: `current_roles` above holds the
+        /// session's *effective* roles (which already include these), so inserts whose effective role
+        /// set differs are already never coalesced, and equal effective sets carry identical privileges.
+        std::vector<UUID> external_roles;
+        /// Credential grant limit of the originating session (null if the session is not limited).
+        /// Replayed on the flush context so the deferred insert keeps the token intersection instead of
+        /// regaining the full user's rights. Part of the batching key (folded into `hash`) so inserts
+        /// with different credential limits are never coalesced into one flush.
+        std::shared_ptr<const AccessRightsElements> authentication_grants;
+        /// Expiry (VALID UNTIL) of the originating session's authentication method, 0 if none. Carried
+        /// over so the deferred flush fails closed if the credential has expired between enqueue and
+        /// flush. Part of the batching key (folded into `hash` and compared in `toTupleCmp`) so inserts
+        /// made under credentials with different expiries are never coalesced into one flush.
+        time_t authentication_valid_until = 0;
         /// Client identity of the originating INSERT query (ClientInfo user names).
         /// Restored on the flush context so currentUser()/user()/authenticatedUser() and
         /// the materialized views triggered by the flush observe the inserting user instead
@@ -105,6 +124,9 @@ public:
             const ASTPtr & query_,
             const std::optional<UUID> & user_id_,
             const std::vector<UUID> & current_roles_,
+            const std::vector<UUID> & external_roles_,
+            const std::shared_ptr<const AccessRightsElements> & authentication_grants_,
+            time_t authentication_valid_until_,
             const String & current_user_,
             const String & initial_user_,
             const String & authenticated_user_,
@@ -117,7 +139,9 @@ public:
         StorageID getStorageID() const;
 
     private:
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, current_user, initial_user, authenticated_user, setting_changes); }
+        /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
+        /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
@@ -309,6 +333,11 @@ private:
 
     void processBatchDeadlines(size_t shard_num);
     void scheduleDataProcessingJob(const InsertQuery & key, InsertDataPtr data, ContextPtr global_context, size_t shard_num, ThreadGroupPtr current_query_thread_group = nullptr);
+
+    /// Call it for every entry that leaves the queue, whether it is flushed or dropped.
+    /// 'AsynchronousInsertQueueSize' and 'AsynchronousInsertQueueBytes' are increased when
+    /// an entry enters the queue, so a caller that forgets this leaves both metrics too high.
+    static void discountFromQueueMetrics(const InsertData & data);
 
     static void processData(
         InsertQuery key, InsertDataPtr data, ContextPtr global_context, ThreadGroupPtr current_query_thread_group, QueueShardFlushTimeHistory & queue_shard_flush_time_history);

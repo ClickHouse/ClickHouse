@@ -58,6 +58,9 @@ public:
     /// Method `execute` called from another thread should stop after this method is called and throw an exception.
     virtual void cancelExecution() const {}
 
+    /// Returns indexes of arguments that must be `ColumnConst`.
+    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
+
 protected:
     friend struct ::FunctionsStressTestThread;
 
@@ -111,28 +114,36 @@ protected:
       */
     virtual bool useDefaultImplementationForReplicatedColumns() const { return true; }
 
-    /** Some arguments could remain constant during this implementation.
-      */
-    virtual ColumnNumbers getArgumentsThatAreAlwaysConstant() const { return {}; }
-
     /** True if function can be called on default arguments and won't throw.
       * Counterexample: modulo(0, 0)
       *
       * Useful when executing on LowCardinality dictionary, which contains default value even if
       * none of the rows use it.
       *
-      * *Not* useful when executing on Nullable columns. The value behind a NULL is
-      * not necessarily default. E.g.:
+      * Also used when executing on Nullable columns: `createBlockWithNestedColumns` leaves the rows
+      * behind a NULL untouched, so a function that declines this contract is not executed on them
+      * either - they are filtered out first, and their result is masked out as NULL anyway. This
+      * means the nested value under a NULL is not observable for such a function, e.g.:
       *   select assumeNotNull(materialize(null::Nullable(Int32)) + 42) as x
       *   ┌──x─┐
       *   │ 42 │
       *   └────┘
+      * still holds for `plus` (which accepts the contract), while a declining function such as
+      * `modulo` yields the default of its result type there instead.
       */
     virtual bool canBeExecutedOnDefaultArguments() const { return true; }
 
     /** True if function might throw an exception during execution.
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
+
+    /** The default implementations above may execute the function over a representation that stores
+      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
+      * result back onto the logical rows, which is sound only if the result is determined by the
+      * argument values. A function answering `false` is executed over materialized rows instead.
+      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
 
 private:
 
@@ -147,6 +158,9 @@ private:
 
     ColumnPtr executeWithoutLowCardinalityColumns(
             const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
+
+    /// The function and every lambda passed to it are deterministic in the scope of the query.
+    bool isCallDeterministicInScopeOfQuery(const ColumnsWithTypeAndName & arguments) const;
 
     ColumnPtr executeWithoutSparseColumns(
             const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const;
@@ -202,6 +216,23 @@ public:
 #endif
 
     virtual bool isStateful() const { return false; }
+
+    /** Returns true if evaluating the function is observable outside of the value it returns: it spends a
+      * noticeable amount of time, performs an external request, or accounts profile events that a user can
+      * read back. `sleep` and `sleepEachRow` are the in-tree examples.
+      * Such a function still returns the same value for the same arguments, so it is neither
+      * non-deterministic nor stateful, but an optimization that changes how many times or on how many rows
+      * an expression is evaluated changes what an observer sees, so it has to leave the expression alone.
+      */
+    virtual bool hasObservableSideEffects() const { return false; }
+
+    /** Returns true if the function maps a variable-size argument (`String`, `FixedString`, `Array`, `Map`)
+      * to a small fixed-size result, so that computing it early and carrying the result instead of the
+      * argument strictly reduces the volume of data flowing through the query plan.
+      * Examples: `length`, `lengthUTF8`, `empty`, `notEmpty`.
+      * Used by the `pushDownVolumeReducingFunction` query plan optimization.
+      */
+    virtual bool isVolumeReducing() const { return false; }
 
     /** Returns true if this is a spatial predicate for which bbox-disjoint pruning is safe.
       * Specifically: if the bounding boxes of the geometry arguments are disjoint,
@@ -410,6 +441,7 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
+    virtual bool isVolumeReducing() const { return false; }
     virtual bool isShortCircuit(IFunctionBase::ShortCircuitSettings & /*settings*/, size_t /*number_of_arguments*/) const { return false; }
     /// Returns true for higher-order functions that accept a lambda expression as an argument
     /// (e.g. `arrayMap`, `arrayFilter`, `arrayFold`, `mapApply`). Used as a non-throwing
@@ -638,6 +670,10 @@ public:
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isServerConstant() const { return false; }
     virtual bool isStateful() const { return false; }
+    /// See `IFunctionBase::hasObservableSideEffects`.
+    virtual bool hasObservableSideEffects() const { return false; }
+    /// See `IFunctionBase::isVolumeReducing`.
+    virtual bool isVolumeReducing() const { return false; }
     virtual bool isSpatialPredicate() const { return false; }
 
     using ShortCircuitSettings = IFunctionBase::ShortCircuitSettings;

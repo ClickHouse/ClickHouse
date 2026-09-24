@@ -1,0 +1,14 @@
+<clickhouse>
+    <!-- The container hostname resolves to the address of the container, so the node stays
+         reachable while `listen_host` contains no wildcard. A wildcard would replace the
+         unavailable address for the gRPC-based protocols, and there would be no failing listener
+         left to observe. -->
+    <listen_host>unavailable_node</listen_host>
+    <!-- A `TEST-NET-1` address (RFC 5737): it is not assigned to any interface, so binding it always
+         fails, which is exactly what `listen_try` is for. -->
+    <listen_host>192.0.2.1</listen_host>
+
+    <listen_try>1</listen_try>
+
+    <grpc_port>9100</grpc_port>
+</clickhouse>

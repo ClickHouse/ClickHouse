@@ -16,7 +16,7 @@ doc_type: 'reference'
 
 ```xml
 <users>
-    <!-- If user name was not specified, 'default' user is used. -->
+    <!-- If user name was not specified, the user from the 'default_session_user' server setting is used ('default' unless configured otherwise). -->
     <user_name>
         <!-- Exactly one authentication method may be specified at the users.user_name level. For example: -->
         <password></password>
@@ -425,5 +425,5 @@ ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIDNf0r6vRl24Ix3tv2IgPmNPO2ATa2krvt80DdcTatLj
             <query>GRANT test_role</query>
         </grants>
     </user_name>
-<users>
+</users>
 ```

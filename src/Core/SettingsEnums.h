@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Access/Common/SQLSecurityDefs.h>
+#include <Common/AsynchronousMetricsKeyValuesMode.h>
 #include <Core/Joins.h>
 #include <Core/LoadBalancing.h>
 #include <Core/LogsLevel.h>
@@ -133,6 +134,7 @@ DECLARE_SETTING_ENUM(LoadBalancing)
 DECLARE_SETTING_ENUM(JoinStrictness)
 DECLARE_SETTING_MULTI_ENUM(JoinAlgorithm)
 DECLARE_SETTING_MULTI_ENUM(JoinOrderAlgorithm)
+DECLARE_SETTING_ENUM(JoinOrderConflictDetector)
 
 /// Which rows should be included in TOTALS.
 enum class TotalsMode : uint8_t
@@ -314,6 +316,8 @@ DECLARE_SETTING_ENUM_WITH_RENAME(ParquetCompression, FormatSettings::ParquetComp
 
 DECLARE_SETTING_ENUM_WITH_RENAME(ArrowCompression, FormatSettings::ArrowCompression)
 
+DECLARE_SETTING_ENUM_WITH_RENAME(ArrowUnsupportedTypes, FormatSettings::ArrowUnsupportedTypes)
+
 DECLARE_SETTING_ENUM_WITH_RENAME(ORCCompression, FormatSettings::ORCCompression)
 
 enum class Dialect : uint8_t
@@ -324,6 +328,7 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    trino,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -394,6 +399,7 @@ enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
+    EXCLUSIVE,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueMode)
@@ -452,6 +458,8 @@ enum class GroupArrayActionWhenLimitReached : uint8_t
 };
 DECLARE_SETTING_ENUM(GroupArrayActionWhenLimitReached)
 
+DECLARE_SETTING_ENUM(AsynchronousMetricsKeyValuesMode)
+
 DECLARE_SETTING_ENUM(MergeSelectorAlgorithm)
 
 enum class DatabaseDataLakeCatalogType : uint8_t
@@ -466,6 +474,7 @@ enum class DatabaseDataLakeCatalogType : uint8_t
     PAIMON_REST,
     S3_TABLES,
     ICEBERG_DELTA_SHARING,
+    ICEBERG_HORIZON,
 };
 
 DECLARE_SETTING_ENUM(DatabaseDataLakeCatalogType)
@@ -536,7 +545,8 @@ DECLARE_SETTING_ENUM(SearchOrphanedPartsDisks)
 enum class TextIndexPostingListCodec : uint8_t
 {
     None,
-    Bitpacking
+    Bitpacking,
+    PFor
 };
 
 DECLARE_SETTING_ENUM(TextIndexPostingListCodec)

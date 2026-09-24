@@ -24,6 +24,7 @@ doc_type: '참고'
 * `mutation_id` ([String](/ko/reference/data-types/string)) — 뮤테이션의 ID입니다. 복제된 테이블에서는 이 ID가 ClickHouse Keeper의 `<table_path_in_clickhouse_keeper>/mutations/` 디렉터리에 있는 znode 이름에 해당합니다. 복제되지 않은 테이블에서는 테이블 데이터 디렉터리의 파일 이름에 해당합니다.
 * `command` ([String](/ko/reference/data-types/string)) — 뮤테이션 명령 문자열입니다(ALTER TABLE [db.]table 뒤에 오는 쿼리 부분).
 * `create_time` ([DateTime](/ko/reference/data-types/datetime)) — 뮤테이션 명령이 실행을 위해 제출된 날짜와 시간입니다.
+* `finish_time` ([DateTime](/ko/reference/data-types/datetime)) — 뮤테이션이 완료된 날짜와 시간입니다. 뮤테이션이 아직 완료되지 않았거나 완료 시간이 알려지지 않은 경우 0입니다. 복제되지 않은 테이블의 경우 이 값은 메모리에서 추적되며 테이블이 다시 로드될 때(예: 서버 재시작 시) 재설정됩니다. 복제된 테이블의 경우 이 값은 레플리카별로 관리됩니다. 재시작 후에는 가장 최근에 완료된 뮤테이션의 완료 시간이 Keeper에서 복원되며, 이전에 완료된 뮤테이션은 0을 보고합니다.
 * `block_numbers.partition_id` ([Array(String)](/ko/reference/data-types/array)) — 복제된 테이블의 뮤테이션에서는 배열에 파티션 ID가 포함됩니다(파티션당 레코드 1개). 복제되지 않은 테이블의 뮤테이션에서는 배열이 비어 있습니다.
 * `block_numbers.number` ([Array(Int64)](/ko/reference/data-types/array)) — 복제된 테이블의 뮤테이션에서는 배열에 각 파티션당 레코드 1개가 포함되며, 각 레코드에는 뮤테이션이 획득한 블록 번호가 들어 있습니다. 해당 파티션에서는 이 번호보다 작은 번호의 블록을 포함하는 파트만 뮤테이션됩니다. 복제되지 않은 테이블에서는 모든 파티션의 블록 번호가 하나의 시퀀스를 이룹니다. 따라서 복제되지 않은 테이블의 뮤테이션에서는 이 컬럼에 뮤테이션이 획득한 단일 블록 번호를 포함하는 레코드 1개가 들어 있습니다.
 * `parts_in_progress_names` ([Array(String)](/ko/reference/data-types/array)) — 현재 뮤테이션 중인 데이터 파트 이름의 배열입니다.
@@ -47,7 +48,7 @@ doc_type: '참고'
 * `is_killed` ([UInt8](/ko/reference/data-types/int-uint)) — 뮤테이션이 중지되었는지 여부를 나타냅니다. **ClickHouse Cloud에서만 사용할 수 있습니다.**
 
 <Note>
-  `is_killed=1`이라고 해서 뮤테이션이 반드시 완전히 종료된 것은 아닙니다. 뮤테이션은 장기간 `is_killed=1` 및 `is_done=0` 상태로 유지될 수 있습니다. 다른 장기 실행 뮤테이션이 중지된 뮤테이션을 차단하는 경우 이런 상황이 발생할 수 있습니다. 이는 정상적인 상황입니다.
+  `is_killed=1`이 반드시 뮤테이션이 완전히 종료되었음을 의미하지는 않습니다. 뮤테이션은 장기간 `is_killed=1` 및 `is_done=0` 상태로 남아 있을 수 있습니다. 다른 장기 실행 중인 뮤테이션이 중지된 뮤테이션을 차단하는 경우 이런 상황이 발생할 수 있습니다. 이는 정상적인 상황입니다.
 </Note>
 
 * `is_done` ([UInt8](/ko/reference/data-types/int-uint)) — 뮤테이션 완료 여부를 나타내는 플래그입니다. 가능한 값:
@@ -55,12 +56,12 @@ doc_type: '참고'
   * 뮤테이션이 아직 진행 중인 경우 `0`.
 
 <Note>
-  `parts_to_do = 0`이더라도, 뮤테이션이 적용되어야 하는 새 데이터 파트를 생성하는 장기 실행 중인 `INSERT` 쿼리 때문에 복제된 테이블의 뮤테이션이 아직 완료되지 않았을 수 있습니다.
+  `parts_to_do = 0`이더라도, 뮤테이션되어야 하는 새 데이터 파트를 생성하는 장기 실행 중인 `INSERT` 쿼리 때문에 복제된 테이블의 뮤테이션이 아직 완료되지 않았을 수 있습니다.
 </Note>
 
 일부 데이터 파트의 뮤테이션 처리 중 문제가 발생했다면, 다음 컬럼에 추가 정보가 포함됩니다:
 
-* `latest_failed_part` ([String](/ko/reference/data-types/string)) — 뮤테이션을 적용할 수 없었던 가장 최근 파트의 이름입니다.
+* `latest_failed_part` ([String](/ko/reference/data-types/string)) — 뮤테이션할 수 없었던 가장 최근 파트의 이름입니다.
 * `latest_fail_time` ([DateTime](/ko/reference/data-types/datetime)) — 가장 최근 파트 뮤테이션 실패가 발생한 날짜와 시간입니다.
 * `latest_fail_reason` ([String](/ko/reference/data-types/string)) — 가장 최근 파트 뮤테이션 실패를 일으킨 예외 메시지입니다.
 

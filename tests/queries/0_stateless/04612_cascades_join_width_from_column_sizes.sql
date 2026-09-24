@@ -1,6 +1,5 @@
--- Tags: no-darwin, no-old-analyzer
+-- Tags: no-darwin
 -- no-darwin: distributed execution uses the streaming exchange, which is implemented only on Linux.
--- no-old-analyzer: distributed Cascades planning requires the analyzer.
 
 -- The join output width must come from the columns' real average sizes, not from type defaults.
 -- Here the join keeps half the fact rows and its output carries a short `String`; with the real
@@ -10,7 +9,6 @@
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
-SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 SET query_plan_join_swap_table = 'false';

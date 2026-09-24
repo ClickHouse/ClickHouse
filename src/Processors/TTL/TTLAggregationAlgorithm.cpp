@@ -1,7 +1,9 @@
 #include <Processors/TTL/TTLAggregationAlgorithm.h>
 
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
@@ -13,6 +15,11 @@
 
 namespace DB
 {
+namespace ErrorCodes
+{
+    extern const int LOGICAL_ERROR;
+}
+
 namespace Setting
 {
     extern const SettingsBool compile_aggregate_expressions;
@@ -83,10 +90,38 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
     time_t current_time_,
     bool force_,
     const Block & header_,
-    const MergeTreeData & storage_)
+    const MergeTreeData & storage_,
+    const StorageMetadataPtr & metadata_snapshot_)
     : ITTLAlgorithm(ttl_expressions_, addImplicitlyAggregatedColumns(description_, header_, storage_.getContext()), old_ttl_info_, current_time_, force_)
     , header(header_)
 {
+    const auto & sorting_key = metadata_snapshot_->getSortingKey();
+    if (!sorting_key.column_names.empty())
+    {
+        const auto & context = storage_.getContext();
+
+        /// The sorting key may be calculated from subcolumns, which are not separate columns of the header.
+        auto sorting_key_dag = sorting_key.expression->getActionsDAG().clone();
+        auto extracting_subcolumns_dag = createSubcolumnsExtractionActions(header, sorting_key_dag.getRequiredColumnsNames(), context);
+        if (!extracting_subcolumns_dag.getNodes().empty())
+            sorting_key_dag = ActionsDAG::merge(std::move(extracting_subcolumns_dag), std::move(sorting_key_dag));
+
+        sorting_key_expression = std::make_shared<ExpressionActions>(std::move(sorting_key_dag), ExpressionActionsSettings(context));
+        sorting_key_required_columns = sorting_key_expression->getRequiredColumns();
+
+        /// Both a merge and a mutation that executes `TTL GROUP BY` process all columns of the table.
+        for (const auto & name : sorting_key_required_columns)
+            if (!header.has(name))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Column {} is required to calculate the sorting key but is absent in the header of TTL GROUP BY", name);
+
+        for (size_t i = 0; i < sorting_key.column_names.size(); ++i)
+        {
+            bool reverse = !sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[i];
+            sort_description.emplace_back(sorting_key.column_names[i], reverse ? -1 : 1, 1);
+        }
+    }
+
     current_key_value.resize(description.group_by_keys.size());
 
     const auto & keys = description.group_by_keys;
@@ -124,7 +159,8 @@ TTLAggregationAlgorithm::TTLAggregationAlgorithm(
         /*enable_parallel_single_level_merge_=*/false,
         settings[Setting::enable_packed_string_keys_in_aggregation],
         /* enable_adaptive_aggregator */ false,
-        /* adaptive_aggregator_freeze_threshold */ 0);
+        /* adaptive_aggregator_freeze_threshold */ 0,
+        /* adaptive_aggregator_freeze_threshold_bytes */ 0);
 
     aggregator = std::make_unique<Aggregator>(header, params);
 
@@ -157,6 +193,8 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         auto ttl_column = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        PaddedPODArray<Int64> timestamps;
+        extractTimestamps(ttl_column.get(), timestamps);
 
         size_t rows_aggregated = 0;
         size_t current_key_start = 0;
@@ -164,7 +202,7 @@ void TTLAggregationAlgorithm::execute(Block & block)
 
         for (size_t i = 0; i < block.rows(); ++i)
         {
-            Int64 cur_ttl = getTimestampByIndex(ttl_column.get(), i);
+            Int64 cur_ttl = timestamps[i];
             bool where_filter_passed = !where_column || where_column->getBool(i);
             bool ttl_expired = isTTLExpired(cur_ttl) && where_filter_passed;
 
@@ -233,17 +271,20 @@ void TTLAggregationAlgorithm::execute(Block & block)
     }
 
     block = header.cloneWithColumns(std::move(result_columns));
+    restoreSortOrder(block);
 
     /// If some rows were aggregated we have to recalculate ttl info's
     if (some_rows_were_aggregated)
     {
         auto ttl_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.expression, block, description.result_column);
         auto where_column_after_aggregation = executeExpressionAndGetColumn(ttl_expressions.where_expression, block, description.where_result_column);
+        PaddedPODArray<Int64> timestamps;
+        extractTimestamps(ttl_column_after_aggregation.get(), timestamps);
         for (size_t i = 0; i < block.rows(); ++i)
         {
             bool where_filter_passed = !where_column_after_aggregation || where_column_after_aggregation->getBool(i);
             if (where_filter_passed)
-                new_ttl_info.update(getTimestampByIndex(ttl_column_after_aggregation.get(), i));
+                new_ttl_info.update(timestamps[i]);
         }
     }
 }
@@ -323,6 +364,120 @@ void TTLAggregationAlgorithm::finalizeAggregates(MutableColumns & result_columns
     }
 
     aggregation_result.invalidate();
+}
+
+Columns TTLAggregationAlgorithm::calculateSortingKey(const Block & block) const
+{
+    Block key_block;
+    for (const auto & name : sorting_key_required_columns)
+        key_block.insert(block.getByName(name));
+
+    sorting_key_expression->execute(key_block);
+
+    Columns sort_key;
+    for (const auto & elem : sort_description)
+        sort_key.push_back(key_block.getByName(elem.column_name).column->convertToFullColumnIfSparse());
+    return sort_key;
+}
+
+void TTLAggregationAlgorithm::restoreSortOrder(Block & block)
+{
+    size_t num_rows = block.rows();
+    if (num_rows == 0 || !sorting_key_expression)
+        return;
+
+    Columns required_columns;
+    for (const auto & name : sorting_key_required_columns)
+        required_columns.push_back(block.getByName(name).column->convertToFullColumnIfSparse());
+
+    /// The sorting key is calculated from the data rather than taken from the header: a mutation does not have
+    /// the sorting key columns beyond the primary key, and after `SET` the sorting key columns of a merge hold
+    /// the values calculated before it.
+    Columns sort_key = calculateSortingKey(block);
+
+    /// The row whose sorting key the previous row effectively has. A row with replaced columns never becomes
+    /// the reference, because its key is equal to the key of the current reference row.
+    const Columns * prev_sort_key = last_row_sort_key.empty() ? nullptr : &last_row_sort_key;
+    const Columns * prev_required_columns = last_row_required_columns.empty() ? nullptr : &last_row_required_columns;
+    size_t prev_row = 0;
+    /// Copies of the columns the sorting key is calculated from, with the replaced values. Created on the first violation.
+    MutableColumns fixed_columns;
+
+    for (size_t i = 0; i < num_rows; ++i)
+    {
+        bool violated = false;
+        for (size_t j = 0; prev_sort_key && j < sort_key.size(); ++j)
+        {
+            int res = sort_description[j].direction
+                * (*prev_sort_key)[j]->compareAt(prev_row, i, *sort_key[j], sort_description[j].nulls_direction);
+            if (res != 0)
+            {
+                violated = res > 0;
+                break;
+            }
+        }
+
+        if (violated && fixed_columns.empty())
+        {
+            for (const auto & column : required_columns)
+            {
+                fixed_columns.push_back(column->cloneEmpty());
+                fixed_columns.back()->insertRangeFrom(*column, 0, i);
+            }
+        }
+
+        if (violated)
+        {
+            for (size_t j = 0; j < required_columns.size(); ++j)
+                fixed_columns[j]->insertFrom(*(*prev_required_columns)[j], prev_row);
+        }
+        else
+        {
+            for (size_t j = 0; j < fixed_columns.size(); ++j)
+                fixed_columns[j]->insertFrom(*required_columns[j], i);
+
+            prev_sort_key = &sort_key;
+            prev_required_columns = &required_columns;
+            prev_row = i;
+        }
+    }
+
+    if (!fixed_columns.empty())
+    {
+        for (size_t j = 0; j < fixed_columns.size(); ++j)
+        {
+            required_columns[j] = std::move(fixed_columns[j]);
+            block.getByName(sorting_key_required_columns[j]).column = required_columns[j];
+        }
+
+        /// The sorting key is deterministic, so the replaced rows get the sorting key of their reference rows.
+        sort_key = calculateSortingKey(block);
+    }
+
+    /// The sorting key columns of the header are used for the primary index, so they must correspond to the data.
+    for (size_t j = 0; j < sort_key.size(); ++j)
+    {
+        const auto & name = sort_description[j].column_name;
+        if (!block.has(name))
+            continue;
+
+        auto & column = block.getByName(name);
+        const auto & type = sorting_key_expression->getSampleBlock().getByName(name).type;
+        if (!column.type->equals(*type))
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Sorting key column {} has type {} in the header of TTL GROUP BY but the sorting key expression returns {}",
+                name, column.type->getName(), type->getName());
+
+        column.column = sort_key[j];
+    }
+
+    last_row_sort_key.clear();
+    for (const auto & column : sort_key)
+        last_row_sort_key.push_back(column->cut(num_rows - 1, 1));
+
+    last_row_required_columns.clear();
+    for (const auto & column : required_columns)
+        last_row_required_columns.push_back(column->cut(num_rows - 1, 1));
 }
 
 void TTLAggregationAlgorithm::finalize(const MutableDataPartPtr & data_part) const
