@@ -2477,3 +2477,33 @@ def test_max_concurrent_requests_keeps_api_call_quota_exact(started_cluster):
         "is an exact cap even with concurrent requests"
     )
     assert int(get_profile_events(qid)["api_calls"]) == 5
+
+
+def test_kill_query_stops_issuing_requests(started_cluster):
+    """`KILL QUERY` stops an AI function mid-block: only the requests already in flight complete, and
+    no new request is sent. The 400 rows form one block, which at 4 requests per 0.5s would otherwise
+    take 50s and send all 400 requests."""
+    _reset_concurrency()
+    qid = unique_query_id("ai_kill")
+    request = instance.get_query_request(
+        f"SELECT {SLOW_CHAT_CALL} FROM numbers(400) FORMAT Null",
+        settings={"ai_function_max_concurrent_requests": 4},
+        query_id=qid,
+    )
+
+    wait_condition(
+        _concurrency_stats, lambda stats: stats["requests"] >= 8, max_attempts=100, delay=0.1
+    )
+    instance.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
+
+    assert "Query was cancelled" in request.get_error()
+    requests = _concurrency_stats()["requests"]
+    assert requests < 40, f"the killed query kept sending requests: {requests} of 400 were sent"
+
+    instance.query("SYSTEM FLUSH LOGS")
+    exception_code = instance.query(
+        f"SELECT exception_code FROM system.query_log "
+        f"WHERE query_id = '{qid}' AND type = 'ExceptionWhileProcessing'"
+    ).strip()
+    assert exception_code == "394"
+    assert int(get_profile_events(qid, "ExceptionWhileProcessing")["api_calls"]) == requests
