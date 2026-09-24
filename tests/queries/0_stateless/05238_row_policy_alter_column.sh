@@ -28,6 +28,12 @@ echo "-- a type change is allowed"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t MODIFY COLUMN tenant_id UInt64"
 $CLICKHOUSE_CLIENT -q "SELECT 'after modify', arraySort(groupArray(id)) FROM t"
 
+echo "-- CLEAR COLUMN keeps the column, so it is allowed"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t CLEAR COLUMN tenant_id"
+$CLICKHOUSE_CLIENT -q "SELECT 'after clear', arraySort(groupArray(id)) FROM t"
+$CLICKHOUSE_CLIENT -q "INSERT INTO t VALUES (4, 1, 'd')"
+$CLICKHOUSE_CLIENT -q "SELECT 'after reinsert', arraySort(groupArray(id)) FROM t"
+
 echo "-- two renames in one statement"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t RENAME COLUMN tenant_id TO tenant, RENAME COLUMN note TO comment"
 $CLICKHOUSE_CLIENT -q "SELECT 'after two renames', arraySort(groupArray(id)) FROM t"
@@ -86,6 +92,11 @@ CREATE ROW POLICY pn ON $DB.tn FOR SELECT USING n.x[1] = 1 TO CURRENT_USER;
 "
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tn DROP COLUMN n" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
 $CLICKHOUSE_CLIENT -q "ALTER TABLE tn DROP COLUMN n.y"
+echo "-- a Nested child rename keeps the path form"
+$CLICKHOUSE_CLIENT -q "INSERT INTO tn VALUES (1, [1]), (2, [2])"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE tn RENAME COLUMN n.x TO n.z"
+$CLICKHOUSE_CLIENT -q "SELECT 'nested policy after rename', arraySort(groupArray(id)) FROM tn"
+$CLICKHOUSE_CLIENT -q "SHOW CREATE ROW POLICY pn ON $DB.tn" | sed "s/$DB/db/g"
 
 echo "-- a column read inside a SQL function body cannot be dropped or renamed"
 UDF="${DB}_udf"

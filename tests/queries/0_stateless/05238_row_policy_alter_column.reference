@@ -7,8 +7,11 @@ after rename	[1,3]
 CREATE ROW POLICY p ON db.t FOR SELECT USING (tenant_id = 1) AND (length(note) > 0) TO default
 -- a type change is allowed
 after modify	[1,3]
+-- CLEAR COLUMN keeps the column, so it is allowed
+after clear	[]
+after reinsert	[4]
 -- two renames in one statement
-after two renames	[1,3]
+after two renames	[4]
 CREATE ROW POLICY p ON db.t FOR SELECT USING (tenant = 1) AND (length(comment) > 0) TO default
 -- a subquery over another table keeps that table's column
 subquery policy after rename	[1]
@@ -17,7 +20,7 @@ CREATE ROW POLICY psub ON db.t2 FOR SELECT USING tenant_id IN (SELECT tenant FRO
 CREATE ROW POLICY pstale ON db.t FOR SELECT USING gone = 1 TO default
 -- a database-wide policy cannot follow a rename on one table
 ALTER_OF_COLUMN_IS_FORBIDDEN
-still readable	[1,3]
+still readable	[4]
 -- a table-qualified column is renamed too
 qualified policy after rename	[1]
 CREATE ROW POLICY pq ON db.tq FOR SELECT USING (tq.tenant_id = 1) AND (db.tq.tenant_id = 1) TO default
@@ -27,6 +30,9 @@ subcolumn policy after rename	[1]
 CREATE ROW POLICY pj ON db.tj FOR SELECT USING data.user.name = \'a\' TO default
 -- dropping a Nested column used through its subcolumn is refused
 ALTER_OF_COLUMN_IS_FORBIDDEN
+-- a Nested child rename keeps the path form
+nested policy after rename	[1]
+CREATE ROW POLICY pn ON db.tn FOR SELECT USING (n.z[1]) = 1 TO default
 -- a column read inside a SQL function body cannot be dropped or renamed
 ALTER_OF_COLUMN_IS_FORBIDDEN
 ALTER_OF_COLUMN_IS_FORBIDDEN
