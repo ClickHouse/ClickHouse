@@ -62,11 +62,13 @@ SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lam
 SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x, y), startsWith(x, \'charg\')), tokens(__table1.msg), tokens(__table1.msg))
 SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, \'cha\')), tokens(__table1.msg, \'ngrams\', 3))
 SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, \'charg\')), tokens(toNullable(__table1.msg)))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, \'charg\')), tokens(toLowCardinality(__table1.msg)))
 SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), ilike(x, \'CH%ED\')), tokens(__table1.msg))
 SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), greater(position(x, \'harg\'), 1)), tokens(__table1.msg))
 SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(\'charged\', x)), tokens(__table1.msg))
 0
 16
+8
 8
 -- an invalid pattern raises the same exception
 -- a tokenizer other than the index tokenizer does not use the index

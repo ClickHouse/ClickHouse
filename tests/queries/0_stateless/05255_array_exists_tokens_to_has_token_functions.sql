@@ -99,7 +99,7 @@ SELECT '-- the index prunes granules and is read directly';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'charg'), tokens(msg))) WHERE explain LIKE '%Granules:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE arrayExists(x -> position(x, 'harg') > 0, tokens(msg))) WHERE explain LIKE '%Granules:%';
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE arrayExists(x -> match(x, '^[0-9]{5}$'), tokens(msg))) WHERE explain LIKE '%Granules:%';
-SELECT 'direct read', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%FUNCTION arrayExists(%') > 0
+SELECT 'direct read', countIf(explain LIKE '%\_\_text\_index\_%') > 0, countIf(explain LIKE '%arrayExists(%') > 0
 FROM (EXPLAIN actions = 1 SELECT count() FROM tab WHERE arrayExists(x -> x LIKE 'ch%ed', tokens(msg)));
 
 SELECT '-- not rewritten';
@@ -113,8 +113,9 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExis
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists((x, y) -> startsWith(x, 'charg'), tokens(msg), tokens(msg));
 -- Tokenizer parameters in separate arguments.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'cha'), tokens(msg, 'ngrams', 3));
--- Nullable input: the function would return Nullable(UInt8).
+-- Nullable or LowCardinality input: the function would return Nullable(UInt8) or LowCardinality(UInt8).
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'charg'), tokens(toNullable(msg)));
+EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'charg'), tokens(toLowCardinality(msg)));
 -- Other predicates.
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> x ILIKE 'CH%ED', tokens(msg));
 EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExists(x -> position(x, 'harg') > 1, tokens(msg));
@@ -123,6 +124,7 @@ EXPLAIN SYNTAX run_query_tree_passes = 1 SELECT count() FROM tab WHERE arrayExis
 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, toString(id)), tokens(msg));
 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'cha'), tokens(msg, 'ngrams', 3));
 SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'charg'), tokens(toNullable(msg)));
+SELECT count() FROM tab WHERE arrayExists(x -> startsWith(x, 'charg'), tokens(toLowCardinality(msg)));
 
 SELECT '-- an invalid pattern raises the same exception';
 SELECT count() FROM tab WHERE arrayExists(x -> match(x, '('), tokens(msg)); -- { serverError CANNOT_COMPILE_REGEXP }
