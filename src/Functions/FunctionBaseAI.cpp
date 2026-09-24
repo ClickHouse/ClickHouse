@@ -1,29 +1,32 @@
 #include <Functions/FunctionBaseAI.h>
+
 #include <Access/Common/AccessType.h>
 #include <Access/ContextAccess.h>
-#include <Common/ProfileEvents.h>
-#include <base/scope_guard.h>
+#include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/Exception.h>
+#include <Common/NamedCollections/NamedCollectionsFactory.h>
+#include <Common/ProfileEvents.h>
+#include <Common/RemoteHostFilter.h>
+#include <Common/logger_useful.h>
 #include <Common/scope_guard_safe.h>
+#include <Core/ServerSettings.h>
+#include <Core/Settings.h>
+#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <IO/ConnectionTimeouts.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/ReadHelpers.h>
+#include <base/scope_guard.h>
+
+#include <Poco/Net/IPAddress.h>
+#include <Poco/URI.h>
+
 #include <algorithm>
 #include <future>
+#include <limits>
 #include <optional>
 #include <utility>
-#include <Common/logger_useful.h>
-#include <Common/NamedCollections/NamedCollectionsFactory.h>
-#include <Common/RemoteHostFilter.h>
-#include <Poco/URI.h>
-#include <Poco/Net/IPAddress.h>
-#include <Columns/ColumnNullable.h>
-#include <Columns/ColumnConst.h>
-#include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeMap.h>
-#include <IO/ConnectionTimeouts.h>
-#include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromString.h>
-#include <Core/Settings.h>
-#include <Core/ServerSettings.h>
-#include <limits>
 
 namespace ProfileEvents
 {
@@ -340,8 +343,8 @@ void FunctionBaseAI::embedTexts(
 {
     result.embeddings.resize(inputs.size());
 
-    /// Rounded up without `inputs.size() + max_batch_size`, which overflows for an adversarially
-    /// large `ai_function_embedding_max_batch_size` and would leave every input unembedded.
+    /// `ceil(inputs.size() / max_batch_size)`. The usual `(n + max_batch_size - 1) / max_batch_size`
+    /// overflows for a huge `ai_function_embedding_max_batch_size`.
     const size_t batch_count = inputs.empty() ? 0 : 1 + (inputs.size() - 1) / max_batch_size;
     const size_t concurrency = std::min(max_concurrent_requests, batch_count);
 
