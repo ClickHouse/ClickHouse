@@ -116,6 +116,9 @@ public:
     void onBuildPhaseFinish() override;
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
+    /// The kind/strictness part of `isSupported`, for callers that have no `TableJoin` (the full check
+    /// additionally requires a single disjunct).
+    static bool isSupported(JoinKind kind, JoinStrictness strictness);
 
     bool canSpillToDisk() const override { return true; }
     size_t getSpillableBytes() const override;

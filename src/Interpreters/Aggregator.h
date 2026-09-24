@@ -138,6 +138,11 @@ public:
         /// Return empty result when aggregating without keys on empty set.
         bool empty_result_for_aggregation_by_empty_set = false;
         TemporaryDataOnDiskScopePtr tmp_data_scope;
+        /// Keep these query settings even when the initiator has no temporary-data scope:
+        /// a remote shard can still create one and spill while executing this plan.
+        String temporary_files_codec;
+        bool spill_codec_authorized = false;
+        size_t temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
         size_t max_threads = 0;
         const size_t min_free_disk_space = 0;
         bool compile_aggregate_expressions = false;
@@ -218,6 +223,9 @@ public:
             size_t max_bytes_before_external_group_by_,
             bool empty_result_for_aggregation_by_empty_set_,
             TemporaryDataOnDiskScopePtr tmp_data_scope_,
+            String temporary_files_codec_,
+            bool spill_codec_authorized_,
+            size_t temporary_files_buffer_size_,
             size_t max_threads_,
             size_t min_free_disk_space_,
             bool compile_aggregate_expressions_,

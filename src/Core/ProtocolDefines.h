@@ -125,7 +125,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
 /// spill trigger, so a plan arriving without the name is read back as legacy mode, and a plan that
 /// needs the new contract is not serialized for such a peer at all.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 20;
+/// Version 21 registers the `spill_codec_authorized` plan setting for temporary-file codecs. A peer
+/// below this version preserves its established temporary-file codec behavior, so the setting is withheld
+/// from it. This lets a mixed-version cluster execute an in-memory plan on an older worker that has no
+/// temporary storage, rather than rejecting the plan solely because it does not know the setting name.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 21;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -177,6 +181,9 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIO
 /// `max_bytes_before_external_distinct` and `max_bytes_ratio_before_external_distinct` plan settings
 /// and the input-order flag. Gates writing the settings in `DistinctStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_DISTINCT = 19;
+/// First query-plan serialization version that knows the `spill_codec_authorized` plan setting for
+/// temporary-file codecs. Gates writing it in the sorting, aggregation, and join serialization paths.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXPERIMENTAL_SPILL_CODEC = 21;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.

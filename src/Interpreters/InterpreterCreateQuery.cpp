@@ -679,7 +679,12 @@ DataTypePtr InterpreterCreateQuery::getColumnType(
 }
 
 ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
-    const ASTExpressionList & columns_ast, ContextPtr context_, LoadingStrictnessLevel mode, bool is_restore_from_backup, bool check_defaults_over_virtual_columns)
+    const ASTExpressionList & columns_ast,
+    ContextPtr context_,
+    LoadingStrictnessLevel mode,
+    bool is_restore_from_backup,
+    bool check_defaults_over_virtual_columns,
+    bool definition_is_fresh_user_input)
 {
     /// First, deduce implicit types.
 
@@ -734,7 +739,14 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
     }
 
     bool skip_checks = LoadingStrictnessLevel::SECONDARY_CREATE <= mode;
-    CodecValidationSettings codec_validation_settings = skip_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context_->getSettingsRef());
+    /// A full-definition `ATTACH TABLE t (...)` is fresh user input rather than a definition read back from
+    /// metadata stored on this server, so its column codecs have to pass the same experimental- and
+    /// suspicious-codec gates a `CREATE` passes: otherwise `ATTACH` is a way to introduce a codec the session
+    /// is not allowed to use. Only the codec gates are affected, so the checks that exist to keep an existing
+    /// table loadable (e.g. the aggregate-function version defaults) still behave as they do for `ATTACH`.
+    bool skip_codec_checks = skip_checks && !definition_is_fresh_user_input;
+    CodecValidationSettings codec_validation_settings
+        = skip_codec_checks ? CodecValidationSettings::trusted() : CodecValidationSettings(context_->getSettingsRef());
 
     ColumnsDescription res;
     auto name_type_it = column_names_and_types.begin();
@@ -925,6 +937,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     TableProperties properties;
     TableLockHolder as_storage_lock;
 
+    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input (a short `ATTACH TABLE t`
+    /// reading stored metadata is marked with `attach_short_syntax`), so the parts of the definition that are
+    /// gated for freshly introduced definitions — column and projection codecs — must pass the same checks as
+    /// `CREATE` instead of the metadata-load sanitization.
+    const bool is_full_definition_attach = mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax;
+
     if (create.columns_list)
     {
         if (create.as_table_function && (create.columns_list->indices || create.columns_list->constraints))
@@ -941,7 +959,12 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
             const bool check_defaults_over_virtual_columns
                 = !(create.is_ordinary_view || create.is_materialized_view_with_external_target());
             properties.columns = getColumnsDescription(
-                *create.columns_list->columns, getContext(), mode, is_restore_from_backup, check_defaults_over_virtual_columns);
+                *create.columns_list->columns,
+                getContext(),
+                mode,
+                is_restore_from_backup,
+                check_defaults_over_virtual_columns,
+                /*definition_is_fresh_user_input=*/ is_full_definition_attach);
         }
 
         if (create.columns_list->indices)
@@ -964,12 +987,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         }
 
         if (create.columns_list->projections)
+        {
             for (const auto & projection_ast : create.columns_list->projections->children)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
                     projection_ast, properties.columns, nullptr, getContext(), mode, create.attach_short_syntax);
                 properties.projections.add(std::move(projection));
             }
+        }
 
         properties.constraints = getConstraintsDescription(create.columns_list->constraints, properties.columns, getContext());
     }
@@ -990,6 +1015,28 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
         auto as_storage_metadata = as_storage->getInMemoryMetadataPtr(getContext(), false);
         properties.columns = as_storage_metadata->getColumns();
+
+        /// The copied column codecs become part of a definition this query introduces, so they have to pass
+        /// the codec gates of the current session, as an explicit column list does in `getColumnsDescription`:
+        /// otherwise `CREATE TABLE ... AS` / `CLONE AS` would create a table with a codec the session may not
+        /// use. Only the gates: the suspicious-codec checks were applied when the source table was created.
+        if (mode <= LoadingStrictnessLevel::CREATE || is_full_definition_attach)
+        {
+            const auto codec_validation_settings = CodecValidationSettings::withoutSanityCheck(getContext()->getSettingsRef());
+            Names columns_with_codecs;
+            for (const auto & column : properties.columns)
+                if (column.codec)
+                    columns_with_codecs.push_back(column.name);
+
+            for (const auto & column_name : columns_with_codecs)
+            {
+                properties.columns.modify(column_name, [&](ColumnDescription & column)
+                {
+                    column.codec = CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
+                        column.codec, column.type, codec_validation_settings);
+                });
+            }
+        }
 
         if (!create.comment && !as_storage_metadata->comment.empty())
             create.set(create.comment, make_intrusive<ASTLiteral>(as_storage_metadata->comment));

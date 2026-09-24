@@ -20,6 +20,14 @@ Block generateOutputHeader(const Block & input_header, const Names & keys, bool 
 /// the choice has to be communicated to a remote peer errs on the side of communicating it.
 bool aggregationCanUsePackedStringKeys(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
 
+/// Whether an aggregation over `keys` - or, when `grouping_sets_params` is not empty, over any of its grouping sets -
+/// can convert its hash table to the two-level structure, which is what the external-aggregation spill in
+/// `Aggregator::executeOnBlock` requires: an aggregation whose method can never go two-level (no keys, or a tiny
+/// fixed map such as `GROUP BY` over a `UInt8`) never reaches `writeToTemporaryFile` whatever the memory pressure.
+/// Returns `true` when a key type cannot be resolved from `header`, so that a caller which uses this to decide
+/// whether the spill codec has to be communicated to a remote peer errs on the side of communicating it.
+bool aggregationCanGoTwoLevel(const Block & header, const Names & keys, const GroupingSetsParamsList & grouping_sets_params);
+
 /// Whether `dag` forwards the column `name` unchanged (possibly through aliases). Guards the GROUP BY top-K
 /// optimization: the heap ranks the aggregation keys, so every expression between the aggregation and the sort
 /// must hand the sorted key through untouched. If such an expression computed a new value and published it under
