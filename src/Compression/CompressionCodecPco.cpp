@@ -368,6 +368,8 @@ namespace ErrorCodes
 /// `enable_pco_codec` setting and the `PCO` documentation point at a codec that reports why it cannot be used,
 /// instead of at `UNKNOWN_CODEC`. The creator throws for every request, including the one `system.codecs` and
 /// `system.documentation` make to describe the family, so `PCO` is absent from them in such a build.
+/// Reading is refused too: `CompressedReadBuffer` resolves method byte `0xa0` through this creator, so `PCO`
+/// data written by a build with pcodec is unreadable here. Decoding needs the library, so there is no fallback.
 void registerCodecPco(CompressionCodecFactory & factory)
 {
     auto method_code = static_cast<UInt8>(CompressionMethodByte::PCO);
