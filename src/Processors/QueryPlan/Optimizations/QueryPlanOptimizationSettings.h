@@ -98,11 +98,10 @@ struct QueryPlanOptimizationSettings
     UInt64 query_plan_optimize_join_order_max_searched_plans;
     /// When non-zero, randomize statistics for join reordering using this value as seed
     UInt64 query_plan_optimize_join_order_randomize = 0;
-    /// Conflict detectors for join reordering validity in the
-    /// DPsub algorithm, instead of the default per-relation ON-clause restriction. CD-A is correct
-    /// but incomplete; CD-C is correct and complete. CD-C takes precedence when both are set.
-    bool query_plan_optimize_join_order_use_conflict_detector_a = false;
-    bool query_plan_optimize_join_order_use_conflict_detector_c = false;
+    /// Conflict detector deciding join reordering validity in the DPsub algorithm, instead of the
+    /// default per-relation ON-clause restriction. CD-A is correct but incomplete; CD-C is correct
+    /// and complete.
+    JoinOrderConflictDetector query_plan_optimize_join_order_conflict_detector = JoinOrderConflictDetector::NONE;
 
     /// Whether unmatched outer-join rows are padded with real SQL NULLs (true) rather than type
     /// defaults (false). The conflict detectors' null-rejection analysis only

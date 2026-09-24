@@ -513,7 +513,20 @@ find $ROOT_PATH/src/Parsers $ROOT_PATH/src/Access $ROOT_PATH/base/poco \( -name 
     echo "Do not use boost::to_lower/to_upper here: they depend on the locale and pull <locale> into the binary. Use toLowerASCII/toUpperASCII from Common/StringUtils.h. See check 20 in ci/jobs/scripts/check_style/check_cpp.sh"
 } > "$O.20" 2>&1 &
 
+# 21: No casts from integers to IntervalKind::Kind, use IntervalKind::fromBinary.
+# Flags static_cast<IntervalKind::Kind>(x), also bit_cast and reinterpret_cast, and the C-style,
+# functional and brace forms: (IntervalKind::Kind)x, IntervalKind::Kind(x), IntervalKind::Kind{x}.
+# Naming an enumerator, declaring a variable or parameter of that type, and magic_enum::enum_cast are fine.
+{
+result=$(xargs < "$STYLE_TMPDIR/all_excluded" grep -P -Hn '\b(static_cast|bit_cast|reinterpret_cast)\s*<\s*(DB::)?IntervalKind::Kind\s*>|\(\s*(DB::)?IntervalKind::Kind\s*\)\s*(?!(const|override|noexcept|final)\b)[\w(]|(^|[^\w])(DB::)?IntervalKind::Kind\s*(\(|\{[^}])' 2>/dev/null)
+if [ -n "$result" ]; then
+    echo "$result"
+    echo "^ Do not cast integers to IntervalKind::Kind: name the enumerator, or use IntervalKind::fromBinary for a byte read from the wire"
+fi
+} > "$O.21" 2>&1 &
+
 # Wait for all parallel checks to complete, then output results in order
+
 wait
 cat "$O".* 2>/dev/null
 
