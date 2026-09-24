@@ -12,6 +12,15 @@ SELECT bitShiftLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressio
 SELECT bitShiftRight(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitRotateLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
 SELECT bitRotateRight(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT bitRotateLeft(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT bitRotateRight(bitNot(c0), s128) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
+
+-- Bit rotate refuses a big integer on the left side as well.
+
+SELECT bitRotateLeft(s128, toUInt8(1)) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT bitRotateLeft(s128, toUInt8(1)) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT bitRotateRight(s128, toUInt8(1)) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError NOT_IMPLEMENTED }
+SELECT bitRotateRight(s128, toUInt8(1)) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError NOT_IMPLEMENTED }
 
 SELECT bitShiftLeft(bitNot(c0), neg) FROM t_jit_bits SETTINGS compile_expressions = 1, min_count_to_compile_expression = 0; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT bitShiftLeft(bitNot(c0), neg) FROM t_jit_bits SETTINGS compile_expressions = 0; -- { serverError ARGUMENT_OUT_OF_BOUND }
