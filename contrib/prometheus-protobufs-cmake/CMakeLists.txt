@@ -16,6 +16,7 @@ list(APPEND Protobuf_IMPORT_DIRS "${Protobuf_INCLUDE_DIR}" "${Prometheus_INCLUDE
 PROTOBUF_GENERATE_CPP(prometheus_protobufs_sources prometheus_protobufs_headers
     "prompb/remote.proto"
     "prompb/types.proto"
+    "prompb/io/prometheus/write/v2/types.proto"
     "gogoproto/gogo.proto"
 )
 

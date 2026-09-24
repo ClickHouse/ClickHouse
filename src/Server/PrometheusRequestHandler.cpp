@@ -10,6 +10,7 @@
 #include <base/scope_guard.h>
 #include <Poco/Net/HTTPRequest.h>
 #include <Poco/Net/HTTPResponse.h>
+#include <Poco/Net/MessageHeader.h>
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
@@ -35,10 +36,14 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Core/Settings.h>
+#include <string>
 #include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 #include <Storages/TimeSeries/PrometheusRemoteWriteProtocol.h>
 #include <Storages/TimeSeries/PrometheusHTTPProtocolAPI.h>
+#if USE_PROMETHEUS_PROTOBUFS
+#include <prompb/io/prometheus/write/v2/types.pb.h>
+#endif
 
 
 namespace DB
@@ -46,11 +51,13 @@ namespace DB
 
 namespace Setting
 {
+    extern const SettingsBool enable_prometheus_remote_write_v2;
     extern const SettingsUInt64 http_response_buffer_size;
 }
 
 namespace ErrorCodes
 {
+    extern const int ASYNC_INSERT_FLUSH_TIMEOUT;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int INCOMPATIBLE_SCHEMA;
@@ -309,9 +316,17 @@ public:
 #if USE_PROMETHEUS_PROTOBUFS
         /// Unsupported content types and encodings get 415 Unsupported Media Type.
         const String content_type = request.get("Content-Type", "");
-        if (content_type != "application/x-protobuf")
+        String media_type;
+        Poco::Net::NameValueCollection content_type_parameters;
+        Poco::Net::MessageHeader::splitParameters(content_type, media_type, content_type_parameters);
+        const String proto = content_type_parameters.get("proto", "");
+        const bool is_v2 = proto == "io.prometheus.write.v2.Request";
+        const bool is_explicit_v1 = proto == "prometheus.WriteRequest";
+        if (media_type != "application/x-protobuf" || (content_type_parameters.has("proto") && !is_v2 && !is_explicit_v1))
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
-                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf')", content_type);
+                "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf', "
+                "'application/x-protobuf;proto=prometheus.WriteRequest', or "
+                "'application/x-protobuf;proto=io.prometheus.write.v2.Request')", content_type);
 
         /// The remote-write 1.0 spec mandates snappy, but some senders can also compress with zstd.
         const String content_encoding = request.get("Content-Encoding", "");
@@ -324,30 +339,82 @@ public:
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Encoding has unsupported value '{}' (must be 'snappy' or 'zstd')", content_encoding);
 
+        const auto set_v2_written_headers = [&](size_t samples_written)
+        {
+            response.set("X-Prometheus-Remote-Write-Samples-Written", std::to_string(samples_written));
+            response.set("X-Prometheus-Remote-Write-Histograms-Written", "0");
+            response.set("X-Prometheus-Remote-Write-Exemplars-Written", "0");
+        };
+
+        if (is_v2)
+        {
+            set_v2_written_headers(0);
+            if (!context->getSettingsRef()[Setting::enable_prometheus_remote_write_v2])
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Setting `enable_prometheus_remote_write_v2` is not enabled");
+        }
+
         auto table = DatabaseCatalog::instance().getTable(getTimeSeriesTableID(), context);
         PrometheusRemoteWriteProtocol protocol{table, context};
-
-        prometheus::WriteRequest write_request;
 
         {
             ProtobufZeroCopyInputStreamFromReadBuffer zero_copy_input_stream{std::move(decompressing_buf)};
 
-            try
+            if (is_v2)
             {
-                if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+                io::prometheus::write::v2::Request v2_request;
+                try
+                {
+                    if (!v2_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream)
+                        || v2_request.symbols().empty()
+                        || !v2_request.symbols(0).empty())
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+                }
+                catch (const Exception & e)
+                {
+                    /// A body this server cannot decode is the sender's to fix, and a sender resends a 5xx for ever.
+                    /// The decoders' own codes also cover reading stored files, so only this request retags them.
+                    if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED || e.code() == ErrorCodes::ZSTD_DECODER_FAILED)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                    throw;
+                }
+                try
+                {
+                    set_v2_written_headers(protocol.write(v2_request));
+                }
+                catch (const Exception & e)
+                {
+                    if (e.code() == ErrorCodes::ASYNC_INSERT_FLUSH_TIMEOUT)
+                    {
+                        response.erase("X-Prometheus-Remote-Write-Samples-Written");
+                        response.erase("X-Prometheus-Remote-Write-Histograms-Written");
+                        response.erase("X-Prometheus-Remote-Write-Exemplars-Written");
+                    }
+                    throw;
+                }
             }
-            catch (const Exception & e)
+            else
             {
-                /// A body this server cannot decode is the sender's to fix, and a sender resends a 5xx for ever.
-                /// The decoders' own codes also cover reading stored files, so only this request retags them.
-                if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED || e.code() == ErrorCodes::ZSTD_DECODER_FAILED)
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
-                throw;
+                prometheus::WriteRequest write_request;
+                try
+                {
+                    if (!write_request.ParsePartialFromZeroCopyStream(&zero_copy_input_stream)
+                        || (write_request.timeseries().empty()
+                            && write_request.metadata().empty()
+                            && write_request.unknown_fields().field_count()))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse WriteRequest");
+                }
+                catch (const Exception & e)
+                {
+                    /// A body this server cannot decode is the sender's to fix, and a sender resends a 5xx for ever.
+                    /// The decoders' own codes also cover reading stored files, so only this request retags them.
+                    if (e.code() == ErrorCodes::SNAPPY_UNCOMPRESS_FAILED || e.code() == ErrorCodes::ZSTD_DECODER_FAILED)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot decode the request body: {}", e.message());
+                    throw;
+                }
+                protocol.write(write_request.timeseries(), write_request.metadata());
             }
         }
-
-        protocol.write(write_request.timeseries(), write_request.metadata());
 
         response.setStatusAndReason(Poco::Net::HTTPResponse::HTTPStatus::HTTP_NO_CONTENT, Poco::Net::HTTPResponse::HTTP_REASON_NO_CONTENT);
         response.setChunkedTransferEncoding(false);
