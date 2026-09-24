@@ -30,6 +30,14 @@ SELECT count() FROM dist WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_prima
 DROP TABLE dist;
 DROP TABLE tab;
 
+SELECT 'partition key';
+CREATE TABLE tab (s String) ENGINE = MergeTree ORDER BY tuple() PARTITION BY if(s = '', 'abc', s);
+INSERT INTO tab VALUES (''), ('x'), ('y'), ('z');
+SELECT count() FROM tab WHERE if(s = '', 'abc', s) = 'abc';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT s FROM tab WHERE if(s = '', 'abc', s) = 'abc') WHERE explain LIKE '%Parts:%';
+SELECT count() FROM tab WHERE if(s = '', 'abc', s) = 'abc' SETTINGS force_index_by_date = 1;
+DROP TABLE tab;
+
 SELECT 'index on an alias column';
 CREATE TABLE tab (s String, a String ALIAS if(s = '', 'abc', s), INDEX idx a TYPE minmax) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 2;
 INSERT INTO tab VALUES (''), ('x'), ('y'), ('z');

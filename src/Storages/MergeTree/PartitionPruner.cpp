@@ -16,6 +16,7 @@ PartitionPruner::PartitionPruner(
           filter_dag,
           context,
           partition_key.column_names,
+          partition_key.column_name_aliases,
           partition_key.expression,
           true /* single_point */,
           skip_analysis,

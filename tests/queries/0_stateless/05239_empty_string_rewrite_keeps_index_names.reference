@@ -18,6 +18,11 @@ primary key
 1
 Granules: 1/2
 1
+partition key
+1
+Parts: 4/4
+Parts: 1/4
+1
 index on an alias column
 1
 Name: idx
