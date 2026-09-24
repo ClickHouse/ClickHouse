@@ -11,6 +11,7 @@
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/Context.h>
@@ -465,22 +466,24 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
             *merge_tree_settings,
             projection_definition->columns);
 
-        /// Substitute codec arguments for declarations whose explicit type pins those arguments, as
-        /// `ColumnsDescription` does for a table's own columns. Keep an untyped declaration unchanged so
-        /// type-dependent defaults are inferred again if the projection's output type changes. Applied to
-        /// the owned clone, never the caller's AST.
+        /// Canonicalize every explicit type, and substitute codec arguments for declarations whose type
+        /// pins those arguments, as `ColumnsDescription` does for a table's own columns. Keep an untyped
+        /// declaration unchanged so type-dependent defaults are inferred again if the projection's output
+        /// type changes. Applied to the owned clone, never the caller's AST.
         if (projection_definition->columns)
         {
             const auto & projection_columns = result.metadata->getColumns();
             for (const auto & child : result.definition_ast->as<ASTProjectionDeclaration &>().columns->children)
             {
                 auto & column_declaration = child->as<ASTColumnDeclaration &>();
-                if (!column_declaration.getCodec() || !column_declaration.getType())
+                if (!column_declaration.getType())
                     continue;
 
-                column_declaration.setCodec(
-                    projection_columns.get(getProjectionStorageColumnName(column_declaration.name, result.with_parent_part_offset))
-                        .codec->clone());
+                const auto & column = projection_columns.get(
+                    getProjectionStorageColumnName(column_declaration.name, result.with_parent_part_offset));
+                column_declaration.setType(dataTypeToAST(column.type));
+                if (column_declaration.getCodec())
+                    column_declaration.setCodec(column.codec->clone());
             }
         }
     }

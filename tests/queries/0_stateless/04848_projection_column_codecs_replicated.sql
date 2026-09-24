@@ -10,12 +10,12 @@ DROP TABLE IF EXISTS t_repl_codecs_r2;
 -- substitution is deterministic.
 CREATE TABLE t_repl_codecs_r1
 (
-    x UInt64,
-    y UInt64,
+    x Int64,
+    y Int64,
     PROJECTION p
     (
-        x UInt64 CODEC(Delta, ZSTD(1)),
-        y UInt64
+        x BIGINT CODEC(Delta, ZSTD(1)),
+        y BIGINT
     )
     AS
     (
@@ -25,16 +25,17 @@ CREATE TABLE t_repl_codecs_r1
 ENGINE = ReplicatedMergeTree('/clickhouse/tables/{database}/t_repl_codecs', 'r1') ORDER BY x
 SETTINGS min_bytes_for_wide_part = 0;
 
--- The second replica declares the already-substituted form. `Delta` and `Delta(8)` must converge on
--- the same stored definition, or this `CREATE` fails with a metadata mismatch.
+-- The second replica declares canonical types and the already-substituted codec. `BIGINT`/`Int64`
+-- and `Delta`/`Delta(8)` must converge on the same stored definition, including the type-only `y`,
+-- or this `CREATE` fails with a metadata mismatch.
 CREATE TABLE t_repl_codecs_r2
 (
-    x UInt64,
-    y UInt64,
+    x Int64,
+    y Int64,
     PROJECTION p
     (
-        x UInt64 CODEC(Delta(8), ZSTD(1)),
-        y UInt64
+        x Int64 CODEC(Delta(8), ZSTD(1)),
+        y Int64
     )
     AS
     (
