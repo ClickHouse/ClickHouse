@@ -36,3 +36,10 @@ IN and NOT IN agree with the rows they return
 3	3
 1	1
 2	2
+a NULL or a NaN nested inside a granule whose bounds are ordinary
+2
+2
+2
+2
+2
+2

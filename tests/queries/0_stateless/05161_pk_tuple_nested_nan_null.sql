@@ -113,3 +113,30 @@ SELECT count(), sum(x) FROM t_pk_tuple_null_in_partition WHERE t IN (SELECT CAST
 SELECT count(), sum(x) FROM t_pk_tuple_null_in_partition WHERE t NOT IN (SELECT CAST((NULL, 3), 'Tuple(Nullable(Int32), Int32)'));
 
 DROP TABLE t_pk_tuple_null_in_partition;
+
+SELECT 'a NULL or a NaN nested inside a granule whose bounds are ordinary';
+
+-- Key order puts `(2, NULL)` and `(2, nan)` between `(2, 1)` and `(3, 0)`, so the granule bounds stay
+-- ordinary, while the row-level comparison of that row is `NULL` or false.
+
+CREATE TABLE t_pk_tuple_null_inside (t Tuple(Int32, Nullable(Int32)), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 3, allow_nullable_key = 1;
+
+INSERT INTO t_pk_tuple_null_inside VALUES ((2,1),1),((2,NULL),1),((3,0),1);
+
+SELECT count() FROM t_pk_tuple_null_inside WHERE t >= (2, 0);
+SELECT count() FROM (SELECT * FROM t_pk_tuple_null_inside WHERE t >= (2, 0));
+SELECT sum(x) FROM t_pk_tuple_null_inside WHERE t >= (2, 0);
+
+DROP TABLE t_pk_tuple_null_inside;
+
+CREATE TABLE t_pk_tuple_nan_inside (t Tuple(Int32, Float64), x Int32) ENGINE = MergeTree ORDER BY t
+SETTINGS index_granularity = 3;
+
+INSERT INTO t_pk_tuple_nan_inside VALUES ((2,1.),1),((2,nan),1),((3,0.),1);
+
+SELECT count() FROM t_pk_tuple_nan_inside WHERE t >= (2, 0.);
+SELECT count() FROM (SELECT * FROM t_pk_tuple_nan_inside WHERE t >= (2, 0.));
+SELECT sum(x) FROM t_pk_tuple_nan_inside WHERE t >= (2, 0.);
+
+DROP TABLE t_pk_tuple_nan_inside;
