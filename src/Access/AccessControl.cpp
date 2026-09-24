@@ -929,11 +929,14 @@ void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
         const auto & function_factory = FunctionFactory::instance();
         const auto & aggregate_function_factory = AggregateFunctionFactory::instance();
 
-        if (function_factory.hasNameOrAlias(name))
+        /// Resolve before the lookup: `hasNameOrAlias` matches only the registered spelling, so
+        /// `HEX` itself is not found, while `hex` is.
+        String registered_name = function_factory.resolveNameOrAlias(name);
+        if (function_factory.hasNameOrAlias(registered_name))
         {
             /// Store the registered name, so that `<function>isValidASCII</function>` also covers
             /// the `isASCII` alias and `<function>HEX</function>` covers `hex`.
-            names->emplace(function_factory.resolveNameOrAlias(name));
+            names->emplace(std::move(registered_name));
         }
         else if (aggregate_function_factory.isAggregateFunctionName(name))
         {
