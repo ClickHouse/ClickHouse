@@ -971,13 +971,13 @@ def scan_external_datasets(texts: dict[str, str]) -> dict[str, list[str]]:
 # into a false CONFIRMED. JSON round-trips the raw string exactly.
 HISTORICAL_THRESHOLDS_QUERY = """\
 SELECT test, query_index, quantileExact(0.99)(abs(diff)) * 1.5 AS max_diff,
-    any(query_display_name) AS query_display_name
+    query_display_name
 FROM query_metrics_v2
 WHERE event_date BETWEEN toDate('{day}') - INTERVAL 1 MONTH - INTERVAL 1 WEEK
         AND toDate('{day}') - INTERVAL 1 WEEK
     AND metric = 'client_time'
     AND pr_number = 0
-GROUP BY test, query_index
+GROUP BY test, query_index, query_display_name
 HAVING count() > 100
 FORMAT JSONEachRow"""
 
