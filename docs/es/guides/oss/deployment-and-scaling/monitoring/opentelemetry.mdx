@@ -81,7 +81,7 @@ Cuando el trazado está habilitado, ClickHouse crea spans tanto para las operaci
 * `keeper.dispatcher.requests_queue` — Puesta en cola de solicitudes en el dispatcher
 * `keeper.write.pre_commit` — Preprocesamiento de solicitudes de escritura antes del commit de Raft
 * `keeper.write.commit` — Procesamiento de solicitudes de escritura después del commit de Raft
-* `keeper.read.wait_for_write` — Solicitudes de lectura en espera de escrituras de las que dependen
+* `keeper.read.wait_for_write` — Solicitudes de lectura en cola a la espera de que se complete un lote de solicitudes en curso
 * `keeper.read.process` — Procesamiento de solicitudes de lectura
 * `keeper.dispatcher.responses_queue` — Puesta en cola de respuestas en el dispatcher
 * `keeper.send_response` — Envío de la respuesta al cliente

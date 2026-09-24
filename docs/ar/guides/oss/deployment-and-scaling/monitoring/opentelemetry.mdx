@@ -62,7 +62,7 @@ doc_type: 'guide'
 
 ### أنواع Span في Keeper {#keeper-span-types}
 
-عند تمكين التتبّع، ينشئ ClickHouse وحدات span لكلٍّ من عمليات Keeper من جهة العميل ومن جهة الخادم:
+عند تمكين التتبّع، ينشئ ClickHouse وحدات span لكلٍّ من عمليات Keeper من جهة العميل ومن جهة الخادم:
 
 **وحدات span من جهة العميل:**
 
@@ -81,7 +81,7 @@ doc_type: 'guide'
 * `keeper.dispatcher.requests_queue` — انتظار الطلبات في طابور dispatcher
 * `keeper.write.pre_commit` — المعالجة التمهيدية لطلبات الكتابة قبل Raft commit
 * `keeper.write.commit` — معالجة طلبات الكتابة بعد Raft commit
-* `keeper.read.wait_for_write` — طلبات القراءة التي تنتظر عمليات الكتابة التابعة
+* `keeper.read.wait_for_write` — طلبات القراءة المنتظرة في قائمة الانتظار خلف دفعة طلبات قيد الإرسال
 * `keeper.read.process` — معالجة طلبات القراءة
 * `keeper.dispatcher.responses_queue` — انتظار الاستجابات في طابور dispatcher
 * `keeper.send_response` — إرسال الاستجابة إلى العميل

@@ -61,7 +61,7 @@ ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/k
 
 ### Keeper Span 类型 {#keeper-span-types}
 
-启用 tracing 后，ClickHouse 会为客户端和服务端的 Keeper 操作创建 spans：
+启用追踪后，ClickHouse 会为客户端和服务端的 Keeper 操作创建 spans：
 
 **客户端 spans：**
 
@@ -80,7 +80,7 @@ ClickHouse 支持对 [ClickHouse Keeper](/zh/guides/oss/deployment-and-scaling/k
 * `keeper.dispatcher.requests_queue` — dispatcher 中的请求排队
 * `keeper.write.pre_commit` — 在 Raft commit 之前预处理写入请求
 * `keeper.write.commit` — 在 Raft commit 之后处理写入请求
-* `keeper.read.wait_for_write` — 读取请求等待其依赖的写入完成
+* `keeper.read.wait_for_write` — 读取请求排在尚在传输中的请求批次之后等待
 * `keeper.read.process` — 处理读取请求
 * `keeper.dispatcher.responses_queue` — dispatcher 中的响应排队
 * `keeper.send_response` — 向客户端发送响应

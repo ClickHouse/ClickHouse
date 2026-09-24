@@ -80,7 +80,7 @@ Keeper リクエストのトレーシングを有効にするには、ZooKeeper/
 * `keeper.dispatcher.requests_queue` — ディスパッチャー内でのリクエストのキュー待ち
 * `keeper.write.pre_commit` — Raft commit 前の書き込みリクエストの前処理
 * `keeper.write.commit` — Raft commit 後の書き込みリクエストの処理
-* `keeper.read.wait_for_write` — 依存する書き込みの完了待ちとなっている読み取りリクエスト
+* `keeper.read.wait_for_write` — 転送中のリクエストバッチの完了を待ってキューに滞留している読み取りリクエスト
 * `keeper.read.process` — 読み取りリクエストの処理
 * `keeper.dispatcher.responses_queue` — ディスパッチャー内でのレスポンスのキュー待ち
 * `keeper.send_response` — クライアントへのレスポンスの送信

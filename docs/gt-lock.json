@@ -7,42 +7,42 @@
       "versionId": "5ccb243319614a64a06ff1a74d906e8cfa9e455cffb7db27b2679cc3377ad5b9",
       "translations": {
         "fr": {
-          "updatedAt": "2026-09-23T21:48:32.095Z",
+          "updatedAt": "2026-09-24T02:33:08.308Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ja": {
-          "updatedAt": "2026-09-23T21:48:31.592Z",
+          "updatedAt": "2026-09-24T02:33:07.536Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ru": {
-          "updatedAt": "2026-09-23T21:48:31.853Z",
+          "updatedAt": "2026-09-24T02:33:07.931Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "zh": {
-          "updatedAt": "2026-09-23T21:48:31.930Z",
+          "updatedAt": "2026-09-24T02:33:08.059Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-23T21:48:31.776Z",
+          "updatedAt": "2026-09-24T02:33:07.796Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ko": {
-          "updatedAt": "2026-09-23T21:48:31.698Z",
+          "updatedAt": "2026-09-24T02:33:07.669Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "es": {
-          "updatedAt": "2026-09-23T21:48:31.464Z",
+          "updatedAt": "2026-09-24T02:33:07.401Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         },
         "ar": {
-          "updatedAt": "2026-09-23T21:48:32.015Z",
+          "updatedAt": "2026-09-24T02:33:08.183Z",
           "fileName": "docs.json",
           "postProcessHash": "70e7bee6668a81e9684fbd032bd46b843e94d65462156356d92d01a22ae9ae7d"
         }
@@ -76328,47 +76328,47 @@
     },
     {
       "fileId": "db76255c0877048a4b333951f278521dd28fc1ab252bc64cfdb785211ce63c8f",
-      "versionId": "1777e32889cad3d730851089edbccf9db79f54104396ca437821c62dd5e5d2e7",
+      "versionId": "eacc9ecf4d4dd8e1bfd208d1118f7eaf7488137a95b6a84db09ab2a72b70ea14",
       "translations": {
-        "zh": {
-          "updatedAt": "2026-09-17T14:45:52.783Z",
-          "fileName": "zh/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "f9ba29d128ac96302be035ca401ed0b29c6845122c7bdc2d257de4f6ebfc7701"
-        },
-        "ru": {
-          "updatedAt": "2026-09-17T14:45:52.783Z",
-          "fileName": "ru/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "ce035aedbaedf372e6ebcc66fe916f6a84ce2a1988f235f973f00822f23536f2"
-        },
-        "pt-BR": {
-          "updatedAt": "2026-09-17T14:45:52.784Z",
-          "fileName": "pt-BR/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "3fdbfcdaf12d051797d7c55c2c098ff48cec26bc3c86d198ebf6b25f6ab5c913"
+        "ja": {
+          "updatedAt": "2026-09-24T02:33:11.490Z",
+          "fileName": "ja/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
+          "postProcessHash": "dd607fd08d45347338f02b8e8f73c5bcf76d09396a1a216961a42f9b5eb4897e"
         },
         "ko": {
-          "updatedAt": "2026-09-17T14:45:52.784Z",
+          "updatedAt": "2026-09-24T02:33:11.491Z",
           "fileName": "ko/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "98df305a6cbc79f4fdbecd54df2862eb22b80fc908e2bee49ff5248d18f2ed9b"
+          "postProcessHash": "3b41cd4eb729d1e7195431b6e75b0a4236839683da22173f6c81ca6da2568f12"
         },
         "es": {
-          "updatedAt": "2026-09-17T14:45:52.785Z",
+          "updatedAt": "2026-09-24T02:33:11.492Z",
           "fileName": "es/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "e553ae37fce4c61fab79fca10c168392ff01b0ec0d38d4e4b8ae9cc244bfa51a"
+          "postProcessHash": "999a0adb79afe36bc0170b9fd265f67fb86ef15d8bd7b93734b97b4507273993"
         },
         "fr": {
-          "updatedAt": "2026-09-17T14:45:52.785Z",
+          "updatedAt": "2026-09-24T02:33:11.492Z",
           "fileName": "fr/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "a568f0c7e5c9fa3a7a33ef280ddff855c2e8ca972d1e21052d97dfe4bc82dce3"
+          "postProcessHash": "c99777b88067fc77af6b15f3e4faff9c3cd7ab00afb789a74b1adef6e60e6ac4"
+        },
+        "ru": {
+          "updatedAt": "2026-09-24T02:33:11.493Z",
+          "fileName": "ru/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
+          "postProcessHash": "09864238654045f4c993b898c90f68c464e5561d9ee69e790c1ef1efaaa059dd"
         },
         "ar": {
-          "updatedAt": "2026-09-17T14:45:52.785Z",
+          "updatedAt": "2026-09-24T02:33:11.493Z",
           "fileName": "ar/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "57c271c9310282e1cac3c7180f0dfb8b4823a34a8a5ce20ebe79ff7f6d067085"
+          "postProcessHash": "4cb9bcf515318c5d37388522a959b3ee9ccfc03ceaa47c7c43b7a09067a5a8ca"
         },
-        "ja": {
-          "updatedAt": "2026-09-17T14:45:52.786Z",
-          "fileName": "ja/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
-          "postProcessHash": "3c8462877f41f3d3689d635b6a3b1b5015331af2ff448b93cf1c64e699d533e5"
+        "zh": {
+          "updatedAt": "2026-09-24T02:33:11.494Z",
+          "fileName": "zh/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
+          "postProcessHash": "fea4a239c6e53cfd4062788292da426b40005512b39e82216d40f8338701016f"
+        },
+        "pt-BR": {
+          "updatedAt": "2026-09-24T02:33:11.494Z",
+          "fileName": "pt-BR/guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx",
+          "postProcessHash": "5b387806a3bfcc5ae38ff9dcd44b73c869f15c8f6c16f8c54e7f21e797b51b5f"
         }
       },
       "fileName": "guides/oss/deployment-and-scaling/monitoring/opentelemetry.mdx"

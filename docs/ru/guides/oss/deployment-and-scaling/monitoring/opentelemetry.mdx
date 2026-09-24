@@ -81,7 +81,7 @@ ClickHouse поддерживает трассировку OpenTelemetry для 
 * `keeper.dispatcher.requests_queue` — Ожидание запроса в очереди диспетчера
 * `keeper.write.pre_commit` — Предварительная обработка запросов на запись перед фиксацией в Raft
 * `keeper.write.commit` — Обработка запросов на запись после фиксации в Raft
-* `keeper.read.wait_for_write` — Ожидание запросов на чтение, зависящих от записи
+* `keeper.read.wait_for_write` — Ожидание запросов на чтение в очереди до завершения обработки текущего батча запросов
 * `keeper.read.process` — Обработка запросов на чтение
 * `keeper.dispatcher.responses_queue` — Ожидание ответа в очереди диспетчера
 * `keeper.send_response` — Отправка ответа клиенту

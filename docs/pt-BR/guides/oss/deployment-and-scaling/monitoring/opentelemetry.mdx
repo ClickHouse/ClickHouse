@@ -73,16 +73,16 @@ Quando o rastreamento está habilitado, o ClickHouse cria spans para operações
 * `zookeeper.list` — Listar nós filhos
 * `zookeeper.exists` — Verificar se um nó existe
 * `zookeeper.multi` — Executar várias operações de forma atômica
-* `zookeeper.client.requests_queue` — Tempo gasto na fila de solicitações antes do envio
+* `zookeeper.client.requests_queue` — Tempo gasto na fila de requisições antes do envio
 
 **Spans do lado do servidor (Keeper):**
 
 * `keeper.receive_request` — Recebimento e análise da solicitação do cliente
-* `keeper.dispatcher.requests_queue` — Solicitações na fila do dispatcher
-* `keeper.write.pre_commit` — Pré-processamento de solicitações de escrita antes do commit do Raft
-* `keeper.write.commit` — Processamento de solicitações de escrita após o commit do Raft
-* `keeper.read.wait_for_write` — Solicitações de leitura aguardando escritas das quais dependem
-* `keeper.read.process` — Processamento de solicitações de leitura
+* `keeper.dispatcher.requests_queue` — Requisições na fila do dispatcher
+* `keeper.write.pre_commit` — Pré-processamento de requisições de escrita antes do commit do Raft
+* `keeper.write.commit` — Processamento de requisições de escrita após o commit do Raft
+* `keeper.read.wait_for_write` — Requisições de leitura enfileiradas aguardando um lote de solicitações em andamento
+* `keeper.read.process` — Processamento de requisições de leitura
 * `keeper.dispatcher.responses_queue` — Respostas na fila do dispatcher
 * `keeper.send_response` — Envio da resposta ao cliente
 

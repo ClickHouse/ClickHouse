@@ -80,7 +80,7 @@ Keeper 요청에 대한 추적을 활성화하려면 ZooKeeper/Keeper 클라이�
 * `keeper.dispatcher.requests_queue` — dispatcher에서 요청이 큐에 대기하는 시간
 * `keeper.write.pre_commit` — Raft commit 전 쓰기 요청 전처리
 * `keeper.write.commit` — Raft commit 후 쓰기 요청 처리
-* `keeper.read.wait_for_write` — 종속된 쓰기 작업을 기다리는 읽기 요청
+* `keeper.read.wait_for_write` — 진행 중인 요청 배치 뒤에서 대기하는 읽기 요청
 * `keeper.read.process` — 읽기 요청 처리
 * `keeper.dispatcher.responses_queue` — dispatcher에서 응답이 큐에 대기하는 시간
 * `keeper.send_response` — 클라이언트에 응답 전송
