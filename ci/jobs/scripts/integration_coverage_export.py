@@ -12,10 +12,14 @@ INDIRECT_CALLS_STRUCTURE = "test_name String, caller_name_hash UInt64, caller_fu
 class IntegrationCoverageExporter:
     """Export the per-module coverage dumped by `tests/integration/helpers/cluster.py`.
 
-    Every instance of a module writes its own dump, so the rows are merged per module
-    (the union over instances and start/shutdown cycles) before they are inserted into
-    the CIDB tables that hold the stateless per-test coverage. `test_name` is the module
-    path relative to `tests/integration`, e.g. `test_storage_s3/test.py`.
+    Every instance of a module writes its own dump, one row per region per flush, so the
+    rows are merged per module (over instances and server restarts) before they are
+    inserted into the CIDB tables that hold the stateless per-test coverage. `test_name`
+    is the module path relative to `tests/integration`, e.g. `test_storage_s3/test.py`.
+
+    Without XRay (the per-test build does not enable it) `min_depth` is the entry count
+    of the function, saturated at 254 (see `getCurrentCoveredNameRefs`), so the module's
+    value is the saturated sum over flushes, as is `call_count` of the indirect calls.
     """
 
     def __init__(self, clickhouse_path: str, coverage_dir: str, dest: CIDBCluster, job_name: str):
@@ -58,11 +62,13 @@ class IntegrationCoverageExporter:
         assert self.dest.is_ready(), "Destination cluster is not ready"
         check_start_time = f"toDateTime({sql_string(self.check_start_time)}, 'UTC')"
         check_name = sql_string(self.job_name)
-        # Same key and tie-break as `ReplacingMergeTree` of `system.coverage_log`.
+        # Same key as `system.coverage_log`. `branch_flag` is a property of the region and
+        # agrees between flushes unless several regions share one span; then take the one
+        # of the flush with the most entries.
         self._query(
             f"INSERT INTO FUNCTION {self._remote('default.checks_coverage_lines')} "
             f"SELECT file, line_start, line_end, {check_start_time}, {check_name}, test_name, "
-            "min(min_depth), argMin(branch_flag, min_depth) "
+            "least(sum(min_depth), 254), argMax(branch_flag, min_depth) "
             f"FROM {lines} GROUP BY test_name, file, line_start, line_end"
         )
         indirect_calls = self._source("indirect_calls", INDIRECT_CALLS_STRUCTURE)
@@ -71,7 +77,7 @@ class IntegrationCoverageExporter:
                 f"INSERT INTO FUNCTION {self._remote('default.checks_coverage_indirect_calls')} "
                 f"SELECT {check_start_time}, {check_name}, test_name, "
                 "argMax(caller_name_hash, call_count), argMax(caller_func_hash, call_count), "
-                "callee_offset, max(call_count) "
+                "callee_offset, sum(call_count) "
                 f"FROM {indirect_calls} GROUP BY test_name, callee_offset"
             )
         print("Coverage export completed")

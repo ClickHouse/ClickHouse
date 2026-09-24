@@ -4490,7 +4490,9 @@ class ClickHouseCluster:
         """Append this module's coverage of every instance to files in `PER_TEST_COVERAGE_DIR`.
 
         Appending keeps the coverage of earlier start/shutdown cycles of the same cluster,
-        whose instance directories the next start wipes. The exporter deduplicates rows.
+        whose instance directories the next start wipes. The rows are read without `FINAL`:
+        a server that restarted flushed several times, and `ReplacingMergeTree` would keep
+        only one flush per region. The exporter sums them.
         """
         name = escape_sql_string(self.coverage_test_name)
         for instance in self.instances.values():
@@ -4502,12 +4504,12 @@ class ClickHouseCluster:
                 instance.query("SYSTEM SET COVERAGE TEST ''", timeout=300)
                 lines = instance.query(
                     "SELECT test_name, file, line_start, line_end, min_depth, branch_flag "
-                    f"FROM system.coverage_log FINAL WHERE test_name = {name} FORMAT TSV",
+                    f"FROM system.coverage_log WHERE test_name = {name} FORMAT TSV",
                     timeout=600,
                 )
                 indirect_calls = instance.query(
                     "SELECT test_name, caller_name_hash, caller_func_hash, callee_offset, call_count "
-                    f"FROM system.coverage_indirect_calls FINAL WHERE test_name = {name} FORMAT TSV",
+                    f"FROM system.coverage_indirect_calls WHERE test_name = {name} FORMAT TSV",
                     timeout=600,
                 )
             except Exception as e:
