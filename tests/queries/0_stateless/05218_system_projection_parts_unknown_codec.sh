@@ -18,19 +18,19 @@ SETTINGS default_compression_codec = 'ZSTD(3)', min_bytes_for_wide_part = 0, min
 INSERT INTO tab SELECT number, toString(number) FROM numbers(1000);
 "
 
-part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE table = 'tab' AND active ORDER BY name")
+part_path=$($CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT path FROM system.parts WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY name")
 
 echo '-- the codec of the projection part is known'
-$CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT name, is_broken, default_compression_codec FROM system.projection_parts WHERE table = 'tab' AND active ORDER BY name"
+$CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT name, is_broken, default_compression_codec FROM system.projection_parts WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY name"
 
 rm "${part_path:?}p.proj/default_compression_codec.txt"
 
 echo '-- codec file gone: the codec recovered from the projection data is reported as unknown'
-$CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT name, is_broken, default_compression_codec FROM system.projection_parts WHERE table = 'tab' AND active ORDER BY name"
+$CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT name, is_broken, default_compression_codec FROM system.projection_parts WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY name"
 
 rm -rf "${part_path:?}p.proj"
 
 echo '-- projection part could not be loaded: broken, with no codec'
-$CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT name, is_broken, empty(default_compression_codec) FROM system.projection_parts WHERE table = 'tab' AND active ORDER BY name"
+$CLICKHOUSE_LOCAL --path "$data_path" -q "SELECT name, is_broken, empty(default_compression_codec) FROM system.projection_parts WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY name"
 
 rm -rf "${data_path:?}"
