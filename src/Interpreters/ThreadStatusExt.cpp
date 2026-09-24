@@ -112,6 +112,12 @@ ThreadGroup::ThreadGroup()
 {
 }
 
+ThreadGroup::~ThreadGroup()
+{
+    MemoryTrackerSwitcher query_memory_scope(&memory_tracker, 0);
+    String{}.swap(shared_data.query_for_logs);
+}
+
 void ThreadGroup::initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_)
 {
     std::lock_guard lock(mutex);
@@ -303,8 +309,6 @@ void ThreadGroup::attachQueryForLog(const String & query_, UInt64 normalized_has
 
 void ThreadStatus::attachQueryForLog(const String & query_)
 {
-    /// Both thread and group copies are released after query detachment.
-    MemoryTrackerSwitcher metadata_memory_scope(&total_memory_tracker);
     local_data.query_for_logs = query_;
     local_data.normalized_query_hash = normalizedQueryHash(query_, false);
 
@@ -369,8 +373,6 @@ void ThreadStatus::applyQuerySettings()
     DB::Exception::enable_job_stack_trace = settings[Setting::enable_job_stack_trace];
 
     {
-        /// The thread retains this buffer between queries.
-        MemoryTrackerSwitcher query_id_memory_scope(&total_memory_tracker);
         SignalUnsafeMutationGuard guard(is_query_id_usable);
         query_id = query_context_ptr->getCurrentQueryId();
     }
@@ -406,6 +408,8 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
 
     if (boundToOSThread())
         thread_group_->linkThread(thread_id);
+    local_data.plan_step_index.reset();
+    local_data.pipeline_processor_index.reset();
     thread_group = thread_group_;
     try
     {
@@ -417,12 +421,9 @@ void ThreadStatus::attachToGroupImpl(const ThreadGroupPtr & thread_group_)
         query_context = thread_group->query_context;
         global_context = thread_group->global_context;
 
-        {
-            /// These copies are cleared after the thread returns to global accounting.
-            MemoryTrackerSwitcher metadata_memory_scope(&total_memory_tracker);
-            fatal_error_callback = thread_group->fatal_error_callback;
-            local_data = thread_group->getSharedData();
-        }
+        fatal_error_callback = thread_group->fatal_error_callback;
+
+        local_data = thread_group->getSharedData();
 
         applyGlobalSettings();
         applyQuerySettings();
@@ -463,6 +464,13 @@ void ThreadStatus::detachFromGroup()
         finalizePerformanceCounters();
     }
 
+    clearQueryId();
+    String{}.swap(local_data.query_for_logs);
+    local_data.query_is_canceled_predicate = {};
+    local_data.throw_if_query_canceled_predicate = {};
+    fatal_error_callback = {};
+    flushUntrackedMemory();
+
     performance_counters.setParent(&ProfileEvents::global_counters);
 
     memory_tracker.reset();
@@ -495,13 +503,8 @@ void ThreadStatus::detachFromGroup()
     Jemalloc::setCollectLocalProfileSamplesInTraceLog(false);
 #endif
 
-    clearQueryId();
     query_context.reset();
-
     local_data = {};
-
-    fatal_error_callback = {};
-
 }
 
 void ThreadStatus::attachToGroup(const ThreadGroupPtr & thread_group_, bool check_detached)
@@ -583,8 +586,6 @@ void ThreadStatus::initPerformanceCounters()
     // query_start_time.nanoseconds cannot be used here since RUsageCounters expect CLOCK_MONOTONIC
     *last_rusage = RUsageCounters::current();
 
-    /// Perf counters, their TLS destructor registration, and procfs readers outlive queries.
-    MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
     if (auto query_context_ptr = query_context.lock())
     {
         const Settings & settings = query_context_ptr->getSettingsRef();
@@ -643,19 +644,15 @@ void ThreadStatus::finalizePerformanceCounters()
     if (auto global_context_ptr = global_context.lock())
         close_perf_descriptors = !global_context_ptr->getSettingsRef()[Setting::metrics_perf_events_enabled];
 
+    try
     {
-        /// Even disabled perf counters first register their TLS destructor here.
-        MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
-        try
-        {
-            current_thread_counters.finalizeProfileEvents(performance_counters);
-            if (close_perf_descriptors)
-                current_thread_counters.closeEventDescriptors();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(log);
-        }
+        current_thread_counters.finalizeProfileEvents(performance_counters);
+        if (close_perf_descriptors)
+            current_thread_counters.closeEventDescriptors();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log);
     }
 
     try
@@ -687,7 +684,6 @@ void ThreadStatus::resetPerformanceCountersLastUsage()
     *last_rusage = RUsageCounters::current();
     if (taskstats)
     {
-        MemoryTrackerSwitcher counters_memory_scope(&total_memory_tracker);
         try
         {
             (*taskstats).reset();

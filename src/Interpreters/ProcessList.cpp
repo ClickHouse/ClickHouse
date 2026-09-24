@@ -189,8 +189,7 @@ ProcessList::EntryPtr ProcessList::insert(
         }
     }
 
-    /// Resolve the final query limit before admission. Flush and diagnostic checks may
-    /// allocate, reclaim caches, or take other locks, so perform them before taking `mutex`.
+    /// Flush and check setup memory before taking `mutex`: diagnostics may allocate or take other locks.
     const auto setup_thread_group = CurrentThread::getGroup();
     if (setup_thread_group)
         setup_thread_group->memory_tracker.setOrRaiseHardLimit(settings[Setting::max_memory_usage]);
@@ -456,9 +455,7 @@ ProcessList::EntryPtr ProcessList::insert(
         }
         if (pending_user_memory_tracker)
         {
-            /// Complete the accounting handoff before publishing the admitted query. This
-            /// operation only touches counters; rejection diagnostics happen after unlocking.
-            /// Bytes still pending in the thread follow the new parent on their normal flush.
+            /// Transfer setup bytes before publishing admission; report rejection after unlocking.
             user_memory_limit_exceeded = CurrentThread::getGroup()->memory_tracker.tryInsertParent(pending_user_memory_tracker);
             if (user_memory_limit_exceeded)
                 query->is_killed.store(true, std::memory_order_relaxed);
@@ -467,8 +464,7 @@ ProcessList::EntryPtr ProcessList::insert(
 
     if (user_memory_limit_exceeded)
     {
-        /// Remove the rejected admission before allocating exception diagnostics. Cleanup
-        /// still uses the original query-to-global chain because insertion did not commit.
+        /// Remove the rejected admission before allocating exception diagnostics.
         {
             LockMemoryExceptionInThread block_exceptions(VariableContext::Global);
             FailPointInjection::pauseFailPoint(FailPoints::query_setup_memory_rejection_before_cleanup);

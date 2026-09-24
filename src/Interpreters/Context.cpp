@@ -1570,8 +1570,7 @@ ContextMutablePtr Context::createCopy(const ContextMutablePtr & other)
 namespace
 {
 
-/// Weak references in thread and group metadata can retain this storage after query detachment.
-/// Only shared-pointer bookkeeping uses this allocator; the context and its owned data do not.
+/// Weak references can retain the control block after query detachment.
 template <typename T>
 struct QueryContextControlBlockAllocator : GlobalMemoryAllocator<T>
 {
@@ -2652,10 +2651,7 @@ UUIDs Context::getEnabledProfiles() const
 
 ResourceManagerPtr Context::getResourceManager() const
 {
-    callOnce(shared->resource_manager_initialized, [&]
-    {
-        /// The manager and its subscriptions outlive the query that first requests them.
-        MemoryTrackerSwitcher manager_memory_scope(&total_memory_tracker);
+    callOnce(shared->resource_manager_initialized, [&] {
         shared->resource_manager = createResourceManager(getGlobalContext());
     });
 
@@ -4432,9 +4428,7 @@ IUserDefinedSQLObjectsStorage & Context::getUserDefinedSQLObjectsStorage()
 
 std::shared_ptr<IWorkloadEntityStorage> Context::getWorkloadEntityStoragePtr() const
 {
-    callOnce(shared->workload_entity_storage_initialized, [&]
-    {
-        MemoryTrackerSwitcher storage_memory_scope(&total_memory_tracker);
+    callOnce(shared->workload_entity_storage_initialized, [&] {
         auto storage = createWorkloadEntityStorage(getGlobalContext());
         std::lock_guard lock(shared->mutex);
         shared->workload_entity_storage = std::move(storage);

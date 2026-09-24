@@ -90,11 +90,10 @@ void QueryScope::attachToQueryContext(ContextMutablePtr query_context, std::func
     if (!query_context->hasQueryContext())
         query_context->makeQueryContext();
     {
-        /// Group metadata is destroyed after detachment. Copy callback storage in that scope too.
+        /// Group metadata outlives query detachment.
         MemoryTrackerSwitcher group_memory_scope(&total_memory_tracker);
         setup_group->initializeQuery(query_context, fatal_error_callback);
     }
-    /// Flush setup bytes to the final query tracker, then restore the outer scope before attachment.
     setup_memory_scope->reset();
     try
     {

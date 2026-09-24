@@ -183,10 +183,8 @@ public:
         [[noreturn]] void throwException() const;
     };
 
-    /// Insert a user ancestor below this query's existing parent. Requires no concurrent changes
-    /// to the query tracker. Only already-tracked bytes are transferred; pending thread bytes
-    /// subsequently flush through the new parent using the usual batching rules.
-    /// Returns rejection data without changing the parent, current usage, or peak on failure.
+    /// Insert a user ancestor without recharging existing ancestors. Requires an unpublished query tracker.
+    /// Rejection leaves all counters and the parent unchanged; diagnostics must run outside the admission lock.
     [[nodiscard]] std::optional<ParentLimitExceeded> tryInsertParent(MemoryTracker * new_parent) noexcept;
 
     /// Check retained query setup bytes against this query's limit, without rechecking

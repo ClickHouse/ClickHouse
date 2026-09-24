@@ -1614,8 +1614,7 @@ void HTTPHandler::handleRequest(HTTPServerRequest & request, HTTPServerResponse 
     }
     catch (...)
     {
-        /// Error delivery must work even when setup or authentication exceeded a memory limit.
-        /// Keep its allocations tracked without replacing the original exception with another one.
+        /// Preserve the original error if delivering it exceeds the memory limit.
         LockMemoryExceptionInThread lock_memory_tracker(VariableContext::Global);
 
         SCOPE_EXIT({

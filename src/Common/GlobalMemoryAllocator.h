@@ -7,8 +7,7 @@
 namespace DB
 {
 
-/// Keeps storage that can outlive a query in the global tracker. Object construction and
-/// destruction still use the caller's tracker, including allocations owned by the object.
+/// Tracks shared-pointer bookkeeping globally while leaving object construction and destruction in the caller's tracker.
 template <typename T>
 struct GlobalMemoryAllocator
 {

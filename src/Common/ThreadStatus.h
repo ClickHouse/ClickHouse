@@ -85,9 +85,9 @@ class ThreadGroup
 public:
     using FatalErrorCallback = std::function<void()>;
     ThreadGroup();
+    ~ThreadGroup();
     ThreadGroup(ContextPtr query_context_, Int32 os_threads_nice_value_, FatalErrorCallback fatal_error_callback_ = {});
 
-    /// Complete a setup group before publishing it to any execution thread.
     void initializeQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
 
     /// The first thread created this thread group

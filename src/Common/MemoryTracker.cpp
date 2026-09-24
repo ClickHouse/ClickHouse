@@ -908,9 +908,7 @@ std::optional<MemoryTracker::ParentLimitExceeded> MemoryTracker::tryInsertParent
     chassert(level == VariableContext::Process && new_parent->level == VariableContext::User);
     chassert(new_parent->getParent() == old_parent);
 
-    /// These bytes have already reached the existing ancestors. This operation must remain
-    /// local and must not allocate, log, profile, invoke overcommit, or construct an exception:
-    /// query admission calls it while holding the process-list mutex.
+    /// Transfer existing bytes without allocating or recharging ancestors under the process-list mutex.
     const Int64 size = get();
     const Int64 limit = new_parent->hard_limit.load(std::memory_order_relaxed);
     const bool enforce_limit = memoryTrackerCanThrow(new_parent->level, false);
@@ -924,7 +922,6 @@ std::optional<MemoryTracker::ParentLimitExceeded> MemoryTracker::tryInsertParent
     }
     while (!new_parent->amount.compare_exchange_weak(old_amount, will_be, std::memory_order_relaxed));
 
-    /// Update the peak directly: the general profiling path may call diagnostics.
     auto old_peak = new_parent->peak.load(std::memory_order_relaxed);
     while (old_peak < will_be && !new_parent->peak.compare_exchange_weak(old_peak, will_be, std::memory_order_relaxed))
     {

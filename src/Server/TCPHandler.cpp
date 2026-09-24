@@ -593,9 +593,9 @@ void TCPHandler::runImpl()
             }
         });
 
-        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         /// Initialized later. It has to be destroyed after query_state is destroyed.
         QueryScope query_scope;
+        OpenTelemetry::TracingContextHolderPtr thread_trace_context;
         /// QueryState should be cleared before QueryScope, since otherwise
         /// the MemoryTracker will be wrong for possible deallocations.
         /// (i.e. deallocations from the Aggregator with two-level aggregation)
@@ -625,16 +625,12 @@ void TCPHandler::runImpl()
             }
 
             /// Set up tracing context for this query on current thread
-            {
-                /// The tracing holder is destroyed after query detachment.
-                MemoryTrackerSwitcher tracing_memory_scope(&total_memory_tracker);
-                thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
-                    query_state->query_context->getClientInfo().client_trace_context,
-                    query_state->query_context->getSettingsRef(),
-                    query_state->query_context->getOpenTelemetrySpanLog());
-                thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
-                thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
-            }
+            thread_trace_context = std::make_unique<OpenTelemetry::TracingContextHolder>("TCPHandler",
+                query_state->query_context->getClientInfo().client_trace_context,
+                query_state->query_context->getSettingsRef(),
+                query_state->query_context->getOpenTelemetrySpanLog());
+            thread_trace_context->root_span.kind = OpenTelemetry::SpanKind::SERVER;
+            thread_trace_context->root_span.addAttribute("client.version", query_state->query_context->getClientInfo().getVersionStr());
 
             /// Fatal error callback can be called at any time, including when we already destroyed TCPHandler object that created the callback.
             /// To avoid accessing invalid memory, we capture all needed fields by value.
@@ -684,11 +680,8 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_SERVER_LOGS
                 && client_logs_level != LogsLevel::none)
             {
-                {
-                    /// Weak references in the thread and group outlive query detachment.
-                    MemoryTrackerSwitcher queue_memory_scope(&total_memory_tracker);
-                    query_state->logs_queue = std::make_shared<InternalTextLogsQueue>();
-                }
+                query_state->logs_queue = std::shared_ptr<InternalTextLogsQueue>(
+                    new InternalTextLogsQueue, std::default_delete<InternalTextLogsQueue>{}, GlobalMemoryAllocator<InternalTextLogsQueue>{});
                 query_state->logs_queue->max_priority = Poco::Logger::parseLevel(client_logs_level.toString());
                 query_state->logs_queue->setSourceRegexp(query_state->query_context->getSettingsRef()[Setting::send_logs_source_regexp]);
                 CurrentThread::attachInternalTextLogsQueue(query_state->logs_queue, client_logs_level);
@@ -697,11 +690,9 @@ void TCPHandler::runImpl()
             const auto send_profile_events = query_state->query_context->getSettingsRef()[Setting::send_profile_events];
             if (client_tcp_protocol_version >= DBMS_MIN_PROTOCOL_VERSION_WITH_INCREMENTAL_PROFILE_EVENTS && send_profile_events)
             {
-                {
-                    /// Thread and group weak references retain the empty queue's shared storage after detachment.
-                    MemoryTrackerSwitcher queue_memory_scope(&total_memory_tracker);
-                    query_state->profile_queue = std::make_shared<InternalProfileEventsQueue>(std::numeric_limits<int>::max());
-                }
+                query_state->profile_queue = std::shared_ptr<InternalProfileEventsQueue>(
+                    new InternalProfileEventsQueue(std::numeric_limits<int>::max()),
+                    std::default_delete<InternalProfileEventsQueue>{}, GlobalMemoryAllocator<InternalProfileEventsQueue>{});
                 CurrentThread::attachInternalProfileEventsQueue(query_state->profile_queue);
             }
 
@@ -1310,8 +1301,7 @@ bool TCPHandler::receivePacketsExpectQuery(std::shared_ptr<QueryState> & state, 
                 const auto exempt_users = server.context()->getUsersToIgnoreEarlyMemoryLimitCheck();
                 if (exempt_users && exempt_users->contains(session->getClientInfo().current_user))
                 {
-                    /// Recovery queries must be receivable under memory pressure. Preserve their
-                    /// configured allowance before parsing query text and per-query settings.
+                    /// Preserve recovery users' batching allowance while receiving the query.
                     setup_untracked_memory_limit = session->sessionContext()->getSettingsRef()[Setting::max_untracked_memory];
                 }
             }
@@ -2580,9 +2570,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     UInt64 compression = 0;
 
     chassert(!state);
-    /// Its shared storage survives through the thread group's weak callback reference, but
-    /// construction of its members (including the initial pipeline) belongs to the query.
-    state = std::allocate_shared<QueryState>(GlobalMemoryAllocator<QueryState>{});
+    state = std::shared_ptr<QueryState>(new QueryState, std::default_delete<QueryState>{}, GlobalMemoryAllocator<QueryState>{});
 
     readStringBinary(state->query_id, *in, MAX_HELLO_STRING_SIZE);
 

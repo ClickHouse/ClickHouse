@@ -78,7 +78,7 @@ TEST(QueryContextMemory, TracksConstructionTemporaryCopiesAndAttachedCopies)
 #endif
 }
 
-TEST(QueryContextMemory, RetainedThreadMetadataDoesNotLeaveUserCharge)
+TEST(QueryContextMemory, LiveThreadMetadataIsChargedAndReleased)
 {
 #if defined(SANITIZER)
     GTEST_SKIP() << "Requires ClickHouse allocation interceptors, which sanitizer builds replace";
@@ -94,7 +94,7 @@ TEST(QueryContextMemory, RetainedThreadMetadataDoesNotLeaveUserCharge)
 
     std::thread([&]
     {
-        ThreadStatus thread;
+        ThreadStatus thread{ThreadStatus::NoOSThreadTag{}};
         MemoryTracker user(&total_memory_tracker, VariableContext::User);
         std::unique_ptr<char[]> sentinel;
         {
@@ -111,6 +111,9 @@ TEST(QueryContextMemory, RetainedThreadMetadataDoesNotLeaveUserCharge)
         {
             bool rejected = false;
             bool query_id_restored = false;
+            Int64 attached_bytes = 0;
+            Int64 log_bytes = 0;
+            Int64 worker_bytes = 0;
             Int64 query_before = 0;
             Int64 query_after = 0;
             Int64 user_before = 0;
@@ -119,23 +122,42 @@ TEST(QueryContextMemory, RetainedThreadMetadataDoesNotLeaveUserCharge)
                 auto scope = QueryScope::createForQueryContext();
                 auto * tracker = thread.memory_tracker.getParent();
                 auto context = Context::createCopyForQuery(source);
+                const auto before_attach = tracker->get();
                 scope.attachToQueryContext(context, [capture = String(8192, 'c')]
                 {
                     std::ignore = capture;
                 });
+                CurrentThread::flushUntrackedMemory();
+                attached_bytes = tracker->get() - before_attach;
+                const auto before_logs = tracker->get();
                 CurrentThread::attachQueryForLog(query);
+                log_bytes = tracker->get() - before_logs;
+                {
+                    MemoryTrackerSwitcher test_thread_memory_scope(&total_memory_tracker);
+                    std::thread([group = CurrentThread::getGroup(), &worker_bytes]
+                    {
+                        ThreadStatus worker{ThreadStatus::NoOSThreadTag{}};
+                        const auto before = group->memory_tracker.get();
+                        CurrentThread::attachToGroup(group);
+                        CurrentThread::flushUntrackedMemory();
+                        worker_bytes = group->memory_tracker.get() - before;
+                        CurrentThread::detachFromGroupIfNotDetached();
+                    }).join();
+                }
                 rejected = tracker->tryInsertParent(&user).has_value();
                 query_before = tracker->get();
                 user_before = user.get();
                 {
                     QueryIdSwitcher query_id_scope(nested_id);
-                    thread.updatePerformanceCounters();
                 }
                 query_id_restored = CurrentThread::getQueryId() == source->getCurrentQueryId();
                 query_after = tracker->get();
                 user_after = user.get();
             }
             /// This isolated user has no last-query reset to hide retained charges.
+            EXPECT_GE(attached_bytes, static_cast<Int64>(source->getCurrentQueryId().size()));
+            EXPECT_GE(log_bytes, static_cast<Int64>(2 * query.size()));
+            EXPECT_GE(worker_bytes, static_cast<Int64>(source->getCurrentQueryId().size() + query.size()));
             EXPECT_FALSE(rejected);
             EXPECT_TRUE(query_id_restored);
             EXPECT_GT(query_before, 0);
