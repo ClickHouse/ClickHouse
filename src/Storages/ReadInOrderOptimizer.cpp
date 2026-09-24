@@ -74,7 +74,12 @@ ASTPtr getFixedPoint(
         argument = arg_func->arguments->children[0];
     }
 
-    return argument->as<ASTIdentifier>() ? argument : nullptr;
+    /// An `ARRAY JOIN` result shadows the source column of the same name, so it is not fixed in the stream.
+    const auto * identifier = argument->as<ASTIdentifier>();
+    if (!identifier || array_join_result_names.contains(identifier->name()))
+        return nullptr;
+
+    return argument;
 }
 
 NameSet getFixedSortingColumns(

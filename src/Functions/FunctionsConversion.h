@@ -3378,6 +3378,8 @@ llvm::Value * convertCompileImpl(llvm::IRBuilderBase & builder, const ValuesWith
 ///
 /// - a date-time in a time zone with a UTC offset transition: in a fall-back hour two distinct
 ///   instants have the same local wall-clock representation;
+/// - a floating-point number, because every `NaN` payload is rendered as the same `nan`, while hash
+///   tables compare floating-point keys bitwise and keep distinct payloads apart;
 /// - a `Date32`, because day numbers out of the type range are saturated to `0000-01-01` and
 ///   `9999-12-31` when formatted (see `ToStringMonotonicity`);
 /// - a type-erased type such as `Variant`, `Dynamic` or `Object`, whose alternatives render into a
@@ -3396,7 +3398,7 @@ inline bool renderingCollapsesDistinctValues(const DataTypePtr & type)
             collapses = collapses || !date_time->getTimeZone().hasFixedOffset();
         else if (const auto * date_time64 = typeid_cast<const DataTypeDateTime64 *>(&nested))
             collapses = collapses || !date_time64->getTimeZone().hasFixedOffset();
-        else if (isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
+        else if (isFloat(nested) || isDate32(nested) || isVariant(nested) || isDynamic(nested) || isObject(nested))
             collapses = true;
     };
 

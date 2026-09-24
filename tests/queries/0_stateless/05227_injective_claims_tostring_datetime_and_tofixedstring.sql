@@ -126,6 +126,22 @@ SELECT uniqExact(toString(dt)) FROM t_array_join_shadow ARRAY JOIN arr AS dt SET
 SELECT count() FROM (SELECT 1 FROM t_array_join_shadow ARRAY JOIN arr AS elem GROUP BY toString(dt));
 DROP TABLE t_array_join_shadow;
 
+SELECT 'an ARRAY JOIN alias that shadows a sorting key column';
+-- A bare `tenant = 'x'` constrains the array-joined element, not the source sorting key `tenant`, so
+-- the stream is not ordered by `ts` alone.
+DROP TABLE IF EXISTS t_array_join_order;
+CREATE TABLE t_array_join_order (tenant String, ts UInt32, arr Array(String)) ENGINE = MergeTree ORDER BY (tenant, ts);
+INSERT INTO t_array_join_order VALUES ('a', 2, ['x']), ('b', 1, ['x']);
+SELECT ts FROM t_array_join_order ARRAY JOIN arr AS tenant WHERE tenant = 'x' ORDER BY ts;
+DROP TABLE t_array_join_order;
+
+SELECT 'distinct NaN payloads';
+-- Every `NaN` is rendered as `nan`, while the raw floating-point keys are compared bitwise.
+SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x);
+SELECT uniqExact(toString(x)) FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) SETTINGS optimize_injective_functions_inside_uniq = 0;
+SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x));
+SELECT count() FROM (SELECT 1 FROM (SELECT arrayJoin([reinterpretAsFloat64(toUInt64(0x7FF0000000000001)), reinterpretAsFloat64(toUInt64(0x7FF8000000000001))]) AS x) GROUP BY toString(x)) SETTINGS optimize_injective_functions_in_group_by = 0;
+
 DROP TABLE t_tz_fold;
 DROP TABLE t_window_fold;
 DROP TABLE t_window_pad;
