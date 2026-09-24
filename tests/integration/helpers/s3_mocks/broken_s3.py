@@ -728,6 +728,8 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 _runtime.lock, params
             )
             self.log_message("set at_object_delete %s", _runtime.at_object_delete)
+            return self._ok()
+
         if path[1] == "at_complete_multi_part_upload":
             params = urllib.parse.parse_qs(parts.query, keep_blank_values=False)
             _runtime.at_complete_multi_part_upload = (

@@ -202,12 +202,14 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
         return
 
     versions_before = spark.sql(f"DESCRIBE HISTORY {table}").count()
+    # type_widening: a value that only fits the widened BIGINT column.
+    new_id = 3000000000 if feature == "type_widening" else 2
     valid_row = {
         "generated_column": "(2, 'clickhouse', 3)",
         "timestamp_ntz": "(2, 'clickhouse', '2024-06-01 12:00:00')",
         "identity_column": "(2, 'clickhouse', 2)",
         "variant_column": "(2, 'clickhouse', '{\"k\": 2}')",
-    }.get(feature, "(2, 'clickhouse')")
+    }.get(feature, f"({new_id}, 'clickhouse')")
     _, error = node.query_and_get_answer_with_error(f"INSERT INTO {table_name} VALUES {valid_row}")
     pull_from_node(node, path)
     versions_after = spark.sql(f"DESCRIBE HISTORY {table}").count()
@@ -225,13 +227,22 @@ def test_write_to_table_with_writer_feature(started_cluster, feature):
 
     logging.info("%s: accepted", feature)
     assert versions_after == versions_before + 1
-    assert [(r.id, r.v) for r in rows] == [(1, "spark"), (2, "clickhouse")], rows
+    assert [(r.id, r.v) for r in rows] == [(1, "spark"), (new_id, "clickhouse")], rows
+    # The feature column itself must read back in Spark, not only `id` and `v`.
     if feature == "generated_column":
         assert spark.sql(f"SELECT id2 FROM {table} WHERE id = 2").collect()[0].id2 == 3
+    if feature == "identity_column":
+        assert spark.sql(f"SELECT seq FROM {table} WHERE id = 2").collect()[0].seq == 2
+    if feature == "variant_column":
+        assert spark.sql(f"SELECT to_json(var) AS j FROM {table} WHERE id = 2").collect()[0].j == '{"k":2}'
     if feature == "timestamp_ntz":
         assert str(spark.sql(f"SELECT ts FROM {table} WHERE id = 2").collect()[0].ts) == "2024-06-01 12:00:00"
         assert node.query(f"SELECT ts FROM {table_name} WHERE id = 2").strip() == "2024-06-01 12:00:00.000000"
     assert node.query(f"SELECT count() FROM {table_name}").strip() == "2"
+    if feature == "identity_column":
+        assert node.query(f"SELECT seq FROM {table_name} WHERE id = 2").strip() == "2"
+    if feature == "variant_column":
+        assert node.query(f"SELECT var FROM {table_name} WHERE id = 2").strip() == '{"k":2}'
 
     violating = FEATURES[feature][2]
     if violating:
