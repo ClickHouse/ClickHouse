@@ -14,6 +14,7 @@
 #include <Parsers/parseQuery.h>
 #include <Storages/AlterCommands.h>
 #include <Storages/ColumnsDescription.h>
+#include <boost/algorithm/string/split.hpp>
 
 namespace DB
 {
@@ -253,7 +254,16 @@ void renameColumnsInRowPolicies(
                 continue;
             const auto & old_parts = node->as<ASTIdentifier &>().name_parts;
             std::vector<String> parts(old_parts.begin(), old_parts.begin() + ref.qualifier_parts);
-            parts.push_back(to + ref.column.substr(from.size()));
+            const auto new_column = to + ref.column.substr(from.size());
+            /// Keep `n.x` written as a path if it was one, so `n.z` doesn't come out as `\`n.z\``.
+            if (ref.column_parts > 1)
+            {
+                std::vector<String> new_parts;
+                boost::split(new_parts, new_column, [](char c) { return c == '.'; });
+                parts.insert(parts.end(), new_parts.begin(), new_parts.end());
+            }
+            else
+                parts.push_back(new_column);
             parts.insert(parts.end(), old_parts.begin() + ref.qualifier_parts + ref.column_parts, old_parts.end());
             auto renamed = make_intrusive<ASTIdentifier>(std::move(parts));
             renamed->setAlias(node->tryGetAlias());
