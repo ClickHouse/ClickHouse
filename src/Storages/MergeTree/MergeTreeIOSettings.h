@@ -43,9 +43,6 @@ struct MergeTreeReaderSettings
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
     /// A read of at least that many granules (or of at least as many granules as columns to read) of a compact part uses a buffer per column.
     size_t compact_parts_min_granules_to_multibuffer_read = 16;
-    /// Whether a compact part may be read with a buffer per column at all. Merges and mutations read all columns of
-    /// whole parts, where the buffer per column only multiplies the number of read requests, so they keep the single buffer.
-    bool allow_compact_parts_multibuffer_read = true;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;
     /// True if we read stream that contains some metadata and will be read as a whole at once.
