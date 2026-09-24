@@ -608,7 +608,7 @@ This setting can be modified at runtime and will take effect immediately. Querie
 Limit on the number of queries that are waiting to start executing because an asynchronous load or startup job
 they need is still running: loading a table, starting up a table or a database, or starting up the distributed
 DDL worker (see [`async_load_databases`](/reference/settings/server-settings/settings/async-load#async_load_databases)).
-Internal queries are not counted.
+Internal queries are not counted, and `KILL` and introspection-port queries are counted but never refused.
 
 <Note>
 

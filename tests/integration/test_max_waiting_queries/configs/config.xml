@@ -10,6 +10,13 @@
     <distributed_ddl>
         <path>/clickhouse/task_queue/ddl</path>
     </distributed_ddl>
+    <protocols>
+        <introspection_native>
+            <type>tcp</type>
+            <introspection>true</introspection>
+            <port>9010</port>
+        </introspection_native>
+    </protocols>
     <remote_servers>
         <test_shard>
             <shard>

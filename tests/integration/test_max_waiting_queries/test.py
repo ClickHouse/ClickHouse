@@ -2,6 +2,7 @@ import time
 
 import pytest
 
+from helpers.client import Client
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
@@ -13,6 +14,7 @@ node = cluster.add_instance(
 )
 
 CONFIG_PATH = "/etc/clickhouse-server/config.d/config.xml"
+INTROSPECTION_PORT = 9010
 FAILPOINT = "database_replicated_startup_pause"
 STARTUP_JOB = "startup Replicated database re"
 # Every table load and startup job is a dependency of STARTUP_JOB, so those are already done while the
@@ -38,6 +40,19 @@ def pause_failpoint(enabled):
         f"<{FAILPOINT}>{str(not enabled).lower()}</{FAILPOINT}>",
         f"<{FAILPOINT}>{str(enabled).lower()}</{FAILPOINT}>",
     )
+
+
+def introspection_client():
+    return Client(node.ip_address, INTROSPECTION_PORT, command=cluster.client_bin_path)
+
+
+def assert_refused(error, maximum, waiting):
+    assert (
+        f"Too many simultaneous waiting queries. Maximum: {maximum}, waiting: {waiting}"
+        in error
+    ), error
+    # The message carries the counts, the code is what a caller branches on. Both are published.
+    assert "Code: 202." in error, error
 
 
 def server_setting(name):
@@ -138,7 +153,7 @@ def test_waiting_queries_limit(started_cluster):
             raise AssertionError(
                 "the query over max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert "Too many simultaneous waiting queries. Maximum: 2, waiting: 2" in error, error
+        assert_refused(error, 2, 2)
         assert waiters_on_startup_job() == "2"
         assert waiting_queries_metric() == "2"
 
@@ -162,7 +177,7 @@ def test_waiting_queries_limit(started_cluster):
             raise AssertionError(
                 "the query over the lowered max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert "Too many simultaneous waiting queries. Maximum: 1, waiting: 2" in error, error
+        assert_refused(error, 1, 2)
         # The refusal throws before any counter moves, so it must leave the waiting set untouched.
         assert waiters_on_startup_job() == "2"
         assert waiting_queries_metric() == "2"
@@ -185,6 +200,25 @@ def test_waiting_queries_limit(started_cluster):
 
         unpin_and_join(handles)
         wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")
+
+        # The only oracle for the enforcement counter's own decrement: `waiting_queries_amount` is
+        # not exposed, and every arm restarts the server, so a counter that leaked its first three
+        # waiters is invisible to the metric probe above. Under limit 1 a leak refuses this attach.
+        set_config(
+            "<max_waiting_queries>0</max_waiting_queries>",
+            "<max_waiting_queries>1</max_waiting_queries>",
+        )
+        node.query("SYSTEM RELOAD CONFIG")
+        assert server_setting("max_waiting_queries") == "1"
+
+        node.query("DETACH DATABASE re")
+        node.query(f"SYSTEM ENABLE FAILPOINT {FAILPOINT}")
+        handles.append(node.get_query_request("ATTACH DATABASE re"))
+        wait_for(waiting_queries_metric, "1", "the re-attach to be admitted as the only waiter")
+        wait_for(waiters_on_startup_job, "1", "the re-attach to block on the fresh startup job")
+
+        unpin_and_join(handles)
+        wait_for(waiting_queries_metric, "0", "the second cycle to drain")
     finally:
         # A failure can land with the limit at 0, 1 or 2, and `set_config` is a `sed` that silently
         # does nothing when its pattern is absent, so restore from every value this test can leave.
@@ -222,7 +256,7 @@ def test_waiting_queries_limit_refuses_database_drop(started_cluster):
             raise AssertionError(
                 "DROP DATABASE over max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert "Too many simultaneous waiting queries. Maximum: 2, waiting: 2" in error, error
+        assert_refused(error, 2, 2)
         # Nothing may have been dropped: the refusal happens before the first destructive step.
         assert node.query("EXISTS DATABASE re").strip() == "1"
         assert waiters_on_startup_job() == "2"
@@ -273,9 +307,26 @@ def test_waiting_queries_limit_covers_ddl_worker_job(started_cluster):
             raise AssertionError(
                 "the query over max_waiting_queries was not refused, it is still waiting"
             ) from e
-        assert "Too many simultaneous waiting queries. Maximum: 2, waiting: 3" in error, error
+        assert_refused(error, 2, 3)
         assert waiters_on_ddl_worker_job() == "1"
         assert waiting_queries_metric() == "3"
+
+        # An operator's diagnostic connection has to reach a server that is still loading.
+        handles.append(
+            introspection_client().get_query_request(
+                "SELECT * FROM system.distributed_ddl_queue"
+            )
+        )
+        wait_for(
+            waiting_queries_metric,
+            "4",
+            "the introspection-port query to be admitted past the limit",
+        )
+        wait_for(
+            waiters_on_ddl_worker_job,
+            "2",
+            "the introspection-port query to block on the ddl worker job",
+        )
 
         # 0 means no limit, so the same query is now admitted and joins the same job's waiters.
         set_config(
@@ -288,9 +339,9 @@ def test_waiting_queries_limit_covers_ddl_worker_job(started_cluster):
             node.get_query_request("SELECT * FROM system.distributed_ddl_queue")
         )
         wait_for(
-            waiters_on_ddl_worker_job, "2", "the admitted query to block on the ddl worker job"
+            waiters_on_ddl_worker_job, "3", "the admitted query to block on the ddl worker job"
         )
-        wait_for(waiting_queries_metric, "4", "the admitted query to be counted as waiting")
+        wait_for(waiting_queries_metric, "5", "the admitted query to be counted as waiting")
 
         unpin_and_join(handles)
         wait_for(waiting_queries_metric, "0", "every waiter to leave the waiting set")

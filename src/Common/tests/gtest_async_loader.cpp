@@ -794,6 +794,54 @@ TEST(AsyncLoader, RemoveDoesNotNotifyWaiters)
     t.loader.wait();
 }
 
+TEST(AsyncLoader, WaiterCallbacksBalanceOnFailedJob)
+{
+    AsyncLoaderTest t(1);
+    t.loader.unpause();
+
+    // The callbacks balance on every terminal status, not only on OK. A wait entered after the job
+    // has already failed returns early and calls neither, so this waiter has to park while pending.
+    std::atomic<int> increments{0};
+    std::atomic<int> decrements{0};
+    auto waiters_inc = [&] (const LoadJobPtr &) { increments.fetch_add(1); };
+    auto waiters_dec = [&] (const LoadJobPtr &) { decrements.fetch_add(1); };
+
+    std::string error_message = "test job failure";
+    std::barrier<std::__empty_completion> sync(2);
+    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) {
+        sync.arrive_and_wait(); // (A)
+        throw Exception(ErrorCodes::ASYNC_LOAD_FAILED, "{}", error_message);
+    };
+
+    auto job = makeLoadJob({}, "job", waiters_inc, waiters_dec, job_func);
+    auto task = t.schedule({job});
+
+    std::atomic<int> caught_code{0};
+    std::thread waiter([&] {
+        try
+        {
+            t.loader.wait(job);
+        }
+        catch (Exception & e)
+        {
+            caught_code.store(e.code());
+        }
+    });
+
+    while (job->waitersCount() == 0)
+        std::this_thread::yield();
+
+    sync.arrive_and_wait(); // (A)
+    waiter.join();
+
+    ASSERT_EQ(caught_code.load(), ErrorCodes::ASYNC_LOAD_WAIT_FAILED);
+    ASSERT_EQ(job->status(), LoadStatus::FAILED);
+    ASSERT_EQ(increments.load(), 1);
+    ASSERT_EQ(decrements.load(), 1);
+
+    t.loader.wait();
+}
+
 TEST(AsyncLoader, TestConcurrency)
 {
     AsyncLoaderTest t(10);
