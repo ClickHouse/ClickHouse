@@ -33,6 +33,9 @@ bool isComplexIdentifier(const char * begin, const char * end)
     return false;
 }
 
+/// a literal is erased to this byte, passed by address because "\x00" through a template trips clang-tidy
+constexpr char literal_placeholder = '\0';
+
 /// passes to emit the units normalizedQueryHash hashes, in the order of the query
 template <typename Emit>
 void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names, bool stop_at_error, Emit && emit)
@@ -54,7 +57,7 @@ void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names
         if (token.type == TokenType::Number || token.type == TokenType::StringLiteral || token.type == TokenType::HereDoc)
         {
             if (0 == num_literals_in_sequence)
-                emit("\x00", 1);
+                emit(&literal_placeholder, 1);
             ++num_literals_in_sequence;
             prev_comma = false;
             continue;
@@ -70,7 +73,7 @@ void forEachNormalizedUnit(const char * begin, const char * end, bool keep_names
         else
         {
             if (num_literals_in_sequence > 1)
-                emit("\x00", 1);
+                emit(&literal_placeholder, 1);
 
             if (prev_comma)
                 emit(",", 1);
