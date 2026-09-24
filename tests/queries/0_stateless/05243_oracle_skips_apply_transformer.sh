@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, long
 # no-fasttest: SET ast_fuzzer_runs / ast_fuzzer_oracle are EXPERIMENTAL-tier settings and
 #              are not allowed when `allow_feature_tier=0` (the Fast test default).
 # no-parallel: the proof events below are server-global, and the assertions require them to
 #              stay put, so no other test may run oracle checks against the same server
 #              meanwhile - and 05097_ast_fuzzer_oracle_apply_aggregate, which runs oracle
 #              checks over this very shape, is not itself tagged `no-parallel`.
+# long: the cost is one fuzzed execution per gate probed, plus the oracles that accept it, so it
+#       scales with the number of gates rather than with any data this test writes, and each of
+#       the gates below is covered by this file alone. 05099_ast_fuzzer_oracle_view_definition
+#       carries the tag for the same reason.
 #
 # Third companion of 05140_oracle_skips_approx_top_k and 05141_oracle_skips_aggregate_aliases.
 # Those two cover which NAMES the oracle's backstop set and the factory lookup must reject.
