@@ -62,6 +62,16 @@ lint_commit() {
         WHERE JSONHas(line, 'add')
         FORMAT TSVRaw
     " | tr '\t' '\n'
+    # The committed partition values and the directory each file landed in (a null-equivalent value
+    # is committed as JSON null and lands in __HIVE_DEFAULT_PARTITION__).
+    ${CLICKHOUSE_LOCAL} --query "
+        WITH decodeURLComponent(JSONExtractString(line, 'add', 'path')) AS path
+        SELECT 'partitionValues: ' || JSONExtractRaw(line, 'add', 'partitionValues') || ' in ' || if(position(path, '/') = 0, '.', splitByChar('/', path)[1])
+        FROM file('${log}', LineAsString)
+        WHERE JSONHas(line, 'add')
+        ORDER BY 1
+        FORMAT TSVRaw
+    "
     # Committed size must equal the object size; print the rows of each referenced file.
     ${CLICKHOUSE_LOCAL} --query "
         SELECT
@@ -110,11 +120,11 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
 echo "versions after a 0-row INSERT: $(versions "${UNPART}")"
 echo "data files: $(find "${UNPART}" -name '*.parquet' | wc -l | tr -d ' ')"
 
-echo "==== partitioned by p (a value with a space exercises the URI encoding of add.path)"
+echo "==== partitioned by p (a value with a space exercises the URI encoding of add.path, a NULL the default partition)"
 PART="${ROOT}/part"
 bootstrap "${PART}" "${SCHEMA}" '["p"]'
 ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
-    INSERT INTO FUNCTION deltaLakeLocal('${PART}') SELECT number AS id, if(number % 2 = 0, 'even part', 'odd') AS p FROM numbers(10);
+    INSERT INTO FUNCTION deltaLakeLocal('${PART}') SELECT number AS id, multiIf(number = 9, NULL, number % 2 = 0, 'even part', 'odd') AS p FROM numbers(10);
 "
 echo "versions after one INSERT: $(versions "${PART}")"
 lint_commit "${PART}" "00000000000000000001" "['p']"
