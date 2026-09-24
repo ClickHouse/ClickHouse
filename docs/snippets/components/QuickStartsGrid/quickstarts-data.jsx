@@ -112,6 +112,20 @@ export const quickStartsData = [
     ]
   },
   {
+    "id": "tutorial",
+    "title": "Advanced tutorial",
+    "description": "Learn how to ingest and query data in ClickHouse using a New York City taxi example dataset.",
+    "href": "/get-started/quickstarts/tutorial",
+    "useCases": [
+      "real-time-analytics",
+      "data-warehousing"
+    ],
+    "products": [
+      "cloud",
+      "self-managed"
+    ]
+  },
+  {
     "id": "working-with-the-map-type",
     "title": "Working with the Map type in ClickHouse",
     "description": "Learn how to use the Map type in ClickHouse to store, query, and aggregate dynamic key-value data using OTel resource attributes as a practical example.",

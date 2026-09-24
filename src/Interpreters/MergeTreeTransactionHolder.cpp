@@ -1,6 +1,6 @@
 #include <Interpreters/MergeTreeTransactionHolder.h>
 #include <Interpreters/MergeTreeTransaction.h>
-#include <Interpreters/TransactionManager.h>
+#include <Interpreters/TransactionLog.h>
 #include <Interpreters/Context.h>
 
 namespace DB
@@ -16,11 +16,7 @@ MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactio
     , autocommit(autocommit_)
     , owned_by_session_context(owned_by_session_context_)
 {
-    /// A peer can declare this replica dead between `beginTransaction` and this constructor, and
-    /// the rollback that follows does not wait for the holder. `onDestroy` already skips a
-    /// transaction that is no longer running.
-    const auto state = txn ? txn->getState() : MergeTreeTransaction::RUNNING;
-    chassert(state == MergeTreeTransaction::RUNNING || state == MergeTreeTransaction::ROLLED_BACK);
+    chassert(!txn || txn->getState() == MergeTreeTransaction::RUNNING);
     chassert(!owned_by_session_context || owned_by_session_context == owned_by_session_context->getSessionContext().get());
 }
 
@@ -57,7 +53,7 @@ void MergeTreeTransactionHolder::onDestroy() noexcept
     {
         try
         {
-            TransactionManager::instance().commitTransaction(txn, /* throw_on_unknown_status */ false);
+            TransactionLog::instance().commitTransaction(txn, /* throw_on_unknown_status */ false);
             return;
         }
         catch (...)
@@ -66,7 +62,7 @@ void MergeTreeTransactionHolder::onDestroy() noexcept
         }
     }
 
-    TransactionManager::instance().rollbackTransaction(txn);
+    TransactionLog::instance().rollbackTransaction(txn);
 }
 
 MergeTreeTransactionHolder::MergeTreeTransactionHolder(const MergeTreeTransactionHolder & rhs)

@@ -102,8 +102,7 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Missing 'schedule_kind' field in `RefreshStrategy` during AST JSON deserialization");
     String schedule_kind_str = r.getString("schedule_kind");
     auto kind_opt = magic_enum::enum_cast<RefreshScheduleKind>(schedule_kind_str);
-    /// `UNKNOWN` marks an unset schedule rather than naming one; every parsed `REFRESH` clause is `AFTER` or `EVERY`.
-    if (!kind_opt || *kind_opt == RefreshScheduleKind::UNKNOWN)
+    if (!kind_opt)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unknown RefreshScheduleKind: '{}'", schedule_kind_str);
     schedule_kind = *kind_opt;
     /// `period`/`offset`/`spread` are `ASTTimeInterval`, `settings` an `ASTSetQuery`, and `dependencies`

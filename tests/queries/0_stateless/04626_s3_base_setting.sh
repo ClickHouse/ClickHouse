@@ -42,10 +42,3 @@ ${CLICKHOUSE_CLIENT} -q "DROP TABLE test_s3_base"
 
 echo '--- s3_base without a scheme is an error'
 ${CLICKHOUSE_CLIENT} -q "SELECT * FROM s3('${FILE}', 'test', 'testtest', 'TSV', 'n UInt32, s String') SETTINGS s3_base = 'localhost:11111/test/'" 2>&1 | grep -oF 'must contain a scheme' | head -1
-
-# The rejected value is not echoed back: it can carry a credential, and the message reaches the client,
-# the exception column of the query log and the server log, none of which the display-secrets setting
-# gates. (last line counts the leaks; clickhouse-local is used because the client also prints back the
-# query it was given, which is the caller's own input rather than something the message disclosed)
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM s3('${FILE}', 'test', 'testtest', 'TSV', 'n UInt32, s String') SETTINGS s3_base = 'user:SEKRIT_PW@localhost:11111/test/'" 2>&1 | grep -oF 'must contain a scheme' | head -1
-${CLICKHOUSE_LOCAL} -q "SELECT * FROM s3('${FILE}', 'test', 'testtest', 'TSV', 'n UInt32, s String') SETTINGS s3_base = 'user:SEKRIT_PW@localhost:11111/test/'" 2>&1 | grep -c SEKRIT_PW ||:

@@ -42,8 +42,6 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/reference/data-types/string)";
         else if (type.starts_with("FixedString"))
             result += "`](/reference/data-types/fixedstring)";
-        else if (type == "Interval") /// Must precede the "Int" prefix below, which "Interval" also matches
-            result += "`](/reference/data-types/special-data-types/interval)";
         else if (type.starts_with("Int") || type.starts_with("UInt") || type.starts_with("(U)Int")) /// "Int8", "Int16", ... || "UInt8", "UInt16", ... || "(U)Int*", "(U)Int8", "(U)Int16", ...
             result += "`](/reference/data-types/int-uint)";
         else if (type.starts_with("Float") || type == "BFloat16") /// "Float32", "Float64", "BFloat16"
@@ -116,6 +114,8 @@ String mapTypesToTypesWithLinks(const std::vector<std::string> & types, const Fu
             result += "`](/reference/data-types/special-data-types/set)";
         else if (type == "Nothing")
             result += "`](/reference/data-types/special-data-types/nothing)";
+        else if (type == "Interval")
+            result += "`](/reference/data-types/special-data-types/interval)";
         else if (type.starts_with("Nested")) /// "Nested(N1 T1, N2 T2, ...)", ...
             result += "`](/reference/data-types/nested-data-structures)";
         else if (type == "Dynamic")
