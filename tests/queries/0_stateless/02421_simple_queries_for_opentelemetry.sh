@@ -11,12 +11,15 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Disable force_primary_key_reverse_order: tests OpenTelemetry integration, creates MergeTree tables internally
 CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
 
-# This function takes 2 arguments:
+# This function takes 3 arguments, the third optional:
 # $1 - query id
 # $2 - query
+# $3 - a client-supplied trace id, so the caller can find this query's `TCPHandler` span
 function execute_query()
 {
-  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 --query_id $1 -q "
+  local traceparent=()
+  [[ -n "${3:-}" ]] && traceparent=(--opentelemetry-traceparent "00-${3}-0000000000000010-01")
+  ${CLICKHOUSE_CLIENT} --opentelemetry_start_trace_probability=1 "${traceparent[@]}" --query_id $1 -q "
       ${2}
   "
 }
@@ -82,42 +85,60 @@ result=$(${CLICKHOUSE_CLIENT} -q "
     echo "{\"min_compress_block_size\":\"$min_present\",\"max_block_size\":\"$max_present\",\"max_execution_time\":\"$execution_time_present\"}"
 }
 
+# A SERVER span reaches the async `opentelemetry_span_log` only when its handler's
+# `TracingContextHolder` is destroyed, which is after the client already has its response, and
+# `SYSTEM FLUSH LOGS` flushes only what is already queued - so one read can legitimately find nothing.
+# Sleeps are budgeted per file, not per call site, to bound the added time (Fast test: --timeout 60).
+span_poll_sleeps_left=15
+
+# $1 - `SELECT` list, $2 - `operation_name`, $3 - trace id (lowercase hex). The rows come back in
+# $span_read_result because a command substitution would lose the shared budget in a subshell.
+function read_server_span()
+{
+    span_read_result=""
+
+    for _ in {1..30}; do
+        span_read_result=$(${CLICKHOUSE_CLIENT} -q "
+            SYSTEM FLUSH LOGS opentelemetry_span_log;
+            SELECT ${1}
+            FROM system.opentelemetry_span_log
+            WHERE finish_date          >= yesterday()
+            AND   operation_name        = '${2}'
+            AND   lower(hex(trace_id))  = '${3}'
+            FORMAT JSONEachRow;") || break
+        [[ -n "$span_read_result" ]] && break
+        [[ "${span_poll_sleeps_left:-0}" -gt 0 ]] || break
+        span_poll_sleeps_left=$((span_poll_sleeps_left - 1))
+        sleep 1
+    done
+}
+
 function check_tcp_attributes()
 {
-  local query_id="$1"
-  local result
   local client_version="not found"
 
-  result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS opentelemetry_span_log;
-      SELECT attribute['client.version']
-      FROM system.opentelemetry_span_log
-      WHERE finish_date >= yesterday()
-      AND operation_name = 'query'
-      AND attribute['clickhouse.query_id'] = '${query_id}'
-      FORMAT JSONEachRow;
-    ")
+  # `client.version` is recorded on the `TCPHandler` (SERVER) span, not on the child query span.
+  read_server_span "attribute['client.version'] != '' AS client_version" 'TCPHandler' "$1"
 
-  if [[ -z "$result" ]]; then
+  if [[ -z "$span_read_result" ]]; then
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
-  
-  if [[ $result == *"client.version"* ]]; then
+
+  if [[ $span_read_result == *'"client_version":1'* ]]; then
     client_version="present"
   fi
 
   echo "{\"client.version\":\"$client_version\"}"
 }
 
+# This function takes 3 arguments: $1 - query id, $2 - query, $3 - a client-supplied trace id.
 function execute_query_HTTP()
 {
     # A traceparent header (with the sampled flag) forces the request to be traced, and the
     # Referer / User-Agent headers populate the http.* attributes on the HTTPHandler span.
-    local trace_id
-    trace_id=$(${CLICKHOUSE_CLIENT} -q "SELECT lower(hex(generateUUIDv4()))")
     ${CLICKHOUSE_CURL} -sS \
-        -H "traceparent: 00-${trace_id}-0000000000000010-01" \
+        -H "traceparent: 00-${3}-0000000000000010-01" \
         -H "referer: some-referer" \
         -H "user-agent: some-user-agent" \
         "${CLICKHOUSE_URL}&database=${CLICKHOUSE_DATABASE}&query_id=$1" -d "$2"
@@ -125,40 +146,29 @@ function execute_query_HTTP()
 
 function check_http_attributes()
 {
-  local query_id="$1"
-  local result
   local referer="not found"
   local agent="not found"
   local method="not found"
-  
-  # The http.* attributes live on the HTTPHandler (SERVER) span, not on the child query span.
-  # Match it by the query_id embedded in the request URI (clickhouse.uri).
-  result=$(${CLICKHOUSE_CLIENT} -q "
-      SYSTEM FLUSH LOGS opentelemetry_span_log;
-      SELECT attribute['http.referer']    AS referer,
-             attribute['http.user.agent'] AS user_agent,
-             attribute['http.method']     AS method
-      FROM system.opentelemetry_span_log
-      WHERE finish_date >= yesterday()
-      AND operation_name = 'HTTPHandler'
-      AND attribute['clickhouse.uri'] LIKE '%${query_id}%'
-      FORMAT JSONEachRow;
-    ")
 
-  if [[ -z "$result" ]]; then
+  # The http.* attributes live on the HTTPHandler (SERVER) span, not on the child query span.
+  read_server_span "attribute['http.referer']    AS referer,
+             attribute['http.user.agent'] AS user_agent,
+             attribute['http.method']     AS method" 'HTTPHandler' "$1"
+
+  if [[ -z "$span_read_result" ]]; then
     echo "Error: No result returned from ClickHouse server"
     return 1
   fi
 
-  if [[ $result == *'"referer":"some-referer"'* ]]; then
+  if [[ $span_read_result == *'"referer":"some-referer"'* ]]; then
     referer="present"
   fi
 
-  if [[ $result == *'"user_agent":"some-user-agent"'* ]]; then
+  if [[ $span_read_result == *'"user_agent":"some-user-agent"'* ]]; then
     agent="present"
   fi
 
-  if [[ $result == *'"method":"POST"'* ]]; then
+  if [[ $span_read_result == *'"method":"POST"'* ]]; then
     method="present"
   fi
 
@@ -200,15 +210,17 @@ execute_query "$query_id" 'SELECT * FROM opentelemetry_test FORMAT Null'
 check_query_span "$query_id"
 check_query_settings "$query_id" "max_execution_time"
 
-# Test 6: Executes a TCP SELECT query and checks for http attributes in OpenTelemetry spans.
+# Test 6: Executes a TCP SELECT query and checks for client attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query $query_id 'select * from opentelemetry_test format Null'
-check_tcp_attributes $query_id
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))")
+execute_query $query_id 'select * from opentelemetry_test format Null' "$trace_id"
+check_tcp_attributes "$trace_id"
 
 # Test 7: Executes an HTTP SELECT query and checks for http attributes in OpenTelemetry spans.
 query_id=$(${CLICKHOUSE_CLIENT} -q "select generateUUIDv4()")
-execute_query_HTTP "$query_id" 'select * from opentelemetry_test FORMAT Null'
-check_http_attributes "$query_id"
+trace_id=$(${CLICKHOUSE_CLIENT} -q "select lower(hex(generateUUIDv4()))")
+execute_query_HTTP "$query_id" 'select * from opentelemetry_test FORMAT Null' "$trace_id"
+check_http_attributes "$trace_id"
 #
 # Tear down
 #
