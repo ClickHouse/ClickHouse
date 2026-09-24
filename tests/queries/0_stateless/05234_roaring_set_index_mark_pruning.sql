@@ -82,6 +82,34 @@ SELECT 'toLastDayOfWeek', ts FROM t_roaring_tz_week WHERE toLastDayOfWeek(ts) IN
 DROP TABLE t_roaring_tz_week;
 SET session_timezone = DEFAULT;
 
+SELECT '--- Transformed key: date functions with constant mode or timezone arguments ---';
+-- A constant second argument is kept in the monotonic chain, so the week mode and the explicit timezone
+-- take part in the monotonicity check. A call with three arguments is not used for the primary key
+-- at all (`Condition: true`). Were the extra arguments dropped, the bare function would work in UTC:
+-- the first part below (Sunday 20:00 .. Monday 05:00 in Tokyo) would map to [7, 7] and the second part
+-- (2026-11-30 22:00 .. 2026-12-01 06:00 in Tokyo) to [30, 30], and both would be pruned.
+SET session_timezone = 'UTC';
+DROP TABLE IF EXISTS t_roaring_tz_args;
+CREATE TABLE t_roaring_tz_args (ts DateTime('UTC')) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 8;
+SYSTEM STOP MERGES t_roaring_tz_args;
+INSERT INTO t_roaring_tz_args VALUES ('2026-06-07 11:00:00'), ('2026-06-07 20:00:00');
+INSERT INTO t_roaring_tz_args VALUES ('2026-11-30 13:00:00'), ('2026-11-30 21:00:00');
+SELECT 'toDayOfWeek(ts, 0, tz) = 1', ts FROM t_roaring_tz_args WHERE toDayOfWeek(ts, 0, 'Asia/Tokyo') = 1 ORDER BY ts;
+SELECT 'toDayOfWeek(ts, 0, tz) IN (1)', ts FROM t_roaring_tz_args WHERE toDayOfWeek(ts, 0, 'Asia/Tokyo') IN (1) ORDER BY ts;
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_roaring_tz_args WHERE toDayOfWeek(ts, 0, 'Asia/Tokyo') IN (1)) WHERE explain LIKE '%Condition%';
+SELECT 'toDayOfMonth(ts, tz) = 1', ts FROM t_roaring_tz_args WHERE toDayOfMonth(ts, 'Asia/Tokyo') = 1 ORDER BY ts;
+SELECT 'toDayOfMonth(ts, tz) IN (1)', ts FROM t_roaring_tz_args WHERE toDayOfMonth(ts, 'Asia/Tokyo') IN (1) ORDER BY ts;
+DROP TABLE t_roaring_tz_args;
+-- The week mode argument alone keeps the column timezone: Sunday 20:00 .. Monday 05:00 in Tokyo is one
+-- UTC week, and in mode 1 the local values are 6 and 0.
+DROP TABLE IF EXISTS t_roaring_tz_week_mode;
+CREATE TABLE t_roaring_tz_week_mode (ts DateTime('Asia/Tokyo')) ENGINE = MergeTree ORDER BY ts SETTINGS index_granularity = 8;
+INSERT INTO t_roaring_tz_week_mode VALUES ('2026-06-07 20:00:00'), ('2026-06-08 05:00:00');
+SELECT 'toDayOfWeek(ts, 1) = 6', ts FROM t_roaring_tz_week_mode WHERE toDayOfWeek(ts, 1) = 6 ORDER BY ts;
+SELECT 'toDayOfWeek(ts, 1) IN (0)', ts FROM t_roaring_tz_week_mode WHERE toDayOfWeek(ts, 1) IN (0) ORDER BY ts;
+DROP TABLE t_roaring_tz_week_mode;
+SET session_timezone = DEFAULT;
+
 SELECT '--- UInt64 ids on both sides of the 32-bit bucket boundary ---';
 -- `Roaring64Map` keeps one 32-bit bitmap per high word, so everything above only exercises bucket 0.
 -- These ids sit in three different buckets and the ranges below cross the 2^32 seam.

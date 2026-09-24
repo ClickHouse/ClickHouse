@@ -59,6 +59,16 @@ toStartOfWeek	2026-06-07 20:00:00
 toStartOfWeek	2026-06-08 05:00:00
 toYearWeek	2026-06-06 20:00:00
 toLastDayOfWeek	2026-06-06 20:00:00
+--- Transformed key: date functions with constant mode or timezone arguments ---
+toDayOfWeek(ts, 0, tz) = 1	2026-06-07 20:00:00
+toDayOfWeek(ts, 0, tz) = 1	2026-11-30 13:00:00
+toDayOfWeek(ts, 0, tz) IN (1)	2026-06-07 20:00:00
+toDayOfWeek(ts, 0, tz) IN (1)	2026-11-30 13:00:00
+Condition: true
+toDayOfMonth(ts, tz) = 1	2026-11-30 21:00:00
+toDayOfMonth(ts, tz) IN (1)	2026-11-30 21:00:00
+toDayOfWeek(ts, 1) = 6	2026-06-07 20:00:00
+toDayOfWeek(ts, 1) IN (0)	2026-06-08 05:00:00
 --- UInt64 ids on both sides of the 32-bit bucket boundary ---
 5
 4294967296
