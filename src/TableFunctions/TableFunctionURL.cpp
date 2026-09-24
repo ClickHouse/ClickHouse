@@ -262,7 +262,18 @@ StoragePtr TableFunctionURL::executeImpl(
     const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const
 {
     if (delegate)
-        return delegate->execute(ast_function, context, table_name, std::move(cached_columns), /*use_global_context=*/false, is_insert_query);
+    {
+        /// The query text still names `url`, while the delegate is a different backend. If the delegate
+        /// created its `*Cluster` storage for `parallel_replicas_for_cluster_engines`, the forwarded query
+        /// would be rewritten from the surface AST name into `urlCluster(...)` - a function that rejects
+        /// every non-HTTP scheme - and with the argument grammar of the delegate rather than of `url`.
+        /// Scheme dispatch is therefore resolved on this node: the delegate builds its plain storage.
+        ContextMutablePtr delegate_context = Context::createCopy(context);
+        delegate_context->setSetting("parallel_replicas_for_cluster_engines", false);
+
+        return delegate->execute(
+            ast_function, delegate_context, table_name, std::move(cached_columns), /*use_global_context=*/false, is_insert_query);
+    }
 
     return ITableFunctionFileLike::executeImpl(ast_function, context, table_name, std::move(cached_columns), is_insert_query);
 }
@@ -524,6 +535,8 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
 Scheme dispatch is not yet wired through [`urlCluster`](/reference/functions/table-functions/urlCluster): a non-`http(s)` scheme passed to `urlCluster` is rejected with an error. Use the corresponding cluster function (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …) for those backends instead.
+
+For the same reason, a dispatched `url` call is read on the node that received the query: the [parallel_replicas_for_cluster_engines](/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) fan-out is not applied to it. Use the corresponding cluster function directly when you want the read distributed across replicas.
 
 ## Globs in URL {#globs-in-url}
 
