@@ -464,13 +464,14 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
         /// those manifests still carry the original snapshot_id. The manifest file's own Avro header
         /// records the correct schema_id for the data files it describes, so falling back to
         /// manifest_schema_id is safe and correct in this case.
-        LOG_DEBUG(
-            getLogger("ManifestFileIterator"),
-            "Manifest file '{}' has entry with snapshot_id '{}' whose snapshot metadata is not present "
-            "(snapshot may have been expired by the catalog). Falling back to manifest schema_id {}.",
-            path_to_manifest_file,
-            resolved_snapshot_id,
-            manifest_schema_id);
+        if (!logged_missing_snapshot_metadata.exchange(true, std::memory_order_relaxed))
+            LOG_TEST(
+                getLogger("ManifestFileIterator"),
+                "Manifest file '{}' has entry with snapshot_id '{}' whose snapshot metadata is not present "
+                "(snapshot may have been expired by the catalog). Falling back to manifest schema_id {}.",
+                path_to_manifest_file,
+                resolved_snapshot_id,
+                manifest_schema_id);
     }
     const auto resolved_schema_id = schema_id_opt.has_value() ? *schema_id_opt : manifest_schema_id;
 
