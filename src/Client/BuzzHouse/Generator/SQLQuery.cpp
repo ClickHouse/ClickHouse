@@ -2486,10 +2486,10 @@ void StatementGenerator::generateSelect(
     CTEs * qctes = nullptr;
 
     chassert(ncols);
-    /// ~17% of the time replace the whole body with a plain `SELECT *`. A projection has to read the
+    /// ~15% of the time replace the whole body with a plain `SELECT *`. A projection has to read the
     /// table it belongs to, a global aggregate projects one row, and both sides of a recursive CTE
     /// have to keep matching, so none of those may be traded for it.
-    const bool star = !force_global_agg && !this->inside_projection && !recursive.has_value() && rg.nextMediumNumber() < 18
+    const bool star = !force_global_agg && !this->inside_projection && !recursive.has_value() && rg.nextMediumNumber() < 16
         && generateStarSelect(rg, ncols, allowed_clauses, sel);
 
     if (!star)
