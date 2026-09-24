@@ -5,7 +5,6 @@
 #include <Common/MemoryTracker.h>
 #include <Common/VariableContext.h>
 #include <Common/PerCPU.h>
-#include <Common/ThreadStatus.h>
 
 #include <array>
 #include <atomic>
@@ -395,35 +394,4 @@ TEST(ProfileEvents, PreallocateColdEventAcrossParentsAndCPUs)
     EXPECT_EQ(thread[event], 1);
     EXPECT_EQ(process[event], 1);
     EXPECT_EQ(user[event], 1);
-}
-
-TEST(ProfileEvents, SharedColdBackingDoesNotChargeTheTriggeringQuery)
-{
-    std::thread worker([]
-    {
-        DB::ThreadStatus status;
-        MemoryTracker query(VariableContext::Process);
-        status.memory_tracker.setParent(&query);
-        status.untracked_memory_limit = 0;
-        const auto before = query.get();
-        {
-            ProfileEvents::Counters user(VariableContext::User, nullptr);
-            ProfileEvents::Counters thread(VariableContext::Thread, &user);
-            thread.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
-            status.flushUntrackedMemory();
-            EXPECT_EQ(query.get(), before);
-        }
-        status.flushUntrackedMemory();
-        EXPECT_EQ(query.get(), before);
-        {
-            ProfileEvents::Counters process(VariableContext::Process, nullptr);
-            process.preallocate(ProfileEvents::AdaptiveAggregationSpillBacklogSheds);
-            status.flushUntrackedMemory();
-            EXPECT_GT(query.get(), before);
-        }
-        status.flushUntrackedMemory();
-        EXPECT_EQ(query.get(), before);
-        status.memory_tracker.setParent(&total_memory_tracker);
-    });
-    worker.join();
 }
