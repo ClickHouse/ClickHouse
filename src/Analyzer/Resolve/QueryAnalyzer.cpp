@@ -6036,10 +6036,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (it == query_aliases->alias_name_to_expression_node.end())
                 return nullptr;
 
-            /// Do not pick an arbitrary expression among duplicated aliases.
+            /// Do not pick an arbitrary expression among duplicated aliases, unless all of them are the same expression.
             for (const auto & duplicated_node : query_aliases->nodes_with_duplicated_aliases)
             {
-                if (duplicated_node->hasAlias() && duplicated_node->getAlias() == identifier_full_name_)
+                if (duplicated_node->hasAlias() && duplicated_node->getAlias() == identifier_full_name_ && !duplicated_node->isEqual(*it->second))
                     return nullptr;
             }
 

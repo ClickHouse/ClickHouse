@@ -55,6 +55,12 @@ WITH y + 1 AS id SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id, 1 A
 
 -- case 7: duplicated WITH alias with different expressions must not be picked arbitrarily.
 WITH x + 1 AS id, x + 2 AS id SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id); -- { serverError UNKNOWN_IDENTIFIER }
+WITH x + 1 AS id SELECT sum(x + 2 AS id) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id); -- { serverError UNKNOWN_IDENTIFIER }
+
+-- case 7b: duplicated aliases with the same expression are accepted (old-analyzer-compatible).
+WITH x + 1 AS id, x + 1 AS id SELECT sum(x) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id);
+WITH x + 1 AS id SELECT sum(x + 1 AS id) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id);
+SELECT sum(x + 1 AS id) + sum(x + 1 AS id) FROM (SELECT 1 AS x) t1 JOIN (SELECT 2 AS id) t2 USING (id);
 
 -- case 8: a lambda alias must not become a USING key, the real left column is used.
 WITH (x -> x + 1) AS id SELECT sum(x) FROM (SELECT 1 AS x, 3 AS id) t1 JOIN (SELECT 3 AS id) t2 USING (id);
