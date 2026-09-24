@@ -114,6 +114,16 @@
         FROM perf_array_index_simd_uint8_short
         FORMAT Null
     </query>
+    <query>
+        SELECT sum(has(u16, 65535))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u64, 18446744073709551615))
+        FROM perf_array_index_simd_numeric
+        FORMAT Null
+    </query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_numeric</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8</drop_query>
     <drop_query>DROP TABLE IF EXISTS perf_array_index_simd_uint8_short</drop_query>

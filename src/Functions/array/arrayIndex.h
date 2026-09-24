@@ -58,118 +58,102 @@ concept SupportedNumeric = std::is_integral_v<T> || std::is_floating_point_v<T>;
 
 inline constexpr size_t NO_MATCH = static_cast<size_t>(-1);
 
-template <typename T, size_t N>
-ALWAYS_INLINE bool hasInBlock(const T * data, T value)
-{
-    unsigned found = 0;
+/// has() returns presence; indexOf() returns a zero-based position or NO_MATCH.
+template <bool IsIndexOf>
+using SearchResult = std::conditional_t<IsIndexOf, size_t, bool>;
 
-    for (size_t j = 0; j < N; ++j)
-        found |= static_cast<unsigned>(data[j] == value);
-
-    return found != 0;
-}
-
-template <SupportedNumeric T>
-ALWAYS_INLINE bool findNumericHasInternal(const T * data, size_t size, T value)
-{
-    if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
-    {
-        return std::memchr(data, static_cast<unsigned char>(value), size) != nullptr;
-    }
-    else
-    {
-        constexpr size_t block_size = 64 / sizeof(T);
-        size_t i = 0;
-
-        for (; size - i >= block_size; i += block_size)
-        {
-            if (hasInBlock<T, block_size>(data + i, value))
-                return true;
-        }
-
-        for (; i < size; ++i)
-        {
-            if (data[i] == value)
-                return true;
-        }
-
-        return false;
-    }
-}
-
-template <SupportedNumeric T>
-ALWAYS_INLINE bool findNumericHas(const T * data, size_t size, T value)
-{
-    constexpr size_t prefix_size = 8;
-
-    if constexpr (sizeof(T) == 2 || sizeof(T) == 4)
-    {
-        constexpr size_t block_size = 64 / sizeof(T);
-        if (size >= block_size && size < prefix_size + block_size)
-        {
-            if (data[0] == value)
-                return true;
-            return findNumericHasInternal(data, size, value);
-        }
-    }
-
-    const size_t actual_prefix_size = std::min(size, prefix_size);
-    for (size_t i = 0; i < actual_prefix_size; ++i)
-        if (data[i] == value)
-            return true;
-
-    if (actual_prefix_size == size)
-        return false;
-
-    return findNumericHasInternal(data + actual_prefix_size, size - actual_prefix_size, value);
-}
-
-template <SupportedNumeric T>
-ALWAYS_INLINE size_t findNumericIndexOfInternal(const T * data, size_t size, T value)
+template <SupportedNumeric T, bool IsIndexOf>
+ALWAYS_INLINE SearchResult<IsIndexOf> findNumericInternal(const T * data, size_t size, T value)
 {
     if constexpr (sizeof(T) == 1 && std::is_integral_v<T>)
     {
         const auto * found = static_cast<const T *>(std::memchr(data, static_cast<unsigned char>(value), size));
-        return found ? static_cast<size_t>(found - data) : NO_MATCH;
+        if constexpr (IsIndexOf)
+            return found ? static_cast<size_t>(found - data) : NO_MATCH;
+        else
+            return found != nullptr;
     }
     else
     {
         constexpr size_t block_size = 64 / sizeof(T);
         size_t i = 0;
-
+        /// The branchless presence reduction lets the compiler vectorize each block.
         for (; size - i >= block_size; i += block_size)
         {
-            if (!hasInBlock<T, block_size>(data + i, value))
-                continue;
-
+            unsigned found = 0;
             for (size_t j = 0; j < block_size; ++j)
-                if (data[i + j] == value)
-                    return i + j;
-        }
+                found |= static_cast<unsigned>(data[i + j] == value);
 
+            if (found)
+            {
+                if constexpr (IsIndexOf)
+                {
+                    /// Only indexOf() needs to locate the first match in a positive block.
+                    for (size_t j = 0; j < block_size; ++j)
+                        if (data[i + j] == value)
+                            return i + j;
+                }
+                else
+                    return true;
+            }
+        }
         for (; i < size; ++i)
         {
             if (data[i] == value)
-                return i;
+            {
+                if constexpr (IsIndexOf)
+                    return i;
+                else
+                    return true;
+            }
         }
-
-        return NO_MATCH;
+        if constexpr (IsIndexOf)
+            return NO_MATCH;
+        else
+            return false;
     }
 }
 
-template <SupportedNumeric T>
-ALWAYS_INLINE size_t findNumericIndexOf(const T * data, size_t size, T value)
+template <SupportedNumeric T, bool IsIndexOf>
+ALWAYS_INLINE SearchResult<IsIndexOf> findNumeric(const T * data, size_t size, T value)
 {
-    const size_t prefix_size = std::min(size, size_t(8));
+    constexpr size_t max_prefix_size = 8;
+    if constexpr (!IsIndexOf && (sizeof(T) == 2 || sizeof(T) == 4))
+    {
+        constexpr size_t block_size = 64 / sizeof(T);
+        /// Do not consume a prefix if that would leave no complete block to probe.
+        if (size >= block_size && size < max_prefix_size + block_size)
+        {
+            if (data[0] == value)
+                return true;
+            return findNumericInternal<T, false>(data, size, value);
+        }
+    }
+
+    const size_t prefix_size = std::min(size, max_prefix_size);
     for (size_t i = 0; i < prefix_size; ++i)
+    {
         if (data[i] == value)
-            return i;
-
+        {
+            if constexpr (IsIndexOf)
+                return i;
+            else
+                return true;
+        }
+    }
     if (prefix_size == size)
-        return NO_MATCH;
+    {
+        if constexpr (IsIndexOf)
+            return NO_MATCH;
+        else
+            return false;
+    }
 
-    const size_t found = findNumericIndexOfInternal(data + prefix_size, size - prefix_size, value);
-    return found == NO_MATCH ? NO_MATCH : prefix_size + found;
+    const auto found = findNumericInternal<T, IsIndexOf>(data + prefix_size, size - prefix_size, value);
+    if constexpr (IsIndexOf)
+        return found == NO_MATCH ? NO_MATCH : prefix_size + found;
+    else
+        return found;
 }
 
 template <SupportedNumeric T>
@@ -182,32 +166,16 @@ ALWAYS_INLINE size_t findNumericScalarIndexOf(const T * data, size_t size, T val
     return NO_MATCH;
 }
 
+/// Short rows avoid memchr overhead or the block rescan needed by indexOf().
 template <SupportedNumeric T, bool IsIndexOf>
 constexpr size_t getOptimizedSearchMinSize()
 {
     if constexpr (sizeof(T) == 1)
-    {
-        /// has() checks an eight-element prefix before memchr, while short indexOf() rows
-        /// are faster on the scalar path because memchr call overhead dominates.
         return IsIndexOf ? 64 : 8;
-    }
-    else if constexpr (!IsIndexOf)
-    {
-        if constexpr (sizeof(T) == 2)
-            return 32;
-        else if constexpr (sizeof(T) == 4)
-            return 16;
-        else
-            return 32;
-    }
+    else if constexpr (IsIndexOf)
+        return (sizeof(T) == 2 || sizeof(T) == 4) ? 80 : 160;
     else
-    {
-        /// indexOf does a scalar prefix before the presence probe.
-        if constexpr (sizeof(T) == 2 || sizeof(T) == 4)
-            return 80;
-        else
-            return 160;
-    }
+        return sizeof(T) == 4 ? 16 : 32;
 }
 }
 
@@ -461,7 +429,7 @@ private:
                 {
                     const size_t found = array_size < min_array_size
                         ? ArrayIndexImpl::findNumericScalarIndexOf(row_data, array_size, value)
-                        : ArrayIndexImpl::findNumericIndexOf(row_data, array_size, value);
+                        : ArrayIndexImpl::findNumeric<Initial, true>(row_data, array_size, value);
                     raw_result[i] = found == ArrayIndexImpl::NO_MATCH ? 0 : static_cast<ResultType>(found + 1);
                 }
                 else
@@ -481,7 +449,7 @@ private:
                     }
                     else
                     {
-                        raw_result[i] = ArrayIndexImpl::findNumericHas(row_data, array_size, value);
+                        raw_result[i] = ArrayIndexImpl::findNumeric<Initial, false>(row_data, array_size, value);
                     }
                 }
 
