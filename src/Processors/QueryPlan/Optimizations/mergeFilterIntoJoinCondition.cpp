@@ -348,6 +348,10 @@ std::pair<JoinConditionParts, bool> extractActionsForJoinCondition(
         }
         else if (rejected_conjuncts.size() > 1)
         {
+            /// `getConjunctsList` yielded the conjuncts right to left, and this `and` is evaluated left to
+            /// right: a guard must stay ahead of the conjunct it guards.
+            std::ranges::reverse(rejected_conjuncts);
+
             /// `and` of the remaining conjuncts normalizes the values itself.
             FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
             filter_dag.addOrReplaceInOutputs(createResultPredicate(
