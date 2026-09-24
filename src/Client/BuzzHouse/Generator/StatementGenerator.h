@@ -720,6 +720,7 @@ private:
     uint32_t generateFromStatement(RandomGenerator & rg, uint32_t allowed_clauses, FromStatement * ft);
     void addCTEs(RandomGenerator & rg, uint32_t allowed_clauses, CTEs * qctes);
     void addWindowDefs(RandomGenerator & rg, SelectStatementCore * ssc);
+    bool generateStarSelect(RandomGenerator & rg, uint32_t ncols, uint32_t allowed_clauses, Select * sel);
     void generateSelect(
         RandomGenerator & rg,
         bool top,

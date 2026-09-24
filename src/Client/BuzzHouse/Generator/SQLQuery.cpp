@@ -2405,6 +2405,75 @@ void StatementGenerator::addWindowDefs(RandomGenerator & rg, SelectStatementCore
     this->depth--;
 }
 
+/// Emit a plain `SELECT * FROM <entity> [FINAL] LIMIT n`, which exercises full-scan paths without
+/// the overhead of the full query generator. Returns false when no entity is eligible.
+bool StatementGenerator::generateStarSelect(
+    RandomGenerator & rg, const uint32_t ncols, const uint32_t allowed_clauses, Select * sel)
+{
+    if (!(allowed_clauses & allow_from))
+    {
+        /// The whole point of this shortcut is the FROM clause
+        return false;
+    }
+    const auto query_table_lambda = getQueryTableLambda<TableRequirement::NoRequirement>();
+    const auto table_lambda = [&](const SQLTable & tt)
+    {
+        /// The width has to survive `asterisk_include_alias_columns` and
+        /// `asterisk_include_materialized_columns`, which are both fuzzed. Neither widens `*` on a
+        /// table whose columns are all insertable, so require that rather than pinning them.
+        return query_table_lambda(tt) && tt.cols.size() == ncols && tt.numberOfInsertableColumns(false) == tt.cols.size();
+    };
+    const auto view_lambda = [&](const SQLView & vv)
+    {
+        return vv.isAttached() && (vv.isDeterministic() || this->allow_not_deterministic)
+            && this->peer_query != PeerQuery::ClickHouseOnly && vv.cols.size() == ncols;
+    };
+    const auto dictionary_lambda = [&](const SQLDictionary & d)
+    {
+        return d.isAttached() && (d.isDeterministic() || this->allow_not_deterministic)
+            && this->peer_query != PeerQuery::ClickHouseOnly && d.cols.size() == ncols;
+    };
+    const bool has_t = collectionHas<SQLTable>(table_lambda);
+    const bool has_v = collectionHas<SQLView>(view_lambda);
+    const bool has_d = collectionHas<SQLDictionary>(dictionary_lambda);
+
+    if (!has_t && !has_v && !has_d)
+    {
+        return false;
+    }
+    SelectStatementCore * ssc = sel->mutable_select_core();
+    JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
+    ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
+    /// Collect which entity types are available and pick one uniformly
+    bool supports_final = false;
+    const uint32_t n_choices = static_cast<uint32_t>(has_t) + static_cast<uint32_t>(has_v) + static_cast<uint32_t>(has_d);
+    uint32_t choice = rg.randomInt<uint32_t>(0, n_choices - 1);
+
+    if (has_t && choice-- == 0)
+    {
+        const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(table_lambda)).get();
+        t.setName(est, false);
+        supports_final = t.supportsFinal(true);
+    }
+    else if (has_v && choice-- == 0)
+    {
+        const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(view_lambda)).get();
+        v.setName(est, false);
+        supports_final = v.supportsFinal();
+    }
+    else
+    {
+        rg.pickRandomly(filterCollection<SQLDictionary>(dictionary_lambda)).get().setName(est, false);
+    }
+    jtf->set_final(supports_final && (this->enforce_final || rg.nextSmallNumber() < 5));
+    if ((allowed_clauses & allow_limit) && this->allow_not_deterministic)
+    {
+        static const std::vector<uint32_t> limit_choices = {1, 10, 100, 1000, 10000};
+        ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.pickRandomly(limit_choices));
+    }
+    return true;
+}
+
 void StatementGenerator::generateSelect(
     RandomGenerator & rg,
     const bool top,
@@ -2417,231 +2486,240 @@ void StatementGenerator::generateSelect(
     CTEs * qctes = nullptr;
 
     chassert(ncols);
-    if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 13)
+    /// ~17% of the time replace the whole body with a plain `SELECT *`. A projection has to read the
+    /// table it belongs to, a global aggregate projects one row, and both sides of a recursive CTE
+    /// have to keep matching, so none of those may be traded for it.
+    const bool star = !force_global_agg && !this->inside_projection && !recursive.has_value() && rg.nextMediumNumber() < 18
+        && generateStarSelect(rg, ncols, allowed_clauses, sel);
+
+    if (!star)
     {
-        qctes = sel->mutable_ctes();
-        this->addCTEs(rg, allowed_clauses, qctes);
-    }
-    if ((allowed_clauses & allow_set) && !force_global_agg && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
-        && (recursive.has_value() || rg.nextSmallNumber() < 3))
-    {
-        SetQuery * setq = sel->mutable_set_query();
-        ExplainQuery * eq1 = setq->mutable_sel1();
-        ExplainQuery * eq2 = setq->mutable_sel2();
-        std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
-
-        setq->set_set_op(
-            recursive.has_value() ? SetQuery_SetOp::SetQuery_SetOp_UNION : static_cast<SetQuery_SetOp>(set_range(rg.generator)));
-        setq->set_paren1(rg.nextSmallNumber() < 9);
-        setq->set_paren2(rg.nextSmallNumber() < 9);
-        if (rg.nextSmallNumber() < (recursive.has_value() ? 9 : 8))
+        if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width && rg.nextMediumNumber() < 13)
         {
-            setq->set_s_or_d(rg.nextSmallNumber() < (recursive.has_value() ? 9 : 6) ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
-        }
-        this->depth++;
-        this->current_level++;
-        if (!recursive.has_value() && ncols == 1 && rg.nextMediumNumber() < 6)
-        {
-            prepareNextExplain(rg, eq1);
-        }
-        else
-        {
-            TopSelect * tsel = eq1->mutable_inner_query()->mutable_select();
-            this->levels[this->current_level] = QueryLevel(this->current_level);
-
-            generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
-            if (recursive.has_value())
-            {
-                /// Move the generated query out, then rebuild `sel` as a wrapper around it
-                Select osel;
-
-                osel.Swap(tsel->mutable_sel());
-                matchQueryAliases(ncols, osel, tsel->mutable_sel());
-            }
-        }
-        this->width++;
-        if (!recursive.has_value() && ncols == 1 && rg.nextMediumNumber() < 6)
-        {
-            prepareNextExplain(rg, eq2);
-        }
-        else
-        {
-            TopSelect * tsel = eq2->mutable_inner_query()->mutable_select();
-            this->levels[this->current_level] = QueryLevel(this->current_level);
-
-            /// Add recursive CTE reference when that's the case
-            if (recursive.has_value())
-            {
-                SQLRelation rel(recursive.value());
-
-                for (uint32_t i = 0; i < ncols; i++)
-                {
-                    rel.cols.emplace_back(SQLRelationCol(recursive.value(), {"c" + std::to_string(i)}));
-                }
-                this->ctes[this->current_level][recursive.value()] = std::move(rel);
-            }
-            generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
-        }
-        this->current_level--;
-        this->depth--;
-        this->width--;
-    }
-    else
-    {
-        bool force_group_by = false;
-        bool force_order_by = false;
-        SelectStatementCore * ssc = sel->mutable_select_core();
-
-        if ((allowed_clauses & allow_distinct) && rg.nextSmallNumber() < 3)
-        {
-            ssc->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
-        }
-        if ((allowed_clauses & allow_from) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextSmallNumber() < 10)
-        {
-            const uint32_t njoined = generateFromStatement(rg, allowed_clauses, ssc->mutable_from());
-            ssc->set_from_first(njoined == 1 && rg.nextSmallNumber() < 4);
-        }
-        const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
-        const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
-
-        /// Most of the times disallow aggregates and window functions inside predicates
-        this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
-        this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
-        if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextMediumNumber() < 16)
-        {
-            /// Add possible CTE expressions referencing columns in the FROM clause
-            qctes = qctes ? qctes : sel->mutable_ctes();
+            qctes = sel->mutable_ctes();
             this->addCTEs(rg, allowed_clauses, qctes);
         }
-        if ((allowed_clauses & allow_window_clause) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextMediumNumber() < 16)
+        if ((allowed_clauses & allow_set) && !force_global_agg && this->depth<this->fc.max_depth && this->fc.max_width> this->width + 1
+            && (recursive.has_value() || rg.nextSmallNumber() < 3))
         {
-            addWindowDefs(rg, ssc);
-        }
-        if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextMediumNumber() < 35)
-        {
-            generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
-        }
-        if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextMediumNumber() < 35)
-        {
-            WhereStatement * whr = ssc->mutable_where();
+            SetQuery * setq = sel->mutable_set_query();
+            ExplainQuery * eq1 = setq->mutable_sel1();
+            ExplainQuery * eq2 = setq->mutable_sel2();
+            std::uniform_int_distribution<uint32_t> set_range(1, static_cast<uint32_t>(SetQuery::SetOp_MAX));
 
-            if (ssc->has_pre_where() && rg.nextMediumNumber() < 16)
+            setq->set_set_op(
+                recursive.has_value() ? SetQuery_SetOp::SetQuery_SetOp_UNION : static_cast<SetQuery_SetOp>(set_range(rg.generator)));
+            setq->set_paren1(rg.nextSmallNumber() < 9);
+            setq->set_paren2(rg.nextSmallNumber() < 9);
+            if (rg.nextSmallNumber() < (recursive.has_value() ? 9 : 8))
             {
-                /// Sometimes use the same predicate for prewhere and where
-                whr->CopyFrom(ssc->pre_where());
+                setq->set_s_or_d(rg.nextSmallNumber() < (recursive.has_value() ? 9 : 6) ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
+            }
+            this->depth++;
+            this->current_level++;
+            if (!recursive.has_value() && ncols == 1 && rg.nextMediumNumber() < 6)
+            {
+                prepareNextExplain(rg, eq1);
             }
             else
             {
-                generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+                TopSelect * tsel = eq1->mutable_inner_query()->mutable_select();
+                this->levels[this->current_level] = QueryLevel(this->current_level);
+
+                generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
+                if (recursive.has_value())
+                {
+                    /// Move the generated query out, then rebuild `sel` as a wrapper around it
+                    Select osel;
+
+                    osel.Swap(tsel->mutable_sel());
+                    matchQueryAliases(ncols, osel, tsel->mutable_sel());
+                }
             }
-        }
-
-        if (this->inside_projection)
-        {
-            const uint32_t nopt = rg.nextSmallNumber();
-
-            force_global_agg |= nopt < 4;
-            force_group_by |= nopt > 3 && nopt < 7;
-            if (force_global_agg || force_group_by)
+            this->width++;
+            if (!recursive.has_value() && ncols == 1 && rg.nextMediumNumber() < 6)
             {
-                allowed_clauses &= ~allow_orderby;
+                prepareNextExplain(rg, eq2);
             }
             else
             {
-                allowed_clauses &= ~(allow_groupby | allow_global_aggregate);
-                force_order_by = true;
-            }
-        }
+                TopSelect * tsel = eq2->mutable_inner_query()->mutable_select();
+                this->levels[this->current_level] = QueryLevel(this->current_level);
 
-        if ((allowed_clauses & allow_groupby) && !force_global_agg && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && (force_group_by || rg.nextSmallNumber() < 4))
-        {
-            generateGroupBy(rg, ncols, false, (allowed_clauses & allow_groupby_settings), ssc);
+                /// Add recursive CTE reference when that's the case
+                if (recursive.has_value())
+                {
+                    SQLRelation rel(recursive.value());
+
+                    for (uint32_t i = 0; i < ncols; i++)
+                    {
+                        rel.cols.emplace_back(SQLRelationCol(recursive.value(), {"c" + std::to_string(i)}));
+                    }
+                    this->ctes[this->current_level][recursive.value()] = std::move(rel);
+                }
+                generateSelect(rg, false, false, ncols, allowed_clauses, std::nullopt, tsel->mutable_sel());
+            }
+            this->current_level--;
+            this->depth--;
+            this->width--;
         }
         else
         {
-            this->levels[this->current_level].global_aggregate
-                = (allowed_clauses & allow_global_aggregate) && (force_global_agg || rg.nextSmallNumber() < 4);
-        }
-        this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
-        this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+            bool force_group_by = false;
+            bool force_order_by = false;
+            SelectStatementCore * ssc = sel->mutable_select_core();
 
-        if (!this->allow_not_deterministic || !this->levels[this->current_level].inside_aggregate || rg.nextMediumNumber() < 99)
-        {
-            this->depth++;
-            for (uint32_t i = 0; i < ncols; i++)
+            if ((allowed_clauses & allow_distinct) && rg.nextSmallNumber() < 3)
             {
-                ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
-
-                generateExpression(rg, eca->mutable_expr());
-                if (!top && rg.nextBool())
-                {
-                    const String ncname = getNextAlias(rg);
-
-                    SQLRelation rel("");
-                    rel.cols.emplace_back(SQLRelationCol("", {ncname}));
-                    this->levels[this->current_level].rels.emplace_back(rel);
-                    eca->mutable_col_alias()->set_column(ncname);
-                    this->levels[this->current_level].projections.emplace_back(ncname);
-                }
-                eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
-                this->width++;
+                ssc->set_s_or_d(rg.nextBool() ? AllOrDistinct::ALL : AllOrDistinct::DISTINCT);
             }
-            this->depth--;
-            this->width -= ncols;
-        }
-        if ((allowed_clauses & allow_qualify) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && rg.nextSmallNumber() < 3)
-        {
-            WhereStatement * whr = ssc->mutable_qualify_expr();
+            if ((allowed_clauses & allow_from) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+                && rg.nextSmallNumber() < 10)
+            {
+                const uint32_t njoined = generateFromStatement(rg, allowed_clauses, ssc->mutable_from());
+                ssc->set_from_first(njoined == 1 && rg.nextSmallNumber() < 4);
+            }
+            const bool prev_allow_aggregates = this->levels[this->current_level].allow_aggregates;
+            const bool prev_allow_window_funcs = this->levels[this->current_level].allow_window_funcs;
 
-            if ((ssc->has_pre_where() || ssc->has_where() || (ssc->has_groupby() && ssc->groupby().has_having_expr()))
+            /// Most of the times disallow aggregates and window functions inside predicates
+            this->levels[this->current_level].allow_aggregates = rg.nextSmallNumber() < 3;
+            this->levels[this->current_level].allow_window_funcs = rg.nextSmallNumber() < 3;
+            if ((allowed_clauses & allow_cte) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
                 && rg.nextMediumNumber() < 16)
             {
-                std::vector<std::function<const WhereStatement &()>> candidates;
+                /// Add possible CTE expressions referencing columns in the FROM clause
+                qctes = qctes ? qctes : sel->mutable_ctes();
+                this->addCTEs(rg, allowed_clauses, qctes);
+            }
+            if ((allowed_clauses & allow_window_clause) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+                && rg.nextMediumNumber() < 16)
+            {
+                addWindowDefs(rg, ssc);
+            }
+            if ((allowed_clauses & allow_prewhere) && this->depth < this->fc.max_depth && ssc->has_from() && rg.nextMediumNumber() < 35)
+            {
+                generateWherePredicate(rg, ssc->mutable_pre_where()->mutable_expr()->mutable_expr());
+            }
+            if ((allowed_clauses & allow_where) && this->depth < this->fc.max_depth && rg.nextMediumNumber() < 35)
+            {
+                WhereStatement * whr = ssc->mutable_where();
 
-                /// Sometimes use the same predicate for having and where
-                if (ssc->has_pre_where())
-                    candidates.push_back([&]() -> const WhereStatement & { return ssc->pre_where(); });
-                if (ssc->has_where())
-                    candidates.push_back([&]() -> const WhereStatement & { return ssc->where(); });
-                if (ssc->has_groupby() && ssc->groupby().has_having_expr())
-                    candidates.push_back([&]() -> const WhereStatement & { return ssc->groupby().having_expr(); });
-                whr->CopyFrom(rg.pickRandomly(candidates)());
+                if (ssc->has_pre_where() && rg.nextMediumNumber() < 16)
+                {
+                    /// Sometimes use the same predicate for prewhere and where
+                    whr->CopyFrom(ssc->pre_where());
+                }
+                else
+                {
+                    generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+                }
+            }
+
+            if (this->inside_projection)
+            {
+                const uint32_t nopt = rg.nextSmallNumber();
+
+                force_global_agg |= nopt < 4;
+                force_group_by |= nopt > 3 && nopt < 7;
+                if (force_global_agg || force_group_by)
+                {
+                    allowed_clauses &= ~allow_orderby;
+                }
+                else
+                {
+                    allowed_clauses &= ~(allow_groupby | allow_global_aggregate);
+                    force_order_by = true;
+                }
+            }
+
+            if ((allowed_clauses & allow_groupby) && !force_global_agg && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+                && (force_group_by || rg.nextSmallNumber() < 4))
+            {
+                generateGroupBy(rg, ncols, false, (allowed_clauses & allow_groupby_settings), ssc);
             }
             else
             {
-                generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+                this->levels[this->current_level].global_aggregate
+                    = (allowed_clauses & allow_global_aggregate) && (force_global_agg || rg.nextSmallNumber() < 4);
+            }
+            this->levels[this->current_level].allow_aggregates = prev_allow_aggregates;
+            this->levels[this->current_level].allow_window_funcs = prev_allow_window_funcs;
+
+            if (!this->allow_not_deterministic || !this->levels[this->current_level].inside_aggregate || rg.nextMediumNumber() < 99)
+            {
+                this->depth++;
+                for (uint32_t i = 0; i < ncols; i++)
+                {
+                    ExprColAlias * eca = ssc->add_result_columns()->mutable_eca();
+
+                    generateExpression(rg, eca->mutable_expr());
+                    if (!top && rg.nextBool())
+                    {
+                        const String ncname = getNextAlias(rg);
+
+                        SQLRelation rel("");
+                        rel.cols.emplace_back(SQLRelationCol("", {ncname}));
+                        this->levels[this->current_level].rels.emplace_back(rel);
+                        eca->mutable_col_alias()->set_column(ncname);
+                        this->levels[this->current_level].projections.emplace_back(ncname);
+                    }
+                    eca->set_use_parenthesis(rg.nextLargeNumber() < 11);
+                    this->width++;
+                }
+                this->depth--;
+                this->width -= ncols;
+            }
+            if ((allowed_clauses & allow_qualify) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+                && rg.nextSmallNumber() < 3)
+            {
+                WhereStatement * whr = ssc->mutable_qualify_expr();
+
+                if ((ssc->has_pre_where() || ssc->has_where() || (ssc->has_groupby() && ssc->groupby().has_having_expr()))
+                    && rg.nextMediumNumber() < 16)
+                {
+                    std::vector<std::function<const WhereStatement &()>> candidates;
+
+                    /// Sometimes use the same predicate for having and where
+                    if (ssc->has_pre_where())
+                        candidates.push_back([&]() -> const WhereStatement & { return ssc->pre_where(); });
+                    if (ssc->has_where())
+                        candidates.push_back([&]() -> const WhereStatement & { return ssc->where(); });
+                    if (ssc->has_groupby() && ssc->groupby().has_having_expr())
+                        candidates.push_back([&]() -> const WhereStatement & { return ssc->groupby().having_expr(); });
+                    whr->CopyFrom(rg.pickRandomly(candidates)());
+                }
+                else
+                {
+                    generateWherePredicate(rg, whr->mutable_expr()->mutable_expr());
+                }
+            }
+            if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
+                && (force_order_by || rg.nextSmallNumber() < 4))
+            {
+                this->depth++;
+                generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
+                this->depth--;
+            }
+            const bool order_safe = ssc->has_orderby() || this->levels[this->current_level].global_aggregate || this->allow_not_deterministic;
+            if ((allowed_clauses & allow_limitby) && order_safe && rg.nextMediumNumber() < 23)
+            {
+                generateLimitBy(rg, ssc->mutable_limit_by());
+            }
+            if ((allowed_clauses & allow_limit) && order_safe && rg.nextMediumNumber() < 23)
+            {
+                generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
+            }
+            if ((allowed_clauses & allow_offset) && order_safe && rg.nextMediumNumber() < 23)
+            {
+                generateOffset(rg, ssc->has_orderby(), ssc->has_limit(), ssc->mutable_offset());
             }
         }
-        if ((allowed_clauses & allow_orderby) && this->depth < this->fc.max_depth && this->width < this->fc.max_width
-            && (force_order_by || rg.nextSmallNumber() < 4))
+        /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
+        if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextMediumNumber() < 35)
         {
-            this->depth++;
-            generateOrderBy(rg, ncols, (allowed_clauses & allow_orderby_settings), false, ssc->mutable_orderby());
-            this->depth--;
+            generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sel->mutable_setting_values());
         }
-        const bool order_safe = ssc->has_orderby() || this->levels[this->current_level].global_aggregate || this->allow_not_deterministic;
-        if ((allowed_clauses & allow_limitby) && order_safe && rg.nextMediumNumber() < 23)
-        {
-            generateLimitBy(rg, ssc->mutable_limit_by());
-        }
-        if ((allowed_clauses & allow_limit) && order_safe && rg.nextMediumNumber() < 23)
-        {
-            generateLimit(rg, ssc->has_orderby(), ssc->mutable_limit());
-        }
-        if ((allowed_clauses & allow_offset) && order_safe && rg.nextMediumNumber() < 23)
-        {
-            generateOffset(rg, ssc->has_orderby(), ssc->has_limit(), ssc->mutable_offset());
-        }
-    }
-    /// This doesn't work: SELECT 1 FROM ((SELECT 1) UNION (SELECT 1) SETTINGS page_cache_inject_eviction = 1) x;
-    if (this->allow_not_deterministic && !this->inside_projection && (top || sel->has_select_core()) && rg.nextMediumNumber() < 35)
-    {
-        generateSettingValues(rg, fc.allow_query_oracles ? serverSettings : formatSettings, sel->mutable_setting_values());
     }
     this->levels.erase(this->current_level);
     this->ctes.erase(this->current_level);
@@ -2650,52 +2728,11 @@ void StatementGenerator::generateSelect(
 void StatementGenerator::generateTopSelect(
     RandomGenerator & rg, const bool force_global_agg, const uint32_t allowed_clauses, TopSelect * ts)
 {
-    /// ~10% of the time emit a plain `SELECT * FROM <entity>` (table, view, or dictionary) to
-    /// exercise full-scan paths without the overhead of the full query generator.
-    const bool has_t = collectionHas<SQLTable>(attached_tables);
-    const bool has_v = collectionHas<SQLView>(attached_views);
-    const bool has_d = collectionHas<SQLDictionary>(attached_dictionaries);
+    const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
 
-    if (!force_global_agg && (has_t || has_v || has_d) && rg.nextSmallNumber() < 2)
-    {
-        static const std::vector<uint32_t> limit_choices = {1, 10, 100, 1000, 10000};
-        SelectStatementCore * ssc = ts->mutable_sel()->mutable_select_core();
-        JoinedTableOrFunction * jtf = ssc->mutable_from()->mutable_tos()->mutable_join_clause()->mutable_tos()->mutable_joined_table();
-        ExprSchemaTable * est = jtf->mutable_tof()->mutable_est();
-        /// Collect which entity types are available and pick one uniformly
-        bool supports_final = false;
-        const uint32_t n_choices = static_cast<uint32_t>(has_t) + static_cast<uint32_t>(has_v) + static_cast<uint32_t>(has_d);
-        uint32_t choice = rg.randomInt<uint32_t>(0, n_choices - 1);
-
-        if (has_t && choice-- == 0)
-        {
-            const SQLTable & t = rg.pickRandomly(filterCollection<SQLTable>(attached_tables)).get();
-            t.setName(est, false);
-            supports_final = t.supportsFinal(true);
-        }
-        else if (has_v && choice-- == 0)
-        {
-            const SQLView & v = rg.pickRandomly(filterCollection<SQLView>(attached_views)).get();
-            v.setName(est, false);
-            supports_final = v.supportsFinal();
-        }
-        else
-        {
-            rg.pickRandomly(filterCollection<SQLDictionary>(attached_dictionaries)).get().setName(est, false);
-        }
-        jtf->set_final(supports_final && rg.nextSmallNumber() < 5);
-
-        /// Add a random LIMIT so we don't drag huge result sets
-        ssc->mutable_limit()->mutable_limit()->mutable_lit_val()->mutable_int_lit()->set_uint_lit(rg.pickRandomly(limit_choices));
-    }
-    else
-    {
-        const uint32_t ncols = std::max(std::min(this->fc.max_width - this->width, rg.randomInt<uint32_t>(1, 5)), UINT32_C(1));
-
-        this->levels[this->current_level] = QueryLevel(this->current_level);
-        generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
-        this->levels.clear();
-    }
+    this->levels[this->current_level] = QueryLevel(this->current_level);
+    generateSelect(rg, true, force_global_agg, ncols, allowed_clauses, std::nullopt, ts->mutable_sel());
+    this->levels.clear();
     if (fc.truncate_output || rg.nextSmallNumber() < 3)
     {
         SelectIntoFile * sif = ts->mutable_intofile();
