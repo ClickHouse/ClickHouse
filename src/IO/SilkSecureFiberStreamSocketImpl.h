@@ -17,6 +17,10 @@ class SecureFiberStreamSocketImpl final : public Poco::Net::SecureStreamSocketIm
 public:
     explicit SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr context);
 
+    /// Server-side socket: adopt an already-accepted plaintext fd and arm the server-side
+    /// TLS handshake (performed lazily on the first read or write). Used by a TLS-terminating proxy.
+    SecureFiberStreamSocketImpl(int accepted_fd, Poco::Net::Context::Ptr context);
+
     bool getDontWait() const;
     void setDontWait(bool flag);
 
