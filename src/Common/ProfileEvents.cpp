@@ -685,7 +685,13 @@ The server successfully detected this situation and will download merged part fr
     M(RWLockAcquiredWriteLocks, "Number of times a write lock was acquired (in a heavy RWLock).", ValueType::Number) \
     M(RWLockReadersWaitMilliseconds, "Total time spent waiting for a read lock to be acquired (in a heavy RWLock).", ValueType::Milliseconds) \
     M(RWLockWritersWaitMilliseconds, "Total time spent waiting for a write lock to be acquired (in a heavy RWLock).", ValueType::Milliseconds) \
-    M(DNSError, "Total count of errors in DNS resolution", ValueType::Number) \
+    M(DNSError, "Total count of errors in DNS resolution. It counts both the requests that failed among the ones counted by DNSRequests and DNSReverseRequests, and the failures that happen without a request, such as a host name resolving only to addresses that are then rejected by the `dns_allow_resolve_names_to_ipv4`/`dns_allow_resolve_names_to_ipv6` filter. Use DNSRequestError and DNSReverseError to get the numerators that match the corresponding request counters.", ValueType::Number) \
+    M(DNSRequests, "Total count of forward name resolution attempts (host name to addresses) made by the server. An attempt is counted when the name is handed to the system resolver, so names answered locally, for example from `/etc/hosts` or another NSS source, and names that the resolver rejects locally without sending a query, are counted as well. Names served from the internal DNS cache and host names that are already IP address literals are not counted.", ValueType::Number) \
+    M(DNSRequestMicroseconds, "Total time spent in the forward name resolution attempts counted by DNSRequests, including the failed ones counted by DNSRequestError.", ValueType::Microseconds) \
+    M(DNSRequestError, "Total count of failed forward name resolution attempts among the attempts counted by DNSRequests. Both requests that ended with an error and requests that returned no addresses are counted. Unlike DNSError, this event has the same boundary as DNSRequests, so a failure rate can be derived from the two.", ValueType::Number) \
+    M(DNSReverseRequests, "Total count of reverse DNS requests (address to host names, PTR) sent to the resolver, for example to match a client address against a `host_regexp` in the users configuration. Requests served from the DNS cache are not counted.", ValueType::Number) \
+    M(DNSReverseRequestMicroseconds, "Total time spent in reverse DNS requests counted by DNSReverseRequests, including the failed ones counted by DNSReverseError.", ValueType::Microseconds) \
+    M(DNSReverseError, "Total count of failed reverse DNS requests among the requests counted by DNSReverseRequests. Both requests that ended with an error and requests that returned no PTR records are counted, because the resolver reports NXDOMAIN and other non-success statuses by returning an empty answer.", ValueType::Number) \
     M(PartsLockHoldMicroseconds, "Total time spent holding data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLockWaitMicroseconds, "Total time spent waiting for data parts lock in MergeTree tables", ValueType::Microseconds) \
     M(PartsLocks, "Number of times data parts lock has been acquired for MergeTree tables", ValueType::Number) \
@@ -836,6 +842,10 @@ The server successfully detected this situation and will download merged part fr
     M(DiskPlainRewritableS3DirectoryCreated, "Number of directories created by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableS3DirectoryRemoved, "Number of directories removed by the 'plain_rewritable' metadata storage for S3ObjectStorage.", ValueType::Number) \
     M(DiskPlainRewritableLegacyLayoutDiskCount, "Number of the 'plain_rewritable' disks with legacy layout.", ValueType::Number) \
+    M(DiskPlainRewritableUndoStageRetries, "Number of times a step of reversing a failed 'plain_rewritable' metadata transaction had to be repeated because object storage rejected it.", ValueType::Number) \
+    \
+    M(MetadataTransactionRollbacks, "Number of metadata transactions that failed to commit and were rolled back.", ValueType::Number) \
+    M(MetadataTransactionRollbacksFailed, "Number of metadata transaction rollbacks that did not run to completion, so the metadata keeps a part of a transaction that was reported as failed.", ValueType::Number) \
     \
     M(S3Clients, "Number of created S3 clients.", ValueType::Number) \
     M(TinyS3Clients, "Number of S3 clients copies which reuse an existing auth provider from another client.", ValueType::Number) \
@@ -855,6 +865,7 @@ The server successfully detected this situation and will download merged part fr
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(MemoryLargeAllocationTraced, "Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \
@@ -865,6 +876,7 @@ The server successfully detected this situation and will download merged part fr
     M(AzureListObjects, "Number of Azure blob storage API ListObjects calls.", ValueType::Number) \
     M(AzureGetProperties, "Number of Azure blob storage API GetProperties calls.", ValueType::Number) \
     M(AzureCreateContainer, "Number of Azure blob storage API CreateContainer calls.", ValueType::Number) \
+    M(AzureClients, "Number of created Azure blob storage container clients.", ValueType::Number) \
     \
     M(DiskAzureGetObject, "Number of Disk Azure API GetObject calls.", ValueType::Number) \
     M(DiskAzureUpload, "Number of Disk Azure blob storage API Upload calls", ValueType::Number) \
@@ -980,6 +992,7 @@ The server successfully detected this situation and will download merged part fr
     M(SleepFunctionCalls, "Number of times a sleep function (sleep, sleepEachRow) has been called.", ValueType::Number) \
     M(SleepFunctionMicroseconds, "Time set to sleep in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \
     M(SleepFunctionElapsedMicroseconds, "Time spent sleeping in a sleep function (sleep, sleepEachRow).", ValueType::Microseconds) \
+    M(SystemPartsEnumerationSlowdownSleeps, "Number of sleeps of the test-only failpoint 'slowdown_system_parts_enumeration' while filling the tables of the system.parts family. Always zero outside of tests.", ValueType::Number) \
     \
     M(ThreadPoolReaderPageCacheHit, "Number of times the read inside ThreadPoolReader was done from the page cache.", ValueType::Number) \
     M(ThreadPoolReaderPageCacheHitBytes, "Number of bytes read inside ThreadPoolReader when it was done from the page cache.", ValueType::Bytes) \
@@ -1380,6 +1393,9 @@ The server successfully detected this situation and will download merged part fr
     M(DistributedPlanRemoteTasks, "Number of tasks dispatched to remote workers when executing a query with make_distributed_plan. A non-zero value means the query was actually executed distributedly.", ValueType::Number) \
     M(DistributedPlanLocalExecution, "Set to 1 when a make_distributed_plan query was executed in-process via the local executor (distributed_plan_execute_locally) instead of being dispatched to remote workers.", ValueType::Number) \
     M(DistributedPlanHostsUsed, "Number of distinct hosts that were assigned at least one task when executing a query with make_distributed_plan.", ValueType::Number) \
+    M(DistributedPlanWorkerPartsReceived, "Number of data parts the coordinator assigned to a worker of a distributed query plan, summed over the bucketed reads a query runs on that worker. A part assigned to several buckets counts once per read.", ValueType::Number) \
+    M(DistributedPlanWorkerPartsScanned, "Number of the assigned data parts the worker keeps to read.", ValueType::Number) \
+    M(DistributedPlanWorkerPartsPruned, "Number of the assigned data parts the worker's own index analysis pruned, so the worker does not read them. The coordinator selects parts without that analysis, so it can assign a part no row of the query can match. `DistributedPlanWorkerPartsReceived` is the sum of this and `DistributedPlanWorkerPartsScanned`.", ValueType::Number) \
     M(StreamingExchangeSendBytes, "Bytes written to the sockets of the streaming exchanges of a distributed query plan. `NetworkSendBytes` does not count them.", ValueType::Bytes) \
     M(StreamingExchangeReceiveBytes, "Bytes read from the sockets of the streaming exchanges of a distributed query plan. `NetworkReceiveBytes` does not count them.", ValueType::Bytes) \
     M(StreamingExchangePacketsSent, "Data packets written whole to the sockets of streaming exchanges, one per chunk plus one end-of-stream packet per stream. A packet is counted when it is written whole; a packet cut short because the receiver needed no more data is not counted.", ValueType::Number) \
@@ -1556,6 +1572,15 @@ The server successfully detected this situation and will download merged part fr
     M(HTTPServerConnectionsExpired, "Number of expired server HTTP connections.", ValueType::Number) \
     M(HTTPServerConnectionsClosed, "Number of closed server HTTP connections. Keep alive has not been negotiated", ValueType::Number) \
     M(HTTPServerConnectionsReset, "Number of reset server HTTP connections. Server closes connection", ValueType::Number) \
+    M(HTTPServerConnectionsErrors, "Number of server HTTP connections terminated by an error: a network error, a malformed request, or an exception that escaped the request handler. A client that closes a kept-alive connection without sending another request is not an error and is not counted here.", ValueType::Number) \
+    \
+    M(TLSHandshakes, "Number of TLS handshakes completed for outgoing (client) connections, for example to object storage, to the target of a `url` table function, or to another ClickHouse server. Only the connections that use the Poco TLS implementation are counted; protocols carrying their own TLS stack, such as gRPC or the MySQL, PostgreSQL and Kafka client libraries, are not. Session resumption still performs a handshake and is counted here.", ValueType::Number) \
+    M(TLSHandshakeMicroseconds, "Total time spent performing TLS handshakes for outgoing (client) connections, including the failed ones counted by TLSHandshakeErrors. For a non-blocking socket a handshake is retried until it completes, and the time of all its attempts is summed up here.", ValueType::Microseconds) \
+    M(TLSHandshakeErrors, "Number of failed TLS handshakes for outgoing (client) connections, for example because of an untrusted or expired peer certificate, a protocol or cipher mismatch, or the peer closing the connection mid-handshake.", ValueType::Number) \
+    \
+    M(TLSServerHandshakes, "Number of TLS handshakes completed for incoming (server) connections, across the server protocols that use the Poco TLS implementation: native TCP, HTTPS, MySQL and PostgreSQL. gRPC carries its own TLS stack and is not counted. Session resumption still performs a handshake and is counted here.", ValueType::Number) \
+    M(TLSServerHandshakeMicroseconds, "Total time spent performing TLS handshakes for incoming (server) connections, including the failed ones counted by TLSServerHandshakeErrors. For a non-blocking socket a handshake is retried until it completes, and the time of all its attempts is summed up here.", ValueType::Microseconds) \
+    M(TLSServerHandshakeErrors, "Number of failed TLS handshakes for incoming (server) connections, for example because of a rejected client certificate, a protocol or cipher mismatch, or the client closing the connection mid-handshake. Port scanners and health checks that open a TCP connection to a secure port and close it are counted here as well.", ValueType::Number) \
     \
     M(AddressesDiscovered, "Total count of new addresses in DNS resolve results for HTTP connections", ValueType::Number) \
     M(AddressesExpired, "Total count of expired addresses which is no longer presented in DNS resolve results for HTTP connections", ValueType::Number) \
