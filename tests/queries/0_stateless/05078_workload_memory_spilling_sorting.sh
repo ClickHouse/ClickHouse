@@ -15,6 +15,7 @@ function cleanup()
 {
   $CLICKHOUSE_CLIENT -nm -q "DROP WORKLOAD $workload" >& /dev/null || :
   workload_remove_our_root
+  $CLICKHOUSE_CLIENT -q "DROP RESOURCE IF EXISTS memory" >& /dev/null || :
 }
 trap cleanup EXIT
 
