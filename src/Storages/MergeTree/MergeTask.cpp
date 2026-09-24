@@ -3506,7 +3506,9 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::createMergedStream() const
     if (global_ctx->vertical_ttl_delete)
     {
         /// The TTLDeleteFilterStep below and `TTLStep` after the merge both evaluate the TTL expressions. They
-        /// share one sets cache, so an expensive expression like `WHERE x IN (SELECT ...)` is built once, not twice.
+        /// share one fresh sets cache, so `WHERE x IN (SELECT ...)` is built once, not twice; a merge context
+        /// never carries a cache of its own.
+        chassert(!global_ctx->context->getPreparedSetsCache());
         auto context_with_sets_cache = Context::createCopy(global_ctx->context);
         context_with_sets_cache->setPreparedSetsCache(std::make_shared<PreparedSetsCache>());
         ttl_context = std::move(context_with_sets_cache);

@@ -132,8 +132,7 @@ MergingSortedAlgorithm::MergingSortedAlgorithm(
     {
         const auto & filter_type = header->getByPosition(filter_column_position).type;
         if (!WhichDataType(filter_type).isUInt8())
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER,
-                "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_COLUMN_FOR_FILTER, "Illegal type {} of column for filter. Must be UInt8", filter_type->getName());
     }
 
     DataTypes sort_description_types;

@@ -46,7 +46,7 @@ private:
     const TTLDeleteAlgorithm * delete_algorithm = nullptr;
     bool all_data_dropped = false;
     /// The merging algorithm already dropped the expired rows, so `delete_algorithm` counts none.
-    const bool ttl_delete_applied_by_merge;
+    const bool ttl_delete_applied_by_merge = false;
 
     PreparedSets::Subqueries subqueries_for_sets;
 

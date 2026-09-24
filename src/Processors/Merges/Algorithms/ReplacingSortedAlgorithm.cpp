@@ -149,29 +149,19 @@ void ReplacingSortedAlgorithm::insertChunk(size_t source_num, Chunk chunk)
     const size_t num_rows = chunk.getNumRows();
     const auto * mask = getRowFilterMask(chunk);
 
+    if (out_row_sources_buf)
+    {
+        for (size_t i = 0; i < num_rows; ++i)
+            out_row_sources_buf->write(RowSourcePart(source_num, /*skip_flag=*/ mask && !(*mask)[i]).data);
+    }
+
     if (!mask)
     {
-        if (out_row_sources_buf)
-        {
-            RowSourcePart row_source(source_num);
-            for (size_t i = 0; i < num_rows; ++i)
-                out_row_sources_buf->write(row_source.data);
-        }
-
         merged_data->insertChunk(std::move(chunk), num_rows);
         return;
     }
 
     auto columns = chunk.detachColumns();
-    if (out_row_sources_buf)
-    {
-        RowSourcePart row_source(source_num, false);
-        RowSourcePart row_source_skipped(source_num, true);
-
-        for (size_t i = 0; i < num_rows; ++i)
-            out_row_sources_buf->write((*mask)[i] ? row_source.data : row_source_skipped.data);
-    }
-
     for (auto & column : columns)
         column = column->filter(*mask, -1);
 
