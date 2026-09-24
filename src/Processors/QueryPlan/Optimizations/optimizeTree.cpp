@@ -789,7 +789,15 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0 && optimization_settings.optimize_lazy_materialization)
             {
-                if (optimizeLazyMaterialization2(*frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+                /// The merged-DAG path handles only some shapes so far, and says so by returning false,
+                /// in which case the older one is asked the same question.
+                const bool applied = (optimization_settings.lazy_materialization_from_merged_dag
+                        && optimizeLazyMaterialization3(
+                            *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization))
+                    || optimizeLazyMaterialization2(
+                        *frame.node, query_plan, nodes, optimization_settings, optimization_settings.max_limit_for_lazy_materialization);
+
+                if (applied)
                 {
                     lazy_materialization_applied = true;
 
