@@ -80,7 +80,6 @@ def test_insert_select_coordinator_reuse_with_drifting_liveness(start_cluster):
         # Keep the local-pipeline INSERT SELECT path (where the coordinator is reused) active, independently
         # of any future change to the defaults.
         "parallel_replicas_local_plan": 1,
-        "parallel_replicas_insert_select_local_pipeline": 1,
         "parallel_replicas_prefer_local_replica": 1,
     }
 

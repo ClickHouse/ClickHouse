@@ -62,7 +62,7 @@ def create_tables(table_name, populate_count, skip_last_replica):
 # a query, and a replica executing it always reads the query-tree-based way. The expected query counts are
 # therefore the same for both values of the setting.
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline,executed_queries,plan_based",
+    "cluster_name,max_parallel_replicas,local_plan,executed_queries,plan_based",
     [
         pytest.param("test_1_shard_3_replicas", 2, False, 3, False),
         pytest.param("test_1_shard_3_replicas", 2, True, 2, False),
@@ -76,7 +76,7 @@ def create_tables(table_name, populate_count, skip_last_replica):
         pytest.param("test_1_shard_3_replicas_1_unavailable", 2, True, 2, False),
     ],
 )
-def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_pipeline, executed_queries, plan_based):
+def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local_plan, executed_queries, plan_based):
     populate_count = 1000000
 
     source_table = "t_source"
@@ -92,7 +92,7 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
             "enable_parallel_replicas": 2,
             "max_parallel_replicas": max_parallel_replicas,
             "cluster_for_parallel_replicas": cluster_name,
-            "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+            "parallel_replicas_local_plan": local_plan,
             "parallel_replicas_plan_based": plan_based,
             "enable_analyzer": 1,
         },
@@ -132,13 +132,13 @@ def test_insert_select(start_cluster, cluster_name, max_parallel_replicas, local
 #       Currently, we'll just fail
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline",
+    "cluster_name,max_parallel_replicas,local_plan",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
     ],
 )
-def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
+def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replicas, local_plan):
     populate_count = 100
 
     source_table = "t_source"
@@ -154,7 +154,7 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+                "parallel_replicas_local_plan": local_plan,
                 "enable_analyzer": 1,
             },
         )
@@ -162,13 +162,13 @@ def test_insert_select_no_table(start_cluster, cluster_name, max_parallel_replic
 
 
 @pytest.mark.parametrize(
-    "cluster_name,max_parallel_replicas,local_pipeline",
+    "cluster_name,max_parallel_replicas,local_plan",
     [
         pytest.param("test_1_shard_3_replicas", 3, False),
         pytest.param("test_1_shard_3_replicas", 3, True),
     ],
 )
-def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_pipeline):
+def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel_replicas, local_plan):
     populate_count = 100
 
     source_table = "t_source"
@@ -184,7 +184,7 @@ def test_insert_select_no_target_table(start_cluster, cluster_name, max_parallel
                 "enable_parallel_replicas": 2,
                 "max_parallel_replicas": max_parallel_replicas,
                 "cluster_for_parallel_replicas": cluster_name,
-                "parallel_replicas_insert_select_local_pipeline": local_pipeline,
+                "parallel_replicas_local_plan": local_plan,
                 "enable_analyzer": 1,
             },
         )

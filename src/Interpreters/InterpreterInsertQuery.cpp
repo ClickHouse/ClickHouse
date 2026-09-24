@@ -95,7 +95,6 @@ namespace Setting
     extern const SettingsBool enable_parsing_to_custom_serialization;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_local_plan;
-    extern const SettingsBool parallel_replicas_insert_select_local_pipeline;
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool async_query_sending_for_remote;
     extern const SettingsBool async_socket_for_remote;
@@ -725,8 +724,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
 
     LOG_TRACE(logger, "Building distributed insert select pipeline with parallel replicas: table={}", query.getTable());
 
-    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
-        && settings[Setting::parallel_replicas_prefer_local_replica])
+    if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_prefer_local_replica])
     {
         /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
         /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into

@@ -92,10 +92,10 @@ SELECT sum(sleepEachRow(0.01)) FROM test_max_execution_time_leaf_plain SETTINGS 
 DROP TABLE test_max_execution_time_leaf_plain SYNC;
 
 -- The leaf timeout is also effective for INSERT SELECT executed with parallel replicas. The local-pipeline
--- settings ('parallel_replicas_local_plan', 'parallel_replicas_insert_select_local_pipeline',
--- 'parallel_replicas_prefer_local_replica') are intentionally left at their defaults (1): when
--- 'max_execution_time_leaf' is set, the local insert select pipeline is skipped (it shares the initiator's
--- query status and cannot be bounded by the leaf timeout), so all leaf reading is bounded.
+-- settings ('parallel_replicas_local_plan', 'parallel_replicas_prefer_local_replica') are intentionally
+-- left at their defaults (1): when 'max_execution_time_leaf' is set, the local insert select pipeline is
+-- skipped (it shares the initiator's query status and cannot be bounded by the leaf timeout), so all leaf
+-- reading is bounded.
 DROP TABLE IF EXISTS test_max_execution_time_leaf_insert SYNC;
 CREATE TABLE test_max_execution_time_leaf_insert
 (
@@ -129,7 +129,7 @@ INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_executi
 -- When 'max_execution_time_leaf' is not set, the query text must not be rewritten at all: the nested subquery
 -- keeps its user-authored timeout on the remote replicas. The local pipeline is disabled so that the set is built
 -- (and the timeout can fire) only on the remote replicas.
-INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_insert_select_local_pipeline = 0; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
+INSERT INTO test_max_execution_time_leaf_insert SELECT key FROM test_max_execution_time_leaf WHERE (key % 2) IN (SELECT number % 2 FROM numbers(300) WHERE sleepEachRow(0.01) = 0 SETTINGS max_block_size = 1, max_execution_time = 1) SETTINGS parallel_distributed_insert_select = 2, parallel_replicas_local_plan = 0; -- { serverError TIMEOUT_EXCEEDED, QUERY_WAS_CANCELLED }
 
 DROP TABLE test_max_execution_time_leaf_insert SYNC;
 DROP TABLE test_max_execution_time_leaf SYNC;
