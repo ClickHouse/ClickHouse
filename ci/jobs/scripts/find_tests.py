@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import re
+import shlex
 import sys
 from pathlib import Path
 from dataclasses import asdict
@@ -363,7 +364,8 @@ class Targeting:
                     test_base_name
                 ):
                     print(f"Detected changed test: '{test_base_name}' (from '{fpath}')")
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{test_base_name}.")
                     continue
 
@@ -382,7 +384,8 @@ class Targeting:
                     print(
                         f"Detected changed data file '{fpath}' owned by test '{base_name}'"
                     )
-                    # Add '.' suffix to precisely match this test only
+                    # The '.' suffix marks a whole-test name; `selection_pattern`
+                    # turns it into the selector that runs only this test.
                     result.add(f"{base_name}.")
             else:
                 print(
@@ -952,6 +955,29 @@ class Targeting:
                 name = name[: -len(extension)]
                 break
         return name + "."
+
+    @classmethod
+    def selection_pattern(cls, test):
+        """Render a selected stateless test as a `clickhouse-test` positional selector.
+
+        Those arguments are regexes, and `TestSuite.get_selected_tests` searches them
+        against the suite file name *including* its extension, so a selector that stops
+        short of the whole file name also selects every test whose name extends this one
+        (`01655_plan_optimizations` picks up `01655_plan_optimizations_merge_filters`).
+        Spell the file name out: anchored, escaped, one known extension.
+        """
+        name = re.escape(cls.selection_test_name(test).rstrip("."))
+        extensions = "|".join(re.escape(ext) for ext in cls._TEST_FILE_EXTENSIONS)
+        return f"^{name}(?:{extensions})$"
+
+    @staticmethod
+    def selection_args(tests):
+        """Render selectors as the argument list of a `clickhouse-test` command line.
+
+        `run_tests` executes that command line through bash, whose quote removal would
+        otherwise consume the regex syntax before `clickhouse-test` parses it.
+        """
+        return " ".join(shlex.quote(test) for test in tests) if tests else ""
 
     def get_most_relevant_tests(self):
         changed_lines = self.get_changed_lines_from_diff()

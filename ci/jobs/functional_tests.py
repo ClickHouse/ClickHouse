@@ -186,7 +186,7 @@ def run_tests(
     command = f"set -o pipefail; clickhouse-test --testname --check-zookeeper-session --hung-check --memory-limit {memory_limit} --trace \
                 --capture-client-stacktrace --queries ./tests/queries --test-runs {rerun_count}{global_time_limit_arg} \
                 {extra_args} \
-                --queries ./tests/queries {('--order=random' if random_order else '')} -- {' '.join(tests) if tests else ''} | ts '%Y-%m-%d %H:%M:%S' \
+                --queries ./tests/queries {('--order=random' if random_order else '')} -- {Targeting.selection_args(tests)} | ts '%Y-%m-%d %H:%M:%S' \
                 | tee -a \"{test_output_file}\""
     if Path(test_output_file).exists():
         Path(test_output_file).unlink()
@@ -887,6 +887,11 @@ def main():
                 info="No selected tests to run",
                 results=results,
             ).complete_job()
+
+    # A selection made by `Targeting` names whole tests, so it becomes an exact
+    # selector. A hand-written `--test` stays the free-form regex it was typed as.
+    if tests and not args.test:
+        tests = [Targeting.selection_pattern(test) for test in tests]
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
     if stage:

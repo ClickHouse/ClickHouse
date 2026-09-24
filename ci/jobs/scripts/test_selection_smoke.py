@@ -2,6 +2,8 @@
 
 import argparse
 import json
+import re
+import shlex
 import unittest
 from dataclasses import replace
 from types import SimpleNamespace
@@ -285,6 +287,61 @@ class SelectionSmoke(unittest.TestCase):
         result = protect_selection(["a", "b", "c"], [], candidates, str, config)
         self.assertEqual(result["mandatory_overflow"], 1)
         self.assertEqual(result["selected_count"], 3)
+
+    def test_selection_pattern_selects_only_its_own_test(self):
+        """A selected test's selector must select that test's file and no other.
+
+        `TestSuite.get_selected_tests` in `tests/clickhouse-test` searches each
+        positional selector as a regex against the suite file name including its
+        extension, which is what this mirrors.
+        """
+        suite = [
+            "01655_plan_optimizations.sh",
+            "01655_plan_optimizations_merge_filters.sql",
+            "00172_hits_joins.sql.j2",
+            "00029_test_zookeeper_optimize_exception.sh",
+            # The suite has dotted test names, so a name may also be the prefix
+            # of a dotted sibling rather than of an underscored one.
+            "03033_dist_settings.sql",
+            "03033_dist_settings.optimize_in.sql",
+        ]
+        selected = lambda pattern: {f for f in suite if re.search(pattern, f)}
+
+        self.assertEqual(
+            Targeting.selection_pattern("01655_plan_optimizations."),
+            r"^01655_plan_optimizations(?:\.sql\.j2|\.sql|\.sh|\.py|\.expect)$",
+        )
+        # Controls: both looser selectors this replaces select a second test.
+        self.assertIn(
+            "01655_plan_optimizations_merge_filters.sql",
+            selected("01655_plan_optimizations."),
+        )
+        self.assertIn(
+            "03033_dist_settings.optimize_in.sql", selected(r"^03033_dist_settings\.")
+        )
+
+        for test, expected in (
+            ("01655_plan_optimizations.", "01655_plan_optimizations.sh"),
+            ("00172_hits_joins.", "00172_hits_joins.sql.j2"),
+            # `clickhouse-test` reports a rendered template as `<name>.gen`.
+            ("00172_hits_joins.gen", "00172_hits_joins.sql.j2"),
+            (
+                "00029_test_zookeeper_optimize_exception",
+                "00029_test_zookeeper_optimize_exception.sh",
+            ),
+            ("03033_dist_settings.", "03033_dist_settings.sql"),
+            ("03033_dist_settings.optimize_in.", "03033_dist_settings.optimize_in.sql"),
+        ):
+            with self.subTest(test=test):
+                pattern = Targeting.selection_pattern(test)
+                self.assertEqual(selected(pattern), {expected})
+
+    def test_selection_args_survive_the_shell(self):
+        """`run_tests` hands its command line to bash, which parses the selectors."""
+        selectors = [Targeting.selection_pattern("01655_plan_optimizations.")]
+        self.assertEqual(shlex.split(Targeting.selection_args(selectors)), selectors)
+        # Control: the plain join this replaces does not survive quote removal.
+        self.assertNotEqual(shlex.split(" ".join(selectors)), selectors)
 
     def test_query_keeps_file_pruning_and_separate_hunks(self):
         query = build_candidate_query(
