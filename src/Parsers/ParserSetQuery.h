@@ -36,4 +36,13 @@ protected:
     bool shorthand_syntax;
 };
 
+/** Probe the text of a query for a leading SQL `SET` statement and return its AST, or `nullptr`
+  * if it is not one. A non-SQL dialect uses it to let a session always run `SET dialect = ...`
+  * to leave the dialect, and its experimental gate uses it to decide the same way the dialect's
+  * own parser does - a first-token heuristic would let a statement such as `set.users.find({})`
+  * through the gate as well.
+  */
+ASTPtr tryParseLeadingSetQuery(
+    const char * begin, const char * end, size_t max_query_size, size_t max_parser_depth, size_t max_parser_backtracks);
+
 }
