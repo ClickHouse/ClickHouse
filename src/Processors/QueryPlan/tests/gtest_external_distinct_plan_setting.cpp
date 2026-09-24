@@ -189,7 +189,7 @@ TEST(ExternalDistinctPlanSetting, InputOrderFlagRoundTripsAtTheCurrentVersion)
     {
         const auto step = makeStep(header, /*preserve_input_order=*/ true, preliminary);
         const auto step_version = registry.versionToWrite(step.getSerializationName(), current_version);
-        EXPECT_EQ(step_version, 1);
+        EXPECT_EQ(step_version, 2);
         EXPECT_TRUE(inputOrderFlagAfterRoundTrip(step, header, current_version, step_version));
     }
 }
@@ -225,7 +225,7 @@ TEST(ExternalDistinctPlanSetting, UnknownStepVersionIsRejected)
     QueryPlanStepRegistry registry;
     registerDistinctStep(registry);
     for (const String name : {"Distinct", "PreDistinct"})
-        EXPECT_THROW(registry.checkVersionReadable(name, 2), Exception);
+        EXPECT_THROW(registry.checkVersionReadable(name, 3), Exception);
 }
 
 TEST(ExternalDistinctPlanSetting, InputOrderFlagIsNotPartOfTheHashTableCacheKey)

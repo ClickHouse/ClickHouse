@@ -30,8 +30,9 @@ public:
         UInt64 max_bytes_before_external_distinct = 0;
         double max_bytes_ratio_before_external_distinct = 0.;
 
-        /// Internal steps serialize these settings through `updatePlanSettings` even when spilling is
-        /// disabled. Defaults match the query settings, including the required nonzero buffer size.
+        /// Internal steps serialize these settings even when spilling is disabled. Defaults match the
+        /// query settings, including the required nonzero buffer size.
+        size_t max_external_merge_fan_in = 64;
         size_t min_free_disk_space = 0;
         String temporary_files_codec = "LZ4";
         UInt64 temporary_files_buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
