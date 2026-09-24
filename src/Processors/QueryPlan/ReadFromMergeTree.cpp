@@ -5136,8 +5136,22 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// different `WHERE` clauses and would let one of them reuse another's granule decisions.
     /// This is the key `updateQueryConditionCache` gives the `WHERE` filter and `selectRangesToReadImpl`
     /// gives the index-analysis exclusions, and the one `filterPartsByQueryConditionCache` probes.
+    ///
+    /// Only do this when the active PREWHERE actually carries the injected `__topKFilter`: `tryOptimizeTopK`
+    /// also marks reads that use only the skip index, and those may have a deterministic user PREWHERE.
+    /// Its emptied granules must keep going under the PREWHERE predicate's own hash, so that plain queries
+    /// and other queries with the same PREWHERE can still reuse them.
+    auto prewhere_has_top_k_filter = [&]
+    {
+        if (!query_info.prewhere_info)
+            return false;
+        const auto * prewhere_node = query_info.prewhere_info->prewhere_actions.tryFindInOutputs(query_info.prewhere_info->prewhere_column_name);
+        return prewhere_node && !VirtualColumnUtils::isDeterministic(prewhere_node)
+            && VirtualColumnUtils::isDeterministicAllowingTopKFilter(prewhere_node);
+    };
+
     if (reader_settings.use_query_condition_cache && top_k_filter_info && !vector_search_parameters.has_value()
-        && !result.sampling.use_sampling)
+        && !result.sampling.use_sampling && prewhere_has_top_k_filter())
     {
         reader_settings.top_k_condition_hash = getQueryConditionCacheConditionHash(
             query_info, top_k_filter_info, context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k],
