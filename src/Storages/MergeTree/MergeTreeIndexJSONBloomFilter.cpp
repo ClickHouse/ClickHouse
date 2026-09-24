@@ -6,6 +6,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -1210,12 +1211,25 @@ private:
             const auto & values = nullable ? nullable->getNestedColumn() : column;
             const UInt32 path_id = tokens.getPathId(logical_path);
             const UInt64 seed = hashToken(hash_path, role, JSONBloomDomain::Typed, info.name, {});
+            /// A typed path has a value in every row: the default one where the path is absent. Most typed paths
+            /// are absent in most rows, and present values often repeat in adjacent rows, so skip a string equal
+            /// to the previous one: its token is already added.
+            const auto * strings = info.raw_value ? typeid_cast<const ColumnString *>(&values) : nullptr;
+            std::optional<std::string_view> previous_string;
             bool has_value = false;
             for (size_t row = begin; row != end; ++row)
             {
                 if (nullable && nullable->isNullAt(row))
                     continue;
                 has_value = true;
+                if (strings)
+                {
+                    const auto data = strings->getDataAt(row);
+                    const std::string_view value(data.data(), data.size());
+                    if (previous_string == value)
+                        continue;
+                    previous_string = value;
+                }
                 tokens.addValue(
                     path_id, hashTypedValue(seed, *info.serialization, info.which, info.raw_value, values, row, value_buffer, format_settings));
             }
