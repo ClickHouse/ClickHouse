@@ -2269,9 +2269,10 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
-    /// The plan's `top_k` flag stays set after the heap freezes and `executeImpl` falls back to
-    /// ordinary aggregation, which no longer ranks the keys.
-    const bool top_k_active = params.top_k && !result.topKHeapFrozen();
+    /// The plan's `top_k` flag stays set after the heap has frozen, and `executeImpl` freezes the
+    /// heap at the start of this block when `shouldFreeze()` is already true. `topKHeapInactive`
+    /// covers both states, so this mirrors exactly whether `executeImpl` will rank the block.
+    const bool top_k_active = params.top_k && !result.topKHeapInactive();
 
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)

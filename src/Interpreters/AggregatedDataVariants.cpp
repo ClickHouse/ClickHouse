@@ -116,7 +116,7 @@ bool AggregatedDataVariants::topKHeapEverRejected() const
     }
 }
 
-bool AggregatedDataVariants::topKHeapFrozen() const
+bool AggregatedDataVariants::topKHeapInactive() const
 {
     switch (type)
     {
@@ -126,7 +126,7 @@ bool AggregatedDataVariants::topKHeapFrozen() const
 
     #define M(NAME, IS_TWO_LEVEL) \
         case Type::NAME: \
-            return (NAME)->top_k_heap.frozen;
+            return (NAME)->top_k_heap.frozen || (NAME)->top_k_heap.shouldFreeze();
         APPLY_FOR_AGGREGATED_VARIANTS(M)
     #undef M
     }
