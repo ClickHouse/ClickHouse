@@ -3623,24 +3623,6 @@ bool conjunctDependsOnAllowedInput(const ActionsDAG::Node * conjunct, const std:
     return false;
 }
 
-ColumnsWithTypeAndName prepareFunctionArguments(const ActionsDAG::NodeRawConstPtrs & nodes)
-{
-    ColumnsWithTypeAndName arguments;
-    arguments.reserve(nodes.size());
-
-    for (const auto * child : nodes)
-    {
-        ColumnWithTypeAndName argument;
-        argument.column = child->column;
-        argument.type = child->result_type;
-        argument.name = child->result_name;
-
-        arguments.emplace_back(std::move(argument));
-    }
-
-    return arguments;
-}
-
 }
 
 std::optional<ActionsDAG::ActionsForFilterPushDown> ActionsDAG::createActionsForConjunction(NodeRawConstPtrs conjunction, const ColumnsWithTypeAndName & all_inputs)
@@ -4223,36 +4205,26 @@ bool ActionsDAG::removeUnusedConjunctions(NodeRawConstPtrs rejected_conjunctions
 
         NodeRawConstPtrs new_children = std::move(rejected_conjunctions);
 
+        const Node * rejected = nullptr;
         if (new_children.size() == 1)
-        {
-            /// Rejected set has only one predicate.
-            /// Fix the result type and add an alias.
-            auto & child = new_children.front();
-
-            /// Preserve the original type if the column is needed in the result.
-            if (!removes_filter)
-                child = &addBooleanCondition(*child, predicate->result_type, nullptr);
-
-            Node node;
-            node.type = ActionType::ALIAS;
-            node.result_name = predicate->result_name;
-            node.result_type = predicate->result_type;
-            node.children.swap(new_children);
-            *predicate = std::move(node);
-        }
+            rejected = new_children.front();
         else
         {
-            /// Predicate is function AND, which still have more then one argument
-            /// or it has one argument of the wrong type.
-            /// Update children and rebuild it.
-            predicate->children.swap(new_children);
-            auto arguments = prepareFunctionArguments(predicate->children);
-
-            FunctionOverloadResolverPtr func_builder_and = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
-
-            predicate->function_base = func_builder_and->build(arguments);
-            predicate->function = predicate->function_base->prepare(arguments);
+            FunctionOverloadResolverPtr func_builder_and
+                = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionAnd>());
+            rejected = &addFunction(func_builder_and, std::move(new_children), {});
         }
+
+        /// Preserve the original type if the column is needed in the result.
+        if (!removes_filter)
+            rejected = &addBooleanCondition(*rejected, predicate->result_type, nullptr);
+
+        Node node;
+        node.type = ActionType::ALIAS;
+        node.result_name = predicate->result_name;
+        node.result_type = rejected->result_type;
+        node.children = {rejected};
+        *predicate = std::move(node);
     }
 
     std::unordered_set<const Node *> used_inputs;
