@@ -1088,6 +1088,8 @@ void executeQueryWithParallelReplicas(
         /// A condition pushed into the local copy of the fragment reaches the replicas as well when they
         /// are given a query to run and the splice accepts it. Asked here, where both are known, and on
         /// the same context the splice will answer to; the local plan is then optimized knowing it.
+        /// Asked rather than assumed, because the answer is usually yes, and then the fragment keeps the
+        /// ordering it would read with - a merge instead of a sort above it, an aggregation in order.
         const bool replicas_get_pushed_conditions = !remote_query_plan
             && canSpliceFiltersIntoRemoteQuery(forwarded_query_ast, query_tree, planner_context, local_context);
 
