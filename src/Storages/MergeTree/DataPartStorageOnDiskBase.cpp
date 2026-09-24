@@ -66,10 +66,10 @@ void fsyncFrozenCloneTree(IDisk & disk, const std::string & clone_dir_path)
     /// Subtree first (children before parents), then the ancestor chain up to the disk root ("").
     syncDirectoryTree(disk, clone_dir_path);
 
-    fs::path dir = fs::path(clone_dir_path).parent_path();
+    fs::path dir = pathFromString(clone_dir_path).parent_path();
     while (true)
     {
-        SyncGuardPtr guard = disk.getDirectorySyncGuard(dir.string());
+        SyncGuardPtr guard = disk.getDirectorySyncGuard(pathToGenericString(dir));
         guard.reset();
         if (dir.empty())
             break;
@@ -627,7 +627,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(disk->getName(), disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
+    bool to_detached = dir_path.starts_with(pathToGenericString(fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""));
     auto frozen_storage = create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 
     return frozen_storage;
@@ -697,7 +697,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
     auto single_disk_volume = std::make_shared<SingleDiskVolume>(dst_disk->getName(), dst_disk, 0);
 
     /// Do not initialize storage in case of DETACH because part may be broken.
-    bool to_detached = dir_path.starts_with(std::string_view((fs::path(MergeTreeData::DETACHED_DIR_NAME) / "").string()));
+    bool to_detached = dir_path.starts_with(pathToGenericString(fs::path(MergeTreeData::DETACHED_DIR_NAME) / ""));
     auto frozen_storage = create(single_disk_volume, to, dir_path, /*initialize=*/ !to_detached && !params.external_transaction);
 
     return frozen_storage;
@@ -798,8 +798,8 @@ void DataPartStorageOnDiskBase::rename(
             { SyncGuardPtr to_sync_guard = volume->getDisk()->getDirectorySyncGuard(to); }
 
             /// parent_path() twice: step past the trailing slash on `to`/`from`, then to the container.
-            const String to_parent = fs::path(to).parent_path().parent_path().string();
-            const String from_parent = fs::path(from).parent_path().parent_path().string();
+            const String to_parent = pathToGenericString(pathFromString(to).parent_path().parent_path());
+            const String from_parent = pathToGenericString(pathFromString(from).parent_path().parent_path());
 
             if (!to_parent.empty())
                 { SyncGuardPtr to_parent_sync_guard = volume->getDisk()->getDirectorySyncGuard(to_parent); }
@@ -845,10 +845,10 @@ void DataPartStorageOnDiskBase::remove(
     /// "moving/all_1_1_1" or "detached/all_2_3_5". We should handle this case more properly.
 
     /// File might be already renamed on previous try
-    bool has_delete_prefix = part_dir_without_slash.filename().string().starts_with("delete_tmp_");
+    bool has_delete_prefix = pathToGenericString(part_dir_without_slash.filename()).starts_with("delete_tmp_");
     std::optional<CanRemoveDescription> can_remove_description;
     auto disk = volume->getDisk();
-    fs::path to = fs::path(root_path) / part_dir_without_slash;
+    fs::path to = pathFromString(root_path) / part_dir_without_slash;
 
     if (!has_delete_prefix)
     {
@@ -862,14 +862,14 @@ void DataPartStorageOnDiskBase::remove(
                     part_dir,
                     root_path);
 
-            part_dir_without_slash = fs::path(parent_path) / ("delete_tmp_" + std::string{pathToGenericString(part_dir_without_slash.filename())});
+            part_dir_without_slash = pathFromString(parent_path) / ("delete_tmp_" + std::string{pathToGenericString(part_dir_without_slash.filename())});
         }
         else
         {
             part_dir_without_slash = ("delete_tmp_" + std::string{pathToGenericString(part_dir_without_slash.filename())});
         }
 
-        to = fs::path(root_path) / part_dir_without_slash;
+        to = pathFromString(root_path) / part_dir_without_slash;
 
         if (disk->existsDirectory(pathToGenericString(to)))
         {
