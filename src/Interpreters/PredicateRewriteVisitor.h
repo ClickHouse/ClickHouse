@@ -13,10 +13,18 @@ class ASTSelectIntersectExceptQuery;
 class ASTSelectQuery;
 class ASTSelectWithUnionQuery;
 
-/// The subquery shapes `PredicateRewriteVisitorData::rewriteSubquery` refuses to add a predicate to -
-/// the ones where a predicate in `HAVING` would not mean what it means outside. Asked on its own by a
-/// caller that has to know in advance whether the rewrite will happen, so that there is one statement
-/// of this and not two.
+/// The subquery shapes `PredicateRewriteVisitorData::rewriteSubquery` refuses to add a predicate to.
+///
+/// It writes the predicate into the subquery's `HAVING`, because that is the one clause in whose scope
+/// the subquery's output columns exist - which is all the predicate can refer to, coming from outside.
+/// `WHERE` is evaluated before grouping and before the aliases are there. Nothing is being said about
+/// aggregation: the receiving side's own push-down then moves the predicate on down, often into
+/// `PREWHERE`. What is refused here are the shapes where sitting in `HAVING` would change what the
+/// predicate means - filtering before a `LIMIT` rather than after it, before `WITH FILL` rather than
+/// after, before `FINAL`'s deduplication, or over the row set a window or stateful function saw.
+///
+/// Asked on its own by a caller that has to know in advance whether the rewrite will happen, so that
+/// there is one statement of this and not two.
 bool subqueryAcceptsPushedPredicate(
     const ASTSelectQuery & subquery, bool optimize_final, bool optimize_with, ContextPtr context);
 
