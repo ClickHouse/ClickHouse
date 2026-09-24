@@ -705,18 +705,26 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
         write_deltalake(f"s3://{started_cluster.minio_bucket}/{path}", batch, storage_options=safe_storage_options, mode="append")
 
     # Deterministic conflict: the ClickHouse transaction is opened when the sink is created, before the
-    # SELECT produces rows, so a delta-rs commit during the slow SELECT makes the ClickHouse commit lose.
+    # pipeline starts executing, so a delta-rs commit during the slow SELECT makes the ClickHouse commit
+    # lose. The delta-rs append is fired only once the INSERT is observably executing (it has read rows),
+    # not after a fixed delay.
+    slow_query_id = f"{path}_slow_insert"
     slow_result = []
     slow_insert = threading.Thread(
         target=lambda: slow_result.append(
             node.query_and_get_answer_with_error(
-                f"INSERT INTO {path} SELECT number, 'clickhouse' FROM (SELECT number FROM numbers(4) WHERE sleepEachRow(1) = 0)"
-                " SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, max_threads = 1"
+                f"INSERT INTO {path} SELECT number, 'clickhouse' FROM (SELECT number FROM numbers(10) WHERE sleepEachRow(1) = 0)"
+                " SETTINGS max_block_size = 1, min_insert_block_size_rows = 1, max_threads = 1",
+                query_id=slow_query_id,
             )
         )
     )
     slow_insert.start()
-    time.sleep(1)
+    deadline = time.monotonic() + 60
+    while int(node.query(f"SELECT coalesce(max(read_rows), 0) FROM system.processes WHERE query_id = '{slow_query_id}'").strip()) < 1:
+        assert time.monotonic() < deadline, "the slow INSERT did not start reading rows in 60s"
+        assert slow_insert.is_alive(), slow_result
+        time.sleep(0.1)
     deltars_append(0)
     slow_insert.join()
     assert "commit conflict at version 1" in slow_result[0][1], slow_result
