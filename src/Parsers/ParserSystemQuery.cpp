@@ -1967,7 +1967,7 @@ SYSTEM PAUSE VIEWS
 
 Trigger an immediate out-of-schedule refresh of a given view. It runs even if the view is stopped or paused with `SYSTEM STOP VIEW` or `SYSTEM PAUSE VIEW`, and every call runs one refresh.
 
-If the view is in a Replicated or Shared database, the request is shared with all replicas: the refresh may run on another replica, e.g. if the current one is read-only. While the view is stopped with `SYSTEM STOP REPLICATED VIEW`, the refresh is deferred until `SYSTEM START REPLICATED VIEW`, and `SYSTEM WAIT VIEW` does not wait for it.
+If the view is in a Replicated or Shared database, the request is shared with all replicas: the refresh may run on another replica, e.g. if the current one is read-only. While the view is stopped with `SYSTEM STOP REPLICATED VIEW`, the refresh is deferred until `SYSTEM START REPLICATED VIEW`.
 
 ```sql
 SYSTEM REFRESH VIEW [db.]name
@@ -1975,7 +1975,7 @@ SYSTEM REFRESH VIEW [db.]name
 
 ### SYSTEM WAIT VIEW {#wait-view}
 
-Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error, unless it was cancelled. On a stopped view, only a failed `SYSTEM REFRESH VIEW` is reported.
+Waits for the running refresh to complete. If no refresh is running, returns immediately. If the latest refresh attempt failed, reports an error, unless it was cancelled. On a view stopped or paused on this replica, or with status `Disabled`, only a failed `SYSTEM REFRESH VIEW` is reported.
 
 Can be used right after creating a new refreshable materialized view (without EMPTY keyword) to wait for the initial refresh to complete.
 

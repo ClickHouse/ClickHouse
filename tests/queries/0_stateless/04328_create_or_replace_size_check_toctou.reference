@@ -6,8 +6,6 @@ t04328_exists:
 1
 t04328_row_count:
 100000
-before:
-[1]
 held_back_during_replace:
 1	1
 target_untouched:

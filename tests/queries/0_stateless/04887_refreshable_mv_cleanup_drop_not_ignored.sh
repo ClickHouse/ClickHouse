@@ -105,13 +105,8 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${d
 
 echo '-- a refresh requested while stopped: SYSTEM WAIT VIEW checks the target table'
 
-# A non-APPEND refresh publishes its target table through replicated DDL, so `SYSTEM WAIT VIEW`
-# ends by checking that the target visible here is the one the last refresh produced.
-# `SYSTEM REFRESH VIEW` runs even while the view is stopped, so that check has to run for it too.
-#
-# A replica whose target is not the refreshed one is a replica that has not replayed the refresh's
-# `EXCHANGE` yet, which a single-replica test cannot produce, so the target is exchanged away
-# behind the stopped view's back instead.
+# `SYSTEM WAIT VIEW` checks that the target here is the one a refresh on a stopped view produced. A replica lagging
+# behind the `EXCHANGE` needs two replicas, so the target is exchanged away behind the stopped view's back instead.
 ${CLICKHOUSE_CLIENT} --distributed_ddl_output_mode=none -q "
     CREATE TABLE ${db_repl}.tgt (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;
     CREATE TABLE ${db_repl}.decoy (x UInt64) ENGINE = ReplicatedMergeTree ORDER BY x;

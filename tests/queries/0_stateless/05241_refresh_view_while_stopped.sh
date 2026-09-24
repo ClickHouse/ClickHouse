@@ -10,7 +10,6 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 $CLICKHOUSE_CLIENT -q "create view refreshes as select * from system.view_refreshes where database = '$CLICKHOUSE_DATABASE' order by view"
 
-# Helper: wait until the view's status matches the expected one.
 wait_status() {
     local view_name=$1
     local expected=$2
@@ -20,7 +19,7 @@ wait_status() {
     done
 }
 
-# Helper: wait until the refresh is running AND has read at least one row, so that a cancellation
+# Waits until the refresh has read a row, so that a cancellation
 # issued right after has a concrete pipeline to interrupt.
 wait_running_with_progress() {
     local view_name=$1
@@ -30,12 +29,10 @@ wait_running_with_progress() {
     done
 }
 
-# ---------------------------------------------------------------------------
 # 1. `SYSTEM REFRESH` on a stopped or paused view runs right away, once per request,
-# and the view goes back to Disabled afterwards, like `REFRESH` on a stopped streaming table.
-# ---------------------------------------------------------------------------
+# and the view goes back to `Disabled` afterwards, like `REFRESH` on a stopped streaming table.
 
-# APPEND, so that the number of rows counts the refreshes that ran.
+# `APPEND`, so that the number of rows counts the refreshes that ran.
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
     insert into src values (44);
@@ -45,14 +42,12 @@ $CLICKHOUSE_CLIENT -q "
 
 wait_status d Disabled
 
-# `REFRESH` while stopped runs now, `SYSTEM WAIT VIEW` waits for it. Then the view is stopped again.
 $CLICKHOUSE_CLIENT -q "
     system refresh d;
     system wait view d;
     select '<1: refresh while stopped runs now>', count() from d;"
 wait_status d Disabled
 
-# Several requests run that many refreshes. `SYSTEM WAIT VIEW` waits for the last of them.
 $CLICKHOUSE_CLIENT -q "
     system refresh view d;
     system refresh view d;
@@ -61,7 +56,6 @@ $CLICKHOUSE_CLIENT -q "
     select '<1: three refreshes run three times>', count() from d;"
 wait_status d Disabled
 
-# The same while paused.
 $CLICKHOUSE_CLIENT -q "
     system start d;
     system pause d;"
@@ -72,19 +66,15 @@ $CLICKHOUSE_CLIENT -q "
     select '<1: refresh while paused runs now>', count() from d;"
 wait_status d Disabled
 
-# Nothing is left pending: `SYSTEM START` does not fire a deferred refresh.
 $CLICKHOUSE_CLIENT -q "
     system start d;
     system wait view d;
     select '<1: nothing pending after start>', (select count() from d), (select status from refreshes where view = 'd');
-    system stop view d;
     drop table d;
     drop table src;"
 
-# ---------------------------------------------------------------------------
 # 2. `SYSTEM WAIT VIEW` reports a failed out-of-schedule refresh on a stopped view,
 # the same as on a running view.
-# ---------------------------------------------------------------------------
 
 $CLICKHOUSE_CLIENT -q "
     create materialized view f refresh every 1 year (x Int64) engine Memory empty as
@@ -101,9 +91,7 @@ $CLICKHOUSE_CLIENT -q "
     select '<2: failed refresh while stopped is reported>', exception like '%boom%', status from refreshes where view = 'f';
     drop table f;"
 
-# ---------------------------------------------------------------------------
 # 3. `SYSTEM STOP VIEW` cancels the running refresh only: requests queued behind it still run.
-# ---------------------------------------------------------------------------
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -123,14 +111,11 @@ $CLICKHOUSE_CLIENT -q "
 wait_status e Disabled
 $CLICKHOUSE_CLIENT -q "
     select '<3: stop cancels only the running refresh>', (select count() from e), (select status from refreshes where view = 'e');
-    system start view e;
     drop table e;
     drop table src;"
 
-# ---------------------------------------------------------------------------
 # 4. `SYSTEM WAIT VIEW` stays silent about a refresh that `SYSTEM STOP VIEW` interrupted
 # (error `cancelled`), while still reporting a genuine failure (2).
-# ---------------------------------------------------------------------------
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
@@ -141,7 +126,6 @@ $CLICKHOUSE_CLIENT -q "
 
 wait_running_with_progress g
 
-# `SYSTEM STOP VIEW` cancels the running refresh; `SYSTEM WAIT VIEW` must not report "cancelled".
 $CLICKHOUSE_CLIENT -q "
     system stop view g;
     system wait view g;
@@ -149,34 +133,29 @@ $CLICKHOUSE_CLIENT -q "
     drop table g;
     drop table src;"
 
-# ---------------------------------------------------------------------------
 # 5. `SYSTEM WAIT VIEW` does not report a scheduled refresh that failed before the view was
 # stopped; only a failed out-of-schedule refresh (2) is reported on a stopped view.
-# ---------------------------------------------------------------------------
 
 $CLICKHOUSE_CLIENT -q "
     create materialized view sv refresh every 1 year settings refresh_retries = 0 (x Int64) engine Memory as
         select throwIf(1, 'scheduled-boom')::Int64 as x;"
 
-# The initial (scheduled, not out-of-schedule) refresh fails; with no retries the view settles Scheduled.
+# The initial (scheduled, not out-of-schedule) refresh fails; with no retries the view settles `Scheduled`.
 wait_status sv Scheduled
 
-# `SYSTEM WAIT VIEW` must stay silent about that failure even after the view is stopped.
 $CLICKHOUSE_CLIENT -q "
     system stop view sv;
     system wait view sv;
     select '<5: stale scheduled failure not reported after stop>', (select exception like '%scheduled-boom%' from refreshes where view = 'sv'), (select status from refreshes where view = 'sv');
     drop table sv;"
 
-# ---------------------------------------------------------------------------
 # 6. `SYSTEM WAIT VIEW` is silent after `SYSTEM CANCEL VIEW` interrupted a refresh (the view
 # stays enabled), matching `SYSTEM STOP VIEW` (4).
-# ---------------------------------------------------------------------------
 
 $CLICKHOUSE_CLIENT -q "
     create table src (x Int64) engine Memory;
     insert into src select * from numbers(10) settings max_block_size = 1;
-    create materialized view cw refresh every 1 year settings refresh_retries = 0 (x Int64) engine Memory empty as
+    create materialized view cw refresh every 1 year (x Int64) engine Memory empty as
         select x + sleepEachRow(1) as x from src settings max_block_size = 1, max_threads = 1;
     system refresh cw;"
 
@@ -186,27 +165,22 @@ $CLICKHOUSE_CLIENT -q "
     system cancel cw;
     system wait view cw;
     select '<6: wait is silent after cancel>', status != 'Disabled' from refreshes where view = 'cw';
-    system stop view cw;
     drop table cw;
     drop table src;"
 
-# ---------------------------------------------------------------------------
 # 7. `SYSTEM WAIT VIEW` reports a failed `SYSTEM REFRESH VIEW` even when the view is stopped
 # only after the failure.
-# ---------------------------------------------------------------------------
 
 $CLICKHOUSE_CLIENT -q "
-    create materialized view fs refresh every 1 year settings refresh_retries = 0 (x Int64) engine Memory empty as
+    create materialized view fs refresh every 1 year (x Int64) engine Memory empty as
         select throwIf(1, 'late-boom')::Int64 as x;
     system refresh view fs;"
 
-# While the view is still enabled the failure is reported. This part always worked.
 $CLICKHOUSE_CLIENT -q "system wait view fs; -- { serverError REFRESH_FAILED }"
 
 $CLICKHOUSE_CLIENT -q "system stop view fs;"
 wait_status fs Disabled
 
-# Same failure, view now stopped: it must still be reported.
 $CLICKHOUSE_CLIENT -q "system wait view fs; -- { serverError REFRESH_FAILED }"
 
 $CLICKHOUSE_CLIENT -q "

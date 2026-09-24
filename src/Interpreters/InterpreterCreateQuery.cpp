@@ -3089,9 +3089,6 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
             InterpreterDropQuery(ast_drop, drop_context).execute();
         }
 
-        /// The replacement view's refresher was created paused so it could not touch the target
-        /// before the rename, which resumed it, see `RefreshTask::rename`.
-
         scrub_temp_table_from_query_log();
 
         create.setTable(table_to_replace_name);

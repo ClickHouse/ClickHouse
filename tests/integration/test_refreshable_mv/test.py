@@ -4,7 +4,7 @@ from random import randint
 import pytest
 
 from helpers.cluster import ClickHouseCluster, QueryRuntimeException
-from helpers.test_tools import assert_eq_with_retry
+from helpers.test_tools import assert_eq_with_retry, wait_condition
 
 cluster = ClickHouseCluster(__file__)
 
@@ -351,19 +351,11 @@ def test_takeover_waits_for_recreated_request(started_cluster, cleanup):
         node.query("system sync database replica re")
         wait_until_view_registered(node, "a")
 
-    def status(node):
-        return node.query("select status from system.view_refreshes where view = 'a'").strip()
+    def wait_status(predicate):
+        wait_condition(lambda: node2.query("select status from system.view_refreshes where view = 'a'").strip(), predicate, max_attempts=600)
 
-    def wait_status(node, predicate, timeout=60):
-        deadline = time.monotonic() + timeout
-        while not predicate(status(node)):
-            assert time.monotonic() < deadline, status(node)
-            time.sleep(0.1)
-
-    # The read-only replica cannot run its requests, so a writable one takes them over after a Keeper session timeout. node2's
-    # first read of them fails and is retried 5 s later, so its takeover clock starts 5 s after node1's: node1 takes the first
-    # one over. That re-creates the znode for the second one: a new request, so node2's clock must start over once nothing is
-    # running, instead of taking it over at once.
+    # node2's failed read is retried 5 s later, so its takeover clock starts after node1's: node1 takes the first request over.
+    # That re-creates the znode for the second: a new request, so node2's clock must start over once nothing runs.
     fp = "refresh_mv_fail_znodes_read"
     node2.query(f"system enable failpoint {fp}")
     try:
@@ -372,10 +364,10 @@ def test_takeover_waits_for_recreated_request(started_cluster, cleanup):
         time.sleep(2)
     finally:
         node2.query(f"system disable failpoint {fp}")
-    wait_status(node2, lambda s: s == "RunningOnAnotherReplica")
-    wait_status(node2, lambda s: s != "RunningOnAnotherReplica")
+    wait_status(lambda s: s == "RunningOnAnotherReplica")
+    wait_status(lambda s: s != "RunningOnAnotherReplica")
     first_refresh_ended = time.monotonic()
-    wait_status(node2, lambda s: s in ("Running", "RunningOnAnotherReplica"))
+    wait_status(lambda s: s in ("Running", "RunningOnAnotherReplica"))
     assert time.monotonic() - first_refresh_ended >= 10
     reading_node.query("system wait view re.a", timeout=180)
     assert_eq_with_retry(node1, "select count() from re.a", "40\n")

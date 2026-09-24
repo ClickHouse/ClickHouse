@@ -1,6 +1,6 @@
 import logging
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 import pytest
@@ -602,32 +602,26 @@ def _wait_batch_log_max_t(at_least, timeout=120):
 
 
 def test_wait_view_reports_failed_refresh_on_stopped_replica(fn3_setup_tables):
-    # `SYSTEM WAIT VIEW` must report a failed `SYSTEM REFRESH VIEW` on a stopped view from any
-    # replica, not just the one that executed the refresh.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval="EVERY 1 YEAR",
         to_clause="tgt1",
         select_query="SELECT throwIf(1, 'boom') a",
-        with_append=False,
         on_cluster="default",
         empty=True,
-        settings={"refresh_retries": "0"},
     )
     node.query(create_sql)
 
-    # Only `node` may run it, so the failing attempt is recorded by a known replica.
     node2.query("SYSTEM STOP VIEW test_rmv")
 
     with pytest.raises(helpers.client.QueryRuntimeException) as exc:
         node.query("SYSTEM REFRESH VIEW test_rmv; SYSTEM WAIT VIEW test_rmv")
     assert "boom" in str(exc.value)
 
-    # node2 never ran the refresh and is stopped, but Keeper tells it the last attempt was a
-    # failed out-of-schedule refresh, so its `SYSTEM WAIT VIEW` must report the same failure.
+    # node2 never ran it, but the root znode says the last attempt was a failed `SYSTEM REFRESH VIEW`.
     get_rmv_info(node2, "test_rmv", wait_status="Disabled")
     with pytest.raises(helpers.client.QueryRuntimeException) as exc:
         node2.query("SYSTEM WAIT VIEW test_rmv")
@@ -635,47 +629,93 @@ def test_wait_view_reports_failed_refresh_on_stopped_replica(fn3_setup_tables):
 
 
 def test_wait_view_reports_manual_refresh_lost_with_its_replica(fn3_setup_tables):
-    # When the replica running a `SYSTEM REFRESH VIEW` dies before the completion write, the
-    # surviving replica finalizes the attempt from the znode written when it started, so that
-    # znode has to already say the attempt was out-of-schedule.
+    # A stopped replica learns that an attempt lost with the replica running it was a `SYSTEM REFRESH VIEW` only from its start znode.
     if node.is_built_with_sanitizer():
         pytest.skip("Disabled for sanitizers")
 
     create_sql = CREATE_RMV.render(
         table_name="test_rmv",
-        refresh_interval="EVERY 1 HOUR",
+        refresh_interval="EVERY 1 YEAR",
         to_clause="tgt1",
         # Slow enough to still be running when the replica is killed.
         select_query="SELECT now() + sleepEachRow(1) a FROM numbers(20) SETTINGS max_block_size = 1",
-        with_append=False,
         on_cluster="default",
         empty=True,
-        settings={"refresh_retries": "0"},
     )
     node.query(create_sql)
 
-    # node2 stays stopped: it is the replica that reconciles the lost attempt and answers `SYSTEM WAIT VIEW`.
     node2.query("SYSTEM STOP VIEW test_rmv")
 
     killed = False
     try:
         node.query("SYSTEM REFRESH VIEW test_rmv")
         get_rmv_info(node, "test_rmv", wait_status="Running")
-        # Wait until node2 sees the refresh in flight, otherwise its `SYSTEM WAIT VIEW` could return before
-        # noticing the attempt at all.
-        get_rmv_info(node2, "test_rmv", wait_status="RunningOnAnotherReplica")
 
         node.stop_clickhouse(kill=True)
         killed = True
 
-        # node2 waits out the Keeper session and the crash grace period, then finalizes the attempt
-        # with an empty error, and must report it: the refresh that was lost was hand-requested.
+        # After the session timeout and crash grace period node2 finalizes the attempt with an empty error, and reports it.
         with pytest.raises(helpers.client.QueryRuntimeException) as exc:
             node2.query("SYSTEM WAIT VIEW test_rmv", timeout=180)
         assert "Replica went away" in str(exc.value)
     finally:
         if killed:
             node.start_clickhouse()
+
+
+def test_wait_view_on_stopped_replica_ignores_scheduled_failure(fn3_setup_tables):
+    # A stopped replica's `SYSTEM WAIT VIEW` that ends on a success must not report the scheduled failure after it, carried
+    # by the retry already running. node2's reads fail meanwhile, so that it sees the success and the retry at once.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    fp = "refresh_mv_pause_before_exchange"
+    node.query("CREATE TABLE ctl ON CLUSTER default (x UInt8) ENGINE = MergeTree ORDER BY tuple()")
+    try:
+        node.query(
+            CREATE_RMV.render(
+                table_name="test_rmv",
+                refresh_interval="EVERY 1 YEAR",
+                to_clause="tgt1",
+                select_query="SELECT now() a FROM numbers(1) WHERE throwIf((SELECT count() FROM ctl) = 1, 'scheduled failure') = 0",
+                on_cluster="default",
+                empty=True,
+            )
+        )
+        next_refresh = get_rmv_info(node, "test_rmv", condition=lambda x: x["status"] == "Scheduled")["next_refresh_time"]
+        node2.query("SYSTEM STOP VIEW test_rmv")
+
+        node.query(f"SYSTEM ENABLE FAILPOINT {fp}")
+        node.query("SYSTEM REFRESH VIEW test_rmv")
+        node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
+        wait = node2.get_query_request("SYSTEM WAIT VIEW test_rmv", timeout=120)
+        wait_condition(
+            lambda: node2.query("SELECT count() FROM system.processes WHERE query LIKE 'SYSTEM WAIT VIEW%'").strip(),
+            lambda x: x == "1",
+            max_attempts=100,
+        )
+        # Lets the wait finish its own read of Keeper, which the failpoint would fail.
+        time.sleep(2)
+        node2.query("SYSTEM ENABLE FAILPOINT refresh_mv_fail_znodes_read")
+        try:
+            # One row in `ctl` fails the scheduled refresh due right after this one; the frozen fake clock holds its retry.
+            node.query("INSERT INTO ctl VALUES (1)")
+            node.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{next_refresh + timedelta(seconds=1)}'")
+            node.query(f"SYSTEM NOTIFY FAILPOINT {fp}")
+            get_rmv_info(
+                node,
+                "test_rmv",
+                condition=lambda x: x["status"] == "Scheduled" and "scheduled failure" in (x["exception"] or ""),
+            )
+            node.query("INSERT INTO ctl VALUES (1)")
+            node.query(f"SYSTEM TEST VIEW test_rmv SET FAKE TIME '{next_refresh + timedelta(seconds=10)}'")
+            node.query(f"SYSTEM WAIT FAILPOINT {fp} PAUSE")
+        finally:
+            node2.query("SYSTEM DISABLE FAILPOINT refresh_mv_fail_znodes_read")
+        wait.get_answer()
+    finally:
+        node.query(f"SYSTEM DISABLE FAILPOINT {fp}")
+        node.query("DROP TABLE IF EXISTS ctl ON CLUSTER default SYNC")
 
 
 def test_circular_dependencies_survive_restart(module_setup_tables):

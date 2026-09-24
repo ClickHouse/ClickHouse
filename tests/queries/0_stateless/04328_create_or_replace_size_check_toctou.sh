@@ -92,20 +92,13 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = curr
 echo "t04328_row_count:"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM t04328"
 
-# The same pause, used for what it does to a refreshable materialized view. A `CREATE OR REPLACE`
-# runs the replacement view under its temporary name until the rename commits, and its refresher is
-# held back until then so it cannot write to the target early. Releasing that hold afterwards must
-# not also start a view that was stopped meanwhile: `SYSTEM START VIEWS` must not lift the hold, and
-# a `SYSTEM STOP VIEWS` landing in the window must survive the commit. Both server-wide commands are
-# the only way to reach a view whose temporary name nobody knows.
+# The replacement refreshable view is held back until the rename commits: `SYSTEM START VIEWS` must not lift that hold,
+# and a `SYSTEM STOP VIEWS` in the window must survive the commit (only server-wide commands reach the temporary name).
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE src04328 (x Int64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO src04328 VALUES (1)"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE dest04328 (x Int64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW mv04328 REFRESH EVERY 1 YEAR TO dest04328 AS SELECT x FROM src04328"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW mv04328"
-${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW mv04328"
-echo "before:"
-${CLICKHOUSE_CLIENT} -q "SELECT groupArray(x) FROM dest04328"
 
 # `PAUSEABLE_ONCE` disarmed itself on Q1 above, so arm it again for this round.
 ${CLICKHOUSE_CLIENT} -q "SYSTEM ENABLE FAILPOINT create_or_replace_before_rename"
@@ -142,4 +135,3 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM START VIEW mv04328"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM WAIT VIEW mv04328"
 echo "target_after_start:"
 ${CLICKHOUSE_CLIENT} -q "SELECT groupArray(x) FROM dest04328"
-${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW mv04328"

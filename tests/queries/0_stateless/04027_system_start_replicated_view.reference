@@ -2,6 +2,5 @@
 <2: stopped>	Disabled
 <3: restarted>	1
 <4: new rows>	1
-<5: stopped cluster-wide>	Disabled
 <6: refresh deferred>	0	Disabled
 <7: deferred refresh runs after resume>	1

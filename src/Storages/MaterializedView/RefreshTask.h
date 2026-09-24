@@ -92,8 +92,7 @@ public:
         std::string last_attempt_replica;
         std::string last_attempt_error;
         bool last_attempt_succeeded = false;
-        /// Whether the last attempt was a `SYSTEM REFRESH VIEW`: a stopped view reports only such a failure, and on every
-        /// replica, see `wait`.
+        /// Whether the last attempt was a `SYSTEM REFRESH VIEW`: `wait` on a stopped replica reports only such a failure.
         bool last_attempt_out_of_schedule = false;
         /// If an attempt is in progress, this contains error from the previous attempt.
         /// Useful if we keep retrying and failing, and each attempt takes a while - we want to see an error message
@@ -197,7 +196,7 @@ public:
     /// Waits for the currently running refresh attempt to complete, either on this replica
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
-    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed, unless it was cancelled.
+    /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
     /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
@@ -241,7 +240,7 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; counts the `SYSTEM REFRESH VIEW`s made on that replica not started yet, see `run`)
+        /// ├── ["requested-<replica>"] (persistent; counts that replica's `SYSTEM REFRESH VIEW`s not started yet, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -256,7 +255,6 @@ private:
         struct PendingRequest
         {
             Int64 czxid = 0;
-            /// How many statements the znode counts, and its version to consume one against, see `updateCoordinationState`.
             UInt64 count = 0;
             int32_t version = -1;
             std::optional<std::chrono::system_clock::time_point> pending_since {};
@@ -338,10 +336,8 @@ private:
         /// Refreshes are stopped, e.g. by SYSTEM STOP VIEW or SYSTEM PAUSE VIEW.
         /// We shouldn't start new scheduled refreshes, but pre-existing refresh attempt may keep going.
         bool stop_requested = false;
-        /// Held back even from `SYSTEM REFRESH VIEW`: an uncoordinated view restored from a backup, until
-        /// `finalizeRestoreFromBackup` or `start`.
+        /// Held back even from `SYSTEM REFRESH VIEW`: an uncoordinated restore until finalized or started, a shutdown for good.
         bool not_ready = false;
-        /// Held back even from `SYSTEM REFRESH VIEW`, and nothing lifts it: `shutdown` began.
         bool shutdown_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;

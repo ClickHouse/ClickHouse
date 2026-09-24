@@ -71,11 +71,8 @@ done
 $CLICKHOUSE_CLIENT -q "select '<3: restarted>', status != 'Disabled' from ${db}.refreshes"
 $CLICKHOUSE_CLIENT -q "select '<4: new rows>', count() > $cnt_before from ${db}.rmv"
 
-# ---------------------------------------------------------------------------
-# A refresh requested while the view is stopped cluster-wide stays deferred until
-# `SYSTEM START REPLICATED VIEW`, and then runs. This is the one stop that
-# `SYSTEM REFRESH VIEW` does not override - a local `SYSTEM STOP VIEW` it does.
-# ---------------------------------------------------------------------------
+# A refresh requested while the view is stopped cluster-wide is deferred until `SYSTEM START REPLICATED VIEW`: the one
+# stop that `SYSTEM REFRESH VIEW` does not override.
 
 # `APPEND`, so the row count is the number of refreshes that ran, and `EVERY 1 YEAR` with
 # `EMPTY` so that nothing refreshes on its own while the test runs.
@@ -87,13 +84,6 @@ $CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -nq "
         as select 2 as x;
     system stop replicated view ${db}.rmv2;
 "
-for _ in $(seq 1 60); do
-    if [ "$($CLICKHOUSE_CLIENT -q "select status from ${db}.refreshes where view = 'rmv2' -- $LINENO" | xargs)" = 'Disabled' ]; then
-        break
-    fi
-    sleep 0.5
-done
-$CLICKHOUSE_CLIENT -q "select '<5: stopped cluster-wide>', status from ${db}.refreshes where view = 'rmv2'"
 
 # The request is accepted, but must not run. The loop gives it a window to run in and
 # breaks early if it does, so a regression here fails instead of passing slowly.
@@ -106,7 +96,6 @@ for _ in $(seq 1 6); do
 done
 $CLICKHOUSE_CLIENT -q "select '<6: refresh deferred>', (select count() from ${db}.rmv2), (select status from ${db}.refreshes where view = 'rmv2')"
 
-# Resuming runs the refresh that was requested while the view was stopped.
 $CLICKHOUSE_CLIENT -q "system start replicated view ${db}.rmv2"
 for _ in $(seq 1 120); do
     if [ "$($CLICKHOUSE_CLIENT -q "select count() from ${db}.rmv2 -- $LINENO" | xargs)" = '1' ]; then

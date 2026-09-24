@@ -1,8 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, atomic-database
-# no-parallel: arms a `PAUSEABLE_ONCE` failpoint, which fires once globally, so a concurrent `RESTORE` from
-#   another test could steal the pause.
-# atomic-database: refreshable materialized views require an `Atomic` database.
+# no-parallel: a concurrent `RESTORE` could take the single pause of the `PAUSEABLE_ONCE` failpoint.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -19,19 +17,16 @@ cleanup() {
 trap cleanup EXIT
 cleanup
 
-# A restored refreshable materialized view is held back until the `RESTORE` finishes, so it cannot
-# refresh over half-restored data. Finishing the restore must lift only that hold: a view that was
-# stopped meanwhile - by `SYSTEM STOP VIEW` here, or by
-# `stop_refreshable_materialized_views_on_startup` on a server where it is set - stays stopped.
+# A restored refreshable materialized view is held back until the `RESTORE` finishes; finishing it must lift only
+# that hold, so a view stopped meanwhile (`SYSTEM STOP VIEW`, `stop_refreshable_materialized_views_on_startup`) stays stopped.
 ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE \`$STOPPED\`"
 ${CLICKHOUSE_CLIENT} -q "CREATE TABLE \`$STOPPED\`.src (x Int64) ENGINE = MergeTree ORDER BY x"
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO \`$STOPPED\`.src VALUES (1)"
 ${CLICKHOUSE_CLIENT} -q "CREATE MATERIALIZED VIEW \`$STOPPED\`.mv REFRESH EVERY 1 SECOND
     (x Int64) ENGINE = MergeTree ORDER BY x EMPTY AS SELECT x FROM \`$STOPPED\`.src"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
-# The view refreshes every second, and `SYSTEM STOP VIEW` interrupts a
-# running refresh without waiting for it to unwind. Wait until the view is idle, so that the
-# `EXCHANGE` and `DROP` of its target cannot race the backup scan and warn on stderr.
+# `SYSTEM STOP VIEW` does not wait for the refresh it interrupts; an `EXCHANGE` or `DROP` of the target racing the backup
+# scan would warn on stderr.
 while [ "$(${CLICKHOUSE_CLIENT} -q "SELECT status FROM system.view_refreshes WHERE database = '$STOPPED'")" != 'Disabled' ]
 do
     sleep 0.1
@@ -54,7 +49,7 @@ ${CLICKHOUSE_CLIENT} -q "SYSTEM STOP VIEW \`$STOPPED\`.mv"
 ${CLICKHOUSE_CLIENT} -q "SYSTEM NOTIFY FAILPOINT restore_pause_before_data_restore_tasks"
 wait $RESTORE_PID
 
-# The view refreshes every second, so this is long enough for a released one to leave Disabled and
+# The view refreshes every second, so this is long enough for a released one to leave `Disabled` and
 # write to its target.
 sleep 2
 
