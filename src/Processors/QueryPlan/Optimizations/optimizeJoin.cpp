@@ -267,7 +267,8 @@ bool optimizeJoinLegacy(
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes & nodes,
-    const QueryPlanOptimizationSettings & optimization_settings)
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache * relation_stats_cache)
 {
     bool keep_logical = optimization_settings.keep_logical_steps;
     /// Distributed plan keeps logical joins steps. They are converted to physical steps afterwards, when plan fragment is executed by a worker.
@@ -279,7 +280,7 @@ bool convertLogicalJoinToPhysical(
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
-    JoinStepLogical::buildPhysicalJoin(node, optimization_settings, nodes);
+    JoinStepLogical::buildPhysicalJoin(node, optimization_settings, nodes, relation_stats_cache);
 
     return true;
 }

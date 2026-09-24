@@ -335,7 +335,7 @@ void optimizeTreeSecondPass(
         /// Their cached entries still describe the subtrees moved underneath those wrappers, so
         /// invalidate every original child along with the join node after a successful conversion.
         const auto original_children = join_node.children;
-        if (!convertLogicalJoinToPhysical(join_node, nodes, optimization_settings))
+        if (!convertLogicalJoinToPhysical(join_node, nodes, optimization_settings, &relation_stats_cache))
             return false;
 
         relation_stats_cache.invalidate(join_node);

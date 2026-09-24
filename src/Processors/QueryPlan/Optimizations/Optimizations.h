@@ -355,10 +355,13 @@ void calculateHashTableCacheKeys(
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
 
+/// Convert a logical join to a physical implementation. The optional cache is borrowed only for
+/// the duration of this call and lets IEJoin key planning reuse estimates from the current pass.
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,
-    const QueryPlanOptimizationSettings & optimization_settings);
+    const QueryPlanOptimizationSettings & optimization_settings,
+    RelationStatsCache * relation_stats_cache = nullptr);
 
 void optimizeJoinLogical(
     QueryPlan::Node & node,
