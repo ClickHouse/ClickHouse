@@ -585,13 +585,6 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if (hasNonProcessableState())
-    {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                path, file_status->state.load(), file_status->retries.load(), max_loading_retries);
-        return std::nullopt;
-    }
-
     if (state == FileStatus::State::Failed)
     {
         /// Revalidate against Keeper: the cache already thinks this file Failed and
@@ -657,6 +650,17 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
                      "at or above the current limit", path);
             return std::nullopt;
         }
+    }
+
+    /// Checked after the Keeper revalidation above (same order as `trySetProcessing`): a cache-hot
+    /// `Failed` file with exhausted retries must reach `getPathState()` and
+    /// `tryTerminalizeExhaustedRetriableMarker()` first, otherwise a stale cache and
+    /// exhausted `.retriable` markers are never healed on the hash-ring path.
+    if (hasNonProcessableState())
+    {
+        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
+                path, file_status->state.load(), file_status->retries.load(), max_loading_retries);
+        return std::nullopt;
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
