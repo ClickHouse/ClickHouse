@@ -1094,12 +1094,10 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     {
         auto * positions = postings.getPositions();
         chassert(positions);
-        positions->finalizeOrdering();
-        const auto & position_entries = positions->getEntries();
 
         info.header |= HasPositions;
         info.position_offset = positions_stream->plain_hashing.count();
-        TextIndexBlockedPositionsCodec::encode(position_entries, positions_stream->plain_hashing);
+        positions->finalize(positions_stream->plain_hashing);
         info.position_bytes = positions_stream->plain_hashing.count() - info.position_offset;
     }
 

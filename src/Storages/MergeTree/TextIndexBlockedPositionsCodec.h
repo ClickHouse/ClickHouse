@@ -1,6 +1,5 @@
 #pragma once
 
-#include <Storages/MergeTree/TextIndexPositionData.h>
 #include <Common/PODArray.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteBuffer.h>
@@ -63,8 +62,25 @@ public:
         PaddedPODArray<UInt32> values;
     };
 
-    /// Encodes the writer's sorted RoaringishEntry accumulation as the blocked stream.
-    static void encode(std::span<const RoaringishEntry> entries, WriteBuffer & out);
+    /// Streams one token's position lists in posting order; full blocks are compressed as they fill.
+    class Encoder
+    {
+    public:
+        /// `positions` must be non-empty and strictly increasing.
+        void addDocument(std::span<const UInt32> positions);
+        void finalize(WriteBuffer & out);
+        UInt64 numDocuments() const { return num_docs; }
+
+    private:
+        void sealBlock();
+
+        PaddedPODArray<UInt32, 64> block_freqs;
+        PaddedPODArray<UInt32, 64> block_values;
+        std::vector<size_t> block_bytes;
+        std::vector<uint8_t> staged;
+        UInt64 num_docs = 0;
+        UInt64 num_positions = 0;
+    };
 
     /// Reads the directory (stream positioned at the token's `blob_offset` = position_offset).
     /// `expected_num_docs` (header cardinality) and `available_bytes` fail-close every declared size.
@@ -90,6 +106,48 @@ public:
         PaddedPODArray<UInt32> & doc_offsets,
         PaddedPODArray<UInt32> & positions,
         DecodeScratch & scratch);
+};
+
+/// Collects one token's positions during the index build and streams them to the encoder.
+class PositionListBuilder
+{
+public:
+    /// Positions may repeat or go backwards within a document: Array and Map restart them per element.
+    void add(UInt32 doc_id, UInt32 position)
+    {
+        if (!document.empty() && doc_id != current_doc)
+            flushDocument();
+
+        current_doc = doc_id;
+        if (!document.empty() && position <= document.back())
+            is_sorted = false;
+        document.push_back(position);
+    }
+
+    void finalize(WriteBuffer & out)
+    {
+        if (!document.empty())
+            flushDocument();
+        encoder.finalize(out);
+    }
+
+private:
+    void flushDocument()
+    {
+        if (!is_sorted)
+        {
+            std::sort(document.begin(), document.end());
+            document.erase(std::unique(document.begin(), document.end()), document.end());
+            is_sorted = true;
+        }
+        encoder.addDocument(document);
+        document.clear();
+    }
+
+    TextIndexBlockedPositionsCodec::Encoder encoder;
+    PaddedPODArray<UInt32, 64> document;
+    UInt32 current_doc = 0;
+    bool is_sorted = true;
 };
 
 }

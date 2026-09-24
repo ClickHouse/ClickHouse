@@ -24,6 +24,8 @@
 #include <array>
 #include <bit>
 #include <limits>
+#include <numeric>
+#include <optional>
 #include <utility>
 
 namespace ProfileEvents
@@ -64,46 +66,6 @@ CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_c
     ParserCodec codec_parser;
     auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
     return CompressionCodecFactory::instance().get(ast, nullptr);
-}
-
-/// Merge-path decode of blocked positions: the stream stores per-posting-rank position lists with
-/// no document ids, so it is paired with the token's posting lists (its rank space, in pre-remap
-/// doc order) to rebuild roaringish entries the merge can remap and re-encode.
-void decodeBlockedPositions(
-    ReadBuffer & in,
-    std::span<const UInt32> doc_ids,
-    UInt64 expected_num_docs,
-    size_t available_bytes,
-    TextIndexBlockedPositionsCodec::DecodeScratch & scratch,
-    PODArray<RoaringishEntry> & entries)
-{
-    PaddedPODArray<UInt32> doc_offsets;
-    PaddedPODArray<UInt32> positions;
-    TextIndexBlockedPositionsCodec::decodeAll(in, expected_num_docs, available_bytes, doc_offsets, positions, scratch);
-
-    entries.reserve(entries.size() + positions.size());
-
-    size_t rank = 0;
-    for (const UInt32 doc : doc_ids)
-    {
-        if (rank + 1 >= doc_offsets.size())
-            throw Exception(ErrorCodes::CORRUPTED_DATA,
-                "Corrupt text index positions: more posting documents than position lists ({})", rank);
-
-        for (UInt32 i = doc_offsets[rank]; i < doc_offsets[rank + 1]; ++i)
-        {
-            const auto entry = RoaringishEntry::make(doc, positions[i]);
-            if (!entries.empty() && entries.back().sameBucket(entry))
-                entries.back().mergeBitmap(entry);
-            else
-                entries.push_back(entry);
-        }
-        ++rank;
-    }
-
-    if (rank + 1 != doc_offsets.size())
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: {} posting documents but {} position lists", rank, doc_offsets.size() - 1);
 }
 
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
@@ -306,11 +268,12 @@ static ALWAYS_INLINE UInt32 adjustPartOffset(const MergedPartOffsets & merged_pa
 struct MergeTextIndexesTask::PostingsMergeCursor
 {
     const TokenSource * source = nullptr;
+    size_t source_idx = 0;
     /// Position of the current row id in the row_ids array.
     size_t pos = 0;
     /// Next entry of info.offsets to decode.
     size_t next_segment = 0;
-    /// Decoded and remapped row ids of the current segment, or of the whole source.
+    /// Decoded and remapped row ids of the current segment, or the embedded postings.
     PaddedPODArray<UInt32> row_ids;
 
     UInt32 current() const { return row_ids[pos]; }
@@ -343,7 +306,8 @@ public:
 
     /// Passes the row ids of the active cursors to the sink in the globally sorted order.
     /// Aligned runs of a single source are passed through without copying, the rest is buffered.
-    template <typename Sink> void merge(Sink && sink);
+    /// If `positions_` is set, it receives the source of every row id in the same order.
+    template <typename Sink> void merge(Sink && sink, PositionsMerge * positions_);
 
 private:
     static constexpr size_t WINDOW_ROWS = 4096;
@@ -395,9 +359,140 @@ private:
     std::vector<PostingsMergeCursor *> active_cursors;
     /// Bitset of the current window.
     std::array<UInt64, WINDOW_ROWS / 64> window_bits{};
+    /// Source of each set bit, tracked only with positions.
+    std::array<UInt32, WINDOW_ROWS> window_sources{};
+    PositionsMerge * positions = nullptr;
     /// Row ids buffered for the sink.
     PaddedPODArray<UInt32> buffer;
 };
+
+class MergeTextIndexesTask::PositionsMerge
+{
+public:
+    explicit PositionsMerge(MergeTextIndexesTask & task_) : task(task_) {}
+
+    /// Opens the positions of the current token's sources.
+    void start();
+    /// Appends the next `count` position lists of the source.
+    void append(size_t source_idx, size_t count);
+    /// Writes the merged position lists; every source must be consumed.
+    void finish(TokenPostingsInfo & token_info);
+
+private:
+    struct Reader
+    {
+        ReadBuffer * in = nullptr;
+        TextIndexBlockedPositionsCodec::Directory directory;
+        size_t next_rank = 0;
+        /// Decoded block of `next_rank`, split by `offsets`.
+        PaddedPODArray<UInt32> offsets;
+        PaddedPODArray<UInt32> positions;
+    };
+
+    MergeTextIndexesTask & task;
+    std::vector<Reader> readers;
+    /// Set only while a token with positions is merged.
+    std::optional<TextIndexBlockedPositionsCodec::Encoder> encoder;
+    TextIndexBlockedPositionsCodec::DecodeScratch scratch;
+    std::vector<UInt32> block_ranks;
+};
+
+void MergeTextIndexesTask::PositionsMerge::start()
+{
+    const auto & sources = task.current_token_sources;
+    readers.resize(sources.size());
+    encoder.emplace();
+
+    for (size_t i = 0; i < sources.size(); ++i)
+    {
+        auto & reader = readers[i];
+        reader.in = nullptr;
+        reader.next_rank = 0;
+
+        const auto & info = sources[i].info;
+        if (info.cardinality == 0)
+            continue;
+
+        if (!(info.header & PostingsSerialization::Flags::HasPositions))
+            throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a source of a token with positions has no positions");
+
+        auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+        auto * data_buffer = stream->getDataBuffer();
+
+        /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
+        const size_t file_size = stream->getFileSize();
+        if ((info.position_bytes == 0)
+            || (info.position_offset > file_size)
+            || (info.position_bytes > file_size - info.position_offset))
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
+                info.position_bytes, info.position_offset, file_size);
+        }
+
+        stream->seekToMark({info.position_offset, 0});
+        reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*data_buffer, info.position_offset, info.cardinality, info.position_bytes);
+        reader.in = data_buffer;
+    }
+}
+
+void MergeTextIndexesTask::PositionsMerge::append(size_t source_idx, size_t count)
+{
+    constexpr size_t block_docs = TextIndexBlockedPositionsCodec::BLOCK_DOCS;
+    auto & reader = readers[source_idx];
+
+    if (!reader.in || reader.next_rank + count > reader.directory.num_docs)
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupt text index positions: more posting documents than position lists ({})", reader.directory.num_docs);
+
+    for (; count > 0; --count, ++reader.next_rank)
+    {
+        const size_t local_rank = reader.next_rank % block_docs;
+
+        /// Blocks follow the directory back to back, so the stream is at the next block.
+        if (local_rank == 0)
+        {
+            const size_t block_idx = reader.next_rank / block_docs;
+            block_ranks.resize(reader.directory.docsInBlock(block_idx));
+            std::iota(block_ranks.begin(), block_ranks.end(), UInt32{0});
+
+            reader.offsets.resize(1);
+            reader.offsets[0] = 0;
+            reader.positions.clear();
+            TextIndexBlockedPositionsCodec::decodeBlock(
+                *reader.in, reader.directory, block_idx, block_ranks, reader.offsets, reader.positions, scratch);
+        }
+
+        const UInt32 begin = reader.offsets[local_rank];
+        encoder->addDocument(std::span<const UInt32>(reader.positions.data() + begin, reader.offsets[local_rank + 1] - begin));
+    }
+}
+
+void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info)
+{
+    if (!encoder)
+        return;
+
+    for (const auto & reader : readers)
+    {
+        if (reader.in && reader.next_rank != reader.directory.num_docs)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupt text index positions: {} posting documents but {} position lists", reader.next_rank, reader.directory.num_docs);
+    }
+
+    if (encoder->numDocuments() == 0)
+    {
+        encoder.reset();
+        return;
+    }
+
+    auto * positions_stream = task.output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
+    token_info.header |= PostingsSerialization::Flags::HasPositions;
+    token_info.position_offset = positions_stream->plain_hashing.count();
+    encoder->finalize(positions_stream->plain_hashing);
+    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
+    encoder.reset();
+}
 
 MergeTextIndexesTask::MergeTextIndexesTask(
     std::vector<TextIndexSegment> segments_,
@@ -417,6 +512,7 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     , need_fsync(need_fsync_)
     , step_time_ms((*new_data_part->storage.getSettings())[MergeTreeSetting::background_task_preferred_step_execution_time_ms].totalMilliseconds())
     , postings_queue(std::make_unique<PostingsMergeQueue>(*this, segments.size()))
+    , positions_merge(std::make_unique<PositionsMerge>(*this))
     , postings_serialization(createPostingsSerialization(*index_ptr))
 {
     tokens_cursors.resize(segments.size());
@@ -535,14 +631,14 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
 {
     /// The cursor is reused across tokens: drop the state of the previous one before anything can fail.
     cursor.source = &source;
+    cursor.source_idx = static_cast<size_t>(&source - current_token_sources.data());
     cursor.next_segment = 0;
     cursor.pos = 0;
     cursor.row_ids.clear();
 
     const auto & info = source.info;
-    bool has_positions = params.positions && (info.header & PostingsSerialization::Flags::HasPositions);
 
-    if (info.embedded_postings.empty() && !has_positions)
+    if (info.embedded_postings.empty())
     {
         if (!advancePostingsCursor(cursor))
         {
@@ -552,28 +648,8 @@ void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, cons
         return;
     }
 
-    /// Embedded postings are already in memory. Positions are addressed by posting rank and need
-    /// all row ids of the source in pre-remap order, so such a source is decoded at once as well
-    if (!info.embedded_postings.empty())
-    {
-        cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
-    }
-    else
-    {
-        for (size_t i = 0; i < info.offsets.size(); ++i)
-            readPostingsSegment(source, i, cursor.row_ids);
-    }
-
-    size_t part_index = segments[source.source_num].part_index;
-
-    if (has_positions)
-    {
-        /// Positions are remapped by the row ids they are paired with, so the bound is checked before that.
-        checkRowIdsInPart(cursor.row_ids, part_index);
-        readAndAppendPositions(source, cursor.row_ids);
-    }
-
-    adjustPartOffsets(cursor.row_ids, part_index);
+    cursor.row_ids.assign(info.embedded_postings.begin(), info.embedded_postings.end());
+    adjustPartOffsets(cursor.row_ids, segments[source.source_num].part_index);
     cursor.next_segment = info.offsets.size();
     cursor.pos = 0;
 }
@@ -653,6 +729,8 @@ std::pair<UInt64, UInt64> MergeTextIndexesTask::PostingsMergeQueue::consumeWindo
 
             window_bits[bit / 64] |= 1ULL << (bit % 64);
             bits_summary |= 1ULL << (bit / 64);
+            if (positions)
+                window_sources[bit] = static_cast<UInt32>(cursor.source_idx);
             ++pos;
         }
 
@@ -687,6 +765,10 @@ void MergeTextIndexesTask::PostingsMergeQueue::processWindow(Window window)
     buffer.resize(old_size + num_consumed);
     UInt32 * out = buffer.data() + old_size;
 
+    /// Consecutive row ids of one source are passed at once.
+    size_t run_source = 0;
+    size_t run_length = 0;
+
     while (bits_summary)
     {
         size_t word_idx = std::countr_zero(bits_summary);
@@ -697,10 +779,25 @@ void MergeTextIndexesTask::PostingsMergeQueue::processWindow(Window window)
 
         while (word)
         {
+            size_t bit = word_idx * 64 + std::countr_zero(word);
             *out++ = static_cast<UInt32>(word_begin + std::countr_zero(word));
             word &= word - 1;
+
+            if (positions)
+            {
+                if (run_length != 0 && window_sources[bit] != run_source)
+                {
+                    positions->append(run_source, run_length);
+                    run_length = 0;
+                }
+                run_source = window_sources[bit];
+                ++run_length;
+            }
         }
     }
+
+    if (run_length != 0)
+        positions->append(run_source, run_length);
 
     size_t num_distinct = out - (buffer.data() + old_size);
 
@@ -724,6 +821,8 @@ void MergeTextIndexesTask::PostingsMergeQueue::flushRun(Window window, Sink && s
         ? remaining.size()
         : std::lower_bound(remaining.begin(), remaining.end(), window.second_head) - remaining.begin();
 
+    if (positions)
+        positions->append(cursor.source_idx, run_length);
     flushDirect(remaining.first(run_length), sink);
     cursor.pos += run_length;
 
@@ -804,9 +903,10 @@ void MergeTextIndexesTask::PostingsMergeQueue::push(const TokenSource & source)
 }
 
 template <typename Sink>
-void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink)
+void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink, PositionsMerge * positions_)
 {
     chassert(buffer.empty());
+    positions = positions_;
 
     if (active_cursors.size() == 1)
     {
@@ -814,6 +914,8 @@ void MergeTextIndexesTask::PostingsMergeQueue::merge(Sink && sink)
 
         do
         {
+            if (positions)
+                positions->append(cursor.source_idx, cursor.remaining().size());
             flushDirect(cursor.remaining(), sink);
         }
         while (task.advancePostingsCursor(cursor));
@@ -850,7 +952,13 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
             postings_queue->push(source);
     }
 
-    postings_queue->merge(sink);
+    const bool has_positions = params.positions && std::ranges::any_of(current_token_sources,
+        [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
+
+    if (has_positions)
+        positions_merge->start();
+
+    postings_queue->merge(sink, has_positions ? positions_merge.get() : nullptr);
 }
 
 TokenPostingsInfo MergeTextIndexesTask::flushRawPostings(MergeTreeIndexWriterStream & postings_stream, size_t total_cardinality)
@@ -920,43 +1028,6 @@ TokenPostingsInfo MergeTextIndexesTask::flushEncodedPostings(MergeTreeIndexWrite
     return token_info;
 }
 
-void MergeTextIndexesTask::readAndAppendPositions(const TokenSource & source, std::span<const UInt32> row_ids)
-{
-    const auto & token_info = source.info;
-    auto * stream = input_streams[source.source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-    auto * data_buffer = stream->getDataBuffer();
-
-    /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
-    const size_t file_size = stream->getFileSize();
-    if ((token_info.position_bytes == 0)
-        || (token_info.position_offset > file_size)
-        || (token_info.position_bytes > file_size - token_info.position_offset))
-    {
-        throw Exception(ErrorCodes::CORRUPTED_DATA,
-            "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
-            token_info.position_bytes, token_info.position_offset, file_size);
-    }
-
-    stream->seekToMark({token_info.position_offset, 0});
-
-    /// The stream stores position lists per posting rank with no document ids,
-    /// so it is paired with the row ids of the source in pre-remap order.
-    position_entries_buffer.clear();
-    decodeBlockedPositions(
-        *data_buffer, row_ids, token_info.cardinality, token_info.position_bytes,
-        blocked_decode_scratch, position_entries_buffer);
-
-    /// Adjust doc_ids if merging parts with offset remapping.
-    if (merged_part_offsets)
-    {
-        size_t part_index = segments[source.source_num].part_index;
-        for (auto & entry : position_entries_buffer)
-            entry = entry.withDocId(adjustPartOffset(*merged_part_offsets, part_index, entry.doc_id));
-    }
-
-    output_positions.insert(output_positions.end(), position_entries_buffer.begin(), position_entries_buffer.end());
-}
-
 void MergeTextIndexesTask::flushPostingList()
 {
     chassert(!current_token_sources.empty());
@@ -974,37 +1045,10 @@ void MergeTextIndexesTask::flushPostingList()
     else
         token_info = flushEncodedPostings(*postings_stream, total_cardinality);
 
-    /// Serialize position data if positions are enabled.
-    if (params.positions && !output_positions.empty())
-        flushPositions(token_info);
+    positions_merge->finish(token_info);
 
     output_infos.push_back(token_info);
     current_token_sources.clear();
-    output_positions.clear();
-}
-
-void MergeTextIndexesTask::flushPositions(TokenPostingsInfo & token_info)
-{
-    auto * positions_stream = output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-
-    /// Entries from multiple source parts may interleave after doc_id remapping.
-    std::sort(output_positions.begin(), output_positions.end());
-
-    size_t out = 0;
-    for (size_t i = 1; i < output_positions.size(); ++i)
-    {
-        if (output_positions[out].sameBucket(output_positions[i]))
-            output_positions[out].mergeBitmap(output_positions[i]);
-        else
-            output_positions[++out] = output_positions[i];
-    }
-
-    output_positions.resize(out + 1);
-
-    token_info.header |= PostingsSerialization::Flags::HasPositions;
-    token_info.position_offset = positions_stream->plain_hashing.count();
-    TextIndexBlockedPositionsCodec::encode(output_positions, positions_stream->plain_hashing);
-    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
 }
 
 void MergeTextIndexesTask::flushDictionaryBlock()
