@@ -1,0 +1,11 @@
+attached read-only, assignees before: 0, cleanup threads before: 0
+made read-only, has assignees before: 1
+attached: toggle failed at the commit: 1
+attached: still readonly after failed toggle: 1
+attached: assignees after failed toggle: 0, cleanup threads after failed toggle: 0
+made: toggle failed at the commit: 1
+made: assignees unchanged after failed toggle: 1
+readonly_attached: assignees after retried toggle: 1, cleanup threads after retried toggle: 1
+readonly_attached: background mutation executed after retried toggle: 1, rows: 4
+readonly_made: assignees after retried toggle: 1, cleanup threads after retried toggle: 1
+readonly_made: background mutation executed after retried toggle: 1, rows: 14
