@@ -87,6 +87,20 @@ TEST(MergedPlanDAG, MergesAChainIntoOneDAG)
     ASSERT_EQ(merged.filter_nodes.size(), 1u);
     EXPECT_EQ(merged.filter_nodes.front()->result_name, "cond");
 
+    /// Every value knows the step it comes from: the source's columns come from the source, and a value
+    /// the filter computes comes from the filter step, as a copy of a node of that step's own DAG.
+    for (const auto * input : merged.sources.front().inputs)
+    {
+        EXPECT_EQ(merged.getOrigin(input).plan_node, &source);
+        EXPECT_EQ(merged.getOrigin(input).step_node, nullptr);
+    }
+    const auto & filter_origin = merged.getOrigin(merged.filter_nodes.front());
+    EXPECT_EQ(filter_origin.plan_node, &filter);
+    ASSERT_NE(filter_origin.step_node, nullptr);
+    EXPECT_EQ(filter_origin.step_node->result_name, "cond");
+    for (const auto & node : merged.getDAG().getNodes())
+        EXPECT_TRUE(merged.origins.contains(&node)) << node.result_name;
+
     /// There is no join, so nothing here is gated by one.
     EXPECT_TRUE(merged.stuffings.empty());
     for (const auto & node : merged.getDAG().getNodes())
