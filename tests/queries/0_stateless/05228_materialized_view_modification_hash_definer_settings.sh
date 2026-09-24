@@ -41,7 +41,10 @@ $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM mv_05228 WHERE '${CLICKHOUSE_DATABASE}
 # A read limit in the definer's profile changes what the target read does: with three rows to read it
 # now fails. The third run must not be served the result cached before the edit; it has to run the
 # read again under the new effective settings, and so fail.
-$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 1"
+# The limit is `CONST`: the invoker's changed settings are applied over the definer's profile, and the
+# CI profile of the invoker sets `max_rows_to_read` itself, which would otherwise win. A constraint of
+# the definer drops the invoker's change instead (`clampToSettingsConstraints`).
+$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 1 CONST"
 $CLICKHOUSE_CLIENT -q "SELECT sum(x) FROM mv_05228 WHERE '${CLICKHOUSE_DATABASE}' != '' SETTINGS ${qc}" 2>&1 | grep -o -m1 'TOO_MANY_ROWS'
 
 # Cache hits per run: the first run stores, the second hits, the third one misses (0, 1).
@@ -72,11 +75,11 @@ baseline=$(hash_of_view)
 [ -n "${baseline}" ] && echo 'hash is computed'
 
 # A purely operational setting in the definer's profile changes no row of the target read.
-$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 1, log_queries = 1"
+$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 1 CONST, log_queries = 1"
 [ "${baseline}" = "$(hash_of_view)" ] && echo 'an operational setting in the definer profile does not change the hash'
 
 # A read limit does.
-$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 2, log_queries = 1"
+$CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS max_rows_to_read = 2 CONST, log_queries = 1"
 [ "${baseline}" != "$(hash_of_view)" ] && echo 'a read limit in the definer profile changes the hash'
 
 # The view first: a user cannot be dropped while it is the definer of one.
