@@ -669,6 +669,7 @@ def test_barrier_synchronised_concurrent_appends(started_cluster, partitioned):
     failures = [o for o in outcomes if o != "ok"]
     logging.info("barrier round: %s successes, %s failures", successes, len(failures))
     assert failures, "no writer lost the race in three rounds: the conflict path was not exercised"
+    assert successes >= 1, f"no writer won the race: {failures}"
     for f in failures:
         assert "commit conflict at version" in f, f
 
@@ -735,6 +736,8 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
     assert_committed_files_exist(started_cluster, path)
 
     # Interleaved appends from both writers; every acknowledged commit must be visible to both readers.
+    # Each writer gets a head start on alternate rounds so both sides win rounds and both sides lose
+    # some: the schedule, not luck, decides that the mixed-writer contract is exercised in both directions.
     rounds = 8
     ch_ok, rs_ok, ch_errors, rs_errors = [], [0], [], []
     barrier = threading.Barrier(2)
@@ -742,6 +745,8 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
     def clickhouse_writer():
         for r in range(1, rounds):
             barrier.wait()
+            if r % 2 == 0:
+                time.sleep(1)
             try:
                 node.query(f"INSERT INTO {path} SELECT number + {r * 100}, 'clickhouse' FROM numbers(10)")
                 ch_ok.append(r)
@@ -751,6 +756,8 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
     def deltars_writer():
         for r in range(1, rounds):
             barrier.wait()
+            if r % 2 == 1:
+                time.sleep(1)
             try:
                 deltars_append(r)
                 rs_ok.append(r)
@@ -766,7 +773,8 @@ def test_concurrent_clickhouse_and_deltars_appends(started_cluster):
 
     for e in ch_errors:
         assert "commit conflict at version" in e, e
-    assert rs_ok, f"delta-rs never committed: {rs_errors}"
+    assert len(rs_ok) > 1, f"delta-rs never committed in the interleaved rounds: {rs_errors}"
+    assert ch_ok, f"ClickHouse never committed in the interleaved rounds: {ch_errors}"
     for e in rs_errors:
         assert any(m in e.lower() for m in ("conflict", "already exists", "version", "precondition")), e
 
