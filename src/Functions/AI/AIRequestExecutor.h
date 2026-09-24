@@ -35,7 +35,7 @@ std::future<std::optional<AIResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 
 /// The same, for one batch of texts sent to an embeddings endpoint.
-std::future<std::optional<AIEmbeddingResponse>> submitAIEmbeddingRequest(
+std::future<std::optional<AIEmbeddingResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIEmbeddingRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota);
 
 }

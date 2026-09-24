@@ -164,10 +164,20 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
     return {};
 }
 
+void runAttempt(IAIProvider & provider, const AIRequest & request, const ConnectionTimeouts & timeouts, AIResponse & response)
+{
+    provider.call(request, timeouts, response);
+    checkResponseIsComplete(response);
 }
 
-std::future<std::optional<AIResponse>> submitAIRequest(
-    std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
+void runAttempt(IAIProvider & provider, const AIEmbeddingRequest & request, const ConnectionTimeouts & timeouts, AIEmbeddingResponse & response)
+{
+    provider.embed(request, timeouts, response);
+}
+
+template <typename Response, typename Request>
+std::future<std::optional<Response>> submit(
+    std::shared_ptr<IAIProvider> provider, Request request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
     /// move everything into task scope so nothing dangles if another thread throws
     auto task = [my_provider = std::move(provider),
@@ -175,9 +185,9 @@ std::future<std::optional<AIResponse>> submitAIRequest(
                  my_policy = std::move(policy),
                  my_quota = std::move(quota)]
     {
-        return runRequest<AIResponse>(my_policy, *my_quota, [&]
+        return runRequest<Response>(my_policy, *my_quota, [&]
         {
-            AIResponse response;
+            Response response;
 
             /// The provider fills the token counts before it validates the payload, so a request that
             /// ends in an exception still reports the usage the provider billed for.
@@ -187,39 +197,26 @@ std::future<std::optional<AIResponse>> submitAIRequest(
                 ProfileEvents::increment(ProfileEvents::AIOutputTokens, response.output_tokens);
             });
 
-            my_provider->call(my_request, my_policy.timeouts, response);
-            checkResponseIsComplete(response);
+            runAttempt(*my_provider, my_request, my_policy.timeouts, response);
             return response;
         });
     };
 
-    return scheduleFromThreadPoolUnsafe<std::optional<AIResponse>>(std::move(task), getAIRequestThreadPool().get(), ThreadName::AI_REQUEST);
+    return scheduleFromThreadPoolUnsafe<std::optional<Response>>(std::move(task), getAIRequestThreadPool().get(), ThreadName::AI_REQUEST);
 }
 
-std::future<std::optional<AIEmbeddingResponse>> submitAIEmbeddingRequest(
+}
+
+std::future<std::optional<AIResponse>> submitAIRequest(
+    std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
+{
+    return submit<AIResponse>(std::move(provider), std::move(request), std::move(policy), std::move(quota));
+}
+
+std::future<std::optional<AIEmbeddingResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIEmbeddingRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
-    auto task = [my_provider = std::move(provider),
-                 my_request = std::move(request),
-                 my_policy = std::move(policy),
-                 my_quota = std::move(quota)]
-    {
-        return runRequest<AIEmbeddingResponse>(my_policy, *my_quota, [&]
-        {
-            AIEmbeddingResponse response;
-
-            SCOPE_EXIT({
-                my_quota->recordTokens(response.input_tokens, 0 /*output_tokens*/);
-                ProfileEvents::increment(ProfileEvents::AIInputTokens, response.input_tokens);
-            });
-
-            my_provider->embed(my_request, my_policy.timeouts, response);
-            return response;
-        });
-    };
-
-    return scheduleFromThreadPoolUnsafe<std::optional<AIEmbeddingResponse>>(
-        std::move(task), getAIRequestThreadPool().get(), ThreadName::AI_REQUEST);
+    return submit<AIEmbeddingResponse>(std::move(provider), std::move(request), std::move(policy), std::move(quota));
 }
 
 }

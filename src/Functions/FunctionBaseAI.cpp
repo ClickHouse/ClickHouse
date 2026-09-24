@@ -391,7 +391,7 @@ void FunctionBaseAI::embedTexts(
             for (size_t k = begin; k < end; ++k)
                 ai_embedding_request.inputs.emplace_back(inputs[k]);
 
-            wave.push_back(submitAIEmbeddingRequest(provider, std::move(ai_embedding_request), policy, quota));
+            wave.push_back(submitAIRequest(provider, std::move(ai_embedding_request), policy, quota));
         }
 
         for (size_t k = 0; k < wave.size(); ++k)
