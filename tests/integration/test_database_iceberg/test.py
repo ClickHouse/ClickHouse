@@ -2282,28 +2282,13 @@ def test_create_table_with_engine_unsupported_clauses(started_cluster):
         "PRIMARY KEY id",
         "ORDER BY id SAMPLE BY id",
         "TTL toDate('2099-01-01')",
+        "ORDER BY id SETTINGS iceberg_format_version = 2",
     ]:
         err = node.query_and_get_error(
             f"CREATE TABLE {CATALOG_NAME}.`ns.engine_unsupp` (id Int64, name String) {engine} {clause}",
             settings={"allow_database_iceberg": 1},
         )
-        assert "PRIMARY KEY, SAMPLE BY, TTL, and UNIQUE KEY are not supported" in err
-
-    namespace = f"test_engine_supp_{uuid.uuid4().hex}"
-    node.query(
-        f"CREATE TABLE {CATALOG_NAME}.`{namespace}.engine_supp` (id Int64, name String) "
-        f"ENGINE = IcebergS3('http://minio1:9001/warehouse-rest/engine_supp/', "
-        f"'{minio_access_key}', '{minio_secret_key}') "
-        f"PARTITION BY id ORDER BY name SETTINGS iceberg_format_version = 2",
-        settings={
-            "allow_database_iceberg": 1,
-            "write_full_path_in_iceberg_metadata": 1,
-        },
-    )
-    node.query(
-        f"DROP TABLE {CATALOG_NAME}.`{namespace}.engine_supp`",
-        settings={"allow_database_iceberg": 1},
-    )
+        assert "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported" in err
 
 
 def test_create_table_invalid_partition_transforms(started_cluster):
