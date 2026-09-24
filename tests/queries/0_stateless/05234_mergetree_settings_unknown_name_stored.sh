@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # A `SETTINGS` name that is not a setting at all is refused when a MergeTree definition is stated, but
 # a table whose definition was stored before that check existed still has to load: refusing it while
-# the metadata is read fails the whole load rather than the one table. A full-definition
-# `ATTACH TABLE t UUID '...' (...)` states its settings itself, so it is checked the way `CREATE` is.
+# the metadata is read fails the whole load rather than the one table. This test covers what such a
+# table can still do - load, be read, be altered, and back a refreshable view - and the one route that
+# is refused again because it restates the stored clause as a new definition.
 #
 # `clickhouse-local` over a prepared data directory is how the stored metadata is obtained here: the
 # table is created with a real setting, its stored definition is then edited into the form a server
-# without this check would have written, and the next start loads it.
+# without this check would have written, and the next start loads it. No SQL statement can plant such
+# a definition on a server that already has the check, which is why this is not a `.sql` test.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -15,13 +17,6 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 WORKING_DIR="${CLICKHOUSE_TMP:?}/${CLICKHOUSE_TEST_UNIQUE_NAME:?}"
 rm -rf "${WORKING_DIR}"
 mkdir -p "${WORKING_DIR}"
-
-echo '--- a full-definition ATTACH states its settings, so they are checked ---'
-# A literal UUID would collide between parallel runs, since it is server-global.
-uuid=$($CLICKHOUSE_CLIENT -q "SELECT generateUUIDv4()")
-$CLICKHOUSE_CLIENT --send_logs_level fatal -q "
-ATTACH TABLE t_mt_stored_unknown UUID '${uuid}' (x UInt8) ENGINE = MergeTree ORDER BY x
-SETTINGS not_a_setting_at_all = DEFAULT;" 2>&1 >/dev/null | grep -o -m 1 -F 'UNKNOWN_SETTING'
 
 echo '--- a stored definition naming a non-setting still loads ---'
 # `min_bytes_for_wide_part` is a setting of the engine, so its reset form stays in the clause and is

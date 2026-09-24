@@ -1,5 +1,6 @@
 --- a name that is not a setting at all is rejected ---
 --- the replicated member of the family is judged the same way ---
+--- a full-definition ATTACH states its settings, so they are checked ---
 --- a setting of the engine is still accepted in the reset form ---
 1
 --- an alias and an obsolete setting of the engine are still accepted ---

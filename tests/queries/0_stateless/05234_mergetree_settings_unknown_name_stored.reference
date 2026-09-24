@@ -1,5 +1,3 @@
---- a full-definition ATTACH states its settings, so they are checked ---
-UNKNOWN_SETTING
 --- a stored definition naming a non-setting still loads ---
 1
 7

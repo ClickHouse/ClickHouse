@@ -1,3 +1,8 @@
+-- Tags: no-parallel, no-ordinary-database
+-- no-parallel: the ATTACH arms below name a fixed UUID, which is server-global and collides across
+-- concurrent runs of this test (the flaky check gives every worker the same test).
+-- no-ordinary-database: those arms need a database that takes a UUID.
+
 DROP TABLE IF EXISTS t_mt_unknown_setting;
 
 SELECT '--- a name that is not a setting at all is rejected ---';
@@ -37,6 +42,16 @@ SETTINGS index_granularity = 4096, param_not_a_setting = 1; -- { serverError UNK
 -- gets through the check and is refused by the family's own sanity check instead.
 CREATE TABLE t_mt_unknown_setting (x UInt8) ENGINE = ReplicatedMergeTree ORDER BY x
 SETTINGS index_granularity = 0; -- { serverError BAD_ARGUMENTS }
+
+SELECT '--- a full-definition ATTACH states its settings, so they are checked ---';
+
+-- An Atomic database requires a UUID on a full-definition ATTACH, which is where the fixed one and
+-- the tag at the top of this file come from.
+ATTACH TABLE t_mt_unknown_setting UUID '00000000-0000-0000-0000-000000005233' (x UInt8)
+ENGINE = MergeTree ORDER BY x SETTINGS not_a_setting_at_all = DEFAULT; -- { serverError UNKNOWN_SETTING }
+
+ATTACH TABLE t_mt_unknown_setting UUID '00000000-0000-0000-0000-000000005233' (x UInt8)
+ENGINE = MergeTree ORDER BY x SETTINGS param_not_a_setting = 1; -- { serverError UNKNOWN_SETTING }
 
 SELECT '--- a setting of the engine is still accepted in the reset form ---';
 
