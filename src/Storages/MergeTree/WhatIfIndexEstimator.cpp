@@ -141,7 +141,6 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                     return change.name == "force_optimize_projection"
                         || change.name == "force_optimize_projection_name"
                         || change.name == "preferred_optimize_projection_name"
-                        || change.name == "prefer_optimize_projection"
                         || change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
                         || change.name == "use_skip_indexes_on_data_read";
@@ -321,8 +320,7 @@ WhatIfResult estimateHypotheticalIndexes(
         {"force_data_skipping_indices",
          "force_optimize_projection",
          "force_optimize_projection_name",
-         "preferred_optimize_projection_name",
-         "prefer_optimize_projection"});
+         "preferred_optimize_projection_name"});
 
     auto select_query_copy = select_query->clone();
     std::vector<String> forced_strings;
