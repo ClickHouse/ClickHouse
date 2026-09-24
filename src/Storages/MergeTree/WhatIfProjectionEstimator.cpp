@@ -192,7 +192,8 @@ Pipe makeWholePartPipe(const DataPartPtr & part, const Names & columns_to_read, 
         std::make_shared<std::atomic<size_t>>(0),
         false,
         false,
-        false);
+        false,
+        context);
 
     /// speed limits apply here too, size is checked by the caller
     if (auto query_limits = read_step->getQueryInfo().storage_limits)

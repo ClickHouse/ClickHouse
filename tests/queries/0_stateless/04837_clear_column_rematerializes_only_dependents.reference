@@ -1,0 +1,7 @@
+-- the dependency closure is recomputed in order, the other columns are left alone
+1	5	100	6	60
+1	0	100	2	200
+-- a key column outside the closure keeps its stored value
+1	0	3	3	1
+-- a MATERIALIZED column reading an EPHEMERAL column is not recomputed
+1	0	1	13
