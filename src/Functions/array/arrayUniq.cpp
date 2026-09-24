@@ -199,7 +199,6 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
             || executeNumber<Decimal32>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Decimal64>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Decimal128>(*offsets, *data_columns[0], null_map, res_values)
-            || executeNumber<Decimal256>(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)))
             executeHashed(*offsets, data_columns, null_map, res_values);
