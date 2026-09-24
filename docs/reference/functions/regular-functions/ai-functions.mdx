@@ -36,7 +36,7 @@ The requests are issued from a server-wide thread pool. Its size (`max_ai_reques
 
 [`ai_function_max_concurrent_requests`](/reference/settings/session-settings/ai-function#ai_function_max_concurrent_requests) bounds a single function call's share of that pool.
 
-The `ai_function_max_concurrent_requests` limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than the setting allows for a single stream. Where the per-query total matters, put a ceiling on the setting with a settings profile constraint, which a query cannot raise:
+The `ai_function_max_concurrent_requests` limit is per AI function call per block, so a query whose pipeline runs several streams may have more requests in flight than the setting allows for a single stream. Where the per-query total matters, put a ceiling on the setting with a settings profile constraint, which a query setting cannot raise:
 
 ```xml
 <profiles>
@@ -58,7 +58,7 @@ The default is `1`, one request at a time, because raising it loosens two guaran
 [`ai_function_max_api_calls_per_query`](/reference/settings/session-settings/ai-function#ai_function_max_api_calls_per_query) is unaffected and stays an exact cap, because a slot is reserved before each request is dispatched.
 
 <Note>
-For a materialized view, the settings go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
+For a materialized view, the settings must go on the `INSERT` that feeds the view's source table, not on the `CREATE MATERIALIZED VIEW` statement: the quotas are read from the top-level query, and a `SETTINGS` clause in a view definition is ignored.
 </Note>
 
 ## Configuration {#configuration}

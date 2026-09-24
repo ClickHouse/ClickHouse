@@ -3,10 +3,13 @@
 #include <Core/Types.h>
 #include <Common/Exception.h>
 
+#include <memory>
 #include <mutex>
 
 namespace DB
 {
+
+class QueryStatus;
 
 /// Tracks AI-function quota usage for one query. A single instance is shared by every AI function
 /// call in the query context (owned by the query `Context`) and updated concurrently from the
@@ -16,16 +19,21 @@ namespace DB
 ///
 /// The API-call limit is a hard cap within a context, while token limits are best effort (we only
 /// know the usage after the call returns).
+///
+/// `checkQuotas` and `recordApiCall` also throw once the query is killed or exceeds
+/// `max_execution_time`, so no new request is dispatched for it.
 class AIQuotaTracker
 {
 public:
     AIQuotaTracker(
         UInt64 max_input_tokens_, UInt64 max_output_tokens_,
-        UInt64 max_api_calls_, bool throw_on_quota_exceeded_)
+        UInt64 max_api_calls_, bool throw_on_quota_exceeded_,
+        std::weak_ptr<QueryStatus> query_status_)
         : max_input_tokens(max_input_tokens_)
         , max_output_tokens(max_output_tokens_)
         , max_api_calls(max_api_calls_)
         , throw_on_quota_exceeded(throw_on_quota_exceeded_)
+        , query_status(std::move(query_status_))
     {}
 
     /// Check the token quotas (and the sticky exceeded flag). Returns true if a limit is met or
@@ -51,6 +59,7 @@ private:
     const UInt64 max_output_tokens;
     const UInt64 max_api_calls;
     const bool throw_on_quota_exceeded;
+    const std::weak_ptr<QueryStatus> query_status;
 
     std::mutex mutex;
     bool quota_exceeded TSA_GUARDED_BY(mutex) = false;
@@ -62,6 +71,9 @@ private:
     /// per `throw_on_quota_exceeded`) when a token quota is met. Shared by `checkQuotas` and
     /// `recordApiCall` so a call is never started once a quota is known-exhausted.
     bool quotasExceededLocked() TSA_REQUIRES(mutex);
+
+    /// Throws if the query was killed or exceeded its time limit.
+    void throwIfCancelled() const;
 };
 
 }

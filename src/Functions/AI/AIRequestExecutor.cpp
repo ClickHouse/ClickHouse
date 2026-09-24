@@ -169,8 +169,7 @@ std::optional<Response> runRequest(const AIRequestPolicy & policy, AIQuotaTracke
 std::future<std::optional<AIResponse>> submitAIRequest(
     std::shared_ptr<IAIProvider> provider, AIRequest request, AIRequestPolicy policy, AIQuotaTrackerPtr quota)
 {
-    /// Everything the worker touches is owned by the task, so a caller that stops waiting on the
-    /// future (e.g. because an earlier request of the same block threw) leaves nothing dangling.
+    /// move everything into task scope so nothing dangles if another thread throws
     auto task = [my_provider = std::move(provider),
                  my_request = std::move(request),
                  my_policy = std::move(policy),
