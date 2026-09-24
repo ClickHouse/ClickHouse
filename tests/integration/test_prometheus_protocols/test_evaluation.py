@@ -5264,8 +5264,8 @@ def test_histogram_fraction():
     # Prometheus accepts scalar expressions for the bounds. ClickHouse currently supports
     # only constant bounds, so check this documented limitation on both ClickHouse paths.
     for query in (
-        "histogram_fraction(time(), 0.5, http_request_duration_seconds_bucket)",
-        "histogram_fraction(0, time(), http_request_duration_seconds_bucket)",
+        "histogram_fraction(time() / 1000, 0.5, http_request_duration_seconds_bucket)",
+        "histogram_fraction(0, time() / 1000, http_request_duration_seconds_bucket)",
     ):
         expected_error = "requires constant lower and upper parameters"
         assert expected_error in execute_query_in_clickhouse_sql(query, 300, expect_error=True)
