@@ -15,6 +15,7 @@
     ENGINE = MergeTree
     ORDER BY id
   </create_query>
+  <create_query>CREATE TABLE tab_no_index (id UInt64, message String) ENGINE = MergeTree ORDER BY id</create_query>
 
   <!-- Log-like messages, one in 10000 mentions a charge. -->
   <fill_query>
@@ -27,14 +28,32 @@
     FROM numbers(3000000)
   </fill_query>
   <fill_query>OPTIMIZE TABLE tab FINAL</fill_query>
+  <fill_query>INSERT INTO tab_no_index SELECT id, message FROM tab</fill_query>
+  <fill_query>OPTIMIZE TABLE tab_no_index FINAL</fill_query>
 
+  <!-- Every lambda shape the rewrite handles, over the index on message. -->
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> endsWith(t, 'rged'), tokens(message))</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> position(t, 'harg') > 0, tokens(message))</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(message))</query>
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
 
   <!-- A query over lower(message), served by the index on that expression. -->
   <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha'))</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> like(t, 'ch%ed'), tokens(lower(message), 'splitByNonAlpha'))</query>
   <query>SELECT count() FROM tab WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(lower(message), 'splitByNonAlpha'))</query>
 
+  <!-- A substring prefilter next to the token predicate, as log search queries are often written. -->
+  <query>SELECT count() FROM tab WHERE position(lower(message), 'charg') > 0 AND arrayExists(t -> startsWith(t, 'charg'), tokens(lower(message), 'splitByNonAlpha'))</query>
+
+  <!-- The prefix matches too many dictionary tokens, so the predicate is evaluated on the rows. -->
+  <query>SELECT count() FROM tab WHERE arrayExists(t -> startsWith(t, '1'), tokens(message))</query>
+
+  <!-- No text index, and the SELECT list: the rewritten function is evaluated on every row. -->
+  <query>SELECT count() FROM tab_no_index WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(message))</query>
+  <query>SELECT count() FROM tab_no_index WHERE arrayExists(t -> match(t, '^charg(ed|ing)$'), tokens(message))</query>
+  <query>SELECT countIf(arrayExists(t -> like(t, 'ch%ed'), tokens(message))) FROM tab</query>
+
   <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+  <drop_query>DROP TABLE IF EXISTS tab_no_index</drop_query>
 </test>
