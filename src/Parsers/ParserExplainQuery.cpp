@@ -516,6 +516,8 @@ EXPLAIN json = 1, description = 0, header = 1 SELECT 1, 2 + dummy;
 
 With `indexes` = 1, the `Indexes` key is added. It contains an array of used indexes. Each index is described as JSON with `Type` key (a string `Partition Min-Max`, `Partition`, `Statistics`, `PrimaryKey` or `Skip`) and optional keys:
 
+The `Statistics` index uses per-part column statistics (min/max values, and the number of `NULL` values for `Nullable` columns) to skip parts that cannot match the query filter.
+
 - `Name` — The index name (currently only used for `Skip` indexes).
 - `Keys` — The array of columns used by the index.
 - `Condition` —  The used condition.
@@ -1263,7 +1265,7 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 
 Estimates the benefit a hypothetical skip index would have on a `SELECT` query, *without* materializing the index on disk. Define one or more candidates with [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#create-hypothetical-index), then run `EXPLAIN WHATIF SELECT ...` to see, for each candidate: applicability, estimated marks read, estimated bytes, and skip ratio.
 
-Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are listed as candidates too, but their benefit is not estimated yet: each is reported with `status: not_applicable`. A projection whose definition no longer applies to the table — a dropped column, or a setting change that disables the features it needs — is reported with that reason instead.
+Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. A normal projection is estimated by building its primary index in memory over the parts the query would read and pruning it as a materialized projection would be pruned. The report gives the marks and rows the projection read would touch, a `read_ratio` against the base-table read (below `1x` means less work, above means more) and a `verdict` with the reason behind it, following the optimizer's rule: the projection wins when it reads fewer marks than the base table, or the same number while serving an outer `ORDER BY`. Listed as `status: not_applicable` and not estimated yet: aggregate projections, projections with a `WHERE` clause or their own skip indexes (`WITH SETTINGS add_minmax_index_*`), projections ordered by the commit order (`TYPE commit_order` and its `_block_number, _block_offset` query form), projections whose sort key is not among the columns they store (for example `ORDER BY _part_offset`), projections that store `_block_number` (the writer builds those only when a part is merged), and projections that do not provide every column the query reads. `force_optimize_projection`, `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored. The mark count is modelled by sizing granules the way the writer does, one granule size per block the writer is handed. Which blocks that is depends on the path that writes the projection part - one squashed block for an insert or a materialization, runs of `merge_max_block_size` for a merge - and a part records none of it, so the estimate is computed for each of those layouts. When they do not agree on the comparison with the base read, the report gives the range and `verdict: too close to call` instead of a decision. A projection whose definition no longer fits the table is reported with that reason.
 
 **Syntax**
 
@@ -1282,6 +1284,7 @@ Baseline (after PK + partition + existing indexes):
   table:       db.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   1.50 MiB             (only when the query reads rows)
 
 With idx_b (minmax, hypothetical):
@@ -1335,6 +1338,7 @@ Baseline (after PK + partition + existing indexes):
   table:       default.t
   parts:       1
   marks:       100
+  rows:        10000
   est_bytes:   85.52 KiB
 
 With idx_b (minmax, hypothetical):
@@ -1382,6 +1386,43 @@ Estimation:
 The number comes from the column-statistic selectivity of `b < 10` (about 10 rows out of 10000) and is reported as an upper bound on `skip_ratio`. There are no `sampled_parts` / `sampled_marks` — no data was read.
 
 If neither path is available (e.g. `empirical = 0` and no column statistics defined), the estimator reports `source: applicability_only` and a conservative `skip_ratio: 0.0%`.
+
+**Hypothetical projections**
+
+A normal projection is estimated the same way, against the parts the query would read after primary-key and partition pruning:
+
+```sql
+CREATE TABLE t (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 100;
+INSERT INTO t SELECT number, number % 100, number FROM numbers(10000);
+CREATE HYPOTHETICAL PROJECTION p_b ON t (SELECT a, b, v ORDER BY b);
+EXPLAIN WHATIF SELECT count() FROM t WHERE b = 42;
+```
+
+```text
+Baseline (after PK + partition + existing indexes):
+  table:       default.t
+  parts:       1
+  marks:       100
+  rows:        10000
+  est_bytes:   80.79 KiB
+
+With p_b (normal projection, hypothetical):
+  status:       applicable
+  marks:        2
+  rows:         200
+  read_ratio:   0.02x
+  verdict:      chosen
+  reason:       2 marks would be read instead of 100 from the base table
+
+Estimation:
+  source:           empirical
+  empirical_status: ok
+  sampled_parts:    1 / 1
+  sampled_marks:    100 / 100
+  elapsed_us:       1126
+```
+
+`marks` and `rows` are what the projection read itself would touch, not a share of the base-table read, because a projection granule holds different rows than a base granule. `read_ratio` is those marks over the base-table marks, so `0.02x` is fifty times less work and `15x` is fifteen times more. `verdict` applies the optimizer's own rule — fewer marks than the base table, or the same number when the projection serves the query's `ORDER BY` — so a candidate can be `applicable` and still not be chosen.
 
 ### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
