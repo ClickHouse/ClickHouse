@@ -18,6 +18,7 @@
 
 #include <Access/Credentials.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/StringUtils.h>
 #include <Common/QueryScope.h>
 #include <Common/MemoryTrackerSwitcher.h>
@@ -48,6 +49,11 @@
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char pause_after_manual_query_id_release[];
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
@@ -76,6 +82,8 @@ public:
     virtual bool isSettingLikeParameter(const String & /* name */) { return false; }
     virtual void handleRequest(HTTPServerRequest & request, HTTPServerResponse & response, QueryScope & query_scope) = 0;
     virtual void onException() {}
+
+    ProcessList::EntryPtr process_list_entry;
 
 protected:
     PrometheusRequestHandler & parent() { return parent_ref; }
@@ -195,18 +203,21 @@ protected:
         return authenticateUserByHTTP(request, *params, response, *session, request_credentials, config().connection_config, server().context(), log());
     }
 
-    ProcessList::EntryPtr admitRequest(const String & description)
+    void admitRequest(const String & description)
     {
+        auto & entry = parent().impl->process_list_entry;
+        if (entry)
+            return;
         if (auto query_status = context->getProcessListElementSafe())
         {
-            if (auto entry = query_status->getProcessListEntry())
-                return entry;
+            entry = query_status->getProcessListEntry();
+            if (entry)
+                return;
         }
 
         /// Some protocol operations do not pass through `executeQuery`.
-        auto entry = context->getProcessList().insert(description, 0, nullptr, context, Stopwatch{}.getStart(), false);
+        entry = context->getProcessList().insert(description, 0, nullptr, context, Stopwatch{}.getStart(), false);
         context->setProcessListElement(entry->getQueryStatus());
-        return entry;
     }
 
     bool isSettingLikeParameter(const String & name) override
@@ -371,9 +382,8 @@ public:
         /// Include the response allocation in admission, before an insert can reset the user tracker.
         getOutputStream(response);
 
-        ProcessList::EntryPtr process_list_entry;
         if (write_request.timeseries().empty() && write_request.metadata().empty())
-            process_list_entry = admitRequest("Prometheus empty remote write");
+            admitRequest("Prometheus empty remote write");
 
         protocol.write(write_request.timeseries(), write_request.metadata());
 
@@ -400,7 +410,7 @@ public:
     {
 #if USE_PROMETHEUS_PROTOBUFS
         /// Remote reads build their pipeline directly, without admission through `executeQuery`.
-        auto process_list_entry = admitRequest("Prometheus remote read");
+        admitRequest("Prometheus remote read");
 
         checkHTTPHeader(request, "Content-Type", "application/x-protobuf");
         checkHTTPHeader(request, "Content-Encoding", "snappy");
@@ -538,7 +548,7 @@ public:
             {
                 /// The format_query endpoint only parses and reformats the given PromQL expression,
                 /// so it doesn't need the TimeSeries table.
-                auto process_list_entry = admitRequest("Prometheus format query");
+                admitRequest("Prometheus format query");
                 formatQuery(getOutputStream(response), params->get("query", ""));
                 return;
             }
@@ -639,7 +649,7 @@ public:
             }
             else
             {
-                auto process_list_entry = admitRequest("Prometheus unknown API request");
+                admitRequest("Prometheus unknown API request");
                 LOG_ERROR(log(), "No matching endpoint found for URI: {}, method: {}", maskSensitiveQueryParametersInURI(uri), request.getMethod());
                 response.setStatusAndReason(Poco::Net::HTTPResponse::HTTP_NOT_FOUND);
                 writeString(R"({"status":"error","errorType":"not_found","error":"API endpoint not found"})", getOutputStream(response));
@@ -655,7 +665,7 @@ public:
                 throw;
 
             /// Parsing and dispatch can fail before `executeQuery` admits the request.
-            auto process_list_entry = admitRequest("Prometheus API error response");
+            admitRequest("Prometheus API error response");
 
             /// Drop any partial success body still sitting in the output buffer
             /// before writing the error response.
@@ -856,8 +866,14 @@ void PrometheusRequestHandler::handleRequest(HTTPServerRequest & request, HTTPSe
     applyHTTPResponseHeaders(response, response_headers);
 
     QueryScope query_scope;
-    /// Finalize or cancel and release the response buffer before detaching its query tracker.
-    SCOPE_EXIT({ write_buffer_from_response.reset(); });
+    /// Release request allocations before the last entry resets the user tracker.
+    SCOPE_EXIT({
+        write_buffer_from_response.reset();
+        CurrentThread::flushUntrackedMemory();
+        impl->process_list_entry.reset();
+        if (FailPointInjection::hasAnyFailPointBeenRegistered())
+            FailPointInjection::pauseFailPoint(FailPoints::pause_after_manual_query_id_release);
+    });
 
     try
     {

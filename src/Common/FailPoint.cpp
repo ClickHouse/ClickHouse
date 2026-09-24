@@ -373,6 +373,7 @@ static struct InitFiu
     ONCE(attach_to_group_failure) \
     ONCE(query_context_control_block_allocation_failure) \
     PAUSEABLE_ONCE(grpc_pause_after_query_id_release) \
+    PAUSEABLE_ONCE(pause_after_manual_query_id_release) \
     PAUSEABLE_ONCE(query_setup_memory_rejection_before_cleanup) \
     ONCE(thread_group_switcher_post_attach_failure) \
     REGULAR(tx_log_abort_cleanup_multi) \

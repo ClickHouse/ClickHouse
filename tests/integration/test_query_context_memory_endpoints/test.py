@@ -1,3 +1,4 @@
+import concurrent.futures
 import contextlib
 import io
 import struct
@@ -559,6 +560,85 @@ def test_grpc_last_query_cleanup(query, batching_limit):
                     time.sleep(0.1)
                 else:
                     pytest.fail("gRPC call did not finish cleanup")
+                balance = int(
+                    node.query(
+                        "SELECT memory_usage - (SELECT memory_usage FROM system.processes "
+                        f"WHERE query_id = '{sentinel_id}') FROM system.user_processes WHERE user = '{user}'"
+                    )
+                )
+                assert abs(balance) < 65536, balance
+            finally:
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                if sentinel is not None:
+                    node.query(f"KILL QUERY WHERE query_id = '{sentinel_id}' SYNC")
+                    sentinel.get_answer_and_error()
+
+
+@pytest.mark.parametrize("batching_limit", [0, 4 * 1024 * 1024])
+@pytest.mark.parametrize(
+    "endpoint",
+    [
+        "flight_session_options",
+        "flight_prepare_insert",
+        "flight_prepare",
+        "prometheus_read",
+        "prometheus_write_empty",
+        "prometheus_format_query",
+        "prometheus_unknown_endpoint",
+        "prometheus_parse_query",
+    ],
+)
+def test_manual_admission_last_query_cleanup(endpoint, batching_limit):
+    failpoint = "pause_after_manual_query_id_release"
+    with payload_user("max_memory_usage", batching_limit) as user:
+        node.query(
+            f"ALTER USER {user} MODIFY SETTINGS max_memory_usage = 0, query_metric_log_interval = 0"
+        )
+
+        def request():
+            if endpoint in ("prometheus_unknown_endpoint", "prometheus_parse_query"):
+                route = endpoint.removeprefix("prometheus_")
+                response = requests.post(
+                    f"http://{node.ip_address}:{PORTS['prometheus']}/api/v1/{route}",
+                    auth=(user, ""),
+                    params={"query": "1", "http_response_buffer_size": PAYLOAD_SIZE},
+                    timeout=60,
+                )
+                assert response.status_code == (
+                    404 if route == "unknown_endpoint" else 400
+                )
+                assert response.json()["status"] == "error", response.text
+            else:
+                run_endpoint(endpoint, user)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            sentinel = None
+            sentinel_id = str(uuid.uuid4())
+            try:
+                result = executor.submit(request)
+                node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=15)
+                assert (
+                    node.query(
+                        f"SELECT count() FROM system.processes WHERE user = '{user}'"
+                    )
+                    == "0\n"
+                )
+                sentinel = node.get_query_request(
+                    "SELECT repeat('ssssssssssssssssssssssssssssssss', 524288), sleep(600) "
+                    "SETTINGS max_block_size = 1, function_sleep_max_microseconds_per_block = 10000000000 "
+                    "FORMAT Null",
+                    user=user,
+                    query_id=sentinel_id,
+                    settings={"max_untracked_memory": 0, "log_queries": 0},
+                )
+                assert_eq_with_retry(
+                    node,
+                    f"SELECT count() FROM system.processes WHERE query_id = '{sentinel_id}'",
+                    "1",
+                )
+                node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+                result.result(timeout=30)
                 balance = int(
                     node.query(
                         "SELECT memory_usage - (SELECT memory_usage FROM system.processes "

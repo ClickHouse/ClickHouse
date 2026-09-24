@@ -12,6 +12,7 @@
 #include <Common/setThreadName.h>
 #include <Common/quoteString.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/MemoryTrackerSwitcher.h>
 #include <Common/SettingsChanges.h>
@@ -46,6 +47,11 @@
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char pause_after_manual_query_id_release[];
+}
 
 namespace ErrorCodes
 {
@@ -1353,11 +1359,18 @@ arrow::Status ArrowFlightServer::DoAction(
             arrow::flight::SetSessionOptionsResult result;
 
             auto query_scope = QueryScope::createForQueryContext();
+            ProcessList::EntryPtr process_list_entry;
+            SCOPE_EXIT({
+                CurrentThread::flushUntrackedMemory();
+                process_list_entry.reset();
+                if (FailPointInjection::hasAnyFailPointBeenRegistered())
+                    FailPointInjection::pauseFailPoint(FailPoints::pause_after_manual_query_id_release);
+            });
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId("");
             query_scope.attachToQueryContext(query_context);
             /// This action does not pass through `executeQuery` and needs its own admission.
-            auto process_list_entry = query_context->getProcessList().insert(
+            process_list_entry = query_context->getProcessList().insert(
                 "Arrow Flight SetSessionOptions", 0, nullptr, query_context, Stopwatch{}.getStart(), false);
             query_context->setProcessListElement(process_list_entry->getQueryStatus());
             auto session_context = query_context->getSessionContext();
@@ -1511,6 +1524,13 @@ arrow::Status ArrowFlightServer::DoAction(
             info.username = auth.getUsername();
 
             auto query_scope = QueryScope::createForQueryContext();
+            ProcessList::EntryPtr process_list_entry;
+            SCOPE_EXIT({
+                CurrentThread::flushUntrackedMemory();
+                process_list_entry.reset();
+                if (FailPointInjection::hasAnyFailPointBeenRegistered())
+                    FailPointInjection::pauseFailPoint(FailPoints::pause_after_manual_query_id_release);
+            });
             auto query_context = session->makeQueryContext();
             query_context->setCurrentQueryId("");
             query_scope.attachToQueryContext(query_context);
@@ -1529,7 +1549,6 @@ arrow::Status ArrowFlightServer::DoAction(
 
             LOG_DEBUG(log, "CreatePreparedStatement request: query={}", ast->formatForLogging());
 
-            ProcessList::EntryPtr process_list_entry;
             if (dynamic_cast<const ASTSelectWithUnionQuery *>(ast.get()))
             {
                 /// Try to infer the result schema by executing the NULL-substituted query.
@@ -1540,6 +1559,7 @@ arrow::Status ArrowFlightServer::DoAction(
                 try
                 {
                     auto [_, block_io] = executeQuery(substituted_query, query_context, QueryFlags{}, QueryProcessingStage::Complete);
+                    process_list_entry = query_context->getProcessListElement()->getProcessListEntry();
 
                     try
                     {
