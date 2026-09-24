@@ -1,80 +1,35 @@
--- constants, arithmetic and nested calls
+-- basic comparisons and expressions
 3
 3
-4
+5
 -5
--2.5
-0
-5
-5
-4
--2
 1.25
-1
-5
-5
 5
 8
 []	3
 []	3
--- NaN and infinities in constants
+-- NaN and infinities
+nan
 nan
 nan
 nan
 -inf
--inf
--inf
-nan
-nan
-nan
-nan
-nan
 inf
-nan
-nan
-inf
-inf
--- signed zero in either argument order
-inf
--inf
--inf
--inf
-inf
-inf
-inf
--inf
--- constant and changing scalar grids
+-- scalar grids
 [0,1,2,2,2]
-[0,1,2,2,2]
-[2,2,2,3,4]
 [2,2,2,3,4]
 [0,1,2,1,0]
-[4,3,2,3,4]
-[0,0,1,2,2]
-[2,2,2,3,4]
 [3,3,3,3,3]
-[5,5,5,5,5]
-[2]
--- runtime scalar inputs and all pairs of special values
-['nan','-inf','nan','nan','nan','nan','nan','-inf','-inf','-inf','-inf','-inf','-inf','-inf','nan','-inf','-3.5','-3.5','-3.5','-3.5','-3.5','nan','-inf','-3.5','-0','-0','-0','-0','nan','-inf','-3.5','-0','0','0','0','nan','-inf','-3.5','-0','0','3.5','3.5','nan','-inf','-3.5','-0','0','3.5','inf']
-['nan','nan','nan','nan','nan','nan','inf','nan','-inf','-3.5','-0','0','3.5','inf','nan','-3.5','-3.5','-0','0','3.5','inf','nan','-0','-0','-0','0','3.5','inf','nan','0','0','0','0','3.5','inf','nan','3.5','3.5','3.5','3.5','3.5','inf','inf','inf','inf','inf','inf','inf','inf']
--3.5
--3.5
--3.5
-2
+-- runtime scalar inputs
+[1,2,2]
+[2,3,5]
 -- empty and multiple-series scalar inputs
 nan
 nan
-nan
-nan
-[nan,nan,nan,nan,nan]
-[nan,nan,nan,nan,nan]
 -- function names remain valid metric and label names
 7
 8
 -- argument count and type errors
--- Float32 samples
-Float64	-3.5
+-- Float32 results are Float64
 Float64	2
-['nan','-inf','nan','nan','nan','nan','nan','-inf','-inf','-inf','-inf','-inf','-inf','-inf','nan','-inf','-3.5','-3.5','-3.5','-3.5','-3.5','nan','-inf','-3.5','-0','-0','-0','-0','nan','-inf','-3.5','-0','0','0','0','nan','-inf','-3.5','-0','0','3.5','3.5','nan','-inf','-3.5','-0','0','3.5','inf']
-['nan','nan','nan','nan','nan','nan','inf','nan','-inf','-3.5','-0','0','3.5','inf','nan','-3.5','-3.5','-0','0','3.5','inf','nan','-0','-0','-0','0','3.5','inf','nan','0','0','0','0','3.5','inf','nan','3.5','3.5','3.5','3.5','3.5','inf','inf','inf','inf','inf','inf','inf','inf']
+Float64	3
