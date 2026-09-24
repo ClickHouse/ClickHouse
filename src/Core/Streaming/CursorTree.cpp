@@ -183,7 +183,7 @@ CursorTreeNodePtr buildCursorTree(const Map & collapsed_tree)
         VectorWithMemoryTracking<String> path;
         boost::split(path, dotted_path, boost::is_any_of("."));
 
-        /// Before the first node of this key exists: a partial chain would be just as deep to destroy.
+        /// Must precede node creation: a partial chain is just as deep to destroy.
         if (path.size() > MAX_CURSOR_TREE_DEPTH)
             throw Exception(
                 ErrorCodes::TOO_DEEP_RECURSION,

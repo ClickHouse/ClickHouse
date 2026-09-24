@@ -46,8 +46,7 @@ private:
 };
 
 /// Maximum number of levels of a cursor tree, i.e. of dot-separated components in one cursor key.
-/// Deliberately not derived from `max_parser_depth`: cursors are also read back from ZooKeeper and
-/// from object storage, where there is no settings context.
+/// Not settings-derived: cursors are also read back from ZooKeeper and object storage, with no settings context.
 static constexpr size_t MAX_CURSOR_TREE_DEPTH = 1000;
 
 Map cursorTreeToMap(const CursorTreeNodePtr & ptr);
