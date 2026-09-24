@@ -850,9 +850,11 @@ Forward-gap bound for the experimental `ReaderExecutor`: a gap up to this is ski
     DECLARE(UInt64, reader_executor_max_tail_for_drain, DEFAULT_READER_EXECUTOR_MAX_TAIL_FOR_DRAIN, R"(
 Drain bound for the experimental `ReaderExecutor`: a long source connection dropped within this many bytes of its right bound is read out to the bound first, so it completes and returns to the connection pool reusable instead of counting as an incomplete connection.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_window_size, DEFAULT_READER_EXECUTOR_WINDOW_SIZE, R"(
-Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns). Must be at least 128 KiB.)", EXPERIMENTAL) \
+Bytes served per read window by the experimental `ReaderExecutor` (the unit a read returns). Must be between 128 KiB and 40 MiB, the band shared by every `ReaderExecutor` size.)", EXPERIMENTAL) \
     DECLARE(UInt64, reader_executor_block_size, DEFAULT_READER_EXECUTOR_BLOCK_SIZE, R"(
-Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size. Must be at least 128 KiB.)", EXPERIMENTAL) \
+Buffer chunk size for the experimental `ReaderExecutor`: source reads fill nodes of at most this size. Must be between 128 KiB and 40 MiB, the band shared by every `ReaderExecutor` size.)", EXPERIMENTAL) \
+    DECLARE(UInt64, reader_executor_plan_look_ahead, DEFAULT_READER_EXECUTOR_PLAN_LOOK_AHEAD, R"(
+How far ahead the experimental `ReaderExecutor` resolves cache residency into its held read plan (a cheap probe, not a read), so one resolve serves many windows. The plan pins every cache cell it resolved until the cursor passes it, so this span drives how much memory and how much unevictable cache each concurrent reader holds. It is not an exact cap: a pin covers a whole cache segment or block, so a cell straddling either end of the range is held entire, adding up to one of them per cache tier at each end. Must be between 128 KiB and 40 MiB, the band shared by every `ReaderExecutor` size, and at least `reader_executor_block_size`.)", EXPERIMENTAL) \
     DECLARE(Bool, azure_skip_empty_files, false, R"(
 Enables or disables skipping empty files in S3 engine.
 
@@ -3908,7 +3910,7 @@ Specifies which [JOIN](/reference/statements/select/join) algorithm is used.
 
 Several algorithms can be specified, and an available one would be chosen for a particular query based on kind/strictness and table engine.
 
-Whether a hash-based algorithm spills to disk is not part of this choice: [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) are the spill threshold for all of them (and once one of the two is non-zero, `enable_adaptive_memory_spill_scheduler` can spill the join earlier still, under memory pressure), and [`max_rows_in_join`](/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/reference/settings/session-settings/max-bytes#max_bytes_in_join) a hard cap for all of them, unless `legacy_join_size_limits_trigger_spilling` turns the two caps back into spill triggers on disk. The value you pick decides how a join spills: `grace_hash` partitions the right table from the first block, `hash` and `parallel_hash` collect it in memory and switch over once the threshold is crossed.
+Spilling for hash-based algorithms is configured separately from `join_algorithm`. All hash-based algorithms use [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) and [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) as spill thresholds.
 
 Most algorithms affect a query only when they are the one selected for it. Some, however, change planning merely by being listed — even as a lower-priority fallback that is not ultimately selected — because the decision is made before the algorithm is picked. There are two such effects:
 
@@ -3922,6 +3924,7 @@ Possible values:
 - grace_hash
 
  [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join) is used.  Grace hash provides an algorithm option that provides performant complex joins while limiting memory use.
+Selecting `grace_hash` explicitly is intended primarily for diagnostic use. To enable join spilling, set [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) or [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) instead.
 
  `grace_hash` is external from the first block: the right table is partitioned straight away, where `hash` and `parallel_hash` collect it in memory first and partition it only once it crosses the spill threshold. Pick it when you already know the right side will not fit in memory and want to skip the in-memory phase. The spill threshold itself is the same one every hash algorithm uses, [`max_bytes_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join), and one of the two has to be non-zero unless `legacy_join_size_limits_trigger_spilling` is on. Without a threshold `grace_hash` is passed over for the next algorithm in the list, and rejected if it is the only one.
 
@@ -8529,6 +8532,11 @@ Use local pipeline during distributed INSERT SELECT with parallel replicas
     DECLARE(Milliseconds, parallel_replicas_connect_timeout_ms, 300, R"(
 The timeout in milliseconds for connecting to a remote replica during query execution with parallel replicas. If the timeout is expired, the corresponding replicas is not used for query execution
 )", 0) \
+    DECLARE(Bool, parallel_replicas_for_queries_with_multiple_tables, true, R"(
+If enabled, parallel replicas can be used for queries joining multiple tables (queries with `JOIN`). If disabled, parallel replicas are not used for such queries, and they are executed without parallel replicas.
+
+The setting affects only queries with `JOIN`, where the non-leftmost side is read in full on every replica. A `UNION` query without a `JOIN` is not affected: each `UNION` branch is an independent single-table read, so parallel replicas remain applicable to it. A `UNION` used as a table expression of a `JOIN` is a part of a query joining multiple tables and is affected. `ARRAY JOIN` does not count as a join between tables.
+)", BETA) \
     DECLARE(Bool, parallel_replicas_for_cluster_engines, true, R"(
 Replace table function engines with their -Cluster alternatives
 )", 0) \
@@ -9254,16 +9262,20 @@ Using the text index header cache can significantly reduce latency and increase 
 Whether to cache deserialized text index posting lists in memory.
 Using the text index postings cache can significantly reduce latency and increase throughput when working with a large number of text index queries.
 )", 0) \
-    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::LAZY, R"(
+    DECLARE(TextIndexPostingListApplyMode, text_index_posting_list_apply_mode, TextIndexPostingListApplyMode::Lazy, R"(
 Controls how posting lists are applied during text index queries.
 'materialize' eagerly decodes posting lists into Roaring Bitmaps.
 'lazy' (default) uses cursor-based on-demand decoding (requires an index format with a serialized codec).
 'lazy' is applied only where it is supported: queries with patterns (such as `LIKE`) and parts with an index written by an older version fall back to 'materialize'.
 )", 0) \
-    DECLARE_WITH_ALIAS(Float, text_index_lazy_intersection_density_threshold, 0.2f, R"(
-Posting list density threshold that selects the intersection algorithm in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
-Below the threshold: leapfrog intersection (favors sparse posting lists). At or above: brute-force bitmap intersection (favors dense posting lists).
-)", 0, text_index_density_threshold) \
+    DECLARE(TextIndexPostingsIntersectionAlgorithm, text_index_postings_intersection_algorithm, TextIndexPostingsIntersectionAlgorithm::Auto, R"(
+Selects the algorithm that intersects posting lists in lazy posting list apply mode (`text_index_posting_list_apply_mode = 'lazy'`).
+- `auto` (default): leapfrog is used only when the sparsest posting list can skip whole packed blocks of the densest one, and brute-force bitmap intersection otherwise.
+- `bruteforce`: always use the brute-force bitmap intersection.
+- `leapfrog`: always use the leapfrog intersection.
+
+Intersections of 256 or more tokens always use leapfrog.
+)", 0) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \
@@ -9478,8 +9490,11 @@ If, at query planning time, the probe side of a JOIN is estimated to produce no 
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(
 When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.
 )", 0) \
-    DECLARE(Bool, enable_join_runtime_filters_index_analysis, false, R"(
-Run a second pass index analysis (via use_skip_indexes_on_data_read) to prune granules on LHS of a join.
+    DECLARE(Bool, enable_join_runtime_filters_index_analysis, true, R"(
+Prune granules on the probe side of a JOIN with the runtime filter collected from the build side, see `enable_join_runtime_filters`.
+Only has an effect if `use_skip_indexes_on_data_read = 1`.
+Only a join key that is a primary key column of the probe side, or is covered by a `minmax`, `set` or `bloom_filter` skip index, can be pruned.
+If the runtime filter kept the exact key values, the pruning predicate is an `IN` set of them, otherwise the minimum/maximum key range is used (this has a lower pruning power).
 )", 0) \
     DECLARE(Bool, join_runtime_filter_size_from_hash_table_stats, true, R"(
 Use hash table size statistics collected from previous executions to size the JOIN runtime filter. When disabled, fall back to the fixed `join_runtime_bloom_filter_bytes`.
@@ -9710,7 +9725,9 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, use_text_index_dictionary_cache, false) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_logical_join_step, true) \
     MAKE_OBSOLETE(M, Bool, query_plan_use_new_logical_join_step, true) \
-    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1)
+    MAKE_OBSOLETE(M, UInt64, cloud_mode_database_engine, 1) \
+    MAKE_OBSOLETE(M, Float, text_index_lazy_intersection_density_threshold, 0.2f) \
+    MAKE_OBSOLETE(M, Float, text_index_density_threshold, 0.2f)
     /** The section above is for obsolete settings. Do not add anything there. */
 #endif /// __CLION_IDE__
 
