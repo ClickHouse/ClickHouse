@@ -32,6 +32,30 @@ static bool typeCanContainFloat(const DataTypePtr & type)
     return found;
 }
 
+/// A deterministic hash of the planning-time parameters of a TopK. The query condition cache keys
+/// the entries written by TopK reads with it, so the same query reuses the cached decisions while a
+/// different TopK (different `LIMIT`, sort column, direction, NULLS FIRST/LAST, collation, ...)
+/// gets a fresh entry.
+static UInt64 topKPlanHash(
+    const String & sort_column_name,
+    const DataTypePtr & sort_column_type,
+    size_t num_sort_columns,
+    size_t limit,
+    const SortColumnDescription & sort_col_desc)
+{
+    SipHash hash;
+    hash.update(sort_column_name);
+    const String type_name = sort_column_type->getName();
+    hash.update(type_name);
+    hash.update(num_sort_columns);
+    hash.update(limit);
+    hash.update(sort_col_desc.direction);
+    hash.update(sort_col_desc.nulls_direction);
+    if (sort_col_desc.collator)
+        hash.update(sort_col_desc.collator->getLocale());
+    return hash.get64();
+}
+
 /// TopN dynamic filtering for sources that read data formats (e.g. Parquet files). There are no
 /// marks or skip indexes here, so only the dynamic-filtering path applies, and it is delivered
 /// through `FormatTopKFilterInfo` rather than an injected PREWHERE: the format appends the
@@ -46,6 +70,8 @@ static size_t tryTopKForFormatSource(
     const ColumnWithTypeAndName & sort_column,
     const String & sort_column_name,
     const SortColumnDescription & sort_col_desc,
+    size_t num_sort_columns,
+    size_t limit,
     const Optimization::ExtraSettings & settings)
 {
     auto * source_step = dynamic_cast<SourceStepWithFilterBase *>(step);
@@ -95,6 +121,7 @@ static size_t tryTopKForFormatSource(
     auto info = std::make_shared<FormatTopKFilterInfo>();
     info->column_name = sort_column_name;
     info->threshold_tracker = std::move(threshold_tracker);
+    info->plan_hash = topKPlanHash(sort_column_name, sort_column.type, num_sort_columns, limit, sort_col_desc);
     source_step->setTopKFilter(std::move(info));
 
     return 0;
@@ -219,7 +246,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     const auto & sort_col_desc = sort_description.front();
 
     if (!read_from_mergetree_step)
-        return tryTopKForFormatSource(node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, settings);
+        return tryTopKForFormatSource(
+            node->step.get(), sorting_step, sort_column, sort_column_name, sort_col_desc, num_sort_columns, n, settings);
 
     /// A row-level policy filter restricts the rows inside the reader just like a `WHERE` / `PREWHERE`,
     /// so it must count as a `where_clause` as well. Otherwise a query filtered only by a row policy leaves
@@ -346,21 +374,8 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     {
         TopKFilterInfo info{sort_column_name, sort_column.type, num_sort_columns, n, sort_col_desc.direction, where_clause, threshold_tracker, /*condition_hash=*/ 0};
 
-        /// Compute a deterministic hash from the planning-time parameters. Used by
-        /// `updateQueryConditionCache` to partition QCC entries by TopK plan, so the same
-        /// query reuses cached granule decisions and a different TopK plan (different LIMIT,
-        /// sort column, direction, NULLS FIRST/LAST, COLLATE, etc.) gets a fresh entry.
-        SipHash hash;
-        hash.update(info.column_name);
-        const String type_name = info.data_type->getName();
-        hash.update(type_name);
-        hash.update(info.num_sort_columns);
-        hash.update(info.limit_n);
-        hash.update(info.direction);
-        hash.update(sort_col_desc.nulls_direction);
-        if (sort_col_desc.collator)
-            hash.update(sort_col_desc.collator->getLocale());
-        info.condition_hash = hash.get64();
+        /// Used by `updateQueryConditionCache` to partition QCC entries by TopK plan.
+        info.condition_hash = topKPlanHash(info.column_name, info.data_type, info.num_sort_columns, info.limit_n, sort_col_desc);
 
         read_from_mergetree_step->setTopKColumn(info);
     }

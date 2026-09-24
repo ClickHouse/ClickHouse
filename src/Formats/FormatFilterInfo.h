@@ -30,6 +30,11 @@ struct FormatTopKFilterInfo
     /// Name of the first ORDER BY column in the format's output block.
     String column_name;
     TopKThresholdTrackerPtr threshold_tracker;
+    /// Hash of the planning-time parameters of the TopK (sort column and its type, number of sort
+    /// columns, `LIMIT`, direction, NULLS FIRST/LAST, collation). Which row groups the filter lets
+    /// through depends on these, so a query condition cache entry written by a TopK read is keyed
+    /// by it (see `StorageFileSource`).
+    UInt64 plan_hash = 0;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.

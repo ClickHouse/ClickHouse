@@ -15,6 +15,7 @@
 
 #include <atomic>
 #include <shared_mutex>
+#include <unordered_map>
 #include <sys/stat.h>
 
 namespace DB
@@ -294,6 +295,20 @@ private:
 
     using FilesIteratorPtr = std::shared_ptr<FilesIterator>;
 
+    /// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a
+    /// file the TopN filter lets through depends on the running threshold, which is established from
+    /// the rows of *every* file the query reads, so the key covers the TopK plan, the predicate and
+    /// the version tokens of all these files (see `ReadFromFile::makeTopKQueryConditionCacheKey`). A file whose
+    /// token at open differs from the one recorded here must not use the key.
+    struct TopKQueryConditionCacheKey
+    {
+        UInt64 condition_hash = 0;
+        /// A printable description of the key for `system.query_condition_cache`.
+        String condition;
+        std::unordered_map<String, String> file_version_tokens;
+    };
+    using TopKQueryConditionCacheKeyPtr = std::shared_ptr<const TopKQueryConditionCacheKey>;
+
     StorageFileSource(
         const ReadFromFormatInfo & info,
         std::shared_ptr<StorageFile> storage_,
@@ -304,7 +319,8 @@ private:
         bool need_only_count_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
-        LazyFileRegistryPtr lazy_row_index_registry_ = nullptr);
+        LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile
@@ -328,6 +344,9 @@ private:
     void addNumRowsToCache(const String & path, size_t num_rows) const;
 
     std::optional<size_t> tryGetNumRowsFromCache(const String & path, time_t last_mod_time) const;
+
+    /// The TopK query condition cache key if it applies to the version of the file being read.
+    std::optional<UInt64> getTopKConditionHashForCurrentFile() const;
 
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;
@@ -355,6 +374,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;
@@ -427,6 +447,8 @@ public:
     LazyFileRegistryPtr getLazyRowIndexRegistry() const { return lazy_row_index_registry; }
 
 private:
+    StorageFileSource::TopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+
     std::shared_ptr<StorageFile> storage;
     ReadFromFormatInfo info;
     const bool need_only_count;

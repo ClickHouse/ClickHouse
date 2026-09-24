@@ -8,6 +8,7 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Storages/HivePartitioningUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
+#include <boost/functional/hash.hpp>
 
 #include <Access/ContextAccess.h>
 #include <Access/Common/AccessFlags.h>
@@ -69,6 +70,7 @@
 #include <Common/filesystemHelpers.h>
 #include <Common/logger_useful.h>
 #include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
 #include <Common/saturatedDuration.h>
@@ -101,6 +103,8 @@ namespace ProfileEvents
     extern const Event CreatedReadBufferMMap;
     extern const Event CreatedReadBufferMMapFailed;
     extern const Event EngineFileLikeReadFiles;
+    extern const Event QueryConditionCacheHits;
+    extern const Event QueryConditionCacheMisses;
 }
 
 namespace fs = std::filesystem;
@@ -127,6 +131,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsLocalFSReadMethod storage_file_read_method;
     extern const SettingsBool use_cache_for_count_from_files;
+    extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool enable_parsing_to_custom_serialization;
@@ -694,6 +699,20 @@ String computeFileCacheVersionToken(const struct stat & file_stat)
         static_cast<Int64>(mtim_nsec),
         static_cast<Int64>(file_stat.st_ino),
         file_stat.st_size);
+}
+
+/// Whether the version token of a file with this `stat` proves every later rewrite: filesystem
+/// timestamps are coarser than the wall clock, so it does only once the last modification is
+/// comfortably in the past (see the settle-window comment at the call site in `StorageFileSource`).
+bool isFileCacheVersionTokenSettled(const struct stat & file_stat)
+{
+#if defined(OS_DARWIN)
+    const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
+#else
+    const auto mtim_sec = file_stat.st_mtim.tv_sec;
+#endif
+    static constexpr Int64 file_version_settle_seconds = 3;
+    return static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
 }
 
 /// Re-stats `path` and reports whether it still produces `expected_token`. Used to bracket a
@@ -1633,7 +1652,8 @@ StorageFileSource::StorageFileSource(
     bool need_only_count_,
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
-    LazyFileRegistryPtr lazy_row_index_registry_)
+    LazyFileRegistryPtr lazy_row_index_registry_,
+    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1641,6 +1661,7 @@ StorageFileSource::StorageFileSource(
     , read_buf(std::move(read_buf_))
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
+    , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
     , requested_virtual_columns(info.requested_virtual_columns)
@@ -1910,14 +1931,7 @@ Chunk StorageFileSource::generate()
                 /// recently - or with an mtime in the future, e.g. due to clock skew on a
                 /// network mount - it fails close and stays bypassed (see the gates below)
                 /// rather than risking stale results.
-#if defined(OS_DARWIN)
-                const auto mtim_sec = file_stat.st_mtimespec.tv_sec;
-#else
-                const auto mtim_sec = file_stat.st_mtim.tv_sec;
-#endif
-                static constexpr Int64 file_version_settle_seconds = 3;
-                current_file_version_settled
-                    = static_cast<Int64>(mtim_sec) + file_version_settle_seconds <= static_cast<Int64>(time(nullptr));
+                current_file_version_settled = isFileCacheVersionTokenSettled(file_stat);
 
                 if (getContext()->getSettingsRef()[Setting::engine_file_skip_empty_files] && file_stat.st_size == 0)
                     continue;
@@ -1986,20 +2000,52 @@ Chunk StorageFileSource::generate()
             /// formats miss.
             /// A TopN read consults the cache only while `use_query_condition_cache_for_top_k` is on:
             /// the setting is documented to make TopK reads neither consult nor populate the query
-            /// condition cache, and the write side is already off for them unconditionally (see below).
+            /// condition cache. With it on, a TopN read consults two keys: the plain predicate key, whose
+            /// entries are written by threshold-oblivious reads and therefore apply to any read with the
+            /// same predicate, and the TopK key of this query (see `TopKQueryConditionCacheKey`), whose
+            /// entries only a previous run of the same TopN over the same file set could have written.
+            /// A row group may be skipped iff either verdict excludes it.
             FileBucketInfoPtr buckets_to_read;
-            QueryConditionCachePtr query_condition_cache;
-            if (object_with_metadata.has_value() && current_file_version_settled
-                && format_filter_info && format_filter_info->condition_hash
+            std::optional<UInt64> plain_condition_hash;
+            if (format_filter_info && format_filter_info->condition_hash
                 && (!format_filter_info->top_k_filter
                     || getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
+                plain_condition_hash = format_filter_info->condition_hash;
+
+            std::optional<UInt64> top_k_condition_hash = getTopKConditionHashForCurrentFile();
+
+            QueryConditionCachePtr query_condition_cache;
+            /// A table without a UUID (e.g. the one behind the `file` table function) has no cache entries.
+            if (object_with_metadata.has_value() && current_file_version_settled && (plain_condition_hash || top_k_condition_hash)
+                && storage->getStorageID().uuid != UUIDHelpers::Nil)
                 query_condition_cache = getContext()->getQueryConditionCache();
 
             if (query_condition_cache)
             {
                 const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                auto matching_marks = query_condition_cache->read(
-                    storage->getStorageID().uuid, cache_file_key, *format_filter_info->condition_hash);
+                const auto table_uuid = storage->getStorageID().uuid;
+
+                /// One logical consultation, so it emits one `QueryConditionCacheHits` / `Misses` event
+                /// however many keys are probed.
+                std::optional<QueryConditionCache::MatchingMarks> matching_marks;
+                auto merge_matching_marks = [&](std::optional<QueryConditionCache::MatchingMarks> marks)
+                {
+                    if (!marks)
+                        return;
+                    if (!matching_marks)
+                        matching_marks = std::move(marks);
+                    else if (matching_marks->size() == marks->size())
+                        for (size_t i = 0; i < marks->size(); ++i)
+                            (*matching_marks)[i] = (*matching_marks)[i] && (*marks)[i];
+                };
+                if (plain_condition_hash)
+                    merge_matching_marks(query_condition_cache->read(
+                        table_uuid, cache_file_key, *plain_condition_hash, /*increment_profile_events=*/false));
+                if (top_k_condition_hash)
+                    merge_matching_marks(query_condition_cache->read(
+                        table_uuid, cache_file_key, *top_k_condition_hash, /*increment_profile_events=*/false));
+                ProfileEvents::increment(matching_marks ? ProfileEvents::QueryConditionCacheHits : ProfileEvents::QueryConditionCacheMisses);
+
                 if (matching_marks.has_value())
                 {
                     const auto & marks = *matching_marks;
@@ -2013,7 +2059,7 @@ Chunk StorageFileSource::generate()
                         "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
                         marks.size() - matching_row_groups.size(),
                         marks.size(),
-                        format_filter_info->filter_actions_dag->dumpNames(),
+                        top_k_condition_hash ? top_k_query_condition_cache_key->condition : format_filter_info->filter_actions_dag->dumpNames(),
                         current_path);
 
                     if (matching_row_groups.empty())
@@ -2224,15 +2270,34 @@ Chunk StorageFileSource::generate()
         /// TopN dynamic filtering makes the matched buckets threshold-dependent rather than a
         /// predicate-only verdict: a row group can end up empty (hence "unmatched") only because the
         /// running `__topKFilter` threshold - established from the rows of *all* files this query
-        /// reads - had already excluded its rows. The cache key encodes just the predicate and the
-        /// single file's version, so such an entry would poison a later plain read, a read with a
-        /// different `LIMIT` or sort direction, or a read of only one file of the glob. Never write
-        /// cache entries for TopK reads. Reading the cache stays enabled while
-        /// `use_query_condition_cache_for_top_k` is on: entries are only ever written by
-        /// threshold-oblivious reads, so applying them to a TopK read is sound.
-        if (input_format && current_file_cache_version.has_value() && current_file_version_settled
-            && format_filter_info && format_filter_info->condition_hash && !format_filter_info->top_k_filter
-            && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        /// reads - had already excluded its rows. Such an entry must never land under the plain
+        /// predicate key, where it would poison a later plain read, a read with a different `LIMIT`
+        /// or sort direction, or a read of only one file of the glob. It is written under the TopK
+        /// key instead (`TopKQueryConditionCacheKey`), which only the same TopN over the same file
+        /// set and the same file versions consults. There it is sound: the threshold only ever
+        /// tightens towards the final one and `__topKFilter` keeps ties, so every row the query
+        /// returns passed it, and a row group that ends up empty holds no row that can beat the
+        /// final threshold - a rerun reading only the other row groups finds the same top-K.
+        /// A cancelled read may stop before it has seen every row group, and the ones it has not
+        /// read report no matching rows either, so it writes nothing.
+        std::optional<UInt64> write_condition_hash;
+        String write_condition;
+        if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info)
+        {
+            if (format_filter_info->top_k_filter)
+            {
+                write_condition_hash = getTopKConditionHashForCurrentFile();
+                if (write_condition_hash)
+                    write_condition = top_k_query_condition_cache_key->condition;
+            }
+            else if (format_filter_info->condition_hash)
+            {
+                write_condition_hash = format_filter_info->condition_hash;
+                write_condition = format_filter_info->filter_actions_dag->dumpNames();
+            }
+        }
+
+        if (write_condition_hash && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
             {
@@ -2263,8 +2328,8 @@ Chunk StorageFileSource::generate()
                             query_condition_cache->write(
                                 storage->getStorageID().uuid,
                                 cache_file_key,
-                                *format_filter_info->condition_hash,
-                                format_filter_info->filter_actions_dag->dumpNames(),
+                                *write_condition_hash,
+                                write_condition,
                                 unmatched_ranges,
                                 total_groups,
                                 /*has_final_mark=*/false);
@@ -2301,6 +2366,20 @@ Chunk StorageFileSource::generate()
     }
 
     return {};
+}
+
+std::optional<UInt64> StorageFileSource::getTopKConditionHashForCurrentFile() const
+{
+    if (!top_k_query_condition_cache_key || !current_file_cache_version.has_value())
+        return {};
+
+    /// The key covers the version token each file had when the key was made. A file that has changed
+    /// since then is read in a version the key does not describe.
+    auto it = top_k_query_condition_cache_key->file_version_tokens.find(current_path);
+    if (it == top_k_query_condition_cache_key->file_version_tokens.end() || it->second != *current_file_cache_version)
+        return {};
+
+    return top_k_query_condition_cache_key->condition_hash;
 }
 
 void StorageFileSource::onFinish() { parser_shared_resources->finishStream(); }
@@ -2533,6 +2612,64 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
+StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
+{
+    const auto & settings = getContext()->getSettingsRef();
+    if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
+        return {};
+
+    /// Only plain local files have version tokens, and only a table with a UUID has cache entries.
+    /// With distributed processing the files arrive from the initiator at run time.
+    if (storage->use_table_fd || storage->archive_info || storage->distributed_processing
+        || storage->getStorageID().uuid == UUIDHelpers::Nil)
+        return {};
+
+    /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
+    /// key covers. `condition_hash` covers the pushed-down filter and a PREWHERE collected with it.
+    /// Without any of them the reader drops nothing else. A row policy is covered by neither.
+    if (query_info.row_level_filter)
+        return {};
+
+    auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
+    size_t condition_hash = 0;
+    if (format_filter_info.condition_hash)
+    {
+        condition_hash = *format_filter_info.condition_hash;
+        key->condition = format_filter_info.filter_actions_dag->dumpNames() + ", ";
+    }
+    else if (!filter_actions_dag && !query_info.prewhere_info)
+        condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
+    else
+        return {};
+
+    key->condition += fmt::format("TopK by {}", top_k_filter->column_name);
+
+    /// The threshold of the TopN filter comes from the rows of every file of the query: a file
+    /// that loses rows or is rewritten can loosen it, and a row group skipped under the old
+    /// threshold may then hold rows of the result. So the key covers the version tokens of all
+    /// files, and it is made only when every token has settled (see `isFileCacheVersionTokenSettled`),
+    /// i.e. when any later change of any of the files is guaranteed to change the key.
+    SipHash files_hash;
+    for (const auto & path : storage->paths)
+    {
+        struct stat file_stat{};
+        if (0 != stat(path.c_str(), &file_stat) || !S_ISREG(file_stat.st_mode) || !isFileCacheVersionTokenSettled(file_stat))
+            return {};
+
+        String token = computeFileCacheVersionToken(file_stat);
+        files_hash.update(path.size());
+        files_hash.update(path);
+        files_hash.update(token.size());
+        files_hash.update(token);
+        key->file_version_tokens.emplace(path, std::move(token));
+    }
+
+    boost::hash_combine(condition_hash, top_k_filter->plan_hash);
+    boost::hash_combine(condition_hash, files_hash.get64());
+    key->condition_hash = condition_hash;
+    return key;
+}
+
 void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
@@ -2562,6 +2699,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
+    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -2583,7 +2721,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             need_only_count,
             parser_shared_resources,
             format_filter_info,
-            lazy_row_index_registry);
+            lazy_row_index_registry,
+            top_k_query_condition_cache_key);
 
         pipes.emplace_back(std::move(source));
     }
