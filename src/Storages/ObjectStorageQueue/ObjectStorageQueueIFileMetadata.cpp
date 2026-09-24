@@ -512,7 +512,8 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         {
             /// File is already processed - update cache and skip.
             LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
-            file_status->updateState(FileStatus::State::Processed);
+            /// Drops the data of the old failed attempt (retries, timings, exception), so it is not shown next to `Processed`.
+            file_status->onStateObservedInKeeper(FileStatus::State::Processed);
             return false;
         }
     }
@@ -623,7 +624,8 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         {
             /// File is already processed - update cache and skip.
             LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
-            file_status->updateState(FileStatus::State::Processed);
+            /// Drops the data of the old failed attempt (retries, timings, exception), so it is not shown next to `Processed`.
+            file_status->onStateObservedInKeeper(FileStatus::State::Processed);
             return std::nullopt;
         }
     }
