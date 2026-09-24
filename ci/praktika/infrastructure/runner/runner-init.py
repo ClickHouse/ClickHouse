@@ -346,6 +346,8 @@ class Runner:
     def run(self) -> None:
         """Main runner loop."""
         if config.init_environment == Environment.MACOS:
+            # runner-init starts once per boot; unified logs and `uuidtext` otherwise grow to several GB.
+            run_bash("log erase --all", sudo=True)
             Runner.configure_darwin()
         else:
             Runner.configure_linux()
@@ -598,6 +600,13 @@ rm -rf /.Spotlight-V100 || true
 
 # No backup destination exists, but enabled Time Machine can still take local APFS snapshots.
 tmutil disable || true
+
+# Photos analysis, Siri, iCloud and location services have no use on a runner.
+RUNNER_UID=$(id -u "$SUDO_USER")
+for agent in photoanalysisd mediaanalysisd Siri.agent assistantd cloudd bird cloudphotod; do
+    launchctl disable "gui/$RUNNER_UID/com.apple.$agent" || true
+done
+launchctl disable system/com.apple.locationd || true
 
 # Stop persisting file-change history; CI churn grows `/.fseventsd` to several GB. Takes effect after reboot.
 rm -rf /System/Volumes/Data/.fseventsd || true
