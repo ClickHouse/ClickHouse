@@ -18,33 +18,52 @@ SHOW TABLES FROM information_schema;
 
 ```text
 ┌─name────────────────────┐
+│ CHARACTER_SETS          │
 │ COLLATIONS              │
 │ COLUMNS                 │
+│ COLUMN_PRIVILEGES       │
+│ ENGINES                 │
 │ KEY_COLUMN_USAGE        │
 │ REFERENTIAL_CONSTRAINTS │
 │ SCHEMATA                │
-| STATISTICS              |
+│ SCHEMA_PRIVILEGES       │
+│ STATISTICS              │
 │ TABLES                  │
+│ TABLE_PRIVILEGES        │
+│ USER_PRIVILEGES         │
 │ VIEWS                   │
+│ character_sets          │
+│ collations              │
+│ column_privileges       │
 │ columns                 │
+│ engines                 │
 │ key_column_usage        │
 │ referential_constraints │
+│ schema_privileges       │
 │ schemata                │
-| statistics              |
+│ statistics              │
+│ table_privileges        │
 │ tables                  │
+│ user_privileges         │
 │ views                   │
 └─────────────────────────┘
 ```
 
 `INFORMATION_SCHEMA` contains the following views:
 
+- [CHARACTER_SETS](#character_sets)
 - [COLUMNS](#columns)
+- [COLUMN_PRIVILEGES](#column_privileges)
 - [COLLATIONS](#collations)
+- [ENGINES](#engines)
 - [KEY_COLUMN_USAGE](#key_column_usage)
 - [REFERENTIAL_CONSTRAINTS](#referential_constraints)
 - [SCHEMATA](#schemata)
+- [SCHEMA_PRIVILEGES](#schema_privileges)
 - [STATISTICS](#statistics)
 - [TABLES](#tables)
+- [TABLE_PRIVILEGES](#table_privileges)
+- [USER_PRIVILEGES](#user_privileges)
 - [VIEWS](#views)
 
 Case-insensitive equivalent views, e.g. `INFORMATION_SCHEMA.columns` are provided for reasons of compatibility with other databases. The same applies to all the columns in these views - both lowercase (for example, `table_name`) and uppercase (`TABLE_NAME`) variants are provided.
@@ -378,3 +397,72 @@ Columns:
 - `is_compiled` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — Whether the collation is compiled into the server (`Yes` for both MySQL-compatibility rows, otherwise `NULL`). Provided for MySQL compatibility.
 - `sortlen` ([Nullable](/reference/data-types/nullable)([UInt64](/reference/data-types/int-uint))) — The minimum sort length (`0` for `utf8mb4_0900_ai_ci`, `1` for `binary`, otherwise `NULL`). Provided for MySQL compatibility.
 - `pad_attribute` ([Nullable](/reference/data-types/nullable)([String](/reference/data-types/string))) — The pad attribute, `NO PAD` or `PAD SPACE` (`NO PAD` for both MySQL-compatibility rows, otherwise `NULL`). Provided for MySQL compatibility.
+
+## CHARACTER_SETS {#character_sets}
+
+Provides a static list of character sets (`utf8`, `utf8mb4`, `ascii`, `binary`) for compatibility with MySQL tools. ClickHouse itself works with UTF-8.
+
+Columns:
+
+- `character_set_name` ([String](/reference/data-types/string)) — The name of the character set.
+
+## ENGINES {#engines}
+
+Provides information about available table engines, read from the [system.table_engines](/reference/system-tables/table_engines) system table. Provided for MySQL compatibility.
+
+Columns:
+
+- `engine` ([String](/reference/data-types/string)) — The name of the table engine.
+- `support` ([String](/reference/data-types/string)) — `DEFAULT` for the engine set as [default_table_engine](/operations/settings/settings#default_table_engine), otherwise `YES`.
+
+## USER_PRIVILEGES {#user_privileges}
+
+Provides information about global privileges, read from the [system.grants](/reference/system-tables/grants) system table (rows with no database).
+
+The `*_PRIVILEGES` views show only positive, non-wildcard, non-parameterized grants: partial revokes, wildcard grants (e.g. `GRANT SELECT ON db_prefix*.*`) and parameterized grants (e.g. `GRANT TABLE ENGINE ON TinyLog`) cannot be represented in the MySQL-compatible format and are omitted, so a grantee restricted by a partial revoke is shown with the unrestricted grant. `system.grants` is the authoritative source. Unlike MySQL, the views show the grants of all users and roles, and reading them requires access to `system.grants`; without it the query fails with an `ACCESS_DENIED` exception. There is no `GRANTOR` column because ClickHouse does not record who issued a grant.
+
+Columns:
+
+- `grantee` ([String](/reference/data-types/string)) — The user or role the privilege is granted to, in MySQL format: `'name'@'%'`. Roles have no MySQL analog and are rendered the same way as users.
+- `table_catalog` ([String](/reference/data-types/string)) — Always `def`.
+- `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege, e.g. `SELECT` or `ALTER UPDATE`. See [system.privileges](/reference/system-tables/privileges) for the full list.
+- `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+
+## SCHEMA_PRIVILEGES {#schema_privileges}
+
+Provides information about database-level privileges, read from the [system.grants](/reference/system-tables/grants) system table (rows with a database but no table). See [USER_PRIVILEGES](#user_privileges) for the limitations shared by all `*_PRIVILEGES` views.
+
+Columns:
+
+- `grantee` ([String](/reference/data-types/string)) — The user or role the privilege is granted to, in MySQL format: `'name'@'%'`.
+- `table_catalog` ([String](/reference/data-types/string)) — Always `def`.
+- `table_schema` ([String](/reference/data-types/string)) — The name of the database.
+- `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege.
+- `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+
+## TABLE_PRIVILEGES {#table_privileges}
+
+Provides information about table-level privileges, read from the [system.grants](/reference/system-tables/grants) system table (rows with a table but no column). See [USER_PRIVILEGES](#user_privileges) for the limitations shared by all `*_PRIVILEGES` views.
+
+Columns:
+
+- `grantee` ([String](/reference/data-types/string)) — The user or role the privilege is granted to, in MySQL format: `'name'@'%'`.
+- `table_catalog` ([String](/reference/data-types/string)) — Always `def`.
+- `table_schema` ([String](/reference/data-types/string)) — The name of the database.
+- `table_name` ([String](/reference/data-types/string)) — The name of the table.
+- `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege.
+- `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.
+
+## COLUMN_PRIVILEGES {#column_privileges}
+
+Provides information about column-level privileges, read from the [system.grants](/reference/system-tables/grants) system table (rows with a column; one row per column). See [USER_PRIVILEGES](#user_privileges) for the limitations shared by all `*_PRIVILEGES` views.
+
+Columns:
+
+- `grantee` ([String](/reference/data-types/string)) — The user or role the privilege is granted to, in MySQL format: `'name'@'%'`.
+- `table_catalog` ([String](/reference/data-types/string)) — Always `def`.
+- `table_schema` ([String](/reference/data-types/string)) — The name of the database.
+- `table_name` ([String](/reference/data-types/string)) — The name of the table.
+- `column_name` ([String](/reference/data-types/string)) — The name of the column.
+- `privilege_type` ([String](/reference/data-types/string)) — The name of the privilege.
+- `is_grantable` ([String](/reference/data-types/string)) — `YES` if the privilege is granted `WITH GRANT OPTION`, otherwise `NO`.

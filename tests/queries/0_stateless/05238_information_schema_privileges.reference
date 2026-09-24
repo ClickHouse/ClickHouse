@@ -1,0 +1,21 @@
+-- user_privileges
+\'q\\\'\\\\05238_[db]\'@\'%\'	def	CREATE TEMPORARY TABLE	NO
+\'user_05238_[db]\'@\'%\'	def	SELECT	NO
+\'user_05238_[db]\'@\'%\'	def	SHOW TABLES	NO
+-- schema_privileges
+\'user_05238_[db]\'@\'%\'	def	[db]	INSERT	YES
+-- table_privileges
+\'role_05238_[db]\'@\'%\'	def	[db]	t	ALTER UPDATE	NO
+-- column_privileges
+\'role_05238_[db]\'@\'%\'	def	[db]	t	a	SELECT	NO
+\'role_05238_[db]\'@\'%\'	def	[db]	t	b	SELECT	NO
+-- grantee with a quote and a backslash in the name
+\'q\\\'\\\\05238_[db]\'@\'%\'	CREATE TEMPORARY TABLE
+-- not representable grants are hidden
+0
+0
+0
+-- upper/lowercase table names and columns
+1
+1
+1
