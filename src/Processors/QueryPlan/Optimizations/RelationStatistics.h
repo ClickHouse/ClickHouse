@@ -46,6 +46,8 @@ void addTransformation(std::unordered_map<String, ColumnStats> & column_stats, C
 bool isExactDistinctCount(const ColumnStatsProvenance & provenance);
 /// The true distinct count cannot exceed the estimate.
 bool isDistinctCountUpperBound(const ColumnStatsProvenance & provenance);
+/// The following predicates also govern `ColumnStats::null_fraction`: it is a value fact for the
+/// same rows as the range and consumers must require the corresponding range guarantee.
 /// The range is exactly the produced rows' range.
 bool isExactValueRange(const ColumnStatsProvenance & provenance);
 /// The range contains the produced rows' range.

@@ -22,7 +22,8 @@ struct ColumnStats
     std::optional<Field> min_value = {};
     std::optional<Field> max_value = {};
     ColumnStatsProvenance range_provenance = {};
-    /// Fraction of NULL values; unset when unknown.
+    /// Fraction of NULL values; unset when unknown. This is a value fact for the same rows as
+    /// `min_value` and `max_value`, so consumers must consult `range_provenance` before using it.
     std::optional<Float64> null_fraction = {};
 };
 

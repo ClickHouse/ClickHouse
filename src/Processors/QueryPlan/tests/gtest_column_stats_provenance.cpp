@@ -285,7 +285,9 @@ TEST(ColumnStatsProvenance, ExpressionLineageAppendsTransformationsAndKeepsFacts
     dag.addOrReplaceInOutputs(chained);
 
     ExpressionStep step(header, std::move(dag));
-    auto result = estimateUnaryStepStats(step, inputRelationStats());
+    auto input_stats = inputRelationStats();
+    input_stats.column_stats.at("k").null_fraction = 0.25;
+    auto result = estimateUnaryStepStats(step, std::move(input_stats));
     ASSERT_TRUE(result.has_value());
     const auto & stats = result->column_stats;
 
@@ -302,6 +304,13 @@ TEST(ColumnStatsProvenance, ExpressionLineageAppendsTransformationsAndKeepsFacts
     EXPECT_TRUE(stats.at("collapsed").ndv_provenance.has(NDVBoundExpression));
     EXPECT_TRUE(stats.at("collapsed").range_provenance.has(NDVBoundExpression));
     EXPECT_TRUE(stats.at("chained").ndv_provenance.has(NDVBoundExpression));
+    EXPECT_EQ(stats.at("k").null_fraction, 0.25);
+    EXPECT_EQ(stats.at("alias").null_fraction, 0.25);
+    EXPECT_EQ(stats.at("preserved").null_fraction, 0.25);
+    EXPECT_EQ(stats.at("nullable").null_fraction, 0.25);
+    EXPECT_FALSE(stats.at("casted").null_fraction.has_value());
+    EXPECT_FALSE(stats.at("collapsed").null_fraction.has_value());
+    EXPECT_FALSE(stats.at("chained").null_fraction.has_value());
     EXPECT_EQ(stats.at("collapsed").num_distinct_values, 50);
     EXPECT_EQ(stats.at("collapsed").min_value, Field(UInt64{10}));
     EXPECT_EQ(stats.at("collapsed").max_value, Field(UInt64{59}));
@@ -464,6 +473,7 @@ TEST(ColumnStatsProvenance, LimitRecordsNonUniformSubsetAndTracksExactRows)
     EXPECT_TRUE(exact->rows_exact);
     EXPECT_TRUE(exact->column_stats.at("k").ndv_provenance.has(NonUniformRowSubset));
     EXPECT_TRUE(exact->column_stats.at("k").range_provenance.has(NonUniformRowSubset));
+    EXPECT_EQ(exact->column_stats.at("k").null_fraction, 0.0);
 
     LimitStep non_truncating_limit(header, 100, 0);
     auto non_truncated = estimateUnaryStepStats(non_truncating_limit, inputRelationStats());

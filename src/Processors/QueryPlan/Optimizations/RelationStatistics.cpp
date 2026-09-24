@@ -95,6 +95,10 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
         {
             stats.ndv_provenance.add(NDVBoundExpression);
             stats.range_provenance.add(NDVBoundExpression);
+            /// A generic function can turn NULLs into values or values into NULLs, so the input's
+            /// NULL fraction is not even an approximation of the output's. Unlike the range, it
+            /// cannot remain as a diagnostic superset.
+            stats.null_fraction.reset();
         }
         else if (
             output_lineage.input->kind == ActionsDAGLineageKind::ValuePreserving
@@ -106,8 +110,8 @@ void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const Ac
             stats.range_provenance.add(ValuePreservingExpression);
         }
         /// A hop that changes the type (e.g. `toString(k)`) changes the value bytes, so drop the
-        /// width to unknown. Keep ranges and NULL fractions as diagnostic facts; consumers reject
-        /// them through `NDVBoundExpression` when the expression may have changed their meaning.
+        /// width to unknown. Keep ranges as diagnostic facts; consumers reject them through
+        /// `NDVBoundExpression` when the expression may have changed their meaning.
         if (!output_lineage.input->preserves_width)
             stats.avg_bytes = 0;
         mapped[output.result_name] = stats;
