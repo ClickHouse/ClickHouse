@@ -90,3 +90,44 @@ SELECT 'the top row', a, b FROM t_05200_topk ORDER BY b DESC LIMIT 1;
 SELECT 'the top row, without the index', a, b FROM t_05200_topk ORDER BY b DESC LIMIT 1 SETTINGS use_skip_indexes_for_top_k = 0;
 
 DROP TABLE t_05200_topk;
+
+-- The regular skip-index path has the same blind spot: a `WHERE` on the re-added column must not be
+-- pruned by the index file built over the dropped column.
+
+DROP TABLE IF EXISTS t_05200_skip;
+CREATE TABLE t_05200_skip (a UInt64, b UInt64, INDEX idx b TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 10, min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES t_05200_skip;
+INSERT INTO t_05200_skip SELECT number, 5000 + number FROM numbers(100);
+INSERT INTO t_05200_skip SELECT 100 + number, 1000 + number FROM numbers(100);
+
+ALTER TABLE t_05200_skip DROP INDEX idx SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05200_skip DROP COLUMN b SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05200_skip ADD COLUMN b UInt64 DEFAULT a + 7;
+ALTER TABLE t_05200_skip ADD INDEX idx b TYPE minmax GRANULARITY 1;
+
+SELECT 'a filter on the re-added column', count() FROM t_05200_skip WHERE b BETWEEN 100 AND 110;
+SELECT 'a filter on the re-added column, without the index', count() FROM t_05200_skip WHERE b BETWEEN 100 AND 110 SETTINGS use_skip_indexes = 0;
+
+DROP TABLE t_05200_skip;
+
+-- The query condition cache is keyed by the part name, which a pending metadata mutation does not
+-- change: an entry recorded for the dropped column must not prune marks of the re-added one.
+
+DROP TABLE IF EXISTS t_05200_qcc;
+CREATE TABLE t_05200_qcc (a UInt64, b UInt64, s String) ENGINE = MergeTree ORDER BY a
+SETTINGS index_granularity = 10, min_bytes_for_wide_part = 0;
+
+SYSTEM STOP MERGES t_05200_qcc;
+INSERT INTO t_05200_qcc SELECT number, number + 1000, 'x' FROM numbers(100);
+
+SELECT 'before the drop', count() FROM t_05200_qcc WHERE b = 7 SETTINGS use_query_condition_cache = 1;
+
+ALTER TABLE t_05200_qcc DROP COLUMN b SETTINGS mutations_sync = 0, alter_sync = 0;
+ALTER TABLE t_05200_qcc ADD COLUMN b UInt64 DEFAULT 7;
+
+SELECT 'the re-added column', count() FROM t_05200_qcc WHERE b = 7 SETTINGS use_query_condition_cache = 1;
+SELECT 'the re-added column, without the cache', count() FROM t_05200_qcc WHERE b = 7 SETTINGS use_query_condition_cache = 0;
+
+DROP TABLE t_05200_qcc;

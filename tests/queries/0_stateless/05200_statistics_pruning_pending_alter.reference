@@ -18,3 +18,8 @@ the statistics prune again	0
 the drop is pending	2
 the top row	199	206
 the top row, without the index	199	206
+a filter on the re-added column	11
+a filter on the re-added column, without the index	11
+before the drop	0
+the re-added column	100
+the re-added column, without the cache	100

@@ -933,9 +933,9 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByStatistics(
 ///    advertises the pre-update values;
 ///  - an ALTER MODIFY COLUMN changes the indexed column's type, but the minmax still holds bytes
 ///    serialized with the old type, which order differently under the new type;
-///  - a DROP COLUMN followed by adding a column with the same name (and an index with the same
-///    name on it) makes a read return the new column's default, but the part still holds the index
-///    file built over the dropped column's values.
+///  - a DROP COLUMN or RENAME COLUMN followed by adding a column with the same name (and an index
+///    with the same name on it) makes a read return the new column, but the part still holds the
+///    index file built over the old column's values.
 /// The top-k granule optimization keeps only the globally extreme granules, so a part whose stale
 /// minmax advertises an extreme value can displace and prune a part that holds the live top rows,
 /// yielding wrong (often empty) results. Exclude such parts from candidate selection; they are then
@@ -967,20 +967,11 @@ static bool partHasStaleTopKIndex(
         if (alter_conversions->hasLightweightDelete() || alter_conversions->hasDeleteMutation())
             return true;
 
-        /// A pending DROP COLUMN of an indexed column: the column can only be indexed again if it was
-        /// added again under the same name, so a read returns its default while the part's index file
-        /// still describes the dropped column's values. The names in the index description are the
-        /// names in the current metadata, which in this case are the names the columns have in the part.
-        for (const auto & column_name : top_k_index->index.column_names)
-        {
-            if (alter_conversions->isColumnDropped(column_name))
-                return true;
-        }
-
-        /// A pending update / patch / MODIFY COLUMN that touches the indexed column makes its minmax
-        /// stale. Reuse the same overlap check the regular skip-index path uses (canUseIndex), so the
-        /// top-k path is consistent with it. Changes to other columns leave the index valid.
-        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getAllUpdatedColumns()))
+        /// A pending update / patch / MODIFY COLUMN that touches the indexed column, or a pending
+        /// DROP COLUMN / RENAME COLUMN of its name, makes its minmax stale. Reuse the same overlap check
+        /// the regular skip-index path uses (canUseIndex), so the top-k path is consistent with it.
+        /// Changes to other columns leave the index valid.
+        if (!MergeTreeDataSelectExecutor::canUseIndex(top_k_index, metadata_snapshot, alter_conversions->getColumnsInvalidatingIndexes()))
             return true;
     }
 
@@ -1265,7 +1256,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                     , context->getAccess()->getEnabledMaskingPolicies()
 #endif
                 );
-                const auto & all_updated_columns = alter_conversions->getAllUpdatedColumns();
+                const auto all_updated_columns = alter_conversions->getColumnsInvalidatingIndexes();
                 auto part_info_for_reader = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(ranges.data_part, alter_conversions);
 
                 auto can_use_index = [&](const MergeTreeIndexPtr & index) -> std::expected<void, PreformattedMessage>
@@ -1711,7 +1702,12 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             || (!select_query_info.prewhere_info && !select_query_info.filter_actions_dag)
             || (vector_search_parameters.has_value()) /// vector search has filter in the ORDER BY
             || select_query_info.isFinal()
-            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+            /// A pending `ALTER MODIFY COLUMN` (an alter mutation) or `DROP COLUMN` / `RENAME COLUMN`
+            /// (a metadata mutation) changes the values a read returns for a column name without
+            /// changing the part name, so an entry recorded before the change would drop marks that
+            /// match now. The write sides are gated symmetrically (see `ReadFromMergeTree`).
+            || (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations()
+                || mutations_snapshot->hasMetadataMutations() || mutations_snapshot->hasPatchParts()))
         return;
 
     /// The query condition cache for `ORDER BY ... LIMIT n` (TopK) reads is gated behind the
