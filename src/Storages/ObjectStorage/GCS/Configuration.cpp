@@ -213,7 +213,8 @@ ObjectStoragePtr StorageGCSConfiguration::createObjectStorage(
     /// Accepting them and then
     /// talking to the endpoint with the transport's own defaults would silently change behavior of a
     /// configuration that switching `use_native_gcs` on is not supposed to affect.
-    gcs_settings.headers = auth.getHeaders();
+    const auto endpoint_headers = auth.getHeaders();
+    gcs_settings.headers.assign(endpoint_headers.begin(), endpoint_headers.end());
     gcs_settings.headers.insert(gcs_settings.headers.end(), headers_from_ast.begin(), headers_from_ast.end());
     gcs_settings.connect_timeout_ms = auth[S3AuthSetting::connect_timeout_ms];
     gcs_settings.request_timeout_ms = auth[S3AuthSetting::request_timeout_ms];

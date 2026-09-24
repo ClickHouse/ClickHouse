@@ -261,7 +261,8 @@ static void registerGCSObjectStorage(ObjectStorageFactory & factory)
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_prefix,
         const ContextPtr & context,
-        bool /* skip_access_check */) -> ObjectStoragePtr
+        bool /* run_access_check */,
+        bool /* run_local_paths_check */) -> ObjectStoragePtr
     {
         auto settings = GCSObjectStorageSettings::loadFromConfig(config, config_prefix, context);
         auto endpoint = context->getMacros()->expand(config.getString(config_prefix + ".endpoint"));
