@@ -65,6 +65,8 @@ MergeTreeReaderWide::MergeTreeReaderWide(
     {
         for (size_t i = 0; i < columns_to_read.size(); ++i)
         {
+            need_avg_value_size_hints.push_back(!columns_to_read[i].getTypeInStorage()->haveMaximumSizeOfValue());
+
             /// Column was dropped by a pending mutation or invalidated. Don't read stale data;
             if (!isColumnDroppedByPendingMutation(i) && !isSystemColumnInvalidated(i))
                 addStreams(columns_to_read[i], serializations[i]);
@@ -196,6 +198,7 @@ size_t MergeTreeReaderWide::readRows(
                     from_mark,
                     continue_reading,
                     max_rows_to_read,
+                    need_avg_value_size_hints[pos],
                     cache,
                     deserialize_states_cache);
 
@@ -389,17 +392,16 @@ MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization
 ReadBuffer * MergeTreeReaderWide::getStream(
     bool seek_to_start,
     const ISerialization::SubstreamPath & substream_path,
-    const MergeTreeDataPartChecksums & checksums,
+    const std::optional<String> & stream_name,
     const NameAndTypePair & name_and_type,
     size_t from_mark,
     bool seek_to_mark,
     ISerialization::SubstreamsCache & cache)
 {
     /// If substream have already been read.
-    if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
+    if (!cache.empty() && cache.contains(ISerialization::getSubstreamsCacheKeyForStream(substream_path)))
         return nullptr;
 
-    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", checksums, storage_settings);
     if (!stream_name)
     {
         /// We allow missing streams only for columns/subcolumns that are not present in this part.
@@ -459,7 +461,7 @@ void MergeTreeReaderWide::deserializePrefix(
             if (stream_name && from_mark != 0)
                 streams.unmarkPrefetched(*stream_name);
 
-            return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, cache);
+            return getStream(/* seek_to_start = */true, substream_path, stream_name, name_and_type, 0, /* seek_to_mark = */false, cache);
         };
         deserialize_settings.seek_to_start_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
@@ -598,7 +600,7 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
             if (!stream_name || streams.isPrefetched(*stream_name))
                 return;
 
-            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, *column_cache))
+            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, stream_name, name_and_type, 0, /* seek_to_mark = */false, *column_cache))
             {
                 buf->prefetch(priority);
                 streams.markPrefetched(*stream_name);
@@ -647,7 +649,7 @@ void MergeTreeReaderWide::prefetchForColumn(
                 return;
 
             bool seek_to_mark = !continue_reading && !read_without_marks;
-            if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, cache))
+            if (ReadBuffer * buf = getStream(false, substream_path, stream_name, name_and_type, from_mark, seek_to_mark, cache))
             {
                 buf->prefetch(priority);
                 streams.markPrefetched(*stream_name);
@@ -676,6 +678,7 @@ void MergeTreeReaderWide::readData(
     size_t from_mark,
     bool continue_reading,
     size_t max_rows_to_read,
+    bool need_avg_value_size_hint,
     ISerialization::SubstreamsCache & cache,
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
 {
@@ -695,7 +698,7 @@ void MergeTreeReaderWide::readData(
 
         return getStream(
             /* seek_to_start = */false, substream_path,
-            data_part_info_for_read->getChecksums(),
+            stream_name,
             name_and_type, from_mark, seek_to_mark, cache);
     };
 
@@ -730,25 +733,28 @@ void MergeTreeReaderWide::readData(
             stream->seekToMark(from_mark);
     };
 
-    deserialize_settings.get_avg_value_size_hint_callback
-        = [&](const ISerialization::SubstreamPath & substream_path) -> double
+    if (need_avg_value_size_hint)
     {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        if (!stream_name)
-            return 0.0;
+        deserialize_settings.get_avg_value_size_hint_callback
+            = [&](const ISerialization::SubstreamPath & substream_path) -> double
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return 0.0;
 
-        return avg_value_size_hints[*stream_name];
-    };
+            return avg_value_size_hints[*stream_name];
+        };
 
-    deserialize_settings.update_avg_value_size_hint_callback
-        = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
-    {
-        auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        if (!stream_name)
-            return;
+        deserialize_settings.update_avg_value_size_hint_callback
+            = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            if (!stream_name)
+                return;
 
-        IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
-    };
+            IDataType::updateAvgValueSizeHint(column_, avg_value_size_hints[*stream_name]);
+        };
+    }
 
     deserialize_settings.continuous_reading = continue_reading;
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];

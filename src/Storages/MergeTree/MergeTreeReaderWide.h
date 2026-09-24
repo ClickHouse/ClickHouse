@@ -89,7 +89,7 @@ private:
     ReadBuffer * getStream(
         bool seek_to_start,
         const ISerialization::SubstreamPath & substream_path,
-        const MergeTreeDataPartChecksums & checksums,
+        const std::optional<String> & stream_name,
         const NameAndTypePair & name_and_type,
         size_t from_mark,
         bool seek_to_mark,
@@ -104,6 +104,7 @@ private:
         size_t from_mark,
         bool continue_reading,
         size_t max_rows_to_read,
+        bool need_avg_value_size_hint,
         ISerialization::SubstreamsCache & cache,
         ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache);
 
@@ -133,6 +134,7 @@ private:
 
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
+    std::vector<bool> need_avg_value_size_hints;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
     ssize_t prefetched_from_mark = -1;
     ReadBufferFromFileBase::ProfileCallback profile_callback;
