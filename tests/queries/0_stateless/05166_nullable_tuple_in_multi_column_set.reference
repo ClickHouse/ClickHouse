@@ -1,0 +1,38 @@
+literal set
+(1)	1	0
+(3)	0	1
+\N	0	1
+subquery set
+(1)	1	0
+(3)	0	1
+\N	0	1
+subquery set with NULL rows on the right
+(1)	1
+(3)	0
+\N	0
+every left row is NULL
+0
+0
+transform_null_in = 1
+(1)	1	0
+(3)	0	1
+\N	0	1
+table
+1
+2
+3
+4
+1
+3
+a NULL element is compared as a value, whether or not the tuple is wrapped in Nullable
+1	1
+0	0
+the payload of a NULL row is not converted
+('1')	1
+('2')	0
+\N	0
+('1')	1
+('2')	0
+\N	0
+0
+0

@@ -1072,16 +1072,15 @@ QueryTreeNodePtr QueryAnalyzer::makeNullSafeHas(
     has_fn->getArguments().getNodes().push_back(element_arg);
 
     QueryTreeNodePtr in_result = has_fn;
-    /// `has` treats tuple values with equal `NULL` elements as a match, while `IN`
-    /// with `transform_null_in = 0` skips such tuple values. Guard tuple LHS
-    /// elements to preserve `IN` semantics in the row-wise rewrite.
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(element_arg->getResultType()).get());
-        tuple_type && !tuple_type->getElements().empty())
+    /// `IN` compares the columns of a multi-column key separately, and with `transform_null_in = 0` a NULL
+    /// element never matches, while `has` compares the tuples as values, where equal NULL elements match. Guard
+    /// the elements to preserve the `IN` semantics; a single key needs no guard, its NULL fields are values.
+    if (const size_t key_columns = getInKeyColumnTypes(element_arg->getResultType()).size(); key_columns > 1)
     {
         auto and_fn = std::make_shared<FunctionNode>("and");
         and_fn->getArguments().getNodes() =
         {
-            makeTupleHasNoNullElementsPredicate(element_arg, tuple_type->getElements().size()),
+            makeTupleHasNoNullElementsPredicate(element_arg, key_columns),
             std::move(in_result),
         };
         in_result = std::move(and_fn);
@@ -1807,12 +1806,11 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             }
 
             /// When the right side is a single column and the left side is kept as one key,
-            /// regular IN does not unpack the left value: the whole left value is one set key, and
-            /// `Set::execute` accurately casts it to the right column type before probing (so
-            /// e.g. `(toUInt16(256), x) IN (SELECT CAST((0, 0), 'Tuple(Int8, UInt64)'))` throws
-            /// when `256` does not fit into `Int8`). The `equals` predicate built by this rewrite
+            /// regular `IN` does not unpack the left value: the whole left value is one set key, and
+            /// `Set::execute` accurately casts it to the right column type before probing, including
+            /// parsing text fields as numbers. The `equals` predicate built by this rewrite
             /// compares element-wise over a common supertype instead and cannot reproduce those
-            /// semantics, so skip the rewrite for this shape and fall through to the regular IN
+            /// semantics, so skip the rewrite for this shape and fall through to the regular `IN`
             /// handling below - the observable behavior must not depend on `rewrite_in_to_join`.
             /// The mutated clones are discarded; the regular path re-resolves the original
             /// arguments and flattens/validates them again itself.

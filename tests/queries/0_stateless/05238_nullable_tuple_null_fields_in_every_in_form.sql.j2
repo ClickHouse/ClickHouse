@@ -1,0 +1,59 @@
+-- A NULL field inside a non-NULL tuple key is an ordinary value in every form of `IN`: the set built from a
+-- subquery, the constant set built from a literal, and the row-wise rewrite over an array column. Only a plain
+-- tuple with several elements is a multi-column key, where a NULL element never matches with
+-- `transform_null_in = 0`. The array column is materialized so that the row-wise rewrite is taken.
+
+SET enable_nullable_tuple_type = 1;
+
+{% for mode in [0, 1] %}
+SELECT {{ mode }}, 'Nullable(Tuple) with one field',
+    k IN (SELECT CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))')) AS subquery,
+    k IN [tuple(NULL), tuple(1)] AS literal_array,
+    k IN (tuple(NULL), tuple(1)) AS literal_tuple,
+    k IN arr AS row_wise,
+    k NOT IN [tuple(NULL), tuple(1)] AS not_literal_array,
+    k NOT IN arr AS not_row_wise
+FROM (SELECT CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))') AS k, materialize([tuple(NULL), tuple(1)]) AS arr)
+SETTINGS transform_null_in = {{ mode }};
+
+SELECT {{ mode }}, 'plain tuple with one field',
+    k IN (SELECT CAST(tuple(NULL), 'Tuple(Nullable(UInt8))')) AS subquery,
+    k IN [tuple(NULL), tuple(1)] AS literal_array,
+    k IN (tuple(NULL), tuple(1)) AS literal_tuple,
+    k IN arr AS row_wise
+FROM (SELECT CAST(tuple(NULL), 'Tuple(Nullable(UInt8))') AS k, materialize([tuple(NULL), tuple(1)]) AS arr)
+SETTINGS transform_null_in = {{ mode }};
+
+SELECT {{ mode }}, 'Nullable(Tuple) with two fields',
+    k IN (SELECT CAST((1, NULL), 'Nullable(Tuple(UInt8, Nullable(UInt8)))')) AS subquery,
+    k IN [(1, NULL), (2, 2)] AS literal_array,
+    k IN ((1, NULL), (2, 2)) AS literal_tuple,
+    k IN arr AS row_wise
+FROM (SELECT CAST((1, NULL), 'Nullable(Tuple(UInt8, Nullable(UInt8)))') AS k, materialize([(1, NULL), (2, 2)]) AS arr)
+SETTINGS transform_null_in = {{ mode }};
+
+-- A plain tuple with two fields is a multi-column key.
+SELECT {{ mode }}, 'plain tuple with two fields',
+    k IN (SELECT 1, NULL) AS subquery,
+    k IN [(1, NULL), (2, 2)] AS literal_array,
+    k IN ((1, NULL), (2, 2)) AS literal_tuple,
+    k IN arr AS row_wise
+FROM (SELECT CAST((1, NULL), 'Tuple(UInt8, Nullable(UInt8))') AS k, materialize([(1, NULL), (2, 2)]) AS arr)
+SETTINGS transform_null_in = {{ mode }};
+
+-- A right-hand tuple of NULLs doubles as the set of its elements and as one tuple literal: `(NULL, NULL)` is also
+-- the value `(NULL, NULL)`, and `(tuple(NULL))` is `tuple(NULL)`. The literal reading takes part in either mode
+-- when the key can hold it.
+SELECT {{ mode }}, 'all-NULL tuple literal on the right',
+    CAST((NULL, NULL), 'Nullable(Tuple(Nullable(UInt8), Nullable(UInt8)))') IN (NULL, NULL) AS pair,
+    CAST(tuple(NULL), 'Nullable(Tuple(Nullable(UInt8)))') IN (tuple(NULL)) AS single,
+    CAST((1, NULL), 'Nullable(Tuple(UInt8, Nullable(UInt8)))') IN (NULL, NULL) AS not_representable
+SETTINGS transform_null_in = {{ mode }};
+
+-- A member whose NULL field the key cannot hold matches nothing, and an outer NULL member follows the mode.
+SELECT {{ mode }}, 'members the key cannot hold',
+    CAST(tuple(0), 'Nullable(Tuple(UInt8))') IN [tuple(NULL)] AS null_field_into_non_nullable,
+    CAST(tuple(1), 'Nullable(Tuple(Nullable(UInt8)))') IN [NULL, tuple(1)] AS value_beside_null_member,
+    CAST(NULL, 'Nullable(Tuple(Nullable(UInt8)))') IN [NULL, tuple(1)] AS null_key
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}

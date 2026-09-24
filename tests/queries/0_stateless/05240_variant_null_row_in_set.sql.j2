@@ -1,0 +1,26 @@
+-- A `Variant` key stores its NULLs in the discriminators. A NULL row never matches a non-nullable key type,
+-- whose default value the cast would otherwise put in its place, and matches a NULL of a nullable key type only
+-- with `transform_null_in = 1`, the same way a NULL of a `Nullable` key does.
+
+SET allow_experimental_variant_type = 1;
+
+{% for mode in [0, 1] %}
+SELECT {{ mode }},
+    (v, 1) IN (SELECT toFloat64(0), 1) AS float_default,
+    (v, 1) NOT IN (SELECT toFloat64(0), 1) AS not_float_default,
+    (v, 1) IN (SELECT toUInt8(0), 1) AS uint8_default,
+    v IN (SELECT toUInt8(0)) AS single_key_default,
+    (v, 1) IN (SELECT CAST(NULL, 'Nullable(Float64)'), 1) AS nullable_null,
+    (v, 1) IN (SELECT CAST(0, 'Nullable(Float64)'), 1) AS nullable_default,
+    (n, 1) IN (SELECT toFloat64(0), 1) AS nullable_key_for_reference
+FROM (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)') AS v, CAST(NULL, 'Nullable(UInt8)') AS n)
+SETTINGS transform_null_in = {{ mode }};
+
+-- A `Variant` key type stores the NULL of a `Variant` key as one of its own values, the same way a join compares
+-- such keys, so the NULL row converts as it is and matches a NULL member.
+SELECT {{ mode }},
+    (v, 1) IN (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)'), 1) AS variant_key_null_member,
+    (v, 1) IN (SELECT CAST(7, 'Variant(DateTime64(3, \'UTC\'), UInt8)'), 1) AS variant_key_value_member
+FROM (SELECT CAST(NULL, 'Variant(DateTime64(3, \'UTC\'), UInt8)') AS v)
+SETTINGS transform_null_in = {{ mode }};
+{% endfor %}

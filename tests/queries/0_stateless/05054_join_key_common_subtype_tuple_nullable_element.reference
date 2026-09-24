@@ -2,22 +2,28 @@ hash
 (1)	(1)
 (1)	(1)
 (NULL)	(NULL)
+(1)	(1)
 parallel_hash
 (1)	(1)
 (1)	(1)
 (NULL)	(NULL)
+(1)	(1)
 grace_hash
 (1)	(1)
 (1)	(1)
 (NULL)	(NULL)
+(1)	(1)
 partial_merge
 (1)	(1)
 (1)	(1)
 (NULL)	(NULL)
+(1)	(1)
 full_sorting_merge
 (1)	(1)
 (1)	(1)
 (NULL)	(NULL)
+(1)	(1)
+(1)
 (1)
 (1)	(1)
 1
