@@ -34,9 +34,12 @@ CREATE TABLE t_state_05243 (s AggregateFunction(groupArrayInsertAt([], 3), Map(S
 ENGINE = MergeTree ORDER BY tuple();
 SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 't_state_05243';
 
--- and a table holding such a state stays readable after being detached and attached
+-- and a table holding such a state stays readable after being detached and attached. The parameter
+-- is written the way it is printed, as an array of pairs: a Replicated database re-parses the
+-- structure it stores, and a parameter that reads back as an Array is not interchangeable with the
+-- Map a map() literal builds.
 CREATE TABLE t_persisted_05243 ENGINE = MergeTree ORDER BY tuple() AS
-SELECT groupArrayInsertAtState(CAST([], 'Map(String, Decimal(9, 1))'), 3)(m, i) AS s
+SELECT groupArrayInsertAtState([], 3)(m, i) AS s
 FROM (SELECT map('a', toDecimal32(2.5, 1)) AS m, toUInt32(0) AS i);
 DETACH TABLE t_persisted_05243;
 ATTACH TABLE t_persisted_05243;
