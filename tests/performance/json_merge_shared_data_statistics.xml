@@ -1,0 +1,40 @@
+<test>
+    <!-- A merge writes many blocks of a `JSON` column whose shared data has thousands of distinct paths.
+         The writer sets the statistics of its first block to every next block. -->
+    <substitutions>
+        <substitution>
+            <name>shared_data_version</name>
+            <values>
+                <value>map_with_buckets</value>
+                <value>advanced</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_json_merge_statistics_{shared_data_version} (id UInt64, json JSON(max_dynamic_paths = 0))
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, object_shared_data_serialization_version = '{shared_data_version}'
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES t_json_merge_statistics_{shared_data_version}</fill_query>
+    <fill_query>
+        INSERT INTO t_json_merge_statistics_{shared_data_version}
+        SELECT number, CAST(arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 5000), toString(x)), range(40)), 'Map(String, String)')
+        FROM numbers(0, 100000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_json_merge_statistics_{shared_data_version}
+        SELECT number, CAST(arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 5000), toString(x)), range(40)), 'Map(String, String)')
+        FROM numbers(100000, 100000)
+    </fill_query>
+    <fill_query>
+        INSERT INTO t_json_merge_statistics_{shared_data_version}
+        SELECT number, CAST(arrayMap(x -> tuple('key' || toString(cityHash64(number, x) % 5000), toString(x)), range(40)), 'Map(String, String)')
+        FROM numbers(200000, 100000)
+    </fill_query>
+
+    <query>OPTIMIZE TABLE t_json_merge_statistics_{shared_data_version} DRY RUN PARTS 'all_1_1_0', 'all_2_2_0', 'all_3_3_0'</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_json_merge_statistics_{shared_data_version}</drop_query>
+</test>
