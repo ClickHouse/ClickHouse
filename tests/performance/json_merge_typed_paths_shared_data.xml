@@ -1,6 +1,7 @@
 <test>
     <!-- Merges and reads of a `JSON` column with many typed paths and shared data.
-         The serialization of typed paths and the split of shared data into buckets run for every granule. -->
+         The serialization of typed paths and the split of shared data into buckets run for every granule.
+         `index_granularity` emulates the small granules of wide rows. -->
     <substitutions>
         <substitution>
             <name>shared_data_version</name>
@@ -16,7 +17,8 @@
         ENGINE = MergeTree ORDER BY id
         SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
             object_shared_data_serialization_version = '{shared_data_version}',
-            object_shared_data_serialization_version_for_zero_level_parts = '{shared_data_version}'
+            object_shared_data_serialization_version_for_zero_level_parts = '{shared_data_version}',
+            index_granularity = 750
     </create_query>
 
     <fill_query>SYSTEM STOP MERGES t_json_typed_shared_merge_{shared_data_version}</fill_query>
