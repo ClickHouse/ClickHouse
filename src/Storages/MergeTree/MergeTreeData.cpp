@@ -399,6 +399,13 @@ namespace ServerSetting
 namespace FailPoints
 {
     extern const char claim_inject_stale_part_dir[];
+    /// Pauses the asynchronous loading of outdated parts right before the next part is taken, so a
+    /// test can make the table read-only while the loading is pending and check that it stops.
+    extern const char mt_pause_before_loading_outdated_part[];
+    /// Pauses every queued load of an outdated part right before it checks whether the background
+    /// workers are still enabled, so a test can make the table read-only while several loads are
+    /// already queued in the thread pool and check that none of them runs.
+    extern const char mt_pause_before_loading_queued_outdated_part[];
     extern const char slowdown_system_parts_enumeration[];
 }
 
@@ -3314,9 +3321,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             unloaded_parts.push_back(node);
     });
 
-    /// If all disks are readonly or the table is explicitly marked as readonly,
-    /// it does not make sense to load outdated parts (we will not own them).
-    if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
+    /// Retain outdated parts for a read-only table: its loading task starts when it becomes writable.
+    /// Until then, the unfinished flag also prevents cleanup from removing their empty covering parts.
+    if (!unloaded_parts.empty() && !all_disks_are_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
 
@@ -3573,6 +3580,16 @@ MergeTreeData::~MergeTreeData()
 void MergeTreeData::loadUnexpectedDataParts()
 try
 {
+    /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
+    /// Loading detaches broken parts, so it waits for the commit. A rolled-back commit restores
+    /// `table_readonly` and the task then stays idle until the next toggle schedules it again.
+    if (!areBackgroundWorkersEnabled())
+    {
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            unexpected_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
         if (unexpected_data_parts.empty())
@@ -3593,18 +3610,40 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getUnexpectedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_UNEXPECTED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+    bool suspended = false;
     for (auto & load_state : unexpected_data_parts)
     {
         std::lock_guard lock(unexpected_data_parts_mutex);
-        chassert(!load_state.part);
         if (unexpected_data_parts_loading_canceled)
         {
             runner.waitForAllToFinishAndRethrowFirstError();
             return;
         }
+
+        /// The table was made read-only while its unexpected parts were still loading, see
+        /// `StorageMergeTree::alter`. No further part is handed to the pool, and a load that was
+        /// queued but has not started yet returns without touching the disk (see the task below),
+        /// so only the parts whose loading already started may finish. The rest are loaded when the
+        /// setting is toggled back, which schedules this task again.
+        if (!areBackgroundWorkersEnabled())
+        {
+            suspended = true;
+            break;
+        }
+
+        /// Already loaded by an earlier run of this task that was suspended half way through.
+        if (load_state.part)
+            continue;
+
         /// Capturing load_state by reference is fine here because it's a reference to this, which outlives runner
         runner.enqueueAndKeepTrack([this, &load_state, replicated, component_name = Coordination::getCurrentComponent()]()
         {
+            /// This load was queued while the table was still writable. The pool runs a bounded
+            /// number of loads at a time, so the loop above can be far ahead of it, and a load that
+            /// starts after the table became read-only must not detach a part.
+            if (!areBackgroundWorkersEnabled())
+                return;
+
             auto local_component_guard = Coordination::setCurrentComponent(component_name);
             loadUnexpectedDataPart(load_state);
 
@@ -3614,6 +3653,17 @@ try
         }, Priority{});
     }
     runner.waitForAllToFinishAndRethrowFirstError();
+
+    /// Either the loop stopped because the workers were disabled, or it handed out every part but
+    /// some queued loads found the workers disabled and returned without loading.
+    if (suspended || std::ranges::any_of(unexpected_data_parts, [](const auto & state) { return !state.part; }))
+    {
+        LOG_DEBUG(log, "Suspended loading unexpected data parts because the background workers are disabled");
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            unexpected_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     LOG_DEBUG(log, "Loaded {} unexpected data parts", unexpected_data_parts.size());
 
     {
@@ -3633,6 +3683,18 @@ catch (...)
 void MergeTreeData::loadOutdatedDataParts(bool is_async)
 try
 {
+    /// Started before the metadata commit of a `table_readonly` 1 -> 0 `ALTER`, see `StorageMergeTree::alter`.
+    /// Loading detaches broken parts, removes duplicates, and prepares parts for removal, so it waits
+    /// for the commit. A rolled-back commit restores `table_readonly` and the task then stays idle
+    /// until the next toggle schedules it again. The same holds for a writable table that was made
+    /// read-only while this task was still pending from its start: it loads nothing until toggled back.
+    if (is_async && !areBackgroundWorkersEnabled())
+    {
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
+        return;
+    }
+
     {
         std::lock_guard lock(outdated_data_parts_mutex);
         if (outdated_unloaded_data_parts.empty())
@@ -3694,9 +3756,23 @@ try
     ThreadPoolCallbackRunnerLocal<void> runner(getOutdatedPartsLoadingThreadPool().get(), ThreadName::MERGETREE_LOAD_OUTDATED_PARTS);
 
     bool replicated = dynamic_cast<StorageReplicatedMergeTree *>(this) != nullptr;
+
+    /// Why the scheduling loop below stopped handing parts to the thread pool.
+    enum class StopReason : uint8_t
+    {
+        /// `stopOutdatedAndUnexpectedDataPartsLoadingTask`: the table is shutting down.
+        Canceled,
+        /// The background workers were disabled, see `StorageMergeTree::alter`.
+        Suspended,
+        /// Every part was handed to the pool.
+        Drained,
+    };
+    StopReason stop_reason = StopReason::Drained;
+
     while (true)
     {
         ThreadFuzzer::maybeInjectSleep();
+        FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_outdated_part);
         PartLoadingTree::NodePtr part;
 
         {
@@ -3704,15 +3780,20 @@ try
 
             if (is_async && outdated_data_parts_loading_canceled)
             {
-                /// Wait for every scheduled task
-                /// In case of any exception it will be re-thrown and server will be terminated.
-                runner.waitForAllToFinishAndRethrowFirstError();
-                requeue_failed_parts();
+                stop_reason = StopReason::Canceled;
+                break;
+            }
 
-                LOG_DEBUG(log,
-                    "Stopped loading outdated data parts because task was canceled. "
-                    "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
-                return;
+            /// The table was made read-only while its outdated parts were still loading, see
+            /// `StorageMergeTree::alter`. No further part is handed to the pool, and a load that was
+            /// queued but has not started yet puts its part back (see the task below), so only the
+            /// parts whose loading already started may finish, like any other background operation in
+            /// progress. The rest stay unloaded on disk until the setting is toggled back, which
+            /// schedules this task again.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                stop_reason = StopReason::Suspended;
+                break;
             }
 
             /// Do not start loading the remaining parts if the loading is going to be retried later anyway.
@@ -3724,8 +3805,22 @@ try
         }
 
         /// The captured locals will outlive runner, so capturing by reference is ok
-        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts, &retryable_exception, &has_retryable_exception, replicated]()
+        runner.enqueueAndKeepTrack([this, my_part = part, &num_loaded_parts, &failed_parts_mutex, &failed_parts,
+                                    &retryable_exception, &has_retryable_exception, replicated, is_async]()
         {
+            FailPointInjection::pauseFailPoint(FailPoints::mt_pause_before_loading_queued_outdated_part);
+
+            /// This load was queued while the table was still writable. The pool runs a bounded
+            /// number of loads at a time, so the scheduling loop can be far ahead of it, and a load
+            /// that starts after the table became read-only must not touch the disk: the part goes
+            /// back to the unloaded ones, and the loop above accounts for it after the pool drained.
+            if (is_async && !areBackgroundWorkersEnabled())
+            {
+                std::lock_guard lock(outdated_data_parts_mutex);
+                outdated_unloaded_data_parts.push_back(my_part);
+                return;
+            }
+
             auto blocker_for_runner_thread = CannotAllocateThreadFaultInjector::blockFaultInjections();
 
             LoadPartResult res;
@@ -3770,38 +3865,57 @@ try
         }, Priority{});
     }
 
+    /// Wait for every queued load without holding `outdated_data_parts_mutex`: a load that found the
+    /// workers disabled takes it to put its part back.
+    /// In case of any exception it will be re-thrown and server will be terminated.
     runner.waitForAllToFinishAndRethrowFirstError();
 
-    /// All the workers have finished, so no synchronization is needed to read `retryable_exception`.
+    std::lock_guard lock(outdated_data_parts_mutex);
+
+    /// All the workers have finished, so the parts that failed with a retryable error can be
+    /// returned to the queue and `retryable_exception` can be read without synchronization.
+    requeue_failed_parts();
+
+    if (stop_reason == StopReason::Canceled)
+    {
+        LOG_DEBUG(log,
+            "Stopped loading outdated data parts because task was canceled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+        return;
+    }
+
     if (has_retryable_exception)
     {
-        size_t num_unloaded_parts = 0;
-        {
-            std::lock_guard lock(outdated_data_parts_mutex);
-            requeue_failed_parts();
-            num_unloaded_parts = outdated_unloaded_data_parts.size();
-        }
-
         /// Synchronous loading (on table drop) has no task to retry with, so it fails fast as before.
         if (!is_async)
             std::rethrow_exception(retryable_exception);
 
         LOG_WARNING(log, "Loading of outdated data parts was interrupted by a retryable error, will retry later. "
             "Loaded {} parts, {} left unloaded. Error: {}",
-            num_loaded_parts.load(), num_unloaded_parts, getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
+            num_loaded_parts.load(), outdated_unloaded_data_parts.size(),
+            getExceptionMessage(retryable_exception, /*with_stacktrace=*/ false));
 
         outdated_data_parts_loading_task->scheduleAfter(loading_parts_max_backoff_ms);
+        return;
+    }
+
+    /// Either the loop stopped because the workers were disabled, or it handed out every part but
+    /// some queued loads found the workers disabled and put their parts back.
+    if (stop_reason == StopReason::Suspended || !outdated_unloaded_data_parts.empty())
+    {
+        LOG_DEBUG(log,
+            "Suspended loading outdated data parts because the background workers are disabled. "
+            "Loaded {} parts, {} left unloaded", num_loaded_parts.load(), outdated_unloaded_data_parts.size());
+        if (!(*getSettings())[MergeTreeSetting::table_readonly])
+            outdated_data_parts_loading_task->scheduleAfter(DISABLED_PARTS_LOADING_RETRY_MS);
         return;
     }
 
     LOG_DEBUG(log, "Loaded {} outdated data parts {}",
         num_loaded_parts.load(), is_async ? "asynchronously" : "synchronously");
 
-    {
-        std::lock_guard lock(outdated_data_parts_mutex);
-        outdated_data_parts_loading_finished = true;
-        outdated_data_parts_cv.notify_all();
-    }
+    outdated_data_parts_loading_finished = true;
+    outdated_data_parts_cv.notify_all();
 }
 catch (...)
 {
@@ -3814,8 +3928,9 @@ catch (...)
 /// No TSA because of std::unique_lock and std::condition_variable.
 void MergeTreeData::waitForOutdatedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    /// Background tasks are not run if storage is static.
-    if (isStaticStorage())
+    /// Static and read-only tables do not start the outdated-parts loading task, and a started
+    /// task loads nothing while the background workers are disabled.
+    if (isStaticStorage() || (*getSettings())[MergeTreeSetting::table_readonly] || !areBackgroundWorkersEnabled())
         return;
 
     /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForOutdatedPartsToBeLoaded` a lightweight check
@@ -3856,8 +3971,9 @@ void MergeTreeData::triggerBackgroundOperations()
 
 void MergeTreeData::waitForUnexpectedPartsToBeLoaded() const TSA_NO_THREAD_SAFETY_ANALYSIS
 {
-    /// Background tasks are not run if storage is static.
-    if (isStaticStorage())
+    /// Background tasks are not run if storage is static, and a started loading task loads nothing
+    /// while the background workers are disabled.
+    if (isStaticStorage() || !areBackgroundWorkersEnabled())
         return;
 
     /// If waiting is not required, do NOT log and do NOT enable/disable turbo mode to make `waitForUnexpectedPartsToBeLoaded` a lightweight check
@@ -9177,8 +9293,11 @@ Pipe MergeTreeData::alterPartition(
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "ALTER ... PARTITION operations are not supported on tables with UNIQUE KEY");
 
-    /// A read-only table must reject explicit partition mutations as well.
-    if ((*getSettings())[MergeTreeSetting::table_readonly])
+    /// A read-only table must reject explicit partition mutations as well. `isReadonlyCommitInFlight`
+    /// covers the window in which a `table_readonly` 1 -> 0 `ALTER` has published `table_readonly = 0`
+    /// in memory but has not committed it: the table is still durably read-only, and the wait for the
+    /// outdated parts below returns at once because nothing is loading while the workers are disabled.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isReadonlyCommitInFlight())
     {
         for (const PartitionCommand & command : commands)
         {
@@ -9278,6 +9397,11 @@ Pipe MergeTreeData::alterPartition(
                         "Cannot replace partition from table {} with storage {} to table {}",
                         from_storage->getStorageID().getNameForLogs(), from_storage->getName(), getStorageID().getNameForLogs());
 
+                /// The wait returns at once while the source is read-only, including inside both windows
+                /// of its `table_readonly` 1 -> 0 `ALTER`, because nothing is loading. That is safe for the
+                /// source: cloning reads only its active parts, and their set is complete once the source
+                /// is attached, since the deferred outdated parts are exactly the parts covered by an
+                /// active one.
                 from_storage_merge_tree->waitForOutdatedPartsToBeLoaded();
                 replacePartitionFrom(from_storage, command.partition, command.replace, query_context);
             }
