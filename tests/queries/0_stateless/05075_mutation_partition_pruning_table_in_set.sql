@@ -58,6 +58,8 @@ SYSTEM STOP REPLICATION QUEUES t_prune_in_table_alias;
 ALTER TABLE t_prune_in_table_alias DELETE WHERE is_hit;
 -- Pruned to partition 1: the `ALIAS` expression is a stable constant set.
 ALTER TABLE t_prune_in_table_alias DELETE WHERE is_one;
+-- Not pruned: a qualified name reaches the same `ALIAS` column.
+ALTER TABLE t_prune_in_table_alias DELETE WHERE t_prune_in_table_alias.is_hit;
 
 SYSTEM SYNC REPLICA t_prune_in_table_alias PULL;
 

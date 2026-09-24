@@ -10386,7 +10386,32 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// predicate mentions only the column name. Follow an identifier into its column default to
     /// see it. A column default cannot reference itself, but keep the set of visited columns
     /// anyway, so that malformed metadata cannot make the recursion unbounded.
+    ///
+    /// The identifiers are the raw text of the predicate, not resolved yet, so a column may be
+    /// spelled qualified (`table.column`, `database.table.column`), while `ColumnsDescription` is
+    /// keyed by the bare storage name. The analysis below resolves such qualified names against
+    /// the storage all the same, so strip the qualifier that names this very table.
     const auto & columns_description = metadata_snapshot->getColumns();
+    const auto storage_id = getStorageID();
+    auto unqualified_column_name = [&](const ASTIdentifier & identifier) -> String
+    {
+        const auto & name_parts = identifier.name_parts;
+        size_t qualifier_size = 0;
+        if (name_parts.size() > 2 && name_parts[0] == storage_id.database_name && name_parts[1] == storage_id.table_name)
+            qualifier_size = 2;
+        else if (name_parts.size() > 1 && name_parts[0] == storage_id.table_name)
+            qualifier_size = 1;
+
+        String result;
+        for (size_t i = qualifier_size; i < name_parts.size(); ++i)
+        {
+            if (i > qualifier_size)
+                result += ".";
+            result += name_parts[i];
+        }
+        return result;
+    };
+
     std::unordered_set<String> visited_columns;
     auto contains_deferred_set = [&](const ASTPtr & ast, const auto & self) -> bool
     {
@@ -10403,10 +10428,13 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                 /// resolved one carries an `ASTTableIdentifier`; both spellings have to be listed,
                 /// because `IAST::as` is an exact-type cast rather than a `dynamic_cast`, and
                 /// `MarkTableIdentifiersVisitor` rewrites the node in place - including inside a
-                /// column default expression that the storage metadata keeps. Nothing else can
-                /// stand there: the right-hand side of `IN` is a set, a tuple, a subquery, a table
-                /// or a table function, so an identifier always names a table whose contents the
-                /// analyzer turns into a prepared set.
+                /// column default expression that the storage metadata keeps.
+                ///
+                /// Nothing else can stand there: a column of the storage (e.g. `x IN arr`) is not
+                /// accepted in a mutation predicate or in a column default, because
+                /// `AddDefaultDatabaseVisitor` qualifies such an identifier with the database as a
+                /// table, so an identifier always names a table whose contents the analyzer turns
+                /// into a prepared set.
                 if (right_argument->as<ASTIdentifier>() || right_argument->as<ASTTableIdentifier>())
                     return true;
 
@@ -10435,12 +10463,21 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
 
         if (const auto * identifier = ast->as<ASTIdentifier>())
         {
-            const auto column_name = identifier->name();
-            if (const auto column_default = columns_description.getDefault(column_name);
-                column_default && column_default->expression && visited_columns.emplace(column_name).second)
+            /// The name may also address a subcolumn (`column.subcolumn`), so look up every prefix
+            /// that ends at a name boundary: an accidental match only costs a pruning opportunity.
+            const auto name = unqualified_column_name(*identifier);
+            for (size_t end = name.find('.'); ; end = name.find('.', end + 1))
             {
-                if (self(column_default->expression, self))
-                    return true;
+                const auto column_name = name.substr(0, end);
+                if (const auto column_default = columns_description.getDefault(column_name);
+                    column_default && column_default->expression && visited_columns.emplace(column_name).second)
+                {
+                    if (self(column_default->expression, self))
+                        return true;
+                }
+
+                if (end == String::npos)
+                    break;
             }
         }
 
