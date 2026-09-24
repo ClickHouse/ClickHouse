@@ -426,7 +426,7 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
         case BinaryTypeIndex::Interval:
         {
             const auto & interval_type = assert_cast<const DataTypeInterval &>(*type);
-            writeBinary(interval_type.getKind().toBinary(), buf);
+            writeBinary(UInt8(interval_type.getKind().kind), buf);
             break;
         }
         case BinaryTypeIndex::Nullable:
@@ -723,7 +723,9 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
         {
             UInt8 kind = 0;
             readBinary(kind, buf);
-            return std::make_shared<DataTypeInterval>(IntervalKind::fromBinary(kind));
+            if (kind > static_cast<UInt8>(IntervalKind::Kind::Year))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown IntervalKind during Interval type decoding: {0:#04x}", UInt64(kind));
+            return std::make_shared<DataTypeInterval>(IntervalKind(IntervalKind::Kind(kind)));
         }
         case BinaryTypeIndex::Nullable:
             return std::make_shared<DataTypeNullable>(decodeDataTypeImpl(buf, complexity, max_complexity));

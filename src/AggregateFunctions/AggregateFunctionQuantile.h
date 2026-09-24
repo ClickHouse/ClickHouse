@@ -229,11 +229,6 @@ public:
             params);
     }
 
-    /// The level may be any numeric Field. A Decimal or wide-integer one prints as a quoted string,
-    /// which reparses as a String that the level check rejects, so the printed state type name needs
-    /// ::Type suffixes to name the parameters it was printed from.
-    bool shouldPrintParametersWithTypes() const override { return true; }
-
     bool allocatesMemoryInArena() const override { return false; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override

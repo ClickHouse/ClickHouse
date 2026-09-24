@@ -77,6 +77,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsBool transform_null_in;
@@ -1476,7 +1477,6 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
         if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         {
-            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }
@@ -1803,7 +1803,7 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             return {};
 
         PreparedSets::Hash set_key;
-        if (!identifier)
+        if (data.getContext()->getSettingsRef()[Setting::allow_experimental_analyzer] && !identifier)
         {
             /// Here we can be only from mutation interpreter. Normal selects with analyzed use other interpreter.
             /// This is a hacky way to allow reusing cache for prepared sets.
@@ -1841,17 +1841,13 @@ FutureSetPtr ActionsMatcher::makeSet(const ASTFunction & node, Data & data, bool
             {
                 if (auto set = data.prepared_sets->findStorage(set_key))
                     return set;
-
-                if (auto * storage_set = dynamic_cast<StorageSet *>(table.get()))
-                {
-                    storage_set->checkNoRowPolicy(data.getContext());
 #if CLICKHOUSE_CLOUD
-                    if (auto * storage_shared_set = dynamic_cast<StorageSharedSet *>(storage_set))
-                        return data.prepared_sets->addFromStorage(
-                            set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
+                if (StorageSharedSet * storage_shared_set = dynamic_cast<StorageSharedSet *>(table.get()))
+                    return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_shared_set->getSet(data.getContext()), table_id);
 #endif
+
+                if (StorageSet * storage_set = dynamic_cast<StorageSet *>(table.get()))
                     return data.prepared_sets->addFromStorage(set_key, right_in_operand, storage_set->getSet(), table_id);
-                }
             }
 
             if (!data.getContext()->isGlobalContext())
