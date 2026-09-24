@@ -5533,11 +5533,6 @@ Given that, for example, dictionaries, can be out of sync across nodes, mutation
 </profiles>
 ```
 )", 0) \
- DECLARE(Bool, validate_mutation_query, true, R"(
-Validate mutation queries before accepting them. Mutations are executed in the background, and running an invalid query can cause mutations to get stuck, requiring manual intervention.
-
-Only change this setting if you encounter a backward-incompatible bug.
-)", 0) \
     DECLARE(Seconds, lock_acquire_timeout, DBMS_DEFAULT_LOCK_ACQUIRE_TIMEOUT_SEC, R"(
 Defines how many seconds a locking request waits before failing.
 
@@ -9502,6 +9497,7 @@ Enable experimental table function `eval`.
     MAKE_OBSOLETE(M, Bool, enable_qbit_type, true) \
     MAKE_OBSOLETE(M, Bool, allow_experimental_alias_table_engine, false) \
     MAKE_OBSOLETE(M, Bool, allow_deprecated_snowflake_conversion_functions, false) \
+    MAKE_OBSOLETE(M, Bool, validate_mutation_query, true) \
     \
     MAKE_OBSOLETE(M, Milliseconds, async_insert_stale_timeout_ms, 0) \
     MAKE_OBSOLETE(M, StreamingHandleErrorMode, handle_kafka_error_mode, StreamingHandleErrorMode::DEFAULT) \

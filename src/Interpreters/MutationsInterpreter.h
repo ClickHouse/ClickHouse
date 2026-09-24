@@ -122,8 +122,8 @@ public:
 
     /// Throws if the mutation contains non-deterministic functions or subqueries on a Replicated*
     /// storage and `allow_nondeterministic_mutations` is disabled.  Static so it can be called
-    /// without constructing a full `MutationsInterpreter` (which would require the predicate
-    /// to be analyzable — see `validate_mutation_query`).
+    /// without constructing a full `MutationsInterpreter`, which requires the predicate to be
+    /// analyzable.
     static void validateNonDeterministicMutationsForStorage(
         const StoragePtr & storage,
         const MutationCommands & commands,

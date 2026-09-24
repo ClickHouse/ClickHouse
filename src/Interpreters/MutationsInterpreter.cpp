@@ -83,7 +83,6 @@ namespace Setting
     extern const SettingsOverflowMode transfer_overflow_mode;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsBool allow_statistics;
-    extern const SettingsBool validate_mutation_query;
     extern const SettingsSetOperationMode union_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode except_default_mode;
