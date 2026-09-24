@@ -8373,30 +8373,60 @@ void MergeTreeData::loadPartAndFixMetadataImpl(MergeTreeData::MutableDataPartPtr
     part->loadColumnsChecksumsIndexes(false, true);
 
     /// The fallback mentioned above is only safe while there is nothing for the part to catch up with.
-    /// A part detached before a metadata-only `ALTER` (`RENAME COLUMN`, `MODIFY COLUMN`) still needs the
-    /// conversions of the versions it has not applied, and its `metadata_version.txt` is the only record
-    /// of how far it got. That file carries no checksum, so its absence is not corruption that anything
-    /// detects: the part would be attached as if it were already at the table's version, the conversions
-    /// would be skipped, and every renamed or modified column would silently read as its default. Refuse
-    /// the attach instead and say what to do about it. A table that never had a metadata-only `ALTER` is
-    /// unaffected, which is also the shape of a genuinely old part written before the file existed.
+    /// Most metadata-only `ALTER`s (`ADD COLUMN`, `MODIFY COLUMN`) are deduced from the difference between
+    /// the part's columns and the table's, but `RENAME COLUMN` and `DROP COLUMN` are applied on the fly from
+    /// the table's mutation history, and only to parts whose metadata version is below the `ALTER`'s one.
+    /// `metadata_version.txt` is the only record of how far a detached part got, and it carries no checksum,
+    /// so its absence is not corruption that anything detects: the part would be attached as if it were
+    /// already at the table's version, the conversions would be skipped, and a renamed column would read as
+    /// its default (a dropped and re-added one as the part's stale data). So assume the part is as old as
+    /// it can be and refuse the attach if any such conversion in the history applies to one of its columns.
+    /// Every other part attaches as before, including a genuinely old one written before the file existed.
     if (part->old_part_with_no_metadata_version_on_disk)
     {
         auto table_metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
         auto table_metadata_version = table_metadata_snapshot->getMetadataVersion();
         if (table_metadata_version > 0)
         {
-            throw Exception(
-                ErrorCodes::NO_FILE_IN_DATA_PART,
-                "Part {} has no {}, so the metadata-only ALTERs it still has to apply cannot be determined, "
-                "while the table is at metadata version {}. Attaching it would read the columns of every "
-                "such ALTER as their defaults. Write the metadata version the part was detached at into "
-                "{}/{} and attach it again",
-                part->name,
-                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
-                table_metadata_version,
-                part->getDataPartStorage().getPartDirectory(),
-                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
+            IMutationsSnapshot::Params params
+            {
+                .metadata_version = table_metadata_version,
+                .min_part_metadata_version = 0,
+            };
+            auto mutations_snapshot = getMutationsSnapshot(params);
+
+            auto loaded_metadata_version = part->getMetadataVersion();
+            part->setMetadataVersion(0);
+            auto commands = mutations_snapshot->getOnFlyMutationCommandsForPart(part);
+            part->setMetadataVersion(loaded_metadata_version);
+
+            const auto & part_columns = part->getColumns();
+            const auto & table_columns = table_metadata_snapshot->getColumns();
+            for (const auto & command : commands)
+            {
+                bool is_lossy = false;
+                if (command.type == MutationCommand::RENAME_COLUMN)
+                    is_lossy = part_columns.contains(command.column_name);
+                else if (command.type == MutationCommand::DROP_COLUMN)
+                    is_lossy = part_columns.contains(command.column_name) && table_columns.has(command.column_name);
+
+                if (!is_lossy)
+                    continue;
+
+                throw Exception(
+                    ErrorCodes::NO_FILE_IN_DATA_PART,
+                    "Part {} has no {}, so the metadata-only ALTERs it still has to apply cannot be determined, "
+                    "while the table is at metadata version {} and its column {} was {} by an ALTER the part "
+                    "may predate. Attaching it could read that column wrongly. Write the metadata version of the "
+                    "table at the time the part was detached into {} and attach it again",
+                    part->name,
+                    IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+                    table_metadata_version,
+                    backQuote(command.column_name),
+                    command.type == MutationCommand::RENAME_COLUMN ? fmt::format("renamed to {}", backQuote(command.rename_to)) : "dropped",
+                    (fs::path(part->getDataPartStorage().getFullRootPath()) / part->getDataPartStorage().getParentDirectory()
+                        / part->name / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME).string());
+            }
         }
     }
     part->modification_time = part->getDataPartStorage().getLastModified().epochTime();
