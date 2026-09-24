@@ -1,6 +1,8 @@
 #include <Interpreters/resolveNumberLiteral.h>
 #include <Interpreters/convertFieldToType.h>
 
+#include <Common/StringUtils.h>
+
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -117,6 +119,22 @@ bool normalizeDecimalLiteral(const String & text, String & out_text, UInt32 & ou
     return true;
 }
 
+/// The precision a normalized decimal string needs: its digits without the sign, the point and the
+/// leading zeroes of the integer part (`-0.0015` needs 4, `12.50` needs 4).
+UInt64 decimalDigits(const String & normalized)
+{
+    UInt64 digits = 0;
+    bool integer_part = true;
+    for (char c : normalized)
+    {
+        if (c == '.')
+            integer_part = false;
+        else if (isNumericASCII(c) && !(integer_part && c == '0' && digits == 0))
+            ++digits;
+    }
+    return digits;
+}
+
 }
 
 std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
@@ -126,7 +144,8 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
     auto default_type = applyVisitor(FieldToDataType(), resolved);
 
     DataTypePtr target_type = default_type;
-    /// Set when the literal is parsed into a Decimal from its (normalized) text instead of `resolved`.
+    Field literal_value = resolved;
+    /// Set when the literal is parsed into a Decimal from its (normalized) text instead of `literal_value`.
     String decimal_text;
     if (reference_type)
     {
@@ -134,14 +153,36 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
         WhichDataType which_default(default_type);
         WhichDataType which_ref(ref);
 
-        if (is_comparison && isDecimal(*ref))
+        if (isDecimal(*ref))
         {
             /// Fold the exponent and drop insignificant trailing zeroes first, so different spellings
             /// of one value (`1.5e-3`, `0.0015`) resolve identically. A value that does not fit
             /// Decimal256 keeps the Float64 default.
             UInt32 scale = 0;
             if (normalizeDecimalLiteral(text, decimal_text, scale))
-                target_type = std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), scale);
+            {
+                if (is_comparison)
+                {
+                    target_type = std::make_shared<DataTypeDecimal<Decimal256>>(DataTypeDecimal<Decimal256>::maxPrecision(), scale);
+                }
+                else
+                {
+                    /// Otherwise the literal is cast to the sibling's type, exactly as an explicit constant of
+                    /// that type would be, and widened only where it does not fit: `1.5` next to a
+                    /// `Decimal32(5)` is `Decimal32(5)`, `1.123` next to a `Decimal32(2)` is `Decimal32(3)`.
+                    const UInt32 target_scale = std::max(scale, getDecimalScale(*ref));
+                    const UInt64 precision = std::max<UInt64>(decimalDigits(decimal_text) + (target_scale - scale), getDecimalPrecision(*ref));
+                    if (precision <= DataTypeDecimal<Decimal256>::maxPrecision())
+                        target_type = createDecimal<DataTypeDecimal>(precision, target_scale);
+                }
+            }
+        }
+        else if ((which_default.isInt() || which_default.isUInt()) && which_ref.isFloat())
+        {
+            /// The integer spelling says nothing about the type: next to a float the literal is a float,
+            /// so a value too large for UInt64 is read as one, rounding as a float literal does.
+            literal_value = NumberLiteral(text).toFloat64();
+            target_type = std::make_shared<DataTypeFloat64>();
         }
         else if ((which_default.isInt() && which_ref.isInt()) || (which_default.isUInt() && (which_ref.isUInt() || which_ref.isInt())))
         {
@@ -156,7 +197,7 @@ std::pair<Field, DataTypePtr> resolveNumberLiteralForFunction(
 
     Field parsed_field = isDecimal(*target_type)
         ? tryConvertFieldToType(Field(decimal_text), *target_type)
-        : tryConvertFieldToType(resolved, *target_type);
+        : tryConvertFieldToType(literal_value, *target_type);
 
     if (parsed_field.isNull() && target_type != default_type)
     {

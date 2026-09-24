@@ -1,0 +1,17 @@
+float	1e23	Float64
+float	0	Float64
+float	1e23	Float64
+float	1e23	Float64
+decimal	100000000000000000000000	Decimal(38, 2)
+decimal	1.1	Decimal(18, 4)
+decimal	1.1	Decimal(18, 4)
+decimal	2.123456789012345678	Decimal(38, 18)
+decimal	1.0015	Decimal(9, 4)
+decimal	1.0015	Decimal(9, 4)
+decimal	-99999	Decimal(38, 2)
+decimal	1.5	Decimal(18, 2)
+type	Decimal(9, 5)	Decimal(9, 3)	Decimal(38, 2)
+divide	0.66666	Decimal(18, 5)
+divide	1.5	Decimal(18, 5)
+decimal	Float64
+int	100000000000000000000000	Int128
