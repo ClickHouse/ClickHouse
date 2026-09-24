@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- `GROUP BY GROUPING SETS` under `make_distributed_plan`. There is no separate plan step: the
 -- `Aggregating` step computes every set and tags rows with `__grouping_set`. Only the
 -- partial-aggregation strategy is correct for it (a shuffle by the full key set would produce a
