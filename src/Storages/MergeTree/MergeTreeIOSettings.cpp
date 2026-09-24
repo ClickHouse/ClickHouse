@@ -174,6 +174,7 @@ MergeTreeReaderSettings MergeTreeReaderSettings::createForMergeMutation(ReadSett
     result.load_marks_asynchronously = false;
     result.save_marks_in_cache = false;
     result.can_read_part_without_marks = true;
+    result.allow_compact_parts_multibuffer_read = false;
     return result;
 }
 
