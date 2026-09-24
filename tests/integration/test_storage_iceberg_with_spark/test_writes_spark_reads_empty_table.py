@@ -12,7 +12,7 @@ from helpers.iceberg_utils import (
 # snapshot -1 does not comply with the Iceberg spec, which requires every ref to
 # point at an existing snapshot. Iceberg Java rejects such a table on load with
 # "Snapshot for reference ... does not exist".
-@pytest.mark.parametrize("format_version", [1, 2])
+@pytest.mark.parametrize("format_version", [1, 2, 3])
 def test_writes_spark_reads_empty_table(started_cluster_iceberg_with_spark, format_version):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session

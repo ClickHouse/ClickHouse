@@ -1092,6 +1092,9 @@ std::pair<Poco::JSON::Object::Ptr, String> createEmptyMetadataFile(
     new_metadata_file_content->set(Iceberg::f_location, path_location);
     if (format_version > 1)
         new_metadata_file_content->set(Iceberg::f_last_sequence_number, 0);
+    /// Row lineage starts at table creation. No rows yet, so the next row id is 0.
+    if (format_version >= 3)
+        new_metadata_file_content->set(Iceberg::f_next_row_id, 0);
 
     auto now = std::chrono::system_clock::now();
     auto ms = duration_cast<std::chrono::milliseconds>(now.time_since_epoch());
