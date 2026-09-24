@@ -221,7 +221,7 @@ class Runner:
             config.keep_workspace = True
 
         if config.init_environment == Environment.MACOS:
-            # Leaked memory ends up in swap files that only a reboot frees.
+            # Drop swap files and other state accumulated across test runs.
             config.max_life = 3600 * 24 * 3
 
         log(f"max jobs: {config.max_jobs}")
@@ -671,6 +671,7 @@ brew install \
     bash \
     coreutils \
     llvm
+brew cleanup --prune=all -s
 
 # Python packages used by jobs. `boto3` is bootstrapped in `user_data_macos.txt`
 # because runner-init itself imports it; the rest are version-gated here.
