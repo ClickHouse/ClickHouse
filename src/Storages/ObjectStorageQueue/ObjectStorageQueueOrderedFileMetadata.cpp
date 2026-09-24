@@ -413,6 +413,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
+    const std::atomic<size_t> & processing_state_cache_ttl_seconds_,
     const std::string & zookeeper_name_,
     ObjectStorageQueueBucketingMode bucketing_mode_,
     ObjectStorageQueuePartitioningMode partitioning_mode_,
@@ -428,6 +429,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         max_loading_retries_,
         metadata_ref_count_,
         use_persistent_processing_nodes_,
+        processing_state_cache_ttl_seconds_,
         log_)
     , buckets_num(buckets_num_)
     , zk_path(zk_path_)
