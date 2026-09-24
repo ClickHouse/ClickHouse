@@ -1,0 +1,114 @@
+-- { echoOn }
+
+-- Both projections read more marks than the base table, so by cost they are rejected.
+EXPLAIN indexes = 1, projections = 1 SELECT value FROM t_relax_normal WHERE key < 10;
+Output: value
+
+ReadFromMergeTree (default.t_relax_normal)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: value
+   Prewhere filter
+   Prewhere filter column:  key < 10
+   Indexes:
+     PrimaryKey
+       Keys:
+         key
+       Condition: (key in (-Inf, 9])
+       Parts: 1/1
+       Granules: 1/13
+       Search Algorithm: binary search
+     Ranges: 1
+   Projections:
+     Name: p_other
+       Description: Projection p_other is usable but requires reading 13 marks, which is not better than the original table with 1 marks
+       Condition: true
+       Parts: 1
+       Marks: 13
+       Ranges: 1
+       Rows: 100000
+       Filtered Parts: 0
+     Name: p_value
+       Description: Projection p_value is usable but requires reading 13 marks, which is not better than the original table with 1 marks
+       Condition: true
+       Parts: 1
+       Marks: 13
+       Ranges: 1
+       Rows: 100000
+       Filtered Parts: 0
+-- Preferring or forcing takes the projection regardless of cost. The result is the same.
+EXPLAIN indexes = 1, projections = 1 SELECT value FROM t_relax_normal WHERE key < 10 SETTINGS preferred_optimize_projection_name = 'p_other', prefer_optimize_projection = 1;
+Output: value
+
+ReadFromMergeTree (p_other)
+   Read type: Default
+   Parts: 1 | Granules: 13
+   Output: key, value
+   Prewhere filter
+   Prewhere filter column:  key < 10
+   Indexes:
+     PrimaryKey
+       Condition: true
+       Parts: 1/1
+       Granules: 13/13
+     Ranges: 1
+SELECT sum(value) FROM t_relax_normal WHERE key < 10;
+90
+SELECT sum(value) FROM t_relax_normal WHERE key < 10 SETTINGS preferred_optimize_projection_name = 'p_other', prefer_optimize_projection = 1;
+90
+SELECT sum(value) FROM t_relax_normal WHERE key < 10 SETTINGS preferred_optimize_projection_name = 'p_other', force_optimize_projection = 1;
+90
+-- The named projection lacks a required column: forcing fails, preferring falls back to the base table.
+SELECT sum(other) FROM t_relax_normal WHERE key < 10 SETTINGS preferred_optimize_projection_name = 'p_value', force_optimize_projection = 1; -- { serverError PROJECTION_NOT_USED }
+EXPLAIN indexes = 1, projections = 1 SELECT other FROM t_relax_normal WHERE key < 10 SETTINGS preferred_optimize_projection_name = 'p_value', prefer_optimize_projection = 1;
+Output: other
+
+ReadFromMergeTree (default.t_relax_normal)
+   Read type: Default
+   Parts: 1 | Granules: 1
+   Output: other
+   Prewhere filter
+   Prewhere filter column:  key < 10
+   Indexes:
+     PrimaryKey
+       Keys:
+         key
+       Condition: (key in (-Inf, 9])
+       Parts: 1/1
+       Granules: 1/13
+       Search Algorithm: binary search
+     Ranges: 1
+SELECT sum(other) FROM t_relax_normal WHERE key < 10 SETTINGS preferred_optimize_projection_name = 'p_value', prefer_optimize_projection = 1;
+45
+-- The aggregate projection reads more marks than the implicit one, so it is taken only when preferred or forced with the implicit projection off. The result is the same.
+EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_relax_agg;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──ReadFromPreparedSource (_minmax_count_projection)
+EXPLAIN indexes = 1, projections = 1 SELECT count() FROM t_relax_agg SETTINGS prefer_optimize_projection = 1, optimize_use_implicit_projections = 0;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──ReadFromMergeTree (p_count)
+      Read type: Default
+      Parts: 1 | Granules: 13
+      Output: count()
+      Indexes:
+        PrimaryKey
+          Condition: true
+          Parts: 1/1
+          Granules: 13/13
+        Ranges: 1
+SELECT count() FROM t_relax_agg;
+100000
+SELECT count() FROM t_relax_agg SETTINGS prefer_optimize_projection = 1, optimize_use_implicit_projections = 0;
+100000
+SELECT count() FROM t_relax_agg SETTINGS force_optimize_projection = 1, optimize_use_implicit_projections = 0;
+100000

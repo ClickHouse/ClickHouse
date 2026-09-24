@@ -23,7 +23,6 @@
 
 #include <Access/Common/AccessFlags.h>
 #include <Access/ContextAccess.h>
-#include <Access/EnabledRowPolicies.h>
 
 #include <Storages/ColumnsDescription.h>
 #include <Storages/IStorage.h>
@@ -40,6 +39,7 @@
 #include <Storages/StorageBuffer.h>
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageValues.h>
+#include <Storages/getEffectiveRowPolicyFilter.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Storages/buildQueryTreeForShard.h>
 
@@ -50,6 +50,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/UnionNode.h>
+#include <Analyzer/traverseQueryTree.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ListNode.h>
@@ -94,6 +95,7 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/IJoin.h>
+#include <Interpreters/PreparedSets.h>
 #include <Interpreters/SelectQueryOptions.h>
 #include <Interpreters/ConcurrentHashJoin.h>
 #include <Interpreters/TableJoin.h>
@@ -171,6 +173,7 @@ namespace Setting
     extern const SettingsBoolAuto query_plan_join_swap_table;
     extern const SettingsUInt64 min_joined_block_size_rows;
     extern const SettingsUInt64 min_joined_block_size_bytes;
+    extern const SettingsBool parallel_replicas_for_queries_with_multiple_tables;
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool query_plan_display_internal_aliases;
     extern const SettingsBool enable_lazy_columns_replication;
@@ -520,31 +523,6 @@ bool hasTrivialCountIncompatibleModifiers(
     return false;
 }
 
-/// Returns the effective row policy filter for the table, or nullptr if the
-/// table has no row policies for the current user or the combined filter is
-/// always-true. Mirrors the effective-filter check used by
-/// buildRowPolicyFilterIfNeeded.
-RowPolicyFilterPtr getEffectiveRowPolicyFilter(const StoragePtr & storage, const ContextPtr & query_context)
-{
-    auto storage_id = storage->getStorageID();
-    if (!storage_id.hasDatabase())
-        return nullptr;
-    auto row_policy_filter = query_context->getRowPolicyFilter(
-        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (const auto * alias = storage->as<StorageAlias>())
-    {
-        const auto target_storage_id = alias->getTargetTable()->getStorageID();
-        auto target_row_policy_filter = query_context->getRowPolicyFilter(
-            target_storage_id.getDatabaseName(), target_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-        row_policy_filter = combineRowPolicyFilters(std::move(row_policy_filter), std::move(target_row_policy_filter));
-    }
-
-    if (!row_policy_filter || row_policy_filter->isAlwaysTrue())
-        return nullptr;
-    return row_policy_filter;
-}
-
 bool applyTrivialCountIfPossible(
     QueryPlan & query_plan,
     SelectQueryInfo & select_query_info,
@@ -569,7 +547,7 @@ bool applyTrivialCountIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -696,7 +674,7 @@ bool applyTrivialCountWithSparsityFilterIfPossible(
             table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot(), query_context))
         return false;
 
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return false;
 
     if (select_query_info.additional_filter_ast)
@@ -809,7 +787,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
         /// would let the query read the view without any `SELECT` grant. Enforce the same column-aware `SELECT`
         /// check the underlying view would receive as a `TableNode`.
         const auto & storage = table_function_node->getStorage();
-        if (const auto * storage_view = storage ? storage->as<StorageView>() : nullptr; storage_view && storage_view->isParameterizedView())
+        if (table_function_node->isParameterizedView())
         {
             const auto & column_names_with_aliases = table_expression_data.getSelectedColumnsNames();
             columns_names_allowed_to_select = checkAccessRights(
@@ -860,6 +838,7 @@ void prepareBuildQueryPlanForTableExpression(const QueryTreeNodePtr & table_expr
             const auto & column_identifier = global_planner_context->createColumnIdentifierOrGet(additional_column_to_read, table_expression);
             columns_names.push_back(additional_column_to_read.name);
             table_expression_data.addColumn(additional_column_to_read, column_identifier);
+            table_expression_data.setRowCountOnlyColumnIdentifier(column_identifier);
         }
     }
 
@@ -944,7 +923,7 @@ std::optional<FilterDAGInfo> buildRowPolicyFilterIfNeeded(const StoragePtr & sto
 {
     const auto & query_context = planner_context->getQueryContext();
 
-    auto row_policy_filter = getEffectiveRowPolicyFilter(storage, query_context);
+    auto row_policy_filter = getEffectiveRowPolicyFilter(*storage, query_context);
     if (!row_policy_filter)
         return {};
 
@@ -1098,16 +1077,6 @@ UInt64 mainQueryNodeBlockSizeByLimit(const SelectQueryInfo & select_query_info)
 
         limit_offset = offset_uint->getUInt(0);
     }
-
-    /// `arrayJoin` in the projection expands one input row into several output rows after the
-    /// source has run. Capping the source to `limit + offset` rows would truncate input BEFORE
-    /// expansion, so hard consumers of `trivial_limit` (StorageLoop, system.zeros, generateRandom)
-    /// could drop output rows that the LIMIT should keep. See issue #82279 and the sibling guard
-    /// in `numbersLikeUtils::shouldPushdownLimit`. (The `ARRAY JOIN` clause is lowered to a
-    /// separate table expression in the analyzer, so it is not a single-table read and never
-    /// reaches this optimization.)
-    if (hasFunctionNode(main_query_node.getProjectionNode(), "arrayJoin"))
-        return 0;
 
     /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
       * but LIMIT is specified with UInt64 value, and limit + offset < max_block_size,
@@ -1306,7 +1275,7 @@ void pushOrderByIntoView(
     /// `StorageView` does not support prewhere), so pushing `LIMIT` would
     /// truncate before the row-policy filter runs and could return fewer rows
     /// than expected.
-    if (getEffectiveRowPolicyFilter(storage, query_context))
+    if (getEffectiveRowPolicyFilter(*storage, query_context))
         return;
 
     /// Skip when `additional_table_filters` matches this view: the additional
@@ -1339,7 +1308,7 @@ void pushOrderByIntoView(
     /// source rows before the expansion runs, so if the top ordered rows have
     /// empty arrays the rewritten query would return too few rows instead of
     /// continuing to lower ordered rows to fill the `LIMIT`. Mirror the existing
-    /// guard in `mainQueryNodeBlockSizeByLimit`.
+    /// `trivial_limit` guard in `buildQueryPlanForTableExpression`.
     if (hasFunctionNode(outer->getProjectionNode(), "arrayJoin"))
         return;
 
@@ -1655,6 +1624,70 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
     return false;
 }
 
+/// Disables parallel replicas in the context of every query carried by `node`, including `node` itself.
+/// A subquery is not planned by the `Planner` of the query that contains it: a `UNION` table expression
+/// is planned branch by branch (see `buildPlanForUnionNode`), an `IN` subquery is planned by
+/// `addBuildSubqueriesForSetsStepIfNeeded`, a materialized CTE by `addBuildSubqueriesForMaterializedCTEsIfNeeded`
+/// and a correlated subquery by `buildPlannerForCorrelatedSubquery`. Each of them builds an independent
+/// `Planner` from the subquery's own context, so it is not enough to update the context of the enclosing
+/// query: the kill switch has to reach the context of every nested `QueryNode`/`UnionNode` as well.
+/// The materialized CTE subquery is a child of its `TableNode` and the correlated subquery is a child of
+/// the expression that uses it, so a full traversal of the query tree covers all the carriers.
+void disableParallelReplicasForSubqueries(const QueryTreeNodePtr & node)
+{
+    traverseQueryTree(node, Everything{}, [](const QueryTreeNodePtr & current_node)
+    {
+        if (auto * query_node = current_node->as<QueryNode>())
+            query_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+        else if (auto * union_node = current_node->as<UnionNode>())
+            union_node->getMutableContext()->setSetting("enable_parallel_replicas", Field{0});
+    });
+}
+
+}
+
+void disableParallelReplicasForMultipleTablesQueryIfNeeded(const QueryTreeNodePtr & query_node, const PlannerContextPtr & planner_context)
+{
+    const auto & settings = planner_context->getQueryContext()->getSettingsRef();
+    if (settings[Setting::parallel_replicas_for_queries_with_multiple_tables])
+        return;
+
+    const auto & query_node_typed = query_node->as<const QueryNode &>();
+    const auto table_expressions_stack = buildTableExpressionsStack(query_node_typed.getJoinTreeNode());
+    const bool joins_multiple_tables = std::any_of(
+        table_expressions_stack.begin(),
+        table_expressions_stack.end(),
+        [](const auto & table_expression)
+        {
+            /// `ARRAY JOIN` is not a join between tables and does not count here.
+            const auto node_type = table_expression->getNodeType();
+            return node_type == QueryTreeNodeType::JOIN || node_type == QueryTreeNodeType::CROSS_JOIN;
+        });
+
+    if (!joins_multiple_tables)
+        return;
+
+    LOG_DEBUG(getLogger("Planner"), "Disabling parallel replicas because parallel_replicas_for_queries_with_multiple_tables is disabled and the query joins multiple tables");
+    planner_context->getMutableQueryContext()->setSetting("enable_parallel_replicas", Field{0});
+
+    /// Every subquery of this query is planned by an independent `Planner` built from the
+    /// subquery's own context, so updating the query context above is not enough: the switch has to
+    /// reach the context of every query carried by the query tree - `IN` subqueries, materialized
+    /// CTE subqueries and correlated subqueries alike. All of them are still part of the tree here
+    /// (they are detached, if at all, only when their plan is built, which happens later).
+    disableParallelReplicasForSubqueries(query_node);
+
+    /// A prepared set holds its own reference to the subquery tree, taken by `collectSets` before
+    /// this point, so a set whose tree was replaced in the query tree in the meantime is not covered
+    /// by the traversal above.
+    for (const auto & set_subquery : planner_context->getPreparedSets().getSubqueries())
+        if (const auto & set_query_tree = set_subquery->getQueryTree())
+            disableParallelReplicasForSubqueries(set_query_tree);
+}
+
+namespace
+{
+
 JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_expression,
     const QueryTreeNodePtr & parent_join_tree,
     const SelectQueryInfo & select_query_info,
@@ -1747,6 +1780,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
 
         UInt64 max_block_size = settings[Setting::max_block_size];
         UInt64 max_block_size_limited = 0;
+        /// LIMIT + OFFSET as the most rows the source has to produce, when that holds.
+        UInt64 max_source_rows = 0;
         if (is_single_table_expression && !select_query_options.only_analyze)
         {
             /** If not specified DISTINCT, WHERE, GROUP BY, HAVING, ORDER BY, JOIN, LIMIT BY, LIMIT WITH TIES
@@ -1758,29 +1793,51 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             /// planning further down: the trivial-LIMIT optimization must be disabled
             /// whenever those filters actually apply, so the flags must agree.
             bool has_additional_filters = !!table_expression_query_info.additional_filter_ast
-                || !!getEffectiveRowPolicyFilter(storage, query_context);
+                || !!getEffectiveRowPolicyFilter(*storage, query_context);
             if (!has_additional_filters)
                 max_block_size_limited = mainQueryNodeBlockSizeByLimit(select_query_info);
             if (max_block_size_limited)
             {
-                if (max_block_size_limited < max_block_size)
+                const bool has_array_join = hasFunctionNode(select_query_info.query_tree->as<QueryNode &>().getProjectionNode(), "arrayJoin");
+                const bool shrink_block = max_block_size_limited < max_block_size;
+                if (shrink_block)
                 {
-                    max_block_size = std::max<UInt64>(1, max_block_size_limited);
-                    max_streams = 1;
-                    max_threads_execute_query = 1;
+                    /// With `arrayJoin` the source cannot stop at the LIMIT, so over a long run of empty arrays it streams
+                    /// every row anyway, and one-row blocks make that hundreds of times slower than the default block.
+                    /// Keep a few hundred rows per block: still a small read, and the empty prefix stays cheap.
+                    constexpr UInt64 min_block_size_above_array_join = 256;
+                    if (has_array_join)
+                        max_block_size = std::min(max_block_size, std::max(max_block_size_limited, min_block_size_above_array_join));
+                    else
+                        max_block_size = std::max<UInt64>(1, max_block_size_limited);
                 }
 
-                if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                /// With `arrayJoin` the LIMIT does not bound the source rows, so only the block size shrinks (#82279).
+                if (!has_array_join)
                 {
-                    if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                    max_source_rows = max_block_size_limited;
+                    if (shrink_block)
+                    {
+                        max_streams = 1;
+                        max_threads_execute_query = 1;
+                    }
+
+                    if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows != 0)
+                    {
+                        if (max_block_size_limited < select_query_info.local_storage_limits.local_limits.size_limits.max_rows)
+                            table_expression_query_info.trivial_limit = max_block_size_limited;
+                        /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                        else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
+                            table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                    }
+                    else
+                    {
                         table_expression_query_info.trivial_limit = max_block_size_limited;
-                    /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                    else if (select_query_info.local_storage_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max())
-                        table_expression_query_info.trivial_limit = 1 + select_query_info.local_storage_limits.local_limits.size_limits.max_rows;
+                    }
                 }
                 else
                 {
-                    table_expression_query_info.trivial_limit = max_block_size_limited;
+                    table_expression_query_info.small_limit_above_array_join = shrink_block;
                 }
             }
 
@@ -2126,14 +2183,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         /// enforces the view policy in the right namespace and handles the Distributed
                         /// policy (not propagated to shards — see issue #28334) and used_row_policies
                         /// bookkeeping correctly, so we fall back to it whenever any policy is present.
-                        const auto & view_id = storage->getStorageID();
-                        const auto & dist_id = underlying_dist->getStorageID();
-                        auto view_row_policy = query_context->getRowPolicyFilter(
-                            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        auto dist_row_policy = query_context->getRowPolicyFilter(
-                            dist_id.getDatabaseName(), dist_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-                        const bool has_row_policy = (view_row_policy && !view_row_policy->isAlwaysTrue())
-                            || (dist_row_policy && !dist_row_policy->isAlwaysTrue());
+                        const bool has_row_policy = getEffectiveRowPolicyFilter(*storage, query_context)
+                            || getEffectiveRowPolicyFilter(*underlying_dist, query_context);
 
                         /// Also suppress when shard pruning is forced. The pushdown ships the outer
                         /// query's WHERE in the view-output namespace, which cannot be safely mapped to
@@ -2667,8 +2718,8 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             if (table_expression_query_info.trivial_limit > 0 && table_expression_query_info.trivial_limit < rows_to_read)
                                 rows_to_read = table_expression_query_info.trivial_limit;
 
-                            if (max_block_size_limited && (max_block_size_limited < rows_to_read))
-                                rows_to_read = max_block_size_limited;
+                            if (max_source_rows && (max_source_rows < rows_to_read))
+                                rows_to_read = max_source_rows;
 
                             const size_t number_of_replicas_to_use
                                 = rows_to_read / settings[Setting::parallel_replicas_min_number_of_rows_per_replica];
@@ -2833,6 +2884,19 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 subquery_planner_context = planner_context->getGlobalPlannerContext();
 
             auto subquery_options = select_query_options.subquery();
+
+            /// When `parallel_replicas_for_queries_with_multiple_tables` is disabled, the outer query
+            /// has already turned off parallel replicas in the planner context (see `buildJoinTreeQueryPlan`).
+            /// A subquery is planned by an independent `Planner` using its own context, so this decision
+            /// would not reach it, and a single-table subquery of a multi-table query could still be read
+            /// with parallel replicas. Propagate only the parallel replicas switch (not the whole context,
+            /// which would clobber the subquery's own settings and bound resources) to the subquery.
+            if (!settings[Setting::parallel_replicas_for_queries_with_multiple_tables]
+                && !settings[Setting::allow_experimental_parallel_reading_from_replicas])
+            {
+                disableParallelReplicasForSubqueries(table_expression);
+            }
+
             Planner subquery_planner(table_expression, subquery_options, subquery_planner_context);
             /// Propagate storage limits to subquery
             subquery_planner.addStorageLimits(*select_query_info.storage_limits);
