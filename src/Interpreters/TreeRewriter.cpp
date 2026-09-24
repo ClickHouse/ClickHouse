@@ -20,7 +20,6 @@
 #include <Interpreters/GroupingSetsRewriterVisitor.h>
 #include <Interpreters/LogicalExpressionsOptimizer.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
-#include <Interpreters/PredicateExpressionsOptimizer.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryNormalizer.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
@@ -1135,11 +1134,14 @@ bool TreeRewriterResult::collectUsedColumns(const ASTPtr & query, bool is_select
             auto query_context = CurrentThread::tryGetQueryContext();
             auto access = query_context ? query_context->getAccess() : nullptr;
             const auto & storage_id = storage->getStorageID();
+            const NameSet chain_granted = access
+                ? alias->filterColumnsGrantedThroughChain(query_context, AccessType::SELECT, source_columns.getNames())
+                : NameSet{};
             for (const auto & column : source_columns)
             {
                 if (access
                     && access->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-                    && alias->isTargetTableGranted(query_context, AccessType::SELECT, column.name))
+                    && chain_granted.contains(column.name))
                     accessible_columns.push_back(column);
             }
         }
@@ -1533,10 +1535,7 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    /// Push the predicate expression down to subqueries. The optimization should be applied to both initial and secondary queries.
-    result.rewrite_subqueries = PredicateExpressionsOptimizer(getContext(), tables_with_columns, settings).optimize(*select_query);
-
-     /// Only apply AST optimization for initial queries.
+    /// Only apply AST optimization for initial queries.
     const bool ast_optimizations_allowed =
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;
