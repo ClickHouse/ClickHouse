@@ -246,10 +246,10 @@ Prior to searching, the function tokenizes both the `input` and the `phrase` arg
 If the column has no text index defined, the `splitByNonAlpha` tokenizer is used instead — unless a tokenizer is provided as the optional third argument.
 The tokenizer argument must be one of `splitByNonAlpha`, `splitByString`, `splitByRegexp`, `ngrams`, `asciiCJK`, or `icu`.
 Note that `splitByRegexp` is not supported for `hasPhrase` when the text index also defines a postprocessor.
+If `input` is the preprocessor expression of the text index itself (for example `lower(col)` for `preprocessor = lower(col)`), `phrase` is not preprocessed.
 
 <Note>
 When a text index defines a [preprocessor](/reference/engines/table-engines/mergetree-family/textindexes#creating-a-text-index) (for example `lowerUTF8`), `hasPhrase` applies it to both `input` and `phrase` before tokenization.
-When `input` is the preprocessor expression itself (for example `lowerUTF8(col)` for `preprocessor = lowerUTF8(col)`), `phrase` is not preprocessed.
 The preprocessor is only applied on the text index path, so results may differ between queries that use the text index and queries that do not (e.g. `SETTINGS use_skip_indexes = 0`).
 This inconsistency is tolerated to improve the usability of full-text search.
 </Note>
