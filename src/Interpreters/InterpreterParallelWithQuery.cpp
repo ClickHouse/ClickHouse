@@ -27,7 +27,6 @@ namespace ErrorCodes
 
 namespace Setting
 {
-    extern const SettingsUInt64 interactive_delay;
     extern const SettingsMaxThreads max_threads;
 }
 
@@ -171,8 +170,6 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
     try
     {
         CompletedPipelineExecutor executor(combined_pipeline);
-        if (auto cancel_callback = getContext()->getInteractiveCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), getContext()->getSettingsRef()[Setting::interactive_delay] / 1000));
         executor.execute();
     }
     catch (...)
@@ -191,7 +188,6 @@ void InterpreterParallelWithQuery::executeCombinedPipeline()
 }
 
 
-void registerInterpreterParallelWithQuery(InterpreterFactory & factory);
 void registerInterpreterParallelWithQuery(InterpreterFactory & factory)
 {
     auto create_fn = [] (const InterpreterFactory::Arguments & args)

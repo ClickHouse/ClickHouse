@@ -1,7 +1,6 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Compression/CachedCompressedReadBuffer.h>
-#include <IO/ReadPipeline.h>
 
 #include <base/getThreadId.h>
 #include <base/range.h>
@@ -75,49 +74,35 @@ void MergeTreeReaderStream::init()
         read_settings = read_settings.adjustBufferSize(max_mark_range_bytes);
 
     //// Empty buffer does not makes progress.
-    if (!read_settings.local_fs_settings.buffer_size || !read_settings.remote_fs_settings.buffer_size)
+    if (!read_settings.local_fs_buffer_size || !read_settings.remote_fs_buffer_size)
         throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Cannot read to empty buffer.");
-
-    auto build_read_buffer = [&]() -> std::unique_ptr<ReadBufferFromFileBase>
-    {
-        ReadPipeline pipeline;
-        data_part_storage->prepareRead(
-            path_prefix + data_file_extension,
-            read_settings,
-            estimated_sum_mark_range_bytes,
-            pipeline);
-
-        return pipeline.build();
-    };
 
     /// Initialize the objects that shall be used to perform read operations.
     if (!settings.is_compressed)
     {
-        auto buffer = build_read_buffer();
+        auto buffer = data_part_storage->readFile(
+            path_prefix + data_file_extension,
+            read_settings,
+            estimated_sum_mark_range_bytes);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
 
+        data_buffer = buffer.get();
+        plain_file_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
-        data_buffer = read_buffer_holder.get();
-        plain_file_buffer = static_cast<ReadBufferFromFileBase *>(read_buffer_holder.get());
     }
     else if (uncompressed_cache)
     {
         auto buffer = std::make_unique<CachedCompressedReadBuffer>(
             std::string(fs::path(data_part_storage->getFullPath()) / (path_prefix + data_file_extension)),
             [this, estimated_sum_mark_range_bytes, read_settings]()
-                -> std::unique_ptr<ReadBufferFromFileBase>
             {
                 auto local_component_guard = Coordination::setCurrentComponent("MergeTreeReaderStream::create_buffer");
-                ReadPipeline pipeline;
-                data_part_storage->prepareRead(
+                return data_part_storage->readFile(
                     path_prefix + data_file_extension,
                     read_settings,
-                    estimated_sum_mark_range_bytes,
-                    pipeline);
-
-                return pipeline.build();
+                    estimated_sum_mark_range_bytes);
             },
             uncompressed_cache,
             /* allow_different_codecs */ true);
@@ -128,14 +113,17 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
+        data_buffer = buffer.get();
+        compressed_data_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
-        data_buffer = read_buffer_holder.get();
-        compressed_data_buffer = static_cast<CachedCompressedReadBuffer *>(read_buffer_holder.get());
     }
     else
     {
         auto buffer = std::make_unique<CompressedReadBufferFromFile>(
-            build_read_buffer(), /* allow_different_codecs */ true);
+            data_part_storage->readFile(
+                path_prefix + data_file_extension,
+                read_settings,
+                estimated_sum_mark_range_bytes), /* allow_different_codecs */ true);
 
         if (profile_callback)
             buffer->setProfileCallback(profile_callback, clock_type);
@@ -143,9 +131,9 @@ void MergeTreeReaderStream::init()
         if (!settings.checksum_on_read)
             buffer->disableChecksumming();
 
+        data_buffer = buffer.get();
+        compressed_data_buffer = buffer.get();
         read_buffer_holder = std::move(buffer);
-        data_buffer = read_buffer_holder.get();
-        compressed_data_buffer = static_cast<CompressedReadBufferFromFile *>(read_buffer_holder.get());
     }
 
     initialized = true;
@@ -177,8 +165,6 @@ void MergeTreeReaderStream::seekToMarkAndColumn(size_t row_index, size_t column_
 
 void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 {
-    init();
-
     if (compressed_data_buffer)
     {
         compressed_data_buffer->seek(mark.offset_in_compressed_file, mark.offset_in_decompressed_block);
@@ -190,39 +176,6 @@ void MergeTreeReaderStream::seekToMark(const MarkInCompressedFile & mark)
 
         plain_file_buffer->seek(mark.offset_in_compressed_file, SEEK_SET);
     }
-}
-
-namespace
-{
-
-/// Index of the first mark after `from` that points to a different position, or `marks_count` if
-/// there is none. Marks are non-decreasing positions in the file, so equal marks form contiguous
-/// runs and binary search is valid.
-size_t findNextDifferentMark(const MergeTreeMarksGetter & marks, size_t from, size_t marks_count)
-{
-    auto indices = collections::range(from, marks_count);
-    auto less_mark = [&](size_t lhs, size_t rhs)
-    {
-        return marks.getMark(lhs, 0).asTuple() < marks.getMark(rhs, 0).asTuple();
-    };
-
-    auto it = std::upper_bound(indices.begin(), indices.end(), from, std::move(less_mark));
-    return it == indices.end() ? marks_count : *it;
-}
-
-}
-
-bool MergeTreeReaderStream::hasAtMostNDistinctMarks(size_t max_transitions) const
-{
-    auto marks = marks_loader->loadMarks();
-
-    size_t num_distinct = 0;
-    for (size_t pos = 0; pos < marks_count; pos = findNextDifferentMark(*marks, pos, marks_count))
-    {
-        if (++num_distinct > max_transitions)
-            return false;
-    }
-    return true;
 }
 
 void MergeTreeReaderStream::seekToStart()
@@ -321,11 +274,17 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
         /// Mark 8, points to [84995, 7738]
         /// Mark 9, points to [126531, 8637] <--- what we are looking for
 
-        size_t next_different_mark = findNextDifferentMark(*marks_getter, right_mark, marks_count);
-        if (next_different_mark == marks_count)
+        auto indices = collections::range(right_mark, marks_count);
+        auto next_different_mark = [&](auto lhs, auto rhs)
+        {
+            return marks_getter->getMark(lhs, 0).asTuple() < marks_getter->getMark(rhs, 0).asTuple();
+        };
+
+        auto it = std::upper_bound(indices.begin(), indices.end(), right_mark, std::move(next_different_mark));
+        if (it == indices.end())
             return file_size;
 
-        right_mark = next_different_mark;
+        right_mark = *it;
     }
 
     /// Special case for streams with dynamic/object structure.
@@ -333,13 +292,6 @@ size_t MergeTreeReaderStreamSingleColumn::getRightOffset(size_t right_mark)
     /// But during deserialization we read both parts before the data, so we can't use the marks and need to always return the
     /// whole file size.
     if (settings.is_metadata_file)
-        return file_size;
-
-    /// Special case for a stream that holds a single value for the whole part (the product quantization codebook).
-    /// The value is written after the data of all granules, so every granule's mark points at its start and no mark
-    /// delimits its end. In particular, when the value spans several compressed blocks, the final mark points into
-    /// the middle of it, and bounding the read by that mark truncates the value (`CANNOT_READ_ALL_DATA`).
-    if (settings.is_single_value_per_part)
         return file_size;
 
     /// This is a good scenario. The compressed block is finished within the right mark,

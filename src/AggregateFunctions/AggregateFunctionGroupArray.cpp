@@ -213,7 +213,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = this->data(place);
         auto & rhs_elems = this->data(rhs);
@@ -422,7 +422,7 @@ struct GroupArrayNodeBase
     /// Reads and allocates node from ReadBuffer's data (doesn't set next)
     static Node * read(ReadBuffer & buf, Arena * arena)
     {
-        UInt64 size = 0;
+        UInt64 size;
         readVarUInt(size, buf);
         checkElementSize(size, AGGREGATE_FUNCTION_GROUP_ARRAY_MAX_ELEMENT_SIZE);
 
@@ -578,7 +578,7 @@ public:
         }
     }
 
-    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
+    void merge(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
     {
         auto & cur_elems = data(place);
         auto & rhs_elems = data(rhs);
@@ -609,7 +609,7 @@ public:
 
     void ALWAYS_INLINE mergeNoSampler(Data & cur_elems, const Data & rhs_elems, Arena * arena) const
     {
-        UInt64 new_elems = 0;
+        UInt64 new_elems;
         if (limit_num_elems)
         {
             if (cur_elems.value.size() >= max_elems)
@@ -684,7 +684,7 @@ public:
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena * arena) const override
     {
-        UInt64 elems = 0;
+        UInt64 elems;
         readVarUInt(elems, buf);
         checkArraySize(elems, max_elems);
 
@@ -854,7 +854,6 @@ AggregateFunctionPtr createAggregateFunctionGroupArraySample(
 }
 
 
-void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory);
 void registerAggregateFunctionGroupArray(AggregateFunctionFactory & factory)
 {
     AggregateFunctionProperties properties = { .returns_default_when_only_null = false, .is_order_dependent = true };
@@ -885,10 +884,7 @@ groupArray(max_size)(x)
     {
         "Basic usage",
         R"(
-CREATE TABLE ck (id UInt8, name String) ENGINE = Memory;
-INSERT INTO ck VALUES (1, 'zhangsan'), (1, 'lisi'), (2, 'wangwu');
-
-SELECT id, groupArray(10)(name) FROM ck GROUP BY id ORDER BY id;
+SELECT id, groupArray(10)(name) FROM default.ck GROUP BY id;
         )",
         R"(
 ┌─id─┬─groupArray(10)(name)─┐
@@ -932,19 +928,19 @@ groupArraySample(max_size[, seed])(x)
     {
          "Usage example",
          R"(
-CREATE TABLE colors (
+CREATE TABLE default.colors (
     id Int32,
     color String
 ) ENGINE = Memory;
 
-INSERT INTO colors VALUES
+INSERT INTO default.colors VALUES
 (1, 'red'),
 (2, 'blue'),
 (3, 'green'),
 (4, 'white'),
 (5, 'orange');
 
-SELECT groupArraySample(3)(color) as newcolors FROM colors;
+SELECT groupArraySample(3)(color) as newcolors FROM default.colors;
          )",
          R"(
 ┌─newcolors──────────────────┐
@@ -956,19 +952,19 @@ SELECT groupArraySample(3)(color) as newcolors FROM colors;
          "Example using a seed",
          R"(
 -- Query with column name and different seed
-SELECT groupArraySample(3, 987654321)(color) as newcolors FROM colors;
+SELECT groupArraySample(3, 987654321)(color) as newcolors FROM default.colors;
         )",
         R"(
-┌─newcolors────────────────┐
-│ ['red','orange','green'] │
-└──────────────────────────┘
+┌─newcolors──────────────────┐
+│ ['red','orange','green']   │
+└────────────────────────────┘
         )"
     },
     {
          "Using an expression as an argument",
          R"(
 -- Query with expression as argument
-SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM colors;
+SELECT groupArraySample(3)(concat('light-', color)) as newcolors FROM default.colors;
         )",
         R"(
 ┌─newcolors───────────────────────────────────┐

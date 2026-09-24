@@ -32,8 +32,7 @@ def get_spark(log_dir=None):
         .config("spark.sql.catalog.spark_catalog.warehouse", "/var/lib/clickhouse/user_files/iceberg_data")
         .config(
             "spark.sql.extensions",
-            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions,"
-            "org.apache.sedona.spark.SedonaSparkSessionExtension",
+            "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
         )
         .master("local")
     )

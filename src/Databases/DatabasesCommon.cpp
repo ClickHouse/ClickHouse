@@ -1,10 +1,8 @@
 #include <Databases/DatabasesCommon.h>
-#include <Databases/DatabaseOnDisk.h>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
-#include <Core/UUID.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterCreateQuery.h>
@@ -23,17 +21,11 @@
 #include <Storages/Utils.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/CurrentMetrics.h>
-#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/escapeForFileName.h>
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
-#include <Common/setThreadName.h>
-#include <Common/Stopwatch.h>
-#include <Common/threadPoolCallbackRunner.h>
 #include <Common/typeid_cast.h>
-#include <IO/SharedThreadPools.h>
-#include <base/sleep.h>
 
 #if CLICKHOUSE_CLOUD
 #include <Interpreters/SharedDatabaseCatalog.h>
@@ -48,7 +40,6 @@ namespace Setting
 extern const SettingsBool fsync_metadata;
 extern const SettingsUInt64 max_parser_backtracks;
 extern const SettingsUInt64 max_parser_depth;
-extern const SettingsUInt64 max_query_size;
 }
 namespace ErrorCodes
 {
@@ -59,20 +50,12 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
     extern const int BAD_ARGUMENTS;
-    extern const int QUERY_IS_TOO_LARGE;
     extern const int THERE_IS_NO_QUERY;
     extern const int EMPTY_LIST_OF_COLUMNS_PASSED;
-    extern const int FAULT_INJECTED;
-}
-namespace FailPoints
-{
-    extern const char database_catalog_throw_on_table_shutdown[];
-    extern const char database_catalog_throw_on_table_prepare_shutdown[];
-    extern const char database_catalog_shutdown_sleep_per_table[];
 }
 namespace
 {
-void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescription & virtuals, ContextPtr context)
+void validateCreateQuery(const ASTCreateQuery & query, ContextPtr context)
 {
     /// First validate that the query can be parsed
     const auto serialized_query = query.formatWithSecretsOneLine();
@@ -100,8 +83,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
         throw Exception(ErrorCodes::EMPTY_LIST_OF_COLUMNS_PASSED, "Cannot CREATE table without insertable columns");
 
     /// Default expressions are only validated in level CREATE, so let's check them now
-    DefaultExpressionsInfo default_expr_info;
-    default_expr_info.expr_list = make_intrusive<ASTExpressionList>();
+    DefaultExpressionsInfo default_expr_info{make_intrusive<ASTExpressionList>()};
 
     for (const auto & ast : columns.columns->children)
     {
@@ -118,9 +100,6 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
             LOG_WARNING(getLogger("validateCreateQuery"), "Couldn't get column description for column {}", col_decl.name);
     }
 
-    /// Validates the whole resulting metadata (also for ordinary ALTERs), so do not enforce the
-    /// virtual-column rule here: a legacy table may already have such a default and an unrelated ALTER
-    /// must not fail on it. New/modified defaults are checked by AlterCommands::validate.
     if (default_expr_info.expr_list)
         validateColumnsDefaultsAndGetSampleBlock(default_expr_info.expr_list, columns_desc.getAll(), context);
 
@@ -138,7 +117,7 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     if (columns.projections)
     {
         for (const auto & child : columns.projections->children)
-            ProjectionDescription::getProjectionFromAST(child, columns_desc, nullptr, context);
+            ProjectionDescription::getProjectionFromAST(child, columns_desc, context);
     }
     if (!new_query.storage)
         return;
@@ -147,40 +126,16 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     std::optional<KeyDescription> primary_key;
     /// First get the key description from order by, so if there is no primary key we will use that
     if (storage.order_by)
-        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, virtuals, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.order_by->ptr(), columns_desc, context);
     if (storage.primary_key)
-        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, virtuals, context);
+        primary_key = KeyDescription::getKeyFromAST(storage.primary_key->ptr(), columns_desc, context);
     if (storage.partition_by)
-        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, virtuals, context);
+        KeyDescription::getKeyFromAST(storage.partition_by->ptr(), columns_desc, context);
     if (storage.sample_by)
-        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, virtuals, context);
+        KeyDescription::getKeyFromAST(storage.sample_by->ptr(), columns_desc, context);
     if (storage.ttl_table && primary_key.has_value())
-        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, TTLValidationMode::Attach);
+        TTLTableDescription::getTTLForTableFromAST(storage.ttl_table->ptr(), columns_desc, context, *primary_key, true);
 }
-}
-
-void checkMetadataDoesNotExceedMaxQuerySize(const StorageID & table_id, const StorageInMemoryMetadata & metadata, ContextPtr context)
-{
-    /// Temporary tables have no on-disk metadata, so the max_query_size check does not apply.
-    if (table_id.database_name == DatabaseCatalog::TEMPORARY_DATABASE)
-        return;
-
-    size_t max_query_size = context->getSettingsRef()[Setting::max_query_size];
-    if (!max_query_size)
-        return;
-
-    auto ast = DatabaseCatalog::instance().getDatabase(table_id.database_name)->getCreateTableQuery(table_id.table_name, context);
-    applyMetadataChangesToCreateQuery(ast, metadata, context);
-    auto statement = getObjectDefinitionFromCreateQuery(ast);
-
-    if (statement.size() > max_query_size)
-        throw Exception(
-            ErrorCodes::QUERY_IS_TOO_LARGE,
-            "The resulting metadata of table {} ({} bytes) would exceed max_query_size ({}), "
-            "which would make the table unloadable. Reduce the number of columns or increase max_query_size.",
-            table_id.getNameForLogs(),
-            statement.size(),
-            max_query_size);
 }
 
 void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemoryMetadata & metadata, ContextPtr context, const bool validate_new_create_query)
@@ -237,7 +192,7 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ASTStorage & storage_ast = *ast_create_query.storage;
 
         bool is_extended_storage_def
-            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.unique_key || storage_ast.sample_by || storage_ast.settings;
+            = storage_ast.partition_by || storage_ast.primary_key || storage_ast.order_by || storage_ast.sample_by || storage_ast.settings;
 
         if (is_extended_storage_def)
         {
@@ -250,17 +205,12 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
             if (metadata.sampling_key.definition_ast)
                 storage_ast.set(storage_ast.sample_by, metadata.sampling_key.definition_ast);
             else if (storage_ast.sample_by != nullptr) /// SAMPLE BY was removed
-                storage_ast.reset(storage_ast.sample_by);
-
-            if (metadata.unique_key.definition_ast)
-                storage_ast.set(storage_ast.unique_key, metadata.unique_key.definition_ast);
-            else if (storage_ast.unique_key != nullptr) /// UNIQUE KEY was removed
-                storage_ast.reset(storage_ast.unique_key);
+                storage_ast.sample_by = nullptr;
 
             if (metadata.table_ttl.definition_ast)
                 storage_ast.set(storage_ast.ttl_table, metadata.table_ttl.definition_ast);
             else if (storage_ast.ttl_table != nullptr) /// TTL was removed
-                storage_ast.reset(storage_ast.ttl_table);
+                storage_ast.ttl_table = nullptr;
 
             if (metadata.settings_changes)
                 storage_ast.set(storage_ast.settings, metadata.settings_changes);
@@ -279,15 +229,15 @@ void applyMetadataChangesToCreateQuery(const ASTPtr & query, const StorageInMemo
         ast_create_query.set(ast_create_query.comment, make_intrusive<ASTLiteral>(metadata.comment));
 
     if (validate_new_create_query)
-        validateCreateQuery(ast_create_query, metadata.virtuals, context);
+        validateCreateQuery(ast_create_query, context);
 }
 
 
 ASTPtr getCreateQueryFromStorage(const StoragePtr & storage, const ASTPtr & ast_storage, bool only_ordinary,
-    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error, ContextPtr context)
+    uint32_t max_parser_depth, uint32_t max_parser_backtracks, bool throw_on_error)
 {
     auto table_id = storage->getStorageID();
-    auto metadata_ptr = storage->getInMemoryMetadataPtr(context, false);
+    auto metadata_ptr = storage->getInMemoryMetadataPtr();
     if (metadata_ptr == nullptr)
     {
         if (throw_on_error)
@@ -363,10 +313,10 @@ void cleanupObjectDefinitionFromTemporaryFlags(ASTCreateQuery & query)
 
     /// For views it is necessary to save the SELECT query itself, for the rest - on the contrary
     if (!query.isView())
-        query.reset(query.select);
+        query.select = nullptr;
 
-    query.reset(query.format_ast);
-    query.reset(query.out_file);
+    query.format_ast = nullptr;
+    query.out_file = nullptr;
 }
 
 String readMetadataFile(std::shared_ptr<IDisk> disk, const String & file_path)
@@ -396,57 +346,30 @@ void DatabaseWithAltersOnDiskBase::alterDatabaseComment(const AlterCommand & com
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unable to obtain database comment from query");
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseWithAltersOnDiskBase::alterDatabaseComment");
-
-    const String & new_comment = command.comment.value();
-
-#if CLICKHOUSE_CLOUD
-    if (SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName()))
-    {
-        if (!SharedDatabaseCatalog::isInitialQuery(query_context))
-        {
-            std::lock_guard lock{mutex};
-            comment = new_comment;
-            return;
-        }
-
-        /// Build the create query with the new comment, but leave the in-memory value
-        /// untouched, so concurrent readers never observe an uncommitted comment.
-        ASTPtr create_query;
-        {
-            std::lock_guard lock{mutex};
-            const String old_comment = comment;
-            comment = new_comment;
-            try
-            {
-                create_query = getCreateDatabaseQueryImpl();
-                if (!create_query)
-                    throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
-            }
-            catch (...)
-            {
-                comment = old_comment;
-                throw;
-            }
-            comment = old_comment;
-        }
-
-        auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
-        query_context->setVersionToWaitSharedCatalog(version_to_wait);
-
-        std::lock_guard lock{mutex};
-        comment = new_comment;
-        return;
-    }
-#endif
-
     std::lock_guard lock{mutex};
+
     const String old_comment = comment;
-    comment = new_comment;
+    comment = command.comment.value();
+
     try
     {
+#if CLICKHOUSE_CLOUD
+        bool managed_by_shared_catalog = SharedDatabaseCatalog::initialized() && SharedDatabaseCatalog::isDatabaseEngineSupported(getEngineName());
+        if (managed_by_shared_catalog && !SharedDatabaseCatalog::isInitialQuery(query_context))
+            return;
+#endif
         const ASTPtr create_query = getCreateDatabaseQueryImpl();
         if (!create_query)
             throw Exception(ErrorCodes::THERE_IS_NO_QUERY, "Unable to show the create query of database {}", backQuoteIfNeed(database_name));
+#if CLICKHOUSE_CLOUD
+        if (managed_by_shared_catalog)
+        {
+
+            auto version_to_wait = SharedDatabaseCatalog::instance().alterDatabase(getUUID(), create_query);
+            query_context->setVersionToWaitSharedCatalog(version_to_wait);
+            return;
+        }
+#endif
         DatabaseCatalog::instance().updateMetadataFile(database_name, create_query);
     }
     catch (...)
@@ -463,92 +386,8 @@ DatabaseWithOwnTablesBase::DatabaseWithOwnTablesBase(const String & name_, const
 {
 }
 
-void DatabaseWithOwnTablesBase::setDeferredPopulation(std::function<void(IDatabase &)> populate)
-{
-    std::lock_guard lock(populate_mutex);
-    deferred_populate = std::move(populate);
-    deferred_shadowing_candidates.clear();
-
-    if (deferred_populate)
-    {
-        std::lock_guard tables_lock(mutex);
-        for (const auto & [table_name, _] : tables)
-            deferred_shadowing_candidates.insert(table_name);
-    }
-
-    has_deferred_population.store(deferred_populate != nullptr, std::memory_order_release);
-}
-
-bool DatabaseWithOwnTablesBase::mayShadowDeferredTable(const String & table_name) const
-{
-    if (!has_deferred_population.load(std::memory_order_acquire))
-        return false;
-    if (deferred_populate_failed.load(std::memory_order_acquire))
-        return true;
-    return deferred_shadowing_candidates.contains(table_name);
-}
-
-void DatabaseWithOwnTablesBase::ensurePopulated() const TSA_NO_THREAD_SAFETY_ANALYSIS
-{
-    if (!has_deferred_population.load(std::memory_order_acquire))
-        return;
-
-    std::unique_lock lock(populate_mutex);
-
-    if (populating && populating_thread == std::this_thread::get_id())
-        return;
-
-    populated.wait(lock, [this]() TSA_NO_THREAD_SAFETY_ANALYSIS { return !populating; });
-
-    if (deferred_populate_error)
-        std::rethrow_exception(deferred_populate_error);
-
-    if (!deferred_populate)
-        return;
-
-    auto populate = std::move(deferred_populate);
-    deferred_populate = nullptr;
-    populating = true;
-    populating_thread = std::this_thread::get_id();
-    lock.unlock();
-
-    auto finish = [this](std::exception_ptr error)
-    {
-        {
-            std::lock_guard finish_lock(populate_mutex);
-            populating = false;
-            populating_thread = {};
-            deferred_populate_error = error;
-            if (error)
-                deferred_populate_failed.store(true, std::memory_order_release);
-            else
-                has_deferred_population.store(false, std::memory_order_release);
-        }
-        populated.notify_all();
-    };
-
-    try
-    {
-        populate(const_cast<DatabaseWithOwnTablesBase &>(*this));
-    }
-    catch (...)
-    {
-        finish(std::current_exception());
-        throw;
-    }
-    finish(nullptr);
-}
-
 bool DatabaseWithOwnTablesBase::isTableExist(const String & table_name, ContextPtr) const
 {
-    if (!mayShadowDeferredTable(table_name))
-    {
-        std::lock_guard lock(mutex);
-        if (tables.contains(table_name))
-            return true;
-    }
-
-    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.contains(table_name);
 }
@@ -561,7 +400,6 @@ StoragePtr DatabaseWithOwnTablesBase::tryGetTable(const String & table_name, Con
 
 DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
-    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
@@ -577,7 +415,6 @@ DatabaseTablesIteratorPtr DatabaseWithOwnTablesBase::getTablesIterator(ContextPt
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetachedTablesIterator(
     ContextPtr, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
-    ensurePopulated();
     std::lock_guard lock(mutex);
     if (!filter_by_table_name)
         return std::make_unique<DatabaseDetachedTablesSnapshotIterator>(snapshot_detached_tables);
@@ -595,20 +432,12 @@ DatabaseDetachedTablesSnapshotIteratorPtr DatabaseWithOwnTablesBase::getDetached
 
 bool DatabaseWithOwnTablesBase::empty() const
 {
-    {
-        std::lock_guard lock(mutex);
-        if (!tables.empty())
-            return false;
-    }
-
-    ensurePopulated();
     std::lock_guard lock(mutex);
     return tables.empty();
 }
 
 StoragePtr DatabaseWithOwnTablesBase::detachTable(ContextPtr /* context_ */, const String & table_name)
 {
-    ensurePopulated();
     std::lock_guard lock(mutex);
     return detachTableUnlocked(table_name);
 }
@@ -644,7 +473,7 @@ StoragePtr DatabaseWithOwnTablesBase::detachTableUnlocked(const String & table_n
     auto table_id = table_storage->getStorageID();
     if (table_id.hasUUID())
     {
-        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
     }
 
@@ -666,7 +495,7 @@ void DatabaseWithOwnTablesBase::attachTableUnlocked(const String & table_name, c
 
     if (table_id.hasUUID())
     {
-        chassert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+        assert(database_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
         DatabaseCatalog::instance().addUUIDMapping(table_id.uuid, shared_from_this(), table);
     }
 
@@ -702,160 +531,25 @@ void DatabaseWithOwnTablesBase::shutdown()
         tables_snapshot = tables;
     }
 
-    /// A failing table shutdown must still release the references the catalog holds (the UUID ->
-    /// storage mappings): otherwise the storage stays alive until DatabaseCatalog is destroyed at
-    /// process exit, after loggers and static pools are gone, which aborts. Record the first error
-    /// and rethrow it once all cleanup has run.
-    std::exception_ptr first_error;
+    for (const auto & kv : tables_snapshot)
+    {
+        kv.second->flushAndPrepareForShutdown();
+    }
 
-    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
-    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
-    /// could write into a table that has already entered shutdown-prepared read-only mode and
-    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
     for (const auto & kv : tables_snapshot)
     {
         auto table_id = kv.second->getStorageID();
-        try
+        kv.second->flushAndShutdown();
+        if (table_id.hasUUID())
         {
-            fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
-            {
-                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
-            });
-            kv.second->flushAndPrepareForShutdown();
-        }
-        catch (...)
-        {
-            if (!first_error)
-                first_error = std::current_exception();
-            tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
+            assert(getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
+            DatabaseCatalog::instance().removeUUIDMapping(table_id.uuid);
         }
     }
 
-    /// Shutdown phase runs in parallel. IStorage::shutdown is the expensive, table-independent work
-    /// (ZooKeeper sessions, interserver endpoints, background pools) and is documented safe to call
-    /// concurrently. Prepare already ran above, so call shutdown() directly rather than
-    /// flushAndShutdown() — that avoids re-running the prepare/flush and racing dependent tables.
-    if (!tables_snapshot.empty())
-    {
-        Stopwatch watch;
-        const auto db_name = getDatabaseName();
-        /// Tables carrying a UUID require the database to have one too (memory-backed databases
-        /// like system / information_schema have neither).
-        if (tables_snapshot.begin()->second->getStorageID().hasUUID())
-            chassert(db_name == DatabaseCatalog::TEMPORARY_DATABASE || getUUID() != UUIDHelpers::Nil);
-
-        /// Errors from the parallel tasks are collected here. Held in a shared_ptr so a task that
-        /// somehow outlives this frame cannot dangle a reference into it.
-        struct ErrorRecorder
-        {
-            std::mutex mutex;
-            std::exception_ptr error;
-            void record(std::exception_ptr e)
-            {
-                std::lock_guard lock(mutex);
-                if (!error)
-                    error = e;
-            }
-        };
-        auto recorder = std::make_shared<ErrorRecorder>();
-
-        /// Lazy-init for non-server binaries (client/keeper) that reach this via a Database destructor.
-        auto & shared_pool = getDatabaseCatalogShutdownTablesThreadPool();
-        shared_pool.initializeWithDefaultSettingsIfNotInitialized();
-        ThreadPoolCallbackRunnerLocal<void> runner(shared_pool.get(), ThreadName::SHUTDOWN_TABLES);
-        /// Reserve so enqueueAndKeepTrack can't fail while tracking an already-scheduled task,
-        /// which would make the inline fallback run a duplicate.
-        runner.reserve(tables_snapshot.size());
-
-        for (const auto & kv : tables_snapshot)
-        {
-            /// Capture only owned state (shared_ptr / logger), never `this` or the stack frame.
-            auto run_task = [log_ptr = log, table = kv.second, recorder]
-            {
-                std::optional<StorageID> table_id;
-                try
-                {
-                    table_id = table->getStorageID();
-                }
-                catch (...)
-                {
-                    recorder->record(std::current_exception());
-                    tryLogCurrentException(log_ptr, "Failed to read storage ID during shutdown");
-                    return;
-                }
-
-                try
-                {
-                    fiu_do_on(FailPoints::database_catalog_shutdown_sleep_per_table,
-                    {
-                        /// Skip predefined databases so a test enabling this failpoint only slows
-                        /// the user database under test.
-                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
-                            sleepForSeconds(1);
-                    });
-
-                    fiu_do_on(FailPoints::database_catalog_throw_on_table_shutdown,
-                    {
-                        if (!DatabaseCatalog::isPredefinedDatabase(table_id->database_name))
-                            throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while shutting down table {}", table_id->getNameForLogs());
-                    });
-                    table->shutdown();
-                }
-                catch (...)
-                {
-                    recorder->record(std::current_exception());
-                    tryLogCurrentException(log_ptr, fmt::format("Failed to shut down table {}", table_id->getNameForLogs()));
-                }
-
-                /// Release the catalog's reference even if shutdown() threw.
-                if (table_id->hasUUID())
-                {
-                    try
-                    {
-                        DatabaseCatalog::instance().removeUUIDMapping(table_id->uuid);
-                    }
-                    catch (...)
-                    {
-                        recorder->record(std::current_exception());
-                        tryLogCurrentException(log_ptr, fmt::format("Failed to remove UUID mapping for table {}", table_id->getNameForLogs()));
-                    }
-                }
-            };
-
-            try
-            {
-                runner.enqueueAndKeepTrack(run_task);
-            }
-            catch (...)
-            {
-                /// Scheduling failed (fault injector, pool exhausted). Run inline so this table is
-                /// still shut down and its reference released. Reserve above guarantees this only
-                /// happens when the task was never scheduled, so there is no duplicate.
-                tryLogCurrentException(log, "Failed to schedule shutdown task, running inline");
-                run_task();
-            }
-        }
-        runner.waitForAllToFinish();
-
-        {
-            std::lock_guard lock(recorder->mutex);
-            if (!first_error)
-                first_error = recorder->error;
-        }
-
-        LOG_INFO(log, "Shut down {} tables in {} in {} ms",
-            tables_snapshot.size(), backQuoteIfNeed(db_name), watch.elapsedMilliseconds());
-    }
-
-    {
-        std::lock_guard lock(mutex);
-        tables.clear();
-        snapshot_detached_tables.clear();
-    }
-
-    if (first_error)
-        std::rethrow_exception(first_error);
+    std::lock_guard lock(mutex);
+    tables.clear();
+    snapshot_detached_tables.clear();
 }
 
 DatabaseWithOwnTablesBase::~DatabaseWithOwnTablesBase()
@@ -926,15 +620,6 @@ void DatabaseWithOwnTablesBase::createTableRestoredFromBackup(const ASTPtr & cre
 
 StoragePtr DatabaseWithOwnTablesBase::tryGetTableNoWait(const String & table_name) const
 {
-    if (!mayShadowDeferredTable(table_name))
-    {
-        std::lock_guard lock(mutex);
-        auto it = tables.find(table_name);
-        if (it != tables.end())
-            return it->second;
-    }
-
-    ensurePopulated();
     std::lock_guard lock(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end())

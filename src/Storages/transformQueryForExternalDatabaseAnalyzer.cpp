@@ -1,5 +1,3 @@
-#include <memory>
-#include <Analyzer/IQueryTreeNode.h>
 #include <Parsers/ASTSubquery.h>
 #include <Storages/transformQueryForExternalDatabaseAnalyzer.h>
 
@@ -46,7 +44,7 @@ public:
                 /// The code is ugly - how to convert artbitrary Field to proper string representation?
                 /// (maybe we can just consider numbers as unix timestamps?)
                 auto result_column = result_type->createColumnConst(1, constant_node->getValue());
-                const IColumn & inner_column = result_column->getDataColumn();
+                const IColumn & inner_column = assert_cast<const ColumnConst &>(*result_column).getDataColumn();
 
                 WriteBufferFromOwnString out;
                 result_type->getDefaultSerialization()->serializeText(inner_column, 0, out, FormatSettings());
@@ -58,23 +56,23 @@ public:
 
 }
 
-ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const TableExpressionNodePtr & table_expression)
+ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTreeNodePtr & query_tree, const QueryTreeNodePtr & table_expression)
 {
     auto replacement_table_expression = table_expression->clone();
-    auto new_tree = query_tree->cloneAndReplace(table_expression, static_pointer_cast<ITableExpressionNode>(replacement_table_expression));
+    auto new_tree = query_tree->cloneAndReplace(table_expression, replacement_table_expression);
 
     PrepareForExternalDatabaseVisitor visitor;
     visitor.visit(new_tree);
     auto * query_node = new_tree->as<QueryNode>();
 
-    const auto & join_tree = query_node->getJoinTreeNode();
+    const auto & join_tree = query_node->getJoinTree();
     bool allow_where = true;
     if (const auto * join_node = join_tree->as<JoinNode>())
     {
         if (join_node->getKind() == JoinKind::Left)
-            allow_where = join_node->getLeftTableExpressionNode()->isEqual(*replacement_table_expression);
+            allow_where = join_node->getLeftTableExpression()->isEqual(*replacement_table_expression);
         else if (join_node->getKind() == JoinKind::Right)
-            allow_where = join_node->getRightTableExpressionNode()->isEqual(*replacement_table_expression);
+            allow_where = join_node->getRightTableExpression()->isEqual(*replacement_table_expression);
         else
             allow_where = (join_node->getKind() == JoinKind::Inner);
     }

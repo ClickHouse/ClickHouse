@@ -99,12 +99,10 @@ private:
             return default_port;
 
         p = host.data() + host.size();
-        if (p >= end || *p != ':')
+        if (*p++ != ':')
             return default_port;
-        ++p;
 
-        Int64 port = 0;
-        bool saw_digit = false;
+        Int64 port = default_port;
         while (p < end)
         {
             if (*p == '/')
@@ -112,24 +110,23 @@ private:
             if (!isNumericASCII(*p))
                 return default_port;
 
-            saw_digit = true;
             port = (port * 10) + (*p - '0');
             if (port < 0 || port > static_cast<UInt16>(-1))
                 return default_port;
             ++p;
         }
-        return saw_digit ? static_cast<UInt16>(port) : default_port;
+        return static_cast<UInt16>(port);
     }
 };
 
-struct FunctionPort final : public FunctionPortImpl<false>
+struct FunctionPort : public FunctionPortImpl<false>
 {
     static constexpr auto name = "port";
     String getName() const override { return name; }
     static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionPort>(); }
 };
 
-struct FunctionPortRFC final : public FunctionPortImpl<true>
+struct FunctionPortRFC : public FunctionPortImpl<true>
 {
     static constexpr auto name = "portRFC";
     String getName() const override { return name; }
@@ -185,9 +182,9 @@ Similar to [`port`](#port), but [RFC 3986](https://datatracker.ietf.org/doc/html
 SELECT port('http://user:password@example.com:8080/'), portRFC('http://user:password@example.com:8080/');
         )",
         R"(
-┌─port('http://user:password@example.com:8080/')─┬─portRFC('http://user:password@example.com:8080/')─┐
-│                                              0 │                                              8080 │
-└────────────────────────────────────────────────┴───────────────────────────────────────────────────┘
+┌─port('http:/⋯com:8080/')─┬─portRFC('htt⋯com:8080/')─┐
+│                        0 │                     8080 │
+└──────────────────────────┴──────────────────────────┘
         )"
     }
     };
