@@ -15,6 +15,7 @@
 #include <Core/Block.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
@@ -519,6 +520,52 @@ void expectCrossingStats(const CrossingBuild & crossing)
     EXPECT_EQ(stats.distinct_keys, crossing.probe_keys.size());
 }
 
+}
+
+TEST(PartitionedHashJoin, DenseSketchConcurrentRead)
+{
+    constexpr UInt32 words = 300000;
+    constexpr size_t passes = 16;
+    DenseHyperLogLog expected;
+    expected.add(7);
+    for (UInt32 i = 0; i < words; ++i)
+        expected.add(i);
+
+    DenseHyperLogLog live;
+    std::atomic<size_t> reader_phase{0};
+    std::atomic<size_t> writer_phase{0};
+    std::thread writer([&]
+    {
+        for (size_t phase = 0; phase < passes; ++phase)
+        {
+            reader_phase.wait(phase, std::memory_order_acquire);
+            for (size_t i = 0; i < 1024; ++i)
+                live.add(7);
+            writer_phase.store(phase + 1, std::memory_order_release);
+            writer_phase.notify_one();
+        }
+        for (UInt32 i = 0; i < words; ++i)
+            live.add(i);
+    });
+
+    bool invalid_estimate = false;
+    for (size_t phase = 0; phase < passes; ++phase)
+    {
+        reader_phase.store(phase + 1, std::memory_order_release);
+        reader_phase.notify_one();
+        DenseHyperLogLog snapshot;
+        snapshot.merge(live);
+        const double merged = snapshot.estimate();
+        const double direct = live.estimate();
+        invalid_estimate |= !std::isfinite(merged) || !std::isfinite(direct) || merged < 0 || direct < 0;
+        writer_phase.wait(phase, std::memory_order_acquire);
+    }
+    writer.join();
+
+    EXPECT_FALSE(invalid_estimate);
+    for (size_t i = 0; i < DenseHyperLogLog::register_count; ++i)
+        EXPECT_EQ(live.registers[i].load(std::memory_order_relaxed), expected.registers[i].load(std::memory_order_relaxed));
+    EXPECT_EQ(live.estimate(), expected.estimate());
 }
 
 /// Build blocks carrying a worker id, and probe blocks a lane, the join has no entry for must still

@@ -10,7 +10,6 @@
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 #include <Common/Logger.h>
 #include <Common/PODArray.h>
-#include <Common/SharedMutex.h>
 
 #include <atomic>
 #include <deque>
@@ -229,9 +228,9 @@ private:
     /// `lanes` owns the per-lane state and the barrier iterates it. The slot table resolves a
     /// pipeline-carried lane index without a lock: one mutexed emplace on a lane's first block, then
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
-    /// Lane-less callers keep the thread-id map. Shared with the per-lane sketch `add`, exclusive for
-    /// the merge: a torn register would persist into the barrier's estimate.
-    SharedMutex fill_mutex;
+    /// Lane-less callers keep the thread-id map. The mutex protects registration and teardown;
+    /// sketch updates on separate lanes need no lock.
+    std::mutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
     std::vector<std::atomic<FillLane *>> fill_lane_slots;

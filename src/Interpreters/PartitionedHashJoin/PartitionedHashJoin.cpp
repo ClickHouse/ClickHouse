@@ -15,7 +15,6 @@
 
 #include <algorithm>
 #include <mutex>
-#include <shared_mutex>
 
 namespace ProfileEvents
 {
@@ -319,12 +318,7 @@ bool PartitionedHashJoin::addBlockToJoin(const Block & source_block, size_t /*nu
     }
 
     FillLane & lane = getFillLane(worker_id);
-    {
-        /// Exclusive merge of the sketches must not race `add` on a live lane. A torn register
-        /// would persist into the barrier's `hll_estimate`. The post-build gate then uses that value.
-        std::shared_lock hll_lock(fill_mutex);
-        clause.computeRoutes(fill, lane.hll);
-    }
+    clause.computeRoutes(fill, lane.hll);
 
     accumulated_rows.fetch_add(rows, std::memory_order_relaxed);
     accumulated_bytes.fetch_add(fill.stored.allocatedBytes() + fill.routes.allocated_bytes(), std::memory_order_relaxed);
@@ -447,8 +441,7 @@ void PartitionedHashJoin::onBuildPhaseFinish()
 
     /// Run once by the last fill thread, and deliberately cheap: concatenate the lanes, number the
     /// row-store blocks, merge the sketches, pick the plan. The scatter, allocation and inserts are
-    /// `runPostBuildPhase`'s work. The lock is taken exclusively, so the merge cannot race a fill
-    /// thread's `add`.
+    /// `runPostBuildPhase`'s work. The fill barrier has completed before this runs.
     DenseHyperLogLog merged;
     size_t total_blocks = 0;
     {
