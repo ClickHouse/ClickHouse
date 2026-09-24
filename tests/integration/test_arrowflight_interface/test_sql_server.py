@@ -1093,6 +1093,84 @@ def test_get_schema():
     assert schema.field("value").type == pa.float64()
 
 
+def test_bare_datetime_schema_is_session_timezone_independent():
+    client = get_client("bare_datetime_schema")
+
+    try:
+        result = client.set_session_options({"session_timezone": "UTC"})
+        assert len(result.errors) == 0
+
+        client.execute_update(
+            "CREATE TABLE mytable ("
+            "dt DateTime, nullable_dt Nullable(DateTime), "
+            "lc_dt LowCardinality(DateTime), simple_dt SimpleAggregateFunction(anyLast, DateTime), "
+            "explicit_dt DateTime('UTC')) ENGINE = Memory"
+        )
+        client.execute_update(
+            "INSERT INTO mytable VALUES "
+            "(1705314600, 1705314600, 1705314600, 1705314600, 1705314600)"
+        )
+
+        command = CommandStatementQuery(query="SELECT * FROM mytable")
+        descriptor = flight_descriptor(command)
+        options = client._flight_call_options()
+
+        get_schema = client.client.get_schema(descriptor, options).schema
+        bare_columns = {
+            "dt": b"DateTime",
+            "nullable_dt": b"Nullable(DateTime)",
+            "lc_dt": b"LowCardinality(DateTime)",
+            "simple_dt": b"SimpleAggregateFunction(anyLast, DateTime)",
+        }
+
+        def assert_datetime_metadata(schema):
+            for name, clickhouse_type_name in bare_columns.items():
+                field = schema.field(name)
+                metadata = _field_metadata(field)
+                assert field.type == pa.uint32()
+                assert FLIGHT_SQL_TYPE_NAME not in metadata
+                assert FLIGHT_SQL_PRECISION not in metadata
+                assert FLIGHT_SQL_SCALE not in metadata
+                assert metadata[CLICKHOUSE_TYPE_NAME] == clickhouse_type_name
+
+            explicit_field = schema.field("explicit_dt")
+            explicit_metadata = _field_metadata(explicit_field)
+            assert explicit_field.type == pa.timestamp("s", tz="UTC")
+            assert explicit_metadata[FLIGHT_SQL_TYPE_NAME] == b"DateTime"
+            assert explicit_metadata[FLIGHT_SQL_PRECISION] == b"19"
+            assert explicit_metadata[FLIGHT_SQL_SCALE] == b"0"
+            assert explicit_metadata[CLICKHOUSE_TYPE_NAME] == b"DateTime('UTC')"
+
+        assert_datetime_metadata(get_schema)
+
+        result = client.set_session_options({"session_timezone": "Asia/Tokyo"})
+        assert len(result.errors) == 0
+
+        flight_info = client.client.get_flight_info(descriptor, options)
+        _assert_schema_equal_with_metadata(flight_info.schema, get_schema)
+
+        table = client.do_get(flight_info.endpoints[0].ticket).read_all()
+        _assert_schema_equal_with_metadata(table.schema, get_schema)
+        assert_datetime_metadata(table.schema)
+        for name in bare_columns:
+            assert table.column(name)[0].as_py() == 1705314600
+
+        tables_info = client.get_tables(
+            db_schema_filter_pattern="default",
+            table_name_filter_pattern="mytable",
+            include_schema=True,
+        )
+        tables = client.do_get(tables_info.endpoints[0].ticket).read_all()
+        table_schema = pa.ipc.read_schema(
+            pa.BufferReader(tables.column("table_schema")[0].as_py())
+        )
+        _assert_schema_equal_with_metadata(table_schema, get_schema)
+        assert_datetime_metadata(table_schema)
+    finally:
+        result = client.set_session_options({"session_timezone": None})
+        assert len(result.errors) == 0
+
+
 def test_get_schema_path_descriptor():
     """GetSchema works with PATH descriptor."""
     client = get_client()

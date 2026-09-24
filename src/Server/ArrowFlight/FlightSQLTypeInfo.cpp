@@ -257,9 +257,11 @@ addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
         const auto type = unwrapType(column.type);
         const std::string family_name = getTypeFamilyName(type);
         const auto * type_info = findXdbcTypeInfo(family_name);
+        const bool is_xdbc_datetime
+            = family_name == "DateTime" && schema->field(static_cast<int>(i))->type()->id() == arrow::Type::TIMESTAMP;
 
         auto metadata_builder = arrow::flight::sql::ColumnMetadata::Builder();
-        if (type_info)
+        if (type_info && (family_name != "DateTime" || is_xdbc_datetime))
             metadata_builder.TypeName(std::string(family_name));
 
         if (family_name == "Decimal")
@@ -267,7 +269,7 @@ addFlightSQLTypeMetadata(std::shared_ptr<arrow::Schema> schema, const ColumnsWit
             metadata_builder.Precision(static_cast<int32_t>(getDecimalPrecision(*type)));
             metadata_builder.Scale(static_cast<int32_t>(getDecimalScale(*type)));
         }
-        else if (family_name == "DateTime")
+        else if (is_xdbc_datetime)
         {
             metadata_builder.Precision(19);
             metadata_builder.Scale(0);

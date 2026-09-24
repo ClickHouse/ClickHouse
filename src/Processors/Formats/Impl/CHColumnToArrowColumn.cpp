@@ -1842,12 +1842,12 @@ namespace DB
             return arrow::timestamp(getArrowTimeUnit(datetime64_type), datetime64_type->getTimeZone().getTimeZone());
         }
 
-        if (isDateTime(column_type) && settings.output_datetime_as_timestamp)
+        if (isDateTime(column_type))
         {
             const auto * datetime_type = assert_cast<const DataTypeDateTime *>(column_type.get());
-            return arrow::timestamp(
-                arrow::TimeUnit::SECOND,
-                datetime_type->getTimeZone().getTimeZone());
+            if (settings.output_datetime_as_timestamp && datetime_type->hasExplicitTimeZone())
+                return arrow::timestamp(arrow::TimeUnit::SECOND, datetime_type->getTimeZone().getTimeZone());
+            return arrow::uint32();
         }
 
         if (isTime64(column_type))
