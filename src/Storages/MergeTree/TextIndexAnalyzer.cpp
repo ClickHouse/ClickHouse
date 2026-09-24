@@ -174,7 +174,11 @@ TextIndexAnalyzer::TextIndexAnalyzer(const MergeTreeIndexConditionText & conditi
         }
 
         for (const auto & pattern : query->getPatterns())
+        {
             queries_by_pattern[&pattern].insert(hash);
+            if (MergeTreeIndexConditionText::isPerTokenPatternFunction(query->getFunctionName()))
+                per_token_patterns.insert(&pattern);
+        }
     }
 }
 
@@ -281,18 +285,21 @@ void TextIndexAnalyzer::setReadableRows(std::vector<RowsRange> readable_ranges)
 bool TextIndexAnalyzer::addTokenToPatterns(std::string_view token)
 {
     bool added = false;
+    bool added_to_per_token_pattern = false;
 
     for (const auto & [pattern, query_hashes] : queries_by_pattern)
     {
         if (pattern->match(token.data(), token.size()))
         {
             added = true;
+            added_to_per_token_pattern |= per_token_patterns.contains(pattern);
 
             for (const auto & query_hash : query_hashes)
                 queries_by_token[token].emplace(query_hash);
         }
     }
 
+    num_per_token_pattern_tokens += added_to_per_token_pattern;
     return added;
 }
 

@@ -200,7 +200,7 @@ SELECT hasTokenPrefix(tag, 'env:prod') AS h, count() FROM tab GROUP BY h ORDER B
 
 DROP TABLE tab;
 
-SELECT '-- text_index_like_max_matched_tokens: a pattern matching too many tokens is evaluated on the column';
+SELECT '-- text_index_like_max_matched_tokens: a per-token pattern matching too many tokens is evaluated on the column';
 
 CREATE TABLE tab
 (
@@ -216,12 +216,19 @@ SETTINGS index_granularity = 8, index_granularity_bytes = '10Mi';
 INSERT INTO tab SELECT number, concat('req id', toString(number), ' ok') FROM numbers(2000);
 
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_prefix';
+SELECT count() FROM tab WHERE hasTokenLike(msg, 'id1%') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_token_like';
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_match';
-SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS text_index_like_max_matched_tokens = 0, log_comment = 'has_token_pattern_matched_tokens_unlimited';
+-- LIKE, ILIKE and startsWith are not capped, and their tokens do not count towards the cap of a per-token function.
+SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like';
+SELECT count() FROM tab WHERE msg ILIKE '%ID12%' SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_ilike';
+SELECT count() FROM tab WHERE startsWith(msg, 'id12') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_starts_with';
+SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasTokenPrefix(msg, 'id199') SETTINGS text_index_like_max_matched_tokens = 100, log_comment = 'has_token_pattern_matched_tokens_like_or_prefix';
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS text_index_like_max_matched_tokens = 100) WHERE explain LIKE '%Granules:%';
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'id1') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE hasTokenMatch(msg, '^id[0-9]*5$') SETTINGS use_skip_indexes = 0;
 SELECT count() FROM tab WHERE msg LIKE '%id12%' SETTINGS use_skip_indexes = 0;
+SELECT count() FROM tab WHERE msg LIKE '%id12%' OR hasTokenPrefix(msg, 'id199') SETTINGS use_skip_indexes = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT log_comment, ProfileEvents['TextIndexDiscardPatternScan'] > 0

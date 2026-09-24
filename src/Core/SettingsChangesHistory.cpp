@@ -44,7 +44,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         addSettingsChanges(settings_changes_history, "26.10",
         {
             {"enable_join_runtime_filters_index_analysis", false, true, "Enable pruning of granules on the probe (left) side of a JOIN by the runtime filter collected from the build (right) side."},
-            {"text_index_like_max_matched_tokens", 0, 20000, "New setting: abandon the text index dictionary scan of a pattern that matches too many tokens and evaluate the predicate on the column."},
+            {"text_index_like_max_matched_tokens", 0, 20000, "New setting: abandon the text index dictionary scan of `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` when their patterns match too many tokens, and evaluate them on the column. `LIKE`, `ILIKE`, `startsWith` and `endsWith` are not capped."},
             {"qbit_one_bit_symmetric_distance", false, false, "New setting: at precision 1 the QBit distance functions can reduce the reference vector to its signs as well and use the Hamming distance between the sign vectors (XOR + popcount) instead of keeping the reference at full precision"},
             {"reader_executor_plan_look_ahead", 16777216, 16777216, "New experimental ReaderExecutor setting: how far ahead cache residency is resolved into the held read plan."},
             {"allow_executable_tables", true, true, "New setting to disable reading through the `executable` table function and from `Executable` and `ExecutablePool` tables."},

@@ -83,17 +83,29 @@ Parts: 1 | Granules: 8
 Granules: 8/8
 0	56
 1	8
--- text_index_like_max_matched_tokens: a pattern matching too many tokens is evaluated on the column
-1111
-200
-111
+-- text_index_like_max_matched_tokens: a per-token pattern matching too many tokens is evaluated on the column
 1111
 1111
 200
+1111
 111
-has_token_pattern_matched_tokens_like	1
+111
+0
+122
+Parts: 1 | Granules: 16
+Granules: 250/250
+Granules: 16/250
+1111
+200
+111
+122
+has_token_pattern_matched_tokens_ilike	0
+has_token_pattern_matched_tokens_like	0
+has_token_pattern_matched_tokens_like_or_prefix	0
 has_token_pattern_matched_tokens_match	1
 has_token_pattern_matched_tokens_prefix	1
+has_token_pattern_matched_tokens_starts_with	0
+has_token_pattern_matched_tokens_token_like	1
 has_token_pattern_matched_tokens_unlimited	0
 -- the result does not depend on settings
 hasTokenPrefix(tag, \'env:prod\')	8
