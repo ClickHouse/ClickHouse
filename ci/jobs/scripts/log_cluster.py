@@ -412,14 +412,11 @@ class LogCluster:
         post_attempted = False
         budget_spent = False
         for retry in range(retries):
-            # The retries of one read must not eat the wall clock the job needs
-            # to report anything: praktika SIGKILLs a job at its timeout and a
-            # killed job produces no Result at all. Only POST retries are cut:
-            # attempt 0 is always made, and a read that has not reached its POST
-            # yet still owes the readiness schedule below its full count, or a
-            # single transient probe failure would leave the loop with nothing
-            # attempted and classify as LogClusterNotReady while the cluster was
-            # answering.
+            # Only POST retries are cut: attempt 0 is always made, and a read
+            # that has not reached its POST yet still owes the readiness
+            # schedule below its full count, or a single transient probe failure
+            # would leave the loop with nothing attempted and classify as
+            # LogClusterNotReady while the cluster was answering.
             if retry and post_attempted and self._read_budget_spent():
                 print(
                     f"WARNING: LogCluster read budget of {self._read_budget_s} s spent,"

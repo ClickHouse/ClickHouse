@@ -577,12 +577,13 @@ GH_STREAM_LEN = 300
 
 # Wall clock kept back from the CI logs cluster read retries so that the job can
 # still report: praktika SIGKILLs a job at its timeout and a killed job produces
-# no Result at all. What has to fit in the reserve is the interpreter startup
-# before the first read, one in-flight POST overrunning its own 60 s socket
-# timeout (measured at up to 185 s on a trickling connection), one
-# already-started backoff (<= 40 s) and the comment refresh plus the job
-# completion; the rest is slack. The image pull is not in it: the timeout only
-# starts with the job process.
+# no Result at all. The budget starts at the cluster handle and is checked
+# between POST retries, so the reserve has to hold the startup before that, the
+# read in flight when the budget runs out (its readiness schedule, bounded by
+# the retry count at 180 s of backoff, and one POST overrunning its own 60 s
+# socket timeout, measured at up to 185 s on a trickling connection), and the
+# comment refresh plus the job completion. The image pull is not in it: the
+# timeout only starts with the job process.
 CLUSTER_READ_RESERVE_SECONDS = 550
 
 
