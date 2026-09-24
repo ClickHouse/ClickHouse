@@ -7,6 +7,10 @@
 #include <array>
 #include <bit>
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 namespace DB
 {
 namespace UTF8

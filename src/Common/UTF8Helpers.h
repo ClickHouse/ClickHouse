@@ -1,18 +1,10 @@
 #pragma once
 
+#include <algorithm>
+#include <cstring>
 #include <optional>
 #include <base/types.h>
-#include <base/simd.h>
 #include <Common/BitHelpers.h>
-
-#ifdef __SSE2__
-#include <emmintrin.h>
-#endif
-
-#if defined(__aarch64__) && defined(__ARM_NEON)
-#    include <arm_neon.h>
-#      pragma clang diagnostic ignored "-Wreserved-identifier"
-#endif
 
 
 namespace DB
@@ -57,33 +49,48 @@ inline size_t seqLength(const UInt8 first_octet)
     return bits - 1 - first_zero;
 }
 
+/// Every byte except a continuation byte (`0b10xxxxxx`) starts a code point: as signed bytes, those above `0xBF`.
 inline size_t countCodePoints(const UInt8 * data, size_t size)
 {
+    using Bytes64 = Int8 __attribute__((ext_vector_type(64)));
+    using Counters64 = UInt8 __attribute__((ext_vector_type(64)));
+    using WideCounters64 = UInt16 __attribute__((ext_vector_type(64)));
+    using Mask64 = bool __attribute__((ext_vector_type(64)));
+    using Bytes16 = Int8 __attribute__((ext_vector_type(16)));
+    using Counters16 = UInt8 __attribute__((ext_vector_type(16)));
+    using Mask16 = bool __attribute__((ext_vector_type(16)));
+
+    /// Converting the comparison to `bool` lanes makes it independent of whether it yields -1 or 1 per lane,
+    /// which depends on `-faltivec-src-compat` on PowerPC.
+    constexpr auto threshold = static_cast<Int8>(0xBF);
+
     size_t res = 0;
-    const auto * end = data + size;
+    const UInt8 * end = data + size;
 
-#ifdef __SSE2__
-    constexpr auto bytes_sse = sizeof(__m128i);
-    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
+    /// One counter per byte of a 64-byte block: `vpcmpgtb` plus `vpsubb` on x86, `cmgt` plus `sub` on NEON.
+    /// A counter is one byte, so the counters are summed every 255 blocks, and 64 * 255 fits in `UInt16`.
+    while (end - data >= 64)
+    {
+        const size_t blocks = std::min<size_t>(255, (end - data) / 64);
+        Counters64 counters = {};
+        for (size_t i = 0; i < blocks; ++i, data += 64)
+        {
+            Bytes64 bytes;
+            memcpy(&bytes, data, sizeof(bytes));
+            counters += __builtin_convertvector(__builtin_convertvector(bytes > threshold, Mask64), Counters64);
+        }
+        res += __builtin_reduce_add(__builtin_convertvector(counters, WideCounters64));
+    }
 
-    const auto threshold = _mm_set1_epi8(0xBF);
+    for (; end - data >= 16; data += 16)
+    {
+        Bytes16 bytes;
+        memcpy(&bytes, data, sizeof(bytes));
+        res += __builtin_reduce_add(__builtin_convertvector(__builtin_convertvector(bytes > threshold, Mask16), Counters16));
+    }
 
-    for (; data < src_end_sse; data += bytes_sse)
-        res += __builtin_popcount(_mm_movemask_epi8(
-            _mm_cmpgt_epi8(_mm_loadu_si128(reinterpret_cast<const __m128i *>(data)), threshold)));
-#elif defined(__aarch64__) && defined(__ARM_NEON)
-    constexpr auto bytes_sse = 16;
-    const auto * src_end_sse = data + size / bytes_sse * bytes_sse;
-
-    const auto threshold = vdupq_n_s8(0xBF);
-
-    for (; data < src_end_sse; data += bytes_sse)
-        res += std::popcount(getNibbleMask(vcgtq_s8(vld1q_s8(reinterpret_cast<const int8_t *>(data)), threshold)));
-    res >>= 2;
-#endif
-
-    for (; data < end; ++data) /// Skip UTF-8 continuation bytes.
-        res += static_cast<Int8>(*data) > static_cast<Int8>(0xBF);
+    for (; data < end; ++data)
+        res += static_cast<Int8>(*data) > threshold;
 
     return res;
 }
