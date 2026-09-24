@@ -392,7 +392,9 @@ void registerStatementExplain(StatementFactory & factory)
 {
     factory.registerStatement("EXPLAIN",
     {
-        .description = R"DOCS_MD(
+        /// Two literals joined at runtime: a single literal over 65536 bytes fails `-Woverlength-strings`,
+        /// and adjacent literals do not help because they are concatenated at compile time.
+        .description = String(R"DOCS_MD(
 Shows a statement's parsed representation, query text, execution plan, or runtime metrics.
 
 <div class='vimeo-container'>
@@ -1190,7 +1192,8 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-### EXPLAIN ANALYZE {#explain-analyze}
+)DOCS_MD")
+        + R"DOCS_MD(### EXPLAIN ANALYZE {#explain-analyze}
 
 `EXPLAIN ANALYZE` actually runs the query, discards the result rows, and prints the same plan tree as `EXPLAIN PLAN` with each step annotated by what really happened at run time.
 
