@@ -23,6 +23,11 @@ log_node = cluster.add_instance("log_node", main_configs=["configs/log.xml"])
 trap_node = cluster.add_instance(
     "trap_node", main_configs=["configs/trap.xml", "configs/binary_checksum.xml"]
 )
+# The setting comes from ZooKeeper, which the server reads only after it has loaded the local
+# configuration - where the setting keeps its default, `log`.
+zk_node = cluster.add_instance(
+    "zk_node", main_configs=["configs/errno_from_zk.xml"], with_zookeeper=True
+)
 
 # `/proc/<pid>/status` reports the seccomp mode of a process: 0 is no filter, 2 is a BPF filter.
 SECCOMP_MODE_DISABLED = "0"
@@ -32,9 +37,21 @@ SECCOMP_MODE_FILTER = "2"
 @pytest.fixture(scope="module")
 def started_cluster():
     try:
+
+        def create_zk_nodes(zk):
+            zk.create(path="/seccomp", value=b"<seccomp>errno</seccomp>", makepath=True)
+
+        cluster.add_zookeeper_startup_command(create_zk_nodes)
         cluster.start()
 
-        for node in [default_node, disabled_node, errno_node, log_node, trap_node]:
+        for node in [
+            default_node,
+            disabled_node,
+            errno_node,
+            log_node,
+            trap_node,
+            zk_node,
+        ]:
             os.system(
                 f"docker cp {os.path.join(SCRIPT_DIR, 'user_scripts/.')} "
                 f"{node.docker_id}:/var/lib/clickhouse/user_scripts"
@@ -75,7 +92,7 @@ def run_probe(node):
     return node.query(
         "SELECT * FROM executable('seccomp_status.py', 'TabSeparated', "
         "'mode String, getxattr_result String, clone_result String, clone3_result String, "
-        "thread_result String')"
+        "thread_result String, mknod_device_result String, mkfifo_result String')"
     ).split()
 
 
@@ -86,6 +103,7 @@ def test_setting_is_reported(started_cluster):
         (errno_node, "errno"),
         (log_node, "log"),
         (trap_node, "trap"),
+        (zk_node, "errno"),
     ]:
         assert (
             node.query(
@@ -132,9 +150,15 @@ def test_no_filter_when_disabled(started_cluster):
     # on the filesystem), about the flags of the `clone`, which name a combination it rejects on its
     # own, and about the null `struct clone_args` of the `clone3`. None of those answers is `EPERM`
     # or `ENOSYS`.
-    mode, getxattr_result, clone_result, clone3_result, thread_result = run_probe(
-        disabled_node
-    )
+    (
+        mode,
+        getxattr_result,
+        clone_result,
+        clone3_result,
+        thread_result,
+        mknod_device_result,
+        mkfifo_result,
+    ) = run_probe(disabled_node)
     assert mode == SECCOMP_MODE_DISABLED
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
     assert clone_result == "EINVAL"
@@ -142,6 +166,27 @@ def test_no_filter_when_disabled(started_cluster):
     # refuse either.
     assert clone3_result in ("EFAULT", "ENOSYS")
     assert thread_result == "OK"
+    assert mknod_device_result == "ENOENT"
+    assert mkfifo_result == "0"
+
+
+def check_policy_is_enforced(node):
+    (
+        mode,
+        getxattr_result,
+        clone_result,
+        clone3_result,
+        thread_result,
+        mknod_device_result,
+        mkfifo_result,
+    ) = run_probe(node)
+    assert mode == SECCOMP_MODE_FILTER
+    assert getxattr_result == "EPERM"
+    assert clone_result == "EPERM"
+    assert clone3_result == "ENOSYS"
+    assert thread_result == "OK"
+    assert mknod_device_result == "EPERM"
+    assert mkfifo_result == "0"
 
 
 def test_system_call_outside_the_policy_is_refused(started_cluster):
@@ -149,15 +194,19 @@ def test_system_call_outside_the_policy_is_refused(started_cluster):
     # makes the filter more than a formality. A `clone` that asks for a user namespace is refused
     # by its flags, and `clone3`, whose arguments a filter cannot read, is refused as a whole with
     # `ENOSYS` - and making a thread keeps working, because `ENOSYS` is what sends the libc back to
-    # `clone`.
-    mode, getxattr_result, clone_result, clone3_result, thread_result = run_probe(
-        errno_node
-    )
-    assert mode == SECCOMP_MODE_FILTER
-    assert getxattr_result == "EPERM"
-    assert clone_result == "EPERM"
-    assert clone3_result == "ENOSYS"
-    assert thread_result == "OK"
+    # `clone`. `mknod` is refused for a device node, but a FIFO is still made.
+    check_policy_is_enforced(errno_node)
+
+
+def test_setting_from_zookeeper_is_the_one_installed(started_cluster):
+    # A filter cannot be relaxed or replaced once it is installed, so it must be installed from the
+    # final configuration, the one with the values from ZooKeeper - not from the local one read
+    # before, where the setting is `log` and nothing would be refused.
+    # `contains_in_log` hands the pattern to `zgrep` inside double quotes, where a backtick would
+    # start a command substitution, so the backticks of the message are matched with `.`.
+    assert zk_node.contains_in_log("server setting, which is set to .errno.")
+    assert not zk_node.contains_in_log("server setting, which is set to .log.")
+    check_policy_is_enforced(zk_node)
 
 
 def test_log_mode_refuses_nothing(started_cluster):
@@ -169,14 +218,22 @@ def test_log_mode_refuses_nothing(started_cluster):
     assert get_status_field(log_node, pid, "Seccomp") == SECCOMP_MODE_FILTER
     assert get_status_field(log_node, pid, "NoNewPrivs") == "1"
 
-    mode, getxattr_result, clone_result, clone3_result, thread_result = run_probe(
-        log_node
-    )
+    (
+        mode,
+        getxattr_result,
+        clone_result,
+        clone3_result,
+        thread_result,
+        mknod_device_result,
+        mkfifo_result,
+    ) = run_probe(log_node)
     assert mode == SECCOMP_MODE_FILTER
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
     assert clone_result == "EINVAL"
     assert clone3_result in ("EFAULT", "ENOSYS")
     assert thread_result == "OK"
+    assert mknod_device_result == "ENOENT"
+    assert mkfifo_result == "0"
 
 
 def test_server_works_under_the_filter(started_cluster):

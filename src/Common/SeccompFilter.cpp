@@ -29,6 +29,7 @@ namespace DB::ErrorCodes
 #include <linux/seccomp.h>
 #include <sched.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
 #include <sys/syscall.h>
 #include <unistd.h>
 
@@ -68,7 +69,8 @@ namespace DB
 /// `pidfd_getfd`), eBPF (`bpf`), the kernel keyring (`add_key`, `keyctl`), `userfaultfd` and
 /// `vmsplice` (both standard exploitation primitives), file handles (`open_by_handle_at`),
 /// `fanotify`, swap and quota control, setting the system clock and the host name, System V and
-/// POSIX IPC, and the extended-attribute calls.
+/// POSIX IPC, and the extended-attribute calls. Making a device node with `mknodat` is refused too,
+/// while its other uses - a FIFO for an executable user defined function among them - are not.
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
@@ -85,7 +87,9 @@ namespace DB
     M(read) M(write) M(readv) M(writev) M(pread64) M(pwrite64) M(preadv) M(pwritev) \
     M(preadv2) M(pwritev2) M(lseek) M(sendfile) M(splice) M(copy_file_range) \
     \
-    /* Opening, creating, renaming, removing and inspecting files. */ \
+    /* Opening, creating, renaming, removing and inspecting files. What `mknodat` may make is */ \
+    /* decided separately, in a block of the program of its own, so that entry does not go into */ \
+    /* the table of numbers. */ \
     M(openat) M(close) M(dup) M(dup3) M(fcntl) M(flock) \
     M(getdents64) M(mkdirat) M(unlinkat) M(renameat) M(renameat2) M(linkat) M(symlinkat) \
     M(readlinkat) M(mknodat) M(truncate) M(ftruncate) M(fallocate) M(fadvise64) M(readahead) \
@@ -153,7 +157,7 @@ namespace DB
 #if defined(__x86_64__)
 /// The x86-64 system call table kept the pre-`*at` forms of many calls, and which one a libc picks
 /// for, say, `open` has changed more than once over the years. They do what their `*at`
-/// counterparts above do.
+/// counterparts above do - `mknod` included, which is decided by its file type like `mknodat`.
 #define SECCOMP_ALLOWED_SYSCALLS_ARCH(M) \
     M(open) M(creat) M(stat) M(lstat) M(access) M(pipe) M(poll) M(select) M(dup2) \
     M(getdents) M(rename) M(mkdir) M(rmdir) M(link) M(unlink) M(symlink) M(readlink) \
@@ -244,6 +248,14 @@ constexpr UInt32 denied_ioctl_requests[] = {TIOCSTI, TIOCLINUX};
 constexpr UInt32 denied_clone_flags
     = CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET;
 
+/// `mknodat` is allowed because `mkfifo` is made of it - the executable user defined functions pass
+/// their arguments through FIFOs - but it also makes character and block device nodes, and a
+/// process that still has `CAP_MKNOD` could make one for any device and then reach the device
+/// through `openat` and `ioctl`, both of which are allowed. So these two file types are refused.
+/// The other three it can make - a regular file, a FIFO and a socket - the server can make anyway,
+/// with `openat` and `bind`.
+constexpr UInt32 denied_mknod_file_types[] = {S_IFCHR, S_IFBLK};
+
 #if defined(__x86_64__)
 constexpr UInt32 expected_audit_arch = AUDIT_ARCH_X86_64;
 #else
@@ -262,6 +274,13 @@ constexpr UInt32 offset_ioctl_request = offsetof(struct seccomp_data, args) + si
 /// flags and once for the exit signal in the lowest byte - and never looks at the high half, so
 /// matching on the low half, which comes first on a little-endian machine, is exact.
 constexpr UInt32 offset_clone_flags = offsetof(struct seccomp_data, args);
+/// The `mode` argument of `mknodat`, and of the legacy `mknod` on x86-64, which has no directory
+/// descriptor before the path. The kernel narrows it to `umode_t`, so only the low half matters,
+/// and the file type is in the `S_IFMT` bits of that half.
+constexpr UInt32 offset_mknodat_mode = offsetof(struct seccomp_data, args) + 2 * sizeof(UInt64);
+#if defined(__x86_64__)
+constexpr UInt32 offset_mknod_mode = offsetof(struct seccomp_data, args) + sizeof(UInt64);
+#endif
 
 static_assert(
     std::endian::native == std::endian::little,
@@ -290,6 +309,8 @@ constexpr UInt32 jump_to_argument_checks = 0xFFFFFFFDU;
 constexpr UInt32 jump_to_ioctl_check = 0xFFFFFFFCU;
 constexpr UInt32 jump_to_clone_check = 0xFFFFFFFBU;
 constexpr UInt32 jump_to_clone3 = 0xFFFFFFFAU;
+constexpr UInt32 jump_to_mknodat_check = 0xFFFFFFF9U;
+constexpr UInt32 jump_to_mknod_check = 0xFFFFFFF8U;
 
 /// A maximal run of consecutive allowed system call numbers, `[first, last]`.
 struct Range
@@ -370,6 +391,9 @@ struct Blocks
     size_t ioctl_check;
     size_t clone_check;
     size_t clone3;
+    size_t mknodat_check;
+    /// Only on x86-64, which has the legacy `mknod`; nothing jumps here elsewhere.
+    size_t mknod_check;
     size_t allow;
     size_t deny;
 };
@@ -396,6 +420,10 @@ void link(Program & program, const Blocks & blocks)
             target = blocks.clone_check;
         else if (instruction.k == jump_to_clone3)
             target = blocks.clone3;
+        else if (instruction.k == jump_to_mknodat_check)
+            target = blocks.mknodat_check;
+        else if (instruction.k == jump_to_mknod_check)
+            target = blocks.mknod_check;
         else
             continue;
 
@@ -428,9 +456,9 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_nr));
     emitSearch(program, ranges);
 
-    /// The three calls whose fate takes more than their number to decide are in none of the
-    /// ranges, so the search sends them here. Keeping these checks after the search rather than
-    /// ahead of it is what keeps them off the path of every other system call: the price of
+    /// The calls whose fate takes more than their number to decide are in none of the ranges, so
+    /// the search sends them here. Keeping these checks after the search rather than ahead of it
+    /// is what keeps them off the path of every other system call: the price of
     /// looking at an argument is paid by the call whose argument it is, and by the refused ones,
     /// which are nobody's hot path.
     const size_t argument_checks_index = program.size();
@@ -441,6 +469,12 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_clone_check));
     program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(clone3_syscall_number), 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_clone3));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_mknodat, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_mknodat_check));
+#if defined(__x86_64__)
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_mknod, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_mknod_check));
+#endif
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
 
     /// The blocks that look at an argument come before the terminal ones because they jump to them.
@@ -459,6 +493,28 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
 
+    /// `mknodat` and `mknod` differ only in where the mode is.
+    auto emit_mknod_check = [&](UInt32 offset_mode)
+    {
+        const size_t index = program.size();
+        program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_mode));
+        program.push_back(statement(BPF_ALU | BPF_AND | BPF_K, S_IFMT));
+        for (UInt32 file_type : denied_mknod_file_types)
+        {
+            program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, file_type, 0, 1));
+            program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+        }
+        program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
+        return index;
+    };
+
+    const size_t mknodat_check_index = emit_mknod_check(offset_mknodat_mode);
+#if defined(__x86_64__)
+    const size_t mknod_check_index = emit_mknod_check(offset_mknod_mode);
+#else
+    const size_t mknod_check_index = 0;
+#endif
+
     const size_t clone3_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, clone3_action));
 
@@ -473,6 +529,8 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt3
          .ioctl_check = ioctl_check_index,
          .clone_check = clone_check_index,
          .clone3 = clone3_index,
+         .mknodat_check = mknodat_check_index,
+         .mknod_check = mknod_check_index,
          .allow = allow_index,
          .deny = deny_index});
     return program;
@@ -512,6 +570,11 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
             index += 1 + (accumulator > instruction.k ? instruction.jt : instruction.jf);
         else if (instruction.code == (BPF_JMP | BPF_JSET | BPF_K))
             index += 1 + ((accumulator & instruction.k) != 0 ? instruction.jt : instruction.jf);
+        else if (instruction.code == (BPF_ALU | BPF_AND | BPF_K))
+        {
+            accumulator &= instruction.k;
+            ++index;
+        }
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unexpected instruction {:#x} in the generated seccomp filter", instruction.code);
@@ -542,8 +605,9 @@ void verifyProgram(
     };
 
     /// Every number the running kernel could put into `nr`, and then some, so that a range which
-    /// is off by one on either end cannot go unnoticed. The two calls that are decided by an
-    /// argument are in `allowed`, and with every argument zero that is indeed the answer they get.
+    /// is off by one on either end cannot go unnoticed. The calls that are decided by an argument
+    /// are in `allowed`, and with every argument zero that is indeed the answer they get - for
+    /// `mknodat`, a zero mode makes a regular file.
     for (int nr = -4096; nr < 8192; ++nr)
     {
         UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
@@ -616,6 +680,29 @@ void verifyProgram(
              .instruction_pointer = 0,
              .args = {argument, argument, argument, argument, argument, argument}},
             clone3_action);
+
+    /// `mknodat` makes a FIFO, a regular file (whose type may be given as zero) or a socket, but
+    /// not a device node - also with junk in the bits of the argument the kernel does not look at.
+    std::vector<std::pair<int, size_t>> mknod_calls{{__NR_mknodat, 2}};
+#if defined(__x86_64__)
+    mknod_calls.emplace_back(__NR_mknod, 1);
+#endif
+    for (const auto & [nr, mode_argument] : mknod_calls)
+    {
+        auto mknod_data = [&](UInt64 mode)
+        {
+            struct seccomp_data data{.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {}};
+            data.args[mode_argument] = mode;
+            return data;
+        };
+
+        for (UInt64 mode : {UInt64{S_IFIFO | 0600}, UInt64{S_IFREG | 0644}, UInt64{0644}, UInt64{S_IFSOCK | 0755}})
+            check(mknod_data(mode), SECCOMP_RET_ALLOW);
+
+        for (UInt32 file_type : denied_mknod_file_types)
+            for (UInt64 mode : {UInt64{file_type}, UInt64{file_type | 0600}, UInt64{1} << 32 | file_type, UInt64{0x10000} | file_type})
+                check(mknod_data(mode), default_action);
+    }
 }
 
 UInt32 getDefaultAction(SeccompMode mode)
@@ -758,10 +845,14 @@ SeccompFilterStatus installSeccompFilter(SeccompMode mode)
 
     const std::unordered_set<int> allowed(numbers.begin(), numbers.end());
 
-    /// `ioctl` is decided by its request and `clone` by its flags, in blocks of their own, so
-    /// neither must also be in the table.
+    /// `ioctl` is decided by its request, `clone` by its flags and `mknodat` by its file type, in
+    /// blocks of their own, so none of them must also be in the table.
     std::erase(numbers, __NR_ioctl);
     std::erase(numbers, __NR_clone);
+    std::erase(numbers, __NR_mknodat);
+#if defined(__x86_64__)
+    std::erase(numbers, __NR_mknod);
+#endif
 
     const UInt32 default_action = getDefaultAction(mode);
     /// `clone3` is refused with `ENOSYS` rather than with the configured action, so that a libc

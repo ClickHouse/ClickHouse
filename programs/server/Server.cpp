@@ -1261,26 +1261,6 @@ try
                 ReadableSize(physical_server_memory), ReadableSize(min_physical_server_memory_to_mlock));
         }
     }
-
-    /// Restrict the server to the system calls it is known to use, as early in the startup as the
-    /// configuration allows. A filter cannot be removed or relaxed afterwards, and `TSYNC` extends
-    /// it to the threads that already exist, so everything that runs from here on - including the
-    /// processes the server forks later, which inherit it - is covered.
-    const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
-    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
-        LOG_INFO(
-            log,
-            "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
-            "be handled according to the `seccomp` server setting, which is set to `{}`",
-            seccomp_status.allowed_syscalls,
-            SettingFieldSeccompMode(seccomp_mode).toString());
-    else if (seccomp_mode != SeccompMode::Disabled)
-        LOG_WARNING(
-            log,
-            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
-            "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
-            SettingFieldSeccompMode(seccomp_mode).toString(),
-            seccomp_status.not_installed_reason);
 #endif
 
     // If the startup_level is set in the config, we override the root logger level.
@@ -1870,6 +1850,29 @@ try
     addMergeTreeArenaPoolWarnings(global_context);
 
 #if defined(OS_LINUX)
+    /// Restrict the server to the system calls it is known to use, as early in the startup as the
+    /// configuration allows. That is after the ZooKeeper-include reload above, not before it: a
+    /// filter cannot be removed or relaxed afterwards, so one installed from the configuration as it
+    /// was before a `from_zk` value arrived would stay in force while `system.server_settings`
+    /// reported the value from ZooKeeper. `TSYNC` extends the filter to the threads that already
+    /// exist, so everything that runs from here on - including the processes the server forks
+    /// later, which inherit it - is covered.
+    const SeccompMode seccomp_mode = server_settings[ServerSetting::seccomp];
+    if (const SeccompFilterStatus seccomp_status = installSeccompFilter(seccomp_mode); seccomp_status.allowed_syscalls != 0)
+        LOG_INFO(
+            log,
+            "Applied a seccomp policy to this process, allowing {} system calls. A system call outside the policy will "
+            "be handled according to the `seccomp` server setting, which is set to `{}`",
+            seccomp_status.allowed_syscalls,
+            SettingFieldSeccompMode(seccomp_mode).toString());
+    else if (seccomp_mode != SeccompMode::Disabled)
+        LOG_WARNING(
+            log,
+            "The `seccomp` server setting is set to `{}`, but {}, so the server is running without a seccomp policy. "
+            "`PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs can gain privileges through a setuid program",
+            SettingFieldSeccompMode(seccomp_mode).toString(),
+            seccomp_status.not_installed_reason);
+
     if (server_settings[ServerSetting::skip_binary_checksum_checks])
     {
         LOG_WARNING(log, "Binary checksum checks disabled due to skip_binary_checksum_checks - not recommended for production deployments");

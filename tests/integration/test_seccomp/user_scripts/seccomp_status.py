@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-# Reports what a process the server started sees of the policy, as a single row of five fields:
+# Reports what a process the server started sees of the policy, as a single row of seven fields:
 #  - the seccomp mode it inherited across `fork` and `execve`: 0 is no filter, 2 is a BPF filter;
 #  - what `getxattr`, which the policy does not allow, does here. Without a filter the attribute is
 #    simply missing (`ENODATA`); under the `errno` mode the call is refused (`EPERM`);
@@ -11,12 +11,21 @@
 #    refused as a whole, with `ENOSYS`. Without a filter the kernel gets to look at that structure,
 #    and the null pointer passed here gives `EFAULT`;
 #  - whether making a thread still works, which is the point of answering `ENOSYS` above rather
-#    than `EPERM`: the libc has to fall back to `clone`.
+#    than `EPERM`: the libc has to fall back to `clone`;
+#  - what `mknod` of a character device does. The policy refuses it by its file type, so the `errno`
+#    mode answers `EPERM`. The path is in a directory that does not exist, which is what makes the
+#    probe safe to run and tells the two answers apart: without a filter the kernel looks the path
+#    up before it checks for `CAP_MKNOD`, and answers `ENOENT`;
+#  - whether `mkfifo`, which is `mknod` of a FIFO, still works: executable user defined functions
+#    pass their arguments through FIFOs.
 
 import ctypes
 import errno
 import os
 import platform
+import shutil
+import stat
+import tempfile
 import threading
 
 CLONE_FS = 0x00000200
@@ -67,6 +76,33 @@ if __name__ == "__main__":
         # One field, so that the row still parses and the assertion is the one that fails.
         thread_result = str(e).replace(" ", "_")
 
+    try:
+        os.mknod(
+            "/nonexistent_seccomp_probe/null", stat.S_IFCHR | 0o600, os.makedev(1, 3)
+        )
+        mknod_device_result = "0"
+    except OSError as e:
+        mknod_device_result = errno.errorcode.get(e.errno, str(e.errno))
+
+    directory = tempfile.mkdtemp()
+    try:
+        os.mkfifo(os.path.join(directory, "fifo"))
+        mkfifo_result = "0"
+    except OSError as e:
+        mkfifo_result = errno.errorcode.get(e.errno, str(e.errno))
+    finally:
+        shutil.rmtree(directory)
+
     print(
-        "\t".join([mode, getxattr_result, clone_result, clone3_result, thread_result])
+        "\t".join(
+            [
+                mode,
+                getxattr_result,
+                clone_result,
+                clone3_result,
+                thread_result,
+                mknod_device_result,
+                mkfifo_result,
+            ]
+        )
     )
