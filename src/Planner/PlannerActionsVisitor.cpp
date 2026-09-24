@@ -31,6 +31,7 @@
 #include <Functions/indexHint.h>
 
 #include <Interpreters/ExpressionActionsSettings.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Set.h>
 
@@ -50,7 +51,6 @@ namespace Setting
     extern const SettingsBool enable_named_columns_in_function_tuple;
     extern const SettingsBool transform_null_in;
     extern const SettingsInt64 optimize_const_name_size;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
 }
 
 namespace ErrorCodes
@@ -888,7 +888,12 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
             const auto & arg_names = lambda_node.getArguments().getNames();
             if (std::find(arg_names.begin(), arg_names.end(), column_node_name) != arg_names.end())
             {
-                const auto & disambiguated = planner_context->getColumnNodeIdentifierOrThrow(node);
+                /// The synthetic column of an `INTERPOLATE` expression is not backed by a table expression,
+                /// so it has no column identifier. Derive a name that no lambda argument can have instead.
+                const auto * column_identifier = planner_context->getColumnNodeIdentifierOrNull(node);
+                String disambiguated = column_identifier
+                    ? *column_identifier
+                    : fmt::format("__{}.{}", column_source ? toString(column_source->getNodeType()) : "COLUMN", column_node_name);
 
                 actions_stack[i].addInputColumnIfNecessary(disambiguated, column_node.getColumnType());
 
@@ -1097,6 +1102,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
 PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::makeSetForInFunction(const QueryTreeNodePtr & node)
 {
     const auto & function_node = node->as<FunctionNode &>();
+    const bool ignore_set = function_node.getFunctionName().ends_with("IgnoreSet");
     auto in_first_argument = function_node.getArguments().getNodes().at(0);
     auto in_second_argument = function_node.getArguments().getNodes().at(1);
 
@@ -1116,7 +1122,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
     FutureSetPtr set;
     auto set_key = in_second_argument->getTreeHash({ .ignore_cte = true });
 
-    if (!subquery_or_table)
+    if (!subquery_or_table && !ignore_set)
     {
         set_element_types = {in_first_argument->getResultType()};
         const auto * left_tuple_type = typeid_cast<const DataTypeTuple *>(set_element_types.front().get());
@@ -1129,14 +1135,14 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::ma
             = Set::getElementTypes(std::move(set_element_types), planner_context->getQueryContext()->getSettingsRef()[Setting::transform_null_in]);
         set = planner_context->getPreparedSets().findTuple(set_key, set_element_types);
     }
-    else
+    else if (!ignore_set)
     {
         set = planner_context->getPreparedSets().findSubquery(set_key);
         if (!set)
             set = planner_context->getPreparedSets().findStorage(set_key);
     }
 
-    if (!set)
+    if (!set && !ignore_set)
         throw Exception(ErrorCodes::LOGICAL_ERROR,
             "No set is registered for key {}",
             PreparedSets::toString(set_key, set_element_types));
@@ -1345,7 +1351,7 @@ PlannerActionsVisitorImpl::NodeNameAndNodeMinLevel PlannerActionsVisitorImpl::vi
     for (auto & function_argument_node_name : function_arguments_node_names)
         children.push_back(actions_stack[level].getNodeOrThrow(function_argument_node_name));
 
-    if (!planner_context->getQueryContext()->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!canDisplaySecrets(planner_context->getQueryContext()))
         markFoldedSecretConstants(function_node, children);
 
     if (function_node.getFunctionName() == "arrayJoin")
