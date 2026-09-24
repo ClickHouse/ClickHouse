@@ -5824,8 +5824,11 @@ def check_server_started(args):
             # Only an HTTP response is an answer from the server; a transport
             # failure means it was not reached, so it must not leave an earlier
             # answer standing. Keep only the outcome of the last retry.
+            # The server body can span several lines, with the error name on the
+            # last one; fold it into one line, so that a reader of the log that
+            # matches the line with the marker also sees the error name.
             check_server_started.last_server_error = (
-                str(e) if isinstance(e, HTTPError) else ""
+                " ".join(str(e).split()) if isinstance(e, HTTPError) else ""
             )
             if args.hung_check:
                 print("Connection error, will retry: ", str(e))
@@ -6607,6 +6610,13 @@ def main(args):
         # Recommended time to wait - 10 minutes
         args_sticky.server_check_retries = 1500
         if not check_server_started(args_sticky):
+            # Same distinction as for the first probe: a sticky host that
+            # answered every retry with an error is reachable, it rejects queries.
+            server_error = getattr(check_server_started, "last_server_error", "")
+            if server_error:
+                raise TestException(
+                    f"Sticky host '{host}' rejects queries: {server_error}"
+                )
             raise TestException(f"Sticky host '{host}' not responding")
 
     args.build_flags = collect_build_flags(args)
@@ -6937,7 +6947,7 @@ ORDER BY (test_name, callee_offset)
             if isinstance(e, HTTPError):
                 print(
                     "Server rejects queries. Cannot get the processlist size: "
-                    + str(e)
+                    + " ".join(str(e).split())
                 )
             exit_code.value = 1
 
