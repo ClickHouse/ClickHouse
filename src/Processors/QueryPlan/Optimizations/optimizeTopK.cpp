@@ -182,8 +182,9 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & /*nodes
 
     /// A plan can be optimized more than once (StorageMerge child plans, set subplans). A second
     /// run here would install a second `__topKFilter` and fold the part-set salt into
-    /// `condition_hash` twice.
-    if (read_from_mergetree_step->isSelectedForTopKFilterOptimization())
+    /// `condition_hash` twice. Only a MergeTree read carries that stamp; a format source is
+    /// handled below.
+    if (read_from_mergetree_step && read_from_mergetree_step->isSelectedForTopKFilterOptimization())
         return 0;
 
     /// FINAL queries deduplicate overlapping parts via merging sorted transforms
