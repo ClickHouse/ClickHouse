@@ -38,8 +38,10 @@ namespace Setting
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
     extern const SettingsBool enable_s3_requests_logging;
+    extern const SettingsUInt64 s3_max_connections;
     extern const SettingsBool s3_slow_all_threads_after_network_error;
     extern const SettingsBool backup_slow_all_threads_after_retryable_s3_error;
+    extern const SettingsBool s3_validate_etag_on_read;
 }
 
 namespace ServerSetting
@@ -83,6 +85,8 @@ namespace S3RequestSetting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int S3_ERROR;
+    extern const int S3_OBJECT_CHANGED_DURING_READ;
 }
 
 namespace
@@ -130,7 +134,7 @@ private:
         const ContextPtr & context)
     {
         Aws::Auth::AWSCredentials credentials(access_key_id, secret_access_key);
-        NormalizedHTTPHeaderEntries headers;
+        HTTPHeaderEntries headers;
         String session_token = settings.auth_settings[S3AuthSetting::session_token];
         String sse_customer_key = settings.auth_settings[S3AuthSetting::server_side_encryption_customer_key_base64];
         S3::ServerSideEncryptionKMSConfig sse_kms_config = settings.auth_settings.server_side_encryption_kms_config;
@@ -162,6 +166,7 @@ private:
 
         const auto & request_settings = settings.request_settings;
         const auto & server_settings = context->getGlobalContext()->getServerSettings();
+        const Settings & global_settings = context->getGlobalContext()->getSettingsRef();
         const Settings & local_settings = context->getSettingsRef();
 
         /// The passed-in role_arn comes from the query/named collection; if empty, fall back to server config.
@@ -216,6 +221,7 @@ private:
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
+        client_configuration.maxConnections = static_cast<unsigned>(global_settings[Setting::s3_max_connections]);
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
@@ -378,6 +384,7 @@ BackupReaderS3::BackupReaderS3(
     : BackupReaderDefault(read_settings_, write_settings_, getLogger("BackupReaderS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , pin_plain_reads_to_generation(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
 {
     s3_settings.loadFromConfig(context_->getConfigRef(), "s3", context_->getSettingsRef());
 
@@ -428,10 +435,125 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
     return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name, std::optional<size_t> expected_file_size)
 {
+    return readFilePinnedToGeneration(file_name, expected_file_size, /*generation=*/ {});
+}
+
+String BackupReaderS3::getFileGeneration(const String & file_name)
+{
+    /// A read of a versioned URI is already pinned to the version the whole backup is read at, and
+    /// the `ETag` of the current version is not the one of that version, so nothing is named here.
+    if (!s3_uri.version_id.empty())
+        return {};
+
+    const String key = getS3BackupObjectKey(s3_uri, file_name);
+    String generation = S3::getObjectInfo(*client, s3_uri.bucket, key, s3_uri.version_id).etag;
+
+    /// The caller reads this file through more than one buffer (an archive, reopened for every
+    /// handle) and needs every one of them to land on the same generation. An empty token would
+    /// pin none of them, and `s3_validate_etag_on_read` cannot make up for it: it only opts a plain
+    /// read out of the pinning, and an archive whose generation cannot be named would be read as
+    /// two archives by two handles if it were replaced in place between them. So the file is
+    /// refused up front, before the first handle is opened.
+    if (generation.empty())
+        throw Exception(
+            ErrorCodes::S3_ERROR,
+            "S3 object {}/{} of the backup cannot be read: the endpoint reports no `ETag` for it, so the reads "
+            "of the backup cannot be pinned to one generation of the object",
+            s3_uri.bucket, key);
+
+    return generation;
+}
+
+BackupReaderS3::CheckedBackupFile BackupReaderS3::checkBackupFile(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation) const
+{
+    /// A plain read that is neither measured nor pinned needs no `HeadObject`, and neither does a
+    /// read that is pinned by its caller and has no size to check: its `GET` carries the generation
+    /// as `If-Match`, and the endpoint refuses another generation itself.
+    const bool pin_here = generation.empty() && pin_plain_reads_to_generation && s3_uri.version_id.empty();
+    if (!expected_file_size && !pin_here)
+        return {.generation = generation, .size = std::nullopt};
+
+    const String key = getS3BackupObjectKey(s3_uri, file_name);
+    const S3::ObjectInfo object = S3::getObjectInfo(*client, s3_uri.bucket, key, s3_uri.version_id);
+
+    /// Every restore path that reads through the buffer - the buffered fallback of `copyFileToDisk`,
+    /// and `BackupImpl::copyFileToDisk` with `sync` - copies exactly the number of bytes the backup
+    /// metadata records, so a backup file that has been replaced by a longer object since the backup
+    /// was made would be restored as its first bytes and pass unnoticed, and the native copy of the
+    /// whole object would restore the whole replacement. It is refused here, before a single byte is
+    /// read or copied, and with the same `HeadObject` that names the generation the read is pinned
+    /// to: what is measured is what is read.
+    ///
+    /// That last sentence holds for a pinned read only. With `s3_validate_etag_on_read = 0` the
+    /// size check stays on, but it measures the object at the instant of this `HeadObject` and
+    /// nothing more: a replacement that lands between it and the `GET` of the buffered restore (or
+    /// the `CopyObject` of the native one, which copies the whole object whatever size the caller
+    /// names) is read or copied under the recorded size, because the read carries no generation to
+    /// refuse it by. That window is exactly what opting out of the pinning gives up, for the reads of
+    /// a backup as for every other S3 read; what the check still catches is the replacement that is
+    /// already there when the restore starts - the one a backup made some time ago meets.
+    if (expected_file_size && object.size != *expected_file_size)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} is {} bytes long, while the file {} of the backup is {} bytes long: "
+            "the object was replaced after the backup was made",
+            s3_uri.bucket, key, object.size, file_name, *expected_file_size);
+
+    /// A caller that names a generation has read other bytes of this file already - the `.backup`
+    /// entry of an archive, read through a buffer that is long gone by the time the archive reader
+    /// opens the next handle - and every later read has to land on the same generation. An object
+    /// that holds another generation now is refused, including when it is of the very same size.
+    if (!generation.empty() && !object.etag.empty() && object.etag != generation)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} of the backup was replaced while the backup was open: its `ETag` is {} instead of {}",
+            s3_uri.bucket, key, object.etag, generation);
+
+    if (pin_here && object.etag.empty())
+        throw Exception(
+            ErrorCodes::S3_ERROR,
+            "S3 object {}/{} of the backup cannot be read: the endpoint reports no `ETag` for it, so the read "
+            "cannot be pinned to one generation of the object",
+            s3_uri.bucket, key);
+
+    return {.generation = pin_here ? object.etag : generation, .size = object.size};
+}
+
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGeneration(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation)
+{
+    /// `generation` is an `ETag`: every `GET` of the buffer carries it as `If-Match`, so an object
+    /// replaced in place since it was named is refused with `S3_OBJECT_CHANGED_DURING_READ` rather
+    /// than read. A versioned URI is pinned by its version and gets no token.
+    ///
+    /// An ordinary read of an unversioned backup names the generation in `checkBackupFile`, with one
+    /// `HeadObject` that also checks the size the backup metadata records, the same way the Azure
+    /// reader does: a buffer makes more than one request - the retries of a failed one, and the
+    /// reopen after a `seek` - and without the token a key rewritten between two of them would be
+    /// restored as the first bytes of one generation followed by the rest of the other, without any
+    /// error. `s3_validate_etag_on_read` opts a plain read out of it, as for every other S3 read; a
+    /// caller that already names a generation (an archive session) is pinned regardless, because its
+    /// other handles have read that generation already.
+    const CheckedBackupFile checked = checkBackupFile(file_name, expected_file_size, generation);
+
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        s3_uri.version_id,
+        s3_settings.request_settings,
+        read_settings,
+        /*use_external_buffer=*/ false,
+        /*offset=*/ 0,
+        /*read_until_position=*/ 0,
+        /*restricted_seek=*/ false,
+        /*file_size=*/ checked.size,
+        /*credentials_refresh_callback=*/ [] { return nullptr; },
+        /*blob_storage_log=*/ nullptr,
+        /*expected_etag=*/ checked.generation);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
@@ -471,16 +593,32 @@ void BackupReaderS3::copyToDiskImpl(const String & path_in_backup, size_t offset
             const auto src_key = fs::path(s3_uri.key) / path_in_backup;
             auto dest_client = destination_disk->getS3StorageClient();
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_READER);
-            auto create_read_buffer = [&, this] { return readFile(path_in_backup); };
+
+            /// One `HeadObject` checks that the object is still as long as the backup metadata says
+            /// the file is - a whole-object `CopyObject` of a longer replacement would restore the
+            /// replacement - and names the generation the copy and its read-and-write fallback are
+            /// both pinned to, the one an ordinary read of the file would be pinned to (see
+            /// `checkBackupFile`): the native copy carries it as `x-amz-copy-source-if-match`, and
+            /// every `GET` of the fallback as `If-Match`. A versioned URI is pinned by its version, which
+            /// the native copy addresses (`?versionId=` on the copy source, the version the fallback
+            /// reads too), and gets no token; `s3_validate_etag_on_read = 0` opts the copy out of the pinning, as
+            /// it does every other plain read of the backup, but not out of the size check - which
+            /// then holds for the object at the `HeadObject` only; a replacement between it and the
+            /// copy is not caught with the pinning off (see `checkBackupFile`).
+            const String src_etag = checkBackupFile(path_in_backup, file_size, /*generation=*/ {}).generation;
+            auto create_read_buffer = [&, this]
+            {
+                return readFilePinnedToGeneration(path_in_backup, file_size, src_etag);
+            };
 
             if (is_range)
                 copyS3FileRange(
-                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size,
+                    client, s3_uri.bucket, src_key, offset, size, /* src_object_size= */ file_size, src_etag, s3_uri.version_id,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
             else
                 copyS3File(
-                    client, s3_uri.bucket, src_key, size,
+                    client, s3_uri.bucket, src_key, size, src_etag, s3_uri.version_id,
                     dest_client, /* dest_bucket= */ blob_path[1], /* dest_key= */ blob_path[0],
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer, object_attributes);
 
@@ -515,6 +653,7 @@ BackupWriterS3::BackupWriterS3(
     : BackupWriterDefault(read_settings_, write_settings_, getLogger("BackupWriterS3"))
     , s3_uri(s3_uri_)
     , data_source_description{DataSourceType::ObjectStorage, ObjectStorageType::S3, MetadataStorageType::None, s3_uri.endpoint, false, false, ""}
+    , pin_copies_to_generation(context_->getSettingsRef()[Setting::s3_validate_etag_on_read])
     , s3_capabilities(getCapabilitiesFromConfig(context_->getConfigRef(), "s3"))
     , disk_client_factory(S3BackupClientCreator(context_))
 {
@@ -569,17 +708,10 @@ void BackupWriterS3::copyFileFromDisk(
         {
             LOG_TRACE(log, "Copying file {} from disk {} to S3", src_path, src_disk->getName());
 
+            const String & src_bucket = blob_path[1];
+            const String & src_key = blob_path[0];
             auto src_client = disk_client_factory.getOrCreate(src_disk);
             auto runner = threadPoolCallbackRunnerUnsafe<void>(getBackupsIOThreadPool().get(), ThreadName::S3_BACKUP_WRITER);
-            auto create_read_buffer = [&, this]
-            {
-                LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
-
-                if (copy_encrypted)
-                    return src_disk->readEncryptedFile(src_path, read_settings);
-
-                return src_disk->readFile(src_path, read_settings);
-            };
 
             /// A copy is whole-object only if it covers the entire source; `start_pos != 0` is not a sound
             /// test, because a prefix [0, length) of a bigger file is a range too. `length` counts the bytes
@@ -588,16 +720,110 @@ void BackupWriterS3::copyFileFromDisk(
                 = copy_encrypted ? src_disk->getEncryptedFileSize(src_path) : src_disk->getFileSize(src_path);
             const bool whole_object = (start_pos == 0) && (length == source_size);
 
+            /// One `HeadObject` measures the object and names its generation. The measure is taken
+            /// whatever the settings say: the copy depends on the size the disk reported - `length` bytes
+            /// are copied, and the backup metadata records that many - so an object of another size is
+            /// already another generation, whose whole-object `CopyObject` would back up the replacement
+            /// and whose read-and-write fallback would back up its first `length` bytes, both under the
+            /// old size and without any error. The generation is used for every request of the copy: the
+            /// native copy carries it as `x-amz-copy-source-if-match` on the `CopyObject` and on every
+            /// `UploadPartCopy`, and the fallback below carries it as `If-Match` on every `GET`. An object
+            /// replaced in place between this `HeadObject` and any of them is refused with
+            /// `S3_OBJECT_CHANGED_DURING_READ` rather than backed up as a newer whole object or as parts
+            /// of two generations stitched into one entry. `s3_validate_etag_on_read = 0` opts the copy
+            /// out of the pinning only, as it does every other S3 read, and not out of the size check,
+            /// the same way it does not for the reads of `BackupReaderS3` (see `checkBackupFile`). The
+            /// check then holds for the object at this `HeadObject` only: an object replaced between
+            /// it and the `CopyObject` or the `GET`s of the fallback is backed up under `length` with
+            /// the pinning off, the copy having no generation to refuse it by.
+            const S3::ObjectInfo src_object = S3::getObjectInfo(*src_client, src_bucket, src_key);
+            if (src_object.size != source_size)
+                throw Exception(
+                    ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                    "S3 object {}/{} is {} bytes long, while the file {} being backed up is {} bytes long: "
+                    "the object was replaced after the size of the file was taken",
+                    src_bucket, src_key, src_object.size, src_path, source_size);
+
+            String src_etag;
+            if (pin_copies_to_generation)
+            {
+                if (src_object.etag.empty())
+                    throw Exception(
+                        ErrorCodes::S3_ERROR,
+                        "S3 object {}/{} was not backed up: the endpoint reports no `ETag` for it, so the copy "
+                        "cannot be pinned to the generation of the object that is being backed up",
+                        src_bucket, src_key);
+                src_etag = src_object.etag;
+            }
+
+            /// The fallback reads through the disk when it can: the disk read honours `read_settings`, so
+            /// a backup with `read_from_filesystem_cache` is served from the filesystem cache of the disk
+            /// (and one without it does not pollute the cache), and on a disk with generated object keys
+            /// the read is pinned by the key itself - such a disk never writes an object in place, a file
+            /// rewritten on it is a new object under a new key, so the object under `src_key` can only
+            /// stay as it was measured above or be gone. The disk read, though, resolves the objects of
+            /// `src_path` from the metadata of the disk when the buffer is built, not when `src_key` was
+            /// taken above, and a file rewritten in between names another key by then: the buffer would
+            /// read an object that was never measured nor named. So the metadata is consulted once more
+            /// after the buffer is built. While it still names `src_key`, the buffer holds that object (a
+            /// rewrite after this point cannot reach a buffer already built); a file that names another
+            /// key was rewritten, and its backup is refused the same way a replaced object is.
+            /// Only a `plain` or `plain_rewritable` disk names its objects by path and rewrites them in
+            /// place, and its read through the disk would be unpinned; that one reads the object itself,
+            /// with the generation named above as `If-Match` on every `GET`. The object holds exactly the
+            /// bytes the disk read would deliver: an encrypted file is copied in its encrypted form, which
+            /// is the object as it is stored.
+            auto create_read_buffer = [&, this]() -> std::unique_ptr<SeekableReadBuffer>
+            {
+                if (!src_disk->isPlain())
+                {
+                    LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through buffers", src_path, src_disk->getName());
+
+                    std::unique_ptr<SeekableReadBuffer> buffer = copy_encrypted
+                        ? src_disk->readEncryptedFile(src_path, read_settings)
+                        : src_disk->readFile(src_path, read_settings);
+
+                    const Strings blob_path_now = src_disk->getBlobPath(src_path);
+                    if (blob_path_now.size() != 2 || blob_path_now[0] != src_key || blob_path_now[1] != src_bucket)
+                        throw Exception(
+                            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+                            "File {} on disk {} was rewritten after its object {}/{} was measured: it is not stored as that "
+                            "object any more, so the object measured is not the file being backed up",
+                            src_path, src_disk->getName(), src_bucket, src_key);
+
+                    return buffer;
+                }
+
+                LOG_TRACE(log, "Falling back to copy file {} from disk {} to S3 through a read of the object{}",
+                    src_path, src_disk->getName(), src_etag.empty() ? "" : " pinned to the generation with `ETag` " + src_etag);
+
+                return std::make_unique<ReadBufferFromS3>(
+                    src_client,
+                    src_bucket,
+                    src_key,
+                    /*version_id=*/ "",
+                    s3_settings.request_settings,
+                    read_settings,
+                    /*use_external_buffer=*/ false,
+                    /*offset=*/ 0,
+                    /*read_until_position=*/ 0,
+                    /*restricted_seek=*/ false,
+                    /*file_size=*/ source_size,
+                    /*credentials_refresh_callback=*/ [] { return nullptr; },
+                    blob_storage_log,
+                    /*expected_etag=*/ src_etag);
+            };
+
             if (whole_object)
                 copyS3File(
-                    src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], length,
+                    src_client, src_bucket, src_key, length, src_etag, /* src_version_id= */ "",
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
             else
                 copyS3FileRange(
-                    src_client, /* src_bucket */ blob_path[1], /* src_key */ blob_path[0], start_pos, length,
-                    /* src_object_size= */ source_size,
+                    src_client, src_bucket, src_key, start_pos, length,
+                    /* src_object_size= */ source_size, src_etag, /* src_version_id= */ "",
                     /* dest_s3_client */ client, /* dest_bucket */ s3_uri.bucket,
                     /* dest_key */ fs::path(s3_uri.key) / path_in_backup,
                     s3_settings.request_settings, read_settings, blob_storage_log, runner, create_read_buffer);
@@ -614,11 +840,39 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
     LOG_TRACE(log, "Copying file inside backup from {} to {}", source, destination);
 
     const auto source_key = fs::path(s3_uri.key) / source;
+
+    /// The same measure and pinning as in `copyFileFromDisk`: one `HeadObject` measures the source (a
+    /// file this backup has just written) against the size the backup metadata records for it, whatever
+    /// the settings say, and names its generation, which the copy and its fallback both carry when
+    /// `s3_validate_etag_on_read` is on; with it off, the measure holds for the object at this
+    /// `HeadObject` only.
+    const S3::ObjectInfo src_object = S3::getObjectInfo(*client, s3_uri.bucket, source_key, s3_uri.version_id);
+    if (src_object.size != size)
+        throw Exception(
+            ErrorCodes::S3_OBJECT_CHANGED_DURING_READ,
+            "S3 object {}/{} is {} bytes long, while the file {} of the backup is {} bytes long: "
+            "the object was replaced after it was written",
+            s3_uri.bucket, source_key, src_object.size, source, size);
+
+    String src_etag;
+    if (pin_copies_to_generation)
+    {
+        if (src_object.etag.empty())
+            throw Exception(
+                ErrorCodes::S3_ERROR,
+                "S3 object {}/{} was not copied inside the backup: the endpoint reports no `ETag` for it, so "
+                "the copy cannot be pinned to the generation of the object that is being copied",
+                s3_uri.bucket, source_key);
+        src_etag = src_object.etag;
+    }
+
     copyS3File(
         client,
         /* src_bucket */ s3_uri.bucket,
         /* src_key= */ source_key,
         size,
+        src_etag,
+        /* src_version_id= */ s3_uri.version_id,
         /* dest_s3_client= */ client,
         /* dest_bucket= */ s3_uri.bucket,
         /* dest_key= */ fs::path(s3_uri.key) / destination,
@@ -630,7 +884,20 @@ void BackupWriterS3::copyFile(const String & destination, const String & source,
         {
             LOG_TRACE(log, "Falling back to copy file inside backup from {} to {} through direct buffers", source, destination);
             return std::make_unique<ReadBufferFromS3>(
-                client, s3_uri.bucket, source_key, s3_uri.version_id, s3_settings.request_settings, read_settings);
+                client,
+                s3_uri.bucket,
+                source_key,
+                s3_uri.version_id,
+                s3_settings.request_settings,
+                read_settings,
+                /*use_external_buffer=*/ false,
+                /*offset=*/ 0,
+                /*read_until_position=*/ 0,
+                /*restricted_seek=*/ false,
+                /*file_size=*/ size,
+                /*credentials_refresh_callback=*/ [] { return nullptr; },
+                /*blob_storage_log=*/ nullptr,
+                /*expected_etag=*/ src_etag);
         });
 }
 

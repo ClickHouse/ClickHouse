@@ -1295,10 +1295,6 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         return error("Cannot parse JSON string: expected opening quote", ErrorCodes::CANNOT_PARSE_QUOTED_STRING);
     ++buf.position();
 
-    /// `s` is an append target already holding previous values (for a column, all previous rows of the block),
-    /// so the size of the current value is the growth of `s`.
-    const size_t initial_size = s.size();
-
     while (!buf.eof())
     {
         char * next_pos = find_first_symbols<'\\', '"'>(buf.position(), buf.buffer().end());
@@ -1306,12 +1302,8 @@ ReturnType readJSONStringInto(Vector & s, ReadBuffer & buf, const FormatSettings
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -1356,9 +1348,6 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
     if (buf.eof() || *buf.position() != opening_bracket)
         return error("JSON object/array should start with corresponding opening bracket", ErrorCodes::INCORRECT_DATA);
 
-    /// See the comment about `initial_size` in readJSONStringInto.
-    const size_t initial_size = s.size();
-
     s.push_back(*buf.position());
     ++buf.position();
 
@@ -1371,12 +1360,8 @@ ReturnType readJSONObjectOrArrayPossiblyInvalid(Vector & s, ReadBuffer & buf)
         appendToStringOrVector(s, buf, next_pos);
         buf.position() = next_pos;
 
-        if (s.size() - initial_size > DEFAULT_MAX_STRING_SIZE)
-        {
-            if constexpr (throw_exception)
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
-            return ReturnType(false);
-        }
+        if (s.size() > DEFAULT_MAX_STRING_SIZE)
+            throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "JSON string is too large, maximum size is {} bytes", DEFAULT_MAX_STRING_SIZE);
 
         if (!buf.hasPendingData())
             continue;
@@ -2097,7 +2082,10 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
-void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+static void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
 {
     size_t size = 0;
     readVarUInt(size, buf);

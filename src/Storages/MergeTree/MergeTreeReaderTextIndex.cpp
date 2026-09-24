@@ -40,12 +40,13 @@ namespace DB
 namespace Setting
 {
     extern const SettingsTextIndexPostingListApplyMode text_index_posting_list_apply_mode;
-    extern const SettingsTextIndexPostingsIntersectionAlgorithm text_index_postings_intersection_algorithm;
+    extern const SettingsFloat text_index_lazy_intersection_density_threshold;
     extern const SettingsFloat text_index_hint_max_selectivity;
 }
 
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -105,8 +106,11 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     const auto & ctx_settings = condition_text->getContext()->getSettingsRef();
     const auto apply_mode = ctx_settings[Setting::text_index_posting_list_apply_mode].value;
 
-    lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::Lazy);
-    intersection_algorithm = ctx_settings[Setting::text_index_postings_intersection_algorithm].value;
+    lazy_mode_requested = (apply_mode == TextIndexPostingListApplyMode::LAZY);
+    lazy_intersection_density_threshold = ctx_settings[Setting::text_index_lazy_intersection_density_threshold].value;
+
+    if (!std::isfinite(lazy_intersection_density_threshold) || lazy_intersection_density_threshold < 0.0f || lazy_intersection_density_threshold > 1.0f)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting text_index_lazy_intersection_density_threshold must be a value in [0.0, 1.0], got {}", lazy_intersection_density_threshold);
 
     if (index_granule_)
         setIndexGranule(std::move(index_granule_));
@@ -399,7 +403,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index.index->index.name);
 
     positions_stream = makeTextIndexInputStream(
-        *data_part_info_for_read,
+        data_part->getDataPartStoragePtr(),
         index.index->getFileName() + positions_substream->suffix,
         positions_substream->extension,
         MergeTreeIndexReader::patchSettings(settings, positions_substream->type));
@@ -558,8 +562,10 @@ void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size
 
 std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeTextIndexStream(const MergeTreeIndexSubstream & substream) const
 {
+    auto data_part = getDataPart();
+
     return makeTextIndexInputStream(
-        *data_part_info_for_read,
+        data_part->getDataPartStoragePtr(),
         index.index->getFileName() + substream.suffix,
         substream.extension,
         MergeTreeIndexReader::patchSettings(settings, substream.type));
@@ -840,7 +846,7 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
     if (search_query->getSearchMode() == TextSearchMode::Any)
         lazyUnionPostingLists(column, cursors, old_size, row_offset, num_rows);
     else if (search_query->getSearchMode() == TextSearchMode::All)
-        lazyIntersectPostingLists(column, cursors, old_size, row_offset, num_rows, intersection_algorithm);
+        lazyIntersectPostingLists(column, cursors, old_size, row_offset, num_rows, lazy_intersection_density_threshold);
     else
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid search mode: {}", search_query->getSearchMode());
 }

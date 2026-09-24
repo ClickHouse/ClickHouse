@@ -152,13 +152,8 @@ IMPLEMENT_SETTING_AUTO_ENUM(DefaultDatabaseEngine, ErrorCodes::BAD_ARGUMENTS)
 IMPLEMENT_SETTING_AUTO_ENUM(DefaultTableEngine, ErrorCodes::BAD_ARGUMENTS)
 
 IMPLEMENT_SETTING_ENUM(TextIndexPostingListApplyMode, ErrorCodes::BAD_ARGUMENTS,
-    {{"materialize", TextIndexPostingListApplyMode::Materialize},
-     {"lazy", TextIndexPostingListApplyMode::Lazy}})
-
-IMPLEMENT_SETTING_ENUM(TextIndexPostingsIntersectionAlgorithm, ErrorCodes::BAD_ARGUMENTS,
-    {{"bruteforce", TextIndexPostingsIntersectionAlgorithm::BruteForce},
-     {"leapfrog", TextIndexPostingsIntersectionAlgorithm::Leapfrog},
-     {"auto", TextIndexPostingsIntersectionAlgorithm::Auto}})
+    {{"materialize", TextIndexPostingListApplyMode::MATERIALIZE},
+     {"lazy", TextIndexPostingListApplyMode::LAZY}})
 
 IMPLEMENT_SETTING_AUTO_ENUM(CleanDeletedRows, ErrorCodes::BAD_ARGUMENTS)
 
@@ -290,11 +285,6 @@ IMPLEMENT_SETTING_ENUM(ArrowCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ArrowCompression::NONE},
      {"lz4_frame", FormatSettings::ArrowCompression::LZ4_FRAME},
      {"zstd", FormatSettings::ArrowCompression::ZSTD}})
-
-IMPLEMENT_SETTING_ENUM(ArrowUnsupportedTypes, ErrorCodes::BAD_ARGUMENTS,
-    {{"throw", FormatSettings::ArrowUnsupportedTypes::THROW},
-     {"text", FormatSettings::ArrowUnsupportedTypes::TEXT},
-     {"binary", FormatSettings::ArrowUnsupportedTypes::BINARY}})
 
 IMPLEMENT_SETTING_ENUM(ORCCompression, ErrorCodes::BAD_ARGUMENTS,
     {{"none", FormatSettings::ORCCompression::NONE},
@@ -509,8 +499,7 @@ IMPLEMENT_SETTING_ENUM(
     TextIndexPostingListCodec,
     ErrorCodes::BAD_ARGUMENTS,
     {{"none", TextIndexPostingListCodec::None},
-     {"bitpacking", TextIndexPostingListCodec::Bitpacking},
-     {"pfor", TextIndexPostingListCodec::PFor}})
+     {"bitpacking", TextIndexPostingListCodec::Bitpacking}})
 
 IMPLEMENT_SETTING_ENUM(
     MergeTreeTextIndexSerializationVersion,

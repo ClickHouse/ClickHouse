@@ -1,6 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#if defined(OS_LINUX)
 
 #include <Client/IConnections.h>
 #include <Common/StackfulCoroutine.h>
@@ -72,7 +72,7 @@ private:
 
     /// In read callback we add socket file descriptor and timer descriptor with receive timeout
     /// in epoll, so we can return epoll file descriptor outside for polling.
-    Epoll epoll{EpollNesting::Leaf};
+    Epoll epoll;
 
     /// If and exception occurred in coroutine resume, we save it and rethrow.
     std::exception_ptr exception;

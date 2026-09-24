@@ -17,7 +17,6 @@
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/StringUtils.h>
 #include <Common/filesystemHelpers.h>
-#include <Common/maskURIPassword.h>
 #include <Common/quoteString.h>
 
 #include <filesystem>
@@ -42,6 +41,26 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// Check that the string starts with a valid RFC 3986 scheme followed by "://".
+bool hasURLScheme(const String & url)
+{
+    auto scheme_end = url.find("://");
+    if (scheme_end == String::npos || scheme_end == 0)
+        return false;
+
+    if (!std::isalpha(static_cast<unsigned char>(url[0])))
+        return false;
+
+    for (size_t i = 1; i < scheme_end; ++i)
+    {
+        char c = url[i];
+        if (!std::isalnum(static_cast<unsigned char>(c)) && c != '+' && c != '-' && c != '.')
+            return false;
+    }
+
+    return true;
+}
 
 /// A table of a `URL` database is a thin wrapper over the `url` table function, which dispatches
 /// the URL to the matching backend (`file`, `s3`, `azureBlobStorage`, ...).
@@ -246,7 +265,7 @@ DatabaseURL::DatabaseURL(const String & name_, const String & base_url_, Context
     : IDatabase(name_), WithContext(context_->getGlobalContext()), base_url(base_url_)
 {
     /// Not echoed back: password masking anchors on the `://` this value lacks, so it would log the password.
-    if (!base_url.empty() && findURIAuthority(base_url) == String::npos)
+    if (!base_url.empty() && !hasURLScheme(base_url))
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "The base URL of a URL database must contain a scheme (e.g. https://)");
 }
@@ -255,7 +274,7 @@ String DatabaseURL::getTableURL(const String & name) const
 {
     String resolved = StorageURL::resolveURLBase(name, base_url, "base URL of the URL database");
 
-    if (findURIAuthority(resolved) == String::npos)
+    if (!hasURLScheme(resolved))
         return {};
     return resolved;
 }
@@ -290,14 +309,14 @@ bool DatabaseURL::checkFileURLExists(const String & url, ContextPtr context_, bo
     if (!isFileReadGranted(context_))
         return true;
 
-    if (!existsOrFileNameTooLong([&] { return fs::exists(path); }))
+    if (!fs::exists(path))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File does not exist: {}", path);
         return false;
     }
 
-    if (!existsOrFileNameTooLong([&] { return fs::is_regular_file(path); }))
+    if (!fs::is_regular_file(path))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File is directory, but expected a file: {}", path);

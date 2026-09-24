@@ -12,6 +12,10 @@
 #include <Functions/FunctionHelpers.h>
 #include <Common/iota.h>
 
+#ifdef __SSE2__
+    #include <emmintrin.h>
+#endif
+
 namespace DB
 {
 
@@ -243,39 +247,51 @@ bool isIdentityPermutation(const IColumn::Permutation & permutation, size_t limi
 {
     static_assert(sizeof(permutation[0]) == sizeof(UInt64), "Invalid permutation value size");
 
-    const size_t permutation_size = permutation.size();
-    const size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
+    size_t permutation_size = permutation.size();
+    size_t size = limit == 0 ? permutation_size : std::min(limit, permutation_size);
+    if (size == 0)
+        return true;
 
-    /// The identity holds exactly when every element equals its own index. A block is folded into
-    /// a single value, so the loop is branchless and vectorizes, and one check per block keeps the
-    /// early exit. Elements are compared against the first element of the block rather than their
-    /// absolute index, which keeps the vector of offsets loop invariant: with the absolute index
-    /// the compiler rebuilds that vector on every block, and on AArch64 that costs more than the
-    /// comparison itself.
-    static constexpr size_t block_size = 64;
-
-    /// Checked on its own, so a permutation that does not start at zero costs one load.
-    if (size != 0 && permutation[0] != 0)
+    if (permutation[0] != 0)
         return false;
 
     size_t i = 0;
-    for (; i + block_size <= size; i += block_size)
+
+#if defined(__SSE2__)
+    if (size >= 8)
     {
-        const UInt64 base = permutation[i];
-        UInt64 different = base ^ i;
+        static constexpr UInt64 compare_all_elements_equal_mask = (1UL << 16) - 1;
 
-        for (size_t j = 0; j < block_size; ++j)
-            different |= (permutation[i + j] - base) ^ j;
+        __m128i permutation_add_vector = { 8, 8 };
+        __m128i permutation_compare_values_vectors[4] { { 0, 1 }, { 2, 3 }, { 4, 5 }, { 6, 7 } };
 
-        if (different)
-            return false;
+        const size_t * permutation_data = permutation.data();
+
+        static constexpr size_t unroll_count = 8;
+        size_t size_unrolled = (size / unroll_count) * unroll_count;
+
+        for (; i < size_unrolled; i += 8)
+        {
+            UInt64 permutation_equals_vector_mask = compare_all_elements_equal_mask;
+
+            for (size_t j = 0; j < 4; ++j)
+            {
+                __m128i permutation_data_vector = _mm_loadu_si128(reinterpret_cast<const __m128i *>(permutation_data + i + j * 2));
+                __m128i permutation_equals_vector = _mm_cmpeq_epi8(permutation_data_vector, permutation_compare_values_vectors[j]);
+                permutation_compare_values_vectors[j] = _mm_add_epi64(permutation_compare_values_vectors[j], permutation_add_vector);
+                permutation_equals_vector_mask &= _mm_movemask_epi8(permutation_equals_vector);
+            }
+
+            if (permutation_equals_vector_mask != compare_all_elements_equal_mask)
+                return false;
+        }
     }
+#endif
 
+    i = std::max(i, static_cast<size_t>(1));
     for (; i < size; ++i)
-    {
-        if (permutation[i] != i)
+        if (permutation[i] != (permutation[i - 1] + 1))
             return false;
-    }
 
     return true;
 }
