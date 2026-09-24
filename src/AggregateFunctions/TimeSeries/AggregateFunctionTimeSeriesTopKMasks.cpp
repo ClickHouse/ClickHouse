@@ -119,7 +119,7 @@ to break a tie between equal values, and `values` contains the values of the ser
 the `values` arrays of all rows must have the same size. At each time step, the series with the k greatest non-NULL
 values at that step are selected (NaN is considered smaller than any other value). A value tie is broken by preferring
 the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
-tie falls back to `key`, which the caller assigns in the order the rows were read in.
+tie is broken by the smaller `key`.
 
 This function implements the `topk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -134,7 +134,7 @@ timeSeriesTopKMasks(k, key[, sampling_key], values)
     FunctionDocumentation::Arguments arguments_topk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
-        {"sampling_key", "Optional. A per-series hash breaking a tie between equal values, e.g. `timeSeriesGroupToSamplingKey(key)`. Without it a tie is broken by `key` instead.", {"UInt64"}},
+        {"sampling_key", "Optional. Any stable per-series `UInt64` breaking a tie between equal values, e.g. `timeSeriesGroupToSamplingKey(group)` when `key` is a group returned by `timeSeriesTagsToGroup`. Without it a tie is broken by `key` instead.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Parameters parameters = {};
@@ -168,7 +168,7 @@ to break a tie between equal values, and `values` contains the values of the ser
 the `values` arrays of all rows must have the same size. At each time step, the series with the k smallest non-NULL
 values at that step are selected (NaN is considered greater than any other value). A value tie is broken by preferring
 the series with the smaller `sampling_key`, and only then the one with the smaller `key`. Without a `sampling_key` a
-tie falls back to `key`, which the caller assigns in the order the rows were read in.
+tie is broken by the smaller `key`.
 
 This function implements the `bottomk()` aggregation operator of PromQL and keeps only one bounded heap of size `k` per
 time step, so its state size does not depend on the number of aggregated series.
@@ -220,7 +220,7 @@ timeSeriesLimitKMasks(k, key, sampling_key, values)
     FunctionDocumentation::Arguments arguments_limitk = {
         {"k", "How many series to select at each time step, either one value for all time steps or an array with one value per time step. Must be the same for all rows.", {"UInt*", "Array(UInt*)"}},
         {"key", "Identifier of the time series.", {"UInt64"}},
-        {"sampling_key", "Required. A per-series hash defining the selection order, e.g. `timeSeriesGroupToSamplingKey(key)`.", {"UInt64"}},
+        {"sampling_key", "Required. A stable per-series `UInt64`, typically a hash, defining the selection order, e.g. `timeSeriesGroupToSamplingKey(group)` when `key` is a group returned by `timeSeriesTagsToGroup`.", {"UInt64"}},
         {"values", "Values of the time series aligned to the time grid, one element per time step.", {"Array(Nullable(Float32))", "Array(Nullable(Float64))", "Array(Float32)", "Array(Float64)"}},
     };
     FunctionDocumentation::Examples examples_limitk = {
