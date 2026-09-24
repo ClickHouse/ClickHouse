@@ -6,10 +6,8 @@
 #include <widechar_width.h>
 #include <array>
 #include <bit>
-
-#if defined(__SSE2__)
-#include <emmintrin.h>
-#endif
+#include <cstring>
+#include <type_traits>
 
 namespace DB
 {
@@ -106,6 +104,22 @@ enum ComputeWidthMode
     BytesBeforeLimit    /// Calculate and return the maximum number of bytes when substring fits in visible width.
 };
 
+/// One bit per byte of a block of `block_size` bytes that is not printable ASCII (32 to 126), lowest bit first.
+/// Converting the comparison to `bool` lanes makes it independent of whether it yields -1 or 1 per lane,
+/// which depends on `-faltivec-src-compat` on PowerPC. Turning the lanes into bits is endian dependent.
+template <size_t block_size>
+ALWAYS_INLINE UInt32 nonPrintableASCIIMask(const UInt8 * data)
+{
+    using Bytes = Int8 __attribute__((ext_vector_type(block_size)));
+    using Mask = bool __attribute__((ext_vector_type(block_size)));
+    using Bits = std::conditional_t<block_size == 32, UInt32, UInt16>;
+    static_assert(std::endian::native == std::endian::little);
+
+    Bytes bytes;
+    memcpy(&bytes, data, block_size);
+    return __builtin_bit_cast(Bits, __builtin_convertvector((bytes < 32) | (bytes > 126), Mask));
+}
+
 template <ComputeWidthMode mode>
 size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t limit) noexcept
 {
@@ -116,35 +130,35 @@ size_t computeWidthImpl(const UInt8 * data, size_t size, size_t prefix, size_t l
     for (size_t i = 0; i < size; ++i)
     {
         /// Quickly skip regular ASCII
-
-#if defined(__SSE2__)
-        const auto lower_bound = _mm_set1_epi8(32);
-        const auto upper_bound = _mm_set1_epi8(126);
-
-        while (i + 15 < size)
+        if constexpr (std::endian::native == std::endian::little)
         {
-            if (is_escape_sequence)
-                break;
-
-            __m128i bytes = _mm_loadu_si128(reinterpret_cast<const __m128i *>(&data[i]));
-
-            const uint16_t non_regular_width_mask = static_cast<uint16_t>(_mm_movemask_epi8(
-                _mm_or_si128(
-                    _mm_cmplt_epi8(bytes, lower_bound),
-                    _mm_cmpgt_epi8(bytes, upper_bound))));
-
-            if (non_regular_width_mask)
+            if (!is_escape_sequence)
             {
-                auto num_regular_chars = std::countr_zero(non_regular_width_mask);
-                width += num_regular_chars;
-                i += num_regular_chars;
-                break;
-            }
+                /// Advance by whole blocks until one has a byte to stop at, so that the next load does not
+                /// wait for the position of that byte.
+                UInt32 non_printable = 0;
+                for (; i + 32 <= size; i += 32, width += 32)
+                    if ((non_printable = nonPrintableASCIIMask<32>(&data[i])))
+                        break;
 
-            i += 16;
-            width += 16;
+                if (!non_printable && i + 16 <= size)
+                {
+                    non_printable = nonPrintableASCIIMask<16>(&data[i]);
+                    if (!non_printable)
+                    {
+                        i += 16;
+                        width += 16;
+                    }
+                }
+
+                if (non_printable)
+                {
+                    const size_t printable = std::countr_zero(non_printable);
+                    i += printable;
+                    width += printable;
+                }
+            }
         }
-#endif
 
         while (i < size && isPrintableASCII(data[i]))
         {
