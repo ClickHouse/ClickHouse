@@ -76,9 +76,6 @@ String key, FixedString source, declined
 1
 1
 FixedString key, narrower FixedString source, declined
-6100
-6162
-6200
 1
 1
 FixedString key, wider FixedString source, declined
@@ -197,8 +194,6 @@ Multi-column set, final set empty after the shared filter
 0	0
 1	2
 3	4
-1
-1
 1
 1
 All-NULL source set NOT IN

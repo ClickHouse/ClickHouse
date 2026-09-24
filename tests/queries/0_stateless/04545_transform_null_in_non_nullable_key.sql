@@ -192,7 +192,10 @@ SELECT 'FixedString key, narrower FixedString source, declined';
 DROP TABLE IF EXISTS t_f2;
 CREATE TABLE t_f2 (s FixedString(2)) ENGINE = MergeTree ORDER BY s PARTITION BY s;
 INSERT INTO t_f2 VALUES ('a'), ('ab'), ('b');
-SELECT hex(s) FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL) ORDER BY s;
+-- With `transform_null_in = 1` the runtime membership check casts the KEY into the set's element type,
+-- and every `FixedString(2)` value is too long for `FixedString(1)`, so the query is rejected. The two
+-- lines below assert the index-level decline, which is decided from the types alone.
+SELECT hex(s) FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL) ORDER BY s; -- { serverError TOO_LARGE_STRING_SIZE }
 SELECT count() = 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%element set%';
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT s FROM t_f2 WHERE s IN (SELECT CAST('a', 'Nullable(FixedString(1))') UNION ALL SELECT NULL)) WHERE explain ILIKE '%Parts: 3/3%';
 
@@ -447,11 +450,9 @@ SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_mc WHERE (a, b) 
 -- it stands mid-loop, cannot see the later column and leaves the empty set marked approximate.
 -- Both key columns are numeric on purpose: the approximate component has to be processed BEFORE the
 -- emptying one, which is what makes the ordering observable.
--- `Parts: 3/3` alone cannot pin this (it is also the relaxed output), so the load-bearing assertion is
--- the trivial-count optimization, which `PartitionPruner`'s strict mode switches off for a relaxed
--- condition: it is available for an exact empty set and unavailable for a relaxed one. That path is
--- reached through `totalRowsByPartitionPredicate`, which only the old analyzer uses for this shape, and
--- `optimize_trivial_count_query` is randomized, so both are pinned per statement.
+-- The exactness half was asserted through a `SELECT count()` plan that only the removed old query
+-- analysis produced, so what stays observable is the `notIn 0-element set` line below: the shared
+-- filter empties the set, rather than the atom declining or one set row surviving.
 SELECT 'Multi-column set, final set empty after the shared filter';
 DROP TABLE IF EXISTS t_me;
 CREATE TABLE t_me (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY (a, b) PARTITION BY (a, b);
@@ -459,10 +460,6 @@ INSERT INTO t_me VALUES (1, 2), (3, 4), (0, 0);
 SELECT a, b FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)'))) ORDER BY a;
 SELECT count() = 0 FROM t_me WHERE (a, b) IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)')));
 SELECT count() > 0 FROM (EXPLAIN indexes = 1 SELECT a, b FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)')))) WHERE explain ILIKE '%notIn 0-element set%';
-SELECT count() > 0 FROM (EXPLAIN SELECT count() FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('bad', 'Nullable(String)')))) WHERE explain ILIKE '%Optimized trivial count%' SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
--- Control: a relaxed NON-empty set of the same cross-type shape must NOT get the optimization, so the
--- assertion above really distinguishes exact-empty from relaxed rather than always being true.
-SELECT count() = 0 FROM (EXPLAIN SELECT count() FROM t_me WHERE (a, b) NOT IN (SELECT tuple(CAST('1', 'Nullable(String)'), CAST('2', 'Nullable(String)')))) WHERE explain ILIKE '%Optimized trivial count%' SETTINGS enable_analyzer = 0, optimize_trivial_count_query = 1;
 
 -- Case I: every source row is NULL, so the pruning set becomes empty. `NOT IN` an empty set is
 -- always true, so no part may be pruned and all three rows are returned.
