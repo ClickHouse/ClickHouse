@@ -21,6 +21,8 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/tests/gtest_disk.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
+#include <Processors/Executors/PushingPipelineExecutor.h>
+#include <Processors/ISink.h>
 #include <Processors/Merges/DistinctSortedTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/BufferingFileTransforms.h>
@@ -72,6 +74,28 @@ public:
 
 private:
     size_t & merge_calls;
+};
+
+class CollectingSink : public ISink
+{
+public:
+    explicit CollectingSink(SharedHeader header)
+        : ISink(std::move(header))
+    {
+    }
+
+    String getName() const override
+    {
+        return "CollectingSink";
+    }
+
+    Chunks chunks;
+
+protected:
+    void consume(Chunk chunk) override
+    {
+        chunks.push_back(std::move(chunk));
+    }
 };
 
 struct ConnectedDistinct
@@ -898,7 +922,8 @@ TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
     {
         struct TailCase
         {
-            size_t threshold;
+            bool external;
+            Int64 merge_headroom;
             bool spills_tail;
             bool keeps_tail;
         };
@@ -907,59 +932,74 @@ TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
         for (const auto & key_type : DataTypes{u64, std::make_shared<DataTypeArray>(u64)})
         for (const bool ordered : {false, true})
         for (const auto & test_case : {
-            TailCase{1024 << 20, false, false},
-            TailCase{64 << 20, false, true},
-            TailCase{key_type->getTypeId() == TypeIndex::Array ? size_t{20} << 20 : size_t{18} << 20, ordered, true},
-            TailCase{4 << 20, true, false}})
+            TailCase{false, 0, false, false},
+            TailCase{true, 32 << 20, false, true},
+            TailCase{true, 0, true, true},
+            TailCase{true, -(32 << 20), true, false}})
         {
             SCOPED_TRACE(::testing::Message() << "key=" << key_type->getName()
-                << ", ordered=" << ordered << ", threshold=" << test_case.threshold);
+                << ", ordered=" << ordered << ", external=" << test_case.external
+                << ", merge_headroom=" << test_case.merge_headroom);
             const auto header = std::make_shared<const Block>(Block{
                 ColumnWithTypeAndName(key_type, "k"), ColumnWithTypeAndName(u64, "payload"),
                 ColumnWithTypeAndName(std::make_shared<DataTypeFixedString>(128), "padding")});
-            constexpr size_t rows = 131071;
-            constexpr size_t unique_keys = 65521;
+            constexpr size_t rows = 40960;
+            constexpr size_t unique_keys = 16381;
             constexpr size_t block_rows = 1024;
-            Chunks chunks;
+            constexpr Int64 threshold = 128 << 20;
+            auto transform = std::make_shared<ExternalDistinctTransform>(
+                header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, threshold,
+                tmp_data, /*min_free_disk_space_=*/ 0, block_rows, /*preferred_block_bytes_=*/ 65536, ordered);
+            auto sink = std::make_shared<CollectingSink>(header);
+            connect(transform->getOutputs().front(), sink->getPort());
+            auto processors = std::make_shared<Processors>();
+            processors->emplace_back(transform);
+            processors->emplace_back(sink);
+            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, &transform->getInputs().front());
+
+            /// Account for another operator's memory to force external processing from the first
+            /// chunk. The remaining input is smaller than the run-size floor, leaving a tail at EOF.
+            Int64 pressure = test_case.external ? threshold : 0;
+            std::ignore = CurrentMemoryTracker::alloc(pressure);
+            SCOPE_EXIT(std::ignore = CurrentMemoryTracker::free(pressure));
+            PushingPipelineExecutor executor(pipeline);
+            SCOPE_EXIT(executor.cancel());
+            const auto & events = CurrentThread::getProfileEvents();
+            const auto spills_before = events[ProfileEvents::ExternalDistinctTailSpilledRows];
+            const auto kept_before = events[ProfileEvents::ExternalDistinctTailKeptRows];
+            const auto merges_before = events[ProfileEvents::ExternalDistinctMerge];
             for (size_t begin = 0; begin < rows; begin += block_rows)
             {
                 auto columns = header->cloneEmptyColumns();
-                const size_t count = std::min(block_rows, rows - begin);
-                for (size_t row = begin; row < begin + count; ++row)
+                for (size_t row = begin; row < begin + block_rows; ++row)
                 {
                     const UInt64 key = row % unique_keys;
                     columns[0]->insert(key_type->getTypeId() == TypeIndex::Array ? Field(Array{key}) : Field(key));
                     columns[1]->insert(UInt64(row));
                     columns[2]->insert(String(128, 'x'));
                 }
-                chunks.emplace_back(std::move(columns), count);
+                executor.push(Chunk(std::move(columns), block_rows));
             }
 
-            /// The source retains enough input to start external processing at the smaller thresholds.
-            /// The remaining run exercises keeping the tail, spilling a prefix, or spilling the entire
-            /// tail. Repeated keys carry different payloads across files and retained blocks, so
-            /// precedence matters.
-            auto source = std::make_shared<SourceFromChunks>(header, std::move(chunks));
-            auto transform = std::make_shared<ExternalDistinctTransform>(
-                header, SizeLimits{}, /*limit_hint_=*/ 0, Names{"k"}, test_case.threshold,
-                tmp_data, /*min_free_disk_space_=*/ 0, block_rows, /*preferred_block_bytes_=*/ 65536, ordered);
-            connect(source->getPort(), transform->getInputs().front());
-            auto * output_port = &transform->getOutputs().front();
-            auto processors = std::make_shared<Processors>();
-            processors->emplace_back(std::move(source));
-            processors->emplace_back(std::move(transform));
-            QueryPipeline pipeline(QueryPlanResourceHolder{}, processors, output_port);
-            PullingPipelineExecutor executor(pipeline);
+            /// Set the headroom relative to actual tracked usage before closing the input. Room for
+            /// all readers keeps the tail; no headroom requires a prefix to pay for them; usage well
+            /// above the threshold requires the whole tail. Existing allocations therefore do not
+            /// determine which path the test exercises.
+            std::ignore = CurrentMemoryTracker::free(pressure);
+            pressure = 0;
+            if (test_case.external)
+            {
+                pressure = threshold - getCurrentQueryMemoryUsage() - test_case.merge_headroom;
+                ASSERT_GT(pressure, 0);
+                std::ignore = CurrentMemoryTracker::alloc(pressure);
+            }
+            executor.finish();
 
-            const auto & events = CurrentThread::getProfileEvents();
-            const auto spills_before = events[ProfileEvents::ExternalDistinctTailSpilledRows];
-            const auto kept_before = events[ProfileEvents::ExternalDistinctTailKeptRows];
-            const auto merges_before = events[ProfileEvents::ExternalDistinctMerge];
-            Block block;
             size_t output_rows = 0;
             std::vector<bool> seen(unique_keys);
-            while (executor.pull(block))
+            for (auto & chunk : sink->chunks)
             {
+                const auto block = header->cloneWithColumns(chunk.detachColumns());
                 for (size_t row = 0; row < block.rows(); ++row)
                 {
                     const UInt64 payload = block.getByName("payload").column->getUInt(row);
@@ -975,8 +1015,7 @@ TEST_F(ExternalDistinctTransformTest, TailBudgetPreservesFirstPayloadAndOrder)
                 }
             }
             EXPECT_EQ(output_rows, unique_keys);
-            EXPECT_EQ(events[ProfileEvents::ExternalDistinctMerge] - merges_before,
-                test_case.spills_tail || test_case.keeps_tail);
+            EXPECT_EQ(events[ProfileEvents::ExternalDistinctMerge] - merges_before, test_case.external);
             EXPECT_EQ(events[ProfileEvents::ExternalDistinctTailSpilledRows] > spills_before, test_case.spills_tail);
             EXPECT_EQ(events[ProfileEvents::ExternalDistinctTailKeptRows] > kept_before, test_case.keeps_tail);
         }

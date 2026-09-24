@@ -14,11 +14,10 @@ run_case()
     local name=$1
     local threshold=$2
     local query=$3
-    local query_memory_limit=${4:-2147483648}
     ${CLICKHOUSE_LOCAL} --path "${LOCAL_DIR}/${name}" --query "
         ${query}
         SETTINGS max_threads = 1, max_block_size = 4096,
-            max_memory_usage = ${query_memory_limit}, max_untracked_memory = 0,
+            max_memory_usage = 2147483648, max_untracked_memory = 0,
             max_bytes_before_external_distinct = ${threshold}, max_bytes_ratio_before_external_distinct = 0,
             prefer_external_sort_block_bytes = 1048576, optimize_distinct_in_order = 0,
             allow_preliminary_distinct_abandoning = 1;
@@ -33,18 +32,16 @@ run_case()
 # The counters show whether files were written, the final merge count, and whether tail rows were
 # spilled or retained. A tail that fits beside the file readers stays in memory.
 run_case narrow 33554432 \
-    'SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(4000000))'
-run_case headroom 100663296 \
-    'SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(4000000))'
+    'SELECT count() FROM (SELECT DISTINCT cityHash64(number) AS k FROM numbers(65537))'
 
-# Wide rows leave insufficient memory to retain the tail beside the file readers. Spilling releases
-# those columns before merging. The result checks the row count and total value length after readback.
-run_case payload 33554432 \
-    "SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, repeat(toString(number % 10), 128) AS payload FROM numbers(2000000))" 100663296
+# Wide rows and a small spill threshold leave insufficient room for the final tail beside file readers.
+# The result checks the row count and total value length after readback.
+run_case payload 1048576 \
+    "SELECT count(), sum(length(payload)) FROM (SELECT DISTINCT cityHash64(number) AS k, repeat(toString(number % 10), 128) AS payload FROM numbers(32769))"
 
-# Order restoration must return the largest keys when the tail is split between disk and memory.
+# Order restoration must return the largest keys when merging files with the retained tail.
 run_case ordered 33554432 \
-    'SELECT count(), min(k), max(k) FROM (SELECT DISTINCT number AS k FROM numbers(4000000) ORDER BY k + 1 DESC LIMIT 100000)'
+    'SELECT count(), min(k), max(k) FROM (SELECT DISTINCT number AS k FROM numbers(65537) ORDER BY k + 1 DESC LIMIT 10000)'
 
 # A one-byte threshold spills every input chunk. EOF then starts the merge with an empty tail.
 run_case empty_tail 1 \
