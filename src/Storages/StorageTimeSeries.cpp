@@ -1256,7 +1256,7 @@ CREATE TABLE my_table ENGINE=TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))))
 ```
 
-The columns `timestamp` and `value` of the older schema versions are not allowed in the samples `INNER COLUMNS` clause.
+For bucketed tables (`version >= 7`), the columns `timestamp` and `value` of the older schema versions are not allowed in the samples `INNER COLUMNS` clause.
 
 ## The `id` column {#id-column}
 
@@ -1434,14 +1434,14 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `recent_samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity_bytes` | UInt64 | 262144 | Sets `index_granularity_bytes` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
-| `version` | UInt64 | 6 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
+| `version` | UInt64 | 7 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 
 ## Schema versioning {#schema-versioning}
 
 The `TimeSeries` table engine and the PromQL execution layer are under active development:
 the set of the target tables and their structure can change between ClickHouse versions.
 To make such changes detectable, every `TimeSeries` table stores its version in the [version](#settings) setting.
-The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 6) -
+The version is pinned automatically into the `CREATE` query when a table is created - its value is the latest version known to the server (currently 7) -
 persists in the table metadata, and can't be changed by `ALTER`. Tables created before the setting was introduced are considered as version 0.
 Normally the setting should just be omitted in the `CREATE TABLE` query - then the table gets the latest version.
 An explicit `version` is accepted if the server supports that version; then the table is defined the way that version does it (see [Version history](#version-history)).
