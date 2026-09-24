@@ -4834,6 +4834,103 @@ def test_write_cancel_during_commit_keeps_data(started_cluster, partitioned):
     )
 
 
+@pytest.mark.parametrize("partitioned", [False, True])
+def test_commit_failure_with_failing_cleanup(started_cluster, partitioned):
+    # A DeltaLake commit that fails must stay the error the client sees, even when
+    # removing the data files the failed INSERT had already uploaded itself fails, and
+    # that removal failure must be reported with the data file it was left on. Two
+    # faults are injected at once: the _delta_log directory is made read-only so the
+    # new log entry cannot be written (the commit fails), and
+    # local_object_storage_network_error_during_remove throws on the first data-file
+    # removal. The first INSERT is a control: it commits, so the committed data files
+    # are known and the failed INSERT can be held to changing nothing.
+    instance = started_cluster.instances["node1"]
+    failpoint = "local_object_storage_network_error_during_remove"
+    table_name = randomize_table_name("test_commit_failure_cleanup")
+    result_file = f"/var/lib/clickhouse/user_files/{table_name}_data"
+    log_dir = f"/{result_file}/_delta_log"
+    # One row per data file, one row per block: the unpartitioned sink rolls a new data
+    # file per block and the partitioned one opens a sink per partition value, so both
+    # write 3 data files. With a single data file the cleanup loop runs only one
+    # iteration, which exercises neither sink's multi-file path.
+    insert_settings = (
+        "max_block_size = 1, delta_lake_insert_max_rows_in_data_file = 1, "
+        "output_format_parquet_compression_method = 'none'"
+    )
+
+    schema = pa.schema([("id", pa.int32(), False), ("part", pa.int32(), False)])
+    empty_arrays = [pa.array([], type=pa.int32()), pa.array([], type=pa.int32())]
+    write_deltalake(
+        f"file:///{result_file}",
+        pa.Table.from_arrays(empty_arrays, schema=schema),
+        mode="overwrite",
+        partition_by=["part"] if partitioned else [],
+    )
+    LocalUploader(instance).upload_directory(f"/{result_file}/", f"/{result_file}/")
+
+    instance.query(
+        f"CREATE TABLE {table_name} (id Int32, part Int32) "
+        f"ENGINE = DeltaLakeLocal('/{result_file}')"
+    )
+
+    def parquet_paths():
+        listing = instance.exec_in_container(
+            ["bash", "-c", f"find /{result_file} -name '*.parquet' | sort"]
+        ).strip()
+        return [path for path in listing.split("\n") if path]
+
+    def failpoint_enabled():
+        return instance.query(
+            f"SELECT enabled FROM system.fail_points WHERE name = '{failpoint}'"
+        ).strip()
+
+    # Version 0 was written from an empty table, so no data file exists yet.
+    assert parquet_paths() == []
+
+    # Control: the same INSERT with no faults commits, so every later count is measured
+    # against a known number of committed data files.
+    instance.query(
+        f"INSERT INTO {table_name} SELECT number::Int32, number::Int32 "
+        f"FROM numbers(3) SETTINGS {insert_settings}"
+    )
+    committed = parquet_paths()
+    assert len(committed) == 3, f"control insert wrote {len(committed)} data files: {committed}"
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+
+    instance.exec_in_container(["chmod", "555", log_dir], user="root")
+    try:
+        instance.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+        assert failpoint_enabled() == "1"
+        _, error = instance.query_and_get_answer_with_error(
+            f"INSERT INTO {table_name} SELECT (number + 10)::Int32, (number + 10)::Int32 "
+            f"FROM numbers(3) SETTINGS {insert_settings}"
+        )
+        # `enabled` went 1 -> 0 with no DISABLE in between, which only a fire can do.
+        fired = failpoint_enabled() == "0"
+    finally:
+        instance.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+        instance.exec_in_container(["chmod", "755", log_dir], user="root")
+
+    assert fired, "the removal failpoint never fired, so the cleanup path was not exercised"
+
+    # O1: the client is told why nothing was written (the commit failed), not why a
+    # cleanup step failed afterwards.
+    assert "Injected error after remove object" not in error, (
+        f"the data-file removal error replaced the commit error: {error}"
+    )
+    assert "_delta_log" in error, f"unexpected insert error: {error}"
+
+    # O2: the removal that failed is reported, naming the data file it was left on.
+    removal_log = instance.grep_in_log("Failed to remove uncommitted data file")
+    assert f"{table_name}_data" in removal_log and ".parquet" in removal_log, (
+        f"the failed data-file removal was not logged with its path: {removal_log}"
+    )
+
+    # O3: the failed INSERT committed nothing, and left the committed data files alone.
+    assert instance.query(f"SELECT count() FROM {table_name}").strip() == "3"
+    assert parquet_paths() == committed
+
+
 @pytest.mark.parametrize("column_mapping", ["", "name"])
 def test_type_from_storage_def(started_cluster, column_mapping):
     instance = started_cluster.instances["node1"]
