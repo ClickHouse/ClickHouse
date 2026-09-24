@@ -315,6 +315,11 @@ public:
         return getMetadata()->shouldReloadSchemaForConsistency(context);
     }
 
+    void checkReadIsAllowed(const StorageSnapshotPtr & storage_snapshot, const ContextPtr & context) const override
+    {
+        getMetadata()->checkReadIsAllowed(storage_snapshot, context);
+    }
+
     std::shared_ptr<IDataLakeMetadata> getExternalMetadata() override
     {
         return getMetadata();
