@@ -1,5 +1,6 @@
 #include <Functions/FunctionDynamicAdaptor.h>
 #include <Functions/TypeMismatchStrictness.h>
+#include <Functions/castNestedResult.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/DataTypeDynamic.h>
@@ -19,9 +20,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
-    extern const int TYPE_MISMATCH;
-    extern const int CANNOT_CONVERT_TYPE;
     extern const int NO_COMMON_TYPE;
 }
 
@@ -34,24 +32,6 @@ static ColumnPtr expandColumnByFilter(ColumnPtr column, const PaddedPODArray<UIn
     auto mutable_column = IColumn::mutate(std::move(column));
     mutable_column->expand(filter, false);
     return mutable_column;
-}
-
-/// Both types are expected to be convertible (like FixedString and String), so a type error from the
-/// cast is a logical error. Other failures (e.g. MEMORY_LIMIT_EXCEEDED) keep their own error code.
-static ColumnPtr castNestedResult(const ColumnWithTypeAndName & nested_result, const DataTypePtr & result_type, const String & function_name)
-{
-    try
-    {
-        return castColumn(nested_result, result_type);
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-            && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
-            throw;
-
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot convert nested result of function {} with type {} to the expected result type {}: {}", function_name, nested_result.type->getName(), result_type->getName(), e.message());
-    }
 }
 
 ExecutableFunctionDynamicAdaptor::ExecutableFunctionDynamicAdaptor(
@@ -97,8 +77,7 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT && e.code() != ErrorCodes::TYPE_MISMATCH
-                && e.code() != ErrorCodes::CANNOT_CONVERT_TYPE && e.code() != ErrorCodes::NO_COMMON_TYPE)
+            if (!isTypeMismatchError(e.code()))
                 throw;
             return nullptr;
         }
