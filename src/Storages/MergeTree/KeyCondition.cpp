@@ -6440,6 +6440,91 @@ static BoolMask forAnySparseHyperrectangle(
     return result;
 }
 
+std::optional<KeyCondition::RPN> KeyCondition::collapseUnavailableAtomGroups(const std::vector<size_t> & key_indices) const
+{
+    std::optional<RPN> result;
+    for (size_t begin = 0; begin < rpn.size();)
+    {
+        chassert(!rpn[begin].continues_multi_atom_group);
+        size_t end = begin;
+        while (!isAtomGroupEnd(rpn, end))
+            ++end;
+        ++end;
+
+        const bool all_atoms_unavailable = end - begin > 1
+            && std::all_of(rpn.begin() + begin, rpn.begin() + end, [&](const RPNElement & element)
+            {
+                if (element.function == RPNElement::FUNCTION_AND)
+                    return true;
+                if (element.function != RPNElement::FUNCTION_IN_RANGE && element.function != RPNElement::FUNCTION_NOT_IN_RANGE)
+                    return false;
+                return !std::binary_search(key_indices.begin(), key_indices.end(), element.getKeyColumn());
+            });
+
+        if (all_atoms_unavailable)
+        {
+            if (!result)
+            {
+                result.emplace(rpn.begin(), rpn.begin() + begin);
+                result->reserve(rpn.size());
+            }
+            /// Each missing comparison returns (true, true), and their conjunction has the same
+            /// mask. Keeping an unknown leaf preserves both pruning and falsity under `AND`, `OR`, and `NOT`.
+            result->emplace_back(RPNElement::FUNCTION_UNKNOWN);
+        }
+        else if (result)
+            result->insert(result->end(), rpn.begin() + begin, rpn.begin() + end);
+
+        begin = end;
+    }
+    return result;
+}
+
+KeyCondition::SparseRangeEvaluator::SparseRangeEvaluator(
+    const KeyCondition & condition_, const std::vector<size_t> & key_indices_, bool check_exactness_)
+    : condition(condition_), key_indices(key_indices_), check_exactness(check_exactness_)
+{
+    chassert(std::is_sorted(key_indices.begin(), key_indices.end()));
+
+    const auto prepare = [&](const KeyCondition & source) -> std::unique_ptr<KeyCondition>
+    {
+        auto prepared_rpn = source.collapseUnavailableAtomGroups(key_indices);
+        if (!prepared_rpn)
+            return nullptr;
+
+        auto prepared = std::make_unique<KeyCondition>(source);
+        prepared->rpn = std::move(*prepared_rpn);
+        return prepared;
+    };
+
+    prepared_condition = prepare(condition);
+    if (check_exactness && condition.exactness_condition)
+    {
+        if (auto prepared_exactness = prepare(*condition.exactness_condition))
+        {
+            if (!prepared_condition)
+                prepared_condition = std::make_unique<KeyCondition>(condition);
+            prepared_condition->exactness_condition = std::move(prepared_exactness);
+        }
+    }
+}
+
+BoolMask KeyCondition::SparseRangeEvaluator::checkInRange(
+    const FieldRef * left_keys,
+    const FieldRef * right_keys,
+    const DataTypes & data_types,
+    const std::vector<UInt8> & equal_boundaries_mask,
+    BoolMask initial_mask,
+    const Hyperrectangle * key_bounds) const
+{
+    const auto & evaluation_condition = prepared_condition ? *prepared_condition : condition;
+    if (check_exactness)
+        return evaluation_condition.checkInRangeWithExactness(
+            key_indices, left_keys, right_keys, data_types, equal_boundaries_mask, initial_mask, key_bounds);
+    return evaluation_condition.checkInRange(
+        key_indices, left_keys, right_keys, data_types, equal_boundaries_mask, initial_mask, key_bounds);
+}
+
 BoolMask KeyCondition::checkInRange(
     size_t used_key_size,
     const FieldRef * left_keys,

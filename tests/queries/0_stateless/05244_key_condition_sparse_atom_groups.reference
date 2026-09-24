@@ -1,0 +1,24 @@
+Mixed index layouts
+Granules: 19/128
+3	150
+Disjunction and negation
+Granules: 66/128
+13	370
+Granules: 128/128
+128	8416
+2
+1
+Retained derived column
+Granules: 510/512
+Granules: 2/512
+1	257
+Partition-bounded suffix
+Granules: 64/64
+Granules: 64/64
+Granules: 28/64
+Granules: 64/64
+Granules: 64/64
+Granules: 14/64
+12	194
+32
+1

@@ -2339,6 +2339,10 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
     std::vector<FieldRef> part_offset_left(2);
     std::vector<FieldRef> part_offset_right(2);
 
+    std::optional<KeyCondition::SparseRangeEvaluator> sparse_key_evaluator;
+    if (use_sparse_pk_representation)
+        sparse_key_evaluator.emplace(key_condition, used_key_indices, exact_ranges != nullptr);
+
     const auto evaluate_key_condition = [&](const auto &... arguments)
     {
         if (exact_ranges)
@@ -2404,8 +2408,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
                     }
                 }
 
-                return evaluate_key_condition(
-                    used_key_indices,
+                return sparse_key_evaluator->checkInRange(
                     sparse_key_left.data(),
                     sparse_key_right.data(),
                     sparse_key_types,

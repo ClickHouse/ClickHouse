@@ -69,6 +69,8 @@ private:
     struct ThisIsPrivate {};
 
 public:
+    class SparseRangeEvaluator;
+
     /// Construct key condition from ActionsDAG nodes.
     /// This overload takes the key column names and expression without any direction information,
     /// so the condition treats the key as ascending in every column. Use it only for keys that
@@ -941,6 +943,10 @@ private:
     /// unreliable `can_be_false`.
     static std::optional<RPN> dropCoveredRelaxedAtoms(const RPN & rpn, bool only_negated_groups);
 
+    /// Collapses multi-atom comparison groups whose key columns are all absent from `key_indices`.
+    /// Returns nothing when no group can be collapsed.
+    std::optional<RPN> collapseUnavailableAtomGroups(const std::vector<size_t> & key_indices) const;
+
     /** Iterates over RPN and collapses FUNCTION_IN_RANGE over the arguments of space-filling curve function
       * into atom of type FUNCTION_ARGS_IN_HYPERRECTANGLE.
       */
@@ -1017,5 +1023,28 @@ private:
     /// Stores an eligible condition with covered relaxed siblings removed, used only for falsity checks.
     /// It is null when the original condition suffices or no eligible derivative exists.
     std::shared_ptr<KeyCondition> exactness_condition;
+};
+
+/// Prepares range evaluation for one sparse index layout, including columns supplied by partition
+/// bounds. The original condition still supplies key geometry and search-strategy decisions.
+/// The condition and the sorted key indices must outlive the evaluator and remain unchanged.
+class KeyCondition::SparseRangeEvaluator
+{
+public:
+    SparseRangeEvaluator(const KeyCondition & condition_, const std::vector<size_t> & key_indices_, bool check_exactness_);
+
+    BoolMask checkInRange(
+        const FieldRef * left_keys,
+        const FieldRef * right_keys,
+        const DataTypes & data_types,
+        const std::vector<UInt8> & equal_boundaries_mask,
+        BoolMask initial_mask,
+        const Hyperrectangle * key_bounds = nullptr) const;
+
+private:
+    const KeyCondition & condition;
+    const std::vector<size_t> & key_indices;
+    bool check_exactness;
+    std::unique_ptr<KeyCondition> prepared_condition;
 };
 }

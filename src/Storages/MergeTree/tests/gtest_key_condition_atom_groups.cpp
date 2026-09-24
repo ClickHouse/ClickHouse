@@ -92,6 +92,74 @@ protected:
     ActionsDAG dag;
 };
 
+TEST_F(KeyConditionAtomGroups, SparseEvaluatorPreservesRangeMasks)
+{
+    const auto type = std::make_shared<DataTypeUInt64>();
+    const auto & y = dag.addInput("y", type);
+    const auto & x = dag.addInput("x", type);
+    const auto & successor = addFunction("plus", {&x, &addConstant(1)});
+    const auto & remainder = addFunction("modulo", {&x, &addConstant(3)});
+    const auto & equals = addFunction("equals", {&x, &addConstant(5)});
+    const auto & not_equals = addFunction("notEquals", {&x, &addConstant(5)});
+    const auto & less = addFunction("less", {&y, &addConstant(3)});
+    const auto & conjunction = addFunction("and", {&less, &equals});
+    const auto & disjunction = addFunction("or", {&less, &equals});
+    const auto & negation = addFunction("not", {&conjunction});
+
+    for (const auto * predicate : {&equals, &not_equals, &conjunction, &disjunction, &negation})
+    {
+        auto condition = makeCondition(*predicate, {&y, &x, &successor, &remainder});
+        const auto original_description = condition.toString();
+        SCOPED_TRACE(original_description);
+
+        /// Each layout models a different part. Suffix entries beyond the loaded prefix are
+        /// supplied by partition bounds, so they must remain available to the evaluator.
+        for (const auto & indices : std::vector<std::vector<size_t>>{{}, {0}, {0, 1}, {0, 2}, {0, 3}, {0, 1, 2, 3}})
+        {
+            for (bool exactness : {false, true})
+            {
+                KeyCondition::SparseRangeEvaluator evaluator(condition, indices, exactness);
+                for (size_t loaded_prefix : {1, 4})
+                {
+                    for (UInt64 value : {4, 5, 6})
+                    {
+                        for (UInt64 first_key : {0, 3})
+                        {
+                            const std::vector<FieldRef> left{Field(first_key), Field(value), Field(value + 1), Field(value % 3)};
+                            const std::vector<FieldRef> right{Field(first_key + 1), Field(value), Field(value + 1), Field(value % 3)};
+                            Hyperrectangle bounds{Range::createWholeUniverseTypeAware(type), Range(left[1]), Range(left[2]), Range(left[3])};
+                            std::vector<UInt8> equal_boundaries(loaded_prefix, true);
+                            equal_boundaries[0] = false;
+                            std::vector<FieldRef> sparse_left;
+                            std::vector<FieldRef> sparse_right;
+                            DataTypes sparse_types;
+                            for (size_t index : indices)
+                            {
+                                sparse_left.push_back(left[index]);
+                                sparse_right.push_back(right[index]);
+                                sparse_types.push_back(type);
+                            }
+
+                            for (BoolMask initial : {BoolMask(false, false), BoolMask::consider_only_can_be_true, BoolMask::consider_only_can_be_false})
+                            {
+                                const auto expected = exactness
+                                    ? condition.checkInRangeWithExactness(
+                                        indices, sparse_left.data(), sparse_right.data(), sparse_types, equal_boundaries, initial, &bounds)
+                                    : condition.checkInRange(
+                                        indices, sparse_left.data(), sparse_right.data(), sparse_types, equal_boundaries, initial, &bounds);
+                                const auto actual = evaluator.checkInRange(
+                                    sparse_left.data(), sparse_right.data(), sparse_types, equal_boundaries, initial, &bounds);
+                                EXPECT_EQ(actual, expected);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        EXPECT_EQ(condition.toString(), original_description);
+    }
+}
+
 TEST_F(KeyConditionAtomGroups, ExtractedLaterAtomStartsItsOwnGroup)
 {
     const auto type = std::make_shared<DataTypeUInt64>();
