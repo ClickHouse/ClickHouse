@@ -41,6 +41,12 @@ struct RowNumber
     auto operator <=>(const RowNumber &) const = default;
 };
 
+struct MovedRow
+{
+    RowNumber row;
+    Int64 offset_left = 0;
+};
+
 
 /* Computes several window functions that share the same window. The input must
  * be sorted by PARTITION BY (in any order), then by ORDER BY.
@@ -204,8 +210,8 @@ public:
         return result;
     }
 
-    auto moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
-    auto moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumber(const RowNumber & original_row_number, Int64 offset) const;
+    MovedRow moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const;
 
     void assertValid(const RowNumber & x) const
     {

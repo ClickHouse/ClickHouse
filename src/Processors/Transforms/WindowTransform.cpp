@@ -554,7 +554,7 @@ void WindowTransform::advancePartitionEnd()
     chassert(!partition_ended && partition_end == blocksEnd());
 }
 
-auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
+MovedRow WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number, Int64 offset) const
 {
     RowNumber moved_row_number = original_row_number;
 
@@ -619,23 +619,21 @@ auto WindowTransform::moveRowNumberNoCheck(const RowNumber & original_row_number
         }
     }
 
-    return std::tuple<RowNumber, Int64>{moved_row_number, offset};
+    return {moved_row_number, offset};
 }
 
-auto WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64 offset) const
+MovedRow WindowTransform::moveRowNumber(const RowNumber & original_row_number, Int64 offset) const
 {
-    auto [moved_row_number, offset_after_move] = moveRowNumberNoCheck(original_row_number, offset);
+    const MovedRow moved = moveRowNumberNoCheck(original_row_number, offset);
 
 #ifndef NDEBUG
     /// Check that it was reversible. If we move back, we get the original row number with zero offset.
-    const auto [original_row_number_to_validate, offset_after_move_back]
-        = moveRowNumberNoCheck(moved_row_number, -(offset - offset_after_move));
-
-    chassert(original_row_number_to_validate == original_row_number);
-    chassert(0 == offset_after_move_back);
+    const MovedRow moved_back = moveRowNumberNoCheck(moved.row, -(offset - moved.offset_left));
+    chassert(moved_back.row == original_row_number);
+    chassert(0 == moved_back.offset_left);
 #endif
 
-    return std::tuple<RowNumber, Int64>{moved_row_number, offset_after_move};
+    return moved;
 }
 
 
