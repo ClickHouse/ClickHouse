@@ -180,10 +180,12 @@ bool usesColumn(const NameSet & used_columns, const String & column)
     return std::ranges::any_of(used_columns, [&](const auto & used) { return isColumnOrSubcolumnOf(used, column); });
 }
 
-/// `ignore` is set by prepare() for IF EXISTS on a missing column, a no-op.
+/// `ignore` is set by prepare() for IF EXISTS on a missing column, a no-op. CLEAR COLUMN keeps the column.
 bool touchesColumns(const AlterCommand & command)
 {
-    return !command.ignore && (command.type == AlterCommand::DROP_COLUMN || command.type == AlterCommand::RENAME_COLUMN);
+    if (command.ignore)
+        return false;
+    return (command.type == AlterCommand::DROP_COLUMN && !command.clear) || command.type == AlterCommand::RENAME_COLUMN;
 }
 
 }
