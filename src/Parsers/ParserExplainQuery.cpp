@@ -1222,7 +1222,7 @@ Estimates the benefit a hypothetical skip index would have on a `SELECT` query, 
 
 Hypothetical projections defined with [`CREATE HYPOTHETICAL PROJECTION`](/reference/statements/hypothetical-projection#create-hypothetical-projection) are candidates too. A normal projection is estimated by building its primary index in memory over the parts the query would read and pruning it as a materialized projection would be pruned.
 
-The report gives the marks and rows the projection read would touch, a `read_ratio` against the base-table read (below `1x` means less work, above means more) and a `verdict` with the reason behind it, following the optimizer's rule: the projection wins when it reads fewer marks than the base table, or the same number while serving an outer `ORDER BY`. With `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
+The report gives the marks and rows the projection read would touch, a `read_ratio` against the base-table read (below `1x` means less work, above means more) and a `verdict` with the reason behind it, following the optimizer's rule: the projection wins when it reads fewer marks than the base table, or the same number while serving an outer `ORDER BY`. With `force_optimize_projection = 1` or `prefer_optimize_projection = 1` the optimizer uses any usable projection, so one it would not pick by cost is reported as `chosen (forced)`.
 
 The mark count is modelled by sizing granules the way the writer does, one granule size per block the writer is handed. Which blocks that is depends on the path that writes the projection part - one squashed block for an insert or a materialization, runs of `merge_max_block_size` for a merge - and a part records none of it, so the estimate is computed for each of those layouts. When they do not agree on the comparison with the base read, the report gives the range and `verdict: too close to call` instead of a decision.
 
@@ -1235,7 +1235,7 @@ Listed as `status: not_applicable` and not estimated yet:
 - projections that store `_block_number` (the writer builds those only when a part is merged);
 - projections that do not provide every column the query reads.
 
-A projection whose definition no longer fits the table is reported with that reason. `force_optimize_projection`, `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored.
+A projection whose definition no longer fits the table is reported with that reason. `force_optimize_projection_name` and `preferred_optimize_projection_name` are ignored, and `force_optimize_projection` does not fail the statement.
 
 **Syntax**
 

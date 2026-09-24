@@ -521,6 +521,7 @@ bool tryEstimateProjection(
     const ConditionTemplate<KeyCondition>::Ptr & total_offset_condition,
     SortOrderHelp sort_help,
     bool has_filter,
+    std::string_view relaxing_setting,
     ReadFromMergeTree * read_step,
     const RangesInDataParts & baseline_parts,
     UInt64 baseline_marks,
@@ -656,9 +657,9 @@ bool tryEstimateProjection(
             = fmt::format("the same {} would be read, and {}", marks_text(projection_marks), describe(sort_help));
     }
 
-    /// with `prefer_optimize_projection` the optimizer takes any usable projection
+    /// with `relaxing_setting` the optimizer takes any usable projection
     const bool nothing_to_serve = !has_filter && sort_help != SortOrderHelp::Helps;
-    if (query_settings[Setting::prefer_optimize_projection] && (result.verdict != "chosen" || nothing_to_serve || baseline_parts.empty()))
+    if (!relaxing_setting.empty() && (result.verdict != "chosen" || nothing_to_serve || baseline_parts.empty()))
     {
         String cost;
         if (baseline_parts.empty())
@@ -672,7 +673,7 @@ bool tryEstimateProjection(
         else
             cost = fmt::format("the projection reads {} against {} from the base table", marks_text(projection_marks), baseline_marks);
         result.verdict = "chosen (forced)";
-        result.verdict_reason = "`prefer_optimize_projection = 1` overrides the cost; " + cost;
+        result.verdict_reason = fmt::format("`{} = 1` overrides the cost; {}", relaxing_setting, cost);
     }
     result.estimate_source = WhatIfCandidateResult::Empirical;
     result.empirical_status = WhatIfCandidateResult::Ok;
@@ -721,6 +722,7 @@ WhatIfCandidateResult evaluateProjection(
     const ReadFromMergeTree::AnalysisResult & analysis,
     const RangesInDataParts & baseline_parts,
     const WhatIfSettings & settings,
+    bool force_projection,
     QueryPlan::Node * plan_root,
     ContextPtr context)
 {
@@ -773,9 +775,10 @@ WhatIfCandidateResult evaluateProjection(
         return result;
     }
 
-    /// lifted by `prefer_optimize_projection`, as in the optimizer
-    const bool prefer_projection = context->getSettingsRef()[Setting::prefer_optimize_projection];
-    if (baseline_parts.empty() && !prefer_projection)
+    /// both lift this gate and the no-filter one below, as in the optimizer
+    const std::string_view relaxing_setting = force_projection ? "force_optimize_projection"
+        : context->getSettingsRef()[Setting::prefer_optimize_projection] ? "prefer_optimize_projection" : "";
+    if (baseline_parts.empty() && relaxing_setting.empty())
     {
         result.not_applicable_reason = "The query reads no parts, so the optimizer would not consider a projection";
         return result;
@@ -899,7 +902,7 @@ WhatIfCandidateResult evaluateProjection(
     /// the same gate as `optimizeUseNormalProjections`: a filter has to exist or the order has to help,
     /// but a filter the projection key cannot prune still leaves a full projection scan worth measuring,
     /// which wins whenever the projection stores less per row than the table does
-    if (!filter_dag && sort_help != SortOrderHelp::Helps && !prefer_projection)
+    if (!filter_dag && sort_help != SortOrderHelp::Helps && relaxing_setting.empty())
     {
         result.not_applicable_reason = fmt::format("Query has no filter predicate, and {}", describe(sort_help));
         return result;
@@ -911,7 +914,7 @@ WhatIfCandidateResult evaluateProjection(
     {
         if (tryEstimateProjection(
                 result, *projection, key_condition ? &*key_condition : nullptr, part_offset_condition, total_offset_condition,
-                sort_help, filter_dag != nullptr, read_step, baseline_parts, analysis.selected_marks, context))
+                sort_help, filter_dag != nullptr, relaxing_setting, read_step, baseline_parts, analysis.selected_marks, context))
             return result;
         result.empirical_status = WhatIfCandidateResult::Unsupported;
     }

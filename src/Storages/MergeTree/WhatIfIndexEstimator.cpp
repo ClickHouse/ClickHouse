@@ -26,6 +26,7 @@
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 
 namespace DB
 {
@@ -37,6 +38,7 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_for_disjunctions;
     extern const SettingsString ignore_data_skipping_indices;
     extern const SettingsString force_data_skipping_indices;
+    extern const SettingsBool force_optimize_projection;
 }
 
 namespace ErrorCodes
@@ -119,8 +121,9 @@ WhatIfResult buildResultWithoutScan(
 }
 
 /// Drop the inner-SELECT settings we pin for a deterministic local baseline
-/// `force_data_skipping_indices` is collected into `removed_force` so we can re-check it later
-void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force)
+/// `force_data_skipping_indices` is collected into `removed_force` so we can re-check it later,
+/// `force_optimize_projection` into `forced_projection` for the projection verdict
+void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_force, std::optional<bool> & forced_projection)
 {
     if (!node)
         return;
@@ -137,9 +140,13 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         removed_force.push_back(change.value.template safeGet<String>());
                         return true;
                     }
+                    if (change.name == "force_optimize_projection")
+                    {
+                        forced_projection = SettingFieldBool(change.value).value;
+                        return true;
+                    }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
-                    return change.name == "force_optimize_projection"
-                        || change.name == "force_optimize_projection_name"
+                    return change.name == "force_optimize_projection_name"
                         || change.name == "preferred_optimize_projection_name"
                         || change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
@@ -149,7 +156,7 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
     }
 
     for (const auto & child : node->children)
-        stripWhatIfControlledSettings(child.get(), removed_force);
+        stripWhatIfControlledSettings(child.get(), removed_force, forced_projection);
 }
 
 /// Check applicability, then try empirical → statistical → applicability_only
@@ -324,7 +331,9 @@ WhatIfResult estimateHypotheticalIndexes(
 
     auto select_query_copy = select_query->clone();
     std::vector<String> forced_strings;
-    stripWhatIfControlledSettings(select_query_copy.get(), forced_strings);
+    std::optional<bool> forced_projection;
+    stripWhatIfControlledSettings(select_query_copy.get(), forced_strings, forced_projection);
+    const bool force_projection = forced_projection.value_or(context->getSettingsRef()[Setting::force_optimize_projection]);
 
     if (forced_strings.empty() && context->getSettingsRef()[Setting::force_data_skipping_indices].changed)
         forced_strings.push_back(context->getSettingsRef()[Setting::force_data_skipping_indices]);
@@ -550,7 +559,8 @@ WhatIfResult estimateHypotheticalIndexes(
 
     for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
         result.candidates.push_back(
-            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
+            evaluateProjection(
+                projection, read_step, analysis, baseline_parts, settings, force_projection, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

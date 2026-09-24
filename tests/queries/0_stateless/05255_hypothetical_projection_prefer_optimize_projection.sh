@@ -51,4 +51,11 @@ check "WHERE b = 42" ", prefer_optimize_projection = 1"
 echo "--- the setting from the session ---"
 check "WHERE a = 42 AND b >= 40" "" "SET prefer_optimize_projection = 1;"
 
+echo "--- force_optimize_projection does the same ---"
+check "WHERE a = 42 AND b >= 40" ", prefer_optimize_projection = 0, force_optimize_projection = 1"
+check "WHERE a = 42 AND b >= 40" ", prefer_optimize_projection = 0" "SET force_optimize_projection = 1;"
+
+echo "--- the query setting overrides the session one ---"
+check "WHERE a = 42 AND b >= 40" ", prefer_optimize_projection = 0, force_optimize_projection = 0" "SET force_optimize_projection = 1;"
+
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_prefer; DROP TABLE t_prefer_real"
