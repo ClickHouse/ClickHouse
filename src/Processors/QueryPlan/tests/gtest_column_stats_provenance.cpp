@@ -23,6 +23,7 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
 #include <Processors/QueryPlan/SaveSubqueryResultToBufferStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -496,6 +497,37 @@ TEST(ColumnStatsProvenance, JoinCardinalityClampInvalidatesDistinctCountUpperBou
     EXPECT_TRUE(isDistinctCountUpperBound(retained.ndv_provenance));
 }
 
+TEST(ColumnStatsProvenance, JoinOrderUsesOnlyDistinctCountUpperBounds)
+{
+    auto exact_stats = measuredColumnStats();
+    exact_stats.num_distinct_values = 40;
+    auto clamped_stats = exact_stats;
+    clamped_stats.ndv_provenance.add(EstimatedRowCountClamp);
+
+    QueryGraph query_graph;
+    RelationStats relation_stats;
+    relation_stats.estimated_rows = 100;
+    relation_stats.column_stats = {{"exact", exact_stats}, {"clamped", clamped_stats}};
+    query_graph.relation_stats.push_back(std::move(relation_stats));
+
+    PlanMemo dp_table;
+    BitSet leaf_relations;
+    leaf_relations.set(0);
+    EXPECT_EQ(getColumnStats(query_graph, dp_table, leaf_relations, "exact"), 40);
+    EXPECT_EQ(getColumnStats(query_graph, dp_table, leaf_relations, "clamped"), 100);
+
+    BitSet joined_relations;
+    joined_relations.set(0).set(1);
+    auto joined = std::make_shared<DPJoinEntry>(
+        0,
+        200,
+        std::unordered_map<String, ColumnStats>{{"exact", exact_stats}, {"clamped", clamped_stats}});
+    joined->relations = joined_relations;
+    dp_table.emplace(joined_relations, std::move(joined));
+    EXPECT_EQ(getColumnStats(query_graph, dp_table, joined_relations, "exact"), 40);
+    EXPECT_EQ(getColumnStats(query_graph, dp_table, joined_relations, "clamped"), 200);
+}
+
 TEST(ColumnStatsProvenance, JoinKeyNdvMinRespectsPreservedSide)
 {
     tryRegisterFunctions();
@@ -526,6 +558,42 @@ TEST(ColumnStatsProvenance, JoinKeyNdvMinRespectsPreservedSide)
     EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Left, JoinStrictness::Anti, 100, 40), (std::pair<UInt64, UInt64>{100, 40}));
     EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Left, JoinStrictness::Semi, 100, 40), (std::pair<UInt64, UInt64>{40, 40}));
     EXPECT_EQ(estimate_join_key_ndvs(JoinKind::Right, JoinStrictness::Semi, 40, 100), (std::pair<UInt64, UInt64>{40, 40}));
+}
+
+TEST(ColumnStatsProvenance, InvalidJoinKeyNdvDoesNotReduceValidUpperBound)
+{
+    tryRegisterFunctions();
+    auto left_header = makeHeader("l");
+    auto right_header = makeHeader("r");
+    JoinExpressionActions expression_actions(*left_header, *right_header);
+    const auto & inputs = expression_actions.getActionsDAG()->getInputs();
+    JoinActionRef left_key(inputs.at(0), expression_actions);
+    JoinActionRef right_key(inputs.at(1), expression_actions);
+    auto predicate = JoinActionRef::transform(
+        {left_key, right_key}, JoinActionRef::AddFunction(JoinConditionOperator::Equals));
+
+    auto invalid_left_stats = measuredColumnStats();
+    invalid_left_stats.num_distinct_values = 10;
+    invalid_left_stats.ndv_provenance.add(EstimatedRowCountClamp);
+    auto valid_right_stats = measuredColumnStats();
+    valid_right_stats.num_distinct_values = 100;
+
+    auto left = std::make_shared<DPJoinEntry>(
+        0, 1000, std::unordered_map<String, ColumnStats>{{"l", invalid_left_stats}});
+    auto right = std::make_shared<DPJoinEntry>(
+        1, 1000, std::unordered_map<String, ColumnStats>{{"r", valid_right_stats}});
+    DPJoinEntry joined(
+        left,
+        right,
+        0,
+        1,
+        1000,
+        JoinOperator(JoinKind::Inner, JoinStrictness::All, JoinLocality::Unspecified, {predicate}));
+
+    EXPECT_EQ(joined.column_stats.at("l").num_distinct_values, 10);
+    EXPECT_FALSE(isDistinctCountUpperBound(joined.column_stats.at("l").ndv_provenance));
+    EXPECT_EQ(joined.column_stats.at("r").num_distinct_values, 100);
+    EXPECT_TRUE(isDistinctCountUpperBound(joined.column_stats.at("r").ndv_provenance));
 }
 
 TEST(ColumnStatsProvenance, FilterAddsRowSubsetAndMakesRowsInexact)

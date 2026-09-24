@@ -84,7 +84,12 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         auto left_it = column_stats.find(left_col);
         auto right_it = column_stats.find(right_col);
 
-        if (left_it != column_stats.end() && right_it != column_stats.end())
+        /// An unsafe clamped NDV must not reduce the other side while leaving that side's valid
+        /// provenance intact. Keep both estimates unchanged unless both are upper bounds.
+        if (left_it != column_stats.end()
+            && right_it != column_stats.end()
+            && QueryPlanOptimizations::isDistinctCountUpperBound(left_it->second.ndv_provenance)
+            && QueryPlanOptimizations::isDistinctCountUpperBound(right_it->second.ndv_provenance))
         {
             bool update_left = false;
             bool update_right = false;
