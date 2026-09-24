@@ -96,8 +96,8 @@ ProcessorMemoryStats ExternalDistinctTransform::getMemoryStats() const
 
 size_t ExternalDistinctTransform::spill(size_t at_least_bytes)
 {
-    const size_t bytes = getMemoryStats().spillable_memory_bytes;
-    if (!bytes || isCancelled())
+    size_t bytes = getMemoryStats().spillable_memory_bytes;
+    if (!at_least_bytes || !bytes || isCancelled())
         return 0;
 
     if (auto * hashing = std::get_if<Hashing>(&state))
@@ -120,10 +120,22 @@ size_t ExternalDistinctTransform::spill(size_t at_least_bytes)
     }
     else if (auto * collecting = std::get_if<CollectingInput>(&state))
     {
-        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(collecting->chunks), collecting->bytes,
+        /// Spill a prefix of whole chunks so earlier runs still win ties for the first payload.
+        Chunks chunks;
+        bytes = 0;
+        for (auto & chunk : collecting->chunks)
+        {
+            bytes += chunk.allocatedBytes();
+            chunks.emplace_back(std::move(chunk));
+            if (bytes >= at_least_bytes)
+                break;
+        }
+        collecting->chunks.erase(collecting->chunks.begin(), collecting->chunks.begin() + chunks.size());
+        collecting->bytes -= bytes;
+
+        auto run = prepareRun(spill_layout->getInputRunHeader(), std::move(chunks), bytes,
             spill_layout->getKeySortDescription(), MergeSorter::Mode::MergeUniqueChunks);
         spillRun(std::move(run));
-        state.emplace<CollectingInput>();
     }
 
     return isCancelled() ? 0 : bytes;
