@@ -7,7 +7,9 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/LambdaNode.h>
+#include <Analyzer/Utils.h>
 
+#include <Common/likePatternToRegexp.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -15,6 +17,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
+#include <Interpreters/ITokenizer.h>
 
 namespace DB
 {
@@ -104,6 +107,9 @@ public:
                 && column_node->getColumnSourceOrNull() == lambda_arguments_node;
         };
 
+        if (tryRewriteToHasTokenFunction(*array_exists_function_node, lambda_node->getExpression(), is_lambda_argument))
+            return;
+
         auto * filter_node = lambda_node->getExpression()->as<FunctionNode>();
         if (!filter_node || filter_node->getFunctionName() != "equals")
             return;
@@ -180,6 +186,88 @@ public:
         array_exists_function_arguments_nodes[0] = std::move(array_exists_function_arguments_nodes[1]);
         array_exists_function_arguments_nodes[1] = std::move(has_constant_element_argument);
         array_exists_function_node->resolveAsFunction(has_function->build(array_exists_function_node->getArgumentColumns()));
+    }
+
+private:
+    /// Rewrite arrayExists(x -> f(x, c), tokens(input[, tokenizer])) to hasTokenLike/hasTokenMatch(input, pattern, tokenizer),
+    /// which a text index on `input` can answer. Unlike hasTokenPrefix, they never apply the preprocessor of that index.
+    bool tryRewriteToHasTokenFunction(FunctionNode & array_exists_function_node, const QueryTreeNodePtr & lambda_expression, const auto & is_lambda_argument)
+    {
+        auto & arguments = array_exists_function_node.getArguments().getNodes();
+        const auto * tokens_function_node = arguments[1]->as<FunctionNode>();
+        if (!tokens_function_node || tokens_function_node->getFunctionName() != "tokens")
+            return false;
+
+        /// With Nullable or LowCardinality input the rewritten function would not return UInt8.
+        /// Tokenizer parameters in separate arguments, as in tokens(s, 'ngrams', 3), are not rewritten.
+        const auto & tokens_arguments = tokens_function_node->getArguments().getNodes();
+        if (tokens_arguments.empty() || tokens_arguments.size() > 2 || !isStringOrFixedString(tokens_arguments[0]->getResultType()))
+            return false;
+
+        /// The tokenizer is always passed, otherwise the function would take it from a text index on `input`.
+        QueryTreeNodePtr tokenizer;
+        if (tokens_arguments.size() == 2)
+        {
+            const auto * tokenizer_constant = tokens_arguments[1]->as<ConstantNode>();
+            if (!tokenizer_constant || !isString(tokenizer_constant->getResultType()))
+                return false;
+            tokenizer = tokens_arguments[1];
+        }
+        else
+        {
+            tokenizer = std::make_shared<ConstantNode>(String(SplitByNonAlphaTokenizer::getExternalName()));
+        }
+
+        const auto * filter_node = lambda_expression->as<FunctionNode>();
+        if (!filter_node)
+            return false;
+
+        bool is_position = false;
+        if (filter_node->getFunctionName() == "greater")
+        {
+            const auto & greater_arguments = filter_node->getArguments().getNodes();
+            const auto * zero_constant = greater_arguments.size() == 2 ? greater_arguments[1]->as<ConstantNode>() : nullptr;
+            if (!zero_constant || zero_constant->getValue() != Field(UInt64(0)))
+                return false;
+
+            filter_node = greater_arguments[0]->as<FunctionNode>();
+            if (!filter_node || filter_node->getFunctionName() != "position")
+                return false;
+            is_position = true;
+        }
+
+        const auto & filter_arguments = filter_node->getArguments().getNodes();
+        if (filter_arguments.size() != 2 || !is_lambda_argument(filter_arguments[0]))
+            return false;
+
+        const auto * needle_constant = filter_arguments[1]->as<ConstantNode>();
+        if (!needle_constant || !isString(needle_constant->getResultType()))
+            return false;
+
+        const auto & needle = needle_constant->getValue().safeGet<String>();
+        const auto & filter_function_name = filter_node->getFunctionName();
+        String function_name = "hasTokenLike";
+        QueryTreeNodePtr pattern;
+
+        if (is_position)
+            pattern = std::make_shared<ConstantNode>("%" + escapeForLikePattern(needle) + "%");
+        else if (filter_function_name == "startsWith")
+            pattern = std::make_shared<ConstantNode>(escapeForLikePattern(needle) + "%");
+        else if (filter_function_name == "endsWith")
+            pattern = std::make_shared<ConstantNode>("%" + escapeForLikePattern(needle));
+        else if (filter_function_name == "like")
+            pattern = filter_arguments[1];
+        else if (filter_function_name == "match")
+        {
+            function_name = "hasTokenMatch";
+            pattern = filter_arguments[1];
+        }
+        else
+            return false;
+
+        arguments = {tokens_arguments[0], std::move(pattern), std::move(tokenizer)};
+        resolveOrdinaryFunctionNodeByName(array_exists_function_node, function_name, getContext());
+        return true;
     }
 };
 

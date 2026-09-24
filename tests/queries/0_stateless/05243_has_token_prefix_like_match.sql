@@ -67,7 +67,8 @@ SELECT
     countIf(hasTokenLike(s, 'a%c') != arrayExists(t -> like(t, 'a%c'), tokens(s))),
     countIf(hasTokenMatch(s, '^[ab]+c$') != arrayExists(t -> match(t, '^[ab]+c$'), tokens(s))),
     countIf(hasTokenPrefix(s, 'ab'))
-FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][x % 7 + 1], range(number % 5)), '') AS s FROM numbers(1000));
+FROM (SELECT arrayStringConcat(arrayMap(x -> ['ab', 'abc', 'bac', 'ca', 'aac', ' ', '-'][x % 7 + 1], range(number % 5)), '') AS s FROM numbers(1000))
+SETTINGS optimize_rewrite_array_exists_to_has = 0;
 
 SELECT '-- arrays in a full column, the first row included';
 SELECT n, hasTokenPrefix(arr, 'ab'), hasTokenLike(arr, 'a_c'), hasTokenMatch(arr, '^abc$')

@@ -1,0 +1,100 @@
+-- the same rows with the rewrite, without it, without the index use and without the index
+startsWith	8	28
+startsWith	8	28
+startsWith	8	28
+startsWith	8	28
+startsWith	8	28
+endsWith	8	28
+endsWith	8	28
+endsWith	8	28
+endsWith	8	28
+endsWith	8	28
+position	24	11412
+position	24	11412
+position	24	11412
+position	24	11412
+position	24	11412
+like	8	28
+like	8	28
+like	8	28
+like	8	28
+like	8	28
+match	8	3228
+match	8	3228
+match	8	3228
+match	8	3228
+match	8	3228
+explicit tokenizer	8	8156
+explicit tokenizer	8	8156
+explicit tokenizer	8	8156
+explicit tokenizer	8	8156
+NOT	1000	512364
+NOT	1000	512364
+SELECT list	0	1016
+SELECT list	1	8
+SELECT list	0	1016
+SELECT list	1	8
+empty needle	1024
+empty needle	1024
+-- the rewrite
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'charg%\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'%rged\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'%harg%\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'ch%ed\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenMatch(__table1.msg, \'^[0-9]{5}$\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'Charg%\', \'splitByNonAlpha\')
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE hasTokenLike(__table1.msg, \'50\\\\%\\\\_\\\\\\\\%\', \'splitByNonAlpha\')
+-- the index prunes granules and is read directly
+Parts: 1 | Granules: 1
+Granules: 128/128
+Granules: 1/128
+Parts: 1 | Granules: 3
+Granules: 128/128
+Granules: 3/128
+Parts: 1 | Granules: 1
+Granules: 128/128
+Granules: 1/128
+direct read	1	0
+-- not rewritten
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, toString(__table1.id))), tokens(__table1.msg))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, materialize(\'charg\'))), tokens(__table1.msg))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), and(startsWith(x, \'charg\'), greater(__table1.id, 0))), tokens(__table1.msg))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x, y), startsWith(x, \'charg\')), tokens(__table1.msg), tokens(__table1.msg))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, \'cha\')), tokens(__table1.msg, \'ngrams\', 3))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(x, \'charg\')), tokens(toNullable(__table1.msg)))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), ilike(x, \'CH%ED\')), tokens(__table1.msg))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), greater(position(x, \'harg\'), 1)), tokens(__table1.msg))
+SELECT count() AS `count()`\nFROM default.tab AS __table1\nWHERE arrayExists(lambda(tuple(x), startsWith(\'charged\', x)), tokens(__table1.msg))
+0
+16
+8
+-- an invalid pattern raises the same exception
+-- a tokenizer other than the index tokenizer does not use the index
+24
+24
+Parts: 1 | Granules: 128
+Granules: 128/128
+-- lower preprocessor: the rewritten functions do not apply it, so the result stays case-sensitive
+8	8156
+8	8156
+8	8156
+8	8156
+8	8156
+8	8156
+-- an index on an expression serves the rewrite over the same expression
+16	8184
+16	8184
+Parts: 1 | Granules: 2
+Granules: 128/128
+Granules: 2/128
+-- LIKE metacharacters in the needle, FixedString input
+startsWith	[1]
+startsWith	[1]
+endsWith	[4]
+endsWith	[4]
+position	[3]
+position	[3]
+FixedString	[]
+FixedString	[]
+FixedString	[3]
+FixedString	[3]

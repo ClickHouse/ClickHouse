@@ -35,15 +35,15 @@ FROM numbers(1024);
 SELECT '-- results are the same as without the index and as arrayExists over tokens';
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasTokenPrefix(msg, 'charg');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasTokenPrefix(msg, 'charg') SETTINGS use_skip_indexes = 0;
-SELECT arraySort(groupArray(id)) FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(msg));
+SELECT arraySort(groupArray(id)) FROM tab WHERE arrayExists(t -> startsWith(t, 'charg'), tokens(msg)) SETTINGS optimize_rewrite_array_exists_to_has = 0;
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasTokenLike(msg, '%harg%');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasTokenLike(msg, '%harg%') SETTINGS use_skip_indexes = 0;
-SELECT arraySort(groupArray(id)) FROM tab WHERE arrayExists(t -> like(t, '%harg%'), tokens(msg));
+SELECT arraySort(groupArray(id)) FROM tab WHERE arrayExists(t -> like(t, '%harg%'), tokens(msg)) SETTINGS optimize_rewrite_array_exists_to_has = 0;
 
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasTokenMatch(msg, '^[0-9]{5}$');
 SELECT arraySort(groupArray(id)) FROM tab WHERE hasTokenMatch(msg, '^[0-9]{5}$') SETTINGS use_skip_indexes = 0;
-SELECT arraySort(groupArray(id)) FROM tab WHERE arrayExists(t -> match(t, '^[0-9]{5}$'), tokens(msg));
+SELECT arraySort(groupArray(id)) FROM tab WHERE arrayExists(t -> match(t, '^[0-9]{5}$'), tokens(msg)) SETTINGS optimize_rewrite_array_exists_to_has = 0;
 
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'logo');
 SELECT count() FROM tab WHERE hasTokenPrefix(msg, 'nothing');
