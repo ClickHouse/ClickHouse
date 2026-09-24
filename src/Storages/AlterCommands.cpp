@@ -2124,6 +2124,12 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     NameSet constraint_names;
     for (const auto & constraint : metadata->constraints.getConstraints())
         constraint_names.insert(constraint->as<const ASTConstraintDeclaration &>().name);
+    /// Projection names need the same statement-local snapshot. In particular, an
+    /// `ADD PROJECTION IF NOT EXISTS` whose name is already taken is a no-op and its
+    /// declaration must not be built or validated.
+    NameSet projection_names;
+    for (const auto & projection : metadata->projections)
+        projection_names.insert(projection.name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
 
     /// A Replicated database and Shared Catalog execute an ALTER again on secondary replicas. The
@@ -2512,7 +2518,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             /// Building the projection here would otherwise move failures for every other
             /// `ADD PROJECTION` from `apply` to this point.
-            if (validate_new_projection_codecs && command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
+            if (validate_new_projection_codecs
+                && !(command.if_not_exists && projection_names.contains(command.projection_name))
+                && command.projection_decl->as<const ASTProjectionDeclaration &>().columns)
             {
                 auto projection = ProjectionDescription::getProjectionFromAST(
                     command.projection_decl,
@@ -2522,7 +2530,10 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     LoadingStrictnessLevel::CREATE);
                 ProjectionDescription::validateDeclaredColumnCodecs(projection, context, LoadingStrictnessLevel::CREATE);
             }
+            projection_names.insert(command.projection_name);
         }
+        else if (command.type == AlterCommand::DROP_PROJECTION && !command.partition && !command.clear)
+            projection_names.erase(command.projection_name);
 
         /// Collect default expressions for MODIFY and ADD commands
         if (command.type == AlterCommand::MODIFY_COLUMN || command.type == AlterCommand::ADD_COLUMN)

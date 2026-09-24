@@ -6,6 +6,14 @@ ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
 -- `ADD PROJECTION` goes through the same declaration parser as `CREATE TABLE`.
 ALTER TABLE t_projection_codecs_alter
     ADD PROJECTION p (x UInt64 CODEC(NONE), y UInt64) AS (SELECT x, y ORDER BY x);
+-- A duplicate `IF NOT EXISTS` is a no-op, so its declaration is not validated. The same rule
+-- applies when an earlier command in this `ALTER` took the name.
+ALTER TABLE t_projection_codecs_alter
+    ADD PROJECTION IF NOT EXISTS p (z UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x);
+ALTER TABLE t_projection_codecs_alter
+    ADD PROJECTION q (x UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x),
+    ADD PROJECTION IF NOT EXISTS q (z UInt64 CODEC(NONE)) AS (SELECT x ORDER BY x);
+ALTER TABLE t_projection_codecs_alter DROP PROJECTION q;
 INSERT INTO t_projection_codecs_alter SELECT number, number FROM numbers(100000);
 -- Same size check as `04846_projection_column_codecs`, on the `ALTER` path.
 SELECT column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
