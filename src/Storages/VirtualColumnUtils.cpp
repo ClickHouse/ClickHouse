@@ -700,16 +700,15 @@ bool isDeterministicAllowingTopKFilter(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
+    /// The only exception to `isDeterministic`: the `__topKFilter` call itself. Everything else goes through
+    /// the same checks, including the functions hidden in a constant-folded lambda carrier.
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "__topKFilter")
         return true;
 
-    if (!node->function_base->isDeterministic())
-        return node->function_base->getName() == "__topKFilter";
+    if (!node->isDeterministic())
+        return false;
 
-    return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
