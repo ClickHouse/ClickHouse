@@ -5,9 +5,9 @@
 -- =============================================================================
 -- Four AI function default flips: `ai_function_allow_insecure_endpoint` from 1 to 0 and
 -- `ai_function_max_api_calls_per_query` from 0 (unlimited) to 1000 in 26.8, then
--- `ai_function_max_retries` from 0 to 1 in 26.9, and `ai_function_max_api_calls_per_query`
--- back to 0 (unlimited) in 26.10. `compatibility = 26.6` predates all of them and
--- `compatibility = 26.9` reverts only the last one, which pins the previous_value/new_value
+-- `ai_function_max_retries` from 0 to 1 and `ai_function_max_api_calls_per_query` back to
+-- 0 (unlimited) in 26.9. `compatibility = 26.6` predates all of them and
+-- `compatibility = 26.8` reverts the last two, which pins the previous_value/new_value
 -- pairs in `SettingsChangesHistory`.
 --
 -- The endpoint check runs in `resolveAIParams`, before the zero-row early return
@@ -26,8 +26,8 @@ SELECT '-- Current defaults';
 SELECT getSetting('ai_function_allow_insecure_endpoint'), getSetting('ai_function_max_api_calls_per_query'), getSetting('ai_function_max_retries');
 SELECT aiGenerate(x, map('credentials', 'ai_compat_remote_http')) FROM tab; -- { serverError BAD_ARGUMENTS }
 
-SELECT '-- compatibility = 26.9 restores the API call quota';
-SET compatibility = '26.9';
+SELECT '-- compatibility = 26.8 restores the API call quota and the retry count';
+SET compatibility = '26.8';
 SELECT getSetting('ai_function_allow_insecure_endpoint'), getSetting('ai_function_max_api_calls_per_query'), getSetting('ai_function_max_retries');
 SELECT aiGenerate(x, map('credentials', 'ai_compat_remote_http')) FROM tab; -- { serverError BAD_ARGUMENTS }
 
