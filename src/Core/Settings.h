@@ -116,6 +116,7 @@ class WriteBuffer;
     M(CLASS_NAME, StreamingHandleErrorMode) \
     M(CLASS_NAME, String) \
     M(CLASS_NAME, TextIndexPostingListApplyMode) \
+    M(CLASS_NAME, TextIndexPostingsIntersectionAlgorithm) \
     M(CLASS_NAME, Timezone) \
     M(CLASS_NAME, TotalsMode) \
     M(CLASS_NAME, TransactionsWaitCSNMode) \
