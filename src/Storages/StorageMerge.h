@@ -224,6 +224,11 @@ public:
     /// plans are moved out of this step, which the caller then replaces.
     QueryPlan expandForParallelReplicas();
 
+    /// Whether the plan-based parallel replicas may expand this read (see `expandForParallelReplicas`), judged
+    /// by the settings and `FINAL` alone, without creating the child plans. `false` means this step is still in
+    /// the plan when the second optimization pass runs; `true` only means it might not be.
+    bool mayBeExpandedForParallelReplicas() const;
+
     void addFilter(FilterDAGInfo filter);
 
 private:

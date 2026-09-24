@@ -447,10 +447,12 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         {
             /// A `Merge` table is read through its own step and pass 2 asks every child table
             /// (`ReadFromMerge::requestReadingInOrder`), so the probe asks them all the same way.
-            /// With parallel replicas the `Merge` read is expanded into its tables later, after
-            /// which pass 2 does not see this step any more, so keep the explicit `Sort + Limit`.
-            const auto context = merge->getContext();
-            if (!context->canUseParallelReplicasOnInitiator() && !context->canUseParallelReplicasOnFollower())
+            /// The plan-based parallel replicas may expand the `Merge` read into its tables later
+            /// (`applyParallelReplicas` runs right before pass 2), after which pass 2 does not see this
+            /// step any more, so keep the explicit `Sort + Limit` then. A `FINAL` read, or any read with
+            /// `parallel_replicas_allow_merge_tables = 0`, is never expanded, and the classic parallel
+            /// replicas read every child without them, so pass 2 still sees this step in those cases.
+            if (!settings.enable_parallel_replicas || !merge->mayBeExpandedForParallelReplicas())
             {
                 const auto order_info = getInputOrderIfReadInOrderIsUseful(
                     probe_sort_step,

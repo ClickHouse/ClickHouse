@@ -2515,6 +2515,17 @@ const std::vector<StorageID> & ReadFromMerge::getExpandableReads(
     return expandable_reads.emplace(std::move(storage_ids));
 }
 
+bool ReadFromMerge::mayBeExpandedForParallelReplicas() const
+{
+    /// The same conditions under which `createChildrenPlans` keeps parallel replicas for the children: a
+    /// `FINAL` read is never expanded (`getExpandableReads` rejects a `FINAL` child), and neither is any
+    /// `Merge` read with `parallel_replicas_allow_merge_tables = 0` (`expandMergeReadsForParallelReplicas`).
+    const auto & settings = context->getSettingsRef();
+    return settings[Setting::parallel_replicas_plan_based]
+        && settings[Setting::parallel_replicas_allow_merge_tables]
+        && !InterpreterSelectQuery::isQueryWithFinal(query_info);
+}
+
 QueryPlan ReadFromMerge::expandForParallelReplicas()
 {
     /// Precondition: `getExpandableReads` returned a value, so the child plans exist and every one of them
