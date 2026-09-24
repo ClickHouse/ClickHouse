@@ -187,6 +187,15 @@ bool containsFloat(const DataTypePtr & type)
     if (const auto * map = typeid_cast<const DataTypeMap *>(unwrapped.get()))
         return containsFloat(map->getKeyType()) || containsFloat(map->getValueType());
 
+    if (const auto * variant = typeid_cast<const DataTypeVariant *>(unwrapped.get()))
+    {
+        for (const auto & alternative : variant->getVariants())
+            if (containsFloat(alternative))
+                return true;
+
+        return false;
+    }
+
     return isFloat(unwrapped);
 }
 

@@ -42,9 +42,9 @@ bool isStorageUsedInTree(const StoragePtr & storage, const IQueryTreeNode * root
 bool stringFamilyPairIsNotEqualityEquivalent(const DataTypePtr & left_type, const DataTypePtr & right_type);
 
 /// Whether the type is a floating-point type or a container that holds one, looking through
-/// `Nullable` and `LowCardinality`. `equals` compares floats numerically, so `-0.0 = 0.0` is true
-/// and `nan = nan` is false, while a set is keyed on the raw bits, so `-0.0 IN (0.0)` is false and
-/// `nan IN (nan)` is true. A rewrite of a comparison chain over such an expression into `IN` or
+/// `Nullable` and `LowCardinality` and into `Variant` alternatives. `equals` compares floats
+/// numerically, so `-0.0 = 0.0` is true and `nan = nan` is false, while a set is keyed on the raw
+/// bits, so `-0.0 IN (0.0)` is false and `nan IN (nan)` is true. A rewrite of a comparison chain over such an expression into `IN` or
 /// `NOT IN` therefore changes the result and has to decline.
 bool containsFloat(const DataTypePtr & type);
 
