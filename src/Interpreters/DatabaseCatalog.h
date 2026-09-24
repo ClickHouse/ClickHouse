@@ -3,6 +3,7 @@
 #include <Core/UUID.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Interpreters/DDLGuard.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/IAST_fwd.h>

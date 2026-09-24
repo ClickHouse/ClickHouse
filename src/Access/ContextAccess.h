@@ -12,6 +12,7 @@
 #include <base/scope_guard.h>
 #include <Common/SettingsChanges.h>
 #include <Interpreters/Context_fwd.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST_fwd.h>
 
 

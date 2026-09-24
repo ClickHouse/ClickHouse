@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Interpreters/IInterpreter.h>
+#include <Interpreters/CurrentDatabaseInfo.h>
 #include <Parsers/IAST_fwd.h>
 
 
