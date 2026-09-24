@@ -335,8 +335,6 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
-/// The tests a function NAME alone decides: shared by the `ASTFunction` branch
-/// below and by `ASTColumnsApplyTransformer`, which carries a bare name.
 bool namesNonDeterministicFunction(const String & name, const ContextPtr & context)
 {
     const String stripped = stripAggregateCombinators(name);
@@ -421,8 +419,7 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
         /// non-injective lambda key (e.g. `arrayReverseSort(x -> 0, arr)`) the
         /// relative order of tied elements is implementation-defined and can
         /// differ between plans, so the produced array *content* differs. The
-        /// single-argument forms sort by value and stay deterministic, so this
-        /// test reads the argument count and a name alone cannot decide it.
+        /// single-argument forms sort by value and stay deterministic.
         /// Compared lowercased for the same reason as above; over-matching an
         /// unresolvable spelling merely skips one more query, which is safe.
         static const std::unordered_set<String> lambda_sort_functions = {
@@ -434,9 +431,8 @@ bool hasNonDeterministicFunctionsImpl(const ASTPtr & ast, const ContextPtr & con
 
     if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
     {
-        /// `func_name`, `parameters` and `lambda` are not among this node's
-        /// children (`Parsers/ASTColumnsTransformers.h`), so neither the branch
-        /// above nor the recursion below reaches the function `APPLY` applies.
+        /// `func_name`, `parameters` and `lambda` are not in this node's
+        /// `children`, so the recursion below does not reach them.
         if (!apply->func_name.empty() && namesNonDeterministicFunction(apply->func_name, context))
             return true;
         if (hasNonDeterministicFunctionsImpl(apply->lambda, context))
