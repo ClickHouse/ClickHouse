@@ -565,8 +565,6 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
 
-    /// True if `filter_actions_dag` was built from a filter condition of this name. The steps above a read
-    /// keep being rebuilt after that DAG is frozen, so one may carry a condition the DAG does not describe.
     bool filterActionsDAGWasBuiltFrom(const String & filter_column_name) const
     {
         return filter_actions_dag_conditions.contains(filter_column_name);

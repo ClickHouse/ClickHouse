@@ -124,11 +124,7 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
             if (!filter_node || !isDeterministicAllowingTopKFilter(filter_node))
                 return;
 
-            /// The hash describes `filter_actions_dag`, which is frozen at index analysis while the steps
-            /// above the read keep being merged and widened. A step that DAG was not built from applies
-            /// conjuncts the hash does not cover, so a granule it empties may still hold rows the hashed
-            /// condition matches. The reverse inclusion is sound and common: the DAG also describes this
-            /// read's PREWHERE and row-level filter, neither of which is a conjunct of the step.
+            /// `filter_actions_dag` is frozen at index analysis; a later-merged step can carry conjuncts it omits.
             if (!read_from_merge_tree->filterActionsDAGWasBuiltFrom(filter_step->getFilterColumnName()))
                 return;
 
