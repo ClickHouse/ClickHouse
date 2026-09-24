@@ -202,7 +202,7 @@ void MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::rewriteSingleD
 {
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Rewriting '{}' to '{}'", from, to);
 
-    writeString(to.string(), buffer);
+    writeString(pathToGenericString(to), buffer);
     buffer.finalize();
 
     LOG_TRACE(getLogger("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation"), "Updated '{}' to '{}'", from, to);
@@ -333,7 +333,7 @@ void MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::undo()
             /*object_attributes*/ std::nullopt,
             /*buf_size*/ 128,
             /*settings*/ DB::getWriteSettings());
-        writeString(path.string(), *buf);
+        writeString(pathToGenericString(path), *buf);
         buf->finalize();
     });
 }
