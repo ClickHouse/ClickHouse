@@ -30,12 +30,36 @@ FROM mergeTreeTextIndex(currentDatabase(), tab_256_tokens, idx) WHERE token != '
 SELECT 'no index', count(), sum(id) FROM tab_256_tokens WHERE hasAllTokens(s, arrayStringConcat(range(256), ' ')) SETTINGS use_skip_indexes = 0;
 
 SELECT '255 bruteforce', count(), sum(id) FROM tab_256_tokens WHERE hasAllTokens(s, arrayStringConcat(range(255), ' '))
-SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '05255_255_bruteforce';
 
 SELECT '256 bruteforce', count(), sum(id) FROM tab_256_tokens WHERE hasAllTokens(s, arrayStringConcat(range(256), ' '))
-SETTINGS text_index_postings_intersection_algorithm = 'bruteforce';
+SETTINGS text_index_postings_intersection_algorithm = 'bruteforce', log_comment = '05255_256_bruteforce';
 
 SELECT '256 auto', count(), sum(id) FROM tab_256_tokens WHERE hasAllTokens(s, arrayStringConcat(range(256), ' '))
 SETTINGS text_index_postings_intersection_algorithm = 'auto';
+
+SYSTEM FLUSH LOGS query_log;
+
+-- The counters land on whichever replica read the part, so sum every row of each tagged query via `initial_query_id`.
+WITH tagged AS
+(
+    SELECT query_id, log_comment
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
+      AND current_database = currentDatabase()
+      AND type = 'QueryFinish'
+      AND is_initial_query = 1
+      AND log_comment IN ('05255_255_bruteforce', '05255_256_bruteforce')
+)
+SELECT
+    tagged.log_comment,
+    sum(l.ProfileEvents['TextIndexLazyBruteForceIntersections']) > 0 AS brute_force,
+    sum(l.ProfileEvents['TextIndexLazyLeapfrogIntersections']) > 0 AS leapfrog
+FROM system.query_log AS l
+INNER JOIN tagged ON l.initial_query_id = tagged.query_id
+WHERE l.event_date >= yesterday() AND l.event_time >= now() - 600
+  AND l.type = 'QueryFinish'
+GROUP BY tagged.log_comment
+ORDER BY tagged.log_comment;
 
 DROP TABLE tab_256_tokens;
