@@ -195,7 +195,8 @@ In these cases the function is evaluated on the raw `input` values, still with t
 
 constexpr auto tokenizer_description = R"(
 Prior to searching, the function tokenizes `input` using the tokenizer specified for the text index on `input`, and the `splitByNonAlpha` tokenizer if `input` has no text index.
-As for [`hasAnyTokens`](#hasAnyTokens), the tokenizer of the index is used in filters and projections directly over the table, but not e.g. on the result of `GROUP BY` or `JOIN`, or in mutations such as `ALTER TABLE ... DELETE`, where the result can differ.
+As for [`hasAnyTokens`](#hasAnyTokens), whether the tokenizer of the index is used depends on the query plan: it is used in filters and projections directly over the table, including conditions pushed down to it such as `HAVING` on a grouping key,
+but not in expressions after `GROUP BY` or `JOIN`, in mutations such as `ALTER TABLE ... DELETE`, or in conditions that are not pushed down, where the result can differ.
 The optional `tokenizer` argument sets the tokenizer explicitly, which gives the same result in every query, and then the text index is used only if it has the same tokenizer.
 If several text indexes on `input` would give the function different tokenizers, it throws an exception, and the `tokenizer` argument selects among them.
 )";

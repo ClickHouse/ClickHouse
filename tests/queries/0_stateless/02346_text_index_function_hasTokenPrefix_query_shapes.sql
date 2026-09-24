@@ -1,6 +1,6 @@
 -- Tags: no-parallel-replicas
--- Without the tokenizer argument, `hasTokenPrefix` uses the index tokenizer only in filters and projections over the table, and
--- `splitByNonAlpha` after GROUP BY and in mutations, as `hasAnyTokens` does. It never applies the index preprocessor.
+-- Without the tokenizer argument, `hasTokenPrefix` uses the index tokenizer only where the plan evaluates it over the table,
+-- and `splitByNonAlpha` after GROUP BY and in mutations, as `hasAnyTokens` does. It never applies the index preprocessor.
 
 SET enable_analyzer = 1;
 SET use_skip_indexes = 1;
@@ -33,6 +33,11 @@ SELECT countIf(hasTokenPrefix(tag, 'prod')) FROM tab;
 SELECT '-- after GROUP BY: splitByNonAlpha, unless the tokenizer is explicit';
 SELECT tag, hasTokenPrefix(tag, 'prod') FROM tab GROUP BY tag ORDER BY tag;
 SELECT tag, hasTokenPrefix(tag, 'prod', 'array') FROM tab GROUP BY tag ORDER BY tag;
+
+SELECT '-- HAVING on the grouping key: the index tokenizer only if the condition is pushed down to the table';
+SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasTokenPrefix(tag, 'prod')) SETTINGS query_plan_filter_push_down = 1;
+SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasTokenPrefix(tag, 'prod')) SETTINGS query_plan_filter_push_down = 0;
+SELECT count() FROM (SELECT tag FROM tab GROUP BY tag HAVING hasTokenPrefix(tag, 'prod', 'array')) SETTINGS query_plan_filter_push_down = 0;
 
 SELECT '-- ALTER TABLE DELETE: splitByNonAlpha, unless the tokenizer is explicit';
 ALTER TABLE tab DELETE WHERE hasTokenPrefix(tag, 'prod');

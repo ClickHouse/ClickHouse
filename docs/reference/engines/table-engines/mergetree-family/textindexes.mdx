@@ -565,7 +565,7 @@ The latter is instead evaluated by a dictionary scan (`use_text_index_like_evalu
 See [LIKE/ILIKE queries](#like-ilike-queries-perf).
 
 ⁵ `hasTokenPrefix`, `hasTokenLike` and `hasTokenMatch` are evaluated by a dictionary scan, see [below](#functions-example-hastokenprefix-hastokenlike-hastokenmatch).
-Their result does not depend on settings. With a preprocessor or a postprocessor, the functions are evaluated on the raw column values and the index is not used.
+With the tokenizer argument, their result depends neither on settings nor on the query plan; without it, see below. With a preprocessor or a postprocessor, the functions are evaluated on the raw column values and the index is not used.
 
 ⁶ The *compatible tokenizers* column ignores the [`keyValuePairs`](#tokenizer-key-value-pairs) tokenizer, which is a specialized tokenizer for `Map` columns.
 
@@ -858,7 +858,9 @@ ClickHouse finds them by a scan of the dictionary (a seek to the range of matchi
 If too many tokens match (see settings [text_index_like_max_matched_tokens](/reference/settings/session-settings/text-index#text_index_like_max_matched_tokens) and [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)), the functions are evaluated on the column instead.
 
 Like `hasAnyTokens`, the functions use the tokenizer of the index if their optional third argument is omitted; an explicit tokenizer argument must match the index tokenizer for the index to be used.
-The tokenizer of the index is applied in filters and projections directly over the table, but not e.g. on the result of `GROUP BY` or `JOIN`, or in mutations such as `ALTER TABLE ... DELETE`, where the result can differ; pass the tokenizer argument to get the same result in every query.
+Without the argument, whether a call gets the tokenizer of the index depends on the query plan: filters and projections directly over the table get it, and so does a condition pushed down to the table, such as `HAVING` on a grouping key.
+Expressions after `GROUP BY` or `JOIN`, mutations such as `ALTER TABLE ... DELETE`, and conditions that are not pushed down (e.g. with `query_plan_filter_push_down = 0`) use `splitByNonAlpha` instead, so the result can differ.
+Pass the tokenizer argument to get the same result in every query.
 The functions never apply the preprocessor of the index: with a preprocessor or a postprocessor, they see the raw column values and the index is not used.
 Settings such as `use_skip_indexes` or `use_text_index_like_evaluation_by_dictionary_scan` only decide whether the index is used, not the result.
 
