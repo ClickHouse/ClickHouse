@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeInterval.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/FunctionHelpers.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <WindowFunctions/helpers.h>
 #include <Common/Exception.h>

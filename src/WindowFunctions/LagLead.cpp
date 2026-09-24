@@ -2,7 +2,9 @@
 #include <AggregateFunctions/WindowFunction.h>
 #include <Columns/ColumnConst.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/getLeastSupertype.h>
 #include <Functions/CastOverloadResolver.h>
+#include <Functions/IFunction.h>
 #include <Processors/Transforms/WindowTransform.h>
 #include <Common/Exception.h>
 
