@@ -215,10 +215,23 @@ close it.
         """
         return f"backport/{name}/{pr_number}"
 
+    @staticmethod
+    def _is_ancestor(commit: str, ref: str) -> bool:
+        """
+        True if `commit` is an ancestor of `ref`. A negative answer is an ordinary result
+        here rather than a failure, so it must not be logged as an error; git's own
+        diagnostics are passed through unchanged.
+        """
+        rc, _, err = Shell.get_res_stdout_stderr(
+            f"git merge-base --is-ancestor {commit} {ref}"
+        )
+        if err:
+            print(err)
+        return rc == 0
+
     def pre_check(self):
-        self._backported = Shell.check(
-            f"git merge-base --is-ancestor {self.pr.merge_commit_sha} {self.REMOTE}/{self.name}",
-            verbose=True,
+        self._backported = self._is_ancestor(
+            self.pr.merge_commit_sha, f"{self.REMOTE}/{self.name}"
         )
         if self._backported:
             print(
@@ -525,10 +538,7 @@ close it.
                 self.cherrypick_pr.number,
             )
             return False
-        if not Shell.check(
-            f"git merge-base --is-ancestor {base_parents[0]} {remote_release}",
-            verbose=True,
-        ):
+        if not self._is_ancestor(base_parents[0], remote_release):
             logging.info(
                 "Retry of cherry-pick PR #%s skipped: its base is not built on %s",
                 self.cherrypick_pr.number,
