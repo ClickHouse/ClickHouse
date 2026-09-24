@@ -27,6 +27,9 @@
     dictGet by dict name
 03062_analyzer_join_engine_missing_column
 
+    https://github.com/ClickHouse/clickhouse-private/issues/17173
+03174_exact_rows_before_aggregation
+
     https://github.com/ClickHouse/ClickHouse/issues/74411
 02884_create_view_with_sql_security_option
 
@@ -67,6 +70,7 @@
 02493_max_streams_for_merge_tree_reading
 02675_predicate_push_down_filled_join_fix
 02809_prewhere_and_in
+02918_optimize_count_for_merge_tables
 01655_plan_optimizations_optimize_read_in_window_order
 01625_constraints_index_append
     Query memory limit exceeded: would use 19.63 MiB (attempt to allocate chunk of 1308788 bytes), current RSS 21.39 MiB, maximum: 19.07 MiB. (MEMORY_LIMIT_EXCEEDED
@@ -82,6 +86,7 @@
 00443_preferred_block_size_bytes
 02149_read_in_order_fixed_prefix
 02151_hash_table_sizes_stats
+02156_storage_merge_prewhere
 02354_vector_search_subquery
 02451_order_by_monotonic
 02864_statistics_usage
@@ -98,6 +103,7 @@
 03275_subcolumns_in_primary_key.gen
 03277_json_subcolumns_in_primary_key.gen
 02944_variant_as_common_type
+03262_filter_push_down_view
 01283_max_threads_simple_query_optimization
 
     # NOT BUGS
@@ -109,6 +115,7 @@
 02713_array_low_cardinality_string
 01748_partition_id_pruning
 01201_read_single_thread_in_order
+02402_merge_engine_with_view
 
 
     plan and incorrect result
@@ -118,6 +125,8 @@
     Limit for rows (controlled by 'max_rows_to_read' setting) exceeded
     !!!max rows: 20.00 million, current rows: 21.00 million
 02275_full_sort_join_long.gen
+    !!!max rows: 8.00, current rows: 16.38 thousand
+01414_push_predicate_when_contains_with_clause
     !!!max rows: 20.00 million, current rows: 22.00 million
 02435_rollback_cancelled_queries
     max rows: 1.00, current rows: 10.00
