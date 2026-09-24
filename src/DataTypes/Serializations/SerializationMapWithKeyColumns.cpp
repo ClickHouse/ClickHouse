@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Common/typeid_cast.h>
 #include <base/EnumReflection.h>
 
 #include <set>
@@ -42,7 +43,7 @@ IColumn & extractNestedColumn(IColumn & column)
     return assert_cast<ColumnMap &>(column).getNestedColumn();
 }
 
-} // namespace
+}
 
 void SerializationMapWithKeyColumns::writeManifest(WriteBuffer & ostr, const SerializationPtr & key_serialization, const MapKeyManifest & manifest)
 {
@@ -418,8 +419,25 @@ void SerializationMapWithKeyColumns::deserializeBinaryBulkStatePrefix(
 
     if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
     {
-        state = std::move(cached_state);
+        /// A single-key subcolumn reader publishes this manifest before per-key value states
+        /// exist. Reusing that state for a full-column read indexes `value_states` out of range.
+        auto * cached = typeid_cast<DeserializeBinaryBulkStateMapWithKeyColumns *>(cached_state.get());
+        if (!cached || cached->value_states.size() == cached->manifest.keys.size())
+        {
+            state = std::move(cached_state);
+            settings.path.pop_back();
+            return;
+        }
+
         settings.path.pop_back();
+        cached->value_states.resize(cached->manifest.keys.size());
+        for (size_t i = 0; i < cached->manifest.keys.size(); ++i)
+        {
+            addMapKeyPath(settings, cached->manifest.keys[i].key);
+            value_serialization->deserializeBinaryBulkStatePrefix(settings, cached->value_states[i], cache);
+            settings.path.pop_back();
+        }
+        state = std::move(cached_state);
         return;
     }
 

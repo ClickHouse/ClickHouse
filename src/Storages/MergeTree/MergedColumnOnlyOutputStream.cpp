@@ -51,7 +51,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
         data_part->name, data_part->storage.getLogName(),
-        serializations_override.empty() ? data_part->getSerializations().toSerializationByName() : std::move(serializations_override),
+        serializations_override.empty() ? data_part->getSerializations().toSerializationByName() : serializations_override,
         data_part_storage, data_part->index_granularity_info,
         storage_settings,
         columns_list_,

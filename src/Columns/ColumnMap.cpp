@@ -6,10 +6,8 @@
 #include <IO/Operators.h>
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Core/Field.h>
-
-#include <set>
-
 
 namespace DB
 {
@@ -464,14 +462,14 @@ void unionKeys(Array & dest, const Array & src)
     if (src.empty())
         return;
 
-    std::set<Field> unique(dest.begin(), dest.end());
+    SetWithMemoryTracking<Field> unique(dest.begin(), dest.end());
     unique.insert(src.begin(), src.end());
     dest.assign(unique.begin(), unique.end());
 }
 
 void collectKeysFromData(Array & dest, const ColumnMap & column)
 {
-    std::set<Field> unique(dest.begin(), dest.end());
+    SetWithMemoryTracking<Field> unique(dest.begin(), dest.end());
     const auto & keys_column = column.getNestedData().getColumn(0);
     for (size_t i = 0; i < keys_column.size(); ++i)
         unique.insert(keys_column[i]);
