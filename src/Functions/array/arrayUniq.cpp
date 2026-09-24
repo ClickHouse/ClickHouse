@@ -5,6 +5,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Common/HashTable/ClearableHashSet.h>
@@ -195,6 +196,10 @@ ColumnPtr FunctionArrayUniq::executeImpl(const ColumnsWithTypeAndName & argument
             || executeNumber<Int64>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Float32>(*offsets, *data_columns[0], null_map, res_values)
             || executeNumber<Float64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal32>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal64>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal128>(*offsets, *data_columns[0], null_map, res_values)
+            || executeNumber<Decimal256>(*offsets, *data_columns[0], null_map, res_values)
             || executeFixedString(*offsets, *data_columns[0], null_map, res_values)
             || executeString(*offsets, *data_columns[0], null_map, res_values)))
             executeHashed(*offsets, data_columns, null_map, res_values);
@@ -263,7 +268,8 @@ void FunctionArrayUniq::executeMethod(
 template <typename T>
 bool FunctionArrayUniq::executeNumber(const ColumnArray::Offsets & offsets, const IColumn & data, const NullMap * null_map, ColumnUInt32::Container & res_values) const
 {
-    const auto * nested = checkAndGetColumn<ColumnVector<T>>(&data);
+    using ColVecType = ColumnVectorOrDecimal<T>;
+    const auto * nested = checkAndGetColumn<ColVecType>(&data);
     if (!nested)
         return false;
 

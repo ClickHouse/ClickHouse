@@ -1,0 +1,66 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+        <max_insert_threads>1</max_insert_threads>
+    </settings>
+
+    <create_query>CREATE TABLE array_uniq_decimal (
+        decimal32_duplicates_16 Array(Decimal32(2)),
+        decimal64_duplicates_16 Array(Decimal64(4)),
+        decimal128_duplicates_16 Array(Decimal128(8)),
+        decimal256_duplicates_16 Array(Decimal256(12)),
+        decimal32_duplicates_128 Array(Decimal32(2)),
+        decimal64_duplicates_128 Array(Decimal64(4)),
+        decimal128_duplicates_128 Array(Decimal128(8)),
+        decimal256_duplicates_128 Array(Decimal256(12)),
+        decimal64_unique_16 Array(Decimal64(4)),
+        decimal64_unique_128 Array(Decimal64(4)),
+        decimal64_all_equal_16 Array(Decimal64(4)),
+        decimal64_all_equal_128 Array(Decimal64(4)),
+        decimal64_nullable_16 Array(Nullable(Decimal64(4))),
+        decimal64_nullable_128 Array(Nullable(Decimal64(4))),
+        numeric_duplicates_16 Array(UInt64),
+        numeric_duplicates_128 Array(UInt64)
+    ) ENGINE = Memory</create_query>
+
+    <fill_query><![CDATA[
+        INSERT INTO array_uniq_decimal
+        SELECT
+            arrayMap(i -> toDecimal32(intDiv(i, 4) + number % 17, 2), range(16)),
+            arrayMap(i -> toDecimal64(intDiv(i, 4) + number % 17, 4), range(16)),
+            arrayMap(i -> toDecimal128(intDiv(i, 4) + number % 17, 8), range(16)),
+            arrayMap(i -> toDecimal256(intDiv(i, 4) + number % 17, 12), range(16)),
+            arrayMap(i -> toDecimal32(intDiv(i, 4) + number % 17, 2), range(128)),
+            arrayMap(i -> toDecimal64(intDiv(i, 4) + number % 17, 4), range(128)),
+            arrayMap(i -> toDecimal128(intDiv(i, 4) + number % 17, 8), range(128)),
+            arrayMap(i -> toDecimal256(intDiv(i, 4) + number % 17, 12), range(128)),
+            arrayMap(i -> toDecimal64(i + number % 17, 4), range(16)),
+            arrayMap(i -> toDecimal64(i + number % 17, 4), range(128)),
+            arrayMap(i -> toDecimal64(number % 17, 4), range(16)),
+            arrayMap(i -> toDecimal64(number % 17, 4), range(128)),
+            arrayMap(i -> if(i % 2 = 0, CAST(NULL, 'Nullable(Decimal64(4))'), toDecimal64(intDiv(i, 4) + number % 17, 4)), range(16)),
+            arrayMap(i -> if(i % 2 = 0, CAST(NULL, 'Nullable(Decimal64(4))'), toDecimal64(intDiv(i, 4) + number % 17, 4)), range(128)),
+            arrayMap(i -> intDiv(i, 4) + number % 17, range(16)),
+            arrayMap(i -> intDiv(i, 4) + number % 17, range(128))
+        FROM numbers(50000)
+    ]]></fill_query>
+
+    <query>SELECT sum(arrayUniq(decimal32_duplicates_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_duplicates_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal128_duplicates_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal256_duplicates_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal32_duplicates_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_duplicates_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal128_duplicates_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal256_duplicates_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_unique_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_unique_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_all_equal_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_all_equal_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_nullable_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(decimal64_nullable_128)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(numeric_duplicates_16)) FROM array_uniq_decimal FORMAT Null</query>
+    <query>SELECT sum(arrayUniq(numeric_duplicates_128)) FROM array_uniq_decimal FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_uniq_decimal</drop_query>
+</test>
