@@ -1,4 +1,5 @@
 #include <Storages/ProjectionsDescription.h>
+#include <Storages/ProjectionColumnNames.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <base/sort.h>
@@ -373,12 +374,19 @@ void ProjectionDescription::validateDeclaredColumnCodecs(
     if (LoadingStrictnessLevel::SECONDARY_CREATE <= mode)
         return;
 
-    /// Only a declared column carries a codec of its own, so this covers exactly the declaration.
-    for (const auto & column : projection.metadata->getColumns())
+    const auto & declaration = projection.definition_ast->as<const ASTProjectionDeclaration &>();
+    if (!declaration.columns)
+        return;
+
+    const auto & projection_columns = projection.metadata->getColumns();
+    for (const auto & child : declaration.columns->children)
     {
-        if (!column.codec)
+        const auto & declared_column = child->as<const ASTColumnDeclaration &>();
+        if (!declared_column.getCodec())
             continue;
 
+        const auto & column = projection_columns.get(
+            getProjectionStorageColumnName(declared_column.name, projection.with_parent_part_offset));
         CompressionCodecFactory::instance().validateCodecAndGetPreprocessedAST(
             column.codec,
             column.type,
@@ -470,7 +478,9 @@ ProjectionDescription ProjectionDescription::getProjectionFromAST(
                 if (!column_declaration.getCodec() || !column_declaration.getType())
                     continue;
 
-                column_declaration.setCodec(projection_columns.get(column_declaration.name).codec->clone());
+                column_declaration.setCodec(
+                    projection_columns.get(getProjectionStorageColumnName(column_declaration.name, result.with_parent_part_offset))
+                        .codec->clone());
             }
         }
     }
@@ -672,6 +682,13 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
         metadata.primary_key.definition_ast = nullptr;
     }
 
+    /// Resolve declarations against the SELECT output names, before translating any of them to
+    /// internal storage names. The resulting map deliberately remains keyed by SELECT name.
+    std::unordered_map<String, ASTPtr> declared_codecs;
+    if (declared_columns)
+        declared_codecs = resolveDeclaredProjectionColumnCodecs(
+            *declared_columns, result.sample_block, columns, result.name);
+
     /// Rename parent _part_offset to _parent_part_offset column
     if (can_hold_parent_part_offset && result.sample_block.has("_part_offset"))
     {
@@ -686,12 +703,6 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     /// Track whether projection stores _block_number/_block_offset from the parent table.
     result.with_block_number = result.sample_block.has(BlockNumberColumn::name);
     result.with_block_offset = result.sample_block.has(BlockOffsetColumn::name);
-
-    /// Resolved here because it needs the types the `SELECT` produces, which `result.sample_block` holds.
-    std::unordered_map<String, ASTPtr> declared_codecs;
-    if (declared_columns)
-        declared_codecs = resolveDeclaredProjectionColumnCodecs(
-            *declared_columns, result.sample_block, columns, result.name);
 
     ColumnsDescription metadata_columns;
     for (const auto & column_with_type_name : result.sample_block)
@@ -717,7 +728,8 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
                 column_description.default_desc = columns.get(column_with_type_name.name).default_desc;
             /// `IMergeTreeDataPartWriter::getCodecDescOrDefault` reads the codec back off this
             /// `ColumnsDescription`, so nothing further is needed to apply it.
-            if (auto declared_codec = declared_codecs.find(column_with_type_name.name);
+            if (auto declared_codec = declared_codecs.find(
+                    getProjectionSelectColumnName(column_with_type_name.name, result.with_parent_part_offset));
                 declared_codec != declared_codecs.end())
                 column_description.codec = declared_codec->second;
             metadata_columns.add(std::move(column_description));

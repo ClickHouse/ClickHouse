@@ -1,4 +1,5 @@
 #include <Storages/System/StorageSystemProjections.h>
+#include <Storages/ProjectionColumnNames.h>
 #include <Storages/System/DatabaseTablesCursor.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <Access/ContextAccess.h>
@@ -198,7 +199,7 @@ protected:
                                 continue;
 
                             Tuple pair;
-                            pair.push_back(column.name);
+                            pair.push_back(getProjectionSelectColumnName(column.name, projection.with_parent_part_offset));
                             pair.push_back(column.codec->formatForLogging());
                             codecs_map.push_back(std::move(pair));
                         }

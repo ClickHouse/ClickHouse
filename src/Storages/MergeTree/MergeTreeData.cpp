@@ -6292,6 +6292,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     {
         for (const auto & command : commands)
         {
+            if (command.ignore)
+                continue;
+
             if (command.type == AlterCommand::DROP_PROJECTION)
                 continue;
 

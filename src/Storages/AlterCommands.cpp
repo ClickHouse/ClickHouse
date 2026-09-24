@@ -1948,6 +1948,8 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
     NameSet projection_names;
     for (const auto & projection : metadata.projections)
         projection_names.insert(projection.name);
+    for (const auto & projection_name : metadata.projections.getUnavailableNames())
+        projection_names.insert(projection_name);
 
     /// Used to tell whether a command restates the definition the table already has, so it must not
     /// depend on whether the redundant parentheses were written on one side and not on the other.
@@ -2141,6 +2143,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     NameSet projection_names;
     for (const auto & projection : metadata->projections)
         projection_names.insert(projection.name);
+    for (const auto & projection_name : metadata->projections.getUnavailableNames())
+        projection_names.insert(projection_name);
     const CodecValidationSettings codec_validation_settings(context->getSettingsRef());
 
     /// A Replicated database and Shared Catalog execute an ALTER again on secondary replicas. The

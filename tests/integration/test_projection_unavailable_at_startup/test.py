@@ -270,6 +270,27 @@ def test_unavailable_projection_is_not_deleted_by_alter(started_cluster):
     )
     assert "a projection with this name is declared but could not be analyzed" in error
 
+    # `IF NOT EXISTS` is a no-op for an unavailable declaration just as it is for an analyzed one.
+    # The replacement is deliberately invalid: neither validation nor application may inspect it.
+    node.query(
+        "ALTER TABLE dl.t ADD PROJECTION IF NOT EXISTS pp "
+        "(missing UInt64 CODEC(NONE)) AS (SELECT missing)"
+    )
+    assert declarations_on_disk("t") == 1
+
+    # The hypothetical form mirrors ADD PROJECTION and must short-circuit on the same reserved name.
+    node.query(
+        "CREATE HYPOTHETICAL PROJECTION IF NOT EXISTS pp ON dl.t "
+        "(missing UInt64 CODEC(NONE)) AS (SELECT missing)"
+    )
+    assert (
+        node.query(
+            "SELECT count() FROM system.hypothetical_projections "
+            "WHERE database = 'dl' AND table = 't' AND name = 'pp'"
+        ).strip()
+        == "0"
+    )
+
     # `CLEAR PROJECTION` carries the same command type as `DROP PROJECTION` and is exempt on purpose:
     # `AlterCommands::apply` deliberately keeps the declaration when `clear` is set, so it changes
     # projection data and no metadata that the unanalyzable declaration could be validated against.

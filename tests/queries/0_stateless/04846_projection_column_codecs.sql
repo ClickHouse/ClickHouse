@@ -11,11 +11,12 @@ CREATE TABLE t_projection_codecs
     PROJECTION p
     (
         x UInt64 CODEC(NONE),
-        y UInt64
+        y UInt64,
+        _part_offset UInt64 CODEC(NONE)
     )
     AS
     (
-        SELECT x, y ORDER BY x
+        SELECT x, y, _part_offset ORDER BY x
     )
 )
 ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
@@ -27,7 +28,7 @@ INSERT INTO t_projection_codecs SELECT number, number FROM numbers(100000);
 SELECT column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
 FROM system.projection_parts_columns
 WHERE database = currentDatabase() AND table = 't_projection_codecs' AND active AND name = 'p'
-    AND column IN ('x', 'y')
+    AND column IN ('x', 'y', '_parent_part_offset')
 ORDER BY column;
 
 -- The parent table's own columns must be unaffected.
@@ -44,7 +45,7 @@ ATTACH TABLE t_projection_codecs;
 SHOW CREATE TABLE t_projection_codecs;
 SELECT count() FROM t_projection_codecs;
 
--- Only `x` has a codec of its own; the type-only declaration of `y` is not reported.
+-- Codecs are reported by the SELECT/declaration name, not the internal storage name.
 SELECT name, codecs FROM system.projections
 WHERE database = currentDatabase() AND table = 't_projection_codecs';
 

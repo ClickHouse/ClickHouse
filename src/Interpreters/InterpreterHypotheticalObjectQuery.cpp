@@ -71,6 +71,8 @@ BlockIO createHypotheticalProjection(
                 return {};
         if (metadata->projections.has(projection_ast.name))
             return {};
+        if (std::ranges::contains(metadata->projections.getUnavailableNames(), projection_ast.name))
+            return {};
     }
 
     /// `LoadingStrictnessLevel::CREATE` is what a real `ADD PROJECTION` passes, so an invalid

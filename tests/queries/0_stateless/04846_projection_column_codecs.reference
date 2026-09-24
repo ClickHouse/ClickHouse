@@ -10,11 +10,12 @@ CREATE TABLE t_projection_codecs
     PROJECTION p
     (
         x UInt64 CODEC(NONE),
-        y UInt64
+        y UInt64,
+        _part_offset UInt64 CODEC(NONE)
     )
     AS
     (
-        SELECT x, y ORDER BY x
+        SELECT x, y, _part_offset ORDER BY x
     )
 )
 ENGINE = MergeTree ORDER BY x SETTINGS min_bytes_for_wide_part = 0;
@@ -24,8 +25,9 @@ INSERT INTO t_projection_codecs SELECT number, number FROM numbers(100000);
 SELECT column, column_data_compressed_bytes > column_data_uncompressed_bytes AS is_uncompressed
 FROM system.projection_parts_columns
 WHERE database = currentDatabase() AND table = 't_projection_codecs' AND active AND name = 'p'
-    AND column IN ('x', 'y')
+    AND column IN ('x', 'y', '_parent_part_offset')
 ORDER BY column;
+_parent_part_offset	1
 x	1
 y	0
 -- The parent table's own columns must be unaffected.
@@ -37,17 +39,17 @@ x	0
 y	0
 -- The declaration must survive DETACH / ATTACH.
 SHOW CREATE TABLE t_projection_codecs;
-CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    `y` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE),\n        `y` UInt64\n    )\n    AS\n    (\n        SELECT\n            x,\n            y\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    `y` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE),\n        `y` UInt64,\n        `_part_offset` UInt64 CODEC(NONE)\n    )\n    AS\n    (\n        SELECT\n            x,\n            y,\n            _part_offset\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 DETACH TABLE t_projection_codecs;
 ATTACH TABLE t_projection_codecs;
 SHOW CREATE TABLE t_projection_codecs;
-CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    `y` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE),\n        `y` UInt64\n    )\n    AS\n    (\n        SELECT\n            x,\n            y\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
+CREATE TABLE default.t_projection_codecs\n(\n    `x` UInt64,\n    `y` UInt64,\n    PROJECTION p\n    (\n        `x` UInt64 CODEC(NONE),\n        `y` UInt64,\n        `_part_offset` UInt64 CODEC(NONE)\n    )\n    AS\n    (\n        SELECT\n            x,\n            y,\n            _part_offset\n        ORDER BY x\n    )\n)\nENGINE = MergeTree\nORDER BY x\nSETTINGS min_bytes_for_wide_part = 0, index_granularity = 8192
 SELECT count() FROM t_projection_codecs;
 100000
--- Only `x` has a codec of its own; the type-only declaration of `y` is not reported.
+-- Codecs are reported by the SELECT/declaration name, not the internal storage name.
 SELECT name, codecs FROM system.projections
 WHERE database = currentDatabase() AND table = 't_projection_codecs';
-p	{'x':'CODEC(NONE)'}
+p	{'x':'CODEC(NONE)','_part_offset':'CODEC(NONE)'}
 DROP TABLE t_projection_codecs;
 -- A projection without a column list must format exactly as before.
 CREATE TABLE t_projection_codecs (x UInt64, PROJECTION p (SELECT x ORDER BY x))
