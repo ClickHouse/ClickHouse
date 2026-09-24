@@ -19,6 +19,7 @@ node = cluster.add_instance(
     main_configs=[
         "configs/storage_conf.xml",
         "configs/drop_table_immediately.xml",
+        "configs/backups.xml",
     ],
     with_minio=True,
     stay_alive=True,
@@ -30,6 +31,8 @@ KEY_PREFIX = "data/"
 REMOVED_NAME_PREFIX = "__removed."
 # `PlainRewritableLayout::constructTombstoneMarkerKey`
 TOMBSTONE_KEY_PREFIX = KEY_PREFIX + "__meta/__tombstone/"
+# `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`
+PENDING_TOMBSTONE_PREFIX = "pending\n"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -304,3 +307,108 @@ def test_names_that_only_look_reserved_are_kept():
         if key not in marked_keys:
             remove_key(key)
     wait_for_empty_prefix()
+
+
+def remove_all_keys():
+    for key in list_keys():
+        remove_key(key)
+
+
+def test_partially_moved_removal_is_rolled_back():
+    """`RemoveRecursive` moves a subtree under a reserved name by rewriting `prefix.path` of its directories one
+    at a time, and its marker says the removal is pending until all of them are moved. A process killed in the
+    middle leaves a part of the subtree under the reserved name and the rest under the original path. Such a
+    removal was never committed, so the next start has to move the directories back rather than delete them.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1)")
+    node.stop_clickhouse()
+
+    removed_name = REMOVED_NAME_PREFIX + "pendingremovalab"
+    original_path = "partially_moved/"
+    # Moved already: the root of the subtree and one of its subdirectories.
+    moved = {
+        "zyxwvutsrqponmla": f"{removed_name}/",
+        "zyxwvutsrqponmlb": f"{removed_name}/moved/",
+    }
+    # Not reached by the move before the process died.
+    not_moved = {"zyxwvutsrqponmlc": f"{original_path}not_moved/"}
+
+    data_keys = []
+    for remote_name, local_path in {**moved, **not_moved}.items():
+        put_key(f"{KEY_PREFIX}__meta/{remote_name}/prefix.path", local_path.encode())
+        data_key = f"{KEY_PREFIX}{remote_name}/data.bin"
+        put_key(data_key, b"a file of a directory")
+        data_keys.append(data_key)
+    marker_key = TOMBSTONE_KEY_PREFIX + removed_name
+    put_key(marker_key, (PENDING_TOMBSTONE_PREFIX + original_path).encode())
+
+    node.start_clickhouse()
+    assert int(node.query("SELECT count() FROM t")) == 1
+
+    # The marker goes once the directories are moved back, and nothing of the subtree is deleted.
+    wait_for_keys_to_disappear([marker_key])
+    assert [key for key in data_keys if not key_exists(key)] == []
+    assert read_key(f"{KEY_PREFIX}__meta/zyxwvutsrqponmla/prefix.path") == original_path
+    assert (
+        read_key(f"{KEY_PREFIX}__meta/zyxwvutsrqponmlb/prefix.path")
+        == f"{original_path}moved/"
+    )
+    assert (
+        read_key(f"{KEY_PREFIX}__meta/zyxwvutsrqponmlc/prefix.path")
+        == f"{original_path}not_moved/"
+    )
+    assert node.contains_in_log("Rolled back 1 removals that were not committed")
+
+    node.query("DROP TABLE t SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()
+
+
+def test_existing_look_alike_directory_stays_usable():
+    """A directory whose name only has the reserved shape, left by a version that reserved nothing, is ordinary
+    data: it has to stay writable, not only readable. Only introducing a new entry of that shape is rejected.
+    """
+    node.query("DROP TABLE IF EXISTS t SYNC")
+    node.query("DROP TABLE IF EXISTS t2 SYNC")
+    wait_for_empty_prefix()
+
+    node.query(
+        "CREATE TABLE t (x UInt64) ENGINE = MergeTree ORDER BY x SETTINGS storage_policy = 's3_plain_rewritable'"
+    )
+    node.query("INSERT INTO t VALUES (1), (2), (3)")
+    node.stop_clickhouse()
+
+    existing_name = REMOVED_NAME_PREFIX + "abcdefghijklmnop"
+    put_key(
+        f"{KEY_PREFIX}__meta/zyxwvutsrqponmla/prefix.path", f"{existing_name}/".encode()
+    )
+    put_key(f"{KEY_PREFIX}zyxwvutsrqponmla/data.bin", b"a file of a directory")
+
+    node.start_clickhouse()
+
+    # Writing into the existing directory creates new files and subdirectories in it.
+    node.query(f"BACKUP TABLE t TO Disk('disk_s3_plain_rewritable', '{existing_name}')")
+    node.query(
+        f"RESTORE TABLE t AS t2 FROM Disk('disk_s3_plain_rewritable', '{existing_name}')"
+    )
+    assert int(node.query("SELECT count() FROM t2")) == 3
+    assert key_exists(f"{KEY_PREFIX}zyxwvutsrqponmla/data.bin")
+
+    # A new entry of the reserved shape is still rejected.
+    error = node.query_and_get_error(
+        f"BACKUP TABLE t TO Disk('disk_s3_plain_rewritable', '{REMOVED_NAME_PREFIX}qqqqqqqqqqqqqqqq')"
+    )
+    assert "are reserved" in error
+
+    node.query("DROP TABLE t SYNC")
+    node.query("DROP TABLE t2 SYNC")
+    node.stop_clickhouse()
+    remove_all_keys()
+    node.start_clickhouse()

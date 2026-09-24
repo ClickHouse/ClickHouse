@@ -77,6 +77,30 @@ std::optional<std::string> PlainRewritableLayout::getRemovedNameOfLocalPath(cons
     return name;
 }
 
+std::string PlainRewritableLayout::restoreLocalPathOfPendingRemoval(const std::string & local_path, const std::string & original_local_path)
+{
+    const auto normalized_path = normalizePath(local_path);
+    std::filesystem::path relative_path;
+    for (auto it = std::next(normalized_path.begin()); it != normalized_path.end(); ++it)
+        relative_path /= *it;
+
+    /// The same shape as the paths `MoveDirectoryOperation` writes: `path_from / subdir / ""`.
+    return (std::filesystem::path(original_local_path) / relative_path / "").string();
+}
+
+std::string PlainRewritableLayout::makePendingTombstoneContent(const std::string & original_local_path)
+{
+    return PENDING_TOMBSTONE_PREFIX + original_local_path;
+}
+
+std::optional<std::string> PlainRewritableLayout::parsePendingTombstoneContent(std::string_view content)
+{
+    if (!content.starts_with(PENDING_TOMBSTONE_PREFIX))
+        return std::nullopt;
+
+    return std::string(content.substr(PENDING_TOMBSTONE_PREFIX.size()));
+}
+
 std::string PlainRewritableLayout::constructTombstoneDirectoryKey() const
 {
     return object_storage_common_key_prefix / METADATA_DIRECTORY_TOKEN / TOMBSTONE_DIRECTORY_TOKEN;

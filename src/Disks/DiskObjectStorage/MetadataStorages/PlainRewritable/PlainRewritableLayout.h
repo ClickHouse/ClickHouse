@@ -36,12 +36,26 @@ public:
     constexpr static std::string REMOVED_NAME_PREFIX = "__removed.";
     constexpr static size_t REMOVED_NAME_RANDOM_PART_SIZE = 16;
 
+    /// `RemoveRecursive` moves a subtree by rewriting `prefix.path` of its directories one at a time, so a process
+    /// that dies in the middle leaves only a part of the subtree under the removed name. Such a removal was never
+    /// committed and has to be rolled back rather than reclaimed. So the marker is first written as pending, with
+    /// the original path of the subtree, and rewritten as committed only once every directory has been moved.
+    /// A pending marker never causes anything to be deleted: the directories under its name are moved back.
+    /// The content of any other marker is the removed name itself, and such a marker is committed.
+    constexpr static std::string PENDING_TOMBSTONE_PREFIX = "pending\n";
+
     static std::string generateRemovedName();
     static bool isRemovedName(std::string_view name);
     /// Whether the first component of a local path (as stored in `prefix.path`) is a removed name.
     static bool isRemovedLocalPath(const std::string & local_path);
     /// The first component of a local path (as stored in `prefix.path`), if it is a removed name.
     static std::optional<std::string> getRemovedNameOfLocalPath(const std::string & local_path);
+    /// The local path the directory with `local_path` under the removed name had before a pending removal moved it.
+    static std::string restoreLocalPathOfPendingRemoval(const std::string & local_path, const std::string & original_local_path);
+
+    static std::string makePendingTombstoneContent(const std::string & original_local_path);
+    /// The original path of the subtree if the content is the one of a pending marker.
+    static std::optional<std::string> parsePendingTombstoneContent(std::string_view content);
 
     explicit PlainRewritableLayout(std::string object_storage_common_key_prefix_);
 

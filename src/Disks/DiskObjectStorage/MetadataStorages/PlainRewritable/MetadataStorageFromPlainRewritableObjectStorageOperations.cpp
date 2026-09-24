@@ -55,7 +55,14 @@ namespace
 /// written before the removal is committed and deleted only after all the objects of the removal are gone.
 /// The shape of the name decides nothing by itself, because an older version, which reserved nothing, could
 /// have created a name of this shape as ordinary data.
-void writeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritableLayout & layout, const std::string & removed_name)
+///
+/// A marker written with `pending_original_path` belongs to a removal that is not committed yet, see
+/// `PlainRewritableLayout::PENDING_TOMBSTONE_PREFIX`.
+void writeTombstoneMarker(
+    IObjectStorage & object_storage,
+    const PlainRewritableLayout & layout,
+    const std::string & removed_name,
+    const std::optional<std::string> & pending_original_path = std::nullopt)
 {
     StoredObject marker_object(layout.constructTombstoneMarkerKey(removed_name));
     auto buf = object_storage.writeObject(
@@ -65,7 +72,7 @@ void writeTombstoneMarker(IObjectStorage & object_storage, const PlainRewritable
         /*buf_size*/ 128,
         /*settings*/ getWriteSettingsForMetadata());
 
-    writeString(removed_name, *buf);
+    writeString(pending_original_path ? PlainRewritableLayout::makePendingTombstoneContent(*pending_original_path) : removed_name, *buf);
     buf->finalize();
 }
 
@@ -795,11 +802,16 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::execute()
     {
         /// The marker has to be there before the subtree is moved under the reserved name, so that a load
         /// never sees the moved subtree unmarked, which would make it look like ordinary data.
-        writeTombstoneMarker(*object_storage, *layout, tmp_name);
+        /// The move rewrites the directories one at a time, so until it is complete the marker says that the
+        /// removal is pending: a load that finds it moves whatever is under the reserved name back.
+        writeTombstoneMarker(*object_storage, *layout, tmp_name, (path / "").string());
         marker_written = true;
 
         move_tried = true;
         move_to_tmp_op->execute();
+
+        /// Only now the whole subtree is under the reserved name, and the removal can be reclaimed instead.
+        writeTombstoneMarker(*object_storage, *layout, tmp_name);
 
         subtree_remote_info = fs_tree->getSubtreeRemoteInfo(tmp_path);
         fs_tree->removeDirectory(tmp_path);
@@ -810,6 +822,14 @@ void MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::undo()
 {
     if (move_tried)
     {
+        /// The marker may already say that the removal is committed. Moving the subtree back rewrites the
+        /// directories one at a time again, so a process that dies in the middle of it must find the removal
+        /// pending, to finish moving the subtree back rather than reclaim what is still under the reserved name.
+        undoWithRetries(log, fmt::format("mark the removal of '{}' as pending", path), [&]
+        {
+            writeTombstoneMarker(*object_storage, *layout, tmp_name, (path / "").string());
+        });
+
         move_to_tmp_op->undo();
     }
 
