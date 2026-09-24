@@ -17,6 +17,8 @@ $CLICKHOUSE_CLIENT -q "
   DROP ROW POLICY IF EXISTS policy_with_udf ON row_policy_table;
   DROP ROW POLICY IF EXISTS policy_with_apply_lambda ON row_policy_table;
   DROP ROW POLICY IF EXISTS policy_with_apply_udf ON row_policy_table;
+  DROP ROW POLICY IF EXISTS policy_with_apply_bare_name ON row_policy_table;
+  DROP ROW POLICY IF EXISTS policy_with_apply_parameters ON row_policy_table;
   DROP ROW POLICY IF EXISTS valid_policy ON row_policy_table;
   DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_row_policy_arrayjoin_udf;
   DROP FUNCTION IF EXISTS ${CLICKHOUSE_DATABASE}_row_policy_apply_udf;
@@ -40,6 +42,8 @@ $CLICKHOUSE_CLIENT -q "
   -- An APPLY column transformer is a third way the call hides: its lambda and its function name are
   -- kept outside the node's children, so a walk over the children alone does not see them.
   CREATE ROW POLICY policy_with_apply_lambda ON row_policy_table FOR SELECT USING * APPLY (x -> arrayJoin([x])) TO ALL; -- { serverError ILLEGAL_PREWHERE }
+  CREATE ROW POLICY policy_with_apply_bare_name ON row_policy_table FOR SELECT USING * APPLY unnest TO ALL; -- { serverError ILLEGAL_PREWHERE }
+  CREATE ROW POLICY policy_with_apply_parameters ON row_policy_table FOR SELECT USING * APPLY (quantile(arrayJoin([0.1, 0.9]))) TO ALL; -- { serverError ILLEGAL_PREWHERE }
   CREATE FUNCTION ${CLICKHOUSE_DATABASE}_row_policy_apply_udf AS (x) -> (unnest([1, 2]) OR x = 0);
   CREATE ROW POLICY policy_with_apply_udf ON row_policy_table FOR SELECT USING * APPLY ${CLICKHOUSE_DATABASE}_row_policy_apply_udf TO ALL; -- { serverError ILLEGAL_PREWHERE }
   DROP FUNCTION ${CLICKHOUSE_DATABASE}_row_policy_apply_udf;
