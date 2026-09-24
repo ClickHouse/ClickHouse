@@ -123,7 +123,14 @@ FilterDAGOutputPruningResult pruneFilterDAGOutputsByPosition(
 
     /// Check if the filter column is required by the caller. If not, we can remove it.
     if (!remove_filter_column && !required_dag_index_set.contains(filter_col_pre_erase_pos))
+    {
         remove_filter_column = true;
+    }
+
+    /// The filter column is dropped, so its `materialize` wrapper is no longer observable. This
+    /// includes filters that were already marked for removal by `ReadFromMergeTree`.
+    if (remove_filter_column)
+        dag.foldFilterPredicateThroughMaterialize(filter_column_name);
 
     required_dag_index_set.insert(filter_col_pre_erase_pos);
 
@@ -276,6 +283,13 @@ FilterStep::FilterStep(
     , filter_column_name(std::move(filter_column_name_))
     , remove_filter_column(remove_filter_column_)
 {
+    /// The filter column is dropped from the output, so only the predicate's value is observable and it
+    /// is safe to fold a `materialize`-wrapped constant away (#78166). Doing it here covers every way a
+    /// dropped-filter step comes to be - in particular the fresh steps `tryPushDownFilter` creates, which
+    /// neither `tryMergeExpressions` nor `pruneFilterDAGOutputsByPosition` ever sees.
+    if (remove_filter_column)
+        actions_dag.foldFilterPredicateThroughMaterialize(filter_column_name);
+
     actions_dag.removeAliasesForFilter(filter_column_name);
     /// Removing aliases may result in unneeded ALIAS node in DAG.
     /// This should not be an issue by itself,
@@ -360,12 +374,24 @@ void FilterStep::describeActions(FormatSettings & settings) const
         }
     }
 
-    settings.out << prefix << "Filter column: "
-                 << (settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name);
+    /// A condition made only of join runtime filters renders as an empty pretty expression plus an
+    /// annotation, the same `Runtime filters:` line a read step shows. Print the annotation on its own
+    /// rather than an empty `Filter column:`.
+    const auto annotation = settings.pretty ? QueryPlanFormat::getColumnAnnotation(filter_column_name, settings) : std::string_view{};
+    const String pretty_column
+        = settings.pretty ? QueryPlanFormat::formatColumnPretty(filter_column_name, settings.pretty_names) : filter_column_name;
 
-    if (!settings.pretty && remove_filter_column)
-        settings.out << " (removed)";
-    settings.out << '\n';
+    if (!pretty_column.empty() || annotation.empty())
+    {
+        settings.out << prefix << "Filter column: " << pretty_column;
+
+        if (!settings.pretty && remove_filter_column)
+            settings.out << " (removed)";
+        settings.out << '\n';
+    }
+
+    if (!annotation.empty())
+        settings.out << prefix << annotation << '\n';
 
     auto expression = std::make_shared<ExpressionActions>(std::move(cloned_dag));
     if (!settings.compact)

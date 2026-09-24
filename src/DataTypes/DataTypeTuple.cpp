@@ -638,11 +638,6 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-:::note Beta Feature
-Requires `SET enable_nullable_tuple_type = 1`
-This is a Beta feature.
-:::
-
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
 
 | Type                                       | Tuple can be NULL | Elements can be NULL |
@@ -653,8 +648,6 @@ Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullabl
 Example:
 
 ```sql
-SET enable_nullable_tuple_type = 1;
-
 CREATE TABLE test (
     id UInt32,
     data Nullable(Tuple(String, Int64))
