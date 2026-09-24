@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置是根据[源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h)自动生成的。
 
-<div id="output_format_always_write_decimal_point_in_float_and_decimal">
-  ## output_format_always_write_decimal_point_in_float_and_decimal
-</div>
+## output_format_always_write_decimal_point_in_float_and_decimal {#output_format_always_write_decimal_point_in_float_and_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 默认禁用。
 
-<div id="output_format_arrow_compression_method">
-  ## output_format_arrow_compression_method
-</div>
+## output_format_arrow_compression_method {#output_format_arrow_compression_method}
 
 <SettingsInfoBlock type="ArrowCompression" default_value="lz4_frame" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd、none (未压缩)
 
-<div id="output_format_arrow_date_as_uint16">
-  ## output_format_arrow_date_as_uint16
-</div>
+## output_format_arrow_date_as_uint16 {#output_format_arrow_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -45,9 +39,7 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 将 Date 值写为普通的 16 位数字 (读取时为 UInt16) ，而不是转换为 32 位的 Arrow DATE32 类型 (读取时为 Date32) 。
 
-<div id="output_format_arrow_fixed_string_as_fixed_byte_array">
-  ## output_format_arrow_fixed_string_as_fixed_byte_array
-</div>
+## output_format_arrow_fixed_string_as_fixed_byte_array {#output_format_arrow_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -55,17 +47,41 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 对 FixedString 列，使用 Arrow FIXED&#95;SIZE&#95;BINARY 类型而不是 Binary 类型。
 
-<div id="output_format_arrow_low_cardinality_as_dictionary">
-  ## output_format_arrow_low_cardinality_as_dictionary
-</div>
+## output_format_arrow_low_cardinality_as_dictionary {#output_format_arrow_low_cardinality_as_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 启用将输出中的 LowCardinality 类型表示为 Dictionary Arrow 类型
 
-<div id="output_format_arrow_string_as_string">
-  ## output_format_arrow_string_as_string
-</div>
+## output_format_arrow_record_batch_size {#output_format_arrow_record_batch_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，可在 `Arrow` 和 `ArrowStream` 输出中按目标行数合并小块。默认值 `0` 表示每个块对应一个 record batch。"}]}]} />
+
+`Arrow` 和 `ArrowStream` 输出格式中每个 record batch 的目标行数。合并小块可减少元数据和缓冲区填充带来的开销，对带有选择性过滤器的查询尤为明显。
+
+块会不断累积，直到达到该目标值或 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size&#95;bytes](/zh/reference/settings/formats/output-format#output_format_arrow_record_batch_size_bytes)。已达到行数或字节目标的块会单独写出，不会被拆分。如果设置了行数目标，合并后的批次所含行数不会超过该目标的两倍，但单个输入块可能更大。
+
+缓冲块会增加内存占用并延迟输出。如果结果始终未达到任一目标，`ArrowStream` 只会在查询结束时写出第一个 record batch，不过 schema 可以更早写出。将两个目标都保持为 `0`，即可在块到达时立即写出 record batch。
+
+`0` (默认值) 表示禁用行数目标。可尝试以 `65409` 作为起始值。
+
+## output_format_arrow_record_batch_size_bytes {#output_format_arrow_record_batch_size_bytes}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，可按累积数据的目标字节大小，在 `Arrow` 和 `ArrowStream` 输出中合并小块。默认值 `0` 表示每个块对应一个 record batch。"}]}]} />
+
+`Arrow` 和 `ArrowStream` 输出格式的目标 record batch 大小，以累积块数据的字节数衡量，其衡量方式与 [min&#95;insert&#95;block&#95;size&#95;bytes](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_bytes) 相同。只要达到该目标或 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/zh/reference/settings/formats/output-format#output_format_arrow_record_batch_size) 两者之一，就会写出一个批次。
+
+请注意，`LowCardinality` 列产生的 Arrow 批次可能远大于或远小于该字节目标。除非启用 [output&#95;format&#95;arrow&#95;low&#95;cardinality&#95;as&#95;dictionary](/zh/reference/settings/formats/output-format#output_format_arrow_low_cardinality_as_dictionary)，否则重复值在输出中会被展开。经过过滤的块也可能仍保留较大的字典，因此即使行数很少的块也可能达到目标而被单独写出。对于这类列，请使用 [output&#95;format&#95;arrow&#95;record&#95;batch&#95;size](/zh/reference/settings/formats/output-format#output_format_arrow_record_batch_size) 来控制行数，并将字节目标设为 `0`。
+
+缓冲块会增加内存占用，并使第一个 record batch 延迟到查询结束后才输出。将两个目标都保持为 `0`，即可在块到达时立即写出 record batch。
+
+`0` (默认值) 表示禁用字节目标。可先尝试将其设为 `1048576` (1 MiB) 。
+
+## output_format_arrow_string_as_string {#output_format_arrow_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -73,19 +89,43 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 对 String 列使用 Arrow 的 String 类型而非 Binary
 
-<div id="output_format_arrow_unsupported_types_as_binary">
-  ## output_format_arrow_unsupported_types_as_binary
-</div>
+## output_format_arrow_unsupported_types {#output_format_arrow_unsupported_types}
+
+<SettingsInfoBlock type="ArrowUnsupportedTypes" default_value="binary" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "binary"},{"label": "新增设置，取代 `output_format_arrow_unsupported_types_as_binary`，并新增 `text` 模式。其默认值与此前行为一致，因此 `compatibility` 不得对其进行更改。"}]}]} />
+
+对于在 Arrow 中没有原生对应类型的列 (例如 `JSON`、`Dynamic`、`QBit` 或 `AggregateFunction`) ，应写出何种内容：
+
+* `throw` — 拒绝该查询；
+* `text` — 每行写出一个文本形式的值 (即 `CAST(col AS String)` 的结果) ，作为 Arrow `Utf8` 列；
+* `binary` — 写出每个值的二进制表示，作为 Arrow `Binary` 列 (与 `RowBinary` 中逐值的编码相同) 。
+
+`AggregateFunction` 列在 `text` 模式下同样为 `Binary`，因为它的文本形式其实是原始的聚合状态而非文本，而 Arrow `Utf8` 列必须保存有效的 UTF-8。可使用 `finalizeAggregation` 获取可读的值。
+
+写入 `Utf8` 列的值会被处理成有效的 UTF-8，其中每个无效序列都会被替换为 U+FFFD。这只会影响那些读取器本来也无法按文本解释的内容——例如保存着任意字节 `String` 的 `Dynamic`。若必须原样保留这些字节，请使用 `binary` 模式。
+
+`output_format_arrow_string_as_string` 不适用于这类列，只适用于真正的 `String` 和 `FixedString` 列。这样一来，不透明列的 Arrow 类型始终能表明它所保存的编码：`Utf8` 即文本形式，`Binary` 即二进制形式，无论该设置取值如何。
+
+保存在 `Dynamic` 中的聚合状态同理：该列的类型来自 `Dynamic`，而这并不说明其各行保存的是什么，且 Arrow schema 在看到任何值之前就已确定，因此无法像 `AggregateFunction` 列那样为该状态单独提供一个 `Binary` 列。所以在 `text` 模式下会有损，而 `binary` 模式可完整保留。`Variant` 则不受影响——它会列出各个备选类型，因此其中的 `AggregateFunction` 会获得自己的 `Binary` 子列。
+
+在 `text` 和 `binary` 两种模式下，该字段都会在 Arrow schema 中以 `clickhouse.opaque` 扩展名和原始 ClickHouse 类型名进行标记，以便读取器能将其与真正的字符串列或二进制列区分开来。
+
+只有当读取端已经知晓该类型时，ClickHouse 才会把这样的列按标记所指明的类型读回，例如表中已声明该类型，或 `file`、`s3` 所接受的那种 structure argument 指明了该类型；此时在 `Array`、`Tuple`、`Map` 和 `Nullable` 内部也同样如此处理。Schema inference 不会参考该标记，因此未指明类型而读取的列仍会以保存原始载荷的 `String` 形式出现。`Variant` 的备选类型则永远不会被读回，即便已指明类型也是如此，因为由其备选类型构成的 Arrow union 在解码时不会参考这些标记。无论何种情况，写出的数据对其他 Arrow 读取器而言都是格式良好的。
+
+该设置优先于较旧的 `output_format_arrow_unsupported_types_as_binary`，后者仅在本设置保持默认值时才会生效。
+
+## output_format_arrow_unsupported_types_as_binary {#output_format_arrow_unsupported_types_as_binary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "新增设置：将不受支持的 CH 类型转换为 Arrow binary，而不是抛出 UNKNOWN_TYPE 异常。"}]}]} />
 
-将无法转换的输出类型作为原始二进制数据输出。如果为 false，则此类类型会抛出 UNKNOWN&#95;TYPE 异常。
+将无法转换的输出类型作为原始二进制数据输出。如果为 false，则此类类型会引发异常。
 
-<div id="output_format_arrow_use_64_bit_indexes_for_dictionary">
-  ## output_format_arrow_use_64_bit_indexes_for_dictionary
-</div>
+已由 `output_format_arrow_unsupported_types` 取代：`0` 表示 `throw`，`1` 表示 `binary`。仅当未显式设置 `output_format_arrow_unsupported_types` 时才会参考此设置。
+
+## output_format_arrow_use_64_bit_indexes_for_dictionary {#output_format_arrow_use_64_bit_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -93,9 +133,7 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 在 Arrow 格式中，始终对字典索引使用 64 位整数
 
-<div id="output_format_arrow_use_signed_indexes_for_dictionary">
-  ## output_format_arrow_use_signed_indexes_for_dictionary
-</div>
+## output_format_arrow_use_signed_indexes_for_dictionary {#output_format_arrow_use_signed_indexes_for_dictionary}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -103,45 +141,33 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 在 Arrow 格式中对字典索引使用有符号整数
 
-<div id="output_format_avro_codec">
-  ## output_format_avro_codec
-</div>
+## output_format_avro_codec {#output_format_avro_codec}
 
 用于输出的压缩编解码器。可选值：&#39;null&#39;、&#39;deflate&#39;、&#39;snappy&#39;、&#39;zstd&#39;。
 
-<div id="output_format_avro_confluent_subject">
-  ## output_format_avro_confluent_subject
-</div>
+## output_format_avro_confluent_subject {#output_format_avro_confluent_subject}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": ""},{"label": "新增设置：用于指定写入 AvroConfluent output 时，在 Confluent Schema Registry 中注册 schema 所使用的 subject name。"}]}]} />
 
 对于 AvroConfluent output format：在 Confluent Schema Registry 中注册 schema 时使用的 subject name。写入 AvroConfluent output 时为必填项。
 
-<div id="output_format_avro_rows_in_file">
-  ## output_format_avro_rows_in_file
-</div>
+## output_format_avro_rows_in_file {#output_format_avro_rows_in_file}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
 单个文件中的最大行数 (如果存储支持)
 
-<div id="output_format_avro_string_column_pattern">
-  ## output_format_avro_string_column_pattern
-</div>
+## output_format_avro_string_column_pattern {#output_format_avro_string_column_pattern}
 
 对于 Avro 格式：用于选择作为 AVRO 字符串输出的 String 列的正则表达式。
 
-<div id="output_format_avro_sync_interval">
-  ## output_format_avro_sync_interval
-</div>
+## output_format_avro_sync_interval {#output_format_avro_sync_interval}
 
 <SettingsInfoBlock type="UInt64" default_value="16384" />
 
 以字节为单位的同步间隔。
 
-<div id="output_format_binary_encode_types_in_binary_format">
-  ## output_format_binary_encode_types_in_binary_format
-</div>
+## output_format_binary_encode_types_in_binary_format {#output_format_binary_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -149,9 +175,7 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 在 RowBinaryWithNamesAndTypes 输出格式中，以二进制格式写入数据类型，而不是类型名称
 
-<div id="output_format_binary_write_json_as_string">
-  ## output_format_binary_write_json_as_string
-</div>
+## output_format_binary_write_json_as_string {#output_format_binary_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -159,17 +183,13 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 在 RowBinary 输出格式中，将 [JSON](/zh/reference/data-types/newjson) data type 的值写为 JSON [String](/zh/reference/data-types/string) 值。
 
-<div id="output_format_bson_string_as_string">
-  ## output_format_bson_string_as_string
-</div>
+## output_format_bson_string_as_string {#output_format_bson_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 对 String 列使用 BSON String 类型，而不是 Binary。
 
-<div id="output_format_compression_level">
-  ## output_format_compression_level
-</div>
+## output_format_compression_level {#output_format_compression_level}
 
 <SettingsInfoBlock type="UInt64" default_value="3" />
 
@@ -179,9 +199,7 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 可能的取值：从 `1` 到 `22`
 
-<div id="output_format_compression_zstd_window_log">
-  ## output_format_compression_zstd_window_log
-</div>
+## output_format_compression_zstd_window_log {#output_format_compression_zstd_window_log}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -191,17 +209,13 @@ Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd
 
 Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib` 将抛出异常。典型值范围为 `20` (window size = `1MB`) 到 `30` (window size = `1GB`) 。
 
-<div id="output_format_csv_crlf_end_of_line">
-  ## output_format_csv_crlf_end_of_line
-</div>
+## output_format_csv_crlf_end_of_line {#output_format_csv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果设置为 true，CSV 格式的行尾将使用 \r\n 而不是 \n。
 
-<div id="output_format_csv_header_serialize_tuple_into_separate_columns">
-  ## output_format_csv_header_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_header_serialize_tuple_into_separate_columns {#output_format_csv_header_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -211,9 +225,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 注意：当 `input_format_with_names_use_header = 1` 时，扁平化后的表头不会按名称读回到 Tuple 中。要将此类数据重新读入 Tuple，可以在输出时将此设置设为 `0`，或者在读取时使用 `input_format_with_names_use_header = 0` (并且对于 `*WithNamesAndTypes` 格式 `CSVWithNamesAndTypes` 和 `CustomSeparatedWithNamesAndTypes`，还需设置 `input_format_with_types_use_header = 0`，否则扁平化后的类型行会与单个顶层 Tuple 输入字段进行校验，并因此被拒绝) 。
 
-<div id="output_format_csv_serialize_tuple_into_separate_columns">
-  ## output_format_csv_serialize_tuple_into_separate_columns
-</div>
+## output_format_csv_serialize_tuple_into_separate_columns {#output_format_csv_serialize_tuple_into_separate_columns}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -223,9 +235,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 这种扁平化仅适用于裸 `Tuple`。`Nullable(Tuple)` 始终会被序列化为单个 CSV 字段 (以确保 NULL 行和非 NULL 行占用相同数量的字段) ，不受此设置影响。
 
-<div id="output_format_decimal_trailing_zeros">
-  ## output_format_decimal_trailing_zeros
-</div>
+## output_format_decimal_trailing_zeros {#output_format_decimal_trailing_zeros}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -235,9 +245,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认禁用。
 
-<div id="output_format_float_precision">
-  ## output_format_float_precision
-</div>
+## output_format_float_precision {#output_format_float_precision}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -250,9 +258,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 有效范围：0 到 100。
 
-<div id="output_format_image_height">
-  ## output_format_image_height
-</div>
+## output_format_image_height {#output_format_image_height}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -262,9 +268,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认值：1024。
 
-<div id="output_format_image_streaming_animation">
-  ## output_format_image_streaming_animation
-</div>
+## output_format_image_streaming_animation {#output_format_image_streaming_animation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -276,9 +280,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认值：`false`。
 
-<div id="output_format_image_terminal_mode">
-  ## output_format_image_terminal_mode
-</div>
+## output_format_image_terminal_mode {#output_format_image_terminal_mode}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": ""},{"label": "新增设置，用于控制是否通过内联图像协议将 PNG 等图像输出格式直接渲染到终端。"}]}]} />
 
@@ -294,9 +296,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认值：&#96;&#96; (空) 。
 
-<div id="output_format_image_time_divisor_seconds">
-  ## output_format_image_time_divisor_seconds
-</div>
+## output_format_image_time_divisor_seconds {#output_format_image_time_divisor_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -308,9 +308,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认值：60。
 
-<div id="output_format_image_time_multiplier_seconds">
-  ## output_format_image_time_multiplier_seconds
-</div>
+## output_format_image_time_multiplier_seconds {#output_format_image_time_multiplier_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -324,9 +322,7 @@ Possible values: 非负数。请注意，如果该值过小或过大，`zstdlib`
 
 默认值：1。
 
-<div id="output_format_image_width">
-  ## output_format_image_width
-</div>
+## output_format_image_width {#output_format_image_width}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -336,9 +332,7 @@ PNG 等图像输出格式的输出图像宽度，以像素为单位。
 
 默认值：1024。
 
-<div id="output_format_json_array_of_rows">
-  ## output_format_json_array_of_rows
-</div>
+## output_format_json_array_of_rows {#output_format_json_array_of_rows}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -385,9 +379,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 {"number":"2"}
 ```
 
-<div id="output_format_json_escape_forward_slashes">
-  ## output_format_json_escape_forward_slashes
-</div>
+## output_format_json_escape_forward_slashes {#output_format_json_escape_forward_slashes}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -395,9 +387,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 默认启用。
 
-<div id="output_format_json_map_as_array_of_tuples">
-  ## output_format_json_map_as_array_of_tuples
-</div>
+## output_format_json_map_as_array_of_tuples {#output_format_json_map_as_array_of_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -407,9 +397,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 默认禁用。
 
-<div id="output_format_json_named_tuples_as_objects">
-  ## output_format_json_named_tuples_as_objects
-</div>
+## output_format_json_named_tuples_as_objects {#output_format_json_named_tuples_as_objects}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -419,9 +407,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 默认启用。
 
-<div id="output_format_json_pretty_print">
-  ## output_format_json_pretty_print
-</div>
+## output_format_json_pretty_print {#output_format_json_pretty_print}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -469,9 +455,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 默认启用。
 
-<div id="output_format_json_quote_64bit_floats">
-  ## output_format_json_quote_64bit_floats
-</div>
+## output_format_json_quote_64bit_floats {#output_format_json_quote_64bit_floats}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -479,9 +463,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 默认情况下禁用。
 
-<div id="output_format_json_quote_64bit_integers">
-  ## output_format_json_quote_64bit_integers
-</div>
+## output_format_json_quote_64bit_integers {#output_format_json_quote_64bit_integers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -495,9 +477,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 * 0 — 整数输出时不带引号。
 * 1 — 整数会被引号括起来。
 
-<div id="output_format_json_quote_decimals">
-  ## output_format_json_quote_decimals
-</div>
+## output_format_json_quote_decimals {#output_format_json_quote_decimals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -505,9 +485,7 @@ SELECT number FROM numbers(3) FORMAT JSONEachRow;
 
 默认禁用。
 
-<div id="output_format_json_quote_denormals">
-  ## output_format_json_quote_denormals
-</div>
+## output_format_json_quote_denormals {#output_format_json_quote_denormals}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -606,17 +584,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 }
 ```
 
-<div id="output_format_json_skip_null_value_in_named_tuples">
-  ## output_format_json_skip_null_value_in_named_tuples
-</div>
+## output_format_json_skip_null_value_in_named_tuples {#output_format_json_skip_null_value_in_named_tuples}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 将命名元组列序列化为 JSON 对象时，跳过值为 NULL 的键值对。仅当 output&#95;format&#95;json&#95;named&#95;tuples&#95;as&#95;objects 为 true 时，此设置才生效。
 
-<div id="output_format_json_validate_utf8">
-  ## output_format_json_validate_utf8
-</div>
+## output_format_json_validate_utf8 {#output_format_json_validate_utf8}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -624,9 +598,7 @@ SELECT area/period FROM account_orders FORMAT JSON;
 
 默认禁用。
 
-<div id="output_format_markdown_escape_special_characters">
-  ## output_format_markdown_escape_special_characters
-</div>
+## output_format_markdown_escape_special_characters {#output_format_markdown_escape_special_characters}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -643,17 +615,13 @@ SELECT area/period FROM account_orders FORMAT JSON;
 * 0 — 禁用。
 * 1 — 启用。
 
-<div id="output_format_msgpack_uuid_representation">
-  ## output_format_msgpack_uuid_representation
-</div>
+## output_format_msgpack_uuid_representation {#output_format_msgpack_uuid_representation}
 
 <SettingsInfoBlock type="MsgPackUUIDRepresentation" default_value="ext" />
 
 UUID 在 MsgPack 格式中的输出方式。
 
-<div id="output_format_native_encode_types_in_binary_format">
-  ## output_format_native_encode_types_in_binary_format
-</div>
+## output_format_native_encode_types_in_binary_format {#output_format_native_encode_types_in_binary_format}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -661,9 +629,7 @@ UUID 在 MsgPack 格式中的输出方式。
 
 在 Native 输出格式中，以二进制格式写入数据类型，而不是写入类型名称
 
-<div id="output_format_native_use_flattened_dynamic_and_json_serialization">
-  ## output_format_native_use_flattened_dynamic_and_json_serialization
-</div>
+## output_format_native_use_flattened_dynamic_and_json_serialization {#output_format_native_use_flattened_dynamic_and_json_serialization}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -671,9 +637,7 @@ UUID 在 MsgPack 格式中的输出方式。
 
 以扁平化格式写入 [JSON](/zh/reference/data-types/newjson) 和 [Dynamic](/zh/reference/data-types/dynamic) 列中的数据 (所有类型/路径均作为独立的子列) 。
 
-<div id="output_format_native_write_json_as_string">
-  ## output_format_native_write_json_as_string
-</div>
+## output_format_native_write_json_as_string {#output_format_native_write_json_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -681,9 +645,7 @@ UUID 在 MsgPack 格式中的输出方式。
 
 将 [JSON](/zh/reference/data-types/newjson) 列的数据写入为包含 JSON 字符串的 [String](/zh/reference/data-types/string) 列，而不是使用默认的原生 JSON 序列化。
 
-<div id="output_format_orc_compression_block_size">
-  ## output_format_orc_compression_block_size
-</div>
+## output_format_orc_compression_block_size {#output_format_orc_compression_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="262144" />
 
@@ -691,9 +653,7 @@ UUID 在 MsgPack 格式中的输出方式。
 
 ORC 输出格式的压缩块大小，以字节为单位。
 
-<div id="output_format_orc_compression_method">
-  ## output_format_orc_compression_method
-</div>
+## output_format_orc_compression_method {#output_format_orc_compression_method}
 
 <SettingsInfoBlock type="ORCCompression" default_value="zstd" />
 
@@ -701,9 +661,7 @@ ORC 输出格式的压缩块大小，以字节为单位。
 
 ORC 输出格式的压缩方法。支持的编解码器：lz4、snappy、zlib、zstd、none (未压缩)
 
-<div id="output_format_orc_dictionary_key_size_threshold">
-  ## output_format_orc_dictionary_key_size_threshold
-</div>
+## output_format_orc_dictionary_key_size_threshold {#output_format_orc_dictionary_key_size_threshold}
 
 <SettingsInfoBlock type="Double" default_value="0" />
 
@@ -711,17 +669,13 @@ ORC 输出格式的压缩方法。支持的编解码器：lz4、snappy、zlib、
 
 对于 ORC 输出格式中的字符串列，如果不同值的数量超过非 NULL 行总数的该比例，则关闭字典编码；否则启用字典编码
 
-<div id="output_format_orc_row_index_stride">
-  ## output_format_orc_row_index_stride
-</div>
+## output_format_orc_row_index_stride {#output_format_orc_row_index_stride}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 ORC 输出格式中的目标行索引步长
 
-<div id="output_format_orc_string_as_string">
-  ## output_format_orc_string_as_string
-</div>
+## output_format_orc_string_as_string {#output_format_orc_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -729,9 +683,7 @@ ORC 输出格式中的目标行索引步长
 
 对 String 列使用 ORC String 类型，而不是 Binary
 
-<div id="output_format_orc_writer_time_zone_name">
-  ## output_format_orc_writer_time_zone_name
-</div>
+## output_format_orc_writer_time_zone_name {#output_format_orc_writer_time_zone_name}
 
 <SettingsInfoBlock type="String" default_value="GMT" />
 
@@ -739,9 +691,7 @@ ORC 输出格式中的目标行索引步长
 
 ORC 写入器的时区名称，默认时区为 GMT。
 
-<div id="output_format_parallel_formatting">
-  ## output_format_parallel_formatting
-</div>
+## output_format_parallel_formatting {#output_format_parallel_formatting}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -752,17 +702,13 @@ ORC 写入器的时区名称，默认时区为 GMT。
 * 1 — 启用。
 * 0 — 禁用。
 
-<div id="output_format_parquet_batch_size">
-  ## output_format_parquet_batch_size
-</div>
+## output_format_parquet_batch_size {#output_format_parquet_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1024" />
 
 每处理这么多行就检查一次页大小。如果列中值的平均大小超过几个 KB，建议适当减小该值。
 
-<div id="output_format_parquet_bloom_filter_bits_per_value">
-  ## output_format_parquet_bloom_filter_bits_per_value
-</div>
+## output_format_parquet_bloom_filter_bits_per_value {#output_format_parquet_bloom_filter_bits_per_value}
 
 <SettingsInfoBlock type="Double" default_value="10.5" />
 
@@ -776,9 +722,7 @@ Parquet 布隆过滤器中每个不同值大致使用的位数。估计的误报
 * 26.4 位 -  0.01%
 * 41   位 -  0.001%
 
-<div id="output_format_parquet_bloom_filter_flush_threshold_bytes">
-  ## output_format_parquet_bloom_filter_flush_threshold_bytes
-</div>
+## output_format_parquet_bloom_filter_flush_threshold_bytes {#output_format_parquet_bloom_filter_flush_threshold_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="134217728" />
 
@@ -790,9 +734,7 @@ Parquet 布隆过滤器中每个不同值大致使用的位数。估计的误报
   * 如果该值大于所有布隆过滤器的总大小，则所有行组的布隆过滤器会先在内存中累积，然后在接近文件末尾处一起写入，
   * 否则，布隆过滤器会先在内存中累积，并在其总大小超过该值时写出。
 
-<div id="output_format_parquet_compression_method">
-  ## output_format_parquet_compression_method
-</div>
+## output_format_parquet_compression_method {#output_format_parquet_compression_method}
 
 <SettingsInfoBlock type="ParquetCompression" default_value="zstd" />
 
@@ -800,17 +742,13 @@ Parquet 布隆过滤器中每个不同值大致使用的位数。估计的误报
 
 Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、brotli、zstd、gzip、none (未压缩)
 
-<div id="output_format_parquet_data_page_size">
-  ## output_format_parquet_data_page_size
-</div>
+## output_format_parquet_data_page_size {#output_format_parquet_data_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
 压缩前的目标页大小 (以字节为单位) 。
 
-<div id="output_format_parquet_date_as_uint16">
-  ## output_format_parquet_date_as_uint16
-</div>
+## output_format_parquet_date_as_uint16 {#output_format_parquet_date_as_uint16}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -818,9 +756,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 将 Date 值写为普通的 16 位数字 (读取回来时为 UInt16) ，而不是转换为 32 位的 Parquet DATE 类型 (读取回来时为 Date32) 。
 
-<div id="output_format_parquet_datetime_as_uint32">
-  ## output_format_parquet_datetime_as_uint32
-</div>
+## output_format_parquet_datetime_as_uint32 {#output_format_parquet_datetime_as_uint32}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -828,9 +764,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 将 DateTime 值写为原始 Unix timestamp (读取时为 UInt32) ，而不是转换为毫秒 (读取时为 DateTime64(3)) 。
 
-<div id="output_format_parquet_enum_as_byte_array">
-  ## output_format_parquet_enum_as_byte_array
-</div>
+## output_format_parquet_enum_as_byte_array {#output_format_parquet_enum_as_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -838,9 +772,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 使用 Parquet 物理类型 BYTE&#95;ARRAY 和逻辑类型 ENUM 写入枚举值
 
-<div id="output_format_parquet_fixed_string_as_fixed_byte_array">
-  ## output_format_parquet_fixed_string_as_fixed_byte_array
-</div>
+## output_format_parquet_fixed_string_as_fixed_byte_array {#output_format_parquet_fixed_string_as_fixed_byte_array}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -848,9 +780,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 对于 FixedString 列，使用 Parquet FIXED&#95;LEN&#95;BYTE&#95;ARRAY 类型而不是 Binary 类型。
 
-<div id="output_format_parquet_geometadata">
-  ## output_format_parquet_geometadata
-</div>
+## output_format_parquet_geometadata {#output_format_parquet_geometadata}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -858,9 +788,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 用于在 Parquet 元数据中写入 Geo 列信息，并将列编码为 WKB 格式。
 
-<div id="output_format_parquet_max_dictionary_size">
-  ## output_format_parquet_max_dictionary_size
-</div>
+## output_format_parquet_max_dictionary_size {#output_format_parquet_max_dictionary_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1048576" />
 
@@ -868,33 +796,25 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 如果字典大小超过该字节数，则切换为不使用字典的编码。设为 0 可禁用字典编码。
 
-<div id="output_format_parquet_parallel_encoding">
-  ## output_format_parquet_parallel_encoding
-</div>
+## output_format_parquet_parallel_encoding {#output_format_parquet_parallel_encoding}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 使用多个线程进行 Parquet 编码。
 
-<div id="output_format_parquet_row_group_size">
-  ## output_format_parquet_row_group_size
-</div>
+## output_format_parquet_row_group_size {#output_format_parquet_row_group_size}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 目标行组大小 (单位：行) 。
 
-<div id="output_format_parquet_row_group_size_bytes">
-  ## output_format_parquet_row_group_size_bytes
-</div>
+## output_format_parquet_row_group_size_bytes {#output_format_parquet_row_group_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="536870912" />
 
 压缩前的目标行组大小，单位为字节。
 
-<div id="output_format_parquet_string_as_string">
-  ## output_format_parquet_string_as_string
-</div>
+## output_format_parquet_string_as_string {#output_format_parquet_string_as_string}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -902,9 +822,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 对 String 列使用 Parquet String 类型，而非 Binary。
 
-<div id="output_format_parquet_wide_integer_as_decimal">
-  ## output_format_parquet_wide_integer_as_decimal
-</div>
+## output_format_parquet_wide_integer_as_decimal {#output_format_parquet_wide_integer_as_decimal}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -912,9 +830,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 以大端字节序将 `Int128`、`UInt128`、`Int256` 和 `UInt256` 值写入为符合标准的 Parquet `DECIMAL` 值。默认情况下，为兼容旧版 ClickHouse，保留未标注的旧版小端序 `FIXED_LEN_BYTE_ARRAY` 表示形式。十进制表示形式支持可互操作的数值统计信息，但部分 Parquet reader 不支持精度超过 38 或 76 的值。
 
-<div id="output_format_parquet_write_bloom_filter">
-  ## output_format_parquet_write_bloom_filter
-</div>
+## output_format_parquet_write_bloom_filter {#output_format_parquet_write_bloom_filter}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -922,9 +838,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 将布隆过滤器写入 Parquet 文件。
 
-<div id="output_format_parquet_write_checksums">
-  ## output_format_parquet_write_checksums
-</div>
+## output_format_parquet_write_checksums {#output_format_parquet_write_checksums}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -932,9 +846,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 在 Parquet 页头中写入 crc32 校验和。
 
-<div id="output_format_parquet_write_page_index">
-  ## output_format_parquet_write_page_index
-</div>
+## output_format_parquet_write_page_index {#output_format_parquet_write_page_index}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -942,9 +854,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 将列索引和偏移索引 (即每个数据页的统计信息，读取时可用于过滤器下推) 写入 Parquet 文件。
 
-<div id="output_format_pretty_color">
-  ## output_format_pretty_color
-</div>
+## output_format_pretty_color {#output_format_pretty_color}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -952,9 +862,7 @@ Parquet 输出格式的压缩方法。支持的编解码器：snappy、lz4、bro
 
 在 Pretty 格式 中使用 ANSI 转义序列。0 - 禁用，1 - 启用，&#39;auto&#39; - 在输出为终端时启用。
 
-<div id="output_format_pretty_display_footer_column_names">
-  ## output_format_pretty_display_footer_column_names
-</div>
+## output_format_pretty_display_footer_column_names {#output_format_pretty_display_footer_column_names}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -988,9 +896,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
       └─number─┴─toTypeName(number)─┘
 ```
 
-<div id="output_format_pretty_display_footer_column_names_min_rows">
-  ## output_format_pretty_display_footer_column_names_min_rows
-</div>
+## output_format_pretty_display_footer_column_names_min_rows {#output_format_pretty_display_footer_column_names_min_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -998,9 +904,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 在启用 [output&#95;format&#95;pretty&#95;display&#95;footer&#95;column&#95;names](/zh/reference/settings/formats/output-format#output_format_pretty_display_footer_column_names) 时，此设置用于指定显示包含列名的页脚所需的最小行数。
 
-<div id="output_format_pretty_fallback_to_vertical">
-  ## output_format_pretty_fallback_to_vertical
-</div>
+## output_format_pretty_fallback_to_vertical {#output_format_pretty_fallback_to_vertical}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1009,9 +913,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 如果启用，且表很宽但行数较少，Pretty 格式会按 Vertical 格式的方式输出。
 有关此行为的详细调优，请参阅 `output_format_pretty_fallback_to_vertical_max_rows_per_chunk` 和 `output_format_pretty_fallback_to_vertical_min_table_width`。
 
-<div id="output_format_pretty_fallback_to_vertical_max_rows_per_chunk">
-  ## output_format_pretty_fallback_to_vertical_max_rows_per_chunk
-</div>
+## output_format_pretty_fallback_to_vertical_max_rows_per_chunk {#output_format_pretty_fallback_to_vertical_max_rows_per_chunk}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -1019,9 +921,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 仅当一个块中的记录数不超过指定值时，才会启用回退到 Vertical 格式的行为 (参见 `output_format_pretty_fallback_to_vertical`) 。
 
-<div id="output_format_pretty_fallback_to_vertical_min_columns">
-  ## output_format_pretty_fallback_to_vertical_min_columns
-</div>
+## output_format_pretty_fallback_to_vertical_min_columns {#output_format_pretty_fallback_to_vertical_min_columns}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -1029,9 +929,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 仅当列数大于指定值时，才会启用回退到 Vertical 格式 (参见 `output_format_pretty_fallback_to_vertical`) 的行为。
 
-<div id="output_format_pretty_fallback_to_vertical_min_table_width">
-  ## output_format_pretty_fallback_to_vertical_min_table_width
-</div>
+## output_format_pretty_fallback_to_vertical_min_table_width {#output_format_pretty_fallback_to_vertical_min_table_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
@@ -1039,9 +937,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 仅当表中各列长度之和至少达到指定值，或至少有一个值包含换行符时，才会回退到 Vertical 格式 (参见 `output_format_pretty_fallback_to_vertical`) 。
 
-<div id="output_format_pretty_glue_chunks">
-  ## output_format_pretty_glue_chunks
-</div>
+## output_format_pretty_glue_chunks {#output_format_pretty_glue_chunks}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -1051,9 +947,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 0 - 禁用，1 - 启用，&#39;auto&#39; - 在终端中启用。
 
-<div id="output_format_pretty_grid_charset">
-  ## output_format_pretty_grid_charset
-</div>
+## output_format_pretty_grid_charset {#output_format_pretty_grid_charset}
 
 <SettingsInfoBlock type="String" default_value="UTF-8" />
 
@@ -1061,9 +955,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 在交互模式下，`clickhouse-client` 会在终端不支持 UTF-8 时自动切换为 `ASCII` (依据 `LC_ALL`、`LC_CTYPE` 和 `LANG` 环境变量判断) ，除非已显式指定此设置。
 
-<div id="output_format_pretty_highlight_digit_groups">
-  ## output_format_pretty_highlight_digit_groups
-</div>
+## output_format_pretty_highlight_digit_groups {#output_format_pretty_highlight_digit_groups}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1071,9 +963,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 如果启用且输出到终端，则会以下划线高亮表示千位、百万位等对应的每一位数字。
 
-<div id="output_format_pretty_highlight_trailing_spaces">
-  ## output_format_pretty_highlight_trailing_spaces
-</div>
+## output_format_pretty_highlight_trailing_spaces {#output_format_pretty_highlight_trailing_spaces}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1081,9 +971,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 
 如果启用且输出到终端，则会以灰色并加下划线的方式高亮尾随空格。
 
-<div id="output_format_pretty_max_column_name_width_cut_to">
-  ## output_format_pretty_max_column_name_width_cut_to
-</div>
+## output_format_pretty_max_column_name_width_cut_to {#output_format_pretty_max_column_name_width_cut_to}
 
 <SettingsInfoBlock type="UInt64" default_value="24" />
 
@@ -1092,9 +980,7 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 如果列名过长，则将其截断到此长度。
 如果列名长度超过 `output_format_pretty_max_column_name_width_cut_to` 与 `output_format_pretty_max_column_name_width_min_chars_to_cut` 之和，就会被截断。
 
-<div id="output_format_pretty_max_column_name_width_min_chars_to_cut">
-  ## output_format_pretty_max_column_name_width_min_chars_to_cut
-</div>
+## output_format_pretty_max_column_name_width_min_chars_to_cut {#output_format_pretty_max_column_name_width_min_chars_to_cut}
 
 <SettingsInfoBlock type="UInt64" default_value="4" />
 
@@ -1103,17 +989,13 @@ SELECT *, toTypeName(*) FROM (SELECT * FROM system.numbers LIMIT 1000);
 当列名过长时，最少需要截断的字符数。
 如果列名长度超过 `output_format_pretty_max_column_name_width_cut_to` 与 `output_format_pretty_max_column_name_width_min_chars_to_cut` 之和，则会被截断。
 
-<div id="output_format_pretty_max_column_pad_width">
-  ## output_format_pretty_max_column_pad_width
-</div>
+## output_format_pretty_max_column_pad_width {#output_format_pretty_max_column_pad_width}
 
 <SettingsInfoBlock type="UInt64" default_value="250" />
 
 Pretty 格式中，对列内所有值进行填充时的最大宽度。
 
-<div id="output_format_pretty_max_rows">
-  ## output_format_pretty_max_rows
-</div>
+## output_format_pretty_max_rows {#output_format_pretty_max_rows}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1121,18 +1003,14 @@ Pretty 格式中，对列内所有值进行填充时的最大宽度。
 
 Pretty 格式的行数上限。
 
-<div id="output_format_pretty_max_value_width">
-  ## output_format_pretty_max_value_width
-</div>
+## output_format_pretty_max_value_width {#output_format_pretty_max_value_width}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
 Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断。
 值为 0 表示永不截断。
 
-<div id="output_format_pretty_max_value_width_apply_for_single_value">
-  ## output_format_pretty_max_value_width_apply_for_single_value
-</div>
+## output_format_pretty_max_value_width_apply_for_single_value {#output_format_pretty_max_value_width_apply_for_single_value}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -1140,9 +1018,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 仅当某个值不是块内的单个值时，才会截断该值 (参见 `output_format_pretty_max_value_width` 设置) 。否则会完整输出，这对 `SHOW CREATE TABLE` 查询很有帮助。
 
-<div id="output_format_pretty_multiline_fields">
-  ## output_format_pretty_multiline_fields
-</div>
+## output_format_pretty_multiline_fields {#output_format_pretty_multiline_fields}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1151,9 +1027,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 如果启用，Pretty 格式会在表单元中以多行形式渲染多行字段，从而保持表格边框完整。
 如果未启用，则会按原样渲染，这可能会导致表格变形 (不过保持关闭的一个好处是，复制粘贴多行值会更方便) 。
 
-<div id="output_format_pretty_named_tuples_as_json">
-  ## output_format_pretty_named_tuples_as_json
-</div>
+## output_format_pretty_named_tuples_as_json {#output_format_pretty_named_tuples_as_json}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1161,9 +1035,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 控制 Pretty 格式中的命名元组是否以格式化的 JSON 对象输出。
 
-<div id="output_format_pretty_row_numbers">
-  ## output_format_pretty_row_numbers
-</div>
+## output_format_pretty_row_numbers {#output_format_pretty_row_numbers}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -1171,9 +1043,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 为 Pretty 输出格式的每一行添加行号
 
-<div id="output_format_pretty_single_large_number_tip_threshold">
-  ## output_format_pretty_single_large_number_tip_threshold
-</div>
+## output_format_pretty_single_large_number_tip_threshold {#output_format_pretty_single_large_number_tip_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -1181,9 +1051,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 如果块仅包含一个数字，且该数字超过此值 (0 除外) ，则会在表右侧显示一个易读的数字提示
 
-<div id="output_format_pretty_squash_consecutive_ms">
-  ## output_format_pretty_squash_consecutive_ms
-</div>
+## output_format_pretty_squash_consecutive_ms {#output_format_pretty_squash_consecutive_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -1192,9 +1060,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 最多等待下一个块指定的毫秒数，然后在写入前将其与前一个块合并。
 这样既可避免过于频繁地输出过小的块，又仍可按流式方式显示数据。
 
-<div id="output_format_pretty_squash_max_wait_ms">
-  ## output_format_pretty_squash_max_wait_ms
-</div>
+## output_format_pretty_squash_max_wait_ms {#output_format_pretty_squash_max_wait_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -1202,9 +1068,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 如果自上次输出以来经过的时间超过指定的毫秒数，则在 Pretty 格式 中输出待处理的块。
 
-<div id="output_format_pretty_use_nbsp_for_padding">
-  ## output_format_pretty_use_nbsp_for_padding
-</div>
+## output_format_pretty_use_nbsp_for_padding {#output_format_pretty_use_nbsp_for_padding}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1214,63 +1078,47 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 在等宽字体下，输出的视觉效果保持不变，但填充内容在经过会压缩或裁剪连续普通空格的工具时仍能保留下来。
 仅在 `output_format_pretty_grid_charset` 为 `UTF-8` 时生效。
 
-<div id="output_format_protobuf_nullables_with_google_wrappers">
-  ## output_format_protobuf_nullables_with_google_wrappers
-</div>
+## output_format_protobuf_nullables_with_google_wrappers {#output_format_protobuf_nullables_with_google_wrappers}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 使用 Google wrapper 对 Nullable 列进行序列化时，会将默认值序列化为空 wrapper。若关闭此设置，则默认值和 NULL 值都不会被序列化
 
-<div id="output_format_schema">
-  ## output_format_schema
-</div>
+## output_format_schema {#output_format_schema}
 
 自动生成的 schema 在 [Cap&#39;n Proto](/zh/reference/formats/CapnProto) 或 [Protobuf](/zh/reference/formats/Protobuf/Protobuf) 格式下将保存到的文件路径。
 
-<div id="output_format_sql_insert_include_column_names">
-  ## output_format_sql_insert_include_column_names
-</div>
+## output_format_sql_insert_include_column_names {#output_format_sql_insert_include_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 在 INSERT 查询中包含列名
 
-<div id="output_format_sql_insert_max_batch_size">
-  ## output_format_sql_insert_max_batch_size
-</div>
+## output_format_sql_insert_max_batch_size {#output_format_sql_insert_max_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="65409" />
 
 单条 INSERT 语句中的最大行数。
 
-<div id="output_format_sql_insert_quote_names">
-  ## output_format_sql_insert_quote_names
-</div>
+## output_format_sql_insert_quote_names {#output_format_sql_insert_quote_names}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 使用 &#39;&#96;&#39; 字符为列名加引号
 
-<div id="output_format_sql_insert_table_name">
-  ## output_format_sql_insert_table_name
-</div>
+## output_format_sql_insert_table_name {#output_format_sql_insert_table_name}
 
 <SettingsInfoBlock type="String" default_value="table" />
 
 输出 INSERT 查询中的表名称
 
-<div id="output_format_sql_insert_use_replace">
-  ## output_format_sql_insert_use_replace
-</div>
+## output_format_sql_insert_use_replace {#output_format_sql_insert_use_replace}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 使用 REPLACE 语句而不是 INSERT
 
-<div id="output_format_trim_fixed_string">
-  ## output_format_trim_fixed_string
-</div>
+## output_format_trim_fixed_string {#output_format_trim_fixed_string}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1278,17 +1126,13 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 在文本输出格式中去除 FixedString 值末尾的零字节。例如，`toFixedString('John', 8)` 将显示为 `John`，而不是 `John\0\0\0\0`。
 
-<div id="output_format_tsv_crlf_end_of_line">
-  ## output_format_tsv_crlf_end_of_line
-</div>
+## output_format_tsv_crlf_end_of_line {#output_format_tsv_crlf_end_of_line}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 如果将其设为 true，TSV 格式的行尾将使用 \r\n，而不是 \n。
 
-<div id="output_format_values_escape_quote_with_quote">
-  ## output_format_values_escape_quote_with_quote
-</div>
+## output_format_values_escape_quote_with_quote {#output_format_values_escape_quote_with_quote}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -1296,9 +1140,7 @@ Pretty 格式 中显示值的最大宽度。若超过该宽度，则会被截断
 
 如果为 true，则将 &#39; 转义为 &#39;&#39;；否则使用 &#92;&#39; 进行转义
 
-<div id="output_format_write_statistics">
-  ## output_format_write_statistics
-</div>
+## output_format_write_statistics {#output_format_write_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

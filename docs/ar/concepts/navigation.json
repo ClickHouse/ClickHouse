@@ -1,11 +1,11 @@
 {
   "icon": "/images/icons/icon-concepts.svg",
-  "item": "Concepts",
+  "item": "المفاهيم",
   "pages": [
     "ar/concepts/index",
     {
       "expanded": true,
-      "group": "Fundamentals",
+      "group": "الأساسيات",
       "pages": [
         "ar/concepts/core-concepts/index",
         "ar/concepts/core-concepts/glossary",
@@ -19,11 +19,11 @@
     },
     {
       "expanded": true,
-      "group": "ClickHouse concepts",
+      "group": "مفاهيم ClickHouse",
       "pages": [
         "ar/concepts/features/index",
         {
-          "group": "Materialized views",
+          "group": "العروض المُجسَّدة",
           "pages": [
             "ar/concepts/features/materialized-views/index",
             "ar/concepts/features/materialized-views/incremental-materialized-view",
@@ -32,28 +32,28 @@
           ]
         },
         {
-          "group": "Dictionaries",
+          "group": "القواميس",
           "pages": [
             "ar/concepts/features/dictionaries/index",
             "ar/concepts/features/dictionaries/best-practices"
           ]
         },
         {
-          "group": "Projections",
+          "group": "الإسقاطات",
           "pages": [
             "ar/concepts/features/projections/projections",
             "ar/concepts/features/projections/materialized-views-versus-projections"
           ]
         },
         {
-          "group": "Performance",
+          "group": "الأداء",
           "pages": [
             "ar/concepts/features/performance/index",
             "ar/concepts/features/performance/prewhere",
             "ar/concepts/features/performance/allocation-profiling",
             "ar/concepts/features/performance/allocation-profiling-old",
             {
-              "group": "Caches",
+              "group": "ذاكرات التخزين المؤقت",
               "pages": [
                 "ar/concepts/features/performance/caches/caches",
                 "ar/concepts/features/performance/caches/query-cache",
@@ -62,7 +62,7 @@
               ]
             },
             {
-              "group": "Skipping-indexes",
+              "group": "فهارس تخطي البيانات",
               "pages": [
                 "ar/concepts/features/performance/skip-indexes/skipping-indexes",
                 "ar/concepts/features/performance/skip-indexes/skipping-indexes-examples"
@@ -70,7 +70,7 @@
             },
             "ar/concepts/features/performance/lazy-materialization",
             {
-              "group": "Troubleshooting",
+              "group": "استكشاف الأخطاء وإصلاحها",
               "pages": [
                 "ar/concepts/features/performance/troubleshoot/debugging-memory-issues",
                 "ar/concepts/features/performance/troubleshoot/oom-canary",
@@ -81,10 +81,11 @@
           ]
         },
         {
-          "group": "Operations",
+          "group": "العمليات",
           "pages": [
+            "ar/concepts/features/operations/background-queries",
             {
-              "group": "Insert",
+              "group": "الإدراج",
               "pages": [
                 "ar/concepts/features/operations/insert/inserting-data",
                 "ar/concepts/features/operations/insert/asyncinserts",
@@ -95,13 +96,13 @@
               ]
             },
             {
-              "group": "Select",
+              "group": "استرجاع البيانات",
               "pages": [
                 "ar/concepts/features/operations/select/joining-tables"
               ]
             },
             {
-              "group": "Update",
+              "group": "التحديث",
               "pages": [
                 "ar/concepts/features/operations/update/index",
                 "ar/concepts/features/operations/update/overview",
@@ -109,7 +110,7 @@
               ]
             },
             {
-              "group": "Delete",
+              "group": "الحذف",
               "pages": [
                 "ar/concepts/features/operations/delete/index",
                 "ar/concepts/features/operations/delete/overview",
@@ -122,10 +123,10 @@
           ]
         },
         {
-          "group": "Configuration",
+          "group": "التهيئة",
           "pages": [
             {
-              "group": "Settings",
+              "group": "الإعدادات",
               "pages": [
                 "ar/concepts/features/configuration/settings/overview",
                 "ar/concepts/features/configuration/settings/settings-query-level",
@@ -141,7 +142,7 @@
               ]
             },
             {
-              "group": "Server config",
+              "group": "إعداد الخادم",
               "pages": [
                 "ar/concepts/features/configuration/server-config/configuration-files",
                 "ar/concepts/features/configuration/server-config/storing-data",
@@ -156,7 +157,7 @@
           ]
         },
         {
-          "group": "Security and auth",
+          "group": "الأمان والمصادقة",
           "pages": [
             "ar/concepts/features/security/index",
             "ar/concepts/features/security/access-rights",
@@ -170,7 +171,7 @@
               ]
             },
             {
-              "group": "External authenticators",
+              "group": "آليات المصادقة الخارجية",
               "pages": [
                 "ar/concepts/features/security/external-authenticators/index",
                 {
@@ -195,7 +196,7 @@
           ]
         },
         {
-          "group": "Backup and restore",
+          "group": "النسخ الاحتياطي والاستعادة",
           "pages": [
             "ar/concepts/features/backup-restore/overview",
             "ar/concepts/features/backup-restore/restore-settings",
@@ -207,14 +208,14 @@
           ]
         },
         {
-          "group": "Interfaces",
+          "group": "الواجهات",
           "pages": [
             "ar/concepts/features/interfaces/native-clients-interfaces-index",
             "ar/concepts/features/interfaces/cli",
             "ar/concepts/features/interfaces/client",
             "ar/concepts/features/interfaces/mcp",
             {
-              "group": "Drivers and interfaces",
+              "group": "المشغّلات والواجهات",
               "pages": [
                 "ar/concepts/features/interfaces/overview",
                 "ar/concepts/features/interfaces/http",
@@ -228,6 +229,7 @@
                 },
                 "ar/concepts/features/interfaces/postgresql",
                 "ar/concepts/features/interfaces/prometheus",
+                "ar/concepts/features/interfaces/prometheus-metrics",
                 "ar/concepts/features/interfaces/ssh",
                 "ar/concepts/features/interfaces/grpc",
                 "ar/concepts/features/interfaces/arrowflight"
@@ -237,12 +239,13 @@
             "ar/concepts/features/interfaces/schema-inference",
             "ar/concepts/features/interfaces/documentation-search",
             "ar/concepts/features/interfaces/web-sql",
+            "ar/concepts/features/interfaces/sql-console",
             "ar/concepts/features/interfaces/web-ui-color-coding",
             "ar/concepts/features/interfaces/web-ui-pinned-columns",
             "ar/concepts/features/interfaces/web-ui-result-shaping",
             "ar/concepts/features/interfaces/web-terminal",
             {
-              "group": "Third-party clients",
+              "group": "العملاء من جهات خارجية",
               "pages": [
                 "ar/concepts/features/interfaces/third-party/index"
               ]
@@ -250,7 +253,7 @@
           ]
         },
         {
-          "group": "Tools and utilities",
+          "group": "الأدوات والبرامج المساعدة",
           "pages": [
             "ar/concepts/features/tools-and-utilities/index",
             "ar/concepts/features/tools-and-utilities/backupview",
@@ -270,7 +273,7 @@
     },
     {
       "expanded": true,
-      "group": "Best practices",
+      "group": "أفضل الممارسات",
       "pages": [
         "ar/concepts/best-practices/index",
         "ar/concepts/best-practices/choosing-a-primary-key",

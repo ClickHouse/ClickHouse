@@ -18,9 +18,7 @@ JDBC 테이블 함수는 JDBC 드라이버를 통해 연결된 테이블을 반�
 이 테이블 함수를 사용하려면 별도의 [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) 프로그램이 실행 중이어야 합니다.
 널 허용(Nullable) 타입을 지원합니다(쿼리하는 원격 테이블의 DDL 기준).
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -28,9 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 외부 데이터베이스 이름 대신 스키마(schema)를 지정할 수 있습니다:
 

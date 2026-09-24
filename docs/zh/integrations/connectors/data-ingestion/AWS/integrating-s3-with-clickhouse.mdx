@@ -16,9 +16,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 您可以将 S3 中的数据插入 ClickHouse，也可以将 S3 用作导出目标端，从而与“数据湖”架构进行交互。此外，S3 还能提供“冷”存储层级，并有助于实现存储与计算分离。在下面的章节中，我们将以纽约市出租车数据集为例，演示如何在 S3 和 ClickHouse 之间移动数据，同时介绍关键配置参数，并提供一些性能优化建议。
 
-<div id="s3-table-functions">
-  ## S3 表函数
-</div>
+## S3 表函数 {#s3-table-functions}
 
 `s3` 表函数允许你从兼容 S3 的存储中读取文件，也可以将文件写入其中。其语法结构如下：
 
@@ -31,13 +29,11 @@ s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structur
 * path — 包含文件路径的 存储桶 URL。在只读模式下，支持以下路径通配符：`*`、`?`、`{abc,def}` 和 `{N..M}`，其中 `N`、`M` 为数字，`'abc'`、`'def'` 为字符串。更多信息，请参阅[在路径中使用通配符](/zh/reference/engines/table-engines/integrations/s3#wildcards-in-path)文档。
 * format — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * structure — 表的结构。格式为 `'column1_name column1_type, column2_name column2_type, ...'`。
-* compression — 该参数为可选。支持的值包括：`none`、`gzip/gz`、`brotli/br`、`xz/LZMA`、`zstd/zst`。默认情况下，会根据文件扩展名自动检测压缩方式。
+* compression — 该参数为可选。支持的值包括：`none`、`gzip/gz`、`deflate`、`brotli/br`、`xz/LZMA`、`zstd/zst`、`lz4`、`bz2`、`snappy`。默认情况下，会根据文件扩展名自动检测压缩方式。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。
 
 在路径表达式中使用通配符可以引用多个文件，从而支持并行处理。
 
-<div id="preparation">
-  ### 准备工作
-</div>
+### 准备工作 {#preparation}
 
 在 ClickHouse 中创建表之前，你可能想先仔细查看一下 S3 存储桶中的数据。你可以直接在 ClickHouse 中使用 `DESCRIBE` 语句：
 
@@ -161,9 +157,7 @@ ORDER BY pickup_datetime
 
 我们的出租车数据集中的每个条目都代表一次出租车行程。这些匿名化数据包含 2000 万条记录，压缩后存储在 S3 存储桶 https://datasets-documentation.s3.eu-west-3.amazonaws.com/ 的 **nyc-taxi** 文件夹下。数据采用 TSV 格式，每个文件约有 100 万行。
 
-<div id="reading-data-from-s3">
-  ### 从 S3 读取数据
-</div>
+### 从 S3 读取数据 {#reading-data-from-s3}
 
 我们可以直接查询 S3 中的数据作为数据源，无需将其持久化到 ClickHouse 中。在下面的查询中，我们取 10 行样本。请注意，这里没有提供凭证，因为该存储桶可公开访问：
 
@@ -208,9 +202,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trip
 
 虽然直接从 S3 读取数据很适合用于数据采样和执行临时的探索性查询，但这并不是你会想要经常做的事。到了需要认真处理的时候，就把数据导入 ClickHouse 中的 `MergeTree` 表。
 
-<div id="using-clickhouse-local">
-  ### 使用 clickhouse-local
-</div>
+### 使用 clickhouse-local {#using-clickhouse-local}
 
 `clickhouse-local` 程序让你无需部署和配置 ClickHouse server，即可快速处理本地文件。任何使用 `s3` 表函数 的查询都可以通过该实用工具执行。例如：
 
@@ -218,9 +210,7 @@ FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trip
 clickhouse-local --query "SELECT * FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_*.gz', NOSIGN, 'TabSeparatedWithNames') LIMIT 10"
 ```
 
-<div id="inserting-data-from-s3">
-  ### 从 S3 插入数据
-</div>
+### 从 S3 插入数据 {#inserting-data-from-s3}
 
 为了充分发挥 ClickHouse 的全部能力，接下来我们会将数据读出并插入到实例中。
 为此，我们将 `s3` 函数与简单的 `INSERT` 语句结合使用。请注意，我们无需列出各列，因为目标表已提供所需的结构。这要求各列按照表 DDL 语句中指定的顺序出现：系统会根据它们在 `SELECT` 子句中的位置进行映射。插入全部 1000 万行可能需要几分钟，具体取决于 ClickHouse 实例的性能。下面我们先插入 100 万行，以确保能快速返回结果。可根据需要调整 `LIMIT` 子句或列选择，以导入所需的子集：
@@ -232,9 +222,7 @@ INSERT INTO trips
    LIMIT 1000000;
 ```
 
-<div id="remote-insert-using-clickhouse-local">
-  ### 使用 ClickHouse Local 进行远程插入
-</div>
+### 使用 ClickHouse Local 进行远程插入 {#remote-insert-using-clickhouse-local}
 
 如果网络安全策略阻止您的 ClickHouse 集群发起出站连接，您仍可使用 `clickhouse-local` 将 S3 数据插入 ClickHouse。在下面的示例中，我们从 S3 存储桶读取数据，并使用 `remote` 函数将其插入 ClickHouse：
 
@@ -247,7 +235,7 @@ clickhouse-local --query "INSERT INTO TABLE FUNCTION remote('localhost:9000', 'd
 </Note>
 
 <div id="exporting-data">
-  ### 导出数据
+  ### 导出数据 {#exporting-data}
 </div>
 
 你可以使用 `s3` 表函数将数据写入 S3 中的文件。这需要具备相应的权限。我们会在请求中传递所需的凭证，但如需了解更多选项，请参阅 [管理凭证](#managing-credentials) 页面。
@@ -270,7 +258,7 @@ LIMIT 10000;
 请注意，这里文件的格式会根据扩展名自动推断。我们也不需要在 `s3` 函数中指定列，这也可以从 `SELECT` 中推断出来。
 
 <div id="splitting-large-files">
-  ### 拆分大文件
+  ### 拆分大文件 {#splitting-large-files}
 </div>
 
 你大概率不会想把数据导出成单个文件。大多数工具 (包括 ClickHouse) 在读写多个文件时，通常都能获得更高的吞吐量，因为这样可以并行处理。我们可以多次执行 `INSERT` 命令，每次处理一部分数据。ClickHouse 提供了通过 `PARTITION` 键自动拆分文件的方法。
@@ -307,9 +295,7 @@ FROM trips
 LIMIT 100000;
 ```
 
-<div id="utilizing-clusters">
-  ### 利用集群
-</div>
+### 利用集群 {#utilizing-clusters}
 
 上述函数都只能在单个节点上执行。读取速度会随 CPU 核心数线性提升，直到其他资源 (通常是网络) 达到饱和，从而实现纵向扩展。不过，这种方法也有其局限性。虽然在执行 `INSERT INTO SELECT` 查询时，可以通过插入到分布式表来缓解部分资源压力，但仍然只有一个节点负责读取、解析和处理数据。为了解决这一问题，并实现读取的横向扩展，我们提供了 [s3Cluster](/zh/reference/functions/table-functions/s3Cluster) 函数。
 
@@ -344,9 +330,7 @@ INSERT INTO default.trips_all
 
 插入操作会在发起节点上执行。这意味着，虽然读取会在每个节点上进行，但生成的行会被路由到发起节点进行分发。在高吞吐量场景下，这可能会成为瓶颈。为解决此问题，请为 `s3cluster` 函数设置 [parallel&#95;distributed&#95;insert&#95;select](/zh/reference/settings/session-settings/parallel#parallel_distributed_insert_select) 参数。
 
-<div id="s3-table-engines">
-  ## S3 表引擎
-</div>
+## S3 表引擎 {#s3-table-engines}
 
 虽然 `s3` 函数支持对存储在 S3 中的数据执行临时查询，但其语法较为繁琐。使用 `S3` 表引擎后，你无需反复指定存储桶 URL 和凭证。为此，ClickHouse 提供了 S3 表引擎。
 
@@ -359,11 +343,9 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — 存储桶 URL 及文件路径。在只读模式下支持以下通配符：`*`、`?`、`{abc,def}` 和 `{N..M}`，其中 N、M 表示数字，&#39;abc&#39;、&#39;def&#39; 表示字符串。更多信息，请参见[此处](/zh/reference/engines/table-engines/integrations/s3#wildcards-in-path)。
 * `format` — 文件的[格式](/zh/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - AWS 账户用户的长期凭证。您可以使用它们对请求进行身份验证。该参数为可选。如果未指定凭证，则使用配置文件中的值。更多信息，请参见[管理凭证](#managing-credentials)。
-* `compression` — 压缩类型。支持的值：none、gzip/gz、brotli/br、xz/LZMA、zstd/zst。该参数为可选。默认情况下，会根据文件扩展名自动检测压缩类型。
+* `compression` — 压缩类型。支持的值：none、gzip/gz、deflate、brotli/br、xz/LZMA、zstd/zst、lz4、bz2、snappy。该参数为可选。默认情况下，会根据文件扩展名自动检测压缩类型。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置选择 (默认值为 `basic`) 。
 
-<div id="reading-data">
-  ### 读取数据
-</div>
+### 读取数据 {#reading-data}
 
 在下面的示例中，我们使用 `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/` 存储桶中的前 10 个 TSV 文件创建一个名为 `trips_raw` 的表。每个文件都包含 100 万行：
 
@@ -442,7 +424,7 @@ LIMIT 10;
 ```
 
 <div id="inserting-data">
-  ### 插入数据
+  ### 插入数据 {#inserting-data}
 </div>
 
 `S3` 表引擎支持并行读取。仅当表定义中不包含 glob pattern 时，才支持写入。因此，上面的表无法写入。
@@ -505,7 +487,7 @@ SELECT * FROM trips_dest LIMIT 5;
   * 没有索引的概念，即主键索引或跳过索引。
 
 <div id="managing-credentials">
-  ## 管理凭证
+  ## 管理凭证 {#managing-credentials}
 </div>
 
 在前面的示例中，我们在 `s3` 函数或 `S3` 表定义中直接传入了凭证。虽然对于偶尔使用，这种方式或许可以接受，但在生产环境中，用户通常需要不那么显式的身份验证机制。为此，ClickHouse 提供了多种选项：
@@ -549,19 +531,19 @@ SELECT * FROM trips_dest LIMIT 5;
   * 也可以针对特定端点设置这些相同的参数，并使用相同的前缀匹配规则。
 
 <div id="s3-optimizing-performance">
-  ## 性能优化
+  ## 性能优化 {#s3-optimizing-performance}
 </div>
 
 有关如何使用 S3 函数优化读取和插入性能，请参阅[专门的性能指南](/zh/integrations/connectors/data-ingestion/AWS/performance)。
 
 <div id="s3-storage-tuning">
-  ### S3 存储调优
+  ### S3 存储调优 {#s3-storage-tuning}
 </div>
 
 在底层实现中，ClickHouse MergeTree 使用两种主要存储格式：[`Wide` and `Compact`](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)。当前实现仍采用 ClickHouse 的默认行为 (由设置 `min_bytes_for_wide_part` 和 `min_rows_for_wide_part` 控制) ，但我们预计在未来版本中，S3 的行为会有所不同。例如，增大 `min_bytes_for_wide_part` 的默认值会更倾向于使用 `Compact` 格式，从而减少文件数量。因此，如果你仅使用 S3 存储，现在可能就需要调优这些设置。
 
 <div id="s3-backed-mergetree">
-  ## S3 后端的 MergeTree
+  ## S3 后端的 MergeTree {#s3-backed-mergetree}
 </div>
 
 `s3` 函数及其相关表引擎让我们可以使用熟悉的 ClickHouse 语法查询存储在 S3 中的数据。不过，它们在数据管理功能和性能方面存在一定局限：不支持主索引，不支持无缓存，文件插入也需要由用户自行管理。
@@ -569,7 +551,7 @@ SELECT * FROM trips_dest LIMIT 5;
 ClickHouse 意识到，S3 是一种很有吸引力的存储解决方案，尤其是在对“较冷”数据的查询性能要求不那么高、且用户希望将存储与 compute 分离的场景下。为此，ClickHouse 提供了将 S3 用作 MergeTree 引擎存储后端的支持。这使你既能利用 S3 在可扩展性和成本方面的优势，又能获得 MergeTree 引擎的插入和查询性能。
 
 <div id="storage-tiers">
-  ### 存储分层
+  ### 存储分层 {#storage-tiers}
 </div>
 
 ClickHouse 存储卷将物理磁盘与 MergeTree 表引擎解耦。单个卷可以由一组按顺序排列的磁盘组成。这种抽象不仅可让多个块设备用于数据存储，还支持包括 S3 在内的其他存储类型。ClickHouse 数据分区片段可以根据存储策略和写满率在不同卷之间迁移，从而形成存储分层这一概念。
@@ -577,7 +559,7 @@ ClickHouse 存储卷将物理磁盘与 MergeTree 表引擎解耦。单个卷可�
 存储分层支持冷热分层架构：最新的数据通常也是查询最频繁的数据，因此只需在高性能存储 (例如 NVMe SSD) 上占用少量空间。随着数据逐渐老化，对查询时间的 SLA 要求会放宽，查询频率也会下降。这部分长尾数据可以存储在速度更慢、性能更低的介质上，例如 HDD 或 S3 这类对象存储。
 
 <div id="creating-a-disk">
-  ### 创建磁盘
+  ### 创建磁盘 {#creating-a-disk}
 </div>
 
 要将 S3 存储桶 用作磁盘，首先需要在 ClickHouse 配置文件中对其进行声明。你可以扩展 config.xml，更推荐的做法是在 conf.d 下新增一个文件。下面是一个 S3 磁盘声明示例：
@@ -611,7 +593,7 @@ ClickHouse 存储卷将物理磁盘与 MergeTree 表引擎解耦。单个卷可�
 与此磁盘声明相关的完整设置列表可在[此处](/zh/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-s3)查看。请注意，此处的凭证也可通过[管理凭证](#managing-credentials)中所述的相同方式进行管理，即在上述设置块中将 use&#95;environment&#95;credentials 设为 true，以使用 IAM 角色。
 
 <div id="creating-a-storage-policy">
-  ### 创建存储策略
+  ### 创建存储策略 {#creating-a-storage-policy}
 </div>
 
 配置完成后，这个“磁盘”就可以供策略中声明的存储卷使用。在下面的示例中，我们假设 S3 是唯一的存储。这不涉及更复杂的冷热分层架构；在这类架构中，数据可根据生存时间 (TTL) 和写满率进行迁移。
@@ -640,9 +622,7 @@ ClickHouse 存储卷将物理磁盘与 MergeTree 表引擎解耦。单个卷可�
 </clickhouse>
 ```
 
-<div id="creating-a-table">
-  ### 创建表
-</div>
+### 创建表 {#creating-a-table}
 
 假设你已将磁盘配置为使用具有写入权限的存储桶，那么你应该能够像下面的示例那样创建一个表。为简洁起见，我们仅使用 NYC taxi 的部分列，并将数据直接流式写入这个以 S3 为后端的表：
 
@@ -680,7 +660,7 @@ SELECT passenger_count, avg(tip_amount) AS avg_tip, avg(total_amount) AS avg_amo
 ```
 
 <div id="modifying-a-table">
-  ### 修改表
+  ### 修改表 {#modifying-a-table}
 </div>
 
 有时，你可能需要修改某个特定表的存储策略。虽然可以这样做，但有一些限制。新的目标策略必须包含原策略中的所有磁盘和卷，也就是说，数据不会为了满足策略变更而被迁移。在校验这些约束时，系统会根据名称识别卷和磁盘；如果尝试违反这些约束，就会报错。不过，如果你沿用前面的示例，则以下更改是有效的。
@@ -715,14 +695,12 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 这里我们在新的 s3&#95;tiered 策略中复用主卷，并引入一个新的 hot 卷。这里使用默认磁盘，它仅包含一个通过参数 `<path>` 配置的磁盘。请注意，我们的卷名和磁盘名称都不会改变。向表中插入的新数据会保留在默认磁盘上，直到达到 move&#95;factor * disk&#95;size，届时数据将被迁移到 S3。
 
 <div id="handling-replication">
-  ### 实现复制
+  ### 实现复制 {#handling-replication}
 </div>
 
 借助 `ReplicatedMergeTree` 表引擎，可在使用 S3 磁盘时实现复制。详情请参阅[使用 S3 对象存储跨两个 AWS 区域复制单个分片](#s3-multi-region)指南。
 
-<div id="read--writes">
-  ### 读写
-</div>
+### 读写 {#read--writes}
 
 以下说明介绍了 ClickHouse 与 S3 交互的实现方式。虽然通常只是补充信息，但在[性能优化](#s3-optimizing-performance)时，可能会对读者有所帮助：
 
@@ -731,13 +709,13 @@ ALTER TABLE trips_s3 MODIFY SETTING storage_policy='s3_tiered'
 * 写入会并行执行，最多支持 100 个并发文件写入线程。`max_insert_delayed_streams_for_parallel_write` 的默认值为 1000，用于控制并行写入的 S3 blob 数量。由于每个正在写入的文件都需要一个缓冲区 (约 1MB) ，这实际上限制了 INSERT 的内存占用。在服务器内存较低的场景下，适当调低该值可能更合适。
 
 <div id="configuring-s3-for-clickhouse-use">
-  ## 将 S3 对象存储用作 ClickHouse 磁盘
+  ## 将 S3 对象存储用作 ClickHouse 磁盘 {#configuring-s3-for-clickhouse-use}
 </div>
 
 如果您需要有关创建 S3 存储桶和 IAM 角色的分步说明，请参阅[“如何创建 AWS IAM 用户和 S3 存储桶”](/zh/integrations/connectors/data-ingestion/AWS/creating-an-s3-iam-role-and-bucket)
 
 <div id="configure-clickhouse-to-use-the-s3-bucket-as-a-disk">
-  ### 配置 ClickHouse 使用 S3 存储桶 作为磁盘
+  ### 配置 ClickHouse 使用 S3 存储桶 作为磁盘 {#configure-clickhouse-to-use-the-s3-bucket-as-a-disk}
 </div>
 
 以下示例基于以服务形式安装的 Linux Deb 软件包，并使用 ClickHouse 的默认目录。
@@ -803,9 +781,7 @@ chown clickhouse:clickhouse /etc/clickhouse-server/config.d/storage_config.xml
 service clickhouse-server restart
 ```
 
-<div id="testing">
-  ### 测试
-</div>
+### 测试 {#testing}
 
 1. 使用 ClickHouse 客户端登录，如下所示
 
@@ -886,7 +862,7 @@ SELECT * FROM s3_table1;
 <Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="AWS 控制台中的 S3 存储桶视图，显示存储在 S3 中的 ClickHouse 数据文件" />
 
 <div id="s3-multi-region">
-  ## 使用 S3 对象存储在两个 AWS 区域之间复制单个分片
+  ## 使用 S3 对象存储在两个 AWS 区域之间复制单个分片 {#s3-multi-region}
 </div>
 
 <Tip>
@@ -894,7 +870,7 @@ SELECT * FROM s3_table1;
 </Tip>
 
 <div id="plan-the-deployment">
-  ### 规划部署
+  ### 规划部署 {#plan-the-deployment}
 </div>
 
 本教程以在 AWS EC2 上部署两个 ClickHouse Server 节点和三个 ClickHouse Keeper 节点为基础。ClickHouse Server 的数据存储使用 S3。为支持灾难恢复，使用了两个 AWS 区域，每个区域各包含一个 ClickHouse Server 和一个 S3 存储桶。
@@ -902,17 +878,17 @@ SELECT * FROM s3_table1;
 ClickHouse 表会在这两台服务器之间复制，因此也会跨这两个区域复制。
 
 <div id="install-software">
-  ### 安装软件
+  ### 安装软件 {#install-software}
 </div>
 
 <div id="clickhouse-server-nodes">
-  #### ClickHouse 服务器 节点
+  #### ClickHouse 服务器 节点 {#clickhouse-server-nodes}
 </div>
 
 在 ClickHouse 服务器 节点上执行部署步骤时，请参阅[安装说明](/zh/get-started/setup/install)。
 
 <div id="deploy-clickhouse">
-  #### 部署 ClickHouse
+  #### 部署 ClickHouse {#deploy-clickhouse}
 </div>
 
 在两台主机上部署 ClickHouse；在示例配置中，这两台主机分别命名为 `chnode1` 和 `chnode2`。
@@ -920,7 +896,7 @@ ClickHouse 表会在这两台服务器之间复制，因此也会跨这两个区
 将 `chnode1` 部署在一个 AWS 区域中，将 `chnode2` 部署在另一个区域中。
 
 <div id="deploy-clickhouse-keeper">
-  #### 部署 ClickHouse Keeper
+  #### 部署 ClickHouse Keeper {#deploy-clickhouse-keeper}
 </div>
 
 在三台主机上部署 ClickHouse Keeper。在示例配置中，这些主机分别命名为 `keepernode1`、`keepernode2` 和 `keepernode3`。`keepernode1` 可部署在与 `chnode1` 相同的区域，`keepernode2` 可部署在与 `chnode2` 相同的区域，而 `keepernode3` 可部署在任一区域，但需与该区域内的 ClickHouse 节点位于不同的可用区。
@@ -928,7 +904,7 @@ ClickHouse 表会在这两台服务器之间复制，因此也会跨这两个区
 在 ClickHouse Keeper 节点上执行部署步骤时，请参阅[安装说明](/zh/get-started/setup/install)。
 
 <div id="create-s3-buckets">
-  ### 创建 S3 存储桶
+  ### 创建 S3 存储桶 {#create-s3-buckets}
 </div>
 
 创建两个 S3 存储桶，在放置 `chnode1` 和 `chnode2` 的两个区域中各创建一个。
@@ -976,7 +952,7 @@ ClickHouse 表会在这两台服务器之间复制，因此也会跨这两个区
 </Note>
 
 <div id="configure-clickhouse-keeper">
-  ### 配置 ClickHouse Keeper
+  ### 配置 ClickHouse Keeper {#configure-clickhouse-keeper}
 </div>
 
 当 ClickHouse Keeper 以 standalone 模式运行 (与 ClickHouse 服务器 分离) 时，配置采用单个 XML 文件。在本教程中，该文件为 `/etc/clickhouse-keeper/keeper_config.xml`。3 个 Keeper server 使用相同的配置，只有一个设置项不同：`<server_id>`。
@@ -1034,11 +1010,11 @@ sudo -u clickhouse \
 ```
 
 <div id="configure-clickhouse-server">
-  ### 配置 ClickHouse 服务器
+  ### 配置 ClickHouse 服务器 {#configure-clickhouse-server}
 </div>
 
 <div id="define-a-cluster">
-  #### 定义集群
+  #### 定义集群 {#define-a-cluster}
 </div>
 
 ClickHouse 集群是在配置的 `<remote_servers>` 部分中定义的。在此示例中，定义了一个集群 `cluster_1S_2R`，它由一个分片和两个副本组成。这两个副本分别位于主机 `chnode1` 和 `chnode2` 上。
@@ -1082,7 +1058,7 @@ ClickHouse 集群是在配置的 `<remote_servers>` 部分中定义的。在此�
 </Note>
 
 <div id="disable-zero-copy-replication">
-  #### 禁用 zero-copy 复制
+  #### 禁用 zero-copy 复制 {#disable-zero-copy-replication}
 </div>
 
 在 ClickHouse 22.7 及更低版本中，对于 S3 和 HDFS 磁盘，设置 `allow_remote_fs_zero_copy_replication` 默认值为 `true`。在此灾难恢复场景下，应将该设置设为 `false`；而在 22.8 及更高版本中，其默认值已为 `false`。
@@ -1119,7 +1095,7 @@ ClickHouse Keeper 负责协调 ClickHouse 节点之间的数据复制。要让 C
 ```
 
 <div id="configure-networking">
-  ### 配置网络
+  ### 配置网络 {#configure-networking}
 </div>
 
 在 AWS 中配置安全设置时，请参阅[网络端口](/zh/concepts/features/security/network-ports)列表，以确保服务器之间能够互相通信，并且你也可以与它们通信。
@@ -1133,11 +1109,11 @@ ClickHouse Keeper 负责协调 ClickHouse 节点之间的数据复制。要让 C
 ```
 
 <div id="start-the-servers">
-  ### 启动各服务器
+  ### 启动各服务器 {#start-the-servers}
 </div>
 
 <div id="run-clickhouse-keeper">
-  #### 运行 ClickHouse Keeper
+  #### 运行 ClickHouse Keeper {#run-clickhouse-keeper}
 </div>
 
 在每个 Keeper server 上，运行适用于你的操作系统的命令，例如：
@@ -1149,7 +1125,7 @@ sudo systemctl status clickhouse-keeper
 ```
 
 <div id="check-clickhouse-keeper-status">
-  #### 检查 ClickHouse Keeper 状态
+  #### 检查 ClickHouse Keeper 状态 {#check-clickhouse-keeper-status}
 </div>
 
 使用 `netcat` 向 ClickHouse Keeper 发送命令。例如，`mntr` 会返回 ClickHouse Keeper 集群的状态。如果你在每个 Keeper 节点上运行该命令，就会看到其中一个是 leader，另外两个是跟随者：
@@ -1181,7 +1157,7 @@ zk_synced_followers     2
 ```
 
 <div id="run-clickhouse-server">
-  #### 启动 ClickHouse 服务器
+  #### 启动 ClickHouse 服务器 {#run-clickhouse-server}
 </div>
 
 在每台 ClickHouse 服务器 上运行
@@ -1190,9 +1166,7 @@ zk_synced_followers     2
 sudo service clickhouse-server start
 ```
 
-<div id="verify-clickhouse-server">
-  #### 验证 ClickHouse 服务器
-</div>
+#### 验证 ClickHouse 服务器 {#verify-clickhouse-server}
 
 添加[集群配置](#define-a-cluster)时，系统定义了一个单分片集群，并在两个 ClickHouse 节点之间进行复制。在此验证步骤中，你将检查 ClickHouse 启动时是否已构建该集群，并使用该集群创建一个复制表。
 
@@ -1263,9 +1237,7 @@ sudo service clickhouse-server start
   你可以通过设置 `default_replica_path` 和 `default_replica_name`，自定义上面显示的 ZooKeeper 路径 `'clickhouse/tables/{uuid}/{shard}`。相关文档见[这里](/zh/reference/settings/server-settings/settings/default-replica#default_replica_path)。
 </Note>
 
-<div id="testing">
-  ### 测试
-</div>
+### 测试 {#testing-1}
 
 这些测试将验证数据是否已在两台服务器之间复制，以及数据是否存储在 S3 存储桶中而非本地磁盘。
 
@@ -1331,7 +1303,7 @@ sudo service clickhouse-server start
 <Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="第二个 S3 存储桶中的数据大小，显示存储使用指标" />
 
 <div id="s3express">
-  ## S3Express
+  ## S3Express {#s3express}
 </div>
 
 [S3Express](https://aws.amazon.com/s3/storage-classes/express-one-zone/) 是 Amazon S3 推出的一种新型高性能单可用区存储类别。
@@ -1343,7 +1315,7 @@ sudo service clickhouse-server start
 </Note>
 
 <div id="s3-disk">
-  ### S3 磁盘
+  ### S3 磁盘 {#s3-disk}
 </div>
 
 创建使用 S3Express 存储桶作为后端存储的表，需要执行以下步骤：
@@ -1391,7 +1363,7 @@ SETTINGS storage_policy = 's3_express';
 ```
 
 <div id="s3-storage">
-  ### S3 存储
+  ### S3 存储 {#s3-storage}
 </div>
 
 也支持 S3 存储，但仅支持 `Object URL` 路径。示例：
@@ -1412,7 +1384,7 @@ SELECT * FROM s3('https://test-bucket--eun1-az1--x-s3.s3express-eun1-az1.eu-nort
 ```
 
 <div id="backups">
-  ### 备份
+  ### 备份 {#backups}
 </div>
 
 可以将备份存储到我们上面创建的磁盘中：

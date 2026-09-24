@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="show_data_lake_catalogs_in_system_tables">
-  ## show_data_lake_catalogs_in_system_tables
-</div>
+## show_data_lake_catalogs_in_system_tables {#show_data_lake_catalogs_in_system_tables}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 システムテーブルにデータレイクカタログを表示できるようにします。
 
-<div id="show_processlist_include_internal">
-  ## show_processlist_include_internal
-</div>
+## show_processlist_include_internal {#show_processlist_include_internal}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 内部プロセスには、Dictionary の再読み込み、リフレッシャブルmaterialized view の再読み込み、`SHOW ...` クエリで実行される補助 `SELECT`、破損したテーブルに対処するために内部で実行される補助 `CREATE DATABASE ...` クエリなどが含まれます。
 
-<div id="show_remote_databases_in_system_tables">
-  ## show_remote_databases_in_system_tables
-</div>
+## show_remote_databases_in_system_tables {#show_remote_databases_in_system_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +39,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 `MySQL` および `PostgreSQL` のデータベースをシステムテーブルに表示できるようにします。
 
-<div id="show_table_uuid_in_table_create_query_if_not_nil">
-  ## show_table_uuid_in_table_create_query_if_not_nil
-</div>
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

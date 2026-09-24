@@ -14,34 +14,24 @@ doc_type: 'reference'
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-<div id="clauses">
-  ## Секции
-</div>
+## Секции {#clauses}
 
-<div id="if-not-exists">
-  ### IF NOT EXISTS
-</div>
+### IF NOT EXISTS {#if-not-exists}
 
 Если база данных `db_name` уже существует, ClickHouse не создает новую базу данных и:
 
 * Не генерирует исключение, если указана эта конструкция.
 * Генерирует исключение, если эта конструкция не указана.
 
-<div id="on-cluster">
-  ### ON CLUSTER
-</div>
+### ON CLUSTER {#on-cluster}
 
 ClickHouse создает базу данных `db_name` на всех серверах указанного кластера. Подробности см. в статье [Distributed DDL](/ru/reference/statements/distributed-ddl).
 
-<div id="engine">
-  ### ДВИЖОК
-</div>
+### ДВИЖОК {#engine}
 
 По умолчанию ClickHouse использует собственный движок базы данных [Atomic](/ru/reference/engines/database-engines/atomic). Также существуют [MySQL](/ru/reference/engines/database-engines/mysql), [PostgresSQL](/ru/reference/engines/database-engines/postgresql), [MaterializedPostgreSQL](/ru/reference/engines/database-engines/materialized-postgresql), [Replicated](/ru/reference/engines/database-engines/replicated), [SQLite](/ru/reference/engines/database-engines/sqlite).
 
-<div id="comment">
-  ### COMMENT
-</div>
+### COMMENT {#comment}
 
 Вы можете добавить комментарий к базе данных при её создании.
 
@@ -66,13 +56,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-<div id="settings">
-  ### Настройки
-</div>
+### SETTINGS {#settings}
 
-<div id="lazy-load-tables">
-  #### lazy_load_tables
-</div>
+Предложение `SETTINGS` может использоваться без предложения `ENGINE` — в этом случае применяется движок баз данных по умолчанию (`Atomic`). Оно может содержать как настройки движка баз данных, так и обычные настройки запроса: каждое имя относится к одной из этих двух групп и обрабатывается соответствующим образом.
+
+#### disk {#disk}
+
+Диск, используемый для хранения файлов метаданных таблиц базы данных. Можно указать имя диска из конфигурации сервера либо определить его inline с помощью функции `disk` — так же, как это делается для отдельной таблицы:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+Применяется к движкам баз данных, которые хранят метаданные таблиц на диске (`Atomic`, `Ordinary`). Если не указан,
+используется диск, заданный в настройке сервера `database_disk.disk`.
+
+#### lazy_load_tables {#lazy-load-tables}
 
 Когда этот параметр включен, таблицы не загружаются полностью при запуске базы данных. Вместо этого для каждой таблицы создается облегченный прокси, а реальный движок таблицы материализуется при первом обращении. Это сокращает время запуска и использование памяти для баз данных с большим количеством таблиц, когда активно запрашивается только часть из них.
 
@@ -80,7 +80,7 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-Применяется к движкам баз данных, которые хранят метаданные таблиц на диске (например, `Atomic`, `Ordinary`). Представления, materialized view, словари и таблицы, использующие table function, всегда загружаются сразу независимо от этого параметра.
+Применяется к движкам баз данных, которые хранят метаданные таблиц на диске (например, `Atomic`, `Ordinary`). Представления, materialized view, словари, таблицы `Alias`, таблицы `TimeSeries` и таблицы, использующие table function, всегда загружаются сразу независимо от этого параметра.
 
 **Когда использовать:** Этот параметр полезен для баз данных с большим количеством таблиц (сотнями или тысячами), когда активно запрашивается только часть из них. Он уменьшает время запуска сервера и использование памяти, откладывая создание объектов движка таблицы, сканирование частей данных и инициализацию фоновых потоков до первого обращения.
 

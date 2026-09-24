@@ -17,7 +17,7 @@ Actualmente, ClickHouse Cloud no admite la conmutación por error automática ni
 </Tip>
 
 <div id="definitions">
-  ## Definiciones
+  ## Definiciones {#definitions}
 </div>
 
 Conviene repasar primero algunas definiciones.
@@ -29,7 +29,7 @@ Conviene repasar primero algunas definiciones.
 **Copias de seguridad e instantáneas de base de datos**: Las copias de seguridad proporcionan almacenamiento duradero a largo plazo con una copia independiente de los datos. Las instantáneas no crean una copia adicional de los datos, suelen ser más rápidas y ofrecen mejores RPO.
 
 <div id="database-backups">
-  ## Copias de seguridad de la base de datos
+  ## Copias de seguridad de la base de datos {#database-backups}
 </div>
 
 Tener una copia de seguridad de su servicio principal es una forma eficaz de poder restaurarlo en caso de indisponibilidad del servicio principal.
@@ -60,26 +60,21 @@ Las copias de seguridad disponibles actualmente para el servicio se muestran en 
 Esta sección también muestra el estado de éxito o fallo de cada copia de seguridad.
 
 <div id="restoring-from-a-backup">
-  ## Restauración desde una copia de seguridad
+  ## Restauración desde una copia de seguridad {#restoring-from-a-backup}
 </div>
 
 1. Las copias de seguridad predeterminadas, en el bucket de ClickHouse Cloud, pueden restaurarse en un servicio nuevo de la misma región.
 2. Las copias de seguridad externas (en el almacenamiento de objetos del cliente) pueden restaurarse en un servicio nuevo de la misma región o de una diferente.
 
-<div id="backup-and-restore-duration-guidance">
-  ## Guía sobre la duración de las copias de seguridad y la restauración
-</div>
+## Guía sobre la duración de las copias de seguridad y la restauración {#backup-and-restore-duration-guidance}
 
-La duración de las copias de seguridad y de la restauración depende de varios factores, como el tamaño de la base de datos, así como el esquema y el número de tablas que contiene.
+La duración de las copias de seguridad y de las restauraciones varía considerablemente según el tamaño de los datos, la complejidad del esquema y el número de tablas. Las cifras que se indican a continuación proceden de pruebas internas y no constituyen compromisos de rendimiento.
 
-En nuestras pruebas, hemos visto que las copias de seguridad más pequeñas, de ~1 TB, pueden tardar entre 10 y 15 minutos o más en completarse.
-Las copias de seguridad de menos de 20 TB suelen completarse en una hora, y hacer una copia de seguridad de ~50 TB de datos debería llevar entre 2 y 3 horas.
-Las copias de seguridad se benefician de economías de escala a medida que aumenta el tamaño, y hemos visto que copias de seguridad de hasta 1 PB para algunos servicios internos se completan en menos de 10 horas.
+En nuestras pruebas, una copia de seguridad de aproximadamente 1 TB ha tardado entre 10 y 15 minutos, y una de 20 TB, alrededor de una hora. Los conjuntos de datos más grandes tardan proporcionalmente más, y las copias de seguridad de varios cientos de TB o más pueden tardar muchas horas, aunque existen economías de escala que ayudan con tamaños mayores.
 
-Recomendamos hacer pruebas con su propia base de datos o con datos de muestra para obtener estimaciones más precisas, ya que la duración real depende de varios factores, como se ha indicado anteriormente.
+Las restauraciones suelen ser más lentas que la copia de seguridad equivalente, especialmente cuando incluyen una cadena larga de copias de seguridad incrementales, ya que deben aplicarse la copia de seguridad completa y todas las copias de seguridad incrementales posteriores de la cadena. Restaurar un servicio muy grande puede tardar más de un día.
 
-La duración de la restauración es similar a la de las copias de seguridad para tamaños equivalentes.
-Como se ha mencionado anteriormente, recomendamos hacer pruebas con su propia base de datos para hacerse una idea de cuánto tardará en restaurarse la copia de seguridad.
+Dado que la duración depende en gran medida de sus datos, su esquema y la configuración de las copias de seguridad, recomendamos encarecidamente probar una restauración con sus propios datos antes de depender de un tiempo de recuperación objetivo.
 
 <Note>
   Actualmente NO hay soporte para la conmutación por error automática entre 2 instancias de ClickHouse Cloud, ya sea en la misma región o en regiones diferentes.
@@ -87,21 +82,19 @@ Como se ha mencionado anteriormente, recomendamos hacer pruebas con su propia ba
 </Note>
 
 <div id="recovery-process">
-  ## Proceso de recuperación
+  ## Proceso de recuperación {#recovery-process}
 </div>
 
 En esta sección se explican las distintas opciones de recuperación y el proceso que puede seguirse en cada caso.
 
 <div id="primary-service-data-corruption">
-  ### Corrupción de datos del servicio principal
+  ### Corrupción de datos del servicio principal {#primary-service-data-corruption}
 </div>
 
 En este caso, los datos [se pueden restaurar](/es/products/cloud/guides/backups/review-and-restore-backups#restore-a-backup) a otro servicio de la misma región a partir de la copia de seguridad.
 La copia de seguridad puede tener hasta 24 horas de antigüedad si se usa la política de copia de seguridad predeterminada, o hasta 6 horas (si se usan copias de seguridad configurables con una frecuencia de 6 horas).
 
-<div id="restoration-steps">
-  #### Pasos de restauración
-</div>
+#### Pasos de restauración {#restoration-steps}
 
 Para restaurar a partir de una copia de seguridad existente
 
@@ -112,7 +105,7 @@ Para restaurar a partir de una copia de seguridad existente
 <Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Restaurar a partir de una copia de seguridad" />
 
 <div id="primary-region-downtime">
-  ### Caída de la región primaria
+  ### Caída de la región primaria {#primary-region-downtime}
 </div>
 
 Puede [exportar copias de seguridad](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) a un bucket de su propio proveedor de nube.
@@ -132,7 +125,7 @@ Esto puede implicar:
 </Note>
 
 <div id="additional-options">
-  ## Opciones adicionales
+  ## Opciones adicionales {#additional-options}
 </div>
 
 Hay algunas opciones adicionales que conviene tener en cuenta.

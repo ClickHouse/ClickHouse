@@ -1,6 +1,6 @@
 {
   "directory": "none",
-  "group": "Session Settings",
+  "group": "Настройки сеанса",
   "pages": [
     "ru/reference/settings/session-settings/additional",
     "ru/reference/settings/session-settings/aggregate",

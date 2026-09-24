@@ -22,9 +22,9 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 `ON CLUSTER` 子句允许在集群中创建 SETTINGS PROFILE，参见 [分布式 DDL](/zh/reference/statements/distributed-ddl)。
 
-<div id="example">
-  ## 示例
-</div>
+`CREATE SETTINGS PROFILE` 需要 [CREATE SETTINGS PROFILE](/zh/reference/statements/grant#access-management) 权限。`OR REPLACE` 会丢弃同名的已有 profile，包括它所应用的角色，因此还需要 [DROP SETTINGS PROFILE](/zh/reference/statements/grant#access-management) 权限。无论该 profile 是否已存在，都需要 `DROP SETTINGS PROFILE` 权限，因此无法使用该语句来探知哪些 profile 存在。
+
+## 示例 {#example}
 
 创建用户：
 

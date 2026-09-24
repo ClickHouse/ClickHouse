@@ -14,34 +14,24 @@ doc_type: 'reference'
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-<div id="clauses">
-  ## 句
-</div>
+## 句 {#clauses}
 
-<div id="if-not-exists">
-  ### IF NOT EXISTS
-</div>
+### IF NOT EXISTS {#if-not-exists}
 
 `db_name` データベースがすでに存在する場合、ClickHouse は新しいデータベースを作成せず、次のように動作します。
 
 * この句が指定されている場合、例外はスローされません。
 * この句が指定されていない場合、例外がスローされます。
 
-<div id="on-cluster">
-  ### ON CLUSTER
-</div>
+### ON CLUSTER {#on-cluster}
 
 ClickHouse は、指定したクラスターを構成するすべてのサーバー上に `db_name` データベースを作成します。詳しくは、[Distributed DDL](/ja/reference/statements/distributed-ddl) を参照してください。
 
-<div id="engine">
-  ### エンジン
-</div>
+### エンジン {#engine}
 
 デフォルトでは、ClickHouse は独自の [Atomic](/ja/reference/engines/database-engines/atomic) データベースエンジンを使用します。これ以外にも、[MySQL](/ja/reference/engines/database-engines/mysql)、[PostgresSQL](/ja/reference/engines/database-engines/postgresql)、[MaterializedPostgreSQL](/ja/reference/engines/database-engines/materialized-postgresql)、[Replicated](/ja/reference/engines/database-engines/replicated)、[SQLite](/ja/reference/engines/database-engines/sqlite) などがあります。
 
-<div id="comment">
-  ### コメント
-</div>
+### コメント {#comment}
 
 データベースの作成時にコメントを追加できます。
 
@@ -66,13 +56,23 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-<div id="settings">
-  ### 設定
-</div>
+### SETTINGS {#settings}
 
-<div id="lazy-load-tables">
-  #### lazy_load_tables
-</div>
+`SETTINGS` 句は `ENGINE` 句なしで使用でき、その場合はデフォルトのデータベースエンジン (`Atomic`) が使用されます。この句にはデータベースエンジンの設定と通常のクエリ設定の両方を指定でき、各名前はそれぞれが属する方へ送出されます。
+
+#### disk {#disk}
+
+データベースのテーブルメタデータファイルを保存するために使用するディスクです。サーバー設定で定義済みのディスクを名前で指定することも、単一のテーブルの場合と同様に `disk` 関数を使ってインラインで定義することもできます:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+テーブルのメタデータをディスク上に保存するデータベースエンジン (`Atomic`、`Ordinary`) に適用されます。指定しない場合は、
+`database_disk.disk` サーバー設定で定義されたディスクが使用されます。
+
+#### lazy_load_tables {#lazy-load-tables}
 
 有効にすると、データベースの起動時にテーブルは完全には読み込まれません。代わりに、各テーブルに対して軽量なプロキシが作成され、実際のテーブルエンジンは最初のアクセス時に実体化されます。これにより、多数のテーブルを含み、実際にクエリされるのがその一部に限られるデータベースで、起動時間とメモリ使用量を削減できます。
 
@@ -80,7 +80,7 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-ディスク上にテーブルメタデータを保存するデータベースエンジン (例: `Atomic`、`Ordinary`) に適用されます。ビュー、materialized view、辞書、およびテーブル関数を使用するテーブルは、この設定に関係なく常に即座にロードされます。
+ディスク上にテーブルメタデータを保存するデータベースエンジン (例: `Atomic`、`Ordinary`) に適用されます。ビュー、materialized view、辞書、`Alias` テーブル、`TimeSeries` テーブル、およびテーブル関数を使用するテーブルは、この設定に関係なく常に即座にロードされます。
 
 **使用するケース:** この設定は、多数のテーブル (数百〜数千) があり、そのうち一部だけが実際にクエリされるデータベースで有用です。テーブルエンジンオブジェクトの生成、データパーツのスキャン、バックグラウンドスレッドの初期化を最初のアクセスまで遅らせることで、サーバーの起動時間とメモリ使用量を削減します。
 

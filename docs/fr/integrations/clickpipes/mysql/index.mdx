@@ -10,33 +10,21 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/fr/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.mdx';
-
-<BetaBadge />
-
-<Info>
-  L’ingestion de données de MySQL vers ClickHouse Cloud via ClickPipes est en bêta publique.
-</Info>
 
 Le MySQL ClickPipe offre une solution entièrement gérée et résiliente pour ingérer des données à partir de bases de données MySQL et MariaDB vers ClickHouse Cloud. Il prend en charge aussi bien les **chargements en masse** pour une ingestion ponctuelle que la **Change Data Capture (CDC)** pour l’ingestion continue.
 
 Les MySQL ClickPipes peuvent être déployés et gérés manuellement à l’aide de la ClickPipes UI, ainsi que par programmation à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
 
-<div id="prerequisites">
-  ## Prérequis
-</div>
+## Prérequis {#prerequisites}
 
 [//]: # "TODO La configuration de la réplication du binlog n’est pas nécessaire pour les pipes d’ingestion ponctuelle. Cela a déjà prêté à confusion par le passé ; nous devrions donc également indiquer les exigences minimales pour les chargements en masse afin d’éviter de rebuter les utilisateurs."
 
 Pour commencer, vous devez vous assurer que votre base de données MySQL est correctement configurée pour la réplication du binlog. Les étapes de configuration dépendent du mode de déploiement de MySQL ; veuillez donc suivre le guide approprié ci-dessous :
 
-<div id="supported-data-sources">
-  ### Sources de données prises en charge
-</div>
+### Sources de données prises en charge {#supported-data-sources}
 
 | Nom                                                              | Logo | Détails                                                                                                                                |
 | ---------------------------------------------------------------- | ---- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -50,9 +38,7 @@ Pour commencer, vous devez vous assurer que votre base de données MySQL est cor
 
 Une fois votre base de données MySQL source configurée, vous pouvez continuer à créer votre ClickPipe.
 
-<div id="create-your-clickpipe">
-  ## Créez votre ClickPipe
-</div>
+## Créez votre ClickPipe {#create-your-clickpipe}
 
 Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’avez pas encore de compte, vous pouvez vous inscrire [ici](https://cloud.clickhouse.com/).
 
@@ -70,9 +56,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp" alt="Sélectionner MySQL" size="lg" border />
 
-<div id="add-your-source-mysql-database-connection">
-  ### Ajoutez la connexion à votre base de données MySQL source
-</div>
+### Ajoutez la connexion à votre base de données MySQL source {#add-your-source-mysql-database-connection}
 
 4. Renseignez les informations de connexion de votre base de données MySQL source, que vous avez configurée lors de l’étape des prérequis.
 
@@ -83,15 +67,11 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 
 <Image img="/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp" alt="Renseignez les informations de connexion" size="lg" border />
 
-<div id="optional-changing-tls-settings">
-  #### (Facultatif) Modifier les paramètres TLS
-</div>
+#### (Facultatif) Modifier les paramètres TLS {#optional-changing-tls-settings}
 
 <ChangingTLSSettings />
 
-<div id="optional-set-up-ssh-tunneling">
-  #### (Facultatif) Configurer le tunnel SSH
-</div>
+#### (Facultatif) Configurer le tunnel SSH {#optional-set-up-ssh-tunneling}
 
 Vous pouvez préciser les informations du tunnel SSH si votre base de données MySQL source n’est pas accessible publiquement.
 
@@ -111,9 +91,7 @@ Vous pouvez préciser les informations du tunnel SSH si votre base de données M
 
 Une fois les informations de connexion renseignées, cliquez sur `Next`.
 
-<div id="advanced-settings">
-  #### Configurer les paramètres avancés
-</div>
+#### Configurer les paramètres avancés {#advanced-settings}
 
 Vous pouvez configurer les paramètres avancés si nécessaire. Une brève description de chaque paramètre est fournie ci-dessous :
 
@@ -124,9 +102,7 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 * **Nombre de tables de l’instantané en parallèle** : il s’agit du nombre de tables récupérées en parallèle pendant l’instantané initial. Cela est utile lorsque vous avez un grand nombre de tables et que vous souhaitez contrôler le nombre de tables récupérées en parallèle.
 * **ID du serveur** : paramètre facultatif permettant de définir l’ID du serveur pour la réplication du binlog MySQL. S’il n’est pas défini, ClickPipes génère un ID de serveur aléatoire qui peut changer au cours du cycle de vie du ClickPipe. Utilisez-le pour identifier de manière déterministe votre ClickPipe côté serveur MySQL source.
 
-<div id="configure-the-tables">
-  ### Configurer les tables
-</div>
+### Configurer les tables {#configure-the-tables}
 
 5. Ici, vous pouvez sélectionner la base de données de destination de votre ClickPipe. Vous pouvez soit sélectionner une base de données existante, soit en créer une nouvelle.
 
@@ -136,9 +112,7 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 7. <SettingPartitionBy />
 
-<div id="review-permissions-and-start-the-clickpipe">
-  ### Vérifiez les permissions et démarrez le ClickPipe
-</div>
+### Vérifiez les permissions et démarrez le ClickPipe {#review-permissions-and-start-the-clickpipe}
 
 8. Sélectionnez le rôle « Accès complet » dans le menu déroulant des permissions, puis cliquez sur « Terminer la configuration ».
 
@@ -146,9 +120,7 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 Enfin, consultez la page [&quot;FAQ de ClickPipes for MySQL&quot;](/fr/integrations/clickpipes/mysql/faq) pour plus d’informations sur les problèmes courants et leur résolution.
 
-<div id="whats-next">
-  ## Et ensuite ?
-</div>
+## Et ensuite ? {#whats-next}
 
 [//]: # "TODO Rédiger un guide de migration spécifique à MySQL ainsi que des bonnes pratiques similaires à celles qui existent déjà pour PostgreSQL. Le guide de migration actuel renvoie vers le moteur de table MySQL, ce qui n'est pas idéal."
 

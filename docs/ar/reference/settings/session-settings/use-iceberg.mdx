@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_iceberg_metadata_files_cache">
-  ## use_iceberg_metadata_files_cache
-</div>
+## use_iceberg_manifest_list_partition_pruning {#use_iceberg_manifest_list_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "إعداد جديد لتخطّي ملفات manifest الخاصة بـ Iceberg التي لا يمكن لملخصات الأقسام الخاصة بها في قائمة manifest أن تطابق مرشِّح الاستعلام، دون قراءتها."}]}]} />
+
+تخطّي ملفات manifest كاملة في Iceberg التي لا يمكن لملخصات الأقسام الخاصة بها في قائمة manifest أن تطابق مرشِّح الاستعلام، وذلك دون قراءتها. يتطلب ذلك تفعيل [use&#95;iceberg&#95;partition&#95;pruning](/ar/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)، ولا يكون مفيدًا إلا عندما يحتوي ملف manifest على عدد قليل من قيم الأقسام المتمايزة، وهو ما ينتجه `rewriteManifests` عند التجميع وفق أعمدة الأقسام.
+
+## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,9 +34,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - معطّل
 * 1 - مفعّل
 
-<div id="use_iceberg_partition_pruning">
-  ## use_iceberg_partition_pruning
-</div>
+## use_iceberg_partition_pruning {#use_iceberg_partition_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

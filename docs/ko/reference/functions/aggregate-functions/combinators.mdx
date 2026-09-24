@@ -8,9 +8,7 @@ doc_type: 'reference'
 
 집계 함수 이름 뒤에 접미사를 붙일 수 있습니다. 이렇게 하면 집계 함수의 동작 방식이 바뀝니다.
 
-<div id="-if">
-  ## -If
-</div>
+## -If {#-if}
 
 접미사 -If는 모든 집계 함수 이름에 붙일 수 있습니다. 이 경우 집계 함수는 추가 인수로 조건(Uint8 유형)을 받습니다. 집계 함수는 해당 조건을 만족하는 행만 처리합니다. 조건이 한 번도 만족되지 않으면 기본값(보통 0 또는 빈 문자열)을 반환합니다.
 
@@ -18,9 +16,7 @@ doc_type: 'reference'
 
 조건부 집계 함수를 사용하면 서브쿼리와 `JOIN`을 사용하지 않고도 여러 조건에 대한 집계를 한 번에 계산할 수 있습니다. 예를 들어, 조건부 집계 함수는 세그먼트 비교 기능을 구현하는 데 사용할 수 있습니다.
 
-<div id="-array">
-  ## -Array
-</div>
+## -Array {#-array}
 
 `-Array` 접미사는 모든 집계 함수에 붙일 수 있습니다. 이 경우 집계 함수는 `T` 유형 인수 대신 `Array(T)` 유형(배열)의 인수를 받습니다. 집계 함수가 여러 인수를 받는 경우, 해당 인수는 길이가 같은 배열이어야 합니다. 배열을 처리할 때 집계 함수는 모든 배열 요소에 대해 원래 집계 함수와 동일한 방식으로 동작합니다.
 
@@ -30,9 +26,7 @@ doc_type: 'reference'
 
 `-If`와 `-Array`는 함께 사용할 수 있습니다. 단, `Array`가 먼저 오고 그다음에 `If`가 와야 합니다. 예시: `uniqArrayIf(arr, cond)`, `quantilesTimingArrayIf(level1, level2)(arr, cond)`. 이 순서 때문에 `cond` 인수는 배열이 아닙니다.
 
-<div id="-map">
-  ## -Map
-</div>
+## -Map {#-map}
 
 -Map 접미사는 모든 집계 함수에 붙일 수 있습니다. 이렇게 하면 맵(Map) 타입을 인수로 받고, 지정된 집계 함수를 사용해 맵의 각 키에 대한 값을 개별적으로 집계하는 집계 함수가 생성됩니다. 결과 역시 맵(Map) 타입입니다.
 
@@ -66,9 +60,7 @@ GROUP BY timeslot;
 └─────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
-<div id="-simplestate">
-  ## -SimpleState
-</div>
+## -SimpleState {#-simplestate}
 
 이 조합자를 적용하면 집계 함수는 동일한 값을 반환하지만 타입은 달라집니다. 반환되는 타입은 [SimpleAggregateFunction(...)](/ko/reference/data-types/simpleaggregatefunction)이며, [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블과 함께 사용할 수 있도록 테이블에 저장할 수 있습니다.
 
@@ -98,9 +90,7 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 └──────────────────────────────────────┴───┘
 ```
 
-<div id="-state">
-  ## -State
-</div>
+## -State {#-state}
 
 이 조합자를 적용하면 집계 함수는 결과 값(예: [uniq](/ko/reference/functions/aggregate-functions/uniq) 함수의 고유값 개수)을 반환하지 않고 집계의 중간 상태를 반환합니다(`uniq`의 경우 고유값 개수를 계산하기 위한 해시 테이블). 이는 이후 추가 처리에 사용하거나 나중에 집계를 완료할 수 있도록 테이블에 저장할 수 있는 `AggregateFunction(...)`입니다.
 
@@ -116,27 +106,19 @@ WITH anySimpleState(number) AS c SELECT toTypeName(c), c FROM numbers(1);
 * [-Merge](#-merge) 조합자.
 * [-MergeState](#-mergestate) 조합자.
 
-<div id="-merge">
-  ## -Merge
-</div>
+## -Merge {#-merge}
 
 이 조합자를 적용하면 집계 함수는 중간 집계 상태를 인수로 받아, 해당 상태들을 결합해 집계를 완료한 뒤 결과 값을 반환합니다.
 
-<div id="-mergestate">
-  ## -MergeState
-</div>
+## -MergeState {#-mergestate}
 
 -Merge 조합자(combinator)와 같은 방식으로 중간 집계 상태를 머지합니다. 다만 결과값을 반환하는 대신, -State 조합자와 마찬가지로 중간 집계 상태를 반환합니다.
 
-<div id="-foreach">
-  ## -ForEach
-</div>
+## -ForEach {#-foreach}
 
 테이블용 집계 함수를 배열용 집계 함수로 변환합니다. 이 함수는 각 배열의 같은 위치에 있는 항목들을 집계해 결과 배열을 반환합니다. 예를 들어, 배열 `[1, 2]`, `[3, 4, 5]`and`[6, 7]`에 대해 `sumForEach`를 사용하면 같은 위치의 배열 항목들을 더한 결과인 `[10, 13, 5]`를 반환합니다.
 
-<div id="-tuple">
-  ## -Tuple
-</div>
+## -Tuple {#-tuple}
 
 `-Tuple` 접미사는 모든 집계 함수에 추가할 수 있습니다. 이렇게 결합된 함수는 기반 집계 함수의 각 인수에 대해 `Tuple` 유형의 인수를 하나씩 받으며, 모든 튜플은 동일한 개수의 원소를 가져야 합니다. 집계는 각 원소 위치에 독립적으로 적용되어, 모든 `Tuple`에서 해당 위치의 원소를 받아 결과 `Tuple`을 반환합니다.
 
@@ -236,16 +218,12 @@ FROM
 
 `-Tuple`은 `-If`와 같은 다른 조합자와 함께 사용할 수 있습니다. 예시: `sumTupleIf(tuple_column, cond)`.
 
-<div id="-distinct">
-  ## -Distinct
-</div>
+## -Distinct {#-distinct}
 
 각 고유한 인수 조합은 한 번만 집계됩니다. 중복되는 값은 무시됩니다.
 예시: `sum(DISTINCT x)` (또는 `sumDistinct(x)`), `groupArray(DISTINCT x)` (또는 `groupArrayDistinct(x)`), `corrStable(DISTINCT x, y)` (또는 `corrStableDistinct(x, y)`) 등이 있습니다.
 
-<div id="-ordefault">
-  ## -OrDefault
-</div>
+## -OrDefault {#-ordefault}
 
 집계 함수의 동작을 변경합니다.
 
@@ -297,9 +275,7 @@ FROM
 └───────────────────────────────────┘
 ```
 
-<div id="-ornull">
-  ## -OrNull
-</div>
+## -OrNull {#-ornull}
 
 집계 함수의 동작을 변경합니다.
 
@@ -354,9 +330,7 @@ FROM
 └────────────────────────────────┘
 ```
 
-<div id="-resample">
-  ## -Resample
-</div>
+## -Resample {#-resample}
 
 데이터를 그룹으로 나눈 뒤, 각 그룹의 데이터를 별도로 집계할 수 있습니다. 그룹은 하나의 컬럼 값을 인터벌 단위로 나누어 생성됩니다.
 
@@ -367,7 +341,7 @@ FROM
 **인수**
 
 * `start` — `resampling_key` 값에 대해 필요한 전체 인터벌의 시작 값입니다.
-* `stop` — `resampling_key` 값에 대해 필요한 전체 인터벌의 끝 값입니다. 전체 인터벌에는 `stop` 값이 포함되지 않습니다(`[start, stop)`).
+* `stop` — `resampling_key` 값에 대해 필요한 전체 인터벌의 끝 값입니다. 전체 인터벌에는 `stop` 값이 포함되지 않습니다(`[start, stop)`). 이 값은 `start`보다 커야 하며, 하위 인터벌을 하나도 포함하지 않는 범위는 예외를 발생시킵니다.
 * `step` — 전체 인터벌을 하위 인터벌로 나누는 간격입니다. `aggFunction`은 각 하위 인터벌에서 독립적으로 실행됩니다.
 * `resampling_key` — 값에 따라 데이터를 인터벌로 나누는 데 사용하는 컬럼입니다.
 * `aggFunction_params` — `aggFunction`의 매개변수입니다.
@@ -424,22 +398,16 @@ FROM people
 └────────┴───────────────────────────┘
 ```
 
-<div id="-argmin">
-  ## -ArgMin
-</div>
+## -ArgMin {#-argmin}
 
 접미사 -ArgMin은 모든 집계 함수 이름에 붙일 수 있습니다. 이 경우 집계 함수는 추가 인수를 받으며, 이 인수에는 비교 가능한 표현식이라면 어떤 것이든 사용할 수 있습니다. 집계 함수는 지정된 추가 표현식의 값이 최솟값인 행만 처리합니다.
 
 예시: `sumArgMin(column, expr)`, `countArgMin(expr)`, `avgArgMin(x, expr)` 등입니다.
 
-<div id="-argmax">
-  ## -ArgMax
-</div>
+## -ArgMax {#-argmax}
 
 접미사 -ArgMin과 유사하지만, 지정된 추가 표현식의 값이 최대인 행만 처리합니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 배열, 맵, 상태에 집계 조합자 사용하기](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)

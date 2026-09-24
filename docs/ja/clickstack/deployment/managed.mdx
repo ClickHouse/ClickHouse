@@ -26,7 +26,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
 * ストレージとは独立したコンピュートの自動スケーリング
 * オブジェクトストレージに基づく低コストかつ実質的に無制限の保持
-* Warehouses により、読み取りワークロードと書き込みワークロードを個別に分離できる
+* Warehouses により、[読み取りワークロードと書き込みワークロードを個別に分離できる](/ja/clickstack/managing/isolating-read-write)
 * 統合された認証
 * 自動バックアップ
 * セキュリティおよびコンプライアンス機能
@@ -35,7 +35,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 このモードでは、データのインジェストは完全にユーザー側で行います。独自にホストした OpenTelemetry Collector、クライアントライブラリからの直接インジェスト、ClickHouse ネイティブのテーブルエンジン (Kafka や S3 など) 、ETL パイプライン、または ClickHouse Cloud のマネージドインジェストサービスである ClickPipes を使用して、Managed ClickStack にデータを取り込むことができます。この方法は、ClickStack を運用するうえで最もシンプルかつ高性能なアプローチです。
 
 <div id="suitable-for">
-  ### 適したケース
+  ### 適したケース {#suitable-for}
 </div>
 
 このデプロイパターンは、次のようなケースに適しています。
@@ -45,7 +45,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 3. すでに分析用途で ClickHouse Cloud を利用しており、ClickStack のインストルメンテーションライブラリを使ってアプリケーションをインストルメントし、同じクラスターにデータを送信したい場合。この場合は、オブザーバビリティワークロード用のコンピュートを分離するため、[warehouses](/ja/products/cloud/features/infrastructure/warehouses) の使用を推奨します。
 
 <div id="setup-steps">
-  ## セットアップ手順
+  ## セットアップ手順 {#setup-steps}
 </div>
 
 以下のガイドは、すでに ClickHouse Cloud サービスを作成済みであることを前提としています。まだサービスを作成していない場合は、Managed ClickStack の [Getting Started](/ja/clickstack/getting-started/managed) ガイドに従ってください。これにより、このガイドと同じ状態、つまり ClickStack が有効になっており、オブザーバビリティデータを受け入れられる状態のサービスが用意されます。
@@ -137,7 +137,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             まだ collector を稼働させていない場合は、以下の手順に従って起動してください。既存の collector がある場合は、そのための configuration 例も用意されています。
 
-            ### collector を起動する
+### collector を起動する {#start-a-collector-existing}
 
             以下では、推奨される方法である **ClickStack distribution of the OpenTelemetry Collector** の使用を前提としています。これには追加の processing が含まれており、ClickHouse Cloud 向けに最適化されています。独自の OpenTelemetry Collector を使用したい場合は、[「既存の collector を設定する」](#configure-existing-collectors-existing) を参照してください。
 
@@ -155,7 +155,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             この 1 つのコマンドを実行すると、ポート 4317 (gRPC) および 4318 (HTTP) で OTLP endpoint を公開した ClickStack collector が起動します。すでに OpenTelemetry のインストルメンテーションと agents がある場合は、すぐにこれらの endpoint へのテレメトリー データ送信を開始できます。
 
-            ### 既存の collector を設定する
+### 既存の collector を設定する {#configure-existing-collectors-existing}
 
             既存の OpenTelemetry Collectors を設定することも、独自の collector distribution を使用することもできます。
 
@@ -173,7 +173,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             OpenTelemetry collectors の設定の詳細については、[「OpenTelemetry でインジェストする」](/ja/clickstack/ingesting-data/opentelemetry) を参照してください。
 
-            ### インジェストを開始する (任意)
+### インジェストを開始する (任意) {#start-ingestion-existing}
 
             OpenTelemetry でインストルメントする既存のアプリケーションやインフラストラクチャがある場合は、「Connect an application」からリンクされている関連ガイドに進んでください。
 
@@ -197,7 +197,7 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 
             以下では、Vector のインスタンスが稼働しており、インジェストパイプラインが事前に設定されていて、データを送信していることを前提としています。
 
-            ### データベースとテーブルを作成する
+### データベースとテーブルを作成する {#create-database-and-tables}
 
             Vector では、データの取り込み前にテーブルとスキーマを定義しておく必要があります。
 
@@ -286,12 +286,10 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 </Tabs>
 
 <div id="additional-tasks">
-  ## その他のタスク
+  ## その他のタスク {#additional-tasks}
 </div>
 
-<div id="configure-access">
-  ### Managed ClickStack へのアクセス権の付与
-</div>
+### Managed ClickStack へのアクセス権の付与 {#configure-access}
 
 1. ClickHouse Cloud コンソールで対象のサービスに移動します
 2. **Settings** → **SQL Console Access** に進みます
@@ -309,13 +307,13 @@ import ProviderSelection from '/snippets/ja/clickstack/_select_provider.mdx';
 </Warning>
 
 <div id="clickstack-read-only-compute">
-  ### 読み取り専用コンピュートで ClickStack を使用する
+  ### 読み取り専用コンピュートで ClickStack を使用する {#clickstack-read-only-compute}
 </div>
 
 ClickStack UI は、読み取り専用の ClickHouse Cloud サービス上で完全に実行できます。これは、インジェストとクエリのワークロードを分離したい場合に推奨される構成です。
 
 <div id="how-clickstack-selects-compute">
-  #### ClickStack がコンピュートを選択する仕組み
+  #### ClickStack がコンピュートを選択する仕組み {#how-clickstack-selects-compute}
 </div>
 
 ClickStack UI は常に、ClickHouse Cloud コンソール で起動元となった ClickHouse service に接続します。
@@ -328,28 +326,30 @@ ClickStack UI は常に、ClickHouse Cloud コンソール で起動元となっ
 read-only の動作を実現するために、ClickStack 内で追加の configuration を行う必要はありません。
 
 <div id="recommended-setup">
-  #### 推奨構成
+  #### 推奨構成 {#recommended-setup}
 </div>
 
-読み取り専用のコンピュートで ClickStack を実行するには、次の手順に従います。
+読み取り専用コンピュートで ClickStack を実行するには、次の手順に従います。
 
-1. 読み取り専用として構成された warehouse 内で、ClickHouse Cloud サービスを作成するか、既存のサービスを選択します。
-2. ClickHouse Cloud コンソールで、読み取り専用のサービスを選択します。
+1. 読み取り専用サービスとして構成された warehouse 内で、ClickHouse Cloud サービスを作成するか、既存のサービスを選択します。
+2. ClickHouse Cloud コンソールで、読み取り専用サービスを選択します。
 3. 左側のナビゲーションメニューから ClickStack を起動します。
 
 起動後、ClickStack UI は自動的にこの読み取り専用サービスに紐付けられます。
 
+なお、ダッシュボード、保存済み検索、アラート、SOURCES は ClickStack を起動したサービスにスコープされるため、warehouse 内の別のサービスで保存したものはここでは利用できず、作り直す必要があります。標準の OpenTelemetry スキーマを使用する SOURCES は自動検出されるため、そのデータに対する検索はすぐに利用できます。一方、カスタムの SOURCES や手動で構成した SOURCES は自動検出されないため、改めて設定し直す必要があります。
+
+インジェストの向き先、DDL を実行するサービス、アラートの動作といった全体構成については、[「読み取りワークロードと書き込みワークロードの分離」](/ja/clickstack/managing/isolating-read-write)を参照してください。
+
 <div id="adding-data-sources">
-  ### さらにデータソースを追加する
+  ### さらにデータソースを追加する {#adding-data-sources}
 </div>
 
 ClickStack は OpenTelemetry をネイティブでサポートしていますが、OpenTelemetry に限定されません。必要に応じて、独自のテーブルスキーマも使用できます。
 
 以下では、自動的に設定されるもの以外に、追加のデータソースをユーザーが追加する方法を説明します。
 
-<div id="using-otel-schemas">
-  #### OpenTelemetry スキーマを使用する
-</div>
+#### OpenTelemetry スキーマを使用する {#using-otel-schemas}
 
 OTel collector を使用して ClickHouse 内にデータベースとテーブルを作成している場合は、ソース作成フォームですべてのデフォルト値をそのまま使用し、ログソースを作成するために `Table` フィールドに `otel_logs` を入力します。その他の設定はすべて自動検出されるため、`Save New Source` をクリックできます。
 
@@ -370,7 +370,7 @@ traces と OTel メトリクスのソースを作成するには、上部メニ�
 </Info>
 
 <div id="using-custom-schemas">
-  #### カスタムスキーマの使用
+  #### カスタムスキーマの使用 {#using-custom-schemas}
 </div>
 
 既存のデータを持つサービスに ClickStack を接続する場合は、必要に応じてデータベースとテーブルの設定を行えます。テーブルが ClickHouse 向けの OpenTelemetry スキーマに準拠していれば、設定は自動検出されます。

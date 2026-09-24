@@ -28,7 +28,7 @@ Arquivos de configuração XML devem usar `<clickhouse>...</clickhouse>` como ta
 Em arquivos de configuração YAML, `clickhouse:` é opcional; se estiver ausente, o parser o insere automaticamente.
 
 <div id="merging">
-  ## Mesclagem de configuração
+  ## Mesclagem de configuração {#merging}
 </div>
 
 Dois arquivos de configuração (geralmente o arquivo de configuração principal e outro arquivo de configuração em `config.d/`) são mesclados da seguinte forma:
@@ -84,7 +84,7 @@ O arquivo de configuração mesclado resultante será:
 ```
 
 <div id="from_env_zk">
-  ### Substituição por variáveis de ambiente e nós do ZooKeeper
+  ### Substituição por variáveis de ambiente e nós do ZooKeeper {#from_env_zk}
 </div>
 
 Para especificar que o valor de um elemento deve ser substituído pelo valor de uma variável de ambiente, você pode usar o atributo `from_env`.
@@ -138,7 +138,7 @@ Resultando na configuração a seguir:
 ```
 
 <div id="default-values">
-  #### Valores padrão
+  #### Valores padrão {#default-values}
 </div>
 
 Um elemento com os atributos `from_env` ou `from_zk` também pode ter o atributo `replace="1"` (este último deve aparecer antes de `from_env`/`from_zk`).
@@ -170,7 +170,7 @@ O resultado é a configuração:
 ```
 
 <div id="substitution-with-file-content">
-  ## Substituição com conteúdo de arquivo
+  ## Substituição com conteúdo de arquivo {#substitution-with-file-content}
 </div>
 
 Também é possível substituir partes da configuração pelo conteúdo de arquivos. Isso pode ser feito de duas formas:
@@ -200,7 +200,7 @@ Um exemplo disso é mostrado abaixo:
 Se você quiser mesclar o conteúdo da substituição com a configuração existente, em vez de apenas anexá-lo, pode usar o atributo `merge="true"`. Por exemplo: `<include from_zk="/some_path" merge="true">`. Nesse caso, a configuração existente será mesclada com o conteúdo da substituição, e as configurações existentes serão substituídas pelos valores da substituição.
 
 <div id="encryption">
-  ## Criptografando e ocultando a configuração
+  ## Criptografando e ocultando a configuração {#encryption}
 </div>
 
 Você pode usar criptografia simétrica para criptografar um elemento de configuração, por exemplo, uma senha em texto simples ou uma chave privada.
@@ -322,7 +322,7 @@ Por exemplo:
 ```
 
 <div id="user-settings">
-  ## Configurações de usuário
+  ## Configurações de usuário {#user-settings}
 </div>
 
 O arquivo `config.xml` pode especificar uma configuração separada com configurações de usuário, perfis e cotas. O caminho relativo para essa configuração é definido no elemento `users_config`. Por padrão, ele é `users.xml`. Se `users_config` for omitido, as configurações de usuário, os perfis e as cotas serão especificados diretamente em `config.xml`.
@@ -335,7 +335,7 @@ Os fragmentos de configuração de usuário são mesclados em ordem lexicográfi
 Observe que os arquivos de configuração primeiro são [mesclados](#merging), levando em conta as configurações, e as inclusões são processadas depois disso.
 
 <div id="example">
-  ## Exemplo em XML
+  ## Exemplo em XML {#example}
 </div>
 
 Por exemplo, você pode ter um arquivo de configuração separado para cada usuário, assim:
@@ -359,9 +359,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-<div id="example-1">
-  ## Exemplos de YAML
-</div>
+## Exemplos de YAML {#example-1}
 
 Aqui você pode ver a configuração padrão escrita em YAML: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example).
 
@@ -477,7 +475,7 @@ XML correspondente:
 ```
 
 <div id="implementation-details">
-  ## Detalhes de implementação
+  ## Detalhes de implementação {#implementation-details}
 </div>
 
 Para cada arquivo de configuração, o servidor também gera arquivos `file-preprocessed.xml` ao iniciar. Esses arquivos contêm todas as substituições e sobrescritas já resolvidas e se destinam apenas à consulta. Se substituições do ZooKeeper tiverem sido usadas nos arquivos de configuração, mas o ZooKeeper não estiver disponível na inicialização do servidor, o servidor carregará a configuração a partir do arquivo pré-processado.

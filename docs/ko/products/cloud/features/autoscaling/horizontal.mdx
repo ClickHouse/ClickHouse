@@ -12,7 +12,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <div id="manual-horizontal-scaling">
-  ## 수동 수평 스케일링
+  ## 수동 수평 스케일링 {#manual-horizontal-scaling}
 </div>
 
 <ScalePlanFeatureBadge feature="Manual horizontal scaling" />
@@ -22,12 +22,10 @@ ClickHouse Cloud [public APIs](/ko/products/cloud/api-reference/service/instance
 **Scale** 및 **Enterprise** 티어는 단일 레플리카 서비스도 지원합니다. 서비스를 한 번 스케일 아웃한 후에는 다시 최소 1개의 레플리카까지 스케일 인할 수 있습니다. 단일 레플리카 서비스는 가용성이 낮으므로 프로덕션 용도로는 권장되지 않습니다.
 
 <Note>
-  서비스는 수평으로 최대 20개의 레플리카까지 스케일링할 수 있습니다. 추가 레플리카가 필요하면 지원 팀에 문의하십시오.
+  서비스에 적용되는 레플리카 제한은 [Usage limits](/ko/cloud/bestpractices/usage-limits)를 참고하십시오. 추가 레플리카가 필요하면 지원 팀에 문의하십시오.
 </Note>
 
-<div id="horizontal-scaling-via-api">
-  ### API를 통한 수평 스케일링
-</div>
+### API를 통한 수평 스케일링 {#horizontal-scaling-via-api}
 
 클러스터를 수평으로 스케일링하려면 API를 통해 `PATCH` 요청을 보내 레플리카 수를 조정하십시오. 아래 스크린샷은 `3`개 레플리카 클러스터를 `6`개 레플리카로 스케일 아웃하는 API 호출과 그에 대한 응답을 보여줍니다.
 
@@ -41,9 +39,7 @@ ClickHouse Cloud [public APIs](/ko/products/cloud/api-reference/service/instance
 
 이미 스케일링이 진행 중인 상태에서 새 스케일링 요청을 보내거나 여러 요청을 연속으로 보내면, 스케일링 서비스는 중간 상태를 무시하고 최종 레플리카 수에 맞춰 조정됩니다.
 
-<div id="horizontal-scaling-via-ui">
-  ### UI를 통한 수평 스케일링
-</div>
+### UI를 통한 수평 스케일링 {#horizontal-scaling-via-ui}
 
 UI에서 서비스의 수평 스케일링을 하려면 **설정** 페이지에서 서비스의 레플리카 수를 조정하십시오.
 

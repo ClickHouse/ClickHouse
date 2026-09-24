@@ -12,13 +12,11 @@ import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/Sett
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="query_profiler_cpu_time_period_ns">
-  ## query_profiler_cpu_time_period_ns
-</div>
+## query_profiler_cpu_time_period_ns {#query_profiler_cpu_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
-Define o período de um temporizador de clock da CPU para o [query profiler](/pt-BR/concepts/features/performance/troubleshoot/sampling-query-profiler). Esse temporizador contabiliza apenas o tempo de CPU.
+Define o período de um temporizador de relógio da CPU para o [query profiler](/pt-BR/concepts/features/performance/troubleshoot/sampling-query-profiler). Esse temporizador contabiliza apenas o tempo de CPU.
 
 Valores possíveis:
 
@@ -31,13 +29,13 @@ Valores possíveis:
 
 * 0 para desativar o temporizador.
 
+O padrão é 0 em compilações com MemorySanitizer, nas quais o profiler de amostragem fica desabilitado.
+
 Veja também:
 
 * Tabela de sistema [trace&#95;log](/pt-BR/reference/system-tables/trace_log)
 
-<div id="query_profiler_real_time_period_ns">
-  ## query_profiler_real_time_period_ns
-</div>
+## query_profiler_real_time_period_ns {#query_profiler_real_time_period_ns}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
@@ -53,6 +51,8 @@ Valores possíveis:
   * 1000000000 (uma vez por segundo) para profiling em todo o cluster.
 
 * 0 para desativar o temporizador.
+
+O padrão é 0 em compilações com MemorySanitizer, nas quais o profiler de amostragem está desabilitado.
 
 Veja também:
 

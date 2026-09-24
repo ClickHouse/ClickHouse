@@ -15,21 +15,15 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
 **Приёмник ClickHouse Kafka Connect** — это коннектор Kafka, который передаёт данные из топика Kafka в таблицу ClickHouse.
 
-<div id="license">
-  ### Лицензия
-</div>
+### Лицензия {#license}
 
 Коннектор Kafka Connector Sink распространяется по лицензии [Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 
-<div id="requirements-for-the-environment">
-  ### Требования к окружению
-</div>
+### Требования к окружению {#requirements-for-the-environment}
 
 В окружении должен быть установлен фреймворк [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) версии 2.7 или более поздней, работающий на Java 11 или более поздней версии.
 
-<div id="version-compatibility-matrix">
-  ### Матрица совместимости версий
-</div>
+### Матрица совместимости версий {#version-compatibility-matrix}
 
 | Версия ClickHouse Kafka Connect | Версия ClickHouse | Kafka Connect | Confluent Platform | Java-клиент ClickHouse |
 | ------------------------------- | ----------------- | ------------- | ------------------ | ---------------------- |
@@ -41,9 +35,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
 Коннектор не запускается с серверами ClickHouse версий ниже 23.3. Всегда используйте [последний релиз](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest), если нет причин закреплять более старую версию.
 
-<div id="main-features">
-  ### Основные возможности
-</div>
+### Основные возможности {#main-features}
 
 * Сразу поддерживает семантику «ровно один раз». Основана на новой возможности ядра ClickHouse под названием [KeeperMap](https://github.com/ClickHouse/ClickHouse/pull/39976) (коннектор использует её как хранилище состояния) и позволяет обойтись минималистичной архитектурой.
 * Поддержка сторонних хранилищ состояния: сейчас по умолчанию используется In-memory, но также можно использовать KeeperMap (скоро будет добавлен Redis).
@@ -52,19 +44,13 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 * Вставка данных как по объявленной схеме, так и без схемы.
 * Поддержка всех типов данных ClickHouse.
 
-<div id="installation-instructions">
-  ### Инструкции по установке
-</div>
+### Инструкции по установке {#installation-instructions}
 
-<div id="gather-your-connection-details">
-  #### Подготовьте сведения о подключении
-</div>
+#### Подготовьте сведения о подключении {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="general-installation-instructions">
-  #### Общие инструкции по установке
-</div>
+#### Общие инструкции по установке {#general-installation-instructions}
 
 Коннектор поставляется в виде одного JAR-файла, содержащего все файлы классов, необходимые для запуска плагина.
 
@@ -97,9 +83,7 @@ schemas.enable=false
 * Перезапустите Confluent Platform.
 * Если вы используете Confluent Platform, войдите в интерфейс Confluent Control Center и убедитесь, что ClickHouse Sink доступен в списке доступных коннекторов.
 
-<div id="configuration-options">
-  ### Параметры конфигурации
-</div>
+### Параметры конфигурации {#configuration-options}
 
 Чтобы подключить ClickHouse Sink к серверу ClickHouse, необходимо указать:
 
@@ -144,23 +128,17 @@ schemas.enable=false
 | `reportInsertedOffsets` (с версии v1.3.6)       | Включает возврат из `preCommit` только смещений, успешно записанных при вставке (вместо `currentOffsets`), когда `exactlyOnce=false`. Это не действует, если `ignorePartitionsWhenBatching=true`: в этом случае по-прежнему возвращаются `currentOffsets`.                                                              | `"false"`                                                |
 | `client_version` (с версии v1.2.0)              | Выбирает [Java-клиент ClickHouse](/ru/integrations/language-clients/java/client), используемый коннектором. Допустимые значения: &quot;V1&quot; и &quot;V2&quot;.                                                                                                                                                          | `"V1"`                                                   |
 
-<div id="target-tables">
-  ### Целевые таблицы
-</div>
+### Целевые таблицы {#target-tables}
 
 ClickHouse Connect Sink читает сообщения из топиков Kafka и записывает их в соответствующие таблицы. ClickHouse Connect Sink записывает данные в существующие таблицы. Пожалуйста, убедитесь, что перед началом вставки данных в ClickHouse уже создана целевая таблица с подходящей схемой.
 
 Для каждого топика требуется отдельная целевая таблица в ClickHouse. Имя целевой таблицы должно совпадать с именем исходного топика.
 
-<div id="pre-processing">
-  ### Предобработка
-</div>
+### Предобработка {#pre-processing}
 
 Если вам нужно преобразовать исходящие сообщения перед отправкой в Приёмник ClickHouse Kafka Connect, используйте [преобразования Kafka Connect](https://docs.confluent.io/platform/current/connect/transforms/overview.html).
 
-<div id="supported-data-types">
-  ### Поддерживаемые типы данных
-</div>
+### Поддерживаемые типы данных {#supported-data-types}
 
 **При объявленной схеме:**
 
@@ -194,15 +172,11 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 
 Запись преобразуется в JSON и отправляется в ClickHouse как значение в формате [JSONEachRow](/ru/reference/formats/JSON/JSONEachRow).
 
-<div id="configuration-recipes">
-  ### Варианты конфигурации
-</div>
+### Варианты конфигурации {#configuration-recipes}
 
 Ниже приведены несколько распространённых вариантов конфигурации, которые помогут вам быстро начать работу.
 
-<div id="basic-configuration">
-  #### Базовая конфигурация
-</div>
+#### Базовая конфигурация {#basic-configuration}
 
 Простейшая конфигурация для начала работы — предполагается, что Kafka Connect запущен в распределенном режиме, а сервер ClickHouse работает на `localhost:8443` с включенным SSL; данные представлены в JSON без схемы.
 
@@ -235,9 +209,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
   Приведённая выше конфигурация коннектора требует включить переопределение клиентских настроек в конфигурации воркера с помощью `connector.client.config.override.policy=All`. Подробнее см. в [документации Kafka Connect](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration).
 </Note>
 
-<div id="basic-configuration-with-multiple-topics">
-  #### Базовая конфигурация для нескольких топиков
-</div>
+#### Базовая конфигурация для нескольких топиков {#basic-configuration-with-multiple-topics}
 
 Коннектор может читать данные из нескольких топиков
 
@@ -253,9 +225,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 }
 ```
 
-<div id="basic-configuration-with-dlq">
-  #### Базовая конфигурация с DLQ
-</div>
+#### Базовая конфигурация с DLQ {#basic-configuration-with-dlq}
 
 ```json
 {
@@ -270,9 +240,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 }
 ```
 
-<div id="avro-schema-support">
-  ### Поддержка схемы Avro
-</div>
+### Поддержка схемы Avro {#avro-schema-support}
 
 ```json
 {
@@ -287,9 +255,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 }
 ```
 
-<div id="avro-type-mapping">
-  #### Сопоставление типов Avro
-</div>
+#### Сопоставление типов Avro {#avro-type-mapping}
 
 Приведённое ниже сопоставление типов задаётся в `io.confluent.connect.avro.AvroConverter` — официальной реализации сериализатора/десериализатора Avro для Kafka Connect. Подробную информацию о логике преобразования см. в [документации](https://docs.confluent.io/platform/current/connect/userguide.html#avro) Kafka Connect.
 
@@ -318,9 +284,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 
 Сопоставление типов Kafka Connect и типов ClickHouse см. в разделе [Поддерживаемые типы данных](#supported-data-types).
 
-<div id="unsupported-avro-schemas">
-  #### Неподдерживаемые схемы Avro
-</div>
+#### Неподдерживаемые схемы Avro {#unsupported-avro-schemas}
 
 Следующие схемы Avro не поддерживаются коннектором:
 
@@ -366,9 +330,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 }
 ```
 
-<div id="protobuf-schema-support">
-  ### Поддержка схем Protobuf
-</div>
+### Поддержка схем Protobuf {#protobuf-schema-support}
 
 ```json
 {
@@ -385,9 +347,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 
 Обратите внимание: если вы столкнулись с проблемами из-за отсутствующих классов, имейте в виду, что не во всех средах есть конвертер Protobuf, и вам может потребоваться альтернативная версия JAR-файла, включающая зависимости.
 
-<div id="proto-type-mapping">
-  #### Сопоставление типов Protobuf
-</div>
+#### Сопоставление типов Protobuf {#proto-type-mapping}
 
 Ниже приведено сопоставление типов, определенное в `io.confluent.connect.protobuf.ProtobufConverter` — официальной реализации сериализатора/десериализатора Protobuf для Kafka Connect. Подробную информацию о логике преобразования см. в [документации](https://docs.confluent.io/platform/current/connect/userguide.html#json-schema-and-protobuf) Kafka Connect.
 
@@ -437,9 +397,7 @@ ClickHouse Connect Sink читает сообщения из топиков Kafk
 
 Сопоставление типов между Kafka Connect и ClickHouse см. в разделе [Поддерживаемые типы данных](#supported-data-types).
 
-<div id="oneof-translation">
-  #### Примечание о сопоставлении полей `oneof` со столбцами ClickHouse
-</div>
+#### Примечание о сопоставлении полей `oneof` со столбцами ClickHouse {#oneof-translation}
 
 Коннектор не поддерживает преобразование union Protobuf (`oneof`) в тип ClickHouse Variant. Вместо этого укажите поля `oneof` в схеме таблицы ClickHouse как отдельные поля Nullable.
 
@@ -469,13 +427,11 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 ) ENGINE = ...;
 ```
 
-<div id="unsupported-proto-schemas">
-  #### Неподдерживаемые схемы Protobuf
-</div>
+#### Неподдерживаемые схемы Protobuf {#unsupported-proto-schemas}
 
-Следующие схемы Protobuf не поддерживаются коннектором:
+Следующие схемы Protobuf не поддерживаются коннектором на более старых версиях ClickHouse:
 
-* union-типы из нескольких сообщений (**до версии CH 26.1**)
+* union-типы из нескольких сообщений (**до версии CH 26.1**, а также до версии CH 26.9, если не включена соответствующая настройка, см. ниже)
 
 ```protobuf
 syntax = "proto3";
@@ -488,23 +444,21 @@ message TwoRecords {
     TypeB type_b = 3;
   }
 
-  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported
+  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported before 26.1
   message TypeA {
     string label = 1;
   }
 
-  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported
+  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported before 26.1
   message TypeB {
     int32 count = 1;
   }
 }
 ```
 
-Начиная с версии CH 26.1 эта схема поддерживается при `allow_experimental_nullable_tuple_type=1` (см. [эту страницу документации](/ru/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
+Начиная с версии ClickHouse 26.9 эта схема поддерживается по умолчанию. В версиях с 26.1 по 26.8 требуется настройка `allow_experimental_nullable_tuple_type = 1` (см. [эту страницу документации](/ru/reference/settings/session-settings/enable#enable_nullable_tuple_type)).
 
-<div id="json-schema-support">
-  ### Поддержка схем JSON
-</div>
+### Поддержка схем JSON {#json-schema-support}
 
 ```json
 {
@@ -517,9 +471,7 @@ message TwoRecords {
 }
 ```
 
-<div id="string-support">
-  ### Поддержка типа String
-</div>
+### Поддержка типа String {#string-support}
 
 Коннектор поддерживает String Converter для различных форматов ClickHouse: [JSON](/ru/reference/formats/JSON/JSONEachRow), [CSV](/ru/reference/formats/CSV/CSV) и [TSV](/ru/reference/formats/TabSeparated/TabSeparated).
 
@@ -536,9 +488,7 @@ message TwoRecords {
 }
 ```
 
-<div id="internal-buffering">
-  ### Внутренняя буферизация
-</div>
+### Внутренняя буферизация {#internal-buffering}
 
 Внутренняя буферизация позволяет задаче sink-коннектора накапливать записи из нескольких вызовов `poll()` и сбрасывать их в ClickHouse более крупными батчами. Это может повысить пропускную способность в рабочих нагрузках, где каждый опрос возвращает множество небольших батчей по отдельным партициям.
 
@@ -569,9 +519,7 @@ message TwoRecords {
 }
 ```
 
-<div id="logging">
-  ### Логирование
-</div>
+### Логирование {#logging}
 
 Логирование автоматически обеспечивается платформой Kafka Connect.
 Пункт назначения и формат журналов можно настроить через [файл конфигурации](https://docs.confluent.io/platform/current/connect/logging.html#log4j-properties-file) Kafka Connect.
@@ -584,15 +532,11 @@ confluent local services connect log
 
 Подробнее см. в официальном [руководстве](https://docs.confluent.io/platform/current/connect/logging.html).
 
-<div id="monitoring">
-  ### Мониторинг
-</div>
+### Мониторинг {#monitoring}
 
 ClickHouse Kafka Connect публикует метрики времени выполнения через [Java Management Extensions (JMX)](https://www.oracle.com/technical-resources/articles/javase/jmx.html). В Kafka Connector JMX включен по умолчанию.
 
-<div id="clickhouse-specific-metrics">
-  #### Метрики ClickHouse
-</div>
+#### Метрики ClickHouse {#clickhouse-specific-metrics}
 
 Коннектор публикует пользовательские метрики под следующим именем MBean:
 
@@ -606,9 +550,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 | `recordProcessingTime` | long | Общее время в наносекундах, затраченное на группировку и преобразование записей в единую структуру. |
 | `taskProcessingTime`   | long | Общее время в наносекундах, затраченное на обработку и вставку данных в ClickHouse.                 |
 
-<div id="kafka-producer-consumer-metrics">
-  #### Метрики Kafka Producer/Consumer
-</div>
+#### Метрики Kafka Producer/Consumer {#kafka-producer-consumer-metrics}
 
 Коннектор предоставляет стандартные метрики продюсера и консьюмера Kafka, которые помогают оценивать поток данных, пропускную способность и производительность.
 
@@ -644,9 +586,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 * **Сжатие**: оценивать эффективность сжатия данных
 * **Состояние соединений**: контролировать сетевую связность и стабильность
 
-<div id="kafka-connect-framework-metrics">
-  #### Метрики фреймворка Kafka Connect
-</div>
+#### Метрики фреймворка Kafka Connect {#kafka-connect-framework-metrics}
 
 Коннектор интегрируется с фреймворком Kafka Connect и предоставляет метрики для отслеживания жизненного цикла задач и ошибок.
 
@@ -679,9 +619,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 * `put-batch-max-time-ms`: Максимальное время обработки батча
 * `source-record-poll-total`: Общее количество записей, полученных при опросе
 
-<div id="monitoring-best-practices">
-  #### Рекомендации по мониторингу
-</div>
+#### Рекомендации по мониторингу {#monitoring-best-practices}
 
 1. **Отслеживайте отставание потребителя**: Следите за `records-lag` по каждой партиции, чтобы выявлять узкие места в обработке
 2. **Контролируйте уровень ошибок**: Следите за `errors-total` и `records-skip-total`, чтобы выявлять проблемы с качеством данных
@@ -692,23 +630,17 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 
 Подробные определения JMX-метрик и сведения об интеграции с Prometheus см. в файле конфигурации [jmx-export-connector.yml](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/jmx-export-connector.yml).
 
-<div id="limitations">
-  ### Ограничения
-</div>
+### Ограничения {#limitations}
 
 * Удаление данных не поддерживается.
 * Размер батча наследуется из свойств Kafka Consumer.
 * При использовании KeeperMap для exactly-once, если смещение было изменено или сброшено назад, необходимо удалить содержимое KeeperMap для соответствующего топика. (Подробнее см. в руководстве по устранению неполадок ниже)
 
-<div id="tuning-performance">
-  ### Настройка производительности и оптимизация пропускной способности
-</div>
+### Настройка производительности и оптимизация пропускной способности {#tuning-performance}
 
 В этом разделе описаны стратегии настройки производительности для Приёмника ClickHouse Kafka Connect. Настройка производительности особенно важна при работе со сценариями с высокой пропускной способностью, а также когда нужно оптимизировать использование ресурсов и минимизировать задержку.
 
-<div id="when-is-performance-tuning-needed">
-  #### Когда нужна настройка производительности?
-</div>
+#### Когда нужна настройка производительности? {#when-is-performance-tuning-needed}
 
 Настройка производительности обычно требуется в следующих случаях:
 
@@ -725,9 +657,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 * Настройки коннектора по умолчанию уже соответствуют вашим требованиям к пропускной способности
 * Ваш кластер ClickHouse без труда справляется с входящей нагрузкой
 
-<div id="understanding-the-data-flow">
-  #### Как устроен поток данных
-</div>
+#### Как устроен поток данных {#understanding-the-data-flow}
 
 Прежде чем приступать к настройке, важно понимать, как данные проходят через коннектор:
 
@@ -739,15 +669,11 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 
 Производительность можно оптимизировать на каждом из этих этапов.
 
-<div id="connect-fetch-vs-connector-poll">
-  #### Настройка размера батча в Kafka Connect
-</div>
+#### Настройка размера батча в Kafka Connect {#connect-fetch-vs-connector-poll}
 
 Первый уровень оптимизации — управлять тем, какой объём данных коннектор получает из Kafka за один батч.
 
-<div id="fetch-settings">
-  ##### Настройки fetch
-</div>
+##### Настройки fetch {#fetch-settings}
 
 Kafka Connect (фреймворк) в фоновом режиме получает сообщения из топиков Kafka независимо от коннектора:
 
@@ -759,9 +685,7 @@ Kafka Connect (фреймворк) в фоновом режиме получае
   В Confluent Cloud для изменения этих настроек нужно открыть обращение в поддержку через Confluent Cloud.
 </Note>
 
-<div id="poll-settings">
-  ##### Настройки опроса
-</div>
+##### Настройки опроса {#poll-settings}
 
 Коннектор опрашивает буфер фреймворка на наличие сообщений:
 
@@ -772,9 +696,7 @@ Kafka Connect (фреймворк) в фоновом режиме получае
   В Confluent Cloud для изменения этих настроек нужно открыть обращение в службу поддержки через Confluent Cloud.
 </Note>
 
-<div id="recommended-batch-settings">
-  ##### Рекомендуемые настройки для высокой пропускной способности
-</div>
+##### Рекомендуемые настройки для высокой пропускной способности {#recommended-batch-settings}
 
 Для оптимальной производительности в ClickHouse используйте более крупные батчи:
 
@@ -806,15 +728,11 @@ consumer.override.fetch.max.wait.ms=300
 
 Подробнее: [документация Confluent](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration) | [документация Kafka](https://kafka.apache.org/documentation/#consumerconfigs)
 
-<div id="asynchronous-inserts">
-  #### Асинхронные вставки
-</div>
+#### Асинхронные вставки {#asynchronous-inserts}
 
 Асинхронные вставки особенно полезны, если коннектор отправляет сравнительно небольшие батчи или если вы хотите дополнительно оптимизировать ингестию, переложив батчинг на ClickHouse.
 
-<div id="when-to-use-async-inserts">
-  ##### Когда использовать асинхронную вставку
-</div>
+##### Когда использовать асинхронную вставку {#when-to-use-async-inserts}
 
 Рассмотрите возможность включения асинхронной вставки, если:
 
@@ -831,9 +749,7 @@ consumer.override.fetch.max.wait.ms=300
 * Семантика «ровно один раз» с `wait_for_async_insert=0` не соответствует вашим требованиям
 * В вашем случае вместо этого можно выиграть от улучшения батчинга на стороне клиента
 
-<div id="how-async-inserts-work">
-  ##### Как работают асинхронные вставки
-</div>
+##### Как работают асинхронные вставки {#how-async-inserts-work}
 
 Когда асинхронные вставки включены, ClickHouse:
 
@@ -847,9 +763,7 @@ consumer.override.fetch.max.wait.ms=300
 
 Это значительно уменьшает количество создаваемых частей и повышает общую пропускную способность.
 
-<div id="enabling-async-inserts">
-  ##### Включение асинхронной вставки
-</div>
+##### Включение асинхронной вставки {#enabling-async-inserts}
 
 Добавьте настройки async insert в параметр конфигурации `clickhouseSettings`:
 
@@ -870,9 +784,7 @@ consumer.override.fetch.max.wait.ms=300
 * **`wait_for_async_insert=1`** (рекомендуется): Коннектор ожидает, пока данные будут записаны в хранилище ClickHouse, прежде чем подтверждать получение. Обеспечивает гарантии доставки.
 * **`wait_for_async_insert=0`**: Коннектор подтверждает получение сразу после буферизации. Обеспечивает более высокую производительность, но данные могут быть потеряны при сбое сервера до сброса на диск.
 
-<div id="tuning-async-inserts">
-  ##### Тонкая настройка поведения асинхронной вставки
-</div>
+##### Тонкая настройка поведения асинхронной вставки {#tuning-async-inserts}
 
 Вы можете тонко настроить поведение сброса при асинхронной вставке:
 
@@ -893,9 +805,7 @@ consumer.override.fetch.max.wait.ms=300
 * **Что учитывать**: Данные становятся доступны для запросов не сразу, немного увеличивается общая задержка
 * **Риски**: Потеря данных при сбое сервера, если `wait_for_async_insert=0`, возможна повышенная нагрузка на оперативную память при больших буферах
 
-<div id="async-inserts-with-exactly-once">
-  ##### Асинхронные вставки с семантикой «ровно один раз»
-</div>
+##### Асинхронные вставки с семантикой «ровно один раз» {#async-inserts-with-exactly-once}
 
 При использовании `exactlyOnce=true` с асинхронными вставками:
 
@@ -912,15 +822,11 @@ consumer.override.fetch.max.wait.ms=300
 
 Подробнее об async inserts см. в [документации ClickHouse об async inserts](/ru/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
 
-<div id="connector-parallelism">
-  #### Параллелизм коннектора
-</div>
+#### Параллелизм коннектора {#connector-parallelism}
 
 Увеличьте степень параллелизма, чтобы повысить пропускную способность:
 
-<div id="tasks-per-connector">
-  ##### Количество задач на коннектор
-</div>
+##### Количество задач на коннектор {#tasks-per-connector}
 
 ```json
 "tasks.max": "4"
@@ -934,9 +840,7 @@ consumer.override.fetch.max.wait.ms=300
 
 **Рекомендация**: Начните с `tasks.max`, равного количеству партиций топика, затем корректируйте это значение на основе метрик CPU и пропускной способности.
 
-<div id="ignoring-partitions">
-  ##### Игнорирование партиций при формировании батчей
-</div>
+##### Игнорирование партиций при формировании батчей {#ignoring-partitions}
 
 По умолчанию коннектор формирует батчи сообщений по каждой партиции. Чтобы повысить пропускную способность, можно формировать батчи без учёта партиций:
 
@@ -946,9 +850,7 @@ consumer.override.fetch.max.wait.ms=300
 
 ** Предупреждение**: Используйте только при `exactlyOnce=false`. Этот параметр может повысить пропускную способность за счёт формирования более крупных батчей, но при этом не сохраняются гарантии порядка в пределах каждой партиции.
 
-<div id="multiple-high-throughput-topics">
-  #### Несколько топиков с высокой пропускной способностью
-</div>
+#### Несколько топиков с высокой пропускной способностью {#multiple-high-throughput-topics}
 
 Если ваш коннектор настроен на подписку на несколько топиков, вы используете `topic2TableMap` для сопоставления топиков с таблицами и сталкиваетесь с узким местом на этапе вставки, из-за чего возникает отставание потребителя, рассмотрите возможность создать отдельный коннектор для каждого топика.
 
@@ -956,9 +858,7 @@ consumer.override.fetch.max.wait.ms=300
 
 **Рекомендация**: Для нескольких топиков с большим объёмом данных разверните отдельный экземпляр коннектора для каждого топика, чтобы максимально повысить параллельную пропускную способность вставки.
 
-<div id="table-engine-considerations">
-  #### Что учитывать при выборе движка таблицы ClickHouse
-</div>
+#### Что учитывать при выборе движка таблицы ClickHouse {#table-engine-considerations}
 
 Выберите подходящий движок таблицы ClickHouse для своей задачи:
 
@@ -985,9 +885,7 @@ SETTINGS
 "clickhouseSettings": "insert_quorum=2,insert_quorum_timeout=60000"
 ```
 
-<div id="connection-pooling">
-  #### Пул соединений и тайм-ауты
-</div>
+#### Пул соединений и тайм-ауты {#connection-pooling}
 
 Коннектор использует HTTP-соединения с ClickHouse. Настройте тайм-ауты для сетей с высокой задержкой:
 
@@ -1000,9 +898,7 @@ SETTINGS
 
 Увеличьте эти значения, если при работе с большими батчами возникают ошибки тайм-аута.
 
-<div id="client-network-buffer">
-  #### Сетевой буфер клиента
-</div>
+#### Сетевой буфер клиента {#client-network-buffer}
 
 При использовании клиента V2 (`"client_version": "V2"`) данные копируются между сокетом и памятью приложения через буфер, размер которого задаётся параметром `client_network_buffer_size` (в байтах). По умолчанию его размер составляет `300000` байт. Увеличение размера буфера может повысить пропускную способность в соединениях с высокой задержкой или высокой пропускной способностью, но увеличивает использование памяти на каждую задачу подключения.
 
@@ -1018,9 +914,7 @@ SETTINGS
 "jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
 ```
 
-<div id="monitoring-performance">
-  #### Мониторинг и устранение проблем с производительностью
-</div>
+#### Мониторинг и устранение проблем с производительностью {#monitoring-performance}
 
 Отслеживайте следующие ключевые метрики:
 
@@ -1043,9 +937,7 @@ SETTINGS
 | Ошибки OutOfMemory                | Слишком большой размер батча                 | Уменьшите `max.poll.records`, `max.partition.fetch.bytes`          |
 | Неравномерная загрузка задач      | Неравномерное распределение партиций         | Выполните перебалансировку или скорректируйте `tasks.max`          |
 
-<div id="performance-best-practices">
-  #### Краткая сводка рекомендаций
-</div>
+#### Краткая сводка рекомендаций {#performance-best-practices}
 
 1. **Начните с настроек по умолчанию**, затем измерьте производительность и настраивайте систему по фактическим результатам
 2. **Предпочитайте более крупные батчи**: по возможности ориентируйтесь на 10 000–100 000 строк на одну вставку
@@ -1056,9 +948,7 @@ SETTINGS
 7. **Постоянно отслеживайте метрики**: контролируйте отставание потребителя, количество частей и активность слияния
 8. **Тщательно тестируйте**: всегда проверяйте изменения конфигурации под реалистичной нагрузкой перед развертыванием в production
 
-<div id="example-high-throughput">
-  #### Пример: конфигурация для высокой пропускной способности
-</div>
+#### Пример: конфигурация для высокой пропускной способности {#example-high-throughput}
 
 Ниже приведён полный пример, оптимизированный для высокой пропускной способности:
 
@@ -1105,13 +995,9 @@ SETTINGS
 * Запускает 8 параллельных задач (число должно соответствовать количеству ваших партиций)
 * Оптимизирована под пропускную способность, а не под строгий порядок
 
-<div id="troubleshooting">
-  ### Устранение неполадок
-</div>
+### Устранение неполадок {#troubleshooting}
 
-<div id="state-mismatch-for-topic-sometopic-partition-0">
-  #### &quot;Несоответствие состояния для топика `[someTopic]` и партиции `[0]`&quot;
-</div>
+#### &quot;Несоответствие состояния для топика `[someTopic]` и партиции `[0]`&quot; {#state-mismatch-for-topic-sometopic-partition-0}
 
 Это происходит, когда смещение, сохранённое в KeeperMap, отличается от смещения, сохранённого в Kafka — обычно после удаления топика
 или ручной корректировки смещения.
@@ -1129,9 +1015,7 @@ ALTER TABLE [database].connect_state DELETE WHERE key = [keyname]
   Эта корректировка может повлиять на гарантии exactly-once.
 </Note>
 
-<div id="what-errors-will-the-connector-retry">
-  #### &quot;При каких ошибках коннектор будет выполнять повторную попытку?&quot;
-</div>
+#### &quot;При каких ошибках коннектор будет выполнять повторную попытку?&quot; {#what-errors-will-the-connector-retry}
 
 Сейчас основное внимание уделяется выявлению временных ошибок, при которых можно выполнить повторную попытку, в том числе:
 
@@ -1156,9 +1040,7 @@ ALTER TABLE [database].connect_state DELETE WHERE key = [keyname]
 * `UnknownHostException` - Это исключение возникает, когда не удаётся определить хост.
 * `IOException` - Это исключение возникает при проблемах с сетью.
 
-<div id="all-my-data-is-blankzeroes">
-  #### &quot;Все мои данные пустые/состоят из нулей&quot;
-</div>
+#### &quot;Все мои данные пустые/состоят из нулей&quot; {#all-my-data-is-blankzeroes}
 
 Скорее всего, поля в ваших данных не совпадают с полями в таблице — особенно часто это встречается при использовании CDC (и формата Debezium).
 Одно из распространённых решений — добавить преобразование flatten в конфигурацию коннектора:
@@ -1171,9 +1053,7 @@ transforms.flatten.delimiter=_
 
 Это преобразует ваши данные из вложенного JSON в плоский JSON (с использованием `_` в качестве разделителя). Поля в таблице тогда будут иметь формат &quot;field1&#95;field2&#95;field3&quot; (то есть &quot;before&#95;id&quot;, &quot;after&#95;id&quot; и т. д.).
 
-<div id="i-want-to-use-my-kafka-keys-in-clickhouse">
-  #### &quot;Я хочу использовать ключи Kafka в ClickHouse&quot;
-</div>
+#### &quot;Я хочу использовать ключи Kafka в ClickHouse&quot; {#i-want-to-use-my-kafka-keys-in-clickhouse}
 
 По умолчанию ключи Kafka не сохраняются в поле value, но вы можете использовать преобразование `KeyToValue`, чтобы переместить ключ в поле value (под новым именем `_key`):
 

@@ -12,18 +12,14 @@ Permite executar consultas `SELECT` e `INSERT` em uma tabela no [Google BigQuery
 
 A leitura usa a API REST do BigQuery (`tabledata.list`); portanto, apenas tabelas nativas podem ser lidas (não é possível ler visões, visões materializadas nem tabelas externas). A gravação usa inserções por streaming (`tabledata.insertAll`), o que exige que o faturamento esteja habilitado para o projeto.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 bigquery(project, dataset, table[, access_token][, key = value, ...])
 bigquery(named_collection[, key = value, ...])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argumento      | Descrição                                                                                                                                                                |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -47,9 +43,7 @@ Os seguintes argumentos podem ser especificados no formato `key = value` (ou com
 | `base_url`            | O endpoint da API, `https://bigquery.googleapis.com` por padrão. Pode ser alterado para testes e emuladores.                                                       |
 | `token_url`           | Substituição do endpoint de token OAuth para testes e emuladores. Por padrão, o `token_uri` da chave da conta de serviço ou `https://oauth2.googleapis.com/token`. |
 
-<div id="authentication">
-  ## Autenticação
-</div>
+## Autenticação {#authentication}
 
 É necessário fornecer exatamente um método de autenticação. O BigQuery não permite acesso anônimo; portanto, as credenciais são necessárias até mesmo para conjuntos de dados públicos.
 
@@ -59,9 +53,7 @@ Os seguintes argumentos podem ser especificados no formato `key = value` (ou com
 
 Armazene as credenciais em uma [coleção nomeada](/pt-BR/concepts/features/configuration/server-config/named-collections) para evitar especificá-las em cada consulta. Uma tabela permanente criada a partir de uma coleção nomeada (com o motor de tabela `BigQuery` ou `CREATE TABLE ... AS bigquery(...)`) é registrada como dependência da coleção. Portanto, `DROP NAMED COLLECTION` é bloqueado enquanto a tabela existir.
 
-<div id="data-type-mapping">
-  ## Mapeamento de tipos de dados
-</div>
+## Mapeamento de tipos de dados {#data-type-mapping}
 
 | Tipo do BigQuery      | Tipo do ClickHouse                                                                                                                                                                               |
 | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -88,17 +80,15 @@ Notas:
 
 * O `DATETIME` do BigQuery não tem fuso horário; ele é mapeado para `DateTime64(6, 'UTC')` para que o valor exibido não dependa do fuso horário do servidor.
 * Um `RECORD` `NULLABLE` é mapeado para `Nullable(Tuple(...))`, preservando um `NULL` de registro completo como `NULL`, em vez de reduzi-lo a um `Tuple` de valores padrão. Um array `NULL` (ou vazio) se torna um array vazio, pois `Array` não pode estar dentro de `Nullable` no ClickHouse. Um array do BigQuery não pode conter elementos `NULL` (`ARRAY<T>` é equivalente a `ARRAY<T NOT NULL>`); portanto, o tipo de elemento de um campo `REPEATED` não é `Nullable` (`Array(T)` ou `Array(Tuple(...))` para um elemento `RECORD`). Um elemento `NULL` em uma resposta `tabledata.list` é rejeitado como entrada malformada.
-* A leitura e a gravação de colunas `Nullable(Tuple(...))` por meio da função de tabela `bigquery` funcionam sem configurações adicionais. A criação de uma tabela persistente com o mecanismo `BigQuery` que contenha essa coluna, seja com a estrutura inferida ou declarada explicitamente, requer a configuração `enable_nullable_tuple_type`, assim como qualquer coluna `Nullable(Tuple)`. Ao declarar colunas explicitamente, um campo `RECORD` pode ser declarado como um `Tuple(...)` simples para evitar essa configuração, ao custo de converter um `NULL` de registro completo em uma tupla padrão; a única diferença aceita em relação ao tipo inferido é remover o `Nullable` que envolve o `Tuple` de um `RECORD`, e somente nesse mesmo registro — a nulabilidade não pode ser movida para outro registro, interno ou externo.
-* `GEOGRAPHY` é mapeado para [Geometry](/pt-BR/reference/data-types/geo#geometry). O BigQuery transfere um valor `GEOGRAPHY` como texto [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry), que é analisado como a alternativa correspondente de `Geometry` (um `Variant` de `Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon` e `MultiPolygon`) na leitura e serializado novamente como WKT na gravação. Uma `GEOMETRYCOLLECTION` e uma geometria vazia, como `POINT EMPTY`, não têm equivalente em `Geometry`; portanto, a leitura de uma linha que contenha esse valor gera um erro. Como `Variant` já comporta um `NULL`, um campo `GEOGRAPHY` `NULLABLE` é mapeado para `Geometry`, e não para `Nullable(Geometry)`, e o `NULL` continua sendo preservado na ida e volta.
+* Ao declarar explicitamente as colunas de uma tabela persistente com o mecanismo `BigQuery`, um campo `RECORD` pode ser declarado como um `Tuple(...)` simples em vez do `Nullable(Tuple(...))` inferido, ao custo de converter um `NULL` de registro completo em uma tupla padrão; a única diferença aceita em relação ao tipo inferido é remover o `Nullable` que envolve o `Tuple` de um `RECORD`, e somente nesse mesmo registro — a nulabilidade não pode ser movida para outro registro, interno ou externo.
+* `GEOGRAPHY` é mapeado para [Geometry](/pt-BR/reference/data-types/geo#geometry). O BigQuery transfere um valor `GEOGRAPHY` como texto [WKT](https://en.wikipedia.org/wiki/Well-known_text_representation_of_geometry), que é convertido na alternativa correspondente de `Geometry` (um `Variant` de `Point`, `MultiPoint`, `Ring`, `LineString`, `MultiLineString`, `Polygon` e `MultiPolygon`) na leitura e serializado novamente como WKT na gravação. Uma `GEOMETRYCOLLECTION` e uma geometria vazia, como `POINT EMPTY`, não têm equivalente em `Geometry`; portanto, a leitura de uma linha que contenha esse valor gera um erro. Como `Variant` já comporta um `NULL`, um campo `GEOGRAPHY` `NULLABLE` é mapeado para `Geometry`, e não para `Nullable(Geometry)`, e o `NULL` continua sendo preservado na ida e volta.
 * `JSON` é mapeado para `String`, em vez do tipo de dados [JSON](/pt-BR/reference/data-types/newjson), porque o tipo `JSON` do ClickHouse aceita apenas um objeto (`{...}`) no nível superior, enquanto um valor `JSON` do BigQuery pode ser qualquer valor JSON — um escalar, um array ou `null`. Portanto, uma tabela que contenha esses valores não poderia ser lida. Além disso, `JSON` não pode ser envolvido em `Nullable`, de modo que um `NULL` SQL em uma coluna `NULLABLE` não seria preservado. O mapeamento para `String` não perde dados; objetos de nível superior podem ser convertidos com `CAST(value AS JSON)`.
 * Valores `BIGNUMERIC` com mais de 38 dígitos na parte inteira não cabem em `Decimal(76, 38)` e geram um erro.
 * Valores `TIMESTAMP` e `DATE` fora do intervalo de `DateTime64`/`Date32` (anos de 1900 a 2299) não são compatíveis.
 * Colunas `RANGE` são somente leitura. `tabledata.insertAll` espera um valor `RANGE<T>` como um objeto estruturado `{start, end}`, que não pode ser reconstruído a partir do mapeamento para `String`; portanto, a inserção em uma coluna `RANGE` gera um erro.
 * Valores `INT64` são enviados para `tabledata.insertAll` como strings decimais, pois a API interpreta números JSON como doubles e, caso contrário, corromperia valores fora de `[-2^53 + 1, 2^53 - 1]`.
 
-<div id="examples">
-  ## Exemplos
-</div>
+## Exemplos {#examples}
 
 Leia um conjunto de dados público usando um token do `gcloud`:
 
@@ -143,9 +133,7 @@ Use uma coleção nomeada:
 SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 ```
 
-<div id="limitations">
-  ## Limitações
-</div>
+## Limitações {#limitations}
 
 * Somente tabelas nativas do BigQuery podem ser lidas. Views e tabelas externas exigem a execução de um job de consulta do BigQuery, o que esta função não faz.
 * Colunas `RANGE` podem ser lidas (como `String`), mas não gravadas: inserir em uma coluna `RANGE` gera um erro.
@@ -159,9 +147,7 @@ SELECT * FROM bigquery(my_bigquery, table = 'my_table');
 * Um `INSERT` grande é enviado para `tabledata.insertAll` em batches: no máximo 500 linhas por solicitação, além de ser dividido para que cada solicitação permaneça abaixo do limite de tamanho de 10 MB do BigQuery (uma única linha maior que esse limite é rejeitada com um erro claro).
 * As operações de gravação não são atômicas, e uma única solicitação `tabledata.insertAll` pode ser parcialmente bem-sucedida: o BigQuery pode confirmar algumas linhas de uma solicitação e rejeitar outras com `insertErrors`. As solicitações também são confirmadas de forma independente, portanto, um lote posterior pode ser rejeitado depois que lotes anteriores forem aceitos. Em ambos os casos, a consulta relata um erro, mas as linhas já confirmadas permanecem no BigQuery. Para limitar duplicações, cada linha é enviada com um `insertId` estável, derivado do ID da consulta e da posição ordinal da linha no stream, que o BigQuery usa para desduplicação de melhor esforço dentro da janela de inserção por streaming. Um `query_id` que exceda o limite de 128 caracteres do `insertId` do BigQuery é submetido a hash para gerar um prefixo de comprimento fixo, que permanece estável para esse `query_id`. Como o `insertId` depende da posição ordinal, a desduplicação só é confiável quando a reexecução produz as linhas na mesma ordem: uma nova tentativa de um lote no nível de transporte é sempre segura, e reexecutar o mesmo `INSERT` com o mesmo `query_id` só desduplica se as linhas forem apresentadas na mesma ordem (por exemplo, uma inserção de thread única ou uma ordenação determinística — defina `max_threads = 1` e `max_insert_threads = 1` para um `INSERT ... SELECT` paralelo cuja ordem dos fragmentos poderia mudar entre tentativas).
 
-<div id="related">
-  ## Relacionados
-</div>
+## Relacionados {#related}
 
 * [Motor de tabela `BigQuery`](/pt-BR/reference/engines/table-engines/integrations/bigquery)
 

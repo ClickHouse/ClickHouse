@@ -11,9 +11,7 @@ En una plataforma SaaS de análisis de datos, es habitual que varios tenants, co
 
 Según los requisitos, existen distintas formas de implementar la multitenencia. A continuación, se ofrece una guía sobre cómo implementarla con ClickHouse Cloud.
 
-<div id="shared-table">
-  ## Tabla compartida
-</div>
+## Tabla compartida {#shared-table}
 
 En este enfoque, los datos de todos los tenants se almacenan en una única tabla compartida, con un campo (o conjunto de campos) que se utiliza para identificar los datos de cada tenant. Para maximizar el rendimiento, este campo debe incluirse en la [clave primaria](/es/reference/statements/create/table#primary-key). Para garantizar que solo pueda acceder a los datos que pertenecen a los tenants correspondientes, usamos [control de acceso basado en roles](/es/concepts/features/security/access-rights), implementado mediante [políticas de fila](/es/concepts/features/security/access-rights#row-policy-management).
 
@@ -27,9 +25,7 @@ Sin embargo, otros enfoques pueden ser más adecuados si los tenants tienen dist
 
 En los casos en que exista una diferencia significativa en el volumen de datos entre tenants, los tenants más pequeños pueden verse afectados innecesariamente en el rendimiento de las consultas. Tenga en cuenta que este problema se mitiga en gran medida al incluir el campo tenant en la clave primaria.
 
-<div id="shared-table-example">
-  ### Ejemplo
-</div>
+### Ejemplo {#shared-table-example}
 
 Este es un ejemplo de implementación de un modelo de multitenencia con tabla compartida.
 
@@ -113,9 +109,7 @@ FROM events
    └───────────┴──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-<div id="separate-tables">
-  ## Tablas separadas
-</div>
+## Tablas separadas {#separate-tables}
 
 En este enfoque, los datos de cada tenant se almacenan en una tabla independiente dentro de la misma base de datos, lo que elimina la necesidad de un campo específico para identificar a los tenants. El acceso de los usuarios se controla mediante una [sentencia GRANT](/es/reference/statements/grant), lo que garantiza que cada usuario solo pueda acceder a las tablas que contienen los datos de sus tenants.
 
@@ -125,9 +119,7 @@ En escenarios con pocos tenants pero con conjuntos de datos muy grandes, donde e
 
 Ten en cuenta que este enfoque no escala para miles de tenants. Consulta los [límites de uso](/es/products/cloud/guides/best-practices/usagelimits).
 
-<div id="shared-table-example">
-  ### Ejemplo
-</div>
+### Ejemplo {#separate-tables-example}
 
 Este es un ejemplo de implementación del modelo de multi-tenancy con tablas separadas.
 
@@ -211,9 +203,7 @@ FROM default.events_tenant_1
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-<div id="separate-databases">
-  ## Bases de datos separadas
-</div>
+## Bases de datos separadas {#separate-databases}
 
 Los datos de cada tenant se almacenan en una base de datos independiente dentro del mismo servicio de ClickHouse.
 
@@ -223,9 +213,7 @@ La implementación es similar al enfoque de tablas separadas, pero, en lugar de 
 
 Ten en cuenta que este enfoque no escala bien para miles de tenants. Consulta [límites de uso](/es/products/cloud/guides/best-practices/usagelimits).
 
-<div id="shared-table-example">
-  ### Ejemplo
-</div>
+### Ejemplo {#separate-databases-example}
 
 Este es un ejemplo de implementación de un modelo de multitenencia con bases de datos separadas.
 
@@ -317,19 +305,15 @@ FROM tenant_1.events
    └──────────────────────────────────────┴─────────────┴─────────────────────┴─────────┴─────────────────────────────────────────┘
 ```
 
-<div id="compute-compute-separation">
-  ## Compute-compute separation
-</div>
+## Compute-compute separation {#compute-compute-separation}
 
 Los tres enfoques descritos anteriormente también pueden aislarse aún más mediante [Warehouses](/es/products/cloud/features/infrastructure/warehouses#what-is-a-warehouse). Los datos se comparten a través de un almacenamiento de objetos común, pero cada tenant puede tener su propio servicio de cómputo gracias a la [compute-compute separation](/es/products/cloud/features/infrastructure/warehouses#what-is-compute-compute-separation), con una proporción de CPU/Memory diferente.
 
 La gestión de usuarios es similar a la de los enfoques descritos anteriormente, ya que todos los servicios de un warehouse [comparten los controles de acceso](/es/products/cloud/features/infrastructure/warehouses#database-credentials).
 
-Ten en cuenta que el número de servicios secundarios en un warehouse está limitado a unos pocos. Consulta [Warehouse limitations](/es/products/cloud/features/infrastructure/warehouses#limitations).
+Ten en cuenta que el número de servicios en un warehouse no está limitado por separado, pero sí lo está el número combinado de réplicas de todos los servicios del warehouse. Consulta [límites de uso](/es/cloud/bestpractices/usage-limits) y [warehouse scaling](/es/products/cloud/features/infrastructure/warehouses#scaling).
 
-<div id="separate-service">
-  ## Servicio Cloud independiente
-</div>
+## Servicio Cloud independiente {#separate-service}
 
 El enfoque más radical es utilizar un servicio de ClickHouse distinto para cada tenant.
 
@@ -339,9 +323,7 @@ Se debe crear una cuenta de usuario en cada servicio para que el usuario pueda a
 
 Este enfoque es más difícil de gestionar y añade sobrecarga con cada servicio, ya que cada uno requiere su propia infraestructura para funcionar. Los servicios pueden gestionarse mediante la [ClickHouse Cloud API](/es/products/cloud/features/admin-features/api/api-overview), y la orquestación también es posible a través del [provider oficial de Terraform](https://registry.terraform.io/providers/ClickHouse/clickhouse/latest/docs).
 
-<div id="shared-table-example">
-  ### Ejemplo
-</div>
+### Ejemplo {#separate-service-example}
 
 Este es un ejemplo de implementación de un modelo de multitenencia con servicios separados. Ten en cuenta que el ejemplo muestra la creación de tablas y usuarios en un servicio de ClickHouse; esto mismo deberá replicarse en todos los servicios.
 

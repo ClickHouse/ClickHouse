@@ -21,9 +21,7 @@ doc_type: 'reference'
   هذا المحرك غير متاح حاليًا في ClickHouse Cloud، يُرجى [استخدام دالة الجدول S3 بدلًا من ذلك](/ar/reference/functions/table-functions/s3).
 </Note>
 
-<div id="usage-in-clickhouse-server">
-  ## الاستخدام في خادم ClickHouse
-</div>
+## الاستخدام في خادم ClickHouse {#usage-in-clickhouse-server}
 
 ```sql
 File(Format)
@@ -44,9 +42,7 @@ File(Format)
   توخَّ الحذر عند استخدام هذه الوظيفة، لأن ClickHouse لا يتتبّع التغييرات الخارجية التي تطرأ على مثل هذه الملفات. ونتيجة الكتابة المتزامنة عبر ClickHouse ومن خارجه غير معرّفة.
 </Note>
 
-<div id="example">
-  ## مثال
-</div>
+## مثال {#example}
 
 **1.** أنشئ الجدول `file_engine_table`:
 
@@ -77,11 +73,9 @@ SELECT * FROM file_engine_table
 └──────┴───────┘
 ```
 
-<div id="usage-in-clickhouse-local">
-  ## الاستخدام في ClickHouse-local
-</div>
+## الاستخدام في ClickHouse-local {#usage-in-clickhouse-local}
 
-في [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local)، يقبل محرك File مسار الملف بالإضافة إلى `Format`. ويمكن تحديد تدفقات الإدخال/الإخراج الافتراضية باستخدام أسماء رقمية أو أسماء مقروءة بشريًا مثل `0` أو `stdin`، و`1` أو `stdout`. كما يمكن قراءة الملفات المضغوطة وكتابتها استنادًا إلى مَعلَمة إضافية للمحرك أو امتداد الملف (`gz` أو `br` أو `xz`).
+في [clickhouse-local](/ar/concepts/features/tools-and-utilities/clickhouse-local)، يقبل محرك File مسار الملف بالإضافة إلى `Format`. ويمكن تحديد تدفقات الإدخال/الإخراج الافتراضية باستخدام أسماء رقمية أو أسماء مقروءة بشريًا مثل `0` أو `stdin`، و`1` أو `stdout`. كما يمكن قراءة الملفات المضغوطة وكتابتها استنادًا إلى مَعلَمة إضافية للمحرك أو امتداد الملف. والقيم المدعومة هي `none` (بدون ضغط)، و`gzip/gz`، و`deflate`، و`brotli/br`، و`lzma/xz`، و`zstd/zst`، و`lz4`، و`bz2`، و`snappy`. أما بالنسبة إلى `snappy`، فيُحدَّد تنسيق النقل عبر الإعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (`basic` افتراضيًا).
 
 **مثال:**
 
@@ -89,9 +83,7 @@ SELECT * FROM file_engine_table
 $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64) ENGINE = File(CSV, stdin); SELECT a, b FROM table; DROP TABLE table"
 ```
 
-<div id="details-of-implementation">
-  ## تفاصيل التنفيذ
-</div>
+## تفاصيل التنفيذ {#details-of-implementation}
 
 * يمكن تنفيذ عدة استعلامات `SELECT` بالتزامن، لكن استعلامات `INSERT` تنتظر بعضها بعضًا.
 * يدعم إنشاء ملف جديد باستخدام استعلام `INSERT`.
@@ -102,26 +94,20 @@ $ echo -e "1,2\n3,4" | clickhouse-local -q "CREATE TABLE table (a Int64, b Int64
   * الفهارس
   * النسخ المتماثل
 
-<div id="partition-by">
-  ## PARTITION BY
-</div>
+## PARTITION BY {#partition-by}
 
 `PARTITION BY` — اختياري. يمكن إنشاء ملفات منفصلة عبر تقسيم البيانات باستخدام مفتاح تقسيم. في معظم الحالات، لن تحتاج إلى مفتاح تقسيم، وحتى عند الحاجة إليه، فغالباً لا تحتاج إلى مفتاح تقسيم أدق من التقسيم حسب الشهر. لا يؤدي التقسيم إلى تسريع الاستعلامات (على خلاف تعبير `ORDER BY`). ويجب ألا تستخدم أبداً تقسيمًا شديد الدقة. لا تقسّم بياناتك حسب معرّفات العملاء أو أسمائهم (وعوضاً عن ذلك، اجعل معرّف العميل أو اسمه هو العمود الأول في تعبير `ORDER BY`).
 
 للتقسيم حسب الشهر، استخدم التعبير `toYYYYMM(date_column)`، حيث إن `date_column` هو عمود يحتوي على تاريخ من النوع [Date](/ar/reference/data-types/date). وتكون أسماء الأقسام هنا بالتنسيق `"YYYYMM"`.
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان الحجم غير معروف، تكون القيمة `NULL`.
 * `_time` — وقت آخر تعديل للملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 * [engine&#95;file&#95;empty&#95;if&#95;not&#95;exists](/ar/reference/settings/session-settings/engine-file#engine_file_empty_if_not_exists) - يتيح قراءة بيانات فارغة من ملف غير موجود. يكون معطّلًا افتراضيًا.
 * [engine&#95;file&#95;truncate&#95;on&#95;insert](/ar/reference/settings/session-settings/engine-file#engine_file_truncate_on_insert) - يتيح اقتطاع الملف قبل الإدراج فيه. يكون معطّلًا افتراضيًا.

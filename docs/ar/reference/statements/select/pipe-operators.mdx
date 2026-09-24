@@ -39,9 +39,7 @@ ORDER BY total DESC
 LIMIT 3
 ```
 
-<div id="from-queries">
-  ## استعلامات FROM
-</div>
+## استعلامات FROM {#from-queries}
 
 يمكن أن يبدأ الاستعلام بعبارة `FROM`، وتكون عبارة `SELECT` اختيارية في هذه الاستعلامات. وعند حذفها، يعمل الاستعلام كما لو كانت `SELECT *` مكتوبة:
 
@@ -53,15 +51,13 @@ FROM orders |> WHERE amount > 100;
 
 يمكن كتابة الأسماء المستعارة للجداول باستخدام الكلمة المفتاحية `AS` أو من دونها، كما في عبارة `FROM` في استعلام `SELECT` عادي: `FROM orders o WHERE o.amount > 100`. الاستثناء الوحيد هو الاسم المستعار المكتوب بالكلمة المجردة `select`: إذ تبدأ هذه الكلمة، بعد الجداول، عبارة `SELECT` الصريحة بدلًا من اعتبارها اسمًا مستعارًا. لا يتأثر جدول يحمل اسم `select` ويحتفظ باسمه المستعار: `FROM select s WHERE s.id = 1`.
 
+يمكن أيضًا أن يبدأ استعلام فرعي بين قوسين بعبارة `FROM`، وهذا ما يجعل `(from IN ('a'))` ملتبسة: فهي تُقرأ إما على أنها التعبير `from IN ('a')` على column يحمل اسم `from`، أو على أنها الاستعلام الفرعي `SELECT * FROM IN('a')` على دالة جدول تحمل اسم `IN`. والقراءة المتعلقة بالـ column هي الأقدم وهي التي تُرجَّح؛ فالأقواس التي تُقرأ محتوياتها كتعبير يبدأ بالكلمة `from` متبوعة بمشغّل تكون ذلك التعبير، ولا تكون استعلامًا فرعيًا أبدًا. اكتب عبارة `SELECT` صريحةً للحصول على القراءة الأخرى: `1 IN (SELECT * FROM in)`.
+
 لا يمكن حذف عبارة `SELECT` عندما يمكن تفسير إزاحة العينة للجدول الأخير أيضًا على أنها `OFFSET` على مستوى الاستعلام، لأن `OFFSET` في `FROM t SAMPLE 1/10 OFFSET 5` تتبع `SAMPLE`، بينما تكون `OFFSET` في `FROM t SAMPLE 1/10 SELECT * OFFSET 5` على مستوى الاستعلام؛ لذا يلزم استخدام `SELECT` الصريحة لإزالة الالتباس بينهما. وعندما يتابع الاستعلام بعبارة لا يمكن أن تسبقها `OFFSET` على مستوى الاستعلام، فلا يوجد التباس وتبقى عبارة `SELECT` اختيارية كالمعتاد: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`، `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
-<div id="operators">
-  ## العوامل
-</div>
+## العوامل {#operators}
 
-<div id="where">
-  ### WHERE
-</div>
+### WHERE {#where}
 
 يُصفّي `|> WHERE condition` صفوف الإدخال. وعند استخدامه بعد عملية تجميع، يعمل مثل `HAVING`:
 
@@ -71,9 +67,7 @@ FROM orders
 |> WHERE total > 100
 ```
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 يُبقي `|> SELECT [DISTINCT] expr1 [AS alias1], ...` التعبيرات المُدرجة فقط كأعمدة الإخراج:
 
@@ -83,9 +77,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 
 يُسمح بوضع فاصلة لاحقة في نهاية قائمة التعبيرات، في المواضع نفسها المسموح بها ضمن عبارة `SELECT` في استعلام عادي. ويمكن أن يليها هنا إما نهاية الاستعلام أو العامل `|>` التالي: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. وينطبق الأمر نفسه على عاملي `EXTEND` و`AGGREGATE`.
 
-<div id="extend">
-  ### EXTEND
-</div>
+### EXTEND {#extend}
 
 `|> EXTEND expr1 [AS alias1], ...` يضيف التعبيرات المُدرجة إلى أعمدة الإدخال؛ وهو مكافئ لـ `SELECT *, expr1 AS alias1, ...`:
 
@@ -93,9 +85,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 FROM orders |> EXTEND amount * 10 AS big
 ```
 
-<div id="set">
-  ### SET
-</div>
+### SET {#set}
 
 يستبدل `|> SET column1 = expr1, ...` قيم الأعمدة المذكورة؛ وهو مكافئ لـ `SELECT * REPLACE (expr1 AS column1, ...)`:
 
@@ -103,9 +93,7 @@ FROM orders |> EXTEND amount * 10 AS big
 FROM orders |> SET amount = amount + 1000
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 `|> DROP column1, ...` يزيل الأعمدة المحددة؛ وهو مكافئ لـ `SELECT * EXCEPT (column1, ...)`:
 
@@ -113,9 +101,7 @@ FROM orders |> SET amount = amount + 1000
 FROM orders |> DROP cancelled
 ```
 
-<div id="as">
-  ### AS
-</div>
+### AS {#as}
 
 يُسنِد `|> AS alias` اسمًا مستعارًا إلى إدخال العامل التالي، بحيث يمكن الإشارة إليه ضمن ذلك العامل، وهو مفيد خصوصًا في عمليات الربط:
 
@@ -126,9 +112,7 @@ FROM orders
 |> JOIN orders AS o ON agg.customer = o.customer
 ```
 
-<div id="aggregate">
-  ### AGGREGATE
-</div>
+### AGGREGATE {#aggregate}
 
 تجمع ‎`|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]`‎ صفوف الإدخال. تتكون أعمدة الإخراج من أعمدة التجميع، تليها الأعمدة المجمّعة. من دون ‎`GROUP BY`‎، يُجمَّع الإدخال بالكامل في صف واحد:
 
@@ -137,15 +121,11 @@ FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
 FROM orders |> AGGREGATE count() AS c;
 ```
 
-<div id="distinct">
-  ### DISTINCT
-</div>
+### DISTINCT {#distinct}
 
 يزيل `|> DISTINCT` الصفوف المكررة، وهو يعادل `SELECT DISTINCT *`.
 
-<div id="order-by">
-  ### ORDER BY
-</div>
+### ORDER BY {#order-by}
 
 `|> ORDER BY expr1 [ASC/DESC], ...` يفرز صفوف الإدخال. يُدعم بناء عبارة `ORDER BY` بالكامل، بما في ذلك `ORDER BY ALL` و`WITH FILL` و`INTERPOLATE`:
 
@@ -155,9 +135,7 @@ FROM orders |> SELECT customer, amount |> ORDER BY ALL;
 FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 ```
 
-<div id="limit-and-offset">
-  ### LIMIT وOFFSET
-</div>
+### LIMIT وOFFSET {#limit-and-offset}
 
 تحدّ `|> LIMIT length [OFFSET offset]` و`|> OFFSET offset` عدد الصفوف:
 
@@ -165,9 +143,7 @@ FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
 ```
 
-<div id="join-and-array-join">
-  ### JOIN و ARRAY JOIN
-</div>
+### JOIN و ARRAY JOIN {#join-and-array-join}
 
 `|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]` يضمّ الإدخال إلى جدول أو استعلام فرعي أو دالة جدول أخرى. جميع أنواع [JOIN](/ar/reference/statements/select/join) و[ARRAY JOIN](/ar/reference/statements/select/array-join) مدعومة، ويمكن أن يتضمن عامل واحد عدة عمليات JOIN، على غرار عبارة `FROM`:
 
@@ -184,9 +160,7 @@ FROM customers
 
 وكما في عبارة `FROM` في استعلام عادي، لا يُدعَم comma (cross) join مباشرةً بعد `ARRAY JOIN`: إذ تنتمي الفاصلة التي تلي `ARRAY JOIN` دائمًا إلى قائمة تعبيرات الخاصة به.
 
-<div id="union-intersect-and-except">
-  ### UNION وINTERSECT وEXCEPT
-</div>
+### UNION وINTERSECT وEXCEPT {#union-intersect-and-except}
 
 تدمج `|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]` و`|> INTERSECT [ALL/DISTINCT] ...` و`|> EXCEPT [ALL/DISTINCT] ...` الإدخال مع نتائج الاستعلامات الأخرى:
 
@@ -199,14 +173,12 @@ FROM orders
 
 الأقواس حول المعامل اختيارية في الاستعلام الواحد، لكنها مطلوبة إذا استمرت السلسلة بعامل الأنبوب آخر بعد عملية المجموعات، وإلا فلن يتضح ما إذا كان العامل التالي ينطبق على المعامل الأخير أم على النتيجة بأكملها.
 
-<div id="notes">
-  ## ملاحظات
-</div>
+## ملاحظات {#notes}
 
 * تظل عبارة `WITH` في الاستعلام مرئية لجميع عوامل الأنبوب اللاحقة، سواء للأسماء المستعارة القياسية أو لتعبيرات الجدول الشائعة: `WITH 10 AS threshold FROM t |> WHERE x < threshold`.
 * في `INSERT ... SELECT`، تُرفق عبارة `WITH` المكتوبة قبل `INSERT` بأقصى استعلام `SELECT` خارجي مُولَّد، وتصل إلى مراحل الأنبوب الداخلية أثناء التفسير عبر الإعداد `enable_global_with_statement` (المفعّل افتراضيًا)، تمامًا كما تصل إلى استعلام فرعي متداخل مكتوب يدويًا. إذا عُطّل هذا الإعداد، فلن تكون الأسماء المستعارة وتعبيرات الجدول الشائعة من عبارة `WITH` ضمن نطاق `INSERT` مرئية داخل مراحل الأنبوب، تمامًا كما لا تكون مرئية داخل استعلام فرعي مكتوب يدويًا.
 * كما في أي استعلام `SELECT`، يمكن أن ينتهي الاستعلام الذي يولّده عامل الأنبوب بعبارة `SETTINGS` تُرفق بذلك الاستعلام المُولَّد: `FROM t |> LIMIT 1 SETTINGS max_threads = 1` يكافئ `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`. يعمل ذلك أيضًا في المواضع التي لا توجد فيها مرحلة منفصلة لمعالجة إعدادات الاستعلام، مثل الاستعلام الفرعي أو `CREATE VIEW` أو دالة الجدول `view`. تظل عبارة `SETTINGS` الموجودة في منتصف سلسلة ضمن مرحلتها، التي تصبح استعلامًا فرعيًا للعامل التالي. بعد عملية مجموعات ذات مُعامل موضوع بين قوسين، لا تُقبل عبارة `SETTINGS` لاحقة؛ إذ لا يمكن للاستعلام المكافئ الذي يستخدم استعلامات فرعية أن يحتوي على عبارة `SETTINGS` في هذا الموضع أيضًا.
-* تظل عبارة `SETTINGS` الخاصة بالاستعلام السابق لأول عامل أنبوب ضمن ذلك الاستعلام، الذي يصبح استعلامًا فرعيًا للغلاف المُولَّد. وتستمر الإعدادات العادية في العمل، لأن إعدادات الاستعلام الفرعي تُطبّق عند تفسيره. الاستثناء الوحيد هو زوج الإعدادات الذي يختار محلل الاستعلام، `enable_analyzer` واسمه المستعار `allow_experimental_analyzer`: لا يُسمح بتغييرهما في استعلام فرعي، لذا فإن `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1` يطرح الخطأ `INCORRECT_QUERY`، تمامًا كما يفعل الاستعلام المكافئ المكتوب يدويًا `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1`. اكتب هذين الإعدادين بعد آخر عامل أنبوب، أو مرّرهما خارج الاستعلام.
+* تظل عبارة `SETTINGS` الخاصة بالاستعلام السابق لأول عامل أنبوب ضمن ذلك الاستعلام، الذي يصبح استعلامًا فرعيًا للغلاف المُولَّد. وتستمر الإعدادات العادية في العمل، لأن إعدادات الاستعلام الفرعي تُطبّق عند تفسيره.
 * ترتبط عوامل الأنبوب بالاستعلام الكامل الذي يسبقها، بما في ذلك عمليات المجموعات: في `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()`، يُطبّق التجميع على نتيجة `UNION ALL`. لمتابعة استعلام بـ `UNION` بعد عامل أنبوب، استخدم العامل `|> UNION` أو الأقواس.
 * يمكن استخدام عوامل الأنبوب في كل موضع يُتوقع فيه استعلام `SELECT`: في الاستعلامات الفرعية، وفي `INSERT ... SELECT` (بما في ذلك الصيغة `INSERT INTO t FROM src |> ...`)، وفي `CREATE VIEW`، وفي دالة الجدول `view`، وما إلى ذلك.
 * لا تتوفر إعادة تسمية الأعمدة في موضعها كعامل منفصل؛ استخدم `|> SELECT * EXCEPT (old_name), old_name AS new_name` أو عاملي `SET` و`DROP`.

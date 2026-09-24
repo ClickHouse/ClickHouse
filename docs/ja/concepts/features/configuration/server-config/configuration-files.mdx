@@ -27,7 +27,7 @@ XML 設定ファイルでは、トップレベルタグとして `<clickhouse>..
 YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略された場合はパーサーが自動的に挿入します。
 
 <div id="merging">
-  ## 設定ファイルのマージ
+  ## 設定ファイルのマージ {#merging}
 </div>
 
 2 つの設定ファイル (通常はメインの設定ファイルと、`config.d/` 内の別の設定ファイル) は、次のルールでマージされます。
@@ -83,7 +83,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ```
 
 <div id="from_env_zk">
-  ### 環境変数とZooKeeperノードによる置換
+  ### 環境変数とZooKeeperノードによる置換 {#from_env_zk}
 </div>
 
 要素の値を環境変数の値に置き換えるよう指定するには、属性 `from_env` を使用できます。
@@ -137,7 +137,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ```
 
 <div id="default-values">
-  #### デフォルト値
+  #### デフォルト値 {#default-values}
 </div>
 
 `from_env` または `from_zk` 属性を持つ要素には、追加で `replace="1"` 属性を指定することもできます (後者は `from_env`/`from_zk` より前に記述する必要があります) 。
@@ -169,7 +169,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ```
 
 <div id="substitution-with-file-content">
-  ## ファイル内容による置換
+  ## ファイル内容による置換 {#substitution-with-file-content}
 </div>
 
 設定の一部をファイルの内容で置き換えることもできます。これには次の 2 つの方法があります。
@@ -199,7 +199,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 追加するのではなく、置換される内容を既存の設定にマージしたい場合は、属性 `merge="true"` を使用できます。例: `<include from_zk="/some_path" merge="true">`。この場合、既存の設定は置換内容とマージされ、既存の設定項目は置換内容の値で置き換えられます。
 
 <div id="encryption">
-  ## 設定の暗号化と秘匿
+  ## 設定の暗号化と秘匿 {#encryption}
 </div>
 
 対称暗号化を使用して、設定要素 (たとえば平文のパスワードや秘密鍵) を暗号化できます。
@@ -321,7 +321,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 ```
 
 <div id="user-settings">
-  ## ユーザー設定
+  ## ユーザー設定 {#user-settings}
 </div>
 
 `config.xml` ファイルでは、ユーザー設定、プロファイル、クォータ用の設定を別ファイルとして指定できます。この設定への相対パスは `users_config` 要素で設定します。デフォルトでは `users.xml` です。`users_config` を省略した場合、ユーザー設定、プロファイル、クォータは `config.xml` に直接指定されます。
@@ -334,7 +334,7 @@ YAML 設定ファイルでは、`clickhouse:` は省略可能で、省略され�
 なお、設定ファイルはまず設定項目を考慮して[マージ](#merging)され、その後で include が処理されます。
 
 <div id="example">
-  ## XML の例
+  ## XML の例 {#example}
 </div>
 
 たとえば、各ユーザーごとにこのような個別の設定ファイルを用意できます。
@@ -358,9 +358,7 @@ $ cat /etc/clickhouse-server/users.d/alice.xml
 </clickhouse>
 ```
 
-<div id="example-1">
-  ## YAML の例
-</div>
+## YAML の例 {#example-1}
 
 ここでは、YAML で記述されたデフォルト設定を確認できます: [`config.yaml.example`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.yaml.example)。
 
@@ -373,7 +371,7 @@ YAML フォーマットで設定を記述する際のヒントを以下に示し
 key: value
 ```
 
-対応するXML:
+対応する XML:
 
 ```xml
 <key>value</key>
@@ -435,7 +433,7 @@ map:
   key: 123
 ```
 
-対応するXML:
+対応する XML:
 
 ```xml
 <map attr1="value1" attr2="value2">
@@ -469,14 +467,14 @@ map_key:
   "#text": value2
 ```
 
-対応するXML：
+対応する XML:
 
 ```xml
 <map_key attr1="value1">value2</map_key>
 ```
 
 <div id="implementation-details">
-  ## 実装の詳細
+  ## 実装の詳細 {#implementation-details}
 </div>
 
 各設定ファイルについて、サーバーは起動時に `file-preprocessed.xml` ファイルも生成します。これらのファイルには、すべての置換と上書きが反映された内容が含まれており、参照用の情報として利用できます。設定ファイルで ZooKeeper の置換が使用されていても、サーバー起動時に ZooKeeper を利用できない場合、サーバーは前処理済みファイルから設定を読み込みます。

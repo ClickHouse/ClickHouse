@@ -28,9 +28,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `ON CLUSTER` 절을 사용하면 클러스터 전체에 사용자를 생성할 수 있습니다. 자세한 내용은 [분산 DDL](/ko/reference/statements/distributed-ddl)을 참조하십시오.
 
-<div id="identification">
-  ## 식별
-</div>
+`CREATE USER`에는 [CREATE USER](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `OR REPLACE`는 동일한 이름의 기존 사용자를 인증 메서드, 부여된 역할, 설정까지 모두 덮어쓰므로 [DROP USER](/ko/reference/statements/grant#access-management) 권한도 추가로 필요합니다. `DROP USER` 권한은 해당 사용자의 존재 여부와 관계없이 SQL 문에 나열된 모든 이름에 대해 필요하므로, 이 SQL 문으로 어떤 사용자가 존재하는지 알아낼 수는 없습니다.
+
+## 식별 {#identification}
 
 사용자를 식별하는 방법은 여러 가지입니다:
 
@@ -76,9 +76,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   * 특수 문자를 최소 1개 포함해야 합니다
 </Note>
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 1. 다음 사용자 이름은 `name1`이며 비밀번호가 필요하지 않습니다. 당연히 보안상 그다지 안전하지 않습니다:
 
@@ -173,9 +171,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 2. 보안상의 이유로 `no_password`는 다른 인증 방법과 함께 사용할 수 없습니다. 따라서
    `no_password`는 쿼리에서 유일한 인증 방법일 때만 지정할 수 있습니다.
 
-<div id="user-host">
-  ## 사용자 호스트
-</div>
+## 사용자 호스트 {#user-host}
 
 사용자 호스트는 ClickHouse 서버에 연결을 설정할 수 있는 호스트입니다. 호스트는 `HOST` 쿼리 섹션에서 다음과 같은 방식으로 지정할 수 있습니다.
 
@@ -196,9 +192,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   ClickHouse는 `user_name@'address'` 전체를 하나의 사용자 이름으로 처리합니다. 따라서 기술적으로는 동일한 `user_name`에 대해 `@` 뒤의 구성이 다른 여러 사용자를 만들 수 있습니다. 그러나 이렇게 하는 것은 권장하지 않습니다.
 </Tip>
 
-<div id="valid-until-clause">
-  ## VALID UNTIL 절
-</div>
+## VALID UNTIL 절 {#valid-until-clause}
 
 인증 방법의 만료 날짜와 선택적으로 시간을 지정할 수 있습니다. 문자열을 매개변수로 받습니다. 날짜 및 시간에는 `YYYY-MM-DD [hh:mm:ss] [timezone]` 포맷을 사용하는 것이 좋습니다. 여기서 `[timezone]`은 `+09:00`과 같은 숫자 오프셋이거나 `UTC`, `GMT`, `Z`, `MSK`, `MSD` 중 하나여야 합니다. `Asia/Tokyo`와 같은 이름 기반 IANA 시간대는 인식되지 않습니다(아래 참고 참조). 기본적으로 이 매개변수의 값은 `'infinity'`입니다. 허용되는 마감 시각 범위는 `1900-01-01 00:00:00 UTC`부터 `9999-12-31 09:59:59 UTC`까지입니다. 이는 모든 시간대에서 9999년 범위를 벗어나지 않는 가장 늦은 시점이므로, 저장된 시점을 표시할 때 값이 제한되지 않습니다. 과거의 마감 시각은 자격 증명이 이미 만료되었음을 의미합니다. `1970-01-01 00:00:01 UTC` 이전의 마감 시각은 &quot;이미 만료됨&quot; 표시로만 허용됩니다. 이 값은 Unix epoch 1초 후(`1970-01-01 00:00:01 UTC`)인 가장 이른 만료 시점으로 정규화되므로, `SHOW CREATE USER`는 작성한 마감 시각 대신 해당 시점을 표시합니다. 해당 시점 이후의 마감 시각은 정확하게 저장됩니다.
 
@@ -222,9 +216,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   날짜 및 시간 문자열은 `parseDateTimeBestEffort`로 파싱되며, 이 함수는 `UTC`, `GMT`, `Z`, `MSK`, `MSD` 시간대 토큰과 `+09:00` 또는 `-05:00`과 같은 숫자 오프셋만 인식합니다. `Asia/Tokyo` 또는 `Europe/London`과 같은 이름 기반 IANA 시간대는 지원되지 않습니다. 또한 고정 오프셋은 일광 절약 시간을 적용하는 지역의 IANA 시간대와 동일하지 않으므로, 인코딩하는 특정 날짜에 맞는 올바른 오프셋을 계산해야 합니다.
 </Note>
 
-<div id="valid-for-clause">
-  ## VALID FOR 절
-</div>
+## VALID FOR 절 {#valid-for-clause}
 
 `VALID FOR` 절은 `VALID UNTIL`을 간편하게 줄여 쓴 표현입니다. 절대 날짜와 시간 대신 [인터벌](/ko/reference/data-types/special-data-types/interval)을 지정할 수 있으며, 쿼리 실행 시점의 현재 시간에 해당 인터벌을 더해 만료 마감 시각을 계산합니다. 결과는 `VALID UNTIL` 형식으로 저장되므로 `SHOW CREATE USER`는 항상 해석된 절대 마감 시각을 표시합니다. `VALID UNTIL`을 사용할 수 있는 모든 위치에서 사용할 수 있으며, 동일한 배치 규칙을 따릅니다. 즉, `IDENTIFIED` 앞에 있거나 인증 방법이 없는 경우에는 모든 메서드에 적용되는 사용자 수준의 마감 시각이 되며, 인증 방법 뒤에 있으면 해당 메서드에만 적용됩니다. 마감 시각은 초 단위 정밀도로 저장되고 적용되므로 하위 초 단위 인터벌(`NANOSECOND`, `MICROSECOND`, `MILLISECOND`)은 허용되지 않으며, 허용되는 최소 단위는 `SECOND`입니다. 음수 인터벌은 자격 증명이 이미 만료되었음을 표시하는 용도로 사용할 수 있습니다. 계산된 마감 시각이 `1970-01-01 00:00:01 UTC`보다 이르면 가장 이른 만료 시점으로 정규화되며, 이후 `SHOW CREATE USER`는 이를 표시합니다. 이 값은 [`VALID UNTIL`](#valid-until-clause)에 설명된 대로 서버 또는 세션 시간대로 표시됩니다.
 
@@ -236,9 +228,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 사용자 수준의 마감 시각은 두 메서드 모두에 적용됩니다.
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — 마감 시각은 `bcrypt_password` 메서드에만 적용되며, `plaintext_password`는 만료되지 않습니다.
 
-<div id="grants-clause">
-  ## GRANTS 절
-</div>
+## GRANTS 절 {#grants-clause}
 
 특정 인증 방법로 인증된 세션에서 사용할 수 있는 접근 권한을 제한할 수 있습니다. [GRANT](/ko/reference/statements/grant) SQL 문과 동일한 형식의 권한 목록을 괄호 안에 지정합니다. 이 절은 인증 방법 뒤에(`VALID UNTIL` 절이 있으면 그 뒤에) 지정하며 해당 메서드에만 적용됩니다.
 
@@ -267,9 +257,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 이 조합은 위에서 외부 검증 메서드에 이 절 자체가 허용되지 않는 것과 같은 이유로, server가 로컬에서 검증하는 인증 방법 간에만 확인됩니다. 외부 검증 메서드에서 자격 증명을 다시 확인하려면 외부 시스템에 안전하지 않은 추가 probe를 수행해야 하기 때문입니다. 따라서 동일한 사용자의 외부 검증 메서드(`ldap`, `kerberos`, `http`, `jwt`)에서도 같은 자격 증명이 허용되더라도, 해당 메서드의 `VALID UNTIL`은 이 조합에 포함되지 않으며, 그 메서드에 구성된 더 이른 만료 시점이 로컬 검증 메서드를 통해 획득한 세션을 단축하지 않습니다.
 
-<div id="grantees-clause">
-  ## GRANTEES 절
-</div>
+## GRANTEES 절 {#grantees-clause}
 
 이 사용자에게 [GRANT OPTION](/ko/reference/statements/grant#granting-privilege-syntax)과 함께 필요한 모든 접근 권한이 부여된 경우, 이 사용자로부터 [권한](/ko/reference/statements/grant#privileges)을 받을 수 있는 사용자 또는 역할을 지정합니다. `GRANTEES` 절의 옵션은 다음과 같습니다.
 
@@ -280,9 +268,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `EXCEPT` 표현식을 사용하면 특정 사용자나 역할을 제외할 수 있습니다. 예를 들어 `CREATE USER user1 GRANTEES ANY EXCEPT user2`는 `user1`에 `GRANT OPTION`과 함께 일부 권한이 부여된 경우, `user2`를 제외한 누구에게나 해당 권한을 부여할 수 있음을 의미합니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples-1}
 
 비밀번호 `qwerty`로 보호된 사용자 계정 `mira`를 생성합니다:
 
@@ -314,6 +300,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 
 ```sql
 CREATE USER john GRANTEES jack;
+```
+
+기본 데이터베이스를 지정하여 사용자 계정 `john`을 생성합니다:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE`은 기본 데이터베이스를 설정하지 않은 상태로 둡니다. `NONE`이라는 이름의 데이터베이스를 사용하려면 그 이름을 backtick으로 감싸십시오:
+
+```sql
+DEFAULT DATABASE `NONE`
 ```
 
 쿼리 매개변수를 사용해 사용자 계정 `john`을 생성하세요:

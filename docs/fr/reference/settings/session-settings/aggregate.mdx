@@ -13,25 +13,25 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="aggregate_function_input_format">
-  ## aggregate_function_input_format
-</div>
+## aggregate_function_input_format {#aggregate_function_input_format}
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "Nouveau paramètre permettant de contrôler le format d'entrée d'AggregateFunction lors des opérations INSERT. La valeur du paramètre est définie sur state par défaut"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "Nouveau paramètre permettant de contrôler le format d'entrée AggregateFunction lors des opérations INSERT. Valeur du paramètre définie à state par défaut"}]}]} />
 
-Format de l&#39;entrée d&#39;AggregateFunction lors des opérations INSERT.
+Comment les formats d&#39;entrée lisent les colonnes de type `AggregateFunction`.
 
-Valeurs possibles :
+Valeurs possibles :
 
-* `state` — Chaîne binaire contenant l&#39;état sérialisé (par défaut). Il s&#39;agit du comportement par défaut, dans lequel les valeurs AggregateFunction sont attendues sous forme de données binaires.
-* `value` — Le format attend une seule valeur pour l&#39;argument de la fonction d&#39;agrégation ou, en cas d&#39;arguments multiples, un tuple de ces valeurs. Elles seront désérialisées à l&#39;aide de l&#39;IDataType ou du DataTypeTuple correspondant, puis agrégées pour former l&#39;état.
-* `array` — Le format attend un Array de valeurs, comme décrit ci-dessus pour l&#39;option `value`. Tous les éléments du tableau seront agrégés pour former l&#39;état.
+* `state` — l&#39;état sérialisé de la fonction d&#39;agrégation, tel que l&#39;écrivent les formats de sortie (valeur par défaut).
+* `value` — une valeur de l&#39;argument de la fonction d&#39;agrégation, ou un tuple des arguments s&#39;il y en a plusieurs. La valeur est agrégée pour former l&#39;état.
+* `array` — un tableau de valeurs, telles que décrites pour l&#39;option `value` ci-dessus. Tous les éléments du tableau sont agrégés pour former l&#39;état.
+
+Dans les modes `value` et `array`, le format lit la colonne comme si elle était du type des valeurs : `T` pour `AggregateFunction(f, T)`, `Tuple(T1, T2)` pour `AggregateFunction(f, T1, T2)`, ou un `Array` de ce type en mode `array`. Les valeurs sont écrites selon la représentation que le format emploie pour ce type : un nombre ou une chaîne dans un format texte, un tableau JSON dans les JSON formats, l&#39;encodage binaire du type dans `RowBinary` ou `Native`, une colonne de ce type dans `Parquet`, etc. Cela vaut pour tous les formats d&#39;entrée, ainsi que pour les `AggregateFunction` imbriquées dans `Array`, `Tuple` ou `Map`.
 
 **Exemples**
 
-Pour une table de structure :
+Pour une table ayant la structure suivante :
 
 ```sql
 CREATE TABLE example (
@@ -40,25 +40,33 @@ CREATE TABLE example (
 );
 ```
 
-Avec `aggregate_function_input_format = 'value'` :
+Avec `aggregate_function_input_format = 'value'` :
 
 ```sql
 INSERT INTO example FORMAT CSV
 123,456
 ```
 
-Avec `aggregate_function_input_format = 'array'` :
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
+
+Avec `aggregate_function_input_format = 'array'` :
 
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
-Remarque : les formats `value` et `array` sont plus lents que le format `state`, qui est le format par défaut, car ils nécessitent de créer et d’agréger des valeurs lors de l’insertion.
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
+```
 
-<div id="aggregate_functions_null_for_empty">
-  ## aggregate_functions_null_for_empty
-</div>
+Remarque : les formats `value` et `array` sont plus lents que le format `state` par défaut, car ils nécessitent de créer et d&#39;agréger les valeurs lors de l&#39;insertion.
+
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

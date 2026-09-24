@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent le serveur ClickHouse et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="min_allocation_size_to_throw_on_memory_limit">
-  ## min_allocation_size_to_throw_on_memory_limit
-</div>
+## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+Taille minimale, en octets, d&#39;une imputation unique au memory tracker global (à l&#39;échelle du serveur) à partir de laquelle une stack trace est capturée, écrite dans le server log au niveau `Warning` et insérée dans [`system.trace_log`](/fr/reference/system-tables/trace_log) avec le trace type `MemoryLargeAllocation`.
+
+La taille comparée au threshold, et rapportée, est celle qu&#39;impute un appel au tracker, ce qui ne correspond pas nécessairement à une seule allocation : un thread diffère ses petites allocations et les flush en une seule imputation, si bien que la taille rapportée peut dépasser l&#39;allocation figurant en tête de la stack rapportée, jusqu&#39;à concurrence de `max_untracked_memory`. En maintenant le threshold nettement au-dessus de `max_untracked_memory`, cet écart reste négligeable.
+
+Il s&#39;agit d&#39;un diagnostic destiné aux cas où le total global suivi a grossi bien au-delà de la memory usage réelle du processus. Dans cet état, le serveur refuse toute allocation, jusqu&#39;à celles de zéro octet, alors qu&#39;il n&#39;utilise qu&#39;une fraction de sa limite, et la telemetry ordinaire ne permet pas d&#39;en identifier l&#39;origine : les allocations imputées sous un `MemoryTrackerBlockerInThread` contournent la vérification de limite ainsi que les traces qui l&#39;accompagnent, et les inserts dans `system.trace_log` qui porteraient le reste échouent une fois le serveur bloqué. Le server log, lui, continue d&#39;être écrit : la stack trace y parvient donc.
+
+Au plus 10 traces sont capturées par exécution du serveur, car capturer et symboliser une stack coûte cher et le trigger a tendance à se répéter. Modifier ce setting au runtime, dans un sens comme dans l&#39;autre, ne relève pas cette limite.
+
+Nécessite que `trace_log` soit configuré. Sans collector de traces en cours d&#39;exécution, la valeur est ignorée et rapportée comme `0` dans [`system.server_settings`](/fr/reference/system-tables/server_settings), puisque la trace ne pourrait qu&#39;être capturée puis rejetée. Une trace traitée par le collector avant que cette table ne soit attachée, ce qui intervient tard dans le démarrage, n&#39;atteint que le server log.
+
+La valeur `0` (par défaut) désactive le diagnostic. Réglez-la nettement au-dessus de la plus grande allocation que le serveur effectue légitimement, faute de quoi les grandes allocations ordinaires sont elles aussi journalisées et le démarrage risque de consommer la totalité du budget.
+
+## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -26,9 +40,7 @@ Une valeur de `0` (par défaut) préserve le comportement historique : les alloc
 
 Remarque : pour éviter les effets de bord, il est recommandé de définir une valeur supérieure à `max_untracked_memory`.
 
-<div id="min_os_cpu_wait_time_ratio_to_drop_connection">
-  ## min_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Oui" />
 

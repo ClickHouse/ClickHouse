@@ -17,11 +17,14 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 [Apache Airflow](https://airflow.apache.org/) は、ワークフローをコードとして記述し、スケジュールし、監視するためのオープンソースプラットフォームです。ワークフローは、Python で記述されたタスクの有向非巡回グラフ (DAG) として定義されます。
 
-`apache-airflow-providers-clickhousedb` プロバイダーは Airflow を ClickHouse に接続し、DAG の一部としてクエリの実行、テーブルの作成、データの読み込みを行えるようにします。[HTTP インターフェイス](/ja/concepts/features/interfaces/http) 経由で [`clickhouse-connect`](/ja/integrations/language-clients/python/index) クライアントを使用して接続し、Airflow の共通 SQL フレームワークを通じて ClickHouse を利用できるようにするため、標準の `SQLExecuteQueryOperator` で DDL、DML、分析クエリを処理でき、ClickHouse 専用のオペレーターは不要です。
+`apache-airflow-providers-clickhousedb` プロバイダーは Airflow を ClickHouse に接続し、DAG の一部としてクエリの実行、テーブルの作成、データの読み込みを行えるようにします。[HTTP インターフェイス](/ja/concepts/features/interfaces/http) 経由で [`clickhouse-connect`](/ja/integrations/language-clients/python/index) クライアントを使用して接続し、Airflow の共通 SQL フレームワークを通じて ClickHouse を利用できるようにするため、標準の `SQLExecuteQueryOperator` で DDL、DML、分析クエリを処理でき、ClickHouse 固有のオペレーターは不要です。
 
-<div id="install-the-provider">
-  ## プロバイダーをインストールする
-</div>
+<Note>
+  すでにコミュニティ版の `airflow-clickhouse-plugin` を使用していますか？こちらは異なるドライバー、プロトコル、ポートを使用します。
+  既存の DAG と接続をプロバイダーへ移行するには、[移行ガイド](/ja/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin) に従ってください。
+</Note>
+
+## プロバイダーをインストールする {#install-the-provider}
 
 Airflow のスケジューラとワーカーが実行される環境に、プロバイダーをインストールします。
 
@@ -35,9 +38,7 @@ pip install apache-airflow-providers-clickhousedb
 pip install 'apache-airflow-providers-common-sql[pandas,polars]'
 ```
 
-<div id="create-a-clickhouse-connection">
-  ## ClickHouse 接続を作成する
-</div>
+## ClickHouse 接続を作成する {#create-a-clickhouse-connection}
 
 このプロバイダーは、`clickhouse` という接続タイプを登録します。Airflow UI の **Admin &gt; Connections** から接続を作成するか、CLI または環境変数で定義できます。
 
@@ -53,26 +54,22 @@ UI では、接続タイプとして **ClickHouse** を選択し、各フィー�
 
 [ClickHouse Cloud](/ja/products/cloud/getting-started/intro) または TLS が有効なセルフホスト クラスターでは、**Extra** フィールドで `secure` を `true` に設定し、TLS ポート (`8443`) を使用します。
 
-<div id="extra-connection-options">
-  ### 追加の接続オプション
-</div>
+### 追加の接続オプション {#extra-connection-options}
 
 このプロバイダーでは、接続フォーム内に専用フィールドとして追加オプションが用意されています。代わりに URI、JSON、または環境変数で接続を定義する場合は、これらを `extra` JSON オブジェクト内のキーとして指定してください。いずれも任意です。
 
-| `extra` キー             | UI フィールド             | デフォルト   | 説明                                                                                                                                         |
-| ---------------------- | -------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `secure`               | TLS (HTTPS) を使用      | `false` | HTTPS/TLS を有効にします。                                                                                                                         |
-| `verify`               | SSL 証明書を検証           | `true`  | `secure` が `true` の場合、サーバーの TLS 証明書を検証します。自己署名証明書を使用する場合は `false` に設定します。                                                                  |
-| `connect_timeout`      | 接続タイムアウト (秒)         | `10`    | HTTP connection のタイムアウト時間 (秒) です。                                                                                                          |
-| `send_receive_timeout` | クエリタイムアウト (秒)        | `300`   | クエリの読み取り/書き込みのタイムアウト時間 (秒) です。長時間実行される分析クエリでは、この値を増やしてください。                                                                                |
-| `compress`             | LZ4 圧縮を有効化           | `true`  | LZ4 による結果の圧縮を有効にします。                                                                                                                       |
-| `client_name`          | Client Name          | (empty) | ClickHouse の `User-Agent` および [`system.query_log`](/ja/reference/system-tables/query_log) の `client_name` カラムで、Airflow のバージョン識別子に付加されるラベルです。  |
-| `session_settings`     | セッション設定 (JSON)       | (empty) | 接続上のすべてのクエリに適用される [ClickHouse セッション設定](/ja/reference/settings/session-settings) です。たとえば `{"max_execution_time": 300, "max_threads": 8}` などです。 |
-| `client_kwargs`        | Client kwargs (JSON) | (empty) | `clickhouse_connect.get_client()` に渡される追加のキーワード引数です。たとえば `http_proxy` などがあります。                                                             |
+| `extra` キー             | UI フィールド             | デフォルト   | 説明                                                                                                                                              |
+| ---------------------- | -------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `secure`               | TLS (HTTPS) を使用      | `false` | HTTPS/TLS を有効にします。                                                                                                                              |
+| `verify`               | SSL 証明書を検証           | `true`  | `secure` が `true` の場合、サーバーの TLS 証明書を検証します。自己署名証明書を使用する場合は `false` に設定します。                                                                       |
+| `connect_timeout`      | 接続タイムアウト (秒)         | `10`    | HTTP connection のタイムアウト時間 (秒) です。                                                                                                               |
+| `send_receive_timeout` | クエリタイムアウト (秒)        | `300`   | クエリの読み取り/書き込みのタイムアウト時間 (秒) です。長時間実行される分析クエリでは、この値を増やしてください。                                                                                     |
+| `compress`             | LZ4 圧縮を有効化           | `true`  | LZ4 による結果の圧縮を有効にします。                                                                                                                            |
+| `client_name`          | Client Name          | (empty) | HTTP の `User-Agent` ヘッダー内で Airflow のバージョン識別子に付加されるラベルで、[`system.query_log`](/ja/reference/system-tables/query_log) の `http_user_agent` カラムに記録されます。 |
+| `session_settings`     | セッション設定 (JSON)       | (empty) | 接続上のすべてのクエリに適用される [ClickHouse セッション設定](/ja/reference/settings/session-settings) です。たとえば `{"max_execution_time": 300, "max_threads": 8}` などです。      |
+| `client_kwargs`        | Client kwargs (JSON) | (empty) | `clickhouse_connect.get_client()` に渡される追加のキーワード引数です。たとえば `http_proxy` などがあります。                                                                  |
 
-<div id="define-a-connection-without-the-ui">
-  ### UI を使わずに接続を定義する
-</div>
+### UI を使わずに接続を定義する {#define-a-connection-without-the-ui}
 
 環境変数で接続を設定します。URI 形式には、ホスト、認証情報、データベースが含まれます。
 
@@ -102,9 +99,7 @@ export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
 
 すべてのフックとオペレーターは、別の接続 ID を指定しない限り、接続 ID `clickhouse_default` を使用します。
 
-<div id="run-queries">
-  ## SQLExecuteQueryOperatorでクエリを実行する
-</div>
+## SQLExecuteQueryOperatorでクエリを実行する {#run-queries}
 
 オペレーターの`conn_id`をClickHouse接続に設定します。次のDAGは、テーブルを作成し、行を挿入し、それらを読み出してから、テーブルを削除します。
 
@@ -112,7 +107,7 @@ export AIRFLOW_CONN_CLICKHOUSE_DEFAULT='{
 from datetime import datetime
 
 from airflow import DAG
-from airflow.providers.common.sql.hooks.sql import fetch_all_handler
+from airflow.providers.common.sql.hooks.handlers import fetch_all_handler
 from airflow.providers.common.sql.operators.sql import SQLExecuteQueryOperator
 
 CLICKHOUSE_CONN_ID = "clickhouse_default"
@@ -163,9 +158,7 @@ with DAG(
 
 クエリ結果は、デフォルトの`handler` (`fetch_all_handler`) を使って取得されます。結果セット全体以外を返したい場合は、別のハンドラーを渡します。たとえば、最初の1行だけを返すには`fetch_one_handler`を使用します。
 
-<div id="target-a-different-database">
-  ### タスクごとに異なるデータベースを対象にする
-</div>
+### タスクごとに異なるデータベースを対象にする {#target-a-different-database}
 
 1 つの接続先がクラスターで、各タスクが異なるデータベースにクエリを実行する場合は、接続を個別に作成するのではなく、`hook_params` でデータベースを上書きします。
 
@@ -178,9 +171,7 @@ read_rows = SQLExecuteQueryOperator(
 )
 ```
 
-<div id="use-the-hook-directly">
-  ## フックを直接使用する
-</div>
+## フックを直接使用する {#use-the-hook-directly}
 
 SQLオペレーターでは対応しにくい処理 — 一括挿入、ストリーミング、または ClickHouse 固有のクライアント呼び出し — には、Python タスク内で `ClickHouseHook` を使用します。
 
@@ -206,9 +197,7 @@ client = hook.get_client()
 total = client.query("SELECT count() FROM events").result_rows[0][0]
 ```
 
-<div id="apply-session-settings">
-  ### セッション設定を適用
-</div>
+### セッション設定を適用 {#apply-session-settings}
 
 フックの構築時に、[セッション設定](/ja/reference/settings/session-settings) を直接、またはオペレーターの `hook_params` を通じて渡します。コンストラクターに渡した設定は、接続の **Extra** フィールドで定義された `session_settings` の上にマージされ、同じキーがある場合はコンストラクター側の値が優先されます。
 
@@ -219,10 +208,9 @@ hook = ClickHouseHook(
 )
 ```
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
+* [airflow-clickhouse-plugin からの移行](/ja/integrations/connectors/data-ingestion/etl-tools/airflow-migrating-from-airflow-clickhouse-plugin)
 * [`clickhouse-connect` Python クライアント](/ja/integrations/language-clients/python/index)
 * [ClickHouse HTTP インターフェイス](/ja/concepts/features/interfaces/http)
 * [ClickHouse セッション設定リファレンス](/ja/reference/settings/session-settings)

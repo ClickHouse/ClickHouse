@@ -37,6 +37,8 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
 
   <Step title="Configurer un registre de schémas (facultatif)" id="4-configure-your-schema-registry">
     Un schéma valide est nécessaire pour les topics Avro et Protobuf. Consultez [les registres de schémas](/fr/integrations/clickpipes/kafka/schema-registries) pour plus de détails sur la configuration d&#39;un registre de schémas.
+
+    Pour Protobuf, vous pouvez à la place laisser **Schema registry** désactivé et [téléverser un schéma lors de la sélection de votre topic](#7-select-your-topic).
   </Step>
 
   <Step title="Configurer un Reverse Private Endpoint (facultatif)" id="5-configure-reverse-private-endpoint">
@@ -47,16 +49,16 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
   <Step title="Configurer le tunnel SSH (facultatif)" id="6-configure-ssh-tunneling">
     Vous pouvez utiliser un tunnel SSH si votre broker Kafka n’est pas accessible publiquement. Au lieu de se connecter directement, ClickPipes établit une connexion SSH vers un hôte bastion (un serveur de votre réseau accessible publiquement), puis y fait transiter le trafic jusqu’à votre broker Kafka sur votre réseau privé.
 
-    1. Activez l’option « SSH Tunnel ».
-    2. Renseignez les informations de connexion SSH :
-       * **SSH Host** : le nom d’hôte ou l’adresse IP de votre hôte bastion — il s’agit du serveur accessible publiquement qui sert de passerelle vers votre réseau privé.
-       * **SSH Port** : le port SSH de l’hôte bastion (par défaut `22`).
-       * **SSH User** : le nom d’utilisateur à utiliser pour l’authentification sur l’hôte bastion.
+    1. Activez l’option « SSH Tunnel ».
+    2. Renseignez les informations de connexion SSH :
+       * **SSH Host** : le nom d’hôte ou l’adresse IP de votre hôte bastion — il s’agit du serveur accessible publiquement qui sert de passerelle vers votre réseau privé.
+       * **SSH Port** : le port SSH de l’hôte bastion (par défaut `22`).
+       * **SSH User** : le nom d’utilisateur à utiliser pour l’authentification sur l’hôte bastion.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp" alt="Configuration du tunnel SSH" size="md" />
 
-    3. Pour utiliser l’authentification par clé, cliquez sur « Révoquer et régénérer la paire de clés » afin de générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
-    4. Cliquez sur « Verify Connection » pour vérifier la connexion.
+    3. Pour utiliser l’authentification par clé, cliquez sur « Révoquer et régénérer la paire de clés » afin de générer une nouvelle paire de clés, puis copiez la clé publique générée sur votre serveur SSH dans `~/.ssh/authorized_keys`.
+    4. Cliquez sur « Verify Connection » pour vérifier la connexion.
 
     <Note>
       Assurez-vous d’autoriser les [ClickPipes IP addresses](/fr/integrations/clickpipes/networking/static-ips) dans les règles de votre pare-feu pour l’hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
@@ -64,7 +66,9 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
   </Step>
 
   <Step title="Sélectionnez votre topic" id="7-select-your-topic">
-    Sélectionnez votre topic et l’UI affichera un exemple de document de ce topic.
+    Sélectionnez votre topic. Si vous n&#39;utilisez pas de registre de schémas, sélectionnez votre format de données sous **Schema format**. Pour `Protobuf`, téléversez un fichier `.proto` ou un `FileDescriptorSet` sérialisé (768 Kio maximum).
+
+    L’UI affichera ensuite un exemple de document de ce topic.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3.webp" alt="Sélectionnez votre topic" size="md" />
   </Step>
@@ -80,10 +84,10 @@ Les Kafka ClickPipes peuvent être déployés et gérés manuellement via la Cli
   </Step>
 
   <Step title="Configurer les autorisations" id="9-configure-permissions">
-    ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne en utilisant un rôle personnalisé ou l&#39;un des rôles prédéfinis :
+    ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne en utilisant un rôle personnalisé ou l&#39;un des rôles prédéfinis :
 
-    * `Full access` : accorde un accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
-    * `Only destination table` : accorde uniquement les autorisations `INSERT` sur la table de destination.
+    * `Full access` : accorde un accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
+    * `Only destination table` : accorde uniquement les autorisations `INSERT` sur la table de destination.
 
     <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" size="md" />
   </Step>

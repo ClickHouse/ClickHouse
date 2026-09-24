@@ -4,9 +4,7 @@ title: Неподдерживаемые возможности Cloud
 
 В следующих таблицах перечислены возможности и процедуры для самоуправляемых развертываний, помеченные как неподдерживаемые в ClickHouse Cloud. В каждой записи указана конкретная неподдерживаемая возможность, даже если на исходной странице также описывается поддерживаемая функциональность.
 
-<div id="unsupported-managed-infrastructure-and-operations">
-  ### Управляемая инфраструктура и эксплуатация
-</div>
+### Управляемая инфраструктура и эксплуатация {#unsupported-managed-infrastructure-and-operations}
 
 | Неподдерживаемая возможность                                                    | Документация                                                                                                                                                     |
 | ------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -16,9 +14,7 @@ title: Неподдерживаемые возможности Cloud
 | Проведение тестов производительности на самоуправляемом оборудовании            | [Руководство](/ru/concepts/features/performance/troubleshoot/performance-test)                                                                                      |
 | Применение рекомендаций по эксплуатации самоуправляемой системы                 | [Руководство](/ru/guides/oss/best-practices/tips)                                                                                                                   |
 
-<div id="unsupported-authentication-and-security">
-  ### Аутентификация и безопасность
-</div>
+### Аутентификация и безопасность {#unsupported-authentication-and-security}
 
 | Неподдерживаемая возможность               | Документация                                                                                                                                                      |
 | ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -27,9 +23,7 @@ title: Неподдерживаемые возможности Cloud
 | Аутентификация LDAP и сопоставление ролей  | [Конфигурация](/ru/concepts/features/security/configuring-ldap), [Аутентификатор](/ru/concepts/features/security/external-authenticators/ldap)                          |
 | Аутентификация с помощью сертификата X.509 | [Аутентификация пользователей](/ru/concepts/features/security/ssl-user-auth), [Внешний аутентификатор](/ru/concepts/features/security/external-authenticators/ssl-x509) |
 
-<div id="unsupported-interfaces-and-integrations">
-  ### Интерфейсы и интеграции
-</div>
+### Интерфейсы и интеграции {#unsupported-interfaces-and-integrations}
 
 | Неподдерживаемая возможность                            | Документация                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -40,9 +34,7 @@ title: Неподдерживаемые возможности Cloud
 | Интеграция с S3-совместимым объектным хранилищем MinIO  | [Руководство](/ru/integrations/connectors/data-ingestion/s3-minio)                                                                                                                                                                                                                                                                                                                                   |
 | Интеграция с S3-совместимым объектным хранилищем Tigris | [Руководство](/ru/integrations/connectors/data-ingestion/s3-tigris)                                                                                                                                                                                                                                                                                                                                  |
 
-<div id="unsupported-database-and-table-engines">
-  ### Движки баз данных и таблиц
-</div>
+### Движки баз данных и таблиц {#unsupported-database-and-table-engines}
 
 | Неподдерживаемая возможность                                       | Документация                                                                                                                                                                                                                                                     |
 | -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -57,9 +49,7 @@ title: Неподдерживаемые возможности Cloud
 | Движок таблицы `YTsaurus`                                      | [Справочник](/ru/reference/engines/table-engines/integrations/ytsaurus)                                                                                                                                                                                             |
 | Движки таблиц семейства `Log` (`Log`, `StripeLog` и `TinyLog`) | [Обзор семейства](/ru/reference/engines/table-engines/log-family), [`Log`](/ru/reference/engines/table-engines/log-family/log), [`StripeLog`](/ru/reference/engines/table-engines/log-family/stripelog), [`TinyLog`](/ru/reference/engines/table-engines/log-family/tinylog) |
 
-<div id="unsupported-dictionaries-and-server-configuration">
-  ### Словари и конфигурация сервера
-</div>
+### Словари и конфигурация сервера {#unsupported-dictionaries-and-server-configuration}
 
 | Неподдерживаемая возможность                                                                  | Документация                                                                                                                                                                                                                                       |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -70,9 +60,7 @@ title: Неподдерживаемые возможности Cloud
 | Источник словаря `YTsaurus`                                                                   | [Справочник](/ru/reference/statements/create/dictionary/sources/ytsaurus)                                                                                                                                                                             |
 | Словари японского токенизатора, настроенные на сервере                                        | [Справочник](/ru/reference/engines/table-engines/mergetree-family/textindexes#japanese-tokenizer-dictionary)                                                                                                                                          |
 
-<div id="unsupported-data-formats-and-codecs">
-  ### Форматы данных и кодеки
-</div>
+### Форматы данных и кодеки {#unsupported-data-formats-and-codecs}
 
 | Неподдерживаемая возможность                                                            | Документация                                                                                                                                                                                       |
 | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -80,24 +68,19 @@ title: Неподдерживаемые возможности Cloud
 | Форматы `Protobuf`, `ProtobufList` и `ProtobufSingle` с файлами схем на стороне сервера | [Руководство](/ru/guides/clickhouse/data-formats/binary#protocol-buffers), [`ProtobufList`](/ru/reference/formats/Protobuf/ProtobufList), [`ProtobufSingle`](/ru/reference/formats/Protobuf/ProtobufSingle) |
 | Устаревшие кодеки `ZSTD_QAT` и `DEFLATE_QPL`                                            | [`ZSTD_QAT`](/ru/reference/statements/create/table#zstd_qat), [`DEFLATE_QPL`](/ru/reference/statements/create/table#deflate_qpl)                                                                         |
 
-<div id="unsupported-functions-and-experimental-features">
-  ### Функции и экспериментальные возможности
-</div>
+### Функции и экспериментальные возможности {#unsupported-functions-and-experimental-features}
 
 | Неподдерживаемая возможность                                       | Документация                                                                                                                                                                                                                                                                                                              |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Экспериментальные функции обработки естественного языка            | [Справочник](/ru/reference/functions/regular-functions/nlp-functions)                                                                                                                                                                                                                                                        |
 | Экспериментальные многооператорные транзакции с коммитом и откатом | [Руководство](/ru/concepts/features/operations/insert/transactions#transactions-commit-and-rollback)                                                                                                                                                                                                                         |
 | Экспериментальные функции интроспекции транзакций                  | [`transactionID`](/ru/reference/functions/regular-functions/other-functions#transactionID), [`transactionLatestSnapshot`](/ru/reference/functions/regular-functions/other-functions#transactionLatestSnapshot), [`transactionOldestSnapshot`](/ru/reference/functions/regular-functions/other-functions#transactionOldestSnapshot) |
-| Функции временных окон для `WindowView`                            | [Справочник](/ru/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                |
-| Экспериментальный `WindowView`                                     | [Справочник](/ru/reference/statements/create/view#window-view)                                                                                                                                                                                                                                                               |
+| Функции временных окон                                             | [Справочник](/ru/reference/functions/regular-functions/time-window-functions)                                                                                                                                                                                                                                                |
 | Пользовательские функции WebAssembly                               | [Обзор](/ru/reference/functions/regular-functions/udf#webassembly-user-defined-functions), [Руководство](/ru/reference/functions/regular-functions/wasm_udf)                                                                                                                                                                    |
 | Исполняемые пользовательские функции на основе драйверов           | [Справочник](/ru/reference/functions/regular-functions/udf#driver-based-executable-user-defined-functions)                                                                                                                                                                                                                   |
 | Табличная функция `filesystem` для файлов на локальном сервере     | [Справочник](/ru/reference/functions/table-functions/filesystem)                                                                                                                                                                                                                                                             |
 
-<div id="unsupported-administration-and-access-control">
-  ### Администрирование и управление доступом
-</div>
+### Администрирование и управление доступом {#unsupported-administration-and-access-control}
 
 | Неподдерживаемая возможность                                       | Документация                                                                                                                                           |
 | ------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------ |

@@ -12,17 +12,13 @@ doc_type: 'reference'
 Permite procesar archivos de [Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs) en paralelo con muchos nodos de un clúster especificado. En el nodo iniciador, crea una conexión con todos los nodos del clúster, expande los asteriscos en la ruta del archivo de S3 y distribuye dinámicamente cada archivo. En el nodo worker, consulta al iniciador cuál es la siguiente tarea que debe procesar y la procesa. Esto se repite hasta que todas las tareas hayan finalizado.
 Esta función de tabla es similar a la [función s3Cluster](/es/reference/functions/table-functions/s3Cluster).
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])
 ```
 
-<div id="arguments">
-  ## Argumentos
-</div>
+## Argumentos {#arguments}
 
 | Argument            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -33,18 +29,14 @@ azureBlobStorageCluster(cluster_name, connection_string|storage_account_url, con
 | `account_name`      | Si se usa storage&#95;account&#95;url, aquí se puede especificar el nombre de la cuenta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | `account_key`       | Si se usa storage&#95;account&#95;url, aquí se puede especificar la clave de la cuenta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | `format`            | El [formato](/es/reference/formats/index) del archivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| `compression`       | Valores admitidos: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. De forma predeterminada, la compresión se detecta automáticamente por la extensión del archivo. (equivale a establecer `auto`).                                                                                                                                                                                                                                                                                                                                                                                            |
+| `compression`       | Valores admitidos: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. De forma predeterminada, la compresión se detecta automáticamente por la extensión del archivo. (equivale a establecer `auto`). Para `snappy`, el formato de transmisión se selecciona mediante la configuración [snappy&#95;mode](/es/reference/settings/session-settings/other#snappy_mode) (`basic` de forma predeterminada).                                                                                                                                                           |
 | `structure`         | Estructura de la tabla. Formato: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
-<div id="returned-value">
-  ## Valor devuelto
-</div>
+## Valor devuelto {#returned-value}
 
 Una tabla con la estructura especificada para leer o escribir datos en el archivo indicado.
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 Al igual que con el motor de tabla [AzureBlobStorage](/es/reference/engines/table-engines/integrations/azureBlobStorage), se puede usar el emulador Azurite para el desarrollo local de Azure Storage. Más detalles [aquí](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage). A continuación, asumimos que Azurite está disponible en el nombre de host `azurite1`.
 
@@ -57,15 +49,11 @@ SELECT count(*) FROM azureBlobStorageCluster(
         'auto', 'key UInt64')
 ```
 
-<div id="using-shared-access-signatures-sas-sas-tokens">
-  ## Uso de firmas de acceso compartido (SAS)
-</div>
+## Uso de firmas de acceso compartido (SAS) {#using-shared-access-signatures-sas-sas-tokens}
 
 Consulte [azureBlobStorage](/es/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) para ver ejemplos.
 
-<div id="related">
-  ## Relacionado
-</div>
+## Relacionado {#related}
 
 * [motor AzureBlobStorage](/es/reference/engines/table-engines/integrations/azureBlobStorage)
 * [función de tabla azureBlobStorage](/es/reference/functions/table-functions/azureBlobStorage)

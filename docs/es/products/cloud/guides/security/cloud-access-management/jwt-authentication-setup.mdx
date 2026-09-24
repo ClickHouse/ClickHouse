@@ -13,10 +13,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/es/components/EnterprisePl
 
 import { VersionBadge } from "/snippets/es/components/VersionBadge/VersionBadge.jsx";
 
-import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="Autenticación con JWT mediante un proveedor de identidad personalizado" />
@@ -30,7 +26,7 @@ ClickHouse Cloud permite autenticar las conexiones a un servicio mediante JSON W
 Puede configurar estos proveedores de JWKS para cada servicio desde **Configuración → Seguridad** en la consola de ClickHouse Cloud.
 
 <div id="before-you-begin">
-  ## Antes de empezar
+  ## Antes de empezar {#before-you-begin}
 </div>
 
 Para configurar proveedores de JWT para un servicio, necesita:
@@ -45,7 +41,7 @@ Para configurar proveedores de JWT para un servicio, necesita:
 </Note>
 
 <div id="how-it-works">
-  ## Cómo funciona
+  ## Cómo funciona {#how-it-works}
 </div>
 
 El Client (su proveedor de identidad o aplicación) genera un JWT y lo firma con su **clave privada**. El token debe seguir el [formato de token](/es/concepts/features/security/external-authenticators/jwt#token-claims) previsto. A continuación, ClickHouse lo verifica con las claves **públicas** publicadas en su URL de JWKS:
@@ -57,7 +53,7 @@ El Client (su proveedor de identidad o aplicación) genera un JWT y lo firma con
 ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor, por lo que las URL mal configuradas o inaccesibles se rechazan de inmediato.
 
 <div id="add-a-jwt-provider">
-  ## Añada un proveedor de JWT
+  ## Añada un proveedor de JWT {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -93,7 +89,7 @@ ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor,
 </Warning>
 
 <div id="limits">
-  ## Límites
+  ## Límites {#limits}
 </div>
 
 * Se permite un máximo de **cinco** proveedores de JWT por servicio.
@@ -101,7 +97,7 @@ ClickHouse valida y obtiene la URL de JWKS al añadir o actualizar un proveedor,
 * La URL de JWKS debe ser un endpoint HTTPS público. Se rechazan las direcciones privadas, internas o de enlace local.
 
 <div id="related">
-  ## Contenido relacionado
+  ## Contenido relacionado {#related}
 </div>
 
 * [Autenticación con JWT](/es/concepts/features/security/external-authenticators/jwt) — claims de token, usuarios efímeros y uso del Client.

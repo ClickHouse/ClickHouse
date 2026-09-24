@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で参照でき、ClickHouse のソースから自動生成されています。
 
-<div id="shared_merge_tree_activate_coordinated_merges_tasks">
-  ## shared_merge_tree_activate_coordinated_merges_tasks
-</div>
+## shared_merge_tree_activate_coordinated_merges_tasks {#shared_merge_tree_activate_coordinated_merges_tasks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -25,9 +23,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 shared&#95;merge&#95;tree&#95;enable&#95;coordinated&#95;merges=0 の場合でも、マージコーディネーターの
 統計情報が蓄積され、コールドスタートに役立つため有用です。
 
-<div id="shared_merge_tree_blobs_list_inline_file_max_bytes">
-  ## shared_merge_tree_blobs_list_inline_file_max_bytes
-</div>
+## shared_merge_tree_blobs_list_inline_file_max_bytes {#shared_merge_tree_blobs_list_inline_file_max_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -39,9 +35,7 @@ count.txt、metadata&#95;version.txt、minmax 索引) を、個別のオブジ�
 blob-list ストレージを使用するパーツにのみ適用されます (
 shared&#95;merge&#95;tree&#95;use&#95;blobs&#95;list&#95;for&#95;parts を参照) 。ClickHouse Cloud でのみ利用できます。
 
-<div id="shared_merge_tree_create_per_replica_metadata_nodes">
-  ## shared_merge_tree_create_per_replica_metadata_nodes
-</div>
+## shared_merge_tree_create_per_replica_metadata_nodes {#shared_merge_tree_create_per_replica_metadata_nodes}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -50,18 +44,14 @@ shared&#95;merge&#95;tree&#95;use&#95;blobs&#95;list&#95;for&#95;parts を参照
 ZooKeeper で、レプリカごとの /metadata ノードと /columns ノードを作成できるようにします。
 ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_disable_merges_and_mutations_assignment">
-  ## shared_merge_tree_disable_merges_and_mutations_assignment
-</div>
+## shared_merge_tree_disable_merges_and_mutations_assignment {#shared_merge_tree_disable_merges_and_mutations_assignment}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 shared merge tree のマージ割り当てを停止します。ClickHouse
 Cloud でのみ使用できます
 
-<div id="shared_merge_tree_empty_partition_lifetime">
-  ## shared_merge_tree_empty_partition_lifetime
-</div>
+## shared_merge_tree_empty_partition_lifetime {#shared_merge_tree_empty_partition_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="86400" />
 
@@ -69,9 +59,7 @@ Cloud でのみ使用できます
 
 パーツがないパーティションをKeeperに保持する秒数。
 
-<div id="shared_merge_tree_enable_automatic_empty_partitions_cleanup">
-  ## shared_merge_tree_enable_automatic_empty_partitions_cleanup
-</div>
+## shared_merge_tree_enable_automatic_empty_partitions_cleanup {#shared_merge_tree_enable_automatic_empty_partitions_cleanup}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -79,9 +67,7 @@ Cloud でのみ使用できます
 
 空のパーティションに対応する Keeper エントリのクリーンアップを有効にします。
 
-<div id="shared_merge_tree_enable_coordinated_merges">
-  ## shared_merge_tree_enable_coordinated_merges
-</div>
+## shared_merge_tree_enable_coordinated_merges {#shared_merge_tree_enable_coordinated_merges}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -89,9 +75,7 @@ Cloud でのみ使用できます
 
 協調マージ 戦略を有効化します
 
-<div id="shared_merge_tree_enable_keeper_parts_extra_data">
-  ## shared_merge_tree_enable_keeper_parts_extra_data
-</div>
+## shared_merge_tree_enable_keeper_parts_extra_data {#shared_merge_tree_enable_keeper_parts_extra_data}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -99,9 +83,7 @@ Cloud でのみ使用できます
 
 仮想パーツへの属性の書き込みと、Keeper でのブロックのコミットを有効にします
 
-<div id="shared_merge_tree_enable_outdated_parts_check">
-  ## shared_merge_tree_enable_outdated_parts_check
-</div>
+## shared_merge_tree_enable_outdated_parts_check {#shared_merge_tree_enable_outdated_parts_check}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -109,9 +91,7 @@ Cloud でのみ使用できます
 
 古くなったパーツのチェックを有効にします。ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_idle_parts_update_seconds">
-  ## shared_merge_tree_idle_parts_update_seconds
-</div>
+## shared_merge_tree_idle_parts_update_seconds {#shared_merge_tree_idle_parts_update_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="3600" />
 
@@ -120,9 +100,7 @@ Cloud でのみ使用できます
 shared merge tree で、ZooKeeper の
 watch によるトリガーなしでパーツを更新する間隔 (秒) です。ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_inactive_replica_cutoff_seconds">
-  ## shared_merge_tree_inactive_replica_cutoff_seconds
-</div>
+## shared_merge_tree_inactive_replica_cutoff_seconds {#shared_merge_tree_inactive_replica_cutoff_seconds}
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -134,9 +112,7 @@ watch によるトリガーなしでパーツを更新する間隔 (秒) です�
 デフォルトの ZooKeeper のセッションタイムアウト 2 回分が使用されます。
 ClickHouse Cloud でのみ使用できます
 
-<div id="shared_merge_tree_initial_parts_update_backoff_ms">
-  ## shared_merge_tree_initial_parts_update_backoff_ms
-</div>
+## shared_merge_tree_initial_parts_update_backoff_ms {#shared_merge_tree_initial_parts_update_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="50" />
 
@@ -144,9 +120,7 @@ ClickHouse Cloud でのみ使用できます
 
 パーツ更新時の初期バックオフ。ClickHouse Cloud でのみ利用可能
 
-<div id="shared_merge_tree_interserver_http_connection_timeout_ms">
-  ## shared_merge_tree_interserver_http_connection_timeout_ms
-</div>
+## shared_merge_tree_interserver_http_connection_timeout_ms {#shared_merge_tree_interserver_http_connection_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -154,9 +128,7 @@ ClickHouse Cloud でのみ使用できます
 
 サーバー間のHTTP接続のタイムアウト。ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_interserver_http_timeout_ms">
-  ## shared_merge_tree_interserver_http_timeout_ms
-</div>
+## shared_merge_tree_interserver_http_timeout_ms {#shared_merge_tree_interserver_http_timeout_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -165,9 +137,7 @@ ClickHouse Cloud でのみ使用できます
 サーバー間 HTTP 通信のタイムアウトです。ClickHouse
 Cloud でのみ利用できます
 
-<div id="shared_merge_tree_leader_update_period_random_add_seconds">
-  ## shared_merge_tree_leader_update_period_random_add_seconds
-</div>
+## shared_merge_tree_leader_update_period_random_add_seconds {#shared_merge_tree_leader_update_period_random_add_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -177,9 +147,7 @@ Cloud でのみ利用できます
 0〜x秒の範囲で一様分布する値を
 shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period に加算します。ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_leader_update_period_seconds">
-  ## shared_merge_tree_leader_update_period_seconds
-</div>
+## shared_merge_tree_leader_update_period_seconds {#shared_merge_tree_leader_update_period_seconds}
 
 <SettingsInfoBlock type="UInt64" default_value="30" />
 
@@ -189,9 +157,7 @@ shared&#95;merge&#95;tree&#95;leader&#95;update&#95;period に加算します。
 ClickHouse Cloud
 のみです。
 
-<div id="shared_merge_tree_max_outdated_parts_to_process_at_once">
-  ## shared_merge_tree_max_outdated_parts_to_process_at_once
-</div>
+## shared_merge_tree_max_outdated_parts_to_process_at_once {#shared_merge_tree_max_outdated_parts_to_process_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -199,9 +165,7 @@ ClickHouse Cloud
 
 リーダーが1回のHTTPリクエストで削除対象として確認を試みる、古くなったパーツの最大数です。ClickHouse Cloudでのみ利用できます。
 
-<div id="shared_merge_tree_max_parts_update_backoff_ms">
-  ## shared_merge_tree_max_parts_update_backoff_ms
-</div>
+## shared_merge_tree_max_parts_update_backoff_ms {#shared_merge_tree_max_parts_update_backoff_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -209,9 +173,7 @@ ClickHouse Cloud
 
 パーツ更新の最大バックオフ時間。ClickHouse Cloud でのみ利用可能
 
-<div id="shared_merge_tree_max_parts_update_leaders_in_total">
-  ## shared_merge_tree_max_parts_update_leaders_in_total
-</div>
+## shared_merge_tree_max_parts_update_leaders_in_total {#shared_merge_tree_max_parts_update_leaders_in_total}
 
 <SettingsInfoBlock type="UInt64" default_value="6" />
 
@@ -219,9 +181,7 @@ ClickHouse Cloud
 
 パーツ更新リーダーの最大数。ClickHouse Cloudでのみ利用できます
 
-<div id="shared_merge_tree_max_parts_update_leaders_per_az">
-  ## shared_merge_tree_max_parts_update_leaders_per_az
-</div>
+## shared_merge_tree_max_parts_update_leaders_per_az {#shared_merge_tree_max_parts_update_leaders_per_az}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -229,9 +189,7 @@ ClickHouse Cloud
 
 パーツ更新リーダーの最大数。ClickHouse Cloud でのみ利用可能
 
-<div id="shared_merge_tree_max_replicas_for_parts_deletion">
-  ## shared_merge_tree_max_replicas_for_parts_deletion
-</div>
+## shared_merge_tree_max_replicas_for_parts_deletion {#shared_merge_tree_max_replicas_for_parts_deletion}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -239,9 +197,7 @@ ClickHouse Cloud
 
 パーツ削除 (キラースレッド) に参加するレプリカの最大数です。ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range">
-  ## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range
-</div>
+## shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range {#shared_merge_tree_max_replicas_to_merge_parts_for_each_parts_range}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -249,9 +205,7 @@ ClickHouse Cloud
 
 競合する可能性のあるマージの割り当てを試行するレプリカの最大数です (これにより、マージ割り当て時の不要な競合を回避できます) 。0 は無効を意味します。ClickHouse Cloud でのみ使用できます
 
-<div id="shared_merge_tree_max_suspicious_broken_parts">
-  ## shared_merge_tree_max_suspicious_broken_parts
-</div>
+## shared_merge_tree_max_suspicious_broken_parts {#shared_merge_tree_max_suspicious_broken_parts}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -259,9 +213,7 @@ ClickHouse Cloud
 
 SMT の破損したパーツの最大数。これを超えると、自動デタッチは行われません。
 
-<div id="shared_merge_tree_max_suspicious_broken_parts_bytes">
-  ## shared_merge_tree_max_suspicious_broken_parts_bytes
-</div>
+## shared_merge_tree_max_suspicious_broken_parts_bytes {#shared_merge_tree_max_suspicious_broken_parts_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -269,9 +221,7 @@ SMT の破損したパーツの最大数。これを超えると、自動デタ�
 
 SMT におけるすべての破損パーツの合計サイズの上限。この値を超えると、自動デタッチは許可されません。
 
-<div id="shared_merge_tree_memo_ids_remove_timeout_seconds">
-  ## shared_merge_tree_memo_ids_remove_timeout_seconds
-</div>
+## shared_merge_tree_memo_ids_remove_timeout_seconds {#shared_merge_tree_memo_ids_remove_timeout_seconds}
 
 <SettingsInfoBlock type="Int64" default_value="1800" />
 
@@ -280,13 +230,11 @@ SMT におけるすべての破損パーツの合計サイズの上限。この�
 insert の再試行中に誤った操作を防ぐため、insert のメモ化 ID を保持する期間です。
 ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_merge_coordinator_distribution_algorithm">
-  ## shared_merge_tree_merge_coordinator_distribution_algorithm
-</div>
+## shared_merge_tree_merge_coordinator_distribution_algorithm {#shared_merge_tree_merge_coordinator_distribution_algorithm}
 
 <SettingsInfoBlock type="MergeCoordinatorDistributionAlgorithm" default_value="sainte_lague" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "デフォルトでSainte-Lague分散を有効にする。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "マージコーディネーターがレプリカ間でマージを分散する際に使用するアルゴリズムを制御する新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "sainte_lague"},{"label": "`compatibility` に関係なくSainte-Lague分散を維持する。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "sainte_lague"},{"label": "デフォルトでSainte-Lague分散を有効にする。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "water_filling"},{"label": "マージコーディネーターがレプリカ間でマージを分散する際に使用するアルゴリズムを制御する新しい設定"}]}]} />
 
 マージコーディネータースレッドが、レプリカ間でマージを分散する際に使用するアルゴリズム。
 
@@ -295,9 +243,7 @@ ClickHouse Cloud でのみ利用できます
 * `water_filling`
 * `sainte_lague`
 
-<div id="shared_merge_tree_merge_coordinator_election_check_period_ms">
-  ## shared_merge_tree_merge_coordinator_election_check_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_election_check_period_ms {#shared_merge_tree_merge_coordinator_election_check_period_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 
@@ -305,9 +251,7 @@ ClickHouse Cloud でのみ利用できます
 
 マージコーディネーター選出スレッドの実行間隔
 
-<div id="shared_merge_tree_merge_coordinator_factor">
-  ## shared_merge_tree_merge_coordinator_factor
-</div>
+## shared_merge_tree_merge_coordinator_factor {#shared_merge_tree_merge_coordinator_factor}
 
 <SettingsInfoBlock type="Float" default_value="1.1" />
 
@@ -315,9 +259,7 @@ ClickHouse Cloud でのみ利用できます
 
 コーディネータースレッドの遅延時間を変更する係数
 
-<div id="shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms">
-  ## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms {#shared_merge_tree_merge_coordinator_fetch_fresh_metadata_period_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
@@ -325,9 +267,7 @@ ClickHouse Cloud でのみ利用できます
 
 マージコーディネーターが最新のメタデータを取得するためにZooKeeperと同期する頻度
 
-<div id="shared_merge_tree_merge_coordinator_max_merge_request_size">
-  ## shared_merge_tree_merge_coordinator_max_merge_request_size
-</div>
+## shared_merge_tree_merge_coordinator_max_merge_request_size {#shared_merge_tree_merge_coordinator_max_merge_request_size}
 
 <SettingsInfoBlock type="UInt64" default_value="20" />
 
@@ -335,9 +275,7 @@ ClickHouse Cloud でのみ利用できます
 
 マージコーディネーターが一度に MergerMutator にリクエストできるマージ数
 
-<div id="shared_merge_tree_merge_coordinator_max_period_ms">
-  ## shared_merge_tree_merge_coordinator_max_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_max_period_ms {#shared_merge_tree_merge_coordinator_max_period_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
@@ -345,9 +283,7 @@ ClickHouse Cloud でのみ利用できます
 
 マージコーディネータースレッドの実行間の最大間隔
 
-<div id="shared_merge_tree_merge_coordinator_merges_prepare_count">
-  ## shared_merge_tree_merge_coordinator_merges_prepare_count
-</div>
+## shared_merge_tree_merge_coordinator_merges_prepare_count {#shared_merge_tree_merge_coordinator_merges_prepare_count}
 
 <SettingsInfoBlock type="UInt64Auto" default_value="auto" />
 
@@ -356,9 +292,7 @@ ClickHouse Cloud でのみ利用できます
 マージコーディネーターが準備し、各ワーカーに分配するマージエントリの数。
 &#39;auto&#39; に設定すると、1 つのレプリカで許可される最大マージタスク数に、アクティブなレプリカ数を掛けた値になります。
 
-<div id="shared_merge_tree_merge_coordinator_min_period_ms">
-  ## shared_merge_tree_merge_coordinator_min_period_ms
-</div>
+## shared_merge_tree_merge_coordinator_min_period_ms {#shared_merge_tree_merge_coordinator_min_period_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="1" />
 
@@ -366,9 +300,7 @@ ClickHouse Cloud でのみ利用できます
 
 マージコーディネータースレッドの実行間の最小時間
 
-<div id="shared_merge_tree_merge_worker_fast_timeout_ms">
-  ## shared_merge_tree_merge_worker_fast_timeout_ms
-</div>
+## shared_merge_tree_merge_worker_fast_timeout_ms {#shared_merge_tree_merge_worker_fast_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
@@ -376,9 +308,7 @@ ClickHouse Cloud でのみ利用できます
 
 即時アクション後に状態を更新する必要がある場合に、マージワーカースレッドが使用するタイムアウト
 
-<div id="shared_merge_tree_merge_worker_regular_timeout_ms">
-  ## shared_merge_tree_merge_worker_regular_timeout_ms
-</div>
+## shared_merge_tree_merge_worker_regular_timeout_ms {#shared_merge_tree_merge_worker_regular_timeout_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="10000" />
 
@@ -386,9 +316,7 @@ ClickHouse Cloud でのみ利用できます
 
 マージワーカースレッドの実行間隔
 
-<div id="shared_merge_tree_outdated_parts_group_size">
-  ## shared_merge_tree_outdated_parts_group_size
-</div>
+## shared_merge_tree_outdated_parts_group_size {#shared_merge_tree_outdated_parts_group_size}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -397,9 +325,7 @@ ClickHouse Cloud でのみ利用できます
 古くなったパーツ のクリーンアップ時に、同じランデブーハッシュグループに属するレプリカ数。
 ClickHouse Cloud でのみ利用できます。
 
-<div id="shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations">
-  ## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations
-</div>
+## shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations {#shared_merge_tree_partitions_hint_ratio_to_reload_merge_pred_for_mutations}
 
 <SettingsInfoBlock type="Float" default_value="0.5" />
 
@@ -408,9 +334,7 @@ partitions for mutations only (partitions that cannot be merged)>/<candidate
 partitions for mutations>` の比率がこの設定値を上回ると、merge/mutate の選択タスクで merge predicate を再読み込みします。ClickHouse Cloud
 でのみ利用できます
 
-<div id="shared_merge_tree_parts_load_batch_size">
-  ## shared_merge_tree_parts_load_batch_size
-</div>
+## shared_merge_tree_parts_load_batch_size {#shared_merge_tree_parts_load_batch_size}
 
 <SettingsInfoBlock type="UInt64" default_value="32" />
 
@@ -418,9 +342,7 @@ partitions for mutations>` の比率がこの設定値を上回ると、merge/mu
 ClickHouse Cloud
 のみです。
 
-<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms">
-  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms
-</div>
+## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -430,9 +352,7 @@ ClickHouse Cloud
 これにより、他のレプリカがそのパーツをフェッチし、このマージを開始する機会を確保できます。
 ClickHouse Cloud でのみ利用できます。
 
-<div id="shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold">
-  ## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold
-</div>
+## shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold {#shared_merge_tree_postpone_next_merge_for_locally_merged_parts_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -440,9 +360,7 @@ ClickHouse Cloud でのみ利用できます。
 
 ローカルでマージした直後に次のマージの割り当てを延期するための、パーツの最小サイズ (行数) です。ClickHouse Cloud でのみ利用できます。
 
-<div id="shared_merge_tree_range_for_merge_window_size">
-  ## shared_merge_tree_range_for_merge_window_size
-</div>
+## shared_merge_tree_range_for_merge_window_size {#shared_merge_tree_range_for_merge_window_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
@@ -452,9 +370,7 @@ ClickHouse Cloud でのみ利用できます。
 同じウィンドウ内のパーツは同じレプリカに割り当てられます。
 ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_read_virtual_parts_from_leader">
-  ## shared_merge_tree_read_virtual_parts_from_leader
-</div>
+## shared_merge_tree_read_virtual_parts_from_leader {#shared_merge_tree_read_virtual_parts_from_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -463,9 +379,7 @@ ClickHouse Cloud でのみ利用できます
 可能な場合はリーダーから仮想パーツを読み取ります。ClickHouse
 Cloudでのみ利用できます。
 
-<div id="shared_merge_tree_replica_set_max_lifetime_seconds">
-  ## shared_merge_tree_replica_set_max_lifetime_seconds
-</div>
+## shared_merge_tree_replica_set_max_lifetime_seconds {#shared_merge_tree_replica_set_max_lifetime_seconds}
 
 <SettingsInfoBlock type="Seconds" default_value="1800" />
 
@@ -475,9 +389,7 @@ Cloudでのみ利用できます。
 一様にランダム化されます。例外: value = 0 はこのルールに従いません。
 実装では最小 200 ms が適用されるため、次回の実行は [0, 200] ms の範囲でランダム化されます。
 
-<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas">
-  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas
-</div>
+## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -485,9 +397,7 @@ Cloudでのみ利用できます。
 
 有効にすると、すべてのレプリカは、すでにそのデータを保持している他のレプリカから、パーツのメモリ内データ (プライマリキー、パーティション情報など) を取得しようとします。
 
-<div id="shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup">
-  ## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup
-</div>
+## shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup {#shared_merge_tree_try_fetch_part_in_memory_data_from_replicas_on_startup}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -495,9 +405,7 @@ Cloudでのみ利用できます。
 
 有効にすると、すべてのレプリカは起動時に、すでにそのデータを保持している他のレプリカから、パーツのメモリ内データ (主キー、パーティション情報など) を取得しようとします。
 
-<div id="shared_merge_tree_update_replica_flags_delay_ms">
-  ## shared_merge_tree_update_replica_flags_delay_ms
-</div>
+## shared_merge_tree_update_replica_flags_delay_ms {#shared_merge_tree_update_replica_flags_delay_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="30000" />
 
@@ -505,9 +413,7 @@ Cloudでのみ利用できます。
 
 レプリカがバックグラウンドスケジュールに従ってフラグの再読み込みを試行する間隔。
 
-<div id="shared_merge_tree_use_blobs_list_for_parts">
-  ## shared_merge_tree_use_blobs_list_for_parts
-</div>
+## shared_merge_tree_use_blobs_list_for_parts {#shared_merge_tree_use_blobs_list_for_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -516,9 +422,7 @@ Cloudでのみ利用できます。
 SharedMergeTree テーブルのパーツ (wide パーツと compact パーツの両方) を、ファイルごとに 1 つの Keeper ノードではなく、単一の集約された blob-list のメタデータノードとして保存します。
 ファイルごとに 1 つのオブジェクトストレージブロブを維持しながら、パーツごとの Keeper メタデータを O(ファイル数) から小さな定数に削減します。ClickHouse Cloud でのみ利用できます。
 
-<div id="shared_merge_tree_use_metadata_hints_cache">
-  ## shared_merge_tree_use_metadata_hints_cache
-</div>
+## shared_merge_tree_use_metadata_hints_cache {#shared_merge_tree_use_metadata_hints_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -527,9 +431,7 @@ SharedMergeTree テーブルのパーツ (wide パーツと compact パーツの
 他のレプリカ上のインメモリ
 cacheからFS cacheヒントをリクエストできるようにします。ClickHouse Cloudでのみ利用できます
 
-<div id="shared_merge_tree_use_outdated_parts_compact_format">
-  ## shared_merge_tree_use_outdated_parts_compact_format
-</div>
+## shared_merge_tree_use_outdated_parts_compact_format {#shared_merge_tree_use_outdated_parts_compact_format}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -538,9 +440,7 @@ cacheからFS cacheヒントをリクエストできるようにします。Clic
 outdated パーツには compact フォーマットを使用します。これにより Keeper への負荷が軽減され、
 outdated パーツの処理が改善されます。ClickHouse Cloud でのみ利用可能です
 
-<div id="shared_merge_tree_use_too_many_parts_count_from_virtual_parts">
-  ## shared_merge_tree_use_too_many_parts_count_from_virtual_parts
-</div>
+## shared_merge_tree_use_too_many_parts_count_from_virtual_parts {#shared_merge_tree_use_too_many_parts_count_from_virtual_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -548,9 +448,7 @@ outdated パーツの処理が改善されます。ClickHouse Cloud でのみ利
 
 有効にすると、パーツが多すぎるカウンターはローカルレプリカの状態ではなく、Keeper 内の shared data を参照します。ClickHouse Cloud でのみ利用できます
 
-<div id="shared_merge_tree_use_zookeeper_connection_pool">
-  ## shared_merge_tree_use_zookeeper_connection_pool
-</div>
+## shared_merge_tree_use_zookeeper_connection_pool {#shared_merge_tree_use_zookeeper_connection_pool}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -558,9 +456,7 @@ outdated パーツの処理が改善されます。ClickHouse Cloud でのみ利
 
 有効にすると、SharedMergeTree はサーバーレベルのプールされた ZooKeeper セッションのいずれかを使用します。
 
-<div id="shared_merge_tree_virtual_parts_discovery_batch">
-  ## shared_merge_tree_virtual_parts_discovery_batch
-</div>
+## shared_merge_tree_virtual_parts_discovery_batch {#shared_merge_tree_virtual_parts_discovery_batch}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 
@@ -568,9 +464,7 @@ outdated パーツの処理が改善されます。ClickHouse Cloud でのみ利
 
 1つのバッチにまとめるパーティション検出の数
 
-<div id="shared_merge_tree_virtual_parts_partition_atomic_discovery">
-  ## shared_merge_tree_virtual_parts_partition_atomic_discovery
-</div>
+## shared_merge_tree_virtual_parts_partition_atomic_discovery {#shared_merge_tree_virtual_parts_partition_atomic_discovery}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -10,7 +10,7 @@ doc_type: 'مرجع'
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## VPC مُدار من قِبل العميل (BYO-VPC) لـ AWS
+  ## VPC مُدار من قِبل العميل (BYO-VPC) لـ AWS {#customer-managed-vpc-aws}
 </div>
 
 إذا كنت تفضّل استخدام VPC حاليًا لنشر ClickHouse BYOC بدلًا من أن يوفّر ClickHouse Cloud شبكة VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في إعدادات الشبكة، ويتيح لك دمج ClickHouse BYOC في البنية التحتية الشبكية الحالية لديك.
@@ -19,7 +19,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="قم بتهيئة شبكة VPC الحالية لديك" id="configure-existing-vpc">
     1. أضِف الوسم `clickhouse-byoc="true"` إلى VPC.
     2. خصّص 3 شبكات فرعية خاصة بالضبط موزعة على 3 مناطق توافر مختلفة لتستخدمها ClickHouse Cloud.
-    3. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR لا يقل عن `/25` (على سبيل المثال، 10.0.0.0/25). يدعم النطاق `/25` نحو 10 عُقد خوادم ClickHouse لكل منطقة توافر؛ ويُوصى باستخدام `/24` لمعظم عمليات النشر، وشبكات فرعية أكبر لعمليات النشر التي تتوقع نموها. تُخصَّص عناوين IP الخاصة بالـ pod من الشبكة الفرعية نفسها، لذا تستهلك كل نسخة متماثلة عناوين من الشبكة الفرعية.
+    3. تأكد من أن كل شبكة فرعية تحتوي على نطاق CIDR لا يقل عن `/25` (على سبيل المثال، 10.0.0.0/25). يدعم النطاق `/25` نحو 10 عُقد خوادم ClickHouse لكل منطقة توافر؛ ويُوصى باستخدام `/24` لمعظم عمليات النشر، وشبكات فرعية أكبر لعمليات النشر التي تتوقع نموها. تُخصَّص عناوين IP الخاصة بالـ pod من الشبكة الفرعية نفسها، لذا تستهلك كل نسخة متماثلة عناوين من الشبكة الفرعية.
     4. أضِف الوسمين `kubernetes.io/role/internal-elb=1` و`clickhouse-byoc="true"` إلى كل شبكة فرعية لتمكين التهيئة الصحيحة لموازن التحميل.
 
     <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="الشبكة الفرعية لـ VPC في BYOC" />
@@ -27,7 +27,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="وسوم الشبكة الفرعية لـ VPC في BYOC" />
   </Step>
 
-  <Step title="قم بتهيئة S3 Gateway Endpoint" id="configure-s3-endpoint">
+  <Step title="قم بتهيئة نقطة نهاية بوابة S3" id="configure-s3-endpoint">
     إذا لم تكن VPC لديك تحتوي بالفعل على S3 Gateway Endpoint مُهيأة، فستحتاج إلى إنشاء واحدة لتمكين اتصال آمن وخاص بين VPC وAmazon S3. تتيح نقطة النهاية هذه لخدمات ClickHouse الوصول إلى S3 من دون المرور عبر الإنترنت العام. يُرجى الرجوع إلى لقطة الشاشة أدناه للاطلاع على مثال على التهيئة.
 
     <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="S3 Endpoint لـ BYOC" />
@@ -35,7 +35,12 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
   <Step title="تأكد من توفر اتصال الشبكة" id="ensure-network-connectivity">
     **وصول الإنترنت الصادر**
-    يجب أن تسمح VPC لديك، كحد أدنى، بوصول الإنترنت الصادر حتى تتمكن مكونات ClickHouse BYOC من التواصل مع طبقة التحكم الخاصة بـ Tailscale. يُستخدم Tailscale لتوفير شبكة آمنة قائمة على مبدأ انعدام الثقة لعمليات الإدارة الخاصة. يتطلب التسجيل والإعداد الأوليان باستخدام Tailscale اتصالاً بالإنترنت العام، ويمكن تحقيق ذلك إما مباشرة أو عبر NAT gateway. هذا الاتصال ضروري للحفاظ على خصوصية نشر BYOC لديك وأمانه.
+    يجب أن تسمح VPC لديك، كحد أدنى، بوصول الإنترنت الصادر، إما مباشرة أو عبر NAT gateway. ويعتمد على ذلك أمران:
+
+    * **Tailscale.** تُسجَّل مكونات ClickHouse BYOC لدى طبقة التحكم الخاصة بـ Tailscale، التي توفّر شبكة آمنة قائمة على مبدأ انعدام الثقة لعمليات الإدارة الخاصة من دون الحاجة إلى وصول عام وارد. ويتطلب التسجيل والإعداد الأوليان اتصالاً بالإنترنت العام.
+    * **صور الحاويات.** بعض الصور التي يشغّلها النشر غير منسوخة إلى registry الخاص بـ BYOC، بما في ذلك صور المجتمع، ويتم سحبها من registries الأصلية الخاصة بها.
+
+    لن تكتمل عملية التوفير لشبكة VPC لا يتوفر لها مسار صادر. ولا توجد قائمة واحدة منشورة بنقاط النهاية؛ فإذا كانت سياسة الشبكة لديك تتطلب جردًا صريحًا، فتواصل مع الدعم لمراجعة إعدادك.
 
     **حلّ أسماء DNS**
     تأكد من أن VPC لديك توفّر حلّ أسماء DNS بشكل سليم، وألا تحظر أسماء DNS القياسية أو تتداخل معها أو تستبدلها. يعتمد ClickHouse BYOC على DNS لحلّ أسماء خوادم التحكم الخاصة بـ Tailscale ونقاط نهاية الخدمة الخاصة بـ ClickHouse. إذا لم يكن DNS متاحًا أو كان مُهيأً بشكل غير صحيح، فقد تفشل خدمات BYOC في الاتصال أو العمل بشكل صحيح.
@@ -45,7 +50,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     ينشئ إعداد BYOC الأولي دور IAM ذا امتيازات (`ClickHouseManagementRole`) يتيح لوحدات التحكم الخاصة بـ BYOC من ClickHouse Cloud إدارة بنيتك التحتية. ويمكن تنفيذ ذلك باستخدام [قالب CloudFormation](https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/cf-templates/byoc_v2.yaml) أو وحدة Terraform (انظر أدناه).
 
     <Warning>
-      **اسم دور IAM مطلب إلزامي.** يجب أن يحتفظ الدور باسمه الافتراضي `ClickHouseManagementRole` — من دون بادئات أو لاحقات أو إعادة تسمية لتلبية اصطلاح تسمية مؤسسي — ما لم توافق ClickHouse صراحةً مسبقًا على اسم مختلف (يجب تغيير إدخال Terraform `role_name` بالتنسيق مع ClickHouse فقط). يُطبَّق الدور المعاد تسميته بنجاح، لكن التوفير يفشل بعد ذلك لأن ClickHouse لا يمكنها تولّي الدور المتوقع. وبشكل عام، لا تغيّر أي شيء في القالب أو الوحدة المقدَّمين من دون موافقة صريحة من ClickHouse؛ إذ تُتاح التخصيصات المدعومة كمعلمات.
+      **اسم دور IAM مطلب إلزامي.** يجب أن يحتفظ الدور باسمه الافتراضي `ClickHouseManagementRole` — من دون بادئات أو لاحقات أو إعادة تسمية لتلبية اصطلاح تسمية مؤسسي — ما لم توافق ClickHouse صراحةً مسبقًا على اسم مختلف (يجب تغيير إدخال Terraform `role_name` بالتنسيق مع ClickHouse فقط). يُطبَّق الدور المعاد تسميته بنجاح، لكن التوفير يفشل بعد ذلك لأن ClickHouse لا يمكنها تولّي الدور المتوقع. وبشكل عام، لا تغيّر أي شيء في القالب أو الوحدة المقدَّمين من دون موافقة صريحة من ClickHouse؛ إذ تُتاح التخصيصات المدعومة كمعلمات.
     </Warning>
 
     عند النشر لإعداد `BYO-VPC`، اضبط المعلمة `IncludeVPCWritePermissions` على `false` لضمان عدم منح ClickHouse Cloud أذونات لتعديل VPC التي يديرها العميل.
@@ -54,7 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       حاويات التخزين وعنقود Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse ليست مضمنة في هذا الإعداد الأولي. سيتم توفيرها في خطوة لاحقة. وعلى الرغم من أنك تتحكم في VPC الخاصة بك، لا تزال ClickHouse Cloud بحاجة إلى أذونات IAM لإنشاء عنقود Kubernetes وإدارته، وأدوار IAM لحسابات الخدمة، وS3 buckets، وغيرها من الموارد الأساسية في حساب AWS الخاص بك.
     </Note>
 
-    #### وحدة Terraform
+#### وحدة Terraform {#terraform-module-aws}
 
     إذا كنت تفضل استخدام Terraform بدلاً من CloudFormation، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -73,7 +78,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     تُنشأ قيمة `external_id` بواسطة ClickHouse Cloud console وتكون مشتركة بين جميع البنى التحتية لـ BYOC ضمن حساب AWS نفسه. راجع [AWS external ID](/ar/products/bring-your-own-cloud/onboarding/standard#aws-external-id) للحصول على التفاصيل، بما في ذلك العنصر النائب القديم `emptyid`.
 
     <Note>
-      كانت الوحدة تُوزَّع سابقًا كملف tarball على `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. يظل عنوان URL هذا متاحًا، لكنه Deprecated — استخدم وحدة GitHub أعلاه.
+      كانت الوحدة تُوزَّع سابقًا كملف tarball على `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. يظل عنوان URL هذا متاحًا، لكنه Deprecated — استخدم وحدة GitHub أعلاه.
     </Note>
   </Step>
 
@@ -98,9 +103,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="customer-managed-iam-roles">
-  ## أدوار IAM المُدارة من قِبل العميل
-</div>
+### الشبكات الفرعية المشتركة من حساب آخر (AWS RAM) {#shared-subnets-ram}
+
+يمكنك تشغيل BYOC في حساب فرعي (spoke) على شبكات فرعية مشتركة من حساب مركزي (hub) عبر [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html)، ما يتيح لك إبقاء إدارة الشبكات مركزية. الإعداد مطابق لما ورد أعلاه، مع اختلافين ناتجين عن طريقة عمل مشاركات RAM:
+
+* **طبّق الوسوم من الحساب الفرعي.** للموارد المشتركة عبر RAM عرضٌ للوسوم خاص بكل حساب، لذا فإن الوسوم المطبّقة في الحساب المركزي لا تظهر للحساب الفرعي. طبّق `clickhouse-byoc="true"` على شبكة VPC، وطبّق `kubernetes.io/role/internal-elb=1` مع `clickhouse-byoc="true"` على كل شبكة فرعية مشتركة، **من الحساب الفرعي**. وبدون ذلك، سيُبلّغ التحقق المسبق عن وسوم مفقودة وسيفشل التجهيز.
+* **يبقى التوجيه لدى الحساب المركزي.** تظل جداول التوجيه الخاصة بالشبكات الفرعية المشتركة مملوكة للحساب المركزي، وهو بالتالي المسؤول عن NAT وتوجيه حركة المرور الصادرة، وعن نقطة نهاية S3 من نوع gateway لأنها مورد على مستوى VPC. تأكّد من أن الشبكات الفرعية المشتركة ما زالت تستوفي متطلب الاتصال الصادر المذكور أعلاه.
+
+أما ما عدا ذلك فيبقى دون تغيير: ثلاث شبكات فرعية خاصة موزّعة على ثلاث مناطق توافر، ونطاق CIDR لا يقل عن `/25` لكل شبكة فرعية، وإعداد `ClickHouseManagementRole` في الحساب الفرعي الذي تعمل فيه بنية BYOC التحتية.
+
+## أدوار IAM المُدارة من قِبل العميل {#customer-managed-iam-roles}
 
 بالنسبة إلى المؤسسات ذات متطلبات الأمان المتقدمة أو سياسات الامتثال الصارمة، يمكنك توفير أدوار IAM الخاصة بك بدلًا من أن ينشئها ClickHouse Cloud. يتيح لك هذا النهج تحكمًا كاملًا في أذونات IAM، كما يسمح لك بفرض سياسات الأمان الخاصة بمؤسستك.
 

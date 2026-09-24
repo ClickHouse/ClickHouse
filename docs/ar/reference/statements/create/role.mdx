@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## إدارة الأدوار
-</div>
+يتطلب `CREATE ROLE` امتياز [CREATE ROLE](/ar/reference/statements/grant#access-management). ويؤدي `OR REPLACE` إلى التخلص من دور موجود يحمل الاسم نفسه، إلى جانب الامتيازات المسنَدة إليه، لذا فهو يتطلب إضافةً إلى ذلك امتياز [DROP ROLE](/ar/reference/statements/grant#access-management). ويُشترط توفر امتياز `DROP ROLE` لكل اسم مذكور في العبارة سواء أكان ذلك الدور موجودًا بالفعل أم لا، ومن ثمّ لا يمكن استخدام العبارة لمعرفة الأدوار الموجودة.
+
+## إدارة الأدوار {#managing-roles}
 
 يمكن إسناد عدة أدوار إلى المستخدم. ويمكن للمستخدمين تفعيل الأدوار المُسندة إليهم بأي مجموعة يختارونها باستخدام عبارة [SET ROLE](/ar/reference/statements/set-role). ويكون النطاق النهائي للامتيازات عبارة عن مجموعة مجمّعة من جميع امتيازات كل الأدوار المفعّلة. وإذا كانت لدى المستخدم امتيازات ممنوحة مباشرةً إلى حساب المستخدم، فإنها تُجمع أيضًا مع الامتيازات الممنوحة عبر الأدوار.
 
@@ -30,9 +30,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 لحذف دور، استخدم عبارة [DROP ROLE](/ar/reference/statements/drop#drop-role). ويُسحب الدور المحذوف تلقائيًا من جميع المستخدمين والأدوار التي كان مُسندًا إليها.
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 ```sql
 CREATE ROLE accountant;

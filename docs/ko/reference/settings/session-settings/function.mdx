@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동으로 생성됩니다.
 
-<div id="function_base58_max_input_size">
-  ## function_base58_max_input_size
-</div>
+## function_base58_max_input_size {#function_base58_max_input_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 함수 `base58Encode`, `base58Decode`, `tryBase58Decode`에 전달되는 단일 입력값의 최대 크기(바이트)입니다. 일반적인 `base58` 변환은 입력 `length`에 대해 2차 시간 복잡도를 가지므로, 큰 값 하나만으로도 매우 오랜 시간 실행될 수 있습니다. `base58`은 짧은 데이터(키, 해시, 주소)를 위한 것이므로, 기본값인 10 KB는 넉넉한 안전 임계값입니다. `base58Encode`와 `base58Decode`는 이보다 큰 입력에 대해 `TOO_LARGE_STRING_SIZE`를 발생시키고, `tryBase58Decode`는 빈 문자열을 반환합니다. 값 `0`은 제한을 비활성화합니다(이 설정이 도입되기 전의 동작). 선형 시간 복잡도의 `base32` 및 `base64` 함수에는 영향을 주지 않습니다.
 
-<div id="function_date_trunc_return_type_behavior">
-  ## function_date_trunc_return_type_behavior
-</div>
+## function_date_trunc_return_type_behavior {#function_date_trunc_return_type_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -38,15 +34,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 - 두 번째 인수가 `DateTime64/Date32`이면, 첫 번째 인수의 시간 단위와 관계없이 반환 유형은 `DateTime64/Date32`입니다.
 * 1 - `Date32`의 경우 결과는 항상 `Date`입니다. `DateTime64`의 경우 시간 단위가 `second` 이상이면 결과는 `DateTime`입니다.
 
-<div id="function_implementation">
-  ## function_implementation
-</div>
-
-특정 대상 또는 Variant(실험적)에 대한 함수 구현을 선택합니다. 비어 있으면 모두 활성화됩니다.
-
-<div id="function_locate_has_mysql_compatible_argument_order">
-  ## function_locate_has_mysql_compatible_argument_order
-</div>
+## function_locate_has_mysql_compatible_argument_order {#function_locate_has_mysql_compatible_argument_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +47,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * 0 — 함수 `locate`는 `(haystack, needle[, start_pos])` 순서로 인수를 받습니다.
 * 1 — 함수 `locate`는 `(needle, haystack, [, start_pos])` 순서로 인수를 받습니다(MySQL 호환 동작)
 
-<div id="function_range_max_elements_in_block">
-  ## function_range_max_elements_in_block
-</div>
+## function_range_max_elements_in_block {#function_range_max_elements_in_block}
 
 <SettingsInfoBlock type="UInt64" default_value="500000000" />
 
@@ -76,9 +62,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 * [`max_block_size`](/ko/reference/settings/session-settings/max#max_block_size)
 * [`min_insert_block_size_rows`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows)
 
-<div id="function_sleep_max_microseconds_per_block">
-  ## function_sleep_max_microseconds_per_block
-</div>
+## function_sleep_max_microseconds_per_block {#function_sleep_max_microseconds_per_block}
 
 <SettingsInfoBlock type="UInt64" default_value="3000000" />
 
@@ -86,9 +70,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 함수 `sleep`이 각 블록에서 대기할 수 있는 최대 마이크로초 수입니다. 사용자가 이보다 큰 값으로 호출하면 예외가 발생합니다. 이는 안전 임계값입니다.
 
-<div id="function_visible_width_behavior">
-  ## function_visible_width_behavior
-</div>
+## function_visible_width_behavior {#function_visible_width_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

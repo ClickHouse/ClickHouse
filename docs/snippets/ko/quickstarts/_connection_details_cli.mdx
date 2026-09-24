@@ -1,0 +1,174 @@
+---
+title: 연결 정보 CLI
+---
+
+이 페이지에서는 [ClickHouse CLI](/ko/products/cloud/features/cli)(`clickhousectl`)를 사용해 명령줄에서 기존 ClickHouse Cloud 서비스의 연결 정보(호스트명, 포트 번호, 사용자 이름, 비밀번호)를 확인하는 방법을 설명합니다. 명령어는 비대화형으로 동작하며, `--json` 옵션을 지정하면 `clickhousectl`이 JSON 형식으로 출력합니다.
+
+## 사전 요구 사항 {#prerequisites}
+
+ClickHouse CLI를 설치합니다:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+`jq`도 필요합니다.
+
+아래 쓰기 단계에는 [API Key 인증](/ko/products/cloud/features/admin-features/api/openapi)이 필요합니다: `cloud service start`(서비스가 `stopped` 상태인 경우에만) 및 `reset-password`. OAuth 로그인은 읽기 전용이므로 읽기 단계(`service list`, `service get`)만 사용할 수 있습니다:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+또는 `CLICKHOUSE_CLOUD_API_KEY` 및 `CLICKHOUSE_CLOUD_API_SECRET` 환경 변수를 설정하십시오. `clickhousectl cloud auth status`로 확인하면 `read/write` 범위를 가진 항목이 표시되어야 합니다.
+
+또한 연결 정보를 가져올 기존 ClickHouse Cloud 서비스가 필요합니다. 예를 들어 [첫 번째 Cloud 서비스 생성](/ko/get-started/quickstarts/create-your-first-service-on-cloud) 빠른 시작이나 [Cloud 빠른 시작](/ko/getting-started/quick-start/cloud) CLI 절차에서 생성한 서비스를 사용할 수 있습니다.
+
+## 서비스 찾기 {#find-your-service}
+
+조직의 서비스 목록을 조회하고, 연결하려는 서비스의 ID를 확인하십시오:
+
+```bash
+clickhousectl cloud service list --json | jq -r '.[] | [.id, .name, .state] | @tsv'
+```
+
+```text
+9c2d4e61-7a35-49c8-8f0e-2b5a1d7c3e90	my-first-service	running
+```
+
+서비스 ID를 저장해 두십시오. 이 가이드의 나머지 모든 명령이 이 값을 인수로 사용합니다. 이름으로 조회하려면 다음을 실행하십시오:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json | jq -r '.[] | select(.name == "my-first-service") | .id')
+```
+
+이후 단계에서 연결을 확인하려면 서비스가 실행 중이어야 합니다. 상태가 `stopped`이면 서비스를 시작한 뒤 `running`이 될 때까지 폴링하십시오(idle 스케일링으로 `idle` 상태가 된 서비스는 첫 연결 시 자동으로 깨어나므로 별도의 작업이 필요하지 않습니다):
+
+```bash
+clickhousectl cloud service start "$CH_ID"
+while [ "$(clickhousectl cloud service get "$CH_ID" --json | jq -r .state)" != "running" ]; do
+  sleep 15
+done
+```
+
+## 연결 정보 확인하기 {#get-your-connection-details}
+
+`clickhousectl cloud service get`은 노출된 프로토콜마다 하나씩의 엔드포인트를 포함해 서비스의 전체 정보를 반환합니다. 응답을 저장한 뒤 필요한 항목을 추출하십시오:
+
+```bash
+clickhousectl cloud service get "$CH_ID" --json > service.json
+jq '.endpoints' service.json
+```
+
+```json
+[
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 9440,
+    "protocol": "nativesecure"
+  },
+  {
+    "host": "abc123.us-east-1.aws.clickhouse.cloud",
+    "port": 8443,
+    "protocol": "https"
+  }
+]
+```
+
+다음은 ClickHouse Cloud의 두 가지 주요 네트워크 프로토콜이며, 각각 별도의 포트를 사용합니다:
+
+* **네이티브 프로토콜(`nativesecure`, 포트 9440)** - `clickhouse-client`, `clickhouse-local` 및 대부분의 언어별 드라이버가 사용하는 바이너리 프로토콜입니다. 가장 빠른 방식이며 모든 ClickHouse 기능을 지원합니다. Cloud에서는 TLS가 필수입니다.
+* **HTTPS 프로토콜(`https`, 포트 8443)** - REST 클라이언트, `curl`, 웹 기반 도구, HTTP를 선호하는 드라이버에 적합한 HTTP 기반 인터페이스입니다. Cloud에서는 마찬가지로 TLS가 필요합니다.
+
+ClickHouse Cloud에 연결할 때는 두 프로토콜 모두 TLS 암호화가 필요하며, 평문(plaintext)으로는 연결할 수 없습니다. 대부분의 도구는 올바른 포트를 지정하면 이를 자동으로 처리하지만, 클라이언트에 따라 `--secure` 플래그를 전달하거나 `ssl=true`를 설정해야 할 수도 있습니다. 이 시리즈의 빠른 시작과 CLI 작업 대부분에서는 **포트 9440의 네이티브 프로토콜**을 사용합니다.
+
+호스트명과 포트를 확인하십시오:
+
+```bash
+CH_HOST=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .host' service.json)
+CH_NATIVE_PORT=$(jq -r '.endpoints[] | select(.protocol == "nativesecure") | .port' service.json)
+CH_HTTPS_PORT=$(jq -r '.endpoints[] | select(.protocol == "https") | .port' service.json)
+```
+
+추가 데이터베이스 사용자를 생성하지 않았다면 사용자 이름은 `default`입니다.
+
+## 비밀번호 확인하기 {#get-a-password}
+
+`default` 사용자의 비밀번호는 `clickhousectl cloud service create` 실행 시 단 한 번만 반환되며, 이후에는 어떤 API나 CLI 호출로도 다시 조회할 수 없습니다. 생성 시점에 비밀번호를 저장해 두었다면, 이후 단계에서 사용하는 변수에 할당하고 재설정 과정은 건너뛰십시오.
+
+```bash
+CH_PASSWORD='<your saved password>'
+```
+
+분실한 경우 새 비밀번호를 생성하십시오:
+
+```bash
+CH_PASSWORD=$(clickhousectl cloud service reset-password "$CH_ID" --json | jq -r .password)
+```
+
+<Warning>
+  `reset-password`는 `default` 사용자의 기존 비밀번호를 즉시 무효화합니다. 기존 비밀번호로 설정된 클라이언트는 더 이상 인증되지 않습니다. 해당 서비스가 [warehouse](/ko/products/cloud/features/infrastructure/warehouses)에 속해 있다면, 데이터베이스 사용자는 해당 warehouse 내 모든 서비스에서 공유되므로 비밀번호를 재설정하면 같은 warehouse에 속한 다른 서비스의 비밀번호도 함께 변경됩니다. 최초 비밀번호와 마찬가지로 새 비밀번호도 한 번만 반환되므로 안전한 곳에 보관하십시오.
+</Warning>
+
+## 재사용을 위해 연결 정보 저장하기 {#save-your-connection-details-for-reuse}
+
+이 연결 정보는 여러 빠른 시작 가이드에서 자주 사용됩니다. 매번 다시 입력하지 않으려면 터미널 세션에서 환경 변수로 내보내 두면 됩니다:
+
+```bash
+export CLICKHOUSE_HOST=$CH_HOST
+export CLICKHOUSE_USER=default
+export CLICKHOUSE_PASSWORD=$CH_PASSWORD
+```
+
+<Warning>
+  이 환경 변수(환경 변수)는 현재 터미널 세션(terminal session)에서만 유지됩니다. 비밀번호(비밀번호)를 셸 프로파일 파일(`.bashrc`, `.zshrc`)에 저장하거나 버전 관리(version control) 시스템에 커밋하지 마십시오.
+</Warning>
+
+## 연결 확인 {#verify-connectivity}
+
+`curl`로 HTTPS 인터페이스(포트 8443)를 확인합니다:
+
+```bash
+curl --user "$CLICKHOUSE_USER:$CLICKHOUSE_PASSWORD" \
+  "https://$CLICKHOUSE_HOST:8443/?query=SELECT%201"
+```
+
+```text
+1
+```
+
+[**clickhouse client**](/ko/concepts/features/interfaces/client)로 네이티브 프로토콜(포트 9440) 연결을 확인하십시오. ClickHouse CLI가 `clickhouse` 바이너리를 대신 관리해 주므로, 아직 설치되어 있지 않다면 `clickhousectl local use latest` 명령으로 설치되고 `~/.local/bin/clickhouse`에 심볼릭 링크가 생성됩니다. 그런 다음:
+
+```bash
+clickhouse client --host "$CLICKHOUSE_HOST" --secure --port 9440 \
+  --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD" \
+  --query "SELECT concat('Connected to ClickHouse ', version(), ' as ', currentUser())"
+```
+
+```text
+Connected to ClickHouse 26.2.1.558 as default
+```
+
+## 정리 {#cleanup}
+
+이 가이드는 서비스의 metadata를 읽고 (선택적으로) 비밀번호를 재설정할 뿐, 새로운 cloud 리소스를 생성하지 않으므로 별도로 정리할 항목이 없습니다.
+
+다만 한 가지 예외가 있습니다. 서비스가 `stopped` 상태였는데 연결을 확인하기 위해 시작했다면, 이후에도 계속 실행되면서 컴퓨트 사용에 대한 청구가 발생합니다. 아직 실행 상태로 둘 필요가 없다면 다시 중지하십시오:
+
+```bash
+clickhousectl cloud service stop "$CH_ID"
+```
+
+## 다음 단계 {#next-steps}
+
+이제 외부 도구에서 ClickHouse Cloud 서비스에 연결하는 데 필요한 모든 연결 정보를 확보했습니다. 여기에서 확인한 호스트명, 포트, 사용자 이름, 비밀번호는 빠른 시작 시리즈의 나머지 문서 전반에서 사용됩니다.
+
+이어서 다음 빠른 시작 문서를 확인해 보십시오:
+
+* [clickhouse-client로 데이터 삽입하기](/ko/get-started/quickstarts/insert-data-using-clickhouse-client)
+* [첫 번째 MergeTree 테이블 생성하기](/ko/get-started/quickstarts/create-your-first-mergetree-table)
+
+또는 참고 문서에서 더 자세히 알아보십시오:
+
+* [네이티브 인터페이스(TCP)](/ko/concepts/features/interfaces/tcp)
+* [HTTP 인터페이스](/ko/concepts/features/interfaces/http)

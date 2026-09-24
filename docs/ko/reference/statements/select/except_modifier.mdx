@@ -11,20 +11,18 @@ doc_type: 'reference'
 
 > 결과에서 제외할 하나 이상의 컬럼 이름을 지정합니다. 일치하는 컬럼 이름은 모두 출력에서 제외됩니다.
 
-<div id="syntax">
-  ## 구문
-</div>
+## 구문 {#syntax}
 
 ```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
-<div id="examples">
-  ## 예시
-</div>
+단일 컬럼을 제외할 때는 괄호를 생략할 수 있습니다.
+
+## 예시 {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i FROM columns_transformers;
 ```
 
 ```response title="Response"

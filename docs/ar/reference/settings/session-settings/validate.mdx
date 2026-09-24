@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,30 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 عند تمكين هذا الإعداد، يتم التحقق من القيم الحرفية للتعداد في عوامل التشغيل مثل `IN` و`NOT IN` و`==` و`!=` مقابل نوع التعداد، ويتم طرح استثناء إذا لم تكن القيمة الحرفية إحدى قيم التعداد الصالحة.
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_group_by_all_key_types {#validate_group_by_all_key_types}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "يبقى التحقق من أنواع المفاتيح التي يوسّع إليها `GROUP BY ALL` تعبيرات `SELECT` خاضعًا لإعداد `compatibility` مع الإصدارين 26.7 و26.8: تتساوى القيمة السابقة مع القيمة الجديدة عمدًا، لأن هذين الإصدارين كانا يرفضان هذا النوع من المفاتيح بالفعل، ولا يُستعاد القبول السابق إلا عند التوافق مع إصدار أقدم من 26.7."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "1"},{"label": "إعداد جديد يضبط التحقق من أنواع المفاتيح التي يوسّع إليها `GROUP BY ALL` تعبيرات `SELECT`. بدأ الإصدار 26.7 برفض مفتاح من النوع `Variant`\/`Dynamic` في هذه الحالة، بينما كانت الإصدارات السابقة تقبله عند تمكين المحلّل (`enable_analyzer = 1`، وهو الإعداد الافتراضي؛ وكان المحلّل القديم يرفض هذا النوع من المفاتيح قبل 26.7 أيضًا)، لذا تكون القيمة السابقة `false`، ويؤدي `compatibility` مع إصدار أقدم من 26.7 إلى استعادة القبول السابق."}]}]} />
+
+يتحكم في التحقق من مفاتيح التجميع التي يوسّع إليها `GROUP BY ALL` تعبيرات `SELECT` وفقًا لإعداد [allow&#95;suspicious&#95;types&#95;in&#95;group&#95;by](/ar/reference/settings/session-settings/allow-suspicious#allow_suspicious_types_in_group_by). عطّله لاستعادة سلوك الإصدارات السابقة لـ 26.7، التي كانت تقبل مفتاحًا من النوع [Variant](/ar/reference/data-types/variant) أو [Dynamic](/ar/reference/data-types/dynamic) مكتوبًا ضمن `GROUP BY ALL`، مثل مفتاح تجميع يمثل مسارًا فرعيًا غير محدد النوع في JSON. لا يسري هذا الإعداد إلا عند تمكين المحلّل (`enable_analyzer = 1`، وهو الإعداد الافتراضي)؛ أما مع المحلّل القديم، فكان هذا النوع من المفاتيح يُرفض قبل 26.7 أيضًا، لذا لا يوجد ما يمكن استعادته. لا يتأثر `GROUP BY` الصريح، ويستمر في رفض هذا النوع من المفاتيح في كلتا الحالتين، لذا فإن هذا الإعداد أضيق نطاقًا من `allow_suspicious_types_in_group_by`، الذي يسمح بها أيضًا في `GROUP BY` صريح.
+
+القيم الممكنة:
+
+* 0 - لا يتم التحقق من أنواع المفاتيح التي يوسّع إليها `GROUP BY ALL`.
+* 1 - يتم التحقق منها، كما يتحقق `GROUP BY` الصريح من مفاتيحه.
+
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "إعداد جديد للتحقق من استعلامات التعديل افتراضيًا."}]}]} />
 
-تحقّق من استعلامات التعديل قبل قبولها. تُنفَّذ عمليات التعديل في الخلفية، وقد يؤدي تشغيل استعلام غير صالح إلى تعلّق عمليات التعديل، مما يستلزم تدخّلًا يدويًا.
+تحقّق من استعلامات التعديل قبل قبولها. تُنفَّذ عمليات التعديل في الخلفية، وقد يتسبب تشغيل استعلام غير صالح في تعلّق عمليات التعديل، مما يستلزم تدخّلًا يدويًا.
 
 لا تغيّر هذا الإعداد إلا إذا واجهت خللًا يسبّب عدم توافق مع الإصدارات السابقة.
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

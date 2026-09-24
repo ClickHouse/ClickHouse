@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <div id="introduction">
-  ## Introduction
+  ## Introduction {#introduction}
 </div>
 
 ClickHouse traite les requêtes extrêmement rapidement, mais comment ces requêtes
@@ -20,7 +20,7 @@ sont-elles réparties et parallélisées sur plusieurs serveurs ?
 > de plusieurs répliques pour son exécution.
 
 <div id="sharded-architecture">
-  ## Architecture shardée
+  ## Architecture shardée {#sharded-architecture}
 </div>
 
 Dans une architecture shared-nothing, les clusters sont généralement répartis en
@@ -65,9 +65,7 @@ Lorsque l&#39;on ajoute des répliques à l&#39;ensemble, le processus reste glo
 différence étant qu&#39;une seule réplique de chaque shard exécutera la requête.
 Cela signifie qu&#39;un plus grand nombre de requêtes peut alors être traité en parallèle.
 
-<div id="non-sharded-architecture">
-  ## Architecture non shardée
-</div>
+## Architecture non shardée {#non-sharded-architecture}
 
 ClickHouse Cloud présente une architecture très différente de celle décrite ci-dessus.
 (Voir [&quot;Architecture de ClickHouse Cloud&quot;](/fr/products/cloud/reference/architecture)
@@ -89,9 +87,7 @@ Mais comment distribuer désormais l’exécution des requêtes sur plusieurs se
 architecture shardée, c’était assez évident puisque chaque shard pouvait effectivement
 exécuter une requête sur un sous-ensemble des données. Comment cela fonctionne-t-il lorsqu’il n’y a pas de sharding ?
 
-<div id="introducing-parallel-replicas">
-  ## Présentation des répliques parallèles
-</div>
+## Présentation des répliques parallèles {#introducing-parallel-replicas}
 
 Pour paralléliser l&#39;exécution des requêtes sur plusieurs serveurs, nous devons d&#39;abord être
 en mesure de désigner l&#39;un de nos serveurs comme coordinateur. Le coordinateur est celui
@@ -163,9 +159,7 @@ de fonctionner parfaitement :
 
 Nous verrons dans les sections suivantes comment ces facteurs sont pris en compte.
 
-<div id="announcements">
-  ### Annonces
-</div>
+### Annonces {#announcements}
 
 Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit le concept d&#39;annonce. Visualisons son fonctionnement à l&#39;aide de la figure ci-dessous :
 
@@ -199,9 +193,7 @@ Pour répondre aux points (1) et (2) de la liste ci-dessus, nous avons introduit
   </li>
 </ol>
 
-<div id="dynamic-coordination">
-  ### Coordination dynamique
-</div>
+### Coordination dynamique {#dynamic-coordination}
 
 Pour remédier au problème de latence des requêtes les plus lentes, nous avons ajouté la coordination dynamique. Cela signifie
 que toutes les granules ne sont pas envoyées à une réplique en une seule requête, mais que chaque réplique
@@ -260,7 +252,7 @@ La figure ci-dessous illustre le fonctionnement de la coordination dynamique :
 </ol>
 
 <div id="managing-cache-locality">
-  ### Gestion de la localité du cache
+  ### Gestion de la localité du cache {#managing-cache-locality}
 </div>
 
 Le dernier problème potentiel concerne la manière de préserver la localité du cache. Si la requête
@@ -313,16 +305,14 @@ systématiquement utilisée pour exécuter certaines tâches. Si `max_parallel_r
 au nombre de répliques, des répliques aléatoires sont alors sélectionnées pour l’exécution des requêtes.
 
 <div id="task-stealing">
-  ### Vol de tâches
+  ### Vol de tâches {#task-stealing}
 </div>
 
 si une réplique traite les tâches plus lentement que les autres, celles-ci essaieront de
 « voler » les tâches qui, en principe, lui sont attribuées par hachage afin de réduire la
 tail latency.
 
-<div id="limitations">
-  ### Limitations
-</div>
+### Limitations {#limitations}
 
 Cette fonctionnalité présente des limitations connues, dont les principales sont documentées dans
 cette section.
@@ -343,20 +333,17 @@ cette section.
 | Compatibilité avec l’analyseur                                      | L’analyseur peut considérablement ralentir ou accélérer l’exécution des requêtes dans certains scénarios.                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 <div id="settings-related-to-parallel-replicas">
-  ## Paramètres liés aux répliques parallèles
+  ## Paramètres liés aux répliques parallèles {#settings-related-to-parallel-replicas}
 </div>
 
-| Paramètre                                          | Description                                                                                                                                                                                                                                                                                                     |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `enable_parallel_replicas`                         | `0` : désactivé<br /> `1` : activé <br />`2` : force l&#39;utilisation d&#39;une réplique parallèle et lèvera une exception si ce n&#39;est pas le cas.                                                                                                                                                           |
-| `cluster_for_parallel_replicas`                    | Nom du cluster à utiliser pour la réplication parallèle ; si vous utilisez ClickHouse Cloud, utilisez `default`.                                                                                                                                                                                                |
+| Paramètre                                          | Description                                                                                                                                                                                                                                                                                                        |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enable_parallel_replicas`                         | `0` : désactivé<br /> `1` : activé <br />`2` : force l&#39;utilisation d&#39;une réplique parallèle et lèvera une exception si ce n&#39;est pas le cas.                                                                                                                                                            |
+| `cluster_for_parallel_replicas`                    | Nom du cluster à utiliser pour la réplication parallèle ; si vous utilisez ClickHouse Cloud, utilisez `default`.                                                                                                                                                                                                   |
 | `max_parallel_replicas`                            | Nombre maximal de répliques à utiliser pour exécuter la requête sur plusieurs répliques. Si un nombre inférieur au nombre de répliques du cluster est spécifié, les nœuds seront sélectionnés aléatoirement. Cette valeur peut également être surallouée pour tenir compte de la mise à l&#39;échelle horizontale. |
-| `parallel_replicas_min_number_of_rows_per_replica` | Permet de limiter le nombre de répliques utilisées en fonction du nombre de lignes à traiter. Le nombre de répliques utilisées est défini par : <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                                                               |
-| `enable_analyzer`                                  | L&#39;exécution des requêtes avec des répliques parallèles n&#39;est prise en charge que lorsque l&#39;analyseur est activé                                                                                                                                                                                      |
+| `parallel_replicas_min_number_of_rows_per_replica` | Permet de limiter le nombre de répliques utilisées en fonction du nombre de lignes à traiter. Le nombre de répliques utilisées est défini par : <br /> `estimated rows to read` / `min_number_of_rows_per_replica`.                                                                                                |
 
-<div id="investigating-issues-with-parallel-replicas">
-  ## Investiguer les problèmes liés aux répliques parallèles
-</div>
+## Investiguer les problèmes liés aux répliques parallèles {#investigating-issues-with-parallel-replicas}
 
 Vous pouvez vérifier quels paramètres sont utilisés pour chaque requête dans la
 table [`system.query_log`](/fr/reference/system-tables/query_log). Vous pouvez

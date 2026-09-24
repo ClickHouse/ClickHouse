@@ -13,25 +13,25 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="aggregate_function_input_format">
-  ## aggregate_function_input_format
-</div>
+## aggregate_function_input_format {#aggregate_function_input_format}
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "新增设置，用于控制 INSERT 操作期间 AggregateFunction 的输入格式。设置值默认为 state"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "New setting to control AggregateFunction input format during INSERT operations. Setting Value set to state by default"}]}]} />
 
-INSERT 操作期间 AggregateFunction 输入的格式。
+输入格式如何读取 `AggregateFunction` 类型的列。
 
-可能的值：
+可能的取值：
 
-* `state` — 包含序列化状态的二进制字符串 (默认值) 。这是默认行为，即 AggregateFunction 值应以二进制数据形式提供。
-* `value` — 此格式要求提供聚合函数参数的单个值；如果有多个参数，则要求提供由这些参数组成的 tuple。它们会使用相应的 IDataType 或 DataTypeTuple 进行反序列化，然后聚合形成状态。
-* `array` — 此格式要求提供一个值的 `Array`，如上文 `value` 选项所述。数组中的所有元素都会被聚合以形成状态。
+* `state` — 聚合函数的序列化状态，即输出格式写出的形式 (默认值) 。
+* `value` — 聚合函数某个参数的值；若参数有多个，则为这些参数组成的元组。该值会经过聚合形成状态。
+* `array` — 由上述 `value` 选项所描述的值组成的数组。数组中的所有元素都会经过聚合形成状态。
+
+在 `value` 和 `array` 模式下，格式会按值的类型来读取该列：`AggregateFunction(f, T)` 按 `T` 读取，`AggregateFunction(f, T1, T2)` 按 `Tuple(T1, T2)` 读取，在 `array` 模式下则按相应的 `Array` 读取。值采用该格式针对相应类型所使用的表示形式写出：在文本格式中为数字或字符串，在 JSON 格式中为 JSON 数组，在 `RowBinary` 或 `Native` 中为该类型的二进制编码，在 `Parquet` 中为该类型的列，依此类推。这适用于所有输入格式，也适用于嵌套在 `Array`、`Tuple` 或 `Map` 中的 `AggregateFunction`。
 
 **示例**
 
-对于一个具有以下结构的表：
+对于具有如下结构的表：
 
 ```sql
 CREATE TABLE example (
@@ -47,18 +47,26 @@ INSERT INTO example FORMAT CSV
 123,456
 ```
 
-当 `aggregate_function_input_format = 'array'` 时：
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
+
+使用 `aggregate_function_input_format = 'array'` 时：
 
 ```sql
 INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
-注意：`value` 和 `array` 格式比默认的 `state` 格式更慢，因为它们在插入时需要创建并聚合值。
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
+```
 
-<div id="aggregate_functions_null_for_empty">
-  ## aggregate_functions_null_for_empty
-</div>
+注意：`value` 和 `array` 格式比默认的 `state` 格式慢，因为它们需要在插入时创建并聚合值。
+
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

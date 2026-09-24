@@ -13,19 +13,20 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="iceberg_insert_max_bytes_in_data_file">
-  ## iceberg_insert_max_bytes_in_data_file
-</div>
+## iceberg_insert_max_bytes_in_data_file {#iceberg_insert_max_bytes_in_data_file}
 
-<SettingsInfoBlock type="UInt64" default_value="1073741824" />
+<SettingsInfoBlock type="UInt64" default_value="536870912" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "536870912"},{"label": "Iceberg テーブルプロパティ `write.target-file-size-bytes` のドキュメント記載のデフォルト値（512 MiB）に合わせました。https:\/\/iceberg.apache.org\/docs\/1.5.2\/configuration\/ を参照してください。"}]}, {"id": "row-2","items": [{"label": "25.9"},{"label": "1073741824"},{"label": "新しい設定"}]}]} />
 
-挿入操作時の Iceberg Parquet データファイルの最大バイト数。
+挿入操作時の iceberg parquet データファイルの最大バイト数です。
 
-<div id="iceberg_insert_max_partitions">
-  ## iceberg_insert_max_partitions
-</div>
+デフォルト値は、Iceberg テーブルプロパティ `write.target-file-size-bytes` のドキュメント記載のデフォルト値 (512 MiB) に合わせています。
+https://iceberg.apache.org/docs/1.5.2/configuration/ を参照してください。ただし、ClickHouse はこの上限を、それまでにファイルへ書き込まれたデータの
+非圧縮サイズと比較するのに対し、Iceberg のプロパティは生成されるファイル自体のサイズを対象としている点に注意してください。また、`iceberg_insert_max_rows_in_data_file` は
+サイズとは無関係にファイルを制限します。
+
+## iceberg_insert_max_partitions {#iceberg_insert_max_partitions}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
@@ -33,9 +34,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 Iceberg テーブルエンジンに対する 1 回の挿入操作で許可されるパーティションの最大数。
 
-<div id="iceberg_insert_max_rows_in_data_file">
-  ## iceberg_insert_max_rows_in_data_file
-</div>
+## iceberg_insert_max_rows_in_data_file {#iceberg_insert_max_rows_in_data_file}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 

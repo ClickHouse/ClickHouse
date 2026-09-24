@@ -13,22 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se autogeneran a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="optimize_rewrite_aggregate_function_with_if">
-  ## optimize_rewrite_aggregate_function_with_if
-</div>
+## optimize_rewrite_aggregate_function_with_if {#optimize_rewrite_aggregate_function_with_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Reescribe las funciones de agregación con una expresión `if` como argumento cuando son lógicamente equivalentes.
 Por ejemplo, `avg(if(cond, col, null))` puede reescribirse como `avgOrNullIf(cond, col)`. Esto puede mejorar el rendimiento.
 
-<Note>
-  Compatible solo con el analizador (`enable_analyzer = 1`).
-</Note>
-
-<div id="optimize_rewrite_array_exists_to_has">
-  ## optimize_rewrite_array_exists_to_has
-</div>
+## optimize_rewrite_array_exists_to_has {#optimize_rewrite_array_exists_to_has}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -36,9 +28,7 @@ Por ejemplo, `avg(if(cond, col, null))` puede reescribirse como `avgOrNullIf(con
 
 Reescribe las funciones arrayExists() como has() cuando sean lógicamente equivalentes. Por ejemplo, arrayExists(x -&gt; x = 1, arr) se puede reescribir como has(arr, 1)
 
-<div id="optimize_rewrite_has_to_in">
-  ## optimize_rewrite_has_to_in
-</div>
+## optimize_rewrite_has_to_in {#optimize_rewrite_has_to_in}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -46,9 +36,7 @@ Reescribe las funciones arrayExists() como has() cuando sean lógicamente equiva
 
 Reescribe las funciones `has` como `IN` cuando el primer argumento es un Array constante. Por ejemplo, `has([1, 2, 3], x)` puede reescribirse como `x IN [1, 2, 3]` para mejorar el rendimiento con Arrays constantes
 
-<div id="optimize_rewrite_like_perfect_affix">
-  ## optimize_rewrite_like_perfect_affix
-</div>
+## optimize_rewrite_like_perfect_affix {#optimize_rewrite_like_perfect_affix}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -56,9 +44,7 @@ Reescribe las funciones `has` como `IN` cuando el primer argumento es un Array c
 
 Reescribe las expresiones LIKE con un prefijo o sufijo exacto (por ejemplo, `col LIKE 'ClickHouse%'`) como funciones startsWith o endsWith (por ejemplo, `startsWith(col, 'ClickHouse')`).
 
-<div id="optimize_rewrite_regexp_functions">
-  ## optimize_rewrite_regexp_functions
-</div>
+## optimize_rewrite_regexp_functions {#optimize_rewrite_regexp_functions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -66,9 +52,7 @@ Reescribe las expresiones LIKE con un prefijo o sufijo exacto (por ejemplo, `col
 
 Reescribe las funciones relacionadas con expresiones regulares en formas más simples y eficientes
 
-<div id="optimize_rewrite_sum_if_to_count_if">
-  ## optimize_rewrite_sum_if_to_count_if
-</div>
+## optimize_rewrite_sum_if_to_count_if {#optimize_rewrite_sum_if_to_count_if}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

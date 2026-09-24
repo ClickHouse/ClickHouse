@@ -22,9 +22,9 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 يتيح بند `ON CLUSTER` إنشاء ملفات تعريف الإعدادات على مستوى العنقود، راجع [DDL الموزعة](/ar/reference/statements/distributed-ddl).
 
-<div id="example">
-  ## مثال
-</div>
+يتطلب `CREATE SETTINGS PROFILE` صلاحية [CREATE SETTINGS PROFILE](/ar/reference/statements/grant#access-management). أما `OR REPLACE` فيتخلص من ملف تعريف قائم يحمل الاسم نفسه، بما في ذلك الأدوار التي ينطبق عليها، ولذلك يتطلب إضافةً إلى ذلك صلاحية [DROP SETTINGS PROFILE](/ar/reference/statements/grant#access-management). وصلاحية `DROP SETTINGS PROFILE` مطلوبة سواء كان ملف التعريف موجودًا أم لا، لذا لا يمكن استخدام العبارة لمعرفة ملفات التعريف الموجودة.
+
+## مثال {#example}
 
 أنشئ مستخدمًا:
 

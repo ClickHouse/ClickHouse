@@ -10,9 +10,7 @@ doc_type: 'reference'
 
 Ce moteur s’intègre à l’[écosystème Azure Blob Storage](https://azure.microsoft.com/en-us/products/storage/blobs).
 
-<div id="create-table">
-  ## Créer une table
-</div>
+## Créer une table {#create-table}
 
 ```sql
 CREATE TABLE azure_blob_storage_table (name String, value UInt32)
@@ -21,9 +19,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
     [SETTINGS ...]
 ```
 
-<div id="engine-parameters">
-  ### Paramètres du moteur
-</div>
+### Paramètres du moteur {#engine-parameters}
 
 * `endpoint` — URL du point de terminaison AzureBlobStorage avec conteneur &amp; préfixe. Peut éventuellement contenir `account&#95;name` si la méthode d’authentification utilisée l’exige. (`http://azurite1:{port}/[account_name]{container_name}/{data_prefix}`) Sinon, ces paramètres peuvent être fournis séparément via `storage&#95;account&#95;url`, `account&#95;name` &amp; `container`. Pour spécifier le préfixe, il faut utiliser `endpoint`.
 * `endpoint_contains_account_name` - Ce flag permet d’indiquer si `endpoint` contient `account&#95;name`, car cela n’est nécessaire que pour certaines méthodes d’authentification. (Par défaut : true)
@@ -33,7 +29,7 @@ CREATE TABLE azure_blob_storage_table (name String, value UInt32)
 * `account_name` - si `storage&#95;account&#95;url` est utilisé, le nom du compte peut être indiqué ici
 * `account_key` - si `storage&#95;account&#95;url` est utilisé, la clé du compte peut être indiquée ici
 * `format` — Le [format](/fr/reference/formats/index) du fichier.
-* `compression` — Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier. (équivaut à définir `auto`).
+* `compression` — Valeurs prises en charge : `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier. (équivaut à définir `auto`). Pour `snappy`, le format binaire de transmission est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (sur `basic` par défaut).
 * `partition_strategy` – Options : `wildcard` ou `hive`. `wildcard` nécessite un `{_partition_id}` dans le chemin, qui est remplacé par la clé de partition. `hive` n’autorise pas les caractères génériques, suppose que le chemin correspond à la racine de la table et génère des répertoires partitionnés au format Hive, avec des Snowflake IDs comme noms de fichiers et le format de fichier comme extension. Sans stratégie explicite, un chemin contenant `{_partition_id}` utilise `wildcard`. Un chemin contenant un autre glob n’utilise aucune stratégie de partitionnement et ignore `PARTITION BY`. Un chemin ne contenant aucun glob utilise `hive` lorsque `file_like_engine_default_partition_strategy` est défini sur `hive` ; sinon, il n’utilise aucune stratégie de partitionnement.
 * `partition_columns_in_data_file` - Utilisé uniquement avec la stratégie de partitionnement `hive`. Indique à ClickHouse s’il doit s’attendre à ce que les colonnes de partition soient écrites dans le fichier de données. La valeur par défaut est `false`.
 * `extra_credentials` - Utilisez `client_id` et `tenant_id` pour l’authentification. Si `extra&#95;credentials` est fourni, il est prioritaire sur `account_name` et `account_key`.
@@ -59,18 +55,14 @@ SELECT * FROM test_table;
 └──────┴───────┘
 ```
 
-<div id="virtual-columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#virtual-columns}
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
 * `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille est inconnue, la valeur est `NULL`.
 * `_time` — Date et heure de dernière modification du fichier. Type : `Nullable(DateTime)`. Si l&#39;heure est inconnue, la valeur est `NULL`.
 
-<div id="authentication">
-  ## Authentification
-</div>
+## Authentification {#authentication}
 
 Il existe actuellement 3 méthodes d’authentification :
 
@@ -78,9 +70,7 @@ Il existe actuellement 3 méthodes d’authentification :
 * `SAS Token` - Peut être utilisé en fournissant un `endpoint`, une `connection_string` ou un `storage_account_url`. Il est identifié par la présence du caractère « ? » dans l’URL. Voir [azureBlobStorage](/fr/reference/functions/table-functions/azureBlobStorage#using-shared-access-signatures-sas-sas-tokens) pour des exemples.
 * `Workload Identity` - Peut être utilisée en fournissant un `endpoint` ou un `storage_account_url`. Si le paramètre `use_workload_identity` est défini dans la config, [workload identity](https://github.com/Azure/azure-sdk-for-cpp/tree/main/sdk/identity/azure-identity#authenticate-azure-hosted-applications) est utilisée pour l’authentification.
 
-<div id="data-cache">
-  ### Cache de données
-</div>
+### Cache de données {#data-cache}
 
 Le moteur de table `Azure` prend en charge la mise en cache des données sur disque local.
 Consultez les options de configuration et l’utilisation du cache du système de fichiers dans cette [section](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache).
@@ -109,17 +99,13 @@ SETTINGS filesystem_cache_name = 'cache_for_azure', enable_filesystem_cache = 1;
 
 2. réutiliser la configuration du cache (et donc son stockage) depuis la section `storage_configuration` de ClickHouse, [décrite ici](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache)
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Facultatif. Dans la plupart des cas, vous n’avez pas besoin de clé de partition et, lorsqu’elle est nécessaire, elle n’a généralement pas besoin d’être plus fine qu’un partitionnement mensuel. Le partitionnement n’accélère pas les requêtes (contrairement à l’expression ORDER BY). N’utilisez jamais un partitionnement trop fin. Ne partitionnez pas vos données par identifiant ou nom de client (utilisez plutôt l’identifiant ou le nom du client comme première colonne de l’expression ORDER BY).
 
 Pour un partitionnement par mois, utilisez l’expression `toYYYYMM(date_column)`, où `date_column` est une colonne contenant une date de type [Date](/fr/reference/data-types/date). Les noms de partition sont ici au format `"YYYYMM"`.
 
-<div id="partition-strategy">
-  #### Stratégie de partitionnement
-</div>
+#### Stratégie de partitionnement {#partition-strategy}
 
 `wildcard` : remplace le caractère générique `{_partition_id}` dans le chemin du fichier par la clé de partition réelle. La lecture n’est pas prise en charge. Cette stratégie est sélectionnée par défaut lorsque le chemin contient `{_partition_id}`.
 
@@ -146,9 +132,7 @@ select _path, * from azure_table;
 └────────────────────────────────────────────────────────────────────────────┴──────┴─────────┴─────────┘
 ```
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 [Fonction de table Azure Blob Storage](/fr/reference/functions/table-functions/azureBlobStorage)
 

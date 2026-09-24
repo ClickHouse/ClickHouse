@@ -1,29 +1,41 @@
 ---
 sidebarTitle: '自动闲置'
 slug: /cloud/features/autoscaling/idling
-description: 'ClickHouse Cloud 中的自动闲置和自适应闲置'
+description: '了解 ClickHouse Cloud 中的自动闲置成本、连接延迟以及自适应闲置'
 keywords: ['闲置', '自动闲置', '自适应闲置', '节省成本', '暂停']
 title: '自动闲置'
 doc_type: 'guide'
 ---
 
-<div id="automatic-idling">
-  ## 自动闲置
-</div>
+## 自动闲置 {#automatic-idling}
 
-在 **设置** 页面中，您还可以选择是否允许服务在持续一段时间无活动后自动进入空闲状态 (即服务未执行任何用户提交的查询时) 。自动闲置可以降低服务成本，因为当服务处于暂停状态时，您无需为计算资源付费。
+当一段时间内没有用户提交的查询时，自动闲置会暂停 ClickHouse Cloud 服务，但需满足[自适应闲置条件](#adaptive-idling)。你可以在服务的 **Settings** 页面启用自动闲置，并配置不活动时长。
+
+## 服务暂停期间会产生哪些费用？ {#billing-while-paused}
+
+服务处于暂停状态时，您无需为计算资源付费。存储和备份仍会继续计费；闲置不会删除您已存储的数据。有关计费详情，请参阅 [定价](/zh/products/cloud/reference/billing/billing-overview)。
 
 <Warning>
   **为您的服务配置 IP 访问列表**
 
-  创建 ClickHouse Cloud 服务时，IP 允许列表的默认设置为“Allow from anywhere”。我们强烈建议您尽快将访问限制为特定的 IP 地址或地址范围。设置为 `Allow from anywhere` 的服务，可能会被寻找公网 IP 的互联网爬虫和扫描器周期性地从空闲状态唤醒为活动状态，从而产生意外费用。
+  创建 ClickHouse Cloud 服务时，IP 允许列表的默认设置为“Allow from anywhere”。我们强烈建议您尽快将访问限制为特定的 IP 地址或地址范围。设置为 `Allow from anywhere` 的服务，可能会被寻找公网 IP 的互联网爬虫和扫描器周期性地从闲置状态唤醒为活动状态，从而产生意外费用。
 </Warning>
 
-<div id="adaptive-idling">
-  ### 自适应闲置
-</div>
+## 当客户端连接到已暂停服务时会发生什么？ {#connecting-to-a-paused-service}
 
-ClickHouse Cloud 采用自适应闲置机制，以便在优化成本节省的同时避免服务中断。系统会在将服务切换到闲置状态前评估多个条件。当满足以下任一条件时，自适应闲置会覆盖闲置时长设置：
+已暂停服务必须先恢复为活动状态，才能响应查询。在 service 处于暂停状态期间，对其发起的 connections 可能会超时。使用自动闲置的应用程序需要容忍这一延迟，并妥善处理连接超时。在 production 中依赖自动闲置之前，请先针对处于闲置状态的 service 测试客户端的超时与 retry 行为。
+
+<Danger>
+  **何时不应使用自动闲置**
+
+  自动闲置适用于使用频率较低、且能够容忍响应查询前存在一定延迟的 service。对于支撑面向客户且访问频繁的功能的 service，则不建议启用。如果你的应用程序无法容忍这一延迟，请禁用自动闲置。
+</Danger>
+
+## 服务何时可以进入闲置状态？ {#adaptive-idling}
+
+ClickHouse Cloud 采用自适应闲置机制，以便让后台维护得以完成，并根据服务器初始化时间调整不活动时长。这些条件控制的是**活跃服务何时可以暂停**；下面列出的时长并不是对客户端连接到已暂停服务时需要等待多久的预测或保证。
+
+在以下情况下，自适应闲置会覆盖已配置的不活动时长：
 
 * 当 parts 数量超过最大活跃 parts 阈值 (默认值：10,000) 时，服务不会进入闲置状态，以便后台维护能够继续进行
 * 当存在正在进行的合并操作时，服务会等到这些合并完成后才进入闲置状态，以避免中断关键的数据整合过程
@@ -33,12 +45,8 @@ ClickHouse Cloud 采用自适应闲置机制，以便在优化成本节省的同
   * 如果服务器初始化时间在 30 到 60 分钟之间，则闲置超时设置为 30 分钟。
   * 如果服务器初始化时间超过 60 分钟，则闲置超时设置为 1 小时
 
+## 服务暂停期间哪些后台工作会停止？ {#background-work-while-paused}
+
 <Note>
   服务可能会进入闲置状态，在此状态下会暂停 [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view) 刷新、从 [S3Queue](/zh/reference/engines/table-engines/integrations/s3queue) 的消费，以及新的合并调度。现有的合并操作会在服务切换到闲置状态之前完成。要确保可刷新materialized view 刷新和 S3Queue 消费持续运行，请禁用闲置状态功能。
 </Note>
-
-<Danger>
-  **何时不应使用自动闲置**
-
-  只有在您的使用场景能够接受查询响应前的延迟时，才应使用自动闲置，因为服务被暂停后，与该服务的连接会超时。自动闲置非常适合使用频率较低且可以容忍延迟的服务。不建议将其用于支撑面向客户且使用频繁的功能的服务。
-</Danger>

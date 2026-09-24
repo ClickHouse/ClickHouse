@@ -32,6 +32,8 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 
 `ON CLUSTER` 절을 사용하면 클러스터에 쿼터를 생성할 수 있습니다. 자세한 내용은 [분산 DDL](/ko/reference/statements/distributed-ddl)을 참조하십시오.
 
+`CREATE QUOTA`에는 [CREATE QUOTA](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `OR REPLACE`는 동일한 이름의 기존 쿼터를 적용 대상 역할까지 포함하여 삭제하므로, 추가로 [DROP QUOTA](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `DROP QUOTA` 권한은 해당 쿼터의 존재 여부와 관계없이 필요하므로, 이 문을 사용해 어떤 쿼터가 존재하는지 알아낼 수는 없습니다.
+
 **예시**
 
 현재 사용자에 대해 15개월 동안 최대 123개의 쿼리로 제한하는 제약 조건:
@@ -60,9 +62,7 @@ CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO defa
 
 xml 구성(ClickHouse Cloud에서는 지원되지 않음)을 사용하는 추가 예시는 [쿼터 가이드](/ko/concepts/features/configuration/server-config/quotas)에서 확인할 수 있습니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse로 싱글 페이지 애플리케이션 구축하기](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
 

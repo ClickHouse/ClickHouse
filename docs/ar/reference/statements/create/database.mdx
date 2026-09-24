@@ -14,34 +14,24 @@ doc_type: 'reference'
 CREATE DATABASE [IF NOT EXISTS] db_name [ON CLUSTER cluster] [ENGINE = engine(...)] [SETTINGS ...] [COMMENT 'Comment']
 ```
 
-<div id="clauses">
-  ## البنود
-</div>
+## البنود {#clauses}
 
-<div id="if-not-exists">
-  ### IF NOT EXISTS
-</div>
+### IF NOT EXISTS {#if-not-exists}
 
 إذا كانت قاعدة البيانات `db_name` موجودة بالفعل، فلن ينشئ ClickHouse قاعدة بيانات جديدة، ويحدث ما يلي:
 
 * لا يطرح استثناءً إذا كان هذا البند محددًا.
 * يطرح استثناءً إذا لم يكن هذا البند محددًا.
 
-<div id="on-cluster">
-  ### ON CLUSTER
-</div>
+### ON CLUSTER {#on-cluster}
 
 ينشئ ClickHouse قاعدة البيانات `db_name` على جميع خوادم المجموعة المحددة. لمزيد من التفاصيل، راجع مقالة [Distributed DDL](/ar/reference/statements/distributed-ddl).
 
-<div id="engine">
-  ### المحرك
-</div>
+### المحرك {#engine}
 
 يستخدم ClickHouse افتراضيًا محرك قاعدة البيانات [Atomic](/ar/reference/engines/database-engines/atomic) الخاص به. كما تتوفر أيضًا محركات أخرى مثل [MySQL](/ar/reference/engines/database-engines/mysql)، و[PostgreSQL](/ar/reference/engines/database-engines/postgresql)، و[MaterializedPostgreSQL](/ar/reference/engines/database-engines/materialized-postgresql)، و[Replicated](/ar/reference/engines/database-engines/replicated)، و[SQLite](/ar/reference/engines/database-engines/sqlite).
 
-<div id="comment">
-  ### تعليق
-</div>
+### تعليق {#comment}
 
 يمكنك إضافة تعليق إلى قاعدة البيانات عند إنشائها.
 
@@ -66,13 +56,26 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 └────────────┴────────────────────────┘
 ```
 
-<div id="settings">
-  ### الإعدادات
-</div>
+### SETTINGS {#settings}
 
-<div id="lazy-load-tables">
-  #### lazy_load_tables
-</div>
+يمكن استخدام عبارة `SETTINGS` دون عبارة `ENGINE`، وعندها يُستخدم محرك قاعدة البيانات الافتراضي
+(`Atomic`). ويمكن أن تتضمن إعدادات محرك قاعدة البيانات وإعدادات الاستعلام العادية معًا؛ حيث يُوجَّه كل
+اسم إلى ما ينتمي إليه منهما.
+
+#### disk {#disk}
+
+القرص المستخدم لتخزين ملفات البيانات الوصفية لجداول قاعدة البيانات. يمكن أن يحدّد اسم قرص من تهيئة
+الخادم، أو أن يُعرّف قرصًا مباشرةً عبر الدالة `disk`، تمامًا كما يفعل الجدول المفرد:
+
+```sql
+CREATE DATABASE db_name SETTINGS disk = 'db_disk';
+CREATE DATABASE db_name SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
+
+ينطبق على محركات قواعد البيانات التي تخزّن البيانات الوصفية للجداول على القرص (`Atomic`، `Ordinary`). وفي حال عدم تحديده،
+يُستخدم القرص المعرّف في إعداد الخادم `database_disk.disk`.
+
+#### lazy_load_tables {#lazy-load-tables}
 
 عند تمكينه، لا تُحمَّل الجداول بالكامل أثناء بدء تشغيل قاعدة البيانات. وبدلًا من ذلك، يُنشأ وكيل خفيف الوزن لكل جدول، ويُنشأ محرك الجدول الفعلي ماديًا عند أول وصول إليه. يقلّل ذلك من وقت بدء التشغيل واستهلاك الذاكرة في قواعد البيانات التي تحتوي على عدد كبير من الجداول ولا يُستعلَم فعليًا إلا عن مجموعة فرعية منها.
 
@@ -80,7 +83,7 @@ SELECT name, comment FROM system.databases WHERE name = 'db_comment';
 CREATE DATABASE db_name ENGINE = Atomic SETTINGS lazy_load_tables = 1;
 ```
 
-ينطبق على محركات قواعد البيانات التي تخزّن البيانات الوصفية للجدول على القرص (مثل `Atomic` و`Ordinary`). تُحمَّل العروض، والعروض المادية، والقواميس، والجداول المستندة إلى table functions دائمًا تحميلًا فوريًا بغضّ النظر عن هذا الإعداد.
+ينطبق على محركات قواعد البيانات التي تخزّن البيانات الوصفية للجدول على القرص (مثل `Atomic` و`Ordinary`). تُحمَّل العروض، والعروض المادية، والقواميس، وجداول `Alias`، وجداول `TimeSeries`، والجداول المستندة إلى table functions دائمًا تحميلًا فوريًا بغضّ النظر عن هذا الإعداد.
 
 **متى يُستخدم:** يفيد هذا الإعداد في قواعد البيانات التي تحتوي على عدد كبير من الجداول (بالمئات أو الآلاف)، ولا يُستعلَم فعليًا إلا عن مجموعة فرعية منها. ويقلّل وقت بدء تشغيل الخادم واستهلاك الذاكرة عبر تأجيل إنشاء كائنات محرك الجدول، وفحص data parts، وتهيئة خيوط الخلفية إلى حين أول وصول.
 

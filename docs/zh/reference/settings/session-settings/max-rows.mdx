@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并根据 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="max_rows_for_lazy_final">
-  ## max_rows_for_lazy_final
-</div>
+## max_rows_for_lazy_final {#max_rows_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="10000000" />
 
@@ -23,17 +21,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到普通 FINAL。
 
-<div id="max_rows_in_distinct">
-  ## max_rows_in_distinct
-</div>
+## max_rows_in_distinct {#max_rows_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 使用 DISTINCT 时，允许的最大不同行数。
 
-<div id="max_rows_in_join">
-  ## max_rows_in_join
-</div>
+## max_rows_in_join {#max_rows_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -44,28 +38,30 @@ lazy FINAL 优化所用集合中的最大行数。超过该值时，将回退到
 操作以及 [Join](/zh/reference/engines/table-engines/special/join) 表引擎。
 
 如果一个查询包含多个连接，ClickHouse 会对每个
-中间结果检查此设置。达到限制时，将执行的操作取决于所选的
-[`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)——请参阅
-该设置，了解各算法对应的行为 (落盘、重新分区、切换，或根据
-[`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 执行
-throw/break) 。
+中间结果检查此设置。对于所有基于哈希的 `join_algorithm`，它都是硬性上限：达到该限制时，
+查询会根据
+[`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode)
+抛出异常或中断。
+它绝不会导致连接落盘——是否落盘由
+[`max_bytes_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+和
+[`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)
+决定。
+例外情况是 `legacy_join_size_limits_trigger_spilling`：启用后，连接中已在磁盘上运行的
+部分会将此限制视为进一步的落盘触发条件，而非上限。
 
 可能的值：
 
 * 正整数。
 * `0` — 行数不受限制。
 
-<div id="max_rows_in_set">
-  ## max_rows_in_set
-</div>
+## max_rows_in_set {#max_rows_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 由子查询创建的 IN 子句中的数据集的最大行数。
 
-<div id="max_rows_in_set_to_optimize_join">
-  ## max_rows_in_set_to_optimize_join
-</div>
+## max_rows_in_set_to_optimize_join {#max_rows_in_set_to_optimize_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -78,9 +74,7 @@ throw/break) 。
 * 0 — 禁用。
 * 任意正整数。
 
-<div id="max_rows_to_group_by">
-  ## max_rows_to_group_by
-</div>
+## max_rows_to_group_by {#max_rows_to_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -89,9 +83,7 @@ throw/break) 。
 如果 GROUP BY 期间的聚合生成的行数 (唯一的 GROUP BY 键) 超过指定数量，其行为将由
 &#39;group&#95;by&#95;overflow&#95;mode&#39; 决定；默认值为 `throw`，但也可以切换为近似 GROUP BY 模式。
 
-<div id="max_rows_to_read">
-  ## max_rows_to_read
-</div>
+## max_rows_to_read {#max_rows_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -100,9 +92,7 @@ throw/break) 。
 表表达式；从远程服务器读取时，也仅在
 远程服务器上进行检查。
 
-<div id="max_rows_to_read_leaf">
-  ## max_rows_to_read_leaf
-</div>
+## max_rows_to_read_leaf {#max_rows_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -116,9 +106,7 @@ throw/break) 。
   此设置在 `prefer_localhost_replica=1` 时不稳定。
 </Note>
 
-<div id="max_rows_to_sort">
-  ## max_rows_to_sort
-</div>
+## max_rows_to_sort {#max_rows_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -126,9 +114,7 @@ throw/break) 。
 如果 ORDER BY 操作需要处理的记录数超过指定数量，
 其行为将由 `sort_overflow_mode` 决定，该值默认设置为 `throw`。
 
-<div id="max_rows_to_transfer">
-  ## max_rows_to_transfer
-</div>
+## max_rows_to_transfer {#max_rows_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

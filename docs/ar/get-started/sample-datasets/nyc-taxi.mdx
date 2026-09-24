@@ -1,319 +1,670 @@
 ---
-description: 'بيانات لمليارات رحلات سيارات الأجرة ومركبات النقل المدفوعة (Uber وLyft وغيرها)
-  المنطلقة من مدينة نيويورك منذ عام 2009'
+description: 'استكشف ClickHouse باستخدام مجموعة بيانات لمليارات رحلات سيارات الأجرة ومركبات النقل المدفوعة (Uber وLyft وغيرها) المنطلقة من مدينة نيويورك منذ عام 2009'
 sidebarTitle: 'بيانات سيارات الأجرة في نيويورك'
 slug: /getting-started/example-datasets/nyc-taxi
-title: 'بيانات سيارات الأجرة في نيويورك'
+title: 'التحليل الجغرافي المكاني باستخدام مجموعة بيانات سيارات الأجرة في نيويورك'
 doc_type: 'guide'
 keywords: ['مجموعة بيانات تجريبية', 'nyc taxi', 'برنامج تعليمي', 'بيانات نموذجية', 'البدء']
 ---
 
 import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
-تتكوّن عيّنة بيانات سيارات الأجرة في نيويورك من أكثر من 3 مليارات رحلة لسيارات الأجرة والمركبات المؤجرة (Uber وLyft وغيرها) انطلقت من مدينة نيويورك منذ عام 2009. يستخدم هذا الدليل التمهيدي عيّنة من 3 ملايين صف.
+<View title="Cloud">
+  ستتعرّف في هذا الدليل العملي على كيفية استخدام ClickHouse لتنفيذ استعلامات تحليلية على كميات ضخمة من البيانات.
+  كما ستتعلّم كيفية استخدام قاموس لإثراء البيانات، وكيفية كتابة استعلامات الدمج (join).
 
-يمكن الحصول على مجموعة البيانات الكاملة بعدة طرق:
+  ## المتطلبات الأساسية {#prerequisites}
 
-* أدرِج البيانات مباشرةً في ClickHouse Cloud من S3 أو GCS
-* نزّل الأجزاء المُقسَّمة المُعدّة مسبقًا
-* أو يمكنك بدلاً من ذلك تنفيذ استعلام على مجموعة البيانات الكاملة في بيئة العرض التوضيحي لدينا على [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19).
+  ستحتاج في هذا الدليل العملي إلى ما يلي:
 
-<Note>
-  نُفِّذت استعلامات المثال أدناه على مثيل **Production** من ClickHouse Cloud. لمزيد من المعلومات، راجع
-  [&quot;مواصفات Playground&quot;](/ar/get-started/sample-datasets/playground#specifications).
-</Note>
+  * [حساب على ClickHouse Cloud](https://clickhouse.cloud/signUp?loc=docs-sample-datasets-nyc-taxi) (تحصل على رصيد مجاني بقيمة 300 دولار عند التسجيل)
+  * [خدمة ClickHouse Cloud](/ar/get-started/setup/cloud#1-create-a-clickhouse-service)
 
-<div id="create-the-table-trips">
-  ## أنشئ جدول trips
-</div>
+  <Steps titleSize="h2">
+    <Step title="أنشئ الجدول" id="create-a-new-table">
+      مجموعة البيانات المستخدمة في هذا الدليل العملي هي مجموعة بيانات سيارات الأجرة في مدينة نيويورك، وتتضمن تفاصيل ملايين رحلات سيارات الأجرة، وتحتوي على أعمدة مثل مبلغ الإكرامية ورسوم الطرق ونوع الدفع وغيرها.
 
-ابدأ بإنشاء جدول لرحلات سيارات الأجرة:
+      1. اختر **SQL console** من القائمة الجانبية اليسرى
+      2. انقر على علامة التبويب **+** المجاورة لأيقونة الصفحة الرئيسية لإنشاء استعلام جديد
+      3. اكتب الاستعلام التالي في محرر SQL، ثم انقر على **Run**:
 
-```sql
+      ```sql Expandable
+      CREATE TABLE trips
+      (
+          `trip_id` UInt32,
+          `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+          `pickup_date` Date,
+          `pickup_datetime` DateTime,
+          `dropoff_date` Date,
+          `dropoff_datetime` DateTime,
+          `store_and_fwd_flag` UInt8,
+          `rate_code_id` UInt8,
+          `pickup_longitude` Float64,
+          `pickup_latitude` Float64,
+          `dropoff_longitude` Float64,
+          `dropoff_latitude` Float64,
+          `passenger_count` UInt8,
+          `trip_distance` Float64,
+          `fare_amount` Float32,
+          `extra` Float32,
+          `mta_tax` Float32,
+          `tip_amount` Float32,
+          `tolls_amount` Float32,
+          `ehail_fee` Float32,
+          `improvement_surcharge` Float32,
+          `total_amount` Float32,
+          `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+          `trip_type` UInt8,
+          `pickup` FixedString(25),
+          `dropoff` FixedString(25),
+          `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+          `pickup_nyct2010_gid` Int8,
+          `pickup_ctlabel` Float32,
+          `pickup_borocode` Int8,
+          `pickup_ct2010` String,
+          `pickup_boroct2010` String,
+          `pickup_cdeligibil` String,
+          `pickup_ntacode` FixedString(4),
+          `pickup_ntaname` String,
+          `pickup_puma` UInt16,
+          `dropoff_nyct2010_gid` UInt8,
+          `dropoff_ctlabel` Float32,
+          `dropoff_borocode` UInt8,
+          `dropoff_ct2010` String,
+          `dropoff_boroct2010` String,
+          `dropoff_cdeligibil` String,
+          `dropoff_ntacode` FixedString(4),
+          `dropoff_ntaname` String,
+          `dropoff_puma` UInt16
+      )
+      ENGINE = MergeTree
+      PARTITION BY toYYYYMM(pickup_date)
+      ORDER BY pickup_datetime;
+      ```
+    </Step>
 
-CREATE DATABASE nyc_taxi;
+    <Step title="أدرج البيانات" id="add-the-dataset">
+      بعد أن أنشأت الجدول، أضف بيانات سيارات الأجرة في مدينة نيويورك من ملفات CSV المخزّنة في S3.
 
-CREATE TABLE nyc_taxi.trips_small (
-    trip_id             UInt32,
-    pickup_datetime     DateTime,
-    dropoff_datetime    DateTime,
-    pickup_longitude    Nullable(Float64),
-    pickup_latitude     Nullable(Float64),
-    dropoff_longitude   Nullable(Float64),
-    dropoff_latitude    Nullable(Float64),
-    passenger_count     UInt8,
-    trip_distance       Float32,
-    fare_amount         Float32,
-    extra               Float32,
-    tip_amount          Float32,
-    tolls_amount        Float32,
-    total_amount        Float32,
-    payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
-    pickup_ntaname      LowCardinality(String),
-    dropoff_ntaname     LowCardinality(String)
-)
-ENGINE = MergeTree
-PRIMARY KEY (pickup_datetime, dropoff_datetime);
-```
+      يُدرج الأمر التالي نحو 2,000,000 صف في جدول trips من ملفين مختلفين في S3، هما: `trips_1.tsv.gz` و`trips_2.tsv.gz`:
 
-<div id="load-the-data-directly-from-object-storage">
-  ## حمّل البيانات مباشرةً من تخزين الكائنات
-</div>
+      ```sql Expandable
+      INSERT INTO trips
+      SELECT * FROM s3(
+          'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{1..2}.gz',
+          'TabSeparatedWithNames', "
+          `trip_id` UInt32,
+          `vendor_id` Enum8('1' = 1, '2' = 2, '3' = 3, '4' = 4, 'CMT' = 5, 'VTS' = 6, 'DDS' = 7, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14, '' = 15),
+          `pickup_date` Date,
+          `pickup_datetime` DateTime,
+          `dropoff_date` Date,
+          `dropoff_datetime` DateTime,
+          `store_and_fwd_flag` UInt8,
+          `rate_code_id` UInt8,
+          `pickup_longitude` Float64,
+          `pickup_latitude` Float64,
+          `dropoff_longitude` Float64,
+          `dropoff_latitude` Float64,
+          `passenger_count` UInt8,
+          `trip_distance` Float64,
+          `fare_amount` Float32,
+          `extra` Float32,
+          `mta_tax` Float32,
+          `tip_amount` Float32,
+          `tolls_amount` Float32,
+          `ehail_fee` Float32,
+          `improvement_surcharge` Float32,
+          `total_amount` Float32,
+          `payment_type` Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),
+          `trip_type` UInt8,
+          `pickup` FixedString(25),
+          `dropoff` FixedString(25),
+          `cab_type` Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),
+          `pickup_nyct2010_gid` Int8,
+          `pickup_ctlabel` Float32,
+          `pickup_borocode` Int8,
+          `pickup_ct2010` String,
+          `pickup_boroct2010` String,
+          `pickup_cdeligibil` String,
+          `pickup_ntacode` FixedString(4),
+          `pickup_ntaname` String,
+          `pickup_puma` UInt16,
+          `dropoff_nyct2010_gid` UInt8,
+          `dropoff_ctlabel` Float32,
+          `dropoff_borocode` UInt8,
+          `dropoff_ct2010` String,
+          `dropoff_boroct2010` String,
+          `dropoff_cdeligibil` String,
+          `dropoff_ntacode` FixedString(4),
+          `dropoff_ntaname` String,
+          `dropoff_puma` UInt16
+      ") SETTINGS input_format_try_infer_datetimes = 0
+      ```
 
-يمكن للمستخدمين الحصول على مجموعة فرعية صغيرة من البيانات (3 ملايين صف) للتعرّف عليها. توجد البيانات في ملفات TSV ضمن تخزين الكائنات، ويمكن بثّها بسهولة إلى
-ClickHouse Cloud باستخدام الدالة الجدولية `s3`.
+      انتظر حتى يكتمل إدراج البيانات. سيجري تنزيل نحو 150MB من البيانات.
+      بعد اكتمال إدراج البيانات، تحقّق من عدد الصفوف في جدول `trips`:
 
-البيانات نفسها مخزّنة في كلٍّ من S3 وGCS؛ اختر أي علامة تبويب.
+      ```sql
+      SELECT count() FROM trips
+      ```
 
-<Tabs>
-  <Tab title="S3">
-    يبثّ الأمر التالي ثلاثة ملفات من حاوية S3 إلى الجدول `trips_small` (صيغة `{0..2}` هي حرف بدل للقيم 0 و1 و2):
+      من المفترض أن تحصل على نتيجة تضم 1,999,657 صفًا
+    </Step>
 
-    ```sql
-    INSERT INTO nyc_taxi.trips_small
-    SELECT
-        trip_id,
-        pickup_datetime,
-        dropoff_datetime,
-        pickup_longitude,
-        pickup_latitude,
-        dropoff_longitude,
-        dropoff_latitude,
-        passenger_count,
-        trip_distance,
-        fare_amount,
-        extra,
-        tip_amount,
-        tolls_amount,
-        total_amount,
-        payment_type,
-        pickup_ntaname,
-        dropoff_ntaname
-    FROM s3(
-        'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
-        'TabSeparatedWithNames'
-    );
-    ```
-  </Tab>
+    <Step title="حلّل البيانات" id="analyze-the-data">
+      بعد تحميل البيانات، يمكنك تشغيل بعض الاستعلامات لتحليلها.
 
-  <Tab title="GCS">
-    يبثّ الأمر التالي ثلاثة ملفات من حاوية GCS إلى الجدول `trips` (صيغة `{0..2}` هي حرف بدل للقيم 0 و1 و2):
+      * احسب متوسط مبلغ الإكرامية:
+        ```sql
+        SELECT round(avg(tip_amount), 2) FROM trips
+        ```
 
-    ```sql
-    INSERT INTO nyc_taxi.trips_small
-    SELECT
-        trip_id,
-        pickup_datetime,
-        dropoff_datetime,
-        pickup_longitude,
-        pickup_latitude,
-        dropoff_longitude,
-        dropoff_latitude,
-        passenger_count,
-        trip_distance,
-        fare_amount,
-        extra,
-        tip_amount,
-        tolls_amount,
-        total_amount,
-        payment_type,
-        pickup_ntaname,
-        dropoff_ntaname
-    FROM gcs(
-        'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_{0..2}.gz',
-        'TabSeparatedWithNames'
-    );
-    ```
-  </Tab>
-</Tabs>
+      * احسب متوسط التكلفة بحسب عدد الركاب:
+        ```sql
+        SELECT
+            passenger_count,
+            ceil(avg(total_amount),2) AS average_total_amount
+        FROM trips
+        GROUP BY passenger_count
+        ```
 
-<div id="sample-queries">
-  ## استعلامات نموذجية
-</div>
+      * احسب العدد اليومي للرحلات التي تبدأ من كل حي:
+        ```sql
+        SELECT
+          pickup_date,
+          pickup_ntaname,
+          SUM(1) AS number_of_trips
+        FROM trips
+        GROUP BY pickup_date, pickup_ntaname
+        ORDER BY pickup_date ASC
+        ```
 
-تُنفَّذ الاستعلامات التالية على العينة الموضَّحة أعلاه. يمكنك تشغيل الاستعلامات النموذجية على مجموعة البيانات الكاملة في [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19)، مع تعديل الاستعلامات أدناه لاستخدام الجدول `nyc_taxi.trips`.
+      * احسب مدة كل رحلة بالدقائق، ثم جمّع النتائج بحسب مدة الرحلة:
+        ```sql
+        SELECT
+          avg(tip_amount) AS avg_tip,
+          avg(fare_amount) AS avg_fare,
+          avg(passenger_count) AS avg_passenger,
+          count() AS count,
+          truncate(date_diff('second', pickup_datetime, dropoff_datetime)/60) as trip_minutes
+        FROM trips
+        WHERE trip_minutes > 0
+        GROUP BY trip_minutes
+        ORDER BY trip_minutes DESC
+        ```
 
-لنرَ عدد الصفوف التي أُدرجت:
+      * اعرض عدد الرحلات التي تبدأ من كل حي موزّعةً على ساعات اليوم:
+        ```sql
+        SELECT
+            pickup_ntaname,
+            toHour(pickup_datetime) as pickup_hour,
+            SUM(1) AS pickups
+        FROM trips
+        WHERE pickup_ntaname != ''
+        GROUP BY pickup_ntaname, pickup_hour
+        ORDER BY pickup_ntaname, pickup_hour
+        ```
+    </Step>
 
-<RunnableCode>
+    <Step title="أنشئ قاموسًا" id="create-a-dictionary">
+      بعد ذلك، ستنشئ قاموسًا (وهو مجموعة من أزواج مفتاح-قيمة مخزّنة في الذاكرة) باسم `taxi_zone_dictionary` يربط بين معرّفات المواقع وأسماء الأقاليم الإدارية (boroughs) في مدينة نيويورك، ويستمد بياناته من ملف CSV يضم جميع أحياء مدينة نيويورك.
+      تقابل هذه المعرّفات العمودين `pickup_nyct2010_gid` و`dropoff_nyct2010_gid` في جدول الرحلات.
+
+      فيما يلي مقتطف من ملف CSV الذي تستخدمه، معروضًا على هيئة جدول. يقابل العمود `LocationID` في الملف العمودين `pickup_nyct2010_gid` و`dropoff_nyct2010_gid` في جدول `trips` لديك:
+
+      | LocationID | Borough       | Zone                    | service&#95;zone |
+      | ---------- | ------------- | ----------------------- | ---------------- |
+      | 1          | EWR           | Newark Airport          | EWR              |
+      | 2          | Queens        | Jamaica Bay             | Boro Zone        |
+      | 3          | Bronx         | Allerton/Pelham Gardens | Boro Zone        |
+      | 4          | Manhattan     | Alphabet City           | Yellow Zone      |
+      | 5          | Staten Island | Arden Heights           | Boro Zone        |
+
+      نفّذ أمر SQL التالي، الذي ينشئ قاموسًا باسم `taxi_zone_dictionary` ويملؤه بالبيانات من ملف CSV المخزّن في S3. عنوان URL للملف هو `https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv`.
+
+      ```sql
+      CREATE DICTIONARY taxi_zone_dictionary
+      (
+        `LocationID` UInt16 DEFAULT 0,
+        `Borough` String,
+        `Zone` String,
+        `service_zone` String
+      )
+      PRIMARY KEY LocationID
+      SOURCE(HTTP(URL 'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/taxi_zone_lookup.csv' FORMAT 'CSVWithNames'))
+      LIFETIME(MIN 0 MAX 0)
+      LAYOUT(HASHED_ARRAY())
+      ```
+
+      <Note>
+        يؤدي ضبط `LIFETIME` على القيمة 0 إلى تعطيل التحديثات التلقائية، وذلك لتجنّب إرسال حركة بيانات غير ضرورية إلى حاوية S3 الخاصة بنا. أما في الحالات الأخرى، فقد ترغب في تهيئته بطريقة مختلفة. لمزيد من التفاصيل، راجع [تحديث بيانات القاموس باستخدام LIFETIME](/ar/reference/statements/create/dictionary/lifetime).
+      </Note>
+
+      تحقّق من نجاح العملية. من المفترض أن يُرجع الاستعلام التالي 265 صفًا، أي صفًا واحدًا لكل حيّ:
+
+      ```sql
+      SELECT * FROM taxi_zone_dictionary
+      ```
+    </Step>
+
+    <Step title="نفّذ الاستعلامات باستخدام القاموس">
+      يمكنك استخدام الدالة `dictGet` ([أو أحد أشكالها](/ar/reference/functions/regular-functions/ext-dict-functions)) لاسترداد قيمة من القاموس.
+      مرِّر إليها اسم القاموس، والقيمة المطلوبة، والمفتاح (وهو في مثالنا العمود `LocationID` من `taxi_zone_dictionary`)، فتُعيد إليك القيمة المطابقة.
+      على سبيل المثال، يُرجع الاستعلام التالي قيمة `Borough` التي تقابل `LocationID` ذا القيمة 132 (أي مطار JFK):
+
+      ```sql
+      SELECT dictGet('taxi_zone_dictionary', 'Borough', 132)
+      ```
+
+      يقع مطار JFK في حي Queens. لاحظ أن الوقت المستغرق لاسترجاع القيمة يكاد يكون صفرًا:
+
+      ```response
+      ┌─dictGet('taxi_zone_dictionary', 'Borough', 132)─┐
+      │ Queens                                          │
+      └─────────────────────────────────────────────────┘
+
+      1 rows in set. Elapsed: 0.004 sec.
+      ```
+
+      استخدم الدالة `dictHas` للتحقق من وجود مفتاح معيّن في القاموس. على سبيل المثال، يُرجع الاستعلام التالي القيمة `1` (التي تعني &quot;true&quot; في ClickHouse):
+
+      ```sql
+      SELECT dictHas('taxi_zone_dictionary', 132)
+      ```
+
+      يُرجع الاستعلام التالي القيمة 0 لأن 4567 ليست من قيم `LocationID` في القاموس:
+
+      ```sql
+      SELECT dictHas('taxi_zone_dictionary', 4567)
+      ```
+
+      استخدم الدالة `dictGet` لاسترداد اسم الحي (borough) ضمن استعلام. على سبيل المثال:
+
+      ```sql
+      SELECT
+        count(1) AS total,
+        dictGetOrDefault('taxi_zone_dictionary','Borough', toUInt64(pickup_nyct2010_gid), 'Unknown') AS borough_name
+      FROM trips
+      WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+      GROUP BY borough_name
+      ORDER BY total DESC
+      ```
+
+      يحسب هذا الاستعلام مجموع رحلات سيارات الأجرة المنتهية في مطار LaGuardia أو مطار JFK لكل borough. تبدو النتيجة كما يلي، ويُلاحَظ وجود عدد كبير من الرحلات التي يكون فيها حي الانطلاق غير معروف:
+
+      ```response
+      ┌─total─┬─borough_name──┐
+      │ 23683 │ Unknown       │
+      │  7053 │ Manhattan     │
+      │  6828 │ Brooklyn      │
+      │  4458 │ Queens        │
+      │  2670 │ Bronx         │
+      │   554 │ Staten Island │
+      │    53 │ EWR           │
+      └───────┴───────────────┘
+
+      7 rows in set. Elapsed: 0.019 sec. Processed 2.00 million rows, 4.00 MB (105.70 million rows/s., 211.40 MB/s.)
+      ```
+    </Step>
+
+    <Step title="نفّذ عملية ضم" id="perform-a-join">
+      أخيرًا، اكتب بعض الاستعلامات التي تربط `taxi_zone_dictionary` بجدول `trips` لديك.
+
+      ابدأ بعملية `JOIN` بسيطة تعمل على نحوٍ مشابه لاستعلام المطارات السابق:
+
+      ```sql
+      SELECT
+          count(1) AS total,
+          Borough
+      FROM trips
+      JOIN taxi_zone_dictionary ON toUInt64(trips.pickup_nyct2010_gid) = taxi_zone_dictionary.LocationID
+      WHERE dropoff_nyct2010_gid = 132 OR dropoff_nyct2010_gid = 138
+      GROUP BY Borough
+      ORDER BY total DESC
+      ```
+
+      تبدو النتيجة مطابقة لنتيجة استعلام `dictGet`:
+
+      ```response
+      ┌─total─┬─Borough───────┐
+      │  7053 │ Manhattan     │
+      │  6828 │ Brooklyn      │
+      │  4458 │ Queens        │
+      │  2670 │ Bronx         │
+      │   554 │ Staten Island │
+      │    53 │ EWR           │
+      └───────┴───────────────┘
+
+      6 rows in set. Elapsed: 0.034 sec. Processed 2.00 million rows, 4.00 MB (59.14 million rows/s., 118.29 MB/s.)
+      ```
+
+      <Note>
+        لاحظ أن ناتج استعلام `JOIN` أعلاه مطابق لناتج الاستعلام السابق الذي استخدم `dictGetOrDefault` (باستثناء أن قيم `Unknown` غير مُضمَّنة).
+        في الواقع، تستدعي ClickHouse خلف الكواليس الدالة `dictGet` على القاموس `taxi_zone_dictionary`، غير أن صيغة `JOIN` أكثر ألفةً لدى مطوري SQL.
+      </Note>
+
+      يُرجع هذا الاستعلام صفوف الرحلات الـ 1000 ذات أعلى قيمة إكرامية، ثم يُجري ربطًا داخليًا (inner join) بين كل صف والقاموس:
+
+      ```sql
+      SELECT *
+      FROM trips
+      JOIN taxi_zone_dictionary
+      ON trips.dropoff_nyct2010_gid = taxi_zone_dictionary.LocationID
+      WHERE tip_amount > 0
+      ORDER BY tip_amount DESC
+      LIMIT 1000
+      ```
+
+      <Tip>
+        يُفضَّل تحديد الأعمدة التي يحتاجها الاستعلام فقط بدلاً من استخدام SELECT *. فنظرًا لأن ClickHouse يخزّن البيانات على هيئة أعمدة، فإن اختيار عدد أقل من الأعمدة يقلّل مباشرةً حجم البيانات التي تُقرأ ويُفك ضغطها وتُعالَج.
+      </Tip>
+    </Step>
+  </Steps>
+
+  ## الخطوات التالية {#next-steps}
+
+  تعرّف على المزيد عن ClickHouse من خلال الوثائق التالية:
+
+  * [مقدمة إلى الفهارس الأساسية في ClickHouse](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes): تعرّف على كيفية استخدام ClickHouse للفهارس الأساسية المتناثرة لتحديد مواقع البيانات ذات الصلة بكفاءة أثناء تنفيذ الاستعلامات.
+  * [دمج مصدر بيانات خارجي](/ar/integrations/home): اطّلع على خيارات التكامل المتاحة مع مصادر البيانات، بما في ذلك الملفات وKafka وPostgreSQL ومسارات معالجة البيانات وغيرها الكثير.
+  * [تصوّر البيانات في ClickHouse](/ar/integrations/connectors/data-visualization/index): اربط أداة واجهة المستخدم أو ذكاء الأعمال (BI) المفضلة لديك بـ ClickHouse.
+  * [مرجع SQL](/ar/reference/home): تصفّح دوال SQL المتاحة في ClickHouse لتحويل البيانات ومعالجتها وتحليلها.
+</View>
+
+<View title="مفتوح المصدر">
+  تتألّف عينة بيانات سيارات الأجرة في نيويورك من أكثر من 3 مليارات رحلة لسيارات الأجرة ومركبات النقل بالأجرة (مثل Uber وLyft وغيرها) انطلقت من مدينة نيويورك منذ عام 2009. ويستخدم دليل البدء هذا عينة تضم 3 ملايين صف.
+
+  يمكن الحصول على مجموعة البيانات الكاملة بإحدى الطريقتين التاليتين:
+
+  * إدراج البيانات مباشرةً في ClickHouse Cloud من S3 أو GCS
+  * تنزيل التقسيمات المُعدّة مسبقًا
+  * يمكنك بدلاً من ذلك الاستعلام عن مجموعة البيانات الكاملة في بيئتنا التجريبية على [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19).
+
+  <Note>
+    نُفِّذت الاستعلامات النموذجية أدناه على مثيل **Production** في ClickHouse Cloud. لمزيد من المعلومات، راجع
+    [&quot;مواصفات Playground&quot;](/ar/get-started/sample-datasets/playground#specifications).
+  </Note>
+
+  ## إنشاء الجدول trips {#create-the-table-trips}
+
+  ابدأ بإنشاء جدول لرحلات سيارات الأجرة:
+
   ```sql
-  SELECT count()
-  FROM nyc_taxi.trips_small;
+
+  CREATE DATABASE nyc_taxi;
+
+  CREATE TABLE nyc_taxi.trips_small (
+      trip_id             UInt32,
+      pickup_datetime     DateTime,
+      dropoff_datetime    DateTime,
+      pickup_longitude    Nullable(Float64),
+      pickup_latitude     Nullable(Float64),
+      dropoff_longitude   Nullable(Float64),
+      dropoff_latitude    Nullable(Float64),
+      passenger_count     UInt8,
+      trip_distance       Float32,
+      fare_amount         Float32,
+      extra               Float32,
+      tip_amount          Float32,
+      tolls_amount        Float32,
+      total_amount        Float32,
+      payment_type        Enum('CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4, 'UNK' = 5),
+      pickup_ntaname      LowCardinality(String),
+      dropoff_ntaname     LowCardinality(String)
+  )
+  ENGINE = MergeTree
+  PRIMARY KEY (pickup_datetime, dropoff_datetime);
   ```
-</RunnableCode>
 
-يحتوي كل ملف TSV على نحو 1M صف، ويبلغ إجمالي عدد الصفوف في الملفات الثلاثة 3,000,317 صفًا. لنلقِ نظرة على بعض الصفوف:
+  ## تحميل البيانات مباشرةً من التخزين الكائني {#load-the-data-directly-from-object-storage}
 
-<RunnableCode>
-  ```sql
-  SELECT *
-  FROM nyc_taxi.trips_small
-  LIMIT 10;
-  ```
-</RunnableCode>
+  يمكن للمستخدمين الحصول على مجموعة فرعية صغيرة من البيانات (3 ملايين صف) للتعرّف عليها. تتوفر البيانات في ملفات TSV ضمن تخزين كائني، ويمكن نقلها تدفقيًا بسهولة إلى
+  ClickHouse Cloud باستخدام دالة الجدول `s3`.
 
-لاحظ أن هناك أعمدة لتواريخ الالتقاط والإنزال، وإحداثيات Geo، وتفاصيل الأجرة، وأحياء نيويورك، وغير ذلك.
+  البيانات نفسها مخزَّنة في كلٍّ من S3 وGCS؛ لذا يمكنك اختيار أيٍّ من علامتَي التبويب.
 
-لنُشغِّل بعض الاستعلامات. يوضّح هذا الاستعلام أفضل 10 أحياء تسجّل أعلى عدد من عمليات الالتقاط:
+  <Tabs>
+    <Tab title="S3">
+      يقوم الأمر التالي بدفق ثلاثة ملفات من حاوية S3 إلى الجدول `trips_small` (الصيغة `{0..2}` هي حرف بدل يطابق القيم 0 و1 و2):
 
-<RunnableCode>
-  ```sql
+      ```sql
+      INSERT INTO nyc_taxi.trips_small
+      SELECT
+          trip_id,
+          pickup_datetime,
+          dropoff_datetime,
+          pickup_longitude,
+          pickup_latitude,
+          dropoff_longitude,
+          dropoff_latitude,
+          passenger_count,
+          trip_distance,
+          fare_amount,
+          extra,
+          tip_amount,
+          tolls_amount,
+          total_amount,
+          payment_type,
+          pickup_ntaname,
+          dropoff_ntaname
+      FROM s3(
+          'https://datasets-documentation.s3.eu-west-3.amazonaws.com/nyc-taxi/trips_{0..2}.gz',
+          'TabSeparatedWithNames'
+      );
+      ```
+    </Tab>
+
+    <Tab title="GCS">
+      يقوم الأمر التالي بدفق ثلاثة ملفات من حاوية GCS إلى الجدول `trips` (الصيغة `{0..2}` هي حرف بدل يطابق القيم 0 و1 و2):
+
+      ```sql
+      INSERT INTO nyc_taxi.trips_small
+      SELECT
+          trip_id,
+          pickup_datetime,
+          dropoff_datetime,
+          pickup_longitude,
+          pickup_latitude,
+          dropoff_longitude,
+          dropoff_latitude,
+          passenger_count,
+          trip_distance,
+          fare_amount,
+          extra,
+          tip_amount,
+          tolls_amount,
+          total_amount,
+          payment_type,
+          pickup_ntaname,
+          dropoff_ntaname
+      FROM gcs(
+          'https://storage.googleapis.com/clickhouse-public-datasets/nyc-taxi/trips_{0..2}.gz',
+          'TabSeparatedWithNames'
+      );
+      ```
+    </Tab>
+  </Tabs>
+
+  ## استعلامات نموذجية {#sample-queries}
+
+  تُنفَّذ الاستعلامات التالية على العينة الموضَّحة أعلاه. يمكنك تشغيل الاستعلامات النموذجية على مجموعة البيانات الكاملة في [sql.clickhouse.com](https://sql.clickhouse.com/?query=U0VMRUNUIGNvdW50KCkgRlJPTSBueWNfdGF4aS50cmlwcw\&chart=eyJ0eXBlIjoibGluZSIsImNvbmZpZyI6eyJ0aXRsZSI6IlRlbXBlcmF0dXJlIGJ5IGNvdW50cnkgYW5kIHllYXIiLCJ4YXhpcyI6InllYXIiLCJ5YXhpcyI6ImNvdW50KCkiLCJzZXJpZXMiOiJDQVNUKHBhc3Nlbmdlcl9jb3VudCwgJ1N0cmluZycpIn19)، مع تعديل الاستعلامات أدناه لاستخدام الجدول `nyc_taxi.trips`.
+
+  لنرَ عدد الصفوف التي أُدرجت:
+
+  <RunnableCode>
+    ```sql
+    SELECT count()
+    FROM nyc_taxi.trips_small;
+    ```
+  </RunnableCode>
+
+  يحتوي كل ملف TSV على نحو 1M صف، ويبلغ إجمالي عدد الصفوف في الملفات الثلاثة 3,000,317 صفًا. لنلقِ نظرة على بعض الصفوف:
+
+  <RunnableCode>
+    ```sql
+    SELECT *
+    FROM nyc_taxi.trips_small
+    LIMIT 10;
+    ```
+  </RunnableCode>
+
+  لاحظ أن هناك أعمدة لتواريخ الالتقاط والإنزال، وإحداثيات Geo، وتفاصيل الأجرة، وأحياء نيويورك، وغير ذلك.
+
+  لنُشغِّل بعض الاستعلامات. يوضّح هذا الاستعلام أفضل 10 أحياء تسجّل أعلى عدد من عمليات الالتقاط:
+
+  <RunnableCode>
+    ```sql
+    SELECT
+       pickup_ntaname,
+       count(*) AS count
+    FROM nyc_taxi.trips_small WHERE pickup_ntaname != ''
+    GROUP BY pickup_ntaname
+    ORDER BY count DESC
+    LIMIT 10;
+    ```
+  </RunnableCode>
+
+  يعرض هذا الاستعلام متوسط الأجرة بناءً على عدد الركاب:
+
+  ```sql runnable view='chart' chart_config='eyJ0eXBlIjoiYmFyIiwiY29uZmlnIjp7InhheGlzIjoicGFzc2VuZ2VyX2NvdW50IiwieWF4aXMiOiJhdmcodG90YWxfYW1vdW50KSIsInRpdGxlIjoiQXZlcmFnZSBmYXJlIGJ5IHBhc3NlbmdlciBjb3VudCJ9fQ'
   SELECT
-     pickup_ntaname,
-     count(*) AS count
-  FROM nyc_taxi.trips_small WHERE pickup_ntaname != ''
-  GROUP BY pickup_ntaname
-  ORDER BY count DESC
-  LIMIT 10;
+     passenger_count,
+     avg(total_amount)
+  FROM nyc_taxi.trips_small
+  WHERE passenger_count < 10
+  GROUP BY passenger_count;
   ```
-</RunnableCode>
 
-يعرض هذا الاستعلام متوسط الأجرة بناءً على عدد الركاب:
+  فيما يلي علاقة بين عدد الركاب ومسافة الرحلة:
 
-```sql runnable view='chart' chart_config='eyJ0eXBlIjoiYmFyIiwiY29uZmlnIjp7InhheGlzIjoicGFzc2VuZ2VyX2NvdW50IiwieWF4aXMiOiJhdmcodG90YWxfYW1vdW50KSIsInRpdGxlIjoiQXZlcmFnZSBmYXJlIGJ5IHBhc3NlbmdlciBjb3VudCJ9fQ'
-SELECT
-   passenger_count,
-   avg(total_amount)
-FROM nyc_taxi.trips_small
-WHERE passenger_count < 10
-GROUP BY passenger_count;
-```
+  ```sql runnable chart_config='eyJ0eXBlIjoiaG9yaXpvbnRhbCBiYXIiLCJjb25maWciOnsieGF4aXMiOiJwYXNzZW5nZXJfY291bnQiLCJ5YXhpcyI6ImRpc3RhbmNlIiwic2VyaWVzIjoiY291bnRyeSIsInRpdGxlIjoiQXZnIGZhcmUgYnkgcGFzc2VuZ2VyIGNvdW50In19'
+  SELECT
+      passenger_count,
+      avg(trip_distance) AS distance,
+      count() AS c
+  FROM nyc_taxi.trips_small
+  GROUP BY passenger_count
+  ORDER BY passenger_count ASC
+  ```
 
-فيما يلي علاقة بين عدد الركاب ومسافة الرحلة:
+  ## تنزيل الأقسام المُعدّة مسبقًا {#download-of-prepared-partitions}
 
-```sql runnable chart_config='eyJ0eXBlIjoiaG9yaXpvbnRhbCBiYXIiLCJjb25maWciOnsieGF4aXMiOiJwYXNzZW5nZXJfY291bnQiLCJ5YXhpcyI6ImRpc3RhbmNlIiwic2VyaWVzIjoiY291bnRyeSIsInRpdGxlIjoiQXZnIGZhcmUgYnkgcGFzc2VuZ2VyIGNvdW50In19'
-SELECT
-    passenger_count,
-    avg(trip_distance) AS distance,
-    count() AS c
-FROM nyc_taxi.trips_small
-GROUP BY passenger_count
-ORDER BY passenger_count ASC
-```
+  <Note>
+    توفّر الخطوات التالية معلومات عن مجموعة البيانات الأصلية، إلى جانب طريقة لتحميل التقسيمات المُعدّة مسبقًا إلى بيئة خادم ClickHouse مُدار ذاتيًا.
+  </Note>
 
-<div id="download-of-prepared-partitions">
-  ## تنزيل الأجزاء المُقسَّمة المُعدّة مسبقًا
-</div>
+  راجع https://github.com/toddwschneider/nyc-taxi-data و http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html للاطلاع على وصف مجموعة البيانات وتعليمات تنزيلها.
 
-<Note>
-  توضّح الخطوات التالية معلومات عن مجموعة البيانات الأصلية، وطريقة تحميل الأجزاء المُقسَّمة المُعدّة مسبقًا إلى بيئة خادم ClickHouse تتم إدارته ذاتيًا.
-</Note>
+  سينتج عن التنزيل نحو 227 GB من البيانات غير المضغوطة في ملفات CSV. يستغرق التنزيل نحو ساعة عبر اتصال بسرعة 1 Gbit (إذ يستغل التنزيل المتوازي من s3.amazonaws.com نصف سعة قناة 1 Gbit على الأقل).
+  قد لا يكتمل تنزيل بعض الملفات. تحقّق من أحجام الملفات وأعِد تنزيل أي ملف تشكّ في سلامته.
 
-راجع https://github.com/toddwschneider/nyc-taxi-data و http://tech.marksblogg.com/billion-nyc-taxi-rides-redshift.html للاطلاع على وصف مجموعة البيانات وإرشادات التنزيل.
+  ```bash
+  $ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
+  # Validate the checksum
+  $ md5sum trips_mergetree.tar
+  # Checksum should be equal to: f3b8d469b41d9a82da064ded7245d12c
+  $ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
+  $ # check permissions of unpacked data, fix if required
+  $ sudo service clickhouse-server restart
+  $ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
+  ```
 
-سينتج عن التنزيل نحو 227 جيجابايت من البيانات غير المضغوطة في ملفات CSV. ويستغرق التنزيل حوالي ساعة عبر اتصال بسرعة 1 جيجابت (إذ يتيح التنزيل المتوازي من s3.amazonaws.com الاستفادة من نصف سعة اتصال 1 جيجابت على الأقل).
-قد لا تكتمل عملية تنزيل بعض الملفات بالكامل. تحقّق من أحجام الملفات، وأعِد تنزيل أي ملف يبدو مشكوكًا فيه.
+  <Info>
+    إذا كنت ستُشغِّل الاستعلامات الموضَّحة أدناه، فعليك استخدام الاسم الكامل للجدول، `datasets.trips_mergetree`.
+  </Info>
 
-```bash
-$ curl -O https://datasets.clickhouse.com/trips_mergetree/partitions/trips_mergetree.tar
-# Validate the checksum
-$ md5sum trips_mergetree.tar
-# Checksum should be equal to: f3b8d469b41d9a82da064ded7245d12c
-$ tar xvf trips_mergetree.tar -C /var/lib/clickhouse # path to ClickHouse data directory
-$ # check permissions of unpacked data, fix if required
-$ sudo service clickhouse-server restart
-$ clickhouse-client --query "select count(*) from datasets.trips_mergetree"
-```
+  ## النتائج على خادم واحد {#results-on-single-server}
 
-<Info>
-  إذا كنت ستشغّل الاستعلامات الموضّحة أدناه، فعليك استخدام اسم الجدول الكامل `datasets.trips_mergetree`.
-</Info>
+  Q1:
 
-<div id="results-on-single-server">
-  ## النتائج على خادم واحد
-</div>
+  ```sql
+  SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type;
+  ```
 
-Q1:
+  0.490 ثانية.
 
-```sql
-SELECT cab_type, count(*) FROM trips_mergetree GROUP BY cab_type;
-```
+  Q2:
 
-0.490 ثانية.
+  ```sql
+  SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count;
+  ```
 
-Q2:
+  1.224 ثانية.
 
-```sql
-SELECT passenger_count, avg(total_amount) FROM trips_mergetree GROUP BY passenger_count;
-```
+  الاستعلام 3:
 
-1.224 ثانية.
+  ```sql
+  SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year;
+  ```
 
-Q3:
+  2.104 ثانية.
 
-```sql
-SELECT passenger_count, toYear(pickup_date) AS year, count(*) FROM trips_mergetree GROUP BY passenger_count, year;
-```
+  الاستعلام 4:
 
-2.104 ثانية.
+  ```sql
+  SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
+  FROM trips_mergetree
+  GROUP BY passenger_count, year, distance
+  ORDER BY year, count(*) DESC;
+  ```
 
-Q4:
+  3.593 ثانية.
 
-```sql
-SELECT passenger_count, toYear(pickup_date) AS year, round(trip_distance) AS distance, count(*)
-FROM trips_mergetree
-GROUP BY passenger_count, year, distance
-ORDER BY year, count(*) DESC;
-```
+  استُخدم الخادم التالي:
 
-3.593 ثانية.
+  معالجان Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz، بإجمالي 16 نواة فعلية، وذاكرة RAM بسعة 128 GiB، و8 أقراص صلبة سعة كلٍّ منها 6 TB ضمن مصفوفة RAID-5 عتادية
 
-استُخدم الخادم التالي:
+  زمن التنفيذ هو أفضل نتيجة من بين ثلاث مرات تشغيل. غير أن الاستعلامات تقرأ البيانات من ذاكرة التخزين المؤقت لنظام الملفات بدءًا من مرة التشغيل الثانية. ولا يحدث أي تخزين مؤقت آخر، إذ تُقرأ البيانات وتُعالَج في كل مرة تشغيل.
 
-معالجان Intel(R) Xeon(R) CPU E5-2650 v2 @ 2.60GHz، بإجمالي 16 نواة فعلية، وذاكرة RAM بسعة 128 GiB، و8 أقراص HD سعة 6 تيرابايت لكل منها ضمن RAID-5 عتادي
+  إنشاء جدول على ثلاثة خوادم:
 
-زمن التنفيذ هو الأفضل من بين ثلاث عمليات تشغيل. ولكن ابتداءً من عملية التشغيل الثانية، تقرأ الاستعلامات البيانات من ذاكرة التخزين المؤقت لنظام الملفات. ولا يحدث أي تخزين مؤقت إضافي: إذ تُقرأ البيانات وتُعالَج في كل عملية تشغيل.
+  على كل خادم:
 
-إنشاء جدول على ثلاثة خوادم:
+  ```sql
+  CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1' = 1, '2' = 2, 'CMT' = 3, 'VTS' = 4, 'DDS' = 5, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14),  pickup_date Date,  pickup_datetime DateTime,  dropoff_date Date,  dropoff_datetime DateTime,  store_and_fwd_flag UInt8,  rate_code_id UInt8,  pickup_longitude Float64,  pickup_latitude Float64,  dropoff_longitude Float64,  dropoff_latitude Float64,  passenger_count UInt8,  trip_distance Float64,  fare_amount Float32,  extra Float32,  mta_tax Float32,  tip_amount Float32,  tolls_amount Float32,  ehail_fee Float32,  improvement_surcharge Float32,  total_amount Float32,  payment_type_ Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),  trip_type UInt8,  pickup FixedString(25),  dropoff FixedString(25),  cab_type Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),  pickup_nyct2010_gid UInt8,  pickup_ctlabel Float32,  pickup_borocode UInt8,  pickup_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  pickup_ct2010 FixedString(6),  pickup_boroct2010 FixedString(7),  pickup_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  pickup_ntacode FixedString(4),  pickup_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  pickup_puma UInt16,  dropoff_nyct2010_gid UInt8,  dropoff_ctlabel Float32,  dropoff_borocode UInt8,  dropoff_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  dropoff_ct2010 FixedString(6),  dropoff_boroct2010 FixedString(7),  dropoff_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  dropoff_ntacode FixedString(4),  dropoff_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  dropoff_puma UInt16) ENGINE = MergeTree(pickup_date, pickup_datetime, 8192);
+  ```
 
-على كل خادم:
+  على الخادم المصدر:
 
-```sql
-CREATE TABLE default.trips_mergetree_third ( trip_id UInt32,  vendor_id Enum8('1' = 1, '2' = 2, 'CMT' = 3, 'VTS' = 4, 'DDS' = 5, 'B02512' = 10, 'B02598' = 11, 'B02617' = 12, 'B02682' = 13, 'B02764' = 14),  pickup_date Date,  pickup_datetime DateTime,  dropoff_date Date,  dropoff_datetime DateTime,  store_and_fwd_flag UInt8,  rate_code_id UInt8,  pickup_longitude Float64,  pickup_latitude Float64,  dropoff_longitude Float64,  dropoff_latitude Float64,  passenger_count UInt8,  trip_distance Float64,  fare_amount Float32,  extra Float32,  mta_tax Float32,  tip_amount Float32,  tolls_amount Float32,  ehail_fee Float32,  improvement_surcharge Float32,  total_amount Float32,  payment_type_ Enum8('UNK' = 0, 'CSH' = 1, 'CRE' = 2, 'NOC' = 3, 'DIS' = 4),  trip_type UInt8,  pickup FixedString(25),  dropoff FixedString(25),  cab_type Enum8('yellow' = 1, 'green' = 2, 'uber' = 3),  pickup_nyct2010_gid UInt8,  pickup_ctlabel Float32,  pickup_borocode UInt8,  pickup_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  pickup_ct2010 FixedString(6),  pickup_boroct2010 FixedString(7),  pickup_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  pickup_ntacode FixedString(4),  pickup_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  pickup_puma UInt16,  dropoff_nyct2010_gid UInt8,  dropoff_ctlabel Float32,  dropoff_borocode UInt8,  dropoff_boroname Enum8('' = 0, 'Manhattan' = 1, 'Bronx' = 2, 'Brooklyn' = 3, 'Queens' = 4, 'Staten Island' = 5),  dropoff_ct2010 FixedString(6),  dropoff_boroct2010 FixedString(7),  dropoff_cdeligibil Enum8(' ' = 0, 'E' = 1, 'I' = 2),  dropoff_ntacode FixedString(4),  dropoff_ntaname Enum16('' = 0, 'Airport' = 1, 'Allerton-Pelham Gardens' = 2, 'Annadale-Huguenot-Prince\'s Bay-Eltingville' = 3, 'Arden Heights' = 4, 'Astoria' = 5, 'Auburndale' = 6, 'Baisley Park' = 7, 'Bath Beach' = 8, 'Battery Park City-Lower Manhattan' = 9, 'Bay Ridge' = 10, 'Bayside-Bayside Hills' = 11, 'Bedford' = 12, 'Bedford Park-Fordham North' = 13, 'Bellerose' = 14, 'Belmont' = 15, 'Bensonhurst East' = 16, 'Bensonhurst West' = 17, 'Borough Park' = 18, 'Breezy Point-Belle Harbor-Rockaway Park-Broad Channel' = 19, 'Briarwood-Jamaica Hills' = 20, 'Brighton Beach' = 21, 'Bronxdale' = 22, 'Brooklyn Heights-Cobble Hill' = 23, 'Brownsville' = 24, 'Bushwick North' = 25, 'Bushwick South' = 26, 'Cambria Heights' = 27, 'Canarsie' = 28, 'Carroll Gardens-Columbia Street-Red Hook' = 29, 'Central Harlem North-Polo Grounds' = 30, 'Central Harlem South' = 31, 'Charleston-Richmond Valley-Tottenville' = 32, 'Chinatown' = 33, 'Claremont-Bathgate' = 34, 'Clinton' = 35, 'Clinton Hill' = 36, 'Co-op City' = 37, 'College Point' = 38, 'Corona' = 39, 'Crotona Park East' = 40, 'Crown Heights North' = 41, 'Crown Heights South' = 42, 'Cypress Hills-City Line' = 43, 'DUMBO-Vinegar Hill-Downtown Brooklyn-Boerum Hill' = 44, 'Douglas Manor-Douglaston-Little Neck' = 45, 'Dyker Heights' = 46, 'East Concourse-Concourse Village' = 47, 'East Elmhurst' = 48, 'East Flatbush-Farragut' = 49, 'East Flushing' = 50, 'East Harlem North' = 51, 'East Harlem South' = 52, 'East New York' = 53, 'East New York (Pennsylvania Ave)' = 54, 'East Tremont' = 55, 'East Village' = 56, 'East Williamsburg' = 57, 'Eastchester-Edenwald-Baychester' = 58, 'Elmhurst' = 59, 'Elmhurst-Maspeth' = 60, 'Erasmus' = 61, 'Far Rockaway-Bayswater' = 62, 'Flatbush' = 63, 'Flatlands' = 64, 'Flushing' = 65, 'Fordham South' = 66, 'Forest Hills' = 67, 'Fort Greene' = 68, 'Fresh Meadows-Utopia' = 69, 'Ft. Totten-Bay Terrace-Clearview' = 70, 'Georgetown-Marine Park-Bergen Beach-Mill Basin' = 71, 'Glen Oaks-Floral Park-New Hyde Park' = 72, 'Glendale' = 73, 'Gramercy' = 74, 'Grasmere-Arrochar-Ft. Wadsworth' = 75, 'Gravesend' = 76, 'Great Kills' = 77, 'Greenpoint' = 78, 'Grymes Hill-Clifton-Fox Hills' = 79, 'Hamilton Heights' = 80, 'Hammels-Arverne-Edgemere' = 81, 'Highbridge' = 82, 'Hollis' = 83, 'Homecrest' = 84, 'Hudson Yards-Chelsea-Flatiron-Union Square' = 85, 'Hunters Point-Sunnyside-West Maspeth' = 86, 'Hunts Point' = 87, 'Jackson Heights' = 88, 'Jamaica' = 89, 'Jamaica Estates-Holliswood' = 90, 'Kensington-Ocean Parkway' = 91, 'Kew Gardens' = 92, 'Kew Gardens Hills' = 93, 'Kingsbridge Heights' = 94, 'Laurelton' = 95, 'Lenox Hill-Roosevelt Island' = 96, 'Lincoln Square' = 97, 'Lindenwood-Howard Beach' = 98, 'Longwood' = 99, 'Lower East Side' = 100, 'Madison' = 101, 'Manhattanville' = 102, 'Marble Hill-Inwood' = 103, 'Mariner\'s Harbor-Arlington-Port Ivory-Graniteville' = 104, 'Maspeth' = 105, 'Melrose South-Mott Haven North' = 106, 'Middle Village' = 107, 'Midtown-Midtown South' = 108, 'Midwood' = 109, 'Morningside Heights' = 110, 'Morrisania-Melrose' = 111, 'Mott Haven-Port Morris' = 112, 'Mount Hope' = 113, 'Murray Hill' = 114, 'Murray Hill-Kips Bay' = 115, 'New Brighton-Silver Lake' = 116, 'New Dorp-Midland Beach' = 117, 'New Springville-Bloomfield-Travis' = 118, 'North Corona' = 119, 'North Riverdale-Fieldston-Riverdale' = 120, 'North Side-South Side' = 121, 'Norwood' = 122, 'Oakland Gardens' = 123, 'Oakwood-Oakwood Beach' = 124, 'Ocean Hill' = 125, 'Ocean Parkway South' = 126, 'Old Astoria' = 127, 'Old Town-Dongan Hills-South Beach' = 128, 'Ozone Park' = 129, 'Park Slope-Gowanus' = 130, 'Parkchester' = 131, 'Pelham Bay-Country Club-City Island' = 132, 'Pelham Parkway' = 133, 'Pomonok-Flushing Heights-Hillcrest' = 134, 'Port Richmond' = 135, 'Prospect Heights' = 136, 'Prospect Lefferts Gardens-Wingate' = 137, 'Queens Village' = 138, 'Queensboro Hill' = 139, 'Queensbridge-Ravenswood-Long Island City' = 140, 'Rego Park' = 141, 'Richmond Hill' = 142, 'Ridgewood' = 143, 'Rikers Island' = 144, 'Rosedale' = 145, 'Rossville-Woodrow' = 146, 'Rugby-Remsen Village' = 147, 'Schuylerville-Throgs Neck-Edgewater Park' = 148, 'Seagate-Coney Island' = 149, 'Sheepshead Bay-Gerritsen Beach-Manhattan Beach' = 150, 'SoHo-TriBeCa-Civic Center-Little Italy' = 151, 'Soundview-Bruckner' = 152, 'Soundview-Castle Hill-Clason Point-Harding Park' = 153, 'South Jamaica' = 154, 'South Ozone Park' = 155, 'Springfield Gardens North' = 156, 'Springfield Gardens South-Brookville' = 157, 'Spuyten Duyvil-Kingsbridge' = 158, 'St. Albans' = 159, 'Stapleton-Rosebank' = 160, 'Starrett City' = 161, 'Steinway' = 162, 'Stuyvesant Heights' = 163, 'Stuyvesant Town-Cooper Village' = 164, 'Sunset Park East' = 165, 'Sunset Park West' = 166, 'Todt Hill-Emerson Hill-Heartland Village-Lighthouse Hill' = 167, 'Turtle Bay-East Midtown' = 168, 'University Heights-Morris Heights' = 169, 'Upper East Side-Carnegie Hill' = 170, 'Upper West Side' = 171, 'Van Cortlandt Village' = 172, 'Van Nest-Morris Park-Westchester Square' = 173, 'Washington Heights North' = 174, 'Washington Heights South' = 175, 'West Brighton' = 176, 'West Concourse' = 177, 'West Farms-Bronx River' = 178, 'West New Brighton-New Brighton-St. George' = 179, 'West Village' = 180, 'Westchester-Unionport' = 181, 'Westerleigh' = 182, 'Whitestone' = 183, 'Williamsbridge-Olinville' = 184, 'Williamsburg' = 185, 'Windsor Terrace' = 186, 'Woodhaven' = 187, 'Woodlawn-Wakefield' = 188, 'Woodside' = 189, 'Yorkville' = 190, 'park-cemetery-etc-Bronx' = 191, 'park-cemetery-etc-Brooklyn' = 192, 'park-cemetery-etc-Manhattan' = 193, 'park-cemetery-etc-Queens' = 194, 'park-cemetery-etc-Staten Island' = 195),  dropoff_puma UInt16) ENGINE = MergeTree(pickup_date, pickup_datetime, 8192);
-```
+  ```sql
+  CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand());
+  ```
 
-على الخادم المصدر:
+  يعيد الاستعلام التالي توزيع البيانات:
 
-```sql
-CREATE TABLE trips_mergetree_x3 AS trips_mergetree_third ENGINE = Distributed(perftest, default, trips_mergetree_third, rand());
-```
+  ```sql
+  INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree;
+  ```
 
-يقوم الاستعلام التالي بإعادة توزيع البيانات:
+  يستغرق ذلك 2454 ثانية.
 
-```sql
-INSERT INTO trips_mergetree_x3 SELECT * FROM trips_mergetree;
-```
+  على ثلاثة خوادم:
 
-استغرق هذا 2454 ثانية.
+  Q1: 0.212 ثانية.
+  Q2: 0.438 ثانية.
+  Q3: 0.733 ثانية.
+  Q4: 1.241 ثانية.
 
-على ثلاثة خوادم:
+  لا مفاجآت هنا، فأداء الاستعلامات يتوسّع خطيًا.
 
-Q1: 0.212 ثانية.
-Q2: 0.438 ثانية.
-Q3: 0.733 ثانية.
-Q4: 1.241 ثانية.
+  لدينا أيضًا نتائج من عنقود مكوَّن من 140 خادمًا:
 
-لا مفاجآت هنا، لأن الاستعلامات تتوسع بشكل خطي.
+  Q1: 0.028 ثانية.
+  Q2: 0.043 ثانية.
+  Q3: 0.051 ثانية.
+  Q4: 0.072 ثانية.
 
-ولدينا أيضًا نتائج عنقود يضم 140 خادمًا:
+  في هذه الحالة، يتحدد زمن معالجة الاستعلام في المقام الأول بزمن الاستجابة في الشبكة.
+  شغّلنا الاستعلامات باستخدام عميل موجود في مركز بيانات غير الذي يستضيف العنقود، مما أضاف نحو 20 ms إلى زمن الاستجابة.
 
-Q1: 0.028 ثانية.
-Q2: 0.043 ثانية.
-Q3: 0.051 ثانية.
-Q4: 0.072 ثانية.
+  ## الملخص {#summary}
 
-في هذه الحالة، يتحدد وقت معالجة الاستعلام بالدرجة الأولى بزمن انتقال الشبكة.
-لقد أجرينا الاستعلامات باستخدام عميل موجود في مركز بيانات مختلف عن مركز البيانات الذي كان العنقود موجودًا فيه، مما أضاف نحو 20 مللي ثانية من زمن الانتقال.
-
-<div id="summary">
-  ## الخلاصة
-</div>
-
-| الخوادم            | Q1    | Q2    | Q3    | Q4    |
-| ------------------ | ----- | ----- | ----- | ----- |
-| 1, E5-2650v2       | 0.490 | 1.224 | 2.104 | 3.593 |
-| 3, E5-2650v2       | 0.212 | 0.438 | 0.733 | 1.241 |
-| 1, AWS c5n.4xlarge | 0.249 | 1.279 | 1.738 | 3.527 |
-| 1, AWS c5n.9xlarge | 0.130 | 0.584 | 0.777 | 1.811 |
-| 3, AWS c5n.9xlarge | 0.057 | 0.231 | 0.285 | 0.641 |
-| 140, E5-2650v2     | 0.028 | 0.043 | 0.051 | 0.072 |
+  | الخوادم            | Q1    | Q2    | Q3    | Q4    |
+  | ------------------ | ----- | ----- | ----- | ----- |
+  | 1, E5-2650v2       | 0.490 | 1.224 | 2.104 | 3.593 |
+  | 3, E5-2650v2       | 0.212 | 0.438 | 0.733 | 1.241 |
+  | 1, AWS c5n.4xlarge | 0.249 | 1.279 | 1.738 | 3.527 |
+  | 1, AWS c5n.9xlarge | 0.130 | 0.584 | 0.777 | 1.811 |
+  | 3, AWS c5n.9xlarge | 0.057 | 0.231 | 0.285 | 0.641 |
+  | 140, E5-2650v2     | 0.028 | 0.043 | 0.051 | 0.072 |
+</View>

@@ -30,15 +30,13 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 * [SQL Editor](#sql-editor): クエリを完全に制御したい場合は SQL エディタを使用できます。このモードでは、あらゆる SQL クエリを実行できます。
 
 <div id="query-types">
-  ## クエリタイプ
+  ## クエリタイプ {#query-types}
 </div>
 
 *クエリタイプ*設定を変更すると、作成するクエリの種類に合わせてクエリビルダーのレイアウトが変わります。
 また、クエリタイプによって、データの可視化に使用するパネルも決まります。
 
-<div id="table">
-  ### Table
-</div>
+### Table {#table}
 
 最も柔軟なクエリタイプは、テーブルクエリです。これは、シンプルなクエリや集約クエリを扱うために設計された、ほかのクエリビルダー全般を包括するクエリタイプです。
 
@@ -56,9 +54,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 このクエリタイプでは、データがテーブルとして表示されます。
 
-<div id="logs">
-  ### ログ
-</div>
+### ログ {#logs}
 
 ログのクエリタイプでは、ログデータのクエリに特化したクエリビルダーを利用できます。
 クエリビルダーでデフォルトのデータベース/テーブルやカラムをあらかじめ読み込めるように、デフォルト値はデータソースの[ログ設定](/ja/integrations/connectors/data-visualization/grafana/config#logs)で構成できます。
@@ -93,7 +89,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="ログクエリの追加フィールドの例" border />
 
 <div id="time-series">
-  ### 時系列
+  ### 時系列 {#time-series}
 </div>
 
 時系列クエリタイプは、[table](#table) と似ていますが、時系列データに重点を置いています。
@@ -128,9 +124,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 このクエリタイプでは、データが時系列パネルで表示されます。
 
-<div id="traces">
-  ### トレース
-</div>
+### トレース {#traces}
 
 トレースクエリタイプには、トレースを簡単に検索して表示できるクエリビルダーが用意されています。
 これは OpenTelemetry データ向けに設計されていますが、別のスキーマのトレースを表示するためにカラムを選択することもできます。
@@ -167,9 +161,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 このクエリタイプでは、Trace Search モードではデータがテーブルビューで表示され、Trace ID モードではトレースパネルで表示されます。
 
-<div id="sql-editor">
-  ## SQL エディタ
-</div>
+## SQL エディタ {#sql-editor}
 
 クエリビルダーでは対応できないような複雑なクエリには、SQL エディタを使用できます。
 プレーンな ClickHouse SQL を記述して実行できるため、クエリを完全に制御できます。
@@ -183,9 +175,7 @@ SQL エディタは、クエリエディタ上部の &quot;SQL Editor&quot; を�
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="生の SQL クエリの例" border />
 
-<div id="data-links">
-  ## データリンク
-</div>
+## データリンク {#data-links}
 
 Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 を使うと、新しいクエリへリンクできます。
@@ -204,18 +194,18 @@ Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### データリンクを作成する方法
+  ### データリンクを作成する方法 {#how-to-make-a-data-link}
 </div>
 
 クエリで `traceID` という名前のカラムを選択すると、データリンクを作成できます。この名前は大文字と小文字を区別せず、&quot;ID&quot; の前にアンダースコアを付けた形式にも対応しています。たとえば、`traceId`、`TraceId`、`TRACE_ID`、`tracE_iD` はいずれも有効です。
 
 [ログ](#logs) または [トレース](#traces) のクエリで OpenTelemetry が有効になっている場合、トレース ID カラムが自動的に含まれます。
 
-トレース ID カラムを含めると、データに「**View Trace**」および「**View Logs**」のリンクが追加されます。
+トレース ID カラムが存在する場合、プラグインはデータに「**View Trace**」および「**View Logs**」のリンクを追加できます。
 
-<div id="linking-abilities">
-  ### リンク機能
-</div>
+トグルはデフォルトで有効になっています。現在のクエリタイプのリンクにはデフォルトを設定する必要はありませんが、クロスシグナルリンクは、データソースにターゲットシグナル用のデフォルトが設定されている場合にのみ表示されます。データソースの[トレース](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links)および[ログ](/ja/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links)設定セクションにある **Show &quot;View trace&quot; links** と **Show &quot;View logs&quot; links** のトグルで非表示にできます。
+
+### リンク機能 {#linking-abilities}
 
 データリンクがあると、指定された トレース ID を使って トレース と ログ を開けます。
 
@@ -231,7 +221,7 @@ Explore ビューではなくダッシュボードからリンクをクリック
 </div>
 
 <div id="macros">
-  ## マクロ
+  ## マクロ {#macros}
 </div>
 
 マクロは、クエリに動的な SQL を追加するためのシンプルな方法です。
@@ -240,7 +230,7 @@ Explore ビューではなくダッシュボードからリンクをクリック
 SQL エディタとクエリビルダーのどちらのクエリでも、マクロを使用できます。
 
 <div id="using-macros">
-  ### マクロの使用
+  ### マクロの使用 {#using-macros}
 </div>
 
 マクロはクエリ内のどこでも使用でき、必要に応じて複数回指定できます。
@@ -268,7 +258,7 @@ WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
 このプラグインは、中括弧 `{}` を使う記法にも対応しています。[parameters](/ja/reference/syntax#defining-and-using-query-parameters) 内でクエリが必要な場合は、この記法を使用してください。
 
 <div id="list-of-macros">
-  ### マクロの一覧
+  ### マクロの一覧 {#list-of-macros}
 </div>
 
 これは、プラグインで使用できるすべてのマクロの一覧です。

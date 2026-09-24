@@ -33,9 +33,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 이제 쿼리 실행 중 각 엔터티가 어떻게 동작하는지 살펴보겠습니다. 몇 가지 쿼리를 예로 들어 `EXPLAIN` 구문을 사용해 자세히 살펴보겠습니다.
 
-<div id="parser">
-  ## 파서
-</div>
+## 파서 {#parser}
 
 파서의 목적은 쿼리 텍스트를 AST(Abstract Syntax Tree)로 변환하는 것입니다. 이 단계는 `EXPLAIN AST`를 사용해 시각적으로 확인할 수 있습니다:
 
@@ -80,22 +78,21 @@ graph TD
     tisqe --> te["TableExpression"]
     te --> ti["TableIdentifier session_events"]
 ```
+
 각 노드에는 해당 자식 노드가 있으며, 전체 트리는 쿼리의 전반적인 구조를 나타냅니다. 이는 쿼리를 처리하는 데 도움이 되는 논리적 구조입니다. 최종 사용자 입장에서는(쿼리 실행 자체에 관심이 있는 경우가 아니라면) 그다지 유용하지 않으며, 이 도구는 주로 개발자가 사용합니다.
 
-<div id="analyzer">
-  ## 분석기
-</div>
+## 분석기 {#analyzer}
 
-ClickHouse에는 현재 분석기에 두 가지 아키텍처가 있습니다. `enable_analyzer=0`으로 설정하면 기존 아키텍처를 사용할 수 있습니다. 현재 아키텍처는 ClickHouse `24.3`부터 기본적으로 활성화되어 있습니다. 기존 아키텍처는 더 이상 권장되지 않으며 이전 버전과의 호환성을 위해서만 유지되므로, 여기서는 현재 아키텍처만 설명하겠습니다.
+분석기는 ClickHouse `24.3`부터 기본적으로 활성화되어 있으며, `26.9`부터는 유일한 쿼리 분석 방식입니다. 이 버전부터 `enable_analyzer`는 더 이상 사용되지 않는 설정이 되어 비활성화할 수 없습니다.
 
 <Note>
-  현재 아키텍처는 ClickHouse 성능을 개선하기 위한 더 나은 기반을 제공합니다. 다만 쿼리 처리 과정의 핵심 구성 요소이기 때문에 일부 쿼리에 부정적인 영향을 줄 수 있으며, [알려진 비호환성](/ko/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities)도 있습니다. 쿼리 수준 또는 사용자 수준에서 `enable_analyzer` 설정을 변경하면 기존 아키텍처로 되돌릴 수 있습니다.
+  분석기는 쿼리 처리 과정의 핵심 구성 요소이기 때문에 일부 쿼리에 부정적인 영향을 줄 수 있습니다. 이에 맞춰 수정이 필요한 쿼리는 [알려진 비호환성](/ko/guides/clickhouse/performance-and-monitoring/analyzer#known-incompatibilities)을 참고하십시오.
 </Note>
 
-분석기는 쿼리 실행의 중요한 단계입니다. 분석기는 AST를 받아 쿼리 트리로 변환합니다. AST와 비교했을 때 쿼리 트리의 가장 큰 장점은 예를 들어 스토리지와 같은 많은 요소가 해석된다는 점입니다. 또한 어느 테이블에서 읽어야 하는지도 알 수 있고, alias도 해석되며, 트리는 사용되는 다양한 데이터 타입도 파악합니다. 이러한 장점 덕분에 분석기는 최적화를 적용할 수 있습니다. 이러한 최적화는 &quot;패스&quot;를 통해 이루어집니다. 각 패스는 서로 다른 최적화를 찾습니다. 모든 패스는 [여기](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249)에서 확인할 수 있습니다. 이전 쿼리를 예로 들어 실제로 어떻게 동작하는지 살펴보겠습니다:
+분석기는 쿼리 실행의 중요한 단계입니다. 분석기는 AST를 받아 쿼리 트리로 변환합니다. AST와 비교했을 때 쿼리 트리의 가장 큰 장점은 예를 들어 스토리지와 같은 많은 요소가 해석된다는 점입니다. 또한 어느 테이블에서 읽어야 하는지도 알 수 있고, 별칭도 해석되며, 트리는 사용되는 다양한 데이터 타입도 파악합니다. 이러한 장점 덕분에 분석기는 최적화를 적용할 수 있습니다. 이러한 최적화는 &quot;패스&quot;를 통해 이루어집니다. 각 패스는 서로 다른 최적화를 찾습니다. 모든 패스는 [여기](https://github.com/ClickHouse/ClickHouse/blob/76578ebf92af3be917cd2e0e17fea2965716d958/src/Analyzer/QueryTreePassManager.cpp#L249)에서 확인할 수 있습니다. 이전 쿼리를 예로 들어 실제로 어떻게 동작하는지 살펴보겠습니다:
 
 ```sql
-EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -113,12 +110,11 @@ EXPLAIN QUERY TREE passes=0 SELECT min(timestamp) AS minimum_date, max(timestamp
 │             IDENTIFIER id: 7, identifier: timestamp                                    │
 │   JOIN TREE                                                                            │
 │     IDENTIFIER id: 8, identifier: session_events                                       │
-│   SETTINGS allow_experimental_analyzer=1                                               │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ```sql
-EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events SETTINGS allow_experimental_analyzer=1;
+EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestamp) AS maximum_date FROM session_events;
 ```
 
 ```response
@@ -135,18 +131,16 @@ EXPLAIN QUERY TREE passes=20 SELECT min(timestamp) AS minimum_date, max(timestam
 │             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │       FUNCTION id: 6, function_name: max, function_type: aggregate, result_type: DateTime │
 │         ARGUMENTS                                                                         │
-│           LIST id: 7, nodes: 1                                                            │
-│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
+│           LIST id: 7, nodes: 1                                                            │n│             COLUMN id: 4, column_name: timestamp, result_type: DateTime, source_id: 5     │
 │   JOIN TREE                                                                               │
 │     TABLE id: 5, alias: __table1, table_name: default.session_events                      │
-│   SETTINGS allow_experimental_analyzer=1                                                  │
 └───────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 두 번의 실행을 비교해 보면 별칭과 프로젝션이 해석되는 것을 확인할 수 있습니다.
 
 <div id="planner">
-  ## 플래너
+  ## 플래너 {#planner}
 </div>
 
 플래너는 쿼리 트리를 입력으로 받아 이를 바탕으로 쿼리 실행 계획을 생성합니다. 쿼리 트리는 특정 쿼리에서 무엇을 수행할지 나타내고, 쿼리 실행 계획은 이를 어떻게 수행할지 나타냅니다. 추가적인 최적화도 쿼리 실행 계획의 일부로 수행됩니다. `EXPLAIN PLAN` 또는 `EXPLAIN`을 사용해 쿼리 실행 계획을 확인할 수 있습니다(`EXPLAIN`은 `EXPLAIN PLAN`을 실행합니다).
@@ -266,7 +260,7 @@ GROUP BY type
 이제 사용되고 있는 모든 입력, 함수, 별칭, 데이터 타입을 확인할 수 있습니다. 플래너가 적용하는 일부 최적화는 [여기](https://github.com/ClickHouse/ClickHouse/blob/master/src/Processors/QueryPlan/Optimizations/Optimizations.h)에서 확인할 수 있습니다.
 
 <div id="query-pipeline">
-  ## 쿌리 파이프라인
+  ## 쿌리 파이프라인 {#query-pipeline}
 </div>
 
 쿼리 파이프라인은 쿼리 실행 계획으로부터 생성됩니다. 쿼리 파이프라인은 쿼리 실행 계획과 매우 유사하지만, 트리가 아닌 그래프 구조라는 점이 다릅니다. 쿼리 파이프라인은 ClickHouse가 쿼리를 어떻게 실행하는지, 그리고 어떤 리소스가 사용되는지를 보여줍니다. 쿼리 파이프라인을 분석하면 입출력 측면에서 병목 지점을 파악하는 데 매우 유용합니다. 앞서 사용한 쿼리를 바탕으로 쿼리 파이프라인 실행을 살펴보겠습니다.
@@ -467,7 +461,7 @@ digraph
 따라서 데이터 양이 충분히 크지 않아 실행기는 작업을 병렬화하지 않았습니다. 이후 행을 더 추가하자, 그래프에 표시된 것처럼 실행기는 여러 스레드를 사용하기로 했습니다.
 
 <div id="executor">
-  ## 실행기
+  ## 실행기 {#executor}
 </div>
 
 마지막으로 쿼리 실행의 최종 단계는 실행기가 담당합니다. 실행기는 쿌리 파이프라인을 받아 실행합니다. `SELECT`, `INSERT`, 또는 `INSERT SELECT` 중 어떤 작업을 수행하는지에 따라 실행기의 유형이 달라집니다.

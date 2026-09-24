@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 Ce moteur permet d’intégrer ClickHouse à [Redis](https://redis.io/). Comme Redis repose sur un modèle clé-valeur, nous vous recommandons vivement de ne l’interroger que de façon ciblée, par exemple avec `where k=xx` ou `where k in (xx, xx)`.
 
-<div id="creating-a-table">
-  ## Création d’une table
-</div>
+## Création d’une table {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,25 +30,19 @@ PRIMARY KEY(primary_key_name);
 * `pool_size` — taille maximale du pool de connexions Redis ; la valeur par défaut est 16.
 * `primary_key_name` - n’importe quel nom de colonne dans la liste des colonnes.
 
-<Info>
-  **Sérialisation**
-
+<Note title="Sérialisation">
   `PRIMARY KEY` ne prend en charge qu’une seule colonne. La clé primaire sera sérialisée au format binaire comme clé Redis.
   Les colonnes autres que la clé primaire seront sérialisées au format binaire comme valeur Redis, dans l’ordre correspondant.
   Les parcours complets avec `SELECT * FROM redis_table` peuvent échouer avec des erreurs de désérialisation binaire si la base de données Redis sélectionnée contient des clés ou des valeurs qui n’ont pas été écrites par ClickHouse.
-</Info>
+</Note>
 
 Les arguments peuvent également être transmis à l’aide de [collections nommées](/fr/concepts/features/configuration/server-config/named-collections). Dans ce cas, `host` et `port` doivent être spécifiés séparément. Cette approche est recommandée pour l’environnement de production. À l’heure actuelle, tous les paramètres transmis à Redis via des collections nommées sont obligatoires.
 
-<Info>
-  **Filtrage**
+<Note title="Filtrage">
+  Les requêtes avec un filtrage `key equals` ou `in` seront optimisées en recherches de plusieurs clés dans Redis. Si les requêtes n’incluent pas de clé de filtrage, un parcours complet de la table sera effectué, ce qui constitue une opération coûteuse.
+</Note>
 
-  Les requêtes avec un filtrage `key equals` ou `in` seront optimisées en recherches de plusieurs clés dans Redis. Si les requêtes n’incluent pas de clé de filtrage, un balayage complet de la table sera effectué, ce qui constitue une opération coûteuse.
-</Info>
-
-<div id="usage-example">
-  ## Exemple d&#39;utilisation
-</div>
+## Exemple d&#39;utilisation {#usage-example}
 
 Créez une table dans ClickHouse en utilisant le moteur `Redis` avec des arguments simples :
 
@@ -156,9 +148,7 @@ Jointure avec d’autres tables.
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-<div id="limitations">
-  ## Limites
-</div>
+## Limites {#limitations}
 
 Le moteur Redis prend également en charge les requêtes de balayage, telles que `where k > xx`, mais il présente certaines limites :
 

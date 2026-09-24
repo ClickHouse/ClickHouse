@@ -20,34 +20,34 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     * التوسّع التلقائي لقدرات الحوسبة بصورة مستقلة عن التخزين
     * احتفاظ منخفض التكلفة وعمليًا غير محدود بالاعتماد على التخزين الكائني
-    * إمكانية عزل أعباء عمل القراءة والكتابة بشكل مستقل باستخدام Warehouses.
+    * إمكانية [عزل أعباء عمل القراءة والكتابة بشكل مستقل](/ar/clickstack/managing/isolating-read-write) باستخدام Warehouses.
     * المصادقة المدمجة
     * [نسخ احتياطية](/ar/products/cloud/features/backups/overview) مؤتمتة
     * ترقيات سلسة
 
     **اتبع [أفضل الممارسات](/ar/products/cloud/guides/production-readiness) هذه في ClickHouse Cloud عند استخدام Managed ClickStack.**
 
-    ### تأمين الإدخال
+### تأمين الإدخال {#secure-ingestion-managed}
 
     افتراضيًا، لا يكون ClickStack OpenTelemetry Collector مؤمّنًا عند نشره خارج التوزيعات مفتوحة المصدر، ولا يتطلب مصادقة على منافذ OTLP الخاصة به.
 
     لتأمين الإدخال، حدّد رمز مصادقة عند نشر collector باستخدام متغير البيئة `OTLP_AUTH_TOKEN`. راجع [&quot;تأمين الـ collector&quot;](/ar/clickstack/ingesting-data/collector#securing-the-collector) لمزيد من التفاصيل.
 
-    #### إنشاء مستخدم للإدخال
+#### إنشاء مستخدم للإدخال {#create-a-database-ingestion-user-managed}
 
     يُوصى بإنشاء مستخدم مخصّص لـ OTel collector للإدخال إلى Managed ClickHouse، ولضمان إرسال البيانات المُدخلة إلى قاعدة بيانات محددة مثل `otel`. راجع [&quot;إنشاء مستخدم للإدخال&quot;](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user) لمزيد من التفاصيل.
 
-    ### تهيئة Time To Live (TTL)
+### تهيئة Time To Live (TTL) {#configure-ttl-managed}
 
     تأكّد من أن [Time To Live (TTL)](/ar/clickstack/managing/ttl) قد جرت [تهيئته بالشكل المناسب](/ar/clickstack/managing/ttl#modifying-ttl) لعملية نشر Managed ClickStack لديك. فهذا يتحكّم في مدة الاحتفاظ بالبيانات، وغالبًا ما يلزم تعديل القيمة الافتراضية البالغة 3 أيام.
 
-    ### تقدير الموارد
+### تقدير الموارد {#estimating-resources}
 
     <ResourceEstimation />
 
     لمزيد من التفاصيل حول تحسين افتراضات تقدير الحجم لبيئتك، راجع [&quot;تحسين افتراضات تقدير الحجم لبيئتك&quot;](/ar/clickstack/managing/estimating-resources#refining-sizing-assumptions).
 
-    #### عزل أعباء عمل الرصد
+#### عزل أعباء عمل الرصد {#isolating-workloads}
 
     إذا كنت تضيف ClickStack إلى **خدمة ClickHouse Cloud حالية** تدعم بالفعل أعباء عمل أخرى، مثل تحليلات التطبيقات في الوقت الفعلي، فإن عزل حركة مرور الرصد يُوصى به بشدة.
 
@@ -60,11 +60,15 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     يضمن هذا النهج بقاء أعباء العمل الحالية لديك دون تأثر، مع السماح لـ ClickStack بالتوسع بشكل مستقل مع نمو بيانات الرصد.
 
+#### عزل أعباء عمل القراءة والكتابة {#isolating-read-write}
+
+    تتيح Warehouses أيضًا فصل أعباء عمل الإدخال والاستعلام الخاصة بـ ClickStack نفسه على قدرات حوسبة مخصّصة، بحيث يستهدف الإدخال خدمة للقراءة والكتابة، بينما تعمل ClickStack UI على خدمة للقراءة فقط. وهذه هي طوبولوجيا الإنتاج المُوصى بها لعمليات النشر الأكبر. راجع [&quot;عزل أعباء عمل القراءة والكتابة&quot;](/ar/clickstack/managing/isolating-read-write).
+
     بالنسبة إلى عمليات النشر الأكبر أو إرشادات تقدير الحجم المخصّصة، يُرجى التواصل مع الدعم للحصول على تقدير أدق.
   </Tab>
 
   <Tab title="ClickStack مفتوح المصدر">
-    ### أمان الشبكة والمنافذ
+### أمان الشبكة والمنافذ {#network-security}
 
     بشكل افتراضي، يكشف Docker Compose المنافذ على المضيف، مما يجعلها قابلة للوصول من خارج الحاوية - حتى لو كانت أدوات مثل `ufw` (جدار الحماية المبسّط) مُفعَّلة. يعود هذا السلوك إلى حزمة شبكات Docker، التي يمكنها تجاوز قواعد جدار الحماية على مستوى المضيف ما لم يُضبط ذلك صراحةً.
 
@@ -84,7 +88,7 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     راجع [توثيق شبكات Docker](https://docs.docker.com/network/) للاطلاع على تفاصيل عزل الحاويات وتقوية ضوابط الوصول.
 
-    ### تهيئة سر الجلسة
+### تهيئة سر الجلسة {#session-secret}
 
     في بيئة الإنتاج، يجب تعيين قيمة قوية وعشوائية لمتغير البيئة `EXPRESS_SESSION_SECRET` الخاص بـ ClickStack UI (HyperDX)، لحماية بيانات الجلسة والحيلولة دون التلاعب بها.
 
@@ -124,7 +128,7 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     تجنّب إيداع الـ secrets في نظام التحكم بالإصدارات. في بيئة الإنتاج، يُنصح باستخدام أدوات إدارة متغيرات البيئة (مثل Docker Secrets أو HashiCorp Vault أو إعدادات CI/CD الخاصة بكل بيئة).
 
-    ### استيعاب آمن للبيانات
+### تأمين الإدخال {#secure-ingestion}
 
     يجب أن تتم عملية الاستيعاب بالكامل عبر منافذ OTLP التي يكشفها توزيع ClickStack من مُجمِّع OpenTelemetry (OTel). يستلزم هذا افتراضيًا مفتاح API استيعاب آمنًا يُولَّد عند بدء التشغيل. يُعدّ هذا المفتاح ضروريًا عند إرسال البيانات إلى منافذ OTel، ويمكن العثور عليه في واجهة HyperDX UI ضمن `Team Settings → API Keys`.
 
@@ -132,15 +136,15 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     بالإضافة إلى ذلك، يُوصى بتفعيل TLS لنقاط نهاية OTLP.
 
-    #### إنشاء مستخدم للإدخال
+#### إنشاء مستخدم للإدخال {#create-a-database-ingestion-user-oss}
 
     يُوصى بإنشاء مستخدم مخصص لـ OTel collector لاستيعاب البيانات في ClickHouse، والتأكد من توجيه عملية الاستيعاب إلى قاعدة بيانات محددة، مثل `otel`. راجع [&quot;إنشاء مستخدم استيعاب&quot;](/ar/clickstack/ingesting-data/collector#creating-an-ingestion-user) لمزيد من التفاصيل.
 
-    ### ClickHouse
+### ClickHouse {#clickhouse}
 
     ينبغي للمستخدمين الذين يديرون نسخة ClickHouse الخاصة بهم الالتزام بأفضل الممارسات التالية.
 
-    #### أفضل ممارسات الأمان
+#### أفضل ممارسات الأمان {#self-managed-security}
 
     إذا كنت تدير نسخة ClickHouse الخاصة بك، فمن الضروري تفعيل **TLS** (أمان طبقة النقل)، وفرض المصادقة، واتباع أفضل الممارسات لتقوية ضوابط الوصول. راجع [منشور المدونة هذا](https://www.wiz.io/blog/clickhouse-and-wiz) للاطلاع على أمثلة واقعية حول الأخطاء الشائعة في الإعداد وكيفية تجنبها.
 
@@ -159,7 +163,7 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     راجع أيضاً [المصادقات الخارجية](/ar/concepts/features/security/external-authenticators/index) و[إعدادات تعقيد الاستعلام](/ar/concepts/features/configuration/settings/query-complexity) لإدارة المستخدمين وفرض حدود الاستعلامات والموارد.
 
-    #### أذونات المستخدم لواجهة ClickStack UI
+#### أذونات المستخدم لواجهة ClickStack UI {#user-permissions}
 
     لا يحتاج مستخدم ClickHouse المخصص لـ ClickStack UI إلا إلى أن يكون مستخدمًا بصلاحية `readonly` مع إمكانية تعديل الإعدادات التالية:
 
@@ -170,11 +174,11 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     بشكل افتراضي، يمتلك المستخدم `default` في كلٍّ من OSS وClickHouse Cloud هذه الصلاحيات، غير أنه يُنصح بإنشاء مستخدم جديد بهذه الصلاحيات.
 
-    ### ضبط مدة البقاء (TTL)
+### ضبط مدة البقاء (TTL) {#configure-ttl}
 
     تأكد من [ضبط مدة البقاء (TTL)](/ar/clickstack/managing/ttl) [بالشكل المناسب](/ar/clickstack/managing/ttl#modifying-ttl) لنشر ClickStack لديك. يتحكم هذا الإعداد في مدة الاحتفاظ بالبيانات - وغالبًا ما تحتاج القيمة الافتراضية البالغة 3 أيام إلى تعديل.
 
-    ### إرشادات MongoDB
+### إرشادات MongoDB {#mongodb-guidelines}
 
     اتبع [قائمة التحقق الأمني الرسمية لـ MongoDB](https://www.mongodb.com/docs/manual/administration/security-checklist/).
   </Tab>

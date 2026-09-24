@@ -30,14 +30,14 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 * [редактор SQL](#sql-editor): редактор SQL можно использовать, если вам нужен полный контроль над запросом. В этом режиме можно выполнять любые SQL-запросы.
 
 <div id="query-types">
-  ## Типы запросов
+  ## Типы запросов {#query-types}
 </div>
 
 Параметр *Query Type* изменяет компоновку конструктора запросов в зависимости от типа создаваемого запроса.
 Тип запроса также определяет, какая панель используется для визуализации данных.
 
 <div id="table">
-  ### Таблица
+  ### Таблица {#table}
 </div>
 
 Самый гибкий тип запроса — табличный запрос. Это универсальный тип, объединяющий возможности других конструкторов запросов для простых и агрегатных запросов.
@@ -56,9 +56,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Данные для этого типа запроса отображаются в виде таблицы.
 
-<div id="logs">
-  ### Журналы
-</div>
+### Журналы {#logs}
 
 Тип запроса журналов предоставляет конструктор запросов, ориентированный на работу с данными журналов.
 Значения по умолчанию можно настроить в [конфигурации журналов](/ru/integrations/connectors/data-visualization/grafana/config#logs), чтобы конструктор запросов сразу открывался с базой данных, таблицей и столбцами по умолчанию.
@@ -93,7 +91,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Пример дополнительных полей в запросе журналов" border />
 
 <div id="time-series">
-  ### Временные ряды
+  ### Временные ряды {#time-series}
 </div>
 
 Тип запроса для временных рядов похож на [таблицу](#table), но ориентирован на данные временных рядов.
@@ -128,9 +126,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Этот тип запроса отображает данные на панели временных рядов.
 
-<div id="traces">
-  ### Трассировки
-</div>
+### Трассировки {#traces}
 
 Тип запроса Trace предоставляет конструктор запросов для удобного поиска и просмотра трассировок.
 Он предназначен для данных OpenTelemetry, но для отображения трассировок из другой схемы можно выбрать соответствующие столбцы.
@@ -167,9 +163,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Этот тип запроса отображает данные в виде таблицы в режиме Trace Search и на панели трассировки в режиме Trace ID.
 
-<div id="sql-editor">
-  ## Редактор SQL
-</div>
+## Редактор SQL {#sql-editor}
 
 Для запросов, которые слишком сложны для конструктора запросов, можно использовать редактор SQL.
 Он дает полный контроль над запросом, позволяя писать и выполнять запросы на обычном ClickHouse SQL.
@@ -183,9 +177,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Пример SQL-запроса в исходном виде" border />
 
-<div id="data-links">
-  ## Ссылки на данные
-</div>
+## Ссылки на данные {#data-links}
 
 В Grafana [ссылки на данные](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 можно использовать для перехода к новым запросам.
@@ -204,18 +196,18 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### Как создать ссылку на данные
+  ### Как создать ссылку на данные {#how-to-make-a-data-link}
 </div>
 
 Вы можете создать ссылку на данные, выбрав в запросе столбец с именем `traceID`. Для этого имени используется регистронезависимый поиск; также поддерживается добавление символа подчёркивания перед &quot;ID&quot;. Например, `traceId`, `TraceId`, `TRACE_ID` и `tracE_iD` будут корректными вариантами.
 
 Если OpenTelemetry включен в запросе [журнала](#logs) или [трассировки](#traces), столбец с trace ID будет добавлен автоматически.
 
-Если в данных есть столбец с trace ID, к ним будут добавлены ссылки &quot;**View Trace**&quot; и &quot;**View Logs**&quot;.
+Если присутствует столбец с trace ID, плагин может добавить к данным ссылки &quot;**View Trace**&quot; и &quot;**View Logs**&quot;.
 
-<div id="linking-abilities">
-  ### Возможности ссылок
-</div>
+Переключатели включены по умолчанию. Для ссылки текущего типа запроса не требуются настроенные значения по умолчанию, тогда как межсигнальная ссылка появляется только при наличии у источника данных настроенных значений по умолчанию для целевого сигнала. Их можно скрыть с помощью переключателей **Показывать ссылки &quot;View trace&quot;** и **Показывать ссылки &quot;View logs&quot;** в разделах конфигурации [трассировки](/ru/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) и [журнала](/ru/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) источника данных.
+
+### Возможности ссылок {#linking-abilities}
 
 Если настроены ссылки на данные, вы можете открывать трассировки и журналы по указанному trace ID.
 
@@ -231,7 +223,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 </div>
 
 <div id="macros">
-  ## Макросы
+  ## Макросы {#macros}
 </div>
 
 Макросы — это простой способ добавить в запрос динамический SQL.
@@ -240,7 +232,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Макросы можно использовать в запросах как из редактора SQL, так и из конструктора запросов.
 
 <div id="using-macros">
-  ### Использование макросов
+  ### Использование макросов {#using-macros}
 </div>
 
 Макросы можно использовать в любом месте запроса, при необходимости — несколько раз.
@@ -268,7 +260,7 @@ WHERE log_time >= toDateTime(1415792726) AND log_time <= toDateTime(1447328726)
 Плагин также поддерживает запись с использованием фигурных скобок `{}`. Используйте такую запись, когда внутри [параметров](/ru/reference/syntax#defining-and-using-query-parameters) необходимо использовать запросы.
 
 <div id="list-of-macros">
-  ### Список макросов
+  ### Список макросов {#list-of-macros}
 </div>
 
 Ниже приведён список всех макросов, доступных в плагине:

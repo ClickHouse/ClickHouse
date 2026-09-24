@@ -33,7 +33,7 @@ doc_type: 'reference'
     ```xml
     <source>
       <postgresql>
-          <host>postgresql-hostname</hoat>
+          <host>postgresql-hostname</host>
           <port>5432</port>
           <user>clickhouse</user>
           <password>qwerty</password>
@@ -68,7 +68,7 @@ doc_type: 'reference'
 | `invalidate_query`                 | استعلام للتحقق من حالة القاموس. اختياري. اقرأ المزيد في قسم [Refreshing dictionary data using LIFETIME](/ar/reference/statements/create/dictionary/lifetime).                              |
 | `background_reconnect`             | أعد الاتصال بالنسخة المتماثلة في الخلفية إذا فشل الاتصال. اختياري.                                                                                                                      |
 | `query`                            | استعلام مخصص. اختياري.                                                                                                                                                                  |
-| `sslmode`                          | وضع TLS/SSL المُمرَّر إلى `libpq`: `disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`. عند عدم ضبطه، يُطبَّق الإعداد الافتراضي `prefer` لـ `libpq`. اختياري. |
+| `sslmode`                          | وضع TLS/SSL المُمرَّر إلى `libpq`: `disable` أو `allow` أو `prefer` أو `require` أو `verify-ca` أو `verify-full`. عند عدم ضبطه، يُطبَّق الإعداد الافتراضي `prefer` لـ `libpq`. اختياري. |
 | `sslrootcert_pem`                  | محتويات شهادة CA التي يُتحقق مقابلها من شهادة خادم PostgreSQL. اختياري.                                                                                                                 |
 | `sslcert_pem`                      | محتويات شهادة العميل، للمصادقة المستندة إلى الشهادات. اختياري.                                                                                                                          |
 | `sslkey_pem`                       | محتويات المفتاح الخاص المرتبط بـ `sslcert_pem`. اختياري.                                                                                                                                |

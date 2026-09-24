@@ -2,7 +2,7 @@
 title: 'Configuración de red privada de BYOC en GCP'
 slug: /cloud/reference/byoc/onboarding/network-gcp
 sidebarTitle: 'Configuración de red privada en GCP'
-keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'peering de VPC', 'gcp', 'Private Service Connect']
+keywords: ['BYOC', 'cloud', 'Bring Your Own Cloud', 'peering de VPC', 'gcp', 'Private Service Connect', 'PSC subnet', 'BYO-VPC']
 description: 'Configura peering de VPC o Private Service Connect para BYOC en GCP'
 doc_type: 'referencia'
 ---
@@ -12,22 +12,18 @@ import { Image } from "/snippets/es/components/Image.jsx";
 ClickHouse BYOC en GCP admite dos opciones de conexión privada, entre ellas peering de VPC y PSC (Private Service Connect).
 
 <div id="common-prerequisites">
-  ## Requisitos previos
+  ## Requisitos previos {#common-prerequisites}
 </div>
 
 Pasos comunes necesarios tanto para el peering de VPC como para PSC.
 
-<div id="step-enable-private-load-balancer-for-clickhouse-byoc">
-  ### Habilite el balanceador de carga privado para ClickHouse BYOC
-</div>
+### Habilite el balanceador de carga privado para ClickHouse BYOC {#step-enable-private-load-balancer-for-clickhouse-byoc}
 
 En la consola de ClickHouse Cloud, habilite el **balanceador de carga privado** para su infraestructura BYOC.
 
 <Image img="/images/cloud/reference/byoc-private-load-balancer.webp" size="md" alt="BYOC Habilitar balanceador de carga privado" border />
 
-<div id="gcp-vpc-peering">
-  ## Configurar el peering de VPC
-</div>
+## Configurar el peering de VPC {#gcp-vpc-peering}
 
 Le recomendamos familiarizarse con la [función de peering de VPC de GCP](https://docs.cloud.google.com/vpc/docs/vpc-peering) y tener en cuenta sus limitaciones (por ejemplo, los rangos de IP de las subredes no pueden superponerse entre redes de VPC con peering). ClickHouse BYOC utiliza un balanceador de carga privado para permitir la conectividad de red a través del peering con los servicios de ClickHouse.
 
@@ -67,9 +63,7 @@ Para crear o eliminar el peering de VPC para ClickHouse BYOC, siga estos pasos:
   </Step>
 </Steps>
 
-<div id="setup-psc">
-  ## Configurar PSC (Private Service Connect)
-</div>
+## Configurar PSC (Private Service Connect) {#setup-psc}
 
 GCP PSC (Private Service Connect) proporciona una conexión segura y privada con tus servicios BYOC de ClickHouse, sin necesidad de peering de VPC ni gateways de Internet. Todo el tráfico circula dentro de la red de GCP, lo que garantiza que nunca transite por la Internet pública.
 
@@ -77,6 +71,27 @@ GCP PSC (Private Service Connect) proporciona una conexión segura y privada con
   <Step title="Habilite el enlace privado en la consola de ClickHouse" id="step-1-enable-private-link">
     <Note>
       Asegúrese de que el **balanceador de carga privado** esté habilitado como requisito previo.
+    </Note>
+
+    Si su infraestructura se ejecuta en una [VPC gestionada por el cliente (BYO-VPC)](/es/cloud/reference/byoc/onboarding/customization-gcp), cree una subred NAT de Private Service Connect antes de habilitar el enlace privado. ClickHouse Cloud no puede crear subredes en su VPC, y GCP asigna una dirección IP NAT de esta subred para cada conexión PSC entrante.
+
+    Cree la subred en la misma VPC y región que la infraestructura, en el proyecto host si usa una Shared VPC:
+
+    ```bash
+    gcloud compute networks subnets create <psc-subnet-name> \
+        --project=<vpc-project-id> \
+        --network=<vpc-network-name> \
+        --region=<region> \
+        --range=<cidr-range> \
+        --purpose=PRIVATE_SERVICE_CONNECT
+    ```
+
+    El `<cidr-range>` debe ser al menos un `/29`; consulte la [guía de dimensionamiento de subredes NAT](https://cloud.google.com/vpc/docs/about-vpc-hosted-services#subnet-capacity) de GCP al dimensionar según el número previsto de conexiones.
+
+    Cuando habilita el enlace privado en una infraestructura BYO-VPC, la consola solicita el **PSC subnet name**. Introduzca el nombre de la subred que creó.
+
+    <Note>
+      La subred PSC no se puede cambiar mientras el enlace privado esté habilitado. Para cambiar a otra subred, deshabilite el enlace privado y vuelva a habilitarlo con el nuevo nombre.
     </Note>
 
     <Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="Habilitar BYOC PrivateLink" />

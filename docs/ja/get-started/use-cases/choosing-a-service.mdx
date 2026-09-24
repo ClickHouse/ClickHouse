@@ -1,0 +1,67 @@
+---
+title: 'ワークロードに合ったサービスを選択する'
+sidebarTitle: 'サービスを選択する'
+description: 'Choose ClickHouse or Postgres サービス within ClickHouse Cloud for analytics or transactions, Managed ClickStack for オブザーバビリティ, or chDB for local analysis.'
+keywords: ['database selection', 'analytical database', 'transactional database', 'managed postgres', 'report history']
+doc_type: 'guide'
+---
+
+まずは、アプリケーションでサポートする必要があるクエリと正確性の要件から検討しましょう。行数が多いというだけではデータベースは決まりません。また、レポートを生成するアプリケーションには、分析系とトランザクション系の両方のワークロードが含まれる場合があります。
+
+ClickHouse Cloud は、分析向けの ClickHouse とトランザクション系ワークロード向けの ClickHouse Managed Postgres を含む、マネージドサービスのプラットフォームです。これらのサービスは、SQL の挙動が異なる別々のデータベースエンジン (ClickHouse と PostgreSQL) 上で動作します。どちらか一方のサービスを単独で利用することも、ClickHouse Cloud 内で両者を組み合わせて利用することもできます。
+
+## ワークロードを始点に対応付ける {#workload-map}
+
+| アプリケーションに必要なもの                                              | まず評価すべき対象                                                                                  | 選択前に確認すべきこと                                             |
+| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------- |
+| 大量のイベント履歴や結果履歴に対する集計、フィルタリング、比較                             | [ClickHouse Cloud の ClickHouse サービス](/ja/products/cloud/getting-started/intro)                | 代表的なクエリ、インジェストのバッチ、データの鮮度、同時実行クエリ、更新や再試行の設計             |
+| 注文、在庫の引き当て、状態遷移にトランザクションと制約を要するジョブなど、トランザクション性のあるアプリケーション状態 | [ClickHouse Cloud の ClickHouse Managed Postgres](/ja/products/managed-postgres/overview)      | トランザクション境界、制約、索引、接続管理、サービスがサポートする機能と可用性                 |
+| トランザクション性のあるアプリケーション状態に加え、独立した提供システムを必要とする分析クエリ             | [ClickHouse Cloud の Postgres サービスと ClickHouse サービス](/ja/products/managed-postgres/clickpipes) | レプリケーションが必要なテーブル、許容できるレプリケーションラグ、スキーマ変更、2 つのサービスのコストと運用 |
+| アプリケーションのログ、メトリクス、トレースを検索・調査するためのマネージド環境                    | [Managed ClickStack](/ja/clickstack/getting-started/managed)                                  | インストルメンテーション、テレメトリーのインジェスト、保持期間、チームに必要なオブザーバビリティのワークフロー |
+| ローカルのアプリケーションやノートブック内でのファイルまたはインメモリデータの分析                   | [chDB](/ja/chdb/index)                                                                        | ローカルのリソース、および個別にホストされる共有データベースサービスが必要かどうか               |
+
+現在の提供状況、リージョン、制限事項については、リンク先の製品ドキュメントを確認してください。ClickHouse Managed Postgres は現在パブリックベータです。[クイックスタート](/ja/products/managed-postgres/quickstart)を参照してください。
+
+セルフマネージドの ClickHouse サーバーやその他のローカル環境の選択肢については、[デプロイメントモード](/ja/get-started/about/deployment-modes)を参照してください。
+
+## 例: レポート結果と実行履歴 {#report-results-and-history}
+
+アップロードされたファイルを処理してレポートを生成し、クエリ可能な結果と実行履歴を保持する必要があるアプリケーションを考えてみましょう。データベースを選定する前に、結果行と実行記録を区別しておきます。
+
+* **結果:** クエリは1つのレポートについて数行を取得するのか、それとも多数のレポート、データセット、時間範囲にまたがって集計するのか。数億行に達すると見込まれるのはどのテーブルか。
+* **実行記録:** 実行完了時に不変の記録が1件書き込まれるだけか、それともアプリケーション側で実行中のジョブの所有権やステータス遷移を調整する必要があるのか。
+* **正確性:** 複数の記録を1つのトランザクションで変更する必要があるか。データベース側で一意性を強制したり、2つのワーカーが同じジョブを取得するのを防いだりする必要があるか。
+* **鮮度:** 書き込みの成功はどれだけ早く参照可能になる必要があるか。また、クエリは不完全または遅延した分析用コピーを許容できるか。
+
+### 完了した実行と分析結果 {#completed-runs}
+
+主要なワークロードが結果行を横断する分析であり、実行記録を完了時に追記できる場合、ClickHouse Cloud の ClickHouse サービスが候補になります。小規模なメタデータテーブルがあるというだけでは、2 つ目のデータベースを用意する理由にはなりません。
+
+完了した実行と、部分的にしか取り込まれていない実行とを読み手がどのように区別するかを設計し、テストしてください。安定した実行識別子、再試行の挙動、重複する結果行の扱いを定義します。結果テーブルへの挿入と実行履歴テーブルへの挿入は別々の操作であり、単一のテーブル横断トランザクションとして扱ってはなりません。
+
+実行記録を複数バージョン保存する場合は、クエリが現在のバージョンをどのように選択するかを定義してください。[ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) は `FINAL` によるクエリ時の重複排除をサポートしますが、正しさが background merges の完了に依存するような設計にしてはなりません。[update リファレンス](/ja/reference/statements/update) では、別の更新メカニズムとその制限について説明しています。いずれのパターンについても、PostgreSQL のようなトランザクション保証が得られると想定すべきではありません。
+
+### トランザクショナルなジョブ状態 {#transactional-job-state}
+
+実行テーブルがトランザクショナルな作業キューや記録の正本(system of record)を兼ねている場合は、ClickHouse Managed Postgres の採用を検討してください。たとえば、複数の worker が同じジョブを奪い合う中で 1 つの worker がアトミックにジョブを取得(claim)する必要がある場合や、複数のアプリケーションレコードを制約を効かせたまま一括で変更する必要がある場合です。
+
+Postgres はレポート用のクエリにも対応できます。分析用の service は、代表的なクエリパフォーマンス、同時実行性、分離性の要件から見て必要だと判断できる場合に追加すればよく、すべてのレポートアプリケーションに 2 つの database が必要だと決めつける必要はありません。
+
+### トランザクションと分析を組み合わせる {#transactions-and-analytics}
+
+両方のワークロードに別々のサービスを用意する妥当性がある場合は、トランザクションの状態はPostgresに保持し、必要なテーブルを[ClickPipes](/ja/products/managed-postgres/clickpipes)または[WalShadow](/ja/products/managed-postgres/walshadow)でClickHouseへレプリケートします。レプリケーションラグを考慮し、最新のアプリケーション状態を必要とする判断には引き続きトランザクション側のソースを使用してください。レプリケーションを行っても、Postgresへの書き込みとClickHouseからの読み取りが1つのトランザクションとして扱われるようになるわけではありません。
+
+[pg&#95;clickhouse拡張機能](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction)を使うと、Postgres経由でClickHouseへアクセスできます。ただし、クエリのエントリポイントを共通化しても、2つのサービスが1つのデータベースエンジンになるわけではなく、データの鮮度を考慮する必要がなくなるわけでもありません。
+
+## プロビジョニング前に適合性を確認する {#check-fit}
+
+代表的なクエリを少数書き出し、現実的なデータ量に対してテストしてください。絞り込まれたルックアップだけでなく、履歴全体にまたがる集計、想定される同時実行負荷、アプリケーションにとって重要となる正確性の検証ケースも含めます。ベンチマーク結果を報告する際は、スキーマ、クエリの形状、ハードウェアまたはサービスのサイズ、インジェストの挙動を併せて記載してください。
+
+マネージドデプロイメントの場合は、次の点も確認してください。
+
+* リージョン、ネットワーク、アクセス制御、復旧に関する要件。
+* 想定されるアクティブ時間、保存データ量、バックアップ、転送料金 ([ClickHouse Cloud 課金ガイド](/ja/products/cloud/reference/billing/billing-overview) または [Managed Postgres 料金ガイド](/ja/products/managed-postgres/pricing)を参照) 。
+* 断続的に発生する分析ワークロードが、[自動アイドル化](/ja/products/cloud/features/autoscaling/idling)に伴う接続遅延を許容できるかどうか。
+* サービス側がインフラストラクチャを管理する場合であっても、スキーマ設計、アプリケーション側の再試行、クエリチューニング、コスト管理はチームの責任であること。
+
+ClickHouse Cloud の ClickHouse サービスまたは Postgres サービスでは、[ClickHouse CLI](/ja/products/cloud/features/cli) を使用して端末からリソースを作成・管理できます。Managed ClickStack と chDB については、ワークロードマップにリンクされている製品ガイドを参照してください。

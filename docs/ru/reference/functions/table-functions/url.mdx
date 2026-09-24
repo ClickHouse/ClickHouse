@@ -15,17 +15,13 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
 
 Функция `url` может использоваться в запросах `SELECT` и `INSERT` для работы с данными в таблицах [URL](/ru/reference/engines/table-engines/special/url).
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-<div id="parameters">
-  ## Параметры
-</div>
+## Параметры {#parameters}
 
 | Параметр    | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -34,15 +30,11 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена и типы столбцов. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                                                                                                                                                                               |
 | `headers`   | Заголовки в формате `'headers('key1'='value1', 'key2'='value2')'`. Позволяет задать заголовки для HTTP-запроса.                                                                                                                                                                                                                                                                                                                                                          |
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Таблица в указанном формате и с указанной структурой, содержащая данные из заданного `URL`.
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Получение первых 3 строк таблицы, содержащей столбцы типа `String` и [UInt32](/ru/reference/data-types/int-uint), с HTTP-сервера, который возвращает данные в формате [CSV](/ru/reference/formats/CSV/CSV).
 
@@ -58,13 +50,11 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-<div id="scheme-dispatch">
-  ## Маршрутизация по схеме URL
-</div>
+## Маршрутизация по схеме URL {#scheme-dispatch}
 
 Функция `url` выступает как единая обёртка над другими табличными функциями для файловых и объектных хранилищ: она перенаправляет вызов в нужный backend в зависимости от схемы URL. Это позволяет читать данные из любого поддерживаемого источника, используя единый синтаксис.
 
-| Схема                                        | Dispatches to                                                                       |
+| Схема                                         | Dispatches to                                                                       |
 | --------------------------------------------- | ----------------------------------------------------------------------------------- |
 | `http`, `https` (and any unrecognized scheme) | сам движок `URL` (HTTP `GET`/`POST`)                                                |
 | `file`                                        | функция [`file`](/ru/reference/functions/table-functions/file)                         |
@@ -85,17 +75,15 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 
 Поддержка схем URL в [`urlCluster`](/ru/reference/functions/table-functions/urlCluster) пока не реализована: если передать в `urlCluster` схему, отличную от `http(s)`, функция вернёт ошибку. Для таких backend-соединений используйте соответствующую кластерную функцию (`s3Cluster`, `azureBlobStorageCluster`, `hdfsCluster`, …).
 
-<div id="globs-in-url">
-  ## Глоб-шаблоны в URL
-</div>
+По той же причине перенаправленный вызов `url` выполняется на том узле, который получил запрос: распараллеливание [parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ru/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) к нему не применяется. Если требуется распределить чтение по репликам, используйте соответствующую кластерную функцию напрямую.
+
+## Глоб-шаблоны в URL {#globs-in-url}
 
 Шаблоны в `{ }` используются для генерации набора сегментов или для указания адресов аварийного переключения. Поддерживаемые типы шаблонов и примеры см. в описании функции [remote](/ru/reference/functions/table-functions/remote#globs-in-addresses).
 Символ `|` внутри шаблонов используется для указания адресов аварийного переключения. Они перебираются в том же порядке, в котором перечислены в шаблоне. Количество сгенерированных адресов ограничено настройкой [glob&#95;expansion&#95;max&#95;elements](/ru/reference/settings/session-settings/other#glob_expansion_max_elements).
 Сведения о синтаксисе глоб-шаблонов в пути URL (например, `*`, `{a,b}`, `{N..M}` и `**`) см. в разделе [Глоб-шаблоны в пути](/ru/reference/functions/table-functions/file#globs-in-path). Обратите внимание, что `?` начинает строку запроса в URL и не может использоваться как подстановочный знак в компоненте пути.
 
-<div id="wildcards-with-http-index-pages">
-  ## Подстановочные шаблоны с HTTP-страницами индекса
-</div>
+## Подстановочные шаблоны с HTTP-страницами индекса {#wildcards-with-http-index-pages}
 
 Для `url` и движка таблицы `URL` ClickHouse может разворачивать подстановочные шаблоны, получая HTTP-страницы индекса (HTML или plaintext) и извлекая URL из тела ответа. Это позволяет использовать шаблоны вида `/**/`, если сервер предоставляет листинг каталогов.
 
@@ -115,12 +103,10 @@ SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_path` — Путь к `URL`. Тип: `LowCardinality(String)`.
 * `_file` — Имя ресурса `URL`. Тип: `LowCardinality(String)`.
@@ -128,9 +114,7 @@ SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_headers` - Заголовки HTTP-ответа. Тип: `Map(LowCardinality(String), LowCardinality(String))`.
 
-<div id="hive-style-partitioning">
-  ## настройка use_hive_partitioning
-</div>
+## настройка use_hive_partitioning {#hive-style-partitioning}
 
 Если настройка `use_hive_partitioning` имеет значение 1, ClickHouse распознаёт партиционирование в стиле Hive в пути (`/name=value/`) и позволяет использовать столбцы партиций в качестве виртуальных столбцов в запросе. Эти виртуальные столбцы будут иметь те же имена, что и в пути с партициями.
 
@@ -142,9 +126,7 @@ SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="resolving-relative-urls">
-  ## Разрешение относительных URL
-</div>
+## Разрешение относительных URL {#resolving-relative-urls}
 
 Настройка [url&#95;base](/ru/reference/settings/session-settings/url#url_base) позволяет передавать в функцию `url` относительный URL. Когда задан `url_base` и аргумент функции представляет собой относительную ссылку, она разрешается относительно базового URL в соответствии с [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986).
 
@@ -166,23 +148,17 @@ SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/'
 SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ```
 
-<div id="storage-settings">
-  ## Настройки хранилища
-</div>
+## Настройки хранилища {#storage-settings}
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/ru/reference/settings/session-settings/other#engine_url_skip_empty_files) - позволяет пропускать пустые файлы при чтении. По умолчанию отключено.
 * [enable&#95;url&#95;encoding](/ru/reference/settings/session-settings/enable#enable_url_encoding) - позволяет включать и отключать декодирование/кодирование пути в URI. По умолчанию включено.
 * [url&#95;base](/ru/reference/settings/session-settings/url#url_base) - базовый URL для разрешения относительных URL, передаваемых в функцию `url`.
 
-<div id="permissions">
-  ## Разрешения
-</div>
+## Разрешения {#permissions}
 
 Для функции `url` требуется разрешение `CREATE TEMPORARY TABLE`. Поэтому она не будет работать для пользователей с настройкой [readonly](/ru/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1. Требуется значение readonly не ниже 2.
 
-<div id="related">
-  ## Связанные материалы
-</div>
+## Связанные материалы {#related}
 
 * [Виртуальные столбцы](/ru/reference/engines/table-engines/index#table_engines-virtual_columns)
 

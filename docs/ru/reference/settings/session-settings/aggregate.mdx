@@ -13,21 +13,21 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="aggregate_function_input_format">
-  ## aggregate_function_input_format
-</div>
+## aggregate_function_input_format {#aggregate_function_input_format}
 
 <SettingsInfoBlock type="AggregateFunctionInputFormat" default_value="state" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "Новая настройка для управления форматом входных данных AggregateFunction при операциях INSERT. Значение настройки по умолчанию — state"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.12"},{"label": "state"},{"label": "Новая настройка для управления входным форматом AggregateFunction при операциях INSERT. Значение настройки по умолчанию — state"}]}]} />
 
-Формат входных данных AggregateFunction при операциях INSERT.
+Как входные форматы читают столбцы типа `AggregateFunction`.
 
 Возможные значения:
 
-* `state` — Двоичная строка с сериализованным состоянием (по умолчанию). Это стандартное поведение, при котором значения AggregateFunction должны передаваться как двоичные данные.
-* `value` — Формат ожидает одно значение аргумента агрегатной функции или, в случае нескольких аргументов, их кортеж. Они будут десериализованы с помощью соответствующего IDataType или DataTypeTuple, а затем агрегированы для формирования состояния.
-* `array` — Формат ожидает `Array` значений, как описано выше для варианта `value`. Все элементы массива будут агрегированы для формирования состояния.
+* `state` — сериализованное состояние агрегатной функции в том виде, в каком его записывают выходные форматы (значение по умолчанию).
+* `value` — значение аргумента агрегатной функции или Tuple из аргументов, если их несколько. Значение агрегируется в состояние.
+* `array` — массив значений, описанных выше для параметра `value`. Все элементы массива агрегируются в состояние.
+
+В режимах `value` и `array` формат читает столбец так, как если бы тот имел тип самих значений: `T` для `AggregateFunction(f, T)`, `Tuple(T1, T2)` для `AggregateFunction(f, T1, T2)` или `Array` от них в режиме `array`. Значения записываются в том представлении, которое формат использует для этого типа: число или строка в текстовом формате, JSON-массив в JSON-форматах, двоичное кодирование типа в `RowBinary` или `Native`, столбец этого типа в `Parquet` и так далее. Это справедливо для любого входного формата, в том числе для `AggregateFunction`, вложенного в `Array`, `Tuple` или `Map`.
 
 **Примеры**
 
@@ -47,6 +47,11 @@ INSERT INTO example FORMAT CSV
 123,456
 ```
 
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": 456}
+```
+
 При `aggregate_function_input_format = 'array'`:
 
 ```sql
@@ -54,11 +59,14 @@ INSERT INTO example FORMAT CSV
 123,"[456,789,101]"
 ```
 
-Примечание: форматы `value` и `array` работают медленнее, чем формат `state`, используемый по умолчанию, поскольку во время вставки требуют создания и агрегации значений.
+```sql
+INSERT INTO example FORMAT JSONEachRow
+{"user_id": 123, "avg_session_length": [456, 789, 101]}
+```
 
-<div id="aggregate_functions_null_for_empty">
-  ## aggregate_functions_null_for_empty
-</div>
+Note: форматы `value` и `array` работают медленнее используемого по умолчанию формата `state`, поскольку требуют создания и агрегирования значений при вставке.
+
+## aggregate_functions_null_for_empty {#aggregate_functions_null_for_empty}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -11,7 +11,7 @@ keywords: ['índice primario', 'indexación', 'rendimiento', 'optimización de c
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="introduction">
-  ## Introducción
+  ## Introducción {#introduction}
 </div>
 
 En esta guía profundizaremos en la indexación de ClickHouse. Ilustraremos y analizaremos en detalle:
@@ -30,7 +30,7 @@ Para instalar ClickHouse y consultar las instrucciones de primeros pasos, consul
 </Note>
 
 <div id="data-set">
-  ### Conjunto de datos
+  ### Conjunto de datos {#data-set}
 </div>
 
 A lo largo de esta guía usaremos un conjunto de datos de ejemplo anonimizado sobre tráfico web.
@@ -46,13 +46,13 @@ Con estas tres columnas ya podemos formular algunas consultas típicas de analí
 * &quot;¿Cuáles son los momentos más habituales (p. ej., los días de la semana) en los que un usuario hace clic en una URL concreta?&quot;
 
 <div id="test-machine">
-  ### Máquina de prueba
+  ### Máquina de prueba {#test-machine}
 </div>
 
 Todas las cifras de rendimiento indicadas en este documento se basan en la ejecución local de ClickHouse 22.2.1 en un MacBook Pro con chip Apple M1 Pro y 16 GB de RAM.
 
 <div id="a-full-table-scan">
-  ### Un escaneo completo de la tabla
+  ### Un escaneo completo de la tabla {#a-full-table-scan}
 </div>
 
 Para ver cómo se ejecuta una consulta sobre nuestro conjunto de datos sin clave primaria, creamos una tabla (con un motor de tabla MergeTree) mediante la ejecución de la siguiente sentencia DDL de SQL:
@@ -138,11 +138,11 @@ La salida de resultados del cliente de ClickHouse indica que ClickHouse ejecutó
 Para que esto sea (mucho) más eficiente y (mucho) más rápido, necesitamos usar una tabla con una clave primaria adecuada. Esto permitirá a ClickHouse crear automáticamente, a partir de las columnas de la clave primaria, un índice primario disperso que luego podrá utilizarse para acelerar significativamente la ejecución de nuestra consulta de ejemplo.
 
 <div id="clickhouse-index-design">
-  ## Diseño de índices en ClickHouse
+  ## Diseño de índices en ClickHouse {#clickhouse-index-design}
 </div>
 
 <div id="an-index-design-for-massive-data-scales">
-  ### Un diseño de índices para datos a gran escala
+  ### Un diseño de índices para datos a gran escala {#an-index-design-for-massive-data-scales}
 </div>
 
 En los sistemas tradicionales de gestión de bases de datos relacionales, el índice primario contendría una entrada por cada fila de la tabla. Esto daría como resultado que el índice primario contuviera 8,87 millones de entradas para nuestro conjunto de datos. Un índice de este tipo permite localizar rápidamente filas concretas, lo que se traduce en una alta eficiencia para consultas de búsqueda y actualizaciones puntuales. Buscar una entrada en una estructura de datos `B(+)-Tree` tiene una complejidad temporal media de `O(log n)`; más concretamente, `log_b n = log_2 n / log_2 b`, donde `b` es el factor de ramificación del `B(+)-Tree` y `n` es el número de filas indexadas. Como `b` suele estar entre varios cientos y varios miles, los `B(+)-Trees` son estructuras muy poco profundas, y se requieren pocas búsquedas en disco para localizar registros. Con 8,87 millones de filas y un factor de ramificación de 1000, se necesitan de media 2,3 búsquedas en disco. Esta capacidad tiene un coste: mayor consumo de disco y memoria, costes de inserción más altos al añadir nuevas filas a la tabla y nuevas entradas al índice y, en ocasiones, el reequilibrado del B-Tree.
@@ -154,7 +154,7 @@ La indexación dispersa es posible porque ClickHouse almacena en disco las filas
 A continuación se ilustra en detalle cómo ClickHouse construye y utiliza su índice primario disperso. Más adelante en el artículo, analizaremos algunas buenas prácticas para elegir, eliminar y ordenar las columnas de la tabla que se utilizan para construir el índice (columnas de la clave primaria).
 
 <div id="a-table-with-a-primary-key">
-  ### Una tabla con clave primaria
+  ### Una tabla con clave primaria {#a-table-with-a-primary-key}
 </div>
 
 Cree una tabla con una clave primaria compuesta por las columnas UserID y URL:
@@ -286,9 +286,7 @@ La salida del cliente de ClickHouse muestra:
 * La tabla tiene un índice primario con 1083 entradas (llamadas &#39;marks&#39;) y el tamaño del índice es de 96.93 KB.
 * En total, los datos de la tabla, los archivos de marcas y el archivo del índice primario ocupan 207.07 MB en disco.
 
-<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
-  ### Los datos se almacenan en disco ordenados por las columnas de la clave primaria
-</div>
+### Los datos se almacenan en disco ordenados por las columnas de la clave primaria {#data-is-stored-on-disk-ordered-by-primary-key-columns}
 
 Nuestra tabla que creamos arriba tiene
 
@@ -329,9 +327,7 @@ ClickHouse es un <a href="/es/get-started/about/distinctive-features#true-column
   * Numeramos las filas empezando por 0 para mantener la coherencia con el esquema interno de numeración de filas de ClickHouse, que también se utiliza en los mensajes de registro.
 </Note>
 
-<div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### Los datos se organizan en gránulos para el procesamiento de datos en paralelo
-</div>
+### Los datos se organizan en gránulos para el procesamiento de datos en paralelo {#data-is-organized-into-granules-for-parallel-data-processing}
 
 A efectos del procesamiento de datos, los valores de las columnas de una tabla se dividen lógicamente en gránulos.
 Un gránulo es el conjunto de datos indivisible más pequeño que se transmite a ClickHouse para el procesamiento de datos.
@@ -364,9 +360,7 @@ Las primeras 8192 filas (según el orden físico en disco) (sus valores de las c
   * Numeramos los gránulos comenzando por 0 para mantener la coherencia con el esquema de numeración interno de ClickHouse, que también se utiliza en los mensajes de registro.
 </Note>
 
-<div id="the-primary-index-has-one-entry-per-granule">
-  ### El índice primario tiene una entrada por gránulo
-</div>
+### El índice primario tiene una entrada por gránulo {#the-primary-index-has-one-entry-per-granule}
 
 El índice primario se crea a partir de los gránulos que se muestran en el diagrama anterior. Este índice es un archivo de matriz plana sin comprimir (primary.idx) que contiene las llamadas marcas numéricas del índice, empezando por 0.
 
@@ -475,9 +469,7 @@ Las entradas de la clave primaria se denominan marcas del índice porque cada en
 
   Más adelante analizaremos con más detalle las consecuencias de esto en el rendimiento de ejecución de las consultas.
 
-<div id="the-primary-index-is-used-for-selecting-granules">
-  ### El índice primario se usa para seleccionar gránulos
-</div>
+### El índice primario se usa para seleccionar gránulos {#the-primary-index-is-used-for-selecting-granules}
 
 Ahora podemos ejecutar nuestras consultas apoyándonos en el índice primario.
 
@@ -528,9 +520,9 @@ Si el <a href="/es/reference/settings/server-settings/settings/other#logger" tar
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-:::note
-En versiones recientes de ClickHouse, los mensajes `Running binary search on index range`, `Found (LEFT) boundary mark` y `Found (RIGHT) boundary mark` se registran en el nivel `test` (el de mayor verbosidad) en lugar de en `trace`. Para verlos, aumente la verbosidad del registro a `test` (por ejemplo, `SET send_logs_level = 'test'` en el cliente o `<logger><level>test</level></logger>` en la configuración del servidor). Las líneas restantes mostradas anteriormente siguen registrándose en `trace`. Esto se aplica a todos los ejemplos de registros de búsqueda binaria de esta guía.
-:::
+<Note>
+  En versiones recientes de ClickHouse, los mensajes `Running binary search on index range`, `Found (LEFT) boundary mark` y `Found (RIGHT) boundary mark` se registran en el nivel `test` (el de mayor verbosidad) en lugar de en `trace`. Para verlos, aumente la verbosidad del registro a `test` (por ejemplo, `SET send_logs_level = 'test'` en el cliente o `<logger><level>test</level></logger>` en la configuración del servidor). Las líneas restantes mostradas anteriormente siguen registrándose en `trace`. Esto se aplica a todos los ejemplos de registros de búsqueda binaria de esta guía.
+</Note>
 
 Podemos ver en el registro de trazas anterior que una marca de las 1083 marcas existentes cumplía las condiciones de la consulta.
 
@@ -595,9 +587,7 @@ En la **segunda etapa (lectura de datos)**, ClickHouse localiza los gránulos se
 
 Analizamos esta segunda etapa con más detalle en la siguiente sección.
 
-<div id="mark-files-are-used-for-locating-granules">
-  ### Los archivos de marcas se usan para localizar gránulos
-</div>
+### Los archivos de marcas se usan para localizar gránulos {#mark-files-are-used-for-locating-granules}
 
 El siguiente diagrama ilustra una parte del archivo de índice primario de nuestra tabla.
 
@@ -684,14 +674,12 @@ El diagrama anterior muestra cómo ClickHouse localiza el gránulo en el archivo
 En paralelo, ClickHouse hace lo mismo con el gránulo 176 del archivo de datos URL.bin. Los dos gránulos correspondientes están alineados y se envían al motor de ClickHouse para su posterior procesamiento; es decir, agregar y contar los valores de URL por grupo para todas las filas en las que el UserID es 749.927.693, antes de devolver finalmente los 10 grupos de URL más grandes en orden descendente de recuento.
 
 <div id="using-multiple-primary-indexes">
-  ## Uso de múltiples índices primarios
+  ## Uso de múltiples índices primarios {#using-multiple-primary-indexes}
 </div>
 
 <a name="filtering-on-key-columns-after-the-first" />
 
-<div id="secondary-key-columns-can-not-be-inefficient">
-  ### Las columnas secundarias de la clave pueden (o no) ser ineficientes
-</div>
+### Las columnas secundarias de la clave pueden (o no) ser ineficientes {#secondary-key-columns-can-not-be-inefficient}
 
 Cuando una consulta filtra por una columna que forma parte de una clave compuesta y es la primera columna de la clave, [ClickHouse ejecuta entonces el algoritmo de búsqueda binaria sobre las marcas de índice de esa columna de la clave](#the-primary-index-is-used-for-selecting-granules).
 
@@ -769,9 +757,7 @@ Para ilustrarlo, daremos algunos detalles sobre cómo funciona la búsqueda por 
 
 <a name="generic-exclusion-search-algorithm" />
 
-<div id="generic-exclusion-search-algorithm">
-  ### Algoritmo de búsqueda por exclusión genérica
-</div>
+### Algoritmo de búsqueda por exclusión genérica {#generic-exclusion-search-algorithm}
 
 A continuación se ilustra cómo funciona el <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">algoritmo de búsqueda por exclusión genérica de ClickHouse</a> cuando los gránulos se seleccionan a través de una columna secundaria y la columna clave predecesora tiene cardinalidad baja o alta.
 
@@ -822,9 +808,7 @@ El mismo escenario se aplica a las marcas 1, 2 y 3.
 
 En nuestro conjunto de datos de ejemplo, ambas columnas clave (UserID, URL) tienen una cardinalidad alta y similar y, como se explicó, el algoritmo de búsqueda por exclusión genérica no es muy eficaz cuando la columna clave precedente de la columna URL tiene una cardinalidad mayor o similar.
 
-<div id="note-about-data-skipping-index">
-  ### Nota sobre el índice de omisión de datos
-</div>
+### Nota sobre el índice de omisión de datos {#note-about-data-skipping-index}
 
 Debido a la cardinalidad igualmente alta de UserID y URL, nuestra [consulta filtrada por URL](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) tampoco se beneficiaría mucho de crear un [índice secundario de omisión de datos](/es/concepts/features/performance/skip-indexes/skipping-indexes) en la columna URL
 de nuestra [tabla con clave primaria compuesta (UserID, URL)](#a-table-with-a-primary-key).
@@ -851,7 +835,7 @@ Debido a la cardinalidad igualmente alta de UserID y URL, este índice secundari
 Es muy probable que el valor de URL concreto que busca la consulta (es decir, &#39;http://public&#95;search&#39;) esté entre el valor mínimo y máximo almacenado por el índice para cada grupo de gránulos, lo que obliga a ClickHouse a seleccionar ese grupo de gránulos (porque podría contener filas que coincidan con la consulta).
 
 <div id="a-need-to-use-multiple-primary-indexes">
-  ### La necesidad de usar varios índices primarios
+  ### La necesidad de usar varios índices primarios {#a-need-to-use-multiple-primary-indexes}
 </div>
 
 Como consecuencia, si queremos acelerar significativamente nuestra consulta de ejemplo que filtra filas por una URL específica, necesitamos usar un índice primario optimizado para esa consulta.
@@ -862,9 +846,7 @@ A continuación se muestran algunas formas de lograrlo.
 
 <a name="multiple-primary-indexes" />
 
-<div id="options-for-creating-additional-primary-indexes">
-  ### Opciones para crear índices primarios adicionales
-</div>
+### Opciones para crear índices primarios adicionales {#options-for-creating-additional-primary-indexes}
 
 Si queremos acelerar significativamente nuestras dos consultas de ejemplo —la que filtra filas con un UserID específico y la que filtra filas con una URL específica—, necesitamos usar varios índices primarios mediante una de estas tres opciones:
 
@@ -892,9 +874,7 @@ A continuación, analizamos estas tres opciones para crear y usar varios índice
 
 <a name="multiple-primary-indexes-via-secondary-tables" />
 
-<div id="option-1-secondary-tables">
-  ### Opción 1: Tablas secundarias
-</div>
+### Opción 1: Tablas secundarias {#option-1-secondary-tables}
 
 <a name="secondary-table" />
 
@@ -1049,9 +1029,7 @@ Abre el cuadro de detalles para ver más información.
 
 Ahora tenemos dos tablas. Optimizadas, respectivamente, para acelerar las consultas que filtran por `UserIDs` y las consultas que filtran por URL:
 
-<div id="option-2-materialized-views">
-  ### Opción 2: Vistas materializadas
-</div>
+### Opción 2: Vistas materializadas {#option-2-materialized-views}
 
 Cree una [vista materializada](/es/reference/statements/create/view) sobre la tabla existente.
 
@@ -1134,9 +1112,7 @@ El registro del servidor correspondiente confirma que ClickHouse está realizand
 ...Executor): Reading approx. 335872 rows with 4 streams
 ```
 
-<div id="option-3-projections">
-  ### Opción 3: Proyecciones
-</div>
+### Opción 3: Proyecciones {#option-3-projections}
 
 Cree una proyección en la tabla existente:
 
@@ -1221,7 +1197,7 @@ El registro del servidor correspondiente confirma que ClickHouse está realizand
 ```
 
 <div id="summary">
-  ### Resumen
+  ### Resumen {#summary}
 </div>
 
 El índice primario de nuestra [tabla con clave primaria compuesta (UserID, URL)](#a-table-with-a-primary-key) fue muy útil para acelerar una [consulta filtrada por UserID](#the-primary-index-is-used-for-selecting-granules). Pero ese índice no ayuda significativamente a acelerar una [consulta filtrada por URL](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient), aunque la columna URL forme parte de la clave primaria compuesta.
@@ -1238,7 +1214,7 @@ Sin embargo, si las columnas clave de una clave primaria compuesta presentan gra
 Cuanto mayor sea la diferencia de cardinalidad entre las columnas clave, más importa el orden de esas columnas en la clave. Lo demostraremos en la siguiente sección.
 
 <div id="ordering-key-columns-efficiently">
-  ## Ordenar eficientemente las columnas de la clave
+  ## Ordenar eficientemente las columnas de la clave {#ordering-key-columns-efficiently}
 </div>
 
 <a name="test" />
@@ -1352,7 +1328,7 @@ La respuesta es:
 ```
 
 <div id="efficient-filtering-on-secondary-key-columns">
-  ### Filtrado eficiente en columnas secundarias de la clave
+  ### Filtrado eficiente en columnas secundarias de la clave {#efficient-filtering-on-secondary-key-columns}
 </div>
 
 Cuando una consulta filtra por al menos una columna que forma parte de una clave compuesta y que es la primera columna de la clave, [ClickHouse ejecuta el algoritmo de búsqueda binaria sobre las marcas de índice de la columna de la clave](#the-primary-index-is-used-for-selecting-granules).
@@ -1405,9 +1381,7 @@ Podemos ver que la ejecución de la consulta es significativamente más eficaz y
 
 La razón es que el [algoritmo de búsqueda por exclusión genérica](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444) funciona con mayor eficacia cuando los [gránulos](#the-primary-index-is-used-for-selecting-granules) se seleccionan mediante una columna de clave secundaria cuya columna de clave predecesora tiene una cardinalidad menor. Lo explicamos en detalle en una [sección anterior](#generic-exclusion-search-algorithm) de esta guía.
 
-<div id="optimal-compression-ratio-of-data-files">
-  ### Relación de compresión óptima de los archivos de datos
-</div>
+### Relación de compresión óptima de los archivos de datos {#optimal-compression-ratio-of-data-files}
 
 Esta consulta compara la relación de compresión de la columna `UserID` entre las dos tablas que creamos anteriormente:
 
@@ -1467,13 +1441,13 @@ Pero, como la primera columna de la clave, `ch`, tiene una cardinalidad alta, es
 Por lo tanto, lo más probable es que los valores de `cl` estén en un orden aleatorio y, en consecuencia, tengan una mala localidad y una mala relación de compresión, respectivamente.
 
 <div id="summary">
-  ### Resumen
+  ### Resumen {#summary-1}
 </div>
 
 Tanto para filtrar eficientemente por las columnas secundarias de la clave en las consultas como para la relación de compresión de los archivos de datos de las columnas de una tabla, conviene ordenar en orden ascendente las columnas de una clave primaria según su cardinalidad.
 
 <div id="identifying-single-rows-efficiently">
-  ## Identificar filas individuales de forma eficiente
+  ## Identificar filas individuales de forma eficiente {#identifying-single-rows-efficiently}
 </div>
 
 Aunque, en general, [no](/es/resources/support-center/knowledge-base/general-faqs/key-value) es el mejor caso de uso para ClickHouse,
@@ -1487,9 +1461,7 @@ Como ya comentamos, dado que [los datos de las filas de una tabla de ClickHouse 
 
 Un punto intermedio entre la recuperación más rápida y una compresión óptima de los datos es usar una clave primaria compuesta en la que el UUID sea la última columna de la clave, después de columnas clave de cardinalidad baja o menor, que se utilizan para garantizar una buena relación de compresión en algunas de las columnas de la tabla.
 
-<div id="a-concrete-example">
-  ### Un ejemplo concreto
-</div>
+### Un ejemplo concreto {#a-concrete-example}
 
 Un ejemplo concreto es el servicio de paste de texto sin formato [https://pastila.nl](https://pastila.nl) que Alexey Milovidov desarrolló y sobre el que [escribió en el blog](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/).
 

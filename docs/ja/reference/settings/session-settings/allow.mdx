@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="allow_aggregate_partitions_independently">
-  ## allow_aggregate_partitions_independently
-</div>
+## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 パーティションキーが GROUP BY キーに適している場合、パーティションごとに別スレッドで独立して集約できるようにします。これは、パーティション数がコア数に近く、各パーティションのサイズがほぼ同じ場合に有効です。`ReadFromMergeTree` のヒューリスティックは、レイアウトが不利な場合 (パーティション数が少なすぎる、多すぎる、またはパーティションサイズの偏りが大きい場合) には、この最適化を自動的に無効化します。これらのチェックを回避するには、`force_aggregate_partitions_independently` を参照してください。
 
-<div id="allow_archive_path_syntax">
-  ## allow_archive_path_syntax
-</div>
+## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,17 +31,13 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 File/S3 エンジン/テーブル関数では、アーカイブの拡張子が正しい場合、&#39;::&#39; を含むパスを `<archive> :: <file>` として解析します。
 
-<div id="allow_asynchronous_read_from_io_pool_for_merge_tree">
-  ## allow_asynchronous_read_from_io_pool_for_merge_tree
-</div>
+## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 MergeTree テーブルからの読み取りにバックグラウンド I/O プールを使用します。この設定により、I/O 律速のクエリではパフォーマンスが向上する場合があります。
 
-<div id="allow_calculating_subcolumns_sizes_for_merge_tree_reading">
-  ## allow_calculating_subcolumns_sizes_for_merge_tree_reading
-</div>
+## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,26 +45,32 @@ MergeTree テーブルからの読み取りにバックグラウンド I/O プ�
 
 有効にすると、ClickHouse は各サブカラムの読み取りに必要なファイルサイズを計算し、タスクサイズとブロックサイズをより適切に算出します。
 
-<div id="allow_changing_replica_until_first_data_packet">
-  ## allow_changing_replica_until_first_data_packet
-</div>
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 有効な場合、ヘッジドリクエストでは、すでにある程度 Progress が進んでいても、最初の Data パケットを受信するまで新しい接続を開始できます
 (ただし、`receive_data_timeout` のタイムアウト時間内に Progress が更新されていない場合に限ります) 。無効な場合は、最初に Progress が進んだ時点以降、レプリカの切り替えは行われません。
 
-<div id="allow_create_index_without_type">
-  ## allow_create_index_without_type
-</div>
+## allow_correlated_subqueries {#allow_correlated_subqueries}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_correlated_subqueries`
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Added an alias for setting `allow_experimental_correlated_subqueries`."}]}]} />
+
+相関サブクエリの実行を許可します。
+
+## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 TYPE を指定しない CREATE INDEX クエリを許可します。このクエリは無視されます。SQL 互換性テストのための設定です。
 
-<div id="allow_creating_set_partitions_independently">
-  ## allow_creating_set_partitions_independently
-</div>
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,25 +78,61 @@ TYPE を指定しない CREATE INDEX クエリを許可します。このクエ�
 
 サブクエリの `MergeTree` テーブルのパーティション式がサブクエリ出力カラムの決定論的関数である場合に、`IN (subquery)` のセット構築時にサブクエリ結果をパーティションごとに並列で事前重複排除します。各パーティションは個別のストリームで読み取られ、独立して重複排除されるため、単一のセット補完変換でハッシュ化されるのは一意の行のみです。`FINAL`、並列レプリカ、`GLOBAL IN` では適用されません。この最適化でパーティションごとの読み取りが要求されるのは、データに複数のパーティションがあり、かつ最大パーティションの行数が平均パーティションの行数の2倍以下である場合のみです (偏りのチェックを回避するには、[force&#95;creating&#95;set&#95;partitions&#95;independently](/ja/reference/settings/session-settings/force#force_creating_set_partitions_independently) を参照してください) 。別のパーティションごとの機能 (たとえばパーティションごとの `LIMIT BY`) によってストリームがすでにパーティション間で分離されている場合は、読み取りレイアウトがすでに固定されているため、事前重複排除は常に適用されます。セットの構築中、ストリームごとの重複排除テーブルには合計で、一意のキーのコピー約1つ分が追加で保持されます。
 
-<div id="allow_custom_error_code_in_throwif">
-  ## allow_custom_error_code_in_throwif
-</div>
+## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 関数 throwIf() でカスタムエラーコードを有効にします。true の場合、送出される例外に想定外のエラーコードが付与されることがあります。
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_database_glue_catalog {#allow_database_glue_catalog}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_database_glue_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "設定 `allow_experimental_database_glue_catalog` の別名を追加"}]}]} />
+
+`catalog_type = 'glue'` を指定したデータベースエンジン `DataLakeCatalog` を許可します
+
+Cloud でのデフォルト値: `1`。
+
+## allow_database_iceberg {#allow_database_iceberg}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_database_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "設定 `allow_experimental_database_iceberg` の別名を追加"}]}]} />
+
+`catalog_type = 'iceberg'` を指定したデータベースエンジン `DataLakeCatalog` を許可します
+
+Cloud でのデフォルト値: `1`。
+
+## allow_database_unity_catalog {#allow_database_unity_catalog}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_database_unity_catalog`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": "0"},{"label": "設定 `allow_experimental_database_unity_catalog` の別名を追加"}]}]} />
+
+`catalog_type = 'unity'` を指定したデータベースエンジン `DataLakeCatalog` を許可します
+
+Cloud でのデフォルト値: `1`。
+
+## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 true に設定すると、ユーザーは DDL クエリを実行できます。
 
-<div id="allow_delta_kernel_rs">
-  ## allow_delta_kernel_rs
-</div>
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
 
 <BetaBadge />
 
@@ -110,9 +144,29 @@ true に設定すると、ユーザーは DDL クエリを実行できます。
 
 Delta Lake テーブルの読み取りに `delta-kernel-rs` 実装を使用できるようにします。
 
-<div id="allow_distinct_partitions_independently">
-  ## allow_distinct_partitions_independently
-</div>
+## allow_delta_lake_create_table {#allow_delta_lake_create_table}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新しい設定: delta-kernel-rs を使用した新しい Delta Lake テーブルの作成、または既存テーブルのカタログへの登録を許可します。"}]}]} />
+
+delta-kernel-rs を使用した新しい Delta Lake テーブルの作成、または既存テーブルのカタログへの登録を許可します。パーティション化されたテーブル (`PARTITION BY`) の作成はまだサポートされていません。`DataLakeCatalog` データベースでは、テーブルは Delta スキーマとして登録されるため、より広い Delta 型にマッピングされる ClickHouse 型を宣言した場合 (例: `UInt8` -&gt; `short`、`FixedString(N)` -&gt; `string`) 、読み出し時には宣言した型ではなく Delta 側でマッピングされた型になります。
+
+## allow_delta_lake_writes {#allow_delta_lake_writes}
+
+<BetaBadge />
+
+**別名**: `allow_experimental_delta_lake_writes`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "ベータに移行された設定 `allow_experimental_delta_lake_writes` の別名を追加しました。"}]}]} />
+
+delta-kernel の書き込み機能を有効にします。
+
+## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,25 +176,19 @@ Delta Lake テーブルの読み取りに `delta-kernel-rs` 実装を使用で�
 
 [max&#95;rows&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-rows#max_rows_in_distinct) または [max&#95;bytes&#95;in&#95;distinct](/ja/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) が設定されている場合は適用されません。これらの上限は、マージ後の結果全体を対象とする単一の `DISTINCT` 変換によって適用されるため、グローバルな意味を維持するためにストリーム間のマージは保持されます。
 
-<div id="allow_distributed_ddl">
-  ## allow_distributed_ddl
-</div>
+## allow_distributed_ddl {#allow_distributed_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 これを true に設定すると、ユーザーは分散 DDL クエリを実行できます。
 
-<div id="allow_drop_detached">
-  ## allow_drop_detached
-</div>
+## allow_drop_detached {#allow_drop_detached}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ALTER TABLE ... DROP DETACHED PART[ITION] ... クエリの実行を許可します
 
-<div id="allow_dynamic_type_in_join_keys">
-  ## allow_dynamic_type_in_join_keys
-</div>
+## allow_dynamic_type_in_join_keys {#allow_dynamic_type_in_join_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -148,17 +196,23 @@ ALTER TABLE ... DROP DETACHED PART[ITION] ... クエリの実行を許可しま�
 
 JOIN キーで Dynamic 型を使用できるようにします。互換性のために追加された設定です。他の型との比較で予期しない結果になる可能性があるため、JOIN キーで Dynamic 型を使用することは推奨されません。
 
-<div id="allow_execute_multiif_columnar">
-  ## allow_execute_multiif_columnar
-</div>
+## allow_executable_tables {#allow_executable_tables}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.10"},{"label": "1"},{"label": "`executable` テーブル関数経由での読み取り、および `Executable` テーブルと `ExecutablePool` テーブルからの読み取りを無効にするための新しい設定。"}]}]} />
+
+`executable` テーブル関数経由での読み取り、および `Executable` テーブルと `ExecutablePool` テーブルからの読み取りを許可します。
+
+これを無効にした場合、拒否されるのは読み取りのみで、こうしたテーブルの作成、アタッチ、削除、DESCRIBE は引き続き利用できます。すでに起動済みの `ExecutablePool` のプロセスは終了されずに実行されたままになりますが、この設定を再び有効にするまで、読み取りはその都度拒否されます。
+
+## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 multiIf 関数の列指向実行を許可する
 
-<div id="allow_fuzz_query_functions">
-  ## allow_fuzz_query_functions
-</div>
+## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge />
 
@@ -168,9 +222,7 @@ multiIf 関数の列指向実行を許可する
 
 クエリ文字列に対して AST にランダムな変更を加える `fuzzQuery` 関数を有効にします。
 
-<div id="allow_general_join_planning">
-  ## allow_general_join_planning
-</div>
+## allow_general_join_planning {#allow_general_join_planning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -178,9 +230,17 @@ multiIf 関数の列指向実行を許可する
 
 より複雑な条件を処理できる、より汎用的な JOIN 計画アルゴリズムを使用できるようにしますが、これはハッシュ結合でのみ機能します。ハッシュ結合が有効でない場合は、この設定の値に関係なく、通常の JOIN 計画アルゴリズムが使用されます。
 
-<div id="allow_get_client_http_header">
-  ## allow_get_client_http_header
-</div>
+## allow_geo_types_in_iceberg {#allow_geo_types_in_iceberg}
+
+**別名**: `allow_experimental_geo_types_in_iceberg`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_geo_types_in_iceberg` の別名を追加。"}]}]} />
+
+Iceberg の `geometry` および `geography` フィールド型を、ClickHouse の `Geometry` (Variant) 型としてパースできるようにします。
+
+## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -188,17 +248,13 @@ multiIf 関数の列指向実行を許可する
 
 現在の HTTP リクエストのヘッダー値を取得できる関数 `getClientHTTPHeader` の使用を許可します。`Cookie` などの一部のヘッダーには機密情報が含まれる可能性があるため、セキュリティ上の理由からデフォルトでは有効になっていません。なお、`X-ClickHouse-*`、`Authentication`、`Authorization` の各ヘッダーは常に制限されており、この関数では取得できません。
 
-<div id="allow_hyperscan">
-  ## allow_hyperscan
-</div>
+## allow_hyperscan {#allow_hyperscan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Hyperscan ライブラリを使用する関数を許可します。コンパイルに長時間かかったり、リソースを過剰に消費したりする可能性を避けるには、無効にしてください。
 
-<div id="allow_iceberg_remove_orphan_files">
-  ## allow_iceberg_remove_orphan_files
-</div>
+## allow_iceberg_remove_orphan_files {#allow_iceberg_remove_orphan_files}
 
 <ExperimentalBadge />
 
@@ -208,9 +264,7 @@ Hyperscan ライブラリを使用する関数を許可します。コンパイ�
 
 Iceberg テーブルで &#39;ALTER TABLE ... EXECUTE remove&#95;orphan&#95;files()&#39; を使用できるようにします。
 
-<div id="allow_insert_into_iceberg">
-  ## allow_insert_into_iceberg
-</div>
+## allow_insert_into_iceberg {#allow_insert_into_iceberg}
 
 <BetaBadge />
 
@@ -222,9 +276,7 @@ Iceberg テーブルで &#39;ALTER TABLE ... EXECUTE remove&#95;orphan&#95;files
 
 Iceberg に対する `insert` クエリの実行を許可します。
 
-<div id="allow_introspection_functions">
-  ## allow_introspection_functions
-</div>
+## allow_introspection_functions {#allow_introspection_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -240,9 +292,31 @@ Iceberg に対する `insert` クエリの実行を許可します。
 * [Sampling Query Profiler](/ja/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * システムテーブル [trace&#95;log](/ja/reference/system-tables/trace_log)
 
-<div id="allow_key_condition_coalesce_rewrite">
-  ## allow_key_condition_coalesce_rewrite
-</div>
+## allow_join_right_table_sorting {#allow_join_right_table_sorting}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_join_right_table_sorting`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_join_right_table_sorting` の別名を追加しました。"}]}]} />
+
+true に設定されており、かつ `join_to_sort_minimum_perkey_rows` と `join_to_sort_maximum_table_rows` の条件を満たす場合、右テーブルをキー順に並べ替え、left または inner のハッシュ結合の性能を向上させます。
+
+## allow_kafka_offsets_storage_in_keeper {#allow_kafka_offsets_storage_in_keeper}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_kafka_offsets_storage_in_keeper`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_kafka_offsets_storage_in_keeper` の別名を追加しました。"}]}]} />
+
+Kafka 関連のオフセットを ClickHouse Keeper に保存できるようにします。有効にすると、Kafka table engine に ClickHouse Keeper パスとレプリカ名を指定できます。これにより、通常の Kafka エンジンではなく、committed offsets を主に ClickHouse Keeper に保存する新しい種類の storage engine が使用されます
+
+## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -251,9 +325,7 @@ Iceberg に対する `insert` クエリの実行を許可します。
 `coalesce(a_1, ..., a_N) <op> const` 形式の述語 (および同等の `ifNull`、または定数が左辺にある場合) を、索引解析の前に選言 `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` へ書き換えます。これにより、各 `a_i` のカラムごとの主キーおよびスキップ索引を利用できます。`coalesce(a, 42, b)` や `coalesce(a, b, 42)` のような、一部が定数の形式も処理されます。引数リストは `coalesce` 自体と同様に正規化されます (`NULL` リテラルは削除され、最初の非 `Nullable` 引数より後の引数は削除されます) 。末尾に非 `NULL` 定数がある場合は、最終分岐として出力されます。この書き換えは索引の枝刈りにのみ追加されるものであり、ランタイムフィルタリングでは引き続き元の述語が使用されます。
 さらに、`nullIf(key, sentinel) = const` 形式の完全一致述語 (`sentinel != const` かつ型が完全に一致する場合) は `key = const` に書き換えられるため、`key` の主キー、パーティション、およびスキップ索引でグラニュールを直接枝刈りできます。範囲条件および選言条件に対する nullIf の枝刈りはサポートされていません。
 
-<div id="allow_limit_by_partitions_independently">
-  ## allow_limit_by_partitions_independently
-</div>
+## allow_limit_by_partitions_independently {#allow_limit_by_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -261,9 +333,7 @@ Iceberg に対する `insert` クエリの実行を許可します。
 
 パーティション式が `LIMIT BY` カラムの決定論的関数である場合、別個のスレッドでパーティションごとに独立して `LIMIT BY` を評価できるようにします。
 
-<div id="allow_lossy_numeric_supertype">
-  ## allow_lossy_numeric_supertype
-</div>
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +341,7 @@ Iceberg に対する `insert` クエリの実行を許可します。
 
 有効にすると、損失のない共通型を持たない数値引数のセット (たとえば `Decimal` と `Float64`、または `Int64` と `Float64`) に対する `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` は、失敗する代わりに、精度が失われる可能性のある数値スーパータイプ (`Float64`) に解決されます。これにより、結果を `sum`、`avg`、`min`、`max` などの値を結合する集約関数で直接使用できます。これは `use_variant_as_common_type` とは独立しており、`use_variant_as_common_type` の有効・無効にかかわらず数値スーパータイプが生成されます。無効の場合 (デフォルト) 、このような引数セットには共通型がないため、`Variant` になる (`use_variant_as_common_type` が有効な場合) か、`NO_COMMON_TYPE` になります。
 
-<div id="allow_materialized_view_with_bad_select">
-  ## allow_materialized_view_with_bad_select
-</div>
+## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,9 +349,7 @@ Iceberg に対する `insert` クエリの実行を許可します。
 
 存在しないテーブルまたはカラムを参照する SELECT query を含む CREATE MATERIALIZED VIEW を許可します。ただし、構文的には有効である必要があります。refreshable MVs には適用されません。また、MV のスキーマを SELECT query から推論する必要がある場合にも適用されません (つまり、CREATE にカラムリストがなく、TO table もない場合です) 。ソーステーブルより前に MV を作成する際に使用できます。
 
-<div id="allow_metadata_only_named_tuple_alter">
-  ## allow_metadata_only_named_tuple_alter
-</div>
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -292,9 +358,7 @@ Iceberg に対する `insert` クエリの実行を許可します。
 true の場合、名前付き Tuple に新しいサブフィールドを追加するだけの ALTER MODIFY COLUMN は、メタデータのみを変更します (データ mutation は実行されません) 。
 false に設定すると、従来の完全 mutation の動作を強制します。
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -303,25 +367,19 @@ false に設定すると、従来の完全 mutation の動作を強制します�
 JSON (Object) カラムに対する minmax スキップ索引の作成を許可します。デフォルトでは無効です。これは、minmax
 索引のシリアライゼーション処理では、JSON カラムに含まれる可能性がある異種の Field 値を扱えないためです。
 
-<div id="allow_named_collection_override_by_default">
-  ## allow_named_collection_override_by_default
-</div>
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 デフォルトで named collections のフィールドの上書きを許可します。
 
-<div id="allow_non_metadata_alters">
-  ## allow_non_metadata_alters
-</div>
+## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 テーブルのメタデータだけでなく、ディスク上のデータにも影響するalterの実行を許可します
 
-<div id="allow_nonconst_timezone_arguments">
-  ## allow_nonconst_timezone_arguments
-</div>
+## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -332,13 +390,11 @@ toTimeZone()、fromUnixTimestamp*()、snowflakeIDToDateTime*() などの一部�
 この設定を有効にすると、1 つのカラム内の値ごとに異なるタイムゾーンを持てるかのような、誤った印象を与えます。
 したがって、この設定は有効にしないでください。
 
-<div id="allow_nullable_tuple_in_extracted_subcolumns">
-  ## allow_nullable_tuple_in_extracted_subcolumns
-</div>
+## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
-<SettingsInfoBlock type="Bool" default_value="0" />
+<SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.3"},{"label": "0"},{"label": "抽出された Tuple サブカラムを Nullable にできるかどうかを制御する新しい設定。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "`Nullable(Tuple)` が GA になりました。`Tuple`、`Variant`、`Dynamic`、`JSON` カラムから抽出された `Tuple` サブカラムは `Nullable(Tuple)` となり、サブカラムが存在しない行では NULL になります。この設定はサーバー起動時に一度だけ読み込まれるため、`compatibility` で以前の動作に戻せるのは起動時プロファイル (たとえば users.xml) からのみで、セッションレベルの `SET` からはできません。"}]}, {"id": "row-2","items": [{"label": "26.3"},{"label": "0"},{"label": "抽出された Tuple サブカラムを Nullable にできるかどうかを制御する新しい設定。"}]}]} />
 
 `Tuple(...)` 型の抽出されたサブカラムを `Nullable(Tuple(...))` 型として扱えるかどうかを制御します。
 
@@ -352,9 +408,15 @@ ClickHouse は、サーバー起動時に読み込まれたこの設定値を使
 `SET` またはクエリレベルの `SETTINGS` による変更では、抽出されたサブカラムの動作は変わりません。
 抽出されたサブカラムの動作を変更するには、起動時プロファイル設定 (たとえば users.xml) で `allow_nullable_tuple_in_extracted_subcolumns` を更新し、サーバーを再起動してください。
 
-<div id="allow_rank_dense_rank_arguments">
-  ## allow_rank_dense_rank_arguments
-</div>
+## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "最終段の `DISTINCT` が出力を再度重複排除するため、予備段の `DISTINCT` がほぼ一意な入力に対する重複排除を打ち切れるようにする新しい設定。"}]}]} />
+
+予備段 (ストリームごと) の `DISTINCT` が、ほぼ一意な入力に対する重複排除を打ち切り、ハッシュテーブルを解放して残りの行をそのまま通過させられるようにします。予備段の `DISTINCT` は設計上ベストエフォートであり (重複排除を行う場合でも、異なるストリームに由来する重複はそのまま通過します) 、最終段の `DISTINCT` がその出力を再度重複排除します。そのため、打ち切っても取り除ける重複はほとんど失われず、一意なキーの2つ目のコピーに要するメモリとハッシュ計算を節約できます。予備段の `DISTINCT` がリミットのヒント (後続の並べ替えを伴わない単純な `LIMIT`) を持つ場合には適用されません。
+
+## allow_rank_dense_rank_arguments {#allow_rank_dense_rank_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -371,9 +433,7 @@ SQL 標準では、`RANK` および `DENSE_RANK` は引数を取りません。�
 `NUMBER_OF_ARGUMENTS_DOESNT_MATCH` 例外を返します。`true` に設定すると、従来の寛容な動作が
 復元され、26.5 より前と同様に引数は黙って無視されます。
 
-<div id="allow_reorder_prewhere_conditions">
-  ## allow_reorder_prewhere_conditions
-</div>
+## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -381,9 +441,7 @@ SQL 標準では、`RANK` および `DENSE_RANK` は引数を取りません。�
 
 条件をWHEREからPREWHEREに移動する際に、フィルタリングを最適化するため条件の並び順の変更を許可します
 
-<div id="allow_replace_partition_from_empty_source">
-  ## allow_replace_partition_from_empty_source
-</div>
+## allow_replace_partition_from_empty_source {#allow_replace_partition_from_empty_source}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -395,9 +453,7 @@ SQL 標準では、`RANK` および `DENSE_RANK` は引数を取りません。�
 
 たとえば、宛先のデータを消去するために意図的に空のソースパーティションを使う場合は、この設定を有効にすると従来の動作に戻せます。無条件に削除したい場合は、代わりに `ALTER TABLE ... DROP PARTITION ...` を使用してください。
 
-<div id="allow_settings_after_format_in_insert">
-  ## allow_settings_after_format_in_insert
-</div>
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -427,17 +483,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
   古い構文に依存するユースケースがある場合に限り、後方互換性のためにこの設定を使用してください。
 </Note>
 
-<div id="allow_simdjson">
-  ## allow_simdjson
-</div>
+## allow_simdjson {#allow_simdjson}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 AVX2 命令が利用可能な場合に、`JSON*` 関数で simdjson ライブラリを使用できるようにします。無効にすると、rapidjson が使用されます。
 
-<div id="allow_special_serialization_kinds_in_output_formats">
-  ## allow_special_serialization_kinds_in_output_formats
-</div>
+## allow_special_serialization_kinds_in_output_formats {#allow_special_serialization_kinds_in_output_formats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -446,17 +498,25 @@ AVX2 命令が利用可能な場合に、`JSON*` 関数で simdjson ライブラ
 Sparse や Replicated のような特殊なシリアライゼーション種別を持つカラムを、フルカラム表現に変換せずに出力できるようにします。
 これにより、フォーマット処理時の不要なデータコピーを避けられます。
 
-<div id="allow_unrestricted_reads_from_keeper">
-  ## allow_unrestricted_reads_from_keeper
-</div>
+## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 system.zookeeper table から無制限に (path に条件を指定せずに) 読み取ることを許可します。便利な場合もありますが、ZooKeeper に対して安全ではありません。
 
-<div id="allow_window_partitions_independently">
-  ## allow_window_partitions_independently
-</div>
+## allow_url_wildcard_from_index_pages {#allow_url_wildcard_from_index_pages}
+
+<ExperimentalBadge />
+
+**別名**: `allow_experimental_url_wildcard_from_index_pages`
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "設定 `allow_experimental_url_wildcard_from_index_pages` の別名を追加しました。"}]}]} />
+
+HTTP のインデックスページからの `url()` および `ENGINE = URL` に対する wildcard 展開を許可します。
+
+## allow_window_partitions_independently {#allow_window_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

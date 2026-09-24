@@ -21,7 +21,7 @@ Vous pouvez également consulter la vidéo suivante :
 </Frame>
 
 <div id="when-should-refreshable-materialized-views-be-used">
-  ## Quand utiliser les vues matérialisées actualisables ?
+  ## Quand utiliser les vues matérialisées actualisables ? {#when-should-refreshable-materialized-views-be-used}
 </div>
 
 Les vues matérialisées incrémentielles de ClickHouse sont extrêmement puissantes et offrent généralement une bien meilleure évolutivité que l’approche utilisée par les vues matérialisées actualisables, en particulier lorsqu’il faut effectuer une agrégation sur une seule table. En calculant l’agrégation uniquement sur chaque bloc de données au moment de son insertion, puis en fusionnant les états incrémentiels dans la table finale, la requête ne s’exécute que sur un sous-ensemble des données. Cette méthode peut passer à l’échelle jusqu’à des pétaoctets de données et constitue généralement l’approche à privilégier.
@@ -30,12 +30,10 @@ Cependant, il existe des cas d’utilisation où ce processus incrémentiel n’
 
 > Les vues matérialisées actualisables peuvent exécuter des traitements par lots pour des tâches telles que la dénormalisation. Il est possible de créer des dépendances entre des vues matérialisées actualisables, de sorte qu’une vue dépende des résultats d’une autre et ne s’exécute qu’une fois celle-ci terminée. Cela peut remplacer des workflows planifiés ou des DAG simples, comme un job [dbt](https://www.getdbt.com/). Pour en savoir plus sur la définition de dépendances entre les vues matérialisées actualisables, consultez [CREATE VIEW](/fr/reference/statements/create/view#refresh-dependencies), section `Dependencies`.
 
-<div id="how-do-you-refresh-a-refreshable-materialized-view">
-  ## Comment rafraîchir une vue matérialisée actualisable ?
-</div>
+## Comment rafraîchir une vue matérialisée actualisable ? {#how-do-you-refresh-a-refreshable-materialized-view}
 
 Les vues matérialisées actualisables sont rafraîchies automatiquement selon un intervalle défini lors de leur création.
-Par exemple, la vue matérialisée suivante est rafraîchie chaque minute :
+Par exemple, la vue matérialisée suivante est rafraîchie chaque minute :
 
 ```sql
 CREATE MATERIALIZED VIEW table_name_mv
@@ -43,7 +41,7 @@ REFRESH EVERY 1 MINUTE TO table_name AS
 ...
 ```
 
-Si vous souhaitez forcer l’actualisation d’une vue matérialisée, vous pouvez utiliser la clause `SYSTEM REFRESH VIEW` :
+Si vous souhaitez forcer le rafraîchissement d’une vue matérialisée, vous pouvez utiliser la clause `SYSTEM REFRESH VIEW` :
 
 ```sql
 SYSTEM REFRESH VIEW table_name_mv;
@@ -52,8 +50,12 @@ SYSTEM REFRESH VIEW table_name_mv;
 Vous pouvez également annuler, arrêter ou démarrer une vue matérialisée actualisable.
 Pour plus de détails, consultez la documentation sur la [gestion des vues matérialisées actualisables](/fr/reference/statements/system#managing-refreshable-materialized-views).
 
+<Warning>
+  Les vues matérialisées actualisables dont les rafraîchissements ne sont pas coordonnés via ClickHouse Keeper ne conservent pas la date de leur dernier rafraîchissement : après un redémarrage du serveur, elles risquent donc de toutes se rafraîchir en même temps. Consultez [Que deviennent les vues matérialisées actualisables lors du redémarrage du serveur](/fr/resources/support-center/knowledge-base/materialized-views/what-happens-to-refreshable-materialized-views-when-the-server-restarts) pour savoir quelles vues sont concernées et comment les redémarrer une par une.
+</Warning>
+
 <div id="when-was-a-refreshable-materialized-view-last-refreshed">
-  ## À quand remonte le dernier rafraîchissement d’une vue matérialisée actualisable ?
+  ## À quand remonte le dernier rafraîchissement d’une vue matérialisée actualisable ? {#when-was-a-refreshable-materialized-view-last-refreshed}
 </div>
 
 Pour savoir quand une vue matérialisée actualisable a été rafraîchie pour la dernière fois, vous pouvez interroger la table système [`system.view_refreshes`](/fr/reference/system-tables/view_refreshes), comme indiqué ci-dessous :
@@ -72,7 +74,7 @@ FROM system.view_refreshes;
 ```
 
 <div id="how-can-i-change-the-refresh-rate">
-  ## Comment puis-je modifier la fréquence d’actualisation ?
+  ## Comment puis-je modifier la fréquence d’actualisation ? {#how-can-i-change-the-refresh-rate}
 </div>
 
 Pour modifier la fréquence d’actualisation d’une vue matérialisée actualisable, utilisez la syntaxe [`ALTER TABLE...MODIFY REFRESH`](/fr/reference/statements/alter/view#alter-table--modify-refresh-statement).
@@ -91,7 +93,7 @@ Une fois cela fait, vous pouvez utiliser la requête [À quand remonte le dernie
 ```
 
 <div id="using-append-to-add-new-rows">
-  ## Utiliser `APPEND` pour ajouter de nouvelles lignes
+  ## Utiliser `APPEND` pour ajouter de nouvelles lignes {#using-append-to-add-new-rows}
 </div>
 
 La fonctionnalité `APPEND` vous permet d’ajouter de nouvelles lignes à la fin de la table au lieu de remplacer l’intégralité de la vue.
@@ -197,13 +199,13 @@ FORMAT PrettyCompactMonoBlock
 ```
 
 <div id="examples">
-  ## Exemples
+  ## Exemples {#examples}
 </div>
 
 Voyons maintenant comment utiliser les vues matérialisées actualisables à l’aide de quelques jeux de données d’exemple.
 
 <div id="stack-overflow">
-  ### Stack Overflow
+  ### Stack Overflow {#stack-overflow}
 </div>
 
 Le [guide de dénormalisation des données](/fr/guides/clickhouse/data-modelling/denormalization) présente différentes techniques de dénormalisation des données à l’aide d’un jeu de données Stack Overflow. Nous insérons des données dans les tables suivantes : `votes`, `users`, `badges`, `posts` et `postlinks`.
@@ -255,7 +257,7 @@ La vue s’exécute immédiatement, puis toutes les heures, conformément à la 
 </Note>
 
 <div id="imdb">
-  ### IMDb
+  ### IMDb {#imdb}
 </div>
 
 Dans le [guide d’intégration dbt et ClickHouse](/fr/integrations/connectors/data-ingestion/etl-tools/dbt/index), nous avons alimenté un jeu de données IMDb avec les tables suivantes : `actors`, `directors`, `genres`, `movie_directors`, `movies` et `roles`.

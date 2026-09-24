@@ -28,9 +28,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `ON CLUSTER` 句を使用すると、クラスター内にユーザーを作成できます。詳細は [Distributed DDL](/ja/reference/statements/distributed-ddl) を参照してください。
 
-<div id="identification">
-  ## 識別
-</div>
+`CREATE USER` には [CREATE USER](/ja/reference/statements/grant#access-management) 権限が必要です。`OR REPLACE` は同名の既存ユーザー (その認証方式、付与されたロール、設定) を上書きするため、さらに [DROP USER](/ja/reference/statements/grant#access-management) 権限も必要になります。`DROP USER` 権限は、そのユーザーが既に存在するかどうかにかかわらず、ステートメントに列挙されたすべての名前について必要です。そのため、このステートメントを使ってどのユーザーが存在するかを調べることはできません。
+
+## 識別 {#identification}
 
 ユーザーの識別方法には、複数の種類があります。
 
@@ -76,9 +76,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   * 特殊文字を1文字以上含むこと
 </Note>
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 1. 次のユーザー名は `name1` で、パスワードは不要です。これは当然ながら、ほとんどセキュリティになりません。
 
@@ -172,9 +170,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 1. 古いバージョンの ClickHouse では、複数の認証方式の構文がサポートされていない場合があります。したがって、ClickHouse serverにそのようなユーザーが存在する状態で、これを未対応のバージョンにダウングレードすると、そのようなユーザーは使用できなくなり、一部のユーザー関連の操作も正常に機能しなくなります。問題なくダウングレードするには、事前にすべてのユーザーが単一の認証方式のみを持つように設定しておく必要があります。あるいは、適切な手順を踏まずにサーバーをダウングレードしてしまった場合は、問題のあるユーザーを削除する必要があります。
 2. セキュリティ上の理由から、`no_password` は他の認証方式と共存できません。したがって、`no_password` を指定できるのは、それがクエリ内で唯一の認証方式である場合に限られます。
 
-<div id="user-host">
-  ## ユーザーホスト
-</div>
+## ユーザーホスト {#user-host}
 
 ユーザーホストとは、ClickHouse server への接続を確立できるホストです。ホストは、`HOST` クエリセクションで次の方法により指定できます。
 
@@ -195,9 +191,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   ClickHouse は `user_name@'address'` を全体で 1 つのユーザー名として扱います。したがって、技術的には同じ `user_name` で `@` の後ろの記述だけが異なる複数のユーザーを作成できます。ただし、その方法は推奨しません。
 </Tip>
 
-<div id="valid-until-clause">
-  ## VALID UNTIL 句
-</div>
+## VALID UNTIL 句 {#valid-until-clause}
 
 認証方式の有効期限の日付と、必要に応じて時刻を指定できます。パラメータには文字列を指定します。datetime には `YYYY-MM-DD [hh:mm:ss] [timezone]` フォーマットを使用することを推奨します。`[timezone]` には、`+09:00` のような数値オフセット、または `UTC`、`GMT`、`Z`、`MSK`、`MSD` のいずれかを指定する必要があります。`Asia/Tokyo` のような名前付き IANA ゾーンは認識されません (以下の注記を参照) 。デフォルトでは、このパラメータは `'infinity'` です。指定できるデッドラインの範囲は、`1900-01-01 00:00:00 UTC` から `9999-12-31 09:59:59 UTC` までです。これは、すべてのタイムゾーンで年 9999 内に収まる最新の時点であるため、格納された時点が表示時にクランプされることはありません。過去のデッドラインは、認証情報 がすでに期限切れであることを意味します。`1970-01-01 00:00:01 UTC` より前のデッドラインは、「すでに期限切れ」を示すマーカーとしてのみ受け入れられます。これらは Unix epoch の 1 秒後 (`1970-01-01 00:00:01 UTC`) にあたる、期限切れの最小時点へ正規化されます。そのため、`SHOW CREATE USER` では指定したデッドラインではなく、この時点が表示されます。この時点以降のデッドラインは正確に格納されます。
 
@@ -221,9 +215,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   datetime 文字列は `parseDateTimeBestEffort` によって解析されます。この関数が認識する timezone トークンは、`UTC`、`GMT`、`Z`、`MSK`、`MSD`、および `+09:00` や `-05:00` のような数値オフセットのみです。`Asia/Tokyo` や `Europe/London` のような名前付き IANA タイムゾーンはサポートされていません。また、夏時間を採用する地域では固定オフセットは IANA ゾーンと同等ではないため、エンコードする特定の日付に対応する正しいオフセットを計算する必要があります。
 </Note>
 
-<div id="valid-for-clause">
-  ## VALID FOR 句
-</div>
+## VALID FOR 句 {#valid-for-clause}
 
 `VALID FOR`句は、`VALID UNTIL`の簡便な短縮記法です。絶対的な日付と時刻の代わりに[インターバル](/ja/reference/data-types/special-data-types/interval)を指定でき、クエリの実行時点の現在時刻にそのインターバルを加算して有効期限のデッドラインを算出します。結果は`VALID UNTIL`形式で保存されるため、`SHOW CREATE USER`では常に解決後の絶対デッドラインが表示されます。`VALID UNTIL`を使用できるすべての場所で使用でき、配置規則も同じです。`IDENTIFIED`の前に指定した場合 (または認証方式を指定しない場合) は、すべての方式に適用されるユーザーレベルのデッドラインとなります。一方、認証方式の後に指定した場合は、その方式にのみ適用されます。デッドラインは秒精度で保存・適用されるため、秒未満のインターバル (`NANOSECOND`、`MICROSECOND`、`MILLISECOND`) は受け付けられません。指定できる最小単位は`SECOND`です。負のインターバルは、認証情報がすでに期限切れであることを示すために使用できます。結果のデッドラインが`1970-01-01 00:00:01 UTC`より前になる場合は、期限切れとなる最小の時点に正規化されます。`SHOW CREATE USER`ではその値が表示され、[`VALID UNTIL`](#valid-until-clause)で説明しているとおり、serverまたはsessionのtime zoneで表示されます。
 
@@ -235,9 +227,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — ユーザーレベルのデッドラインは両方の方式に適用されます。
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — デッドラインは`bcrypt_password`方式にのみ適用されます。`plaintext_password`は期限切れになりません。
 
-<div id="grants-clause">
-  ## GRANTS 句
-</div>
+## GRANTS 句 {#grants-clause}
 
 特定の認証方式で認証されたセッションで使用可能なアクセス権を制限できます。括弧内に、[GRANT](/ja/reference/statements/grant) ステートメントと同じ形式で権限のリストを指定します。この句は認証方式の後 (`VALID UNTIL` 句がある場合はその後) に指定し、その方式にのみ適用されます。
 
@@ -266,9 +256,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 この組み合わせは、server によってローカルで検証される認証方式間でのみ確認されます。これは、上記の外部で検証される method で句自体が拒否されるのと同じ理由によるものです。つまり、その認証情報を再確認するには、外部システムに対する安全でない追加の照会が必要になるためです。したがって、同じ認証情報が同じ USER の外部で検証される method (`ldap`、`kerberos`、`http`、`jwt`) でも受け入れられる場合でも、その method 固有の `VALID UNTIL` はこの組み合わせの対象には含まれず、そこに設定されたより早い有効期限によって、ローカルで検証される method を通じて取得されたセッションが短縮されることはありません。
 
-<div id="grantees-clause">
-  ## GRANTEES 句
-</div>
+## GRANTEES 句 {#grantees-clause}
 
 このユーザーが [GRANT OPTION](/ja/reference/statements/grant#granting-privilege-syntax) 付きで必要なすべてのアクセス権も付与されている場合に、このユーザーから [権限](/ja/reference/statements/grant#privileges) を受け取ることができるユーザーまたはロールを指定します。`GRANTEES` 句のオプションは次のとおりです。
 
@@ -279,9 +267,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `EXCEPT` 式を使用すると、任意のユーザーまたはロールを除外できます。たとえば、`CREATE USER user1 GRANTEES ANY EXCEPT user2` と指定します。これは、`user1` が `GRANT OPTION` 付きでいくつかの権限を付与されている場合、それらの権限を `user2` を除く誰にでも付与できることを意味します。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples-1}
 
 パスワード `qwerty` を設定したユーザーアカウント `mira` を作成します:
 
@@ -313,6 +299,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 
 ```sql
 CREATE USER john GRANTEES jack;
+```
+
+デフォルトデータベースを指定してユーザーアカウント `john` を作成します:
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` は、デフォルトデータベースを未設定のままにします。`NONE` という名前のデータベースを使用するには、その名前をバッククォートで囲みます:
+
+```sql
+DEFAULT DATABASE `NONE`
 ```
 
 `john` のユーザーアカウントを作成するには、クエリパラメータを使用します:

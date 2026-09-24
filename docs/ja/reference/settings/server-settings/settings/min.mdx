@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は ClickHouse server を構成するためのもので、ClickHouse のソースコードから自動生成されています。
 
-<div id="min_allocation_size_to_throw_on_memory_limit">
-  ## min_allocation_size_to_throw_on_memory_limit
-</div>
+## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+グローバル (サーバー全体) のメモリトラッカーへの 1 回の計上について、stack trace を取得し、`Warning` レベルでサーバーログに書き込み、トレースタイプ `MemoryLargeAllocation` として [`system.trace_log`](/ja/reference/system-tables/trace_log) に挿入する対象となる最小サイズ (バイト単位) です。
+
+しきい値と比較され、報告されるサイズは、トラッカー呼び出し 1 回が計上する量であり、必ずしも 1 回の割り当てに対応するとは限りません。スレッドは小さな割り当てを遅延させ、まとめて 1 回の計上としてフラッシュするため、報告されるサイズは、報告されたスタックの最上位にある割り当てを最大で `max_untracked_memory` 分だけ上回ることがあります。しきい値を `max_untracked_memory` より十分大きく保てば、この差は無視できる程度に収まります。
+
+これは、グローバルに追跡されている合計値がプロセスの実際のメモリ使用量をはるかに超えて増大した状態を診断するためのものです。この状態では、サーバーは上限のごく一部しか使用していないにもかかわらず、0 バイトのものまで含めてすべての割り当てを拒否します。しかも、通常のテレメトリーではその増加の原因を特定できません。`MemoryTrackerBlockerInThread` の下で計上された割り当ては上限チェックとそれに伴うトレースをスキップし、残りを伝えるはずの `system.trace_log` への挿入も、サーバーが行き詰まった時点で失敗するためです。サーバーログへの書き込みは続くため、stack trace はそこに残ります。
+
+スタックの取得とシンボル化はコストが高く、トリガーは繰り返し発生しがちであるため、サーバーの 1 回の実行につき取得されるトレースは最大 10 件です。この設定を実行時にどちら方向へ変更しても、この上限が引き上げられることはありません。
+
+`trace_log` が設定されている必要があります。トレース collector が動作していない場合、トレースを取得しても破棄するほかないため、この値は無視され、[`system.server_settings`](/ja/reference/system-tables/server_settings) では `0` として報告されます。起動処理の後半で行われるこのテーブルの attach よりも前に collector が処理したトレースは、サーバーログにのみ記録されます。
+
+`0` (デフォルト) を指定すると、この診断は無効になります。サーバーが正当に行う最大の割り当てよりも十分大きな値を設定してください。そうしないと、通常の大きな割り当てまでログに記録され、起動時に上限枠をすべて使い切ってしまう可能性があります。
+
+## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -26,9 +40,7 @@ ClickHouse 自身の大きなバッファ — カラムデータ、ハッシュ�
 
 副作用を避けるため、値は `max_untracked_memory` より大きく設定することを推奨します。
 
-<div id="min_os_cpu_wait_time_ratio_to_drop_connection">
-  ## min_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

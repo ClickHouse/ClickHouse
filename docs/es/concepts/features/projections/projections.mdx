@@ -12,7 +12,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 import { RunnableCode } from "/snippets/es/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## Introducción
+  ## Introducción {#introduction}
 </div>
 
 ClickHouse ofrece varios mecanismos para acelerar las consultas analíticas sobre
@@ -31,9 +31,7 @@ consultas creando una reordenación de los datos según los atributos de interé
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="Reproductor de video de YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="how-do-projections-work">
-  ## ¿Cómo funcionan las Proyecciones?
-</div>
+## ¿Cómo funcionan las Proyecciones? {#how-do-projections-work}
 
 En la práctica, una Proyección puede entenderse como una tabla adicional oculta de la
 tabla original. La proyección puede tener un orden de filas distinto y, por tanto, un
@@ -57,7 +55,7 @@ como se muestra en la figura siguiente:
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="Proyecciones en ClickHouse" />
 
 <div id="smarter_storage_with_part_offset">
-  ### Almacenamiento más inteligente con `_part_offset`
+  ### Almacenamiento más inteligente con `_part_offset` {#smarter_storage_with_part_offset}
 </div>
 
 Desde la versión 25.5, ClickHouse admite la columna virtual `_part_offset` en las
@@ -78,7 +76,7 @@ Los enfoques anteriores también pueden combinarse, almacenando algunas columnas
 otras indirectamente mediante `_part_offset`.
 
 <div id="when-to-use-projections">
-  ## ¿Cuándo usar proyecciones?
+  ## ¿Cuándo usar proyecciones? {#when-to-use-projections}
 </div>
 
 Las proyecciones son una funcionalidad atractiva para los usuarios nuevos, ya que se
@@ -116,11 +114,11 @@ Recomendamos usar proyecciones cuando:
   [evalúe la sobrecarga de almacenamiento](/es/guides/clickhouse/data-modelling/compression/compression-in-clickhouse).
 
 <div id="examples">
-  ## Ejemplos
+  ## Ejemplos {#examples}
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### Filtrado por columnas que no están en la clave primaria
+  ### Filtrado por columnas que no están en la clave primaria {#filtering-without-using-primary-keys}
 </div>
 
 En este ejemplo, mostraremos cómo agregar una proyección a una tabla.
@@ -210,9 +208,7 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-<div id="using-projections-to-speed-up-UK-price-paid">
-  ### Uso de proyecciones para acelerar las consultas sobre UK Price Paid
-</div>
+### Uso de proyecciones para acelerar las consultas sobre UK Price Paid {#using-projections-to-speed-up-UK-price-paid}
 
 Para demostrar cómo se pueden usar las proyecciones para mejorar el rendimiento de las consultas, veamos
 un ejemplo con un conjunto de datos real. Para este ejemplo, usaremos
@@ -423,7 +419,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### Más ejemplos
+  ### Más ejemplos {#further-examples}
 </div>
 
 Los siguientes ejemplos usan el mismo conjunto de datos de precios del Reino Unido y comparan consultas con y sin proyecciones.
@@ -435,31 +431,36 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-<div id="build-projection">
-  #### Crear una proyección
-</div>
+#### Crear una proyección {#build-projection}
 
-Vamos a crear una proyección de agregación por las dimensiones `toYear(date)`, `district` y `town`:
+Vamos a crear una proyección de agregación por las dimensiones `year`, `district` y `town`.
+La proyección agrupa las ventas por el año de cada venta, por lo que materializamos esa
+expresión como una columna para que los filtros puedan referenciarla:
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
+```
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            toYear(date),
+            year,
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            toYear(date),
+            year,
             district,
             town
     )
 ```
 
-Rellene la proyección para los datos existentes. (Si no se materializa, la proyección solo se creará para los datos que se inserten a partir de ese momento):
+Pueble la proyección para los datos existentes. (Si no se materializa, la proyección solo se creará para los datos que se inserten a partir de ese momento):
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
@@ -470,13 +471,13 @@ SETTINGS mutations_sync = 1
 Las siguientes consultas muestran el contraste de rendimiento con y sin proyecciones. Para desactivar el uso de proyecciones, usamos la configuración [`optimize_use_projections`](/es/reference/settings/session-settings/optimize-use#optimize_use_projections), que está habilitada de forma predeterminada.
 
 <div id="average-price-projections">
-  #### Consulta 1. Precio medio por año
+  #### Consulta 1. Precio medio por año {#average-price-projections}
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -489,7 +490,7 @@ Las siguientes consultas muestran el contraste de rendimiento con y sin proyecci
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -502,13 +503,13 @@ Las siguientes consultas muestran el contraste de rendimiento con y sin proyecci
 Los resultados deberían ser los mismos, pero el rendimiento será mejor en este último ejemplo.
 
 <div id="average-price-london-projections">
-  #### Consulta 2. Precio promedio por año en Londres
+  #### Consulta 2. Precio promedio por año en Londres {#average-price-london-projections}
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -522,7 +523,7 @@ Los resultados deberían ser los mismos, pero el rendimiento será mejor en este
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -533,10 +534,10 @@ Los resultados deberían ser los mismos, pero el rendimiento será mejor en este
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### Consulta 3. Los barrios más caros
+  #### Consulta 3. Los barrios más caros {#most-expensive-neighborhoods-projections}
 </div>
 
-La condición (date &gt;= &#39;2020-01-01&#39;) debe modificarse para que coincida con la dimensión de la proyección (`toYear(date) >= 2020)`):
+El filtro para las filas a partir de 2020 hace referencia directamente a la dimensión `year` almacenada en la proyección:
 
 <RunnableCode>
   ```sql
@@ -547,7 +548,7 @@ La condición (date &gt;= &#39;2020-01-01&#39;) debe modificarse para que coinci
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE toYear(date) >= 2020
+  WHERE year >= 2020
   GROUP BY
       town,
       district
@@ -567,7 +568,7 @@ La condición (date &gt;= &#39;2020-01-01&#39;) debe modificarse para que coinci
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE toYear(date) >= 2020
+  WHERE year >= 2020
   GROUP BY
       town,
       district
@@ -579,8 +580,15 @@ La condición (date &gt;= &#39;2020-01-01&#39;) debe modificarse para que coinci
 
 De nuevo, el resultado es el mismo, pero observa la mejora en el rendimiento de la consulta en la segunda consulta.
 
+<Note>
+  El filtro debe hacer referencia directamente a la dimensión `year` almacenada. Escribir
+  `WHERE toYear(date) >= 2020` no utiliza la proyección: el optimizador reescribe
+  la condición como un rango sobre `date`, y la proyección no almacena una columna
+  `date`, por lo que ClickHouse recurre a escanear la tabla base.
+</Note>
+
 <div id="combining-projections">
-  ### Combinar proyecciones en una sola consulta
+  ### Combinar proyecciones en una sola consulta {#combining-projections}
 </div>
 
 A partir de la versión 25.6, y sobre la base del soporte de `_part_offset` introducido en
@@ -702,9 +710,7 @@ Al final, solo **1 de las 5 partes** se lee desde la tabla base.
 Al combinar el análisis de índices de múltiples proyecciones, ClickHouse reduce significativamente la cantidad de datos analizados,
 mejorando el rendimiento y manteniendo baja la sobrecarga de almacenamiento.
 
-<div id="related-content">
-  ## Contenido relacionado
-</div>
+## Contenido relacionado {#related-content}
 
 * [Introducción práctica a los índices primarios en ClickHouse](/es/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [Vistas materializadas](/es/concepts/features/materialized-views/index)

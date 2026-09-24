@@ -1,0 +1,691 @@
+---
+sidebarTitle: 'chdb_hook'
+description: 'Postgres chdb_hook モジュールの完全なリファレンスドキュメント'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb_hook'
+title: 'chdb_hook モジュールのリファレンスドキュメント'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb_hook', 'Parquet', 'CSV', 'TSV']
+---
+
+## 概要 {#synopsis}
+
+```psql
+# LOAD 'chdb_hook';
+LOAD
+
+# CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+CREATE TABLE
+
+# COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+COPY 18
+```
+
+## 説明 {#description}
+
+chdb&#95;hook モジュールは PostgreSQL の [COPY](#copy-overloading) コマンドにフックし、
+ローカルファイル、[AWS S3] bucket、[Google Cloud ストレージ] などを対象として、
+[chDB がサポートするデータフォーマット][formats] のいずれかで [chDB] によるデータのコピー (`TO` / `FROM`) を行えるようにします。
+さらに [CREATE TABLE] にもフックするため、テーブルはこれらと同じターゲットから
+カラムを導出し、行を読み込むことができます。
+
+## ロード {#loading}
+
+以下のいずれかの方法で、super user として chdb&#95;hook をロードします。ユースケースに最も適した方法を選んでください:
+
+* [LOAD] コマンドによる明示的なロード。session が続く間のみ有効です:
+
+  ```sql
+  LOAD 'chdb_hook';
+  ```
+
+  <Note>
+    ClickHouse Cloud の SQL Console は現時点では `LOAD 'chdb_hook'` コマンドに対応していませんが、psql やその他の database connection 経由であれば実行できます。
+    そうでない場合は、サポート担当者に連絡して Postgres service の configuration に追加してもらってください。追加後は SQL Console でも使用できるようになります。
+  </Note>
+
+* すべての sessions を対象とする場合は、`postgresql.conf` で [session&#95;preload&#95;libraries] SETTING を指定します:
+
+  ```ini
+  session_preload_libraries = chdb_hook
+  ```
+
+  または [ALTER SYSTEM] を使用します:
+
+  ```sql
+  ALTER SYSTEM SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  この SETTING は [ALTER DATABASE] を使って database 単位で設定することもできます:
+
+  ```sql
+  ALTER DATABASE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+  また、[ALTER ROLE] を使って特定のユーザーやグループに対して設定することもできます:
+
+  ```sql
+  ALTER ROLE name SET session_preload_libraries = 'chdb_hook';
+  ```
+
+* [shared&#95;preload&#95;libraries] SETTING により server 起動時にロードする方法。すべての sessions と databases から常に利用できるようになります:
+
+  ```ini
+  shared_preload_libraries = chdb_hook
+  ```
+
+<Warning>
+  chdb&#95;hook をロードすると、`pg_read_server_files` または `pg_write_server_files` ロールに属するユーザーが、Postgres server 上のファイルや cloud storage との間でデータを `COPY` できるようになる点に注意してください。
+</Warning>
+
+## COPY のオーバーロード {#copy-overloading}
+
+[ロード](#loading)時に、chdb&#95;hook は Postgres の [COPY] コマンドにフックし、
+ローカルファイル、[AWS S3] バケット、[Google Cloud ストレージ] などにある
+[chDB がサポートするデータフォーマット][formats] のいずれかに対して、`TO` でデータを書き出したり
+`FROM` で読み込んだりできるようにします。たとえば S3 上の CSV ファイルから
+テーブルを読み込むには、テーブルを作成してから `s3://` URL を指定して `COPY` を呼び出します:
+
+```sql
+CREATE TABLE times (
+    id     INT PRIMARY KEY,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv';
+```
+
+### Privileges {#privileges}
+
+chdb&#95;hook の `COPY` には、置き換え対象の [COPY] と同じ権限が必要です。
+すなわち、`COPY TO` の場合は relation またはコピー対象のすべてのカラムに対する `SELECT`、
+`COPY FROM` の場合は `INSERT` です。`file://` URL は server 上のファイルを読み書きするため、
+`pg_read_server_files` または `pg_write_server_files` のメンバーであることも必要です。
+`COPY FROM` には read-write の transaction が必要です。
+
+### URL スキーム {#url-schemes}
+
+chdb&#95;hook は、次のいずれかのスキームを使用する URL `COPY` ターゲットに対してのみ実行されます。
+
+| スキーム                           | ターゲット                                 | chDB 関数                |
+| ------------------------------ | ------------------------------------- | ---------------------- |
+| `file`                         | Postgres サーバー上の絶対パス                   | [`file()`]             |
+| `http`, `https`                | HTTP URL                              | [`url()`]              |
+| `s3`                           | [AWS S3]                              | [`s3()`]               |
+| `gs`, `gcs`, `oss`             | [Google Cloud ストレージ]                | [`gcs()`]              |
+| `az`, `azure`, `abfss`, `abfs` | [Azure Blob Storage] または [Azure ABFS] | [`azureBlobStorage()`] |
+| `hdfs`                         | [Hadoop Distributed File System]      | [`hdfs()`]             |
+
+### URL フォーマット {#url-formats}
+
+URL のフォーマットは、ターゲットによって異なります。
+
+#### File {#file}
+
+Postgres サーバー上の絶対パスである必要があります。相対パスを指定した場合はエラーになります。Postgres ユーザーは、用途に応じて `pg_read_server_files` または `pg_write_server_files` ロールのメンバーである必要があります。また、Postgres のシステムユーザーには、用途に応じて対象ファイルへの読み取りまたは書き込みアクセス権が必要です。`COPY TO` の場合、パスが存在しなければ chdb&#95;hook が不足している親ディレクトリを作成しますが、そのためにはファイルシステム上の権限が必要です。例:
+
+```
+file:///tmp/users.parquet
+```
+
+#### HTTP {#http}
+
+パブリックな cloud ストレージ上のものを含め、通常の HTTP URL であれば利用できます。`COPY TO` の場合、
+chdb&#95;hook はその URL に対してデータを `POST` しようとします。例:
+
+```
+https://datasets-documentation.s3.eu-west-3.amazonaws.com/my-test-bucket-768/some_prefix/some_file_1.csv
+```
+
+#### S3 {#s3}
+
+S3 URL は S3 URI の形式で指定することもできます
+
+```
+s3://{bucket}/{path}
+```
+
+または、オブジェクト URL の形式:
+
+```
+s3://{bucket}.s3.{region}.amazonaws.com/{path}
+```
+
+#### GCS {#GCS}
+
+GCS の URL は、パブリック URL の形式を取ります。
+
+```
+gs://storage.googleapis.com/{bucket}/{path}
+```
+
+または、chdb&#95;hook が Public な URL に変換する Cloud ストレージ URI を指定します:
+
+```
+gs://{bucket}/{path}
+```
+
+#### Azure Blob Storage {#azure-blob-storage}
+
+サブドメインにアカウント名を指定した `blob.windows.net` の URL を使用します:
+
+```
+az://{account}.blob.core.windows.net/{container}/{blob}
+```
+
+または、別の host name を使用することもできます:
+
+```
+az://{host}/{container}/{blob}
+```
+
+#### Azure ABFS {#azure-abfs}
+
+ABFS URL は次のフォーマットである必要があります:
+
+```
+abfs://{container}@{account}.dfs.core.windows.net/{blob}
+```
+
+#### HDFS URL {#hdfs-urls}
+
+HDFS URL には、一般的な HTTP 形式の URL を使用でき、ポートは任意で指定できます:
+
+```
+hdfs://{host}/{path}
+hdfs://{host}:{port}/{path}
+```
+
+### パスのワイルドカード {#path-wildcards}
+
+`COPY FROM` コマンドの URL パスにはグロブを含めることができます。ファイルは接尾辞やプレフィックスだけでなく、パスパターン全体に一致する必要があります。例外が1つあり、パスが既存のディレクトリを指していてグロブを使用していない場合は、そのディレクトリ内のすべてのファイルを選択するために `*` が暗黙的にパスへ追加されます。
+
+サポートされているワイルドカードは次のとおりです。
+
+* `*`: `/` を除く任意の文字に任意個数一致します (空文字列を含む) 。
+* `?`: 任意の1文字に一致します。
+* `{groucho,harpo,chico}`: 文字列 &quot;groucho&quot;、&quot;harpo&quot;、&quot;chico&quot; のいずれかに置き換えます。これらの文字列には `/` を含めることができます。
+* `{N..M}`: `>= N` かつ `<= M` の任意の数値に一致します。
+* `**`: ディレクトリ内のすべてのファイルに再帰的に一致します。
+
+たとえば、以下のファイルのデータを1つのコマンドで読み込むとします。
+
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/some&#95;prefix/some&#95;file&#95;3.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;1.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;2.csv
+* https://clickhouse-public-datasets.s3.amazonaws.com/my-test-bucket-768/another&#95;prefix/some&#95;file&#95;3.csv
+
+この場合、`{some,another}_prefix` で2つのディレクトリ名に、`some_file_{1..3}.csv'` でファイルに一致させます。次のように記述します。
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+);
+
+COPY times FROM 's3://datasets-documentation/my-test-bucket-768/{some,another}_prefix/some_file_{1..3}.csv';
+```
+
+### オプション {#options}
+
+chdb&#95;hook の `COPY` コマンドは、次のオプションをサポートします。
+
+#### `format`: {#format}
+
+読み取りまたは書き込みに使用するフォーマット。[chDB] が提供する [formats] のいずれかを指定する必要があり、TSV、CSV、Parquet、Iceberg、JSON などが利用できます。省略するか `auto` に設定した場合は、chDB が URL 末尾のファイル名の拡張子からフォーマットを判別します。
+
+#### `structure` {#structure}
+
+行を表す [chDB] のデータ構造です。カラム名と [ClickHouse データ型]、および修飾子のリストで構成されます。省略した場合、chdb&#95;hook は Postgres のデータ型を、おおむね適切な ClickHouse の型にマッピングします。詳細は [Postgres から
+chDB へ](#postgres-to-chdb) を参照してください。`auto` を指定した場合、chDB が型の推論を試みます。
+
+例:
+
+```sql
+COPY users TO 'file:///tmp/users.parquet' (
+    structure 'id Int64, name String, age Nullable(UInt8), attributes JSON'
+);
+```
+
+#### `access_key` と `access_secret` {#access_key-and-access_secret}
+
+リクエストを認証するために使用する、AWS アカウントユーザーの長期認証情報です。
+
+* **S3:** AWS の [access key ID と access secret]。多くの場合、環境変数
+  `AWS_ACCESS_KEY_ID` および `AWS_SECRET_ACCESS_KEY` で指定します
+* **GCS:** GCP の [HMACキーとシークレット]
+* **Azure:** Azure ストレージアカウント名と [access key]
+
+#### `session_token` {#session_token}
+
+`access_key` および `access_secret` と併用する AWS のセッショントークンで、多くの場合は環境変数 `AWS_SESSION_TOKEN` で定義されます。S3 の URL の場合にのみ使用されます。
+
+#### `compression` {#compression}
+
+ファイルの圧縮フォーマット。ファイル名から圧縮方式を推論できない場合に使用します。サポートされる値:
+
+* `auto` (デフォルト) 
+* `none`
+* `gzip` または `gz`
+* `brotli` または `br`
+* `xz` または `LZMA`
+* `zstd` または `zst`
+* `lz4`
+* `bz2`
+* `snappy`
+
+#### `timeout` {#timeout}
+
+リクエストのタイムアウト (ミリ秒) 。HTTP、S3、GCS、Azure の URL に適用されます。
+デフォルトは `30000` (30秒) です。
+
+### デバッグ {#debugging}
+
+エラー発生時、chdb&#95;hook の `COPY` コマンドは、実行を試みた [chDB] クエリをエラーコンテキストに含めます:
+
+```
+ERROR:  chdb: error executing chDB query
+DETAIL:  Code: 53. DB::Exception: Requested type of column p doesn't match parquet schema
+CONTEXT:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+chdb&#95;hook は、SQL インジェクションの脆弱性を防ぎ、認証情報などの機密データがログに記録されるリスクを最小化するため、クエリパラメータに `{name:Type}` 形式のプレースホルダーを使用します。
+
+ただし、問題をデバッグするためにこれらのパラメータの内容を確認する必要がある場合は、Postgres の [log&#95;min&#95;messages] GUC を一時的に `DEBUG1` 以上に設定してください。これにより、chdb&#95;hook はクエリとパラメータを Postgres のログ (クライアントには送信されません) に出力し、次のように表示されます:
+
+```
+2026-08-08 09:41:06.842 EDT [59940] LOG:  executing chDB query
+2026-08-08 09:41:06.842 EDT [59940] DETAIL:  query: SELECT * FROM file({path:String}, {format:String}, {structure:String})
+2026-08-08 09:41:06.842 EDT [59940] CONTEXT:  params: { path: "/tmp/users.data", format: "Parquet", structure: "user_id Nullable(Int64), username Nullable(String), password Nullable(String)" }
+2026-08-08 09:41:06.842 EDT [59940] STATEMENT:  COPY "users" FROM 'file:///tmp/users.data' (format 'Parquet');
+```
+
+<Warning>
+  &#91;log&#95;min&#95;messages&#93; をデバッグレベルに設定したままにするのは、1回の
+  デバッグセッションの範囲にとどめてください。認証情報などの機密情報が
+  ログに記録されるのを防ぐためであり、また PostgreSQL 自体もデバッグ情報を
+  出力するため、ログがすぐに肥大化してしまうからです。
+</Warning>
+
+## CREATE TABLE のオーバーロード {#create-table-overloading}
+
+chdb&#95;hook は [CREATE TABLE] にもフックするため、テーブルは URL からカラムを導出し、行を読み込むことができます。
+
+URL から導出した structure でテーブルを作成するには、`structure_from` オプションに URL を渡し、カラムリストを空のままにします:
+
+```sql
+CREATE TABLE reviews () WITH (
+    structure_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+`copy_from` を使用して、カラムだけでなく行も読み込みます:
+
+```sql
+CREATE TABLE reviews () WITH (
+    copy_from = 's3://datasets-documentation/amazon_reviews/amazon_reviews_2015.snappy.parquet'
+);
+```
+
+`copy_from` は、ステートメント自身がカラムを 1 つも指定していない場合にのみカラムを推論します。カラムリスト、`INHERITS` 句、`OF` 型、パーティションは、いずれもカラムを定義するため、その場合 `copy_from` は次の項目のみをコピーします:
+
+```sql
+CREATE TABLE times (
+    id     INT NOT NULL,
+    months INT NOT NULL,
+    days   INT NOT NULL
+) WITH (copy_from = 's3://datasets-documentation/my-test-bucket-768/some_prefix/some_file_1.csv');
+```
+
+どちらのオプションも `COPY` と同じ [URL スキーム](#url-schemes) と[オプション](#options)をサポートしており、認証情報、format、圧縮、timeout、さらには明示的な [structure](#structure) まで、すべてそのまま利用できます。Postgres 側では、残った storage parameters がそのまま保持されます:
+
+```sql
+CREATE TABLE users () WITH (
+    copy_from     = 's3://my-bucket/users.csv',
+    access_key    = 'AKIAIOSFODNN7EXAMPLE',
+    access_secret = 'wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY',
+    format        = 'CSVWithNames',
+    fillfactor    = 90
+);
+```
+
+`structure_from` と `copy_from` はいずれも `IF NOT EXISTS` と併用できません。既存のリレーションを読み込むには [COPY] を使用してください。
+
+## 制限事項 {#limitations}
+
+Postgres と chDB の間でのいくつかの既知の問題およびデータ型の挙動の違いにより、chdb&#95;hook には以下の制限があります:
+
+* コピーを実行するロールに適用される [row-level security] policies が設定された relation は `COPY` できません。Postgres はこうした policies を適用する際に `COPY TO` をクエリへ書き換えますが、chdb&#95;hook はこれをサポートしていません。
+* ClickHouse には NULL の Array が存在しないため、`COPY TO` は `NULL` を空の Array (`[]`) として格納します。
+* ClickHouse は `lseg`、`path`、`polygon` に相当するものを Array として表現します。そのため、これらの型の NULL 値も `COPY TO` では空の Array (`[]`) になります。
+* 指定した [structure](#structure) でカラムが Nullable として定義されていない場合、NULL 値はそのデフォルト値として出力されます。この変換を避けるため、[structure](#structure) では nullable columns を必ず明示的に定義してください。
+* 最後の点が最初の点と一致する開いた `path` は、閉じた path として出力されます。
+* Protobuf の repeated field には null が存在しないため、Array 内の NULL 値は省略されます。
+* chDB の [JSON type] は JSON オブジェクトのみをサポートします。`json` および `jsonb` のデフォルトの `String` マッピングを `JSON` で上書きするのは、すべての値が JSON オブジェクトである場合に限ってください。(ClickHouse/ClickHouse#68428)
+* chDB の [JSON type] は `null` を無視するため、NULL 値を持つオブジェクトのキーは出力時に省略されます。`json` および `jsonb` のデフォルトの `String` マッピングを `JSON` で上書きするのは、オブジェクトの値が `null` でない場合、またはその欠落が許容できる場合に限ってください。(ClickHouse/ClickHouse#68428)
+* JSON、JSONCompact、JSONColumnsWithMetadata フォーマットは常に UTF-8 を検証するため、bytea 値は replacement characters を含んだ形で出力されます。
+* `COPY FROM` は、空文字列またはゼロを含む Protobuf の `Nullable` フィールドを `NULL` として読み取ります。(chdb-io/chdb-core#152)
+* Parquet への `COPY TO` は、Nullable Tuple 自身の null マップから `NULL` を削除します。(ClickHouse/ClickHouse#112427)
+* Parquet、Arrow、ArrowStream、ORC、Avro、Protobuf、ProtobufList、MsgPack、BSONEachRow の各フォーマットには、Postgres の `time` や chDB の `Time64` に対応する型がありません。値を保持するには、明示的な [structure](#structure) で `time` カラムを `String` として設定してください。
+* Protobuf 出力では timestamp 値が秒単位に切り捨てられます。
+* Protobuf 出力は 1970-01-01 より前の日付をサポートしません。値を保持するには、明示的な [structure](#structure) で `time` カラムを `String` として設定してください。(ClickHouse/ClickHouse#111860)
+* CSVWithNames および CSVWithNamesAndTypes フォーマットは、現時点では `NULL` の box や circle の値をインポートできません。(ClickHouse/ClickHouse#115523)
+
+## データ型 {#data-types}
+
+[COPY](#copy-overloading) は relation の Postgres 型を chDB の型にマッピングし、
+[CREATE TABLE](#create-table-overloading) は URL の chDB 型を Postgres の型に
+マッピングします。
+
+### Postgres から chDB へ {#postgres-to-chdb}
+
+明示的な [structure](#structure) オプションが指定されていない場合、chdb&#95;hook は
+Postgres の型を適切な chDB の同等な型にマッピングします。用途に合わない場合は、
+[structure](#structure) を指定して、生成された型を必要な型でオーバーライドしてください。
+
+| Postgres    | chDB                                     | 備考                                                   |
+| ----------- | ---------------------------------------- | ---------------------------------------------------- |
+| boolean     | Bool                                     |                                                      |
+| name        | String                                   |                                                      |
+| text        | String                                   |                                                      |
+| inet        | String                                   | データがどちらか一方のみを含む場合は `IPv4` または `IPv6` でオーバーライドしてください。 |
+| cidr        | String                                   |                                                      |
+| macaddr     | String                                   |                                                      |
+| macaddr8    | String                                   |                                                      |
+| interval    | String                                   | `IntervalDay` などの `Interval` 単位でオーバーライドしてください。       |
+| tsvector    | String                                   |                                                      |
+| tsquery     | String                                   |                                                      |
+| jsonpath    | String                                   |                                                      |
+| money       | String                                   |                                                      |
+| enum        | String                                   |                                                      |
+| varchar     | String                                   |                                                      |
+| varbit      | String                                   |                                                      |
+| char        | FixedString                              |                                                      |
+| bit         | FixedString                              |                                                      |
+| bpchar      | String                                   |                                                      |
+| int2        | Int16                                    |                                                      |
+| int4        | Int32                                    |                                                      |
+| int8        | Int64                                    |                                                      |
+| oid         | UInt32                                   |                                                      |
+| oid8        | UInt64                                   |                                                      |
+| xid8        | UInt64                                   |                                                      |
+| json        | String                                   | データがオブジェクトのみを含む場合は `JSON` でオーバーライドしてください。            |
+| jsonb       | String                                   | データがオブジェクトのみを含む場合は `JSON` でオーバーライドしてください。            |
+| float4      | Float32                                  |                                                      |
+| float8      | Float64                                  |                                                      |
+| date        | Date32                                   |                                                      |
+| time        | Time64(6)                                | 時刻をサポートしないフォーマットの場合は `String` でオーバーライドしてください。        |
+| timetz      | String                                   |                                                      |
+| timestamp   | DateTime64(6)                            | `UTC` タイムゾーンで宣言され、セッションのタイムゾーンから変換されます。              |
+| timestamptz | DateTime64(6)                            | `UTC` タイムゾーンで宣言されます。                                 |
+| numeric     | Decimal                                  |                                                      |
+| uuid        | UUID                                     |                                                      |
+| point       | `Point`                                  | Postgres と同じ 2 つの座標です。                               |
+| lseg        | `LineString`                             | 厳密に 2 点からなる線です。                                      |
+| path        | `LineString`                             | 閉じた path では最初の点が繰り返されます。                             |
+| polygon     | `Ring`                                   | Ring は polygon と同様に暗黙的に閉じます。                         |
+| box         | `Tuple(high Point, low Point)`           | 2 つの角で、Postgres と同じ順序でソートされます。                       |
+| circle      | `Tuple(center Point, radius Float64)`    |                                                      |
+| line        | `Tuple(a Float64, b Float64, c Float64)` | 方程式 `Ax + By + C = 0` です。                            |
+
+Array 型は、マッピング後の要素型の `Array` にマッピングされます。ClickHouse は
+カラム単位で NULL 許容を制約しますが、Postgres は array 単位で制約するため、要素は
+常に `Nullable` になります。
+
+`Map` や `Tuple` にマッピングされる Postgres 型はありませんが、[structure](#structure) で
+指定することは可能です。`Map` はキーと値のペアの array に変換でき、`Tuple` は
+array に変換されます。異種混在のデータをサポートするには `text[]` を使用してください。
+
+### Timestamp 変換 {#timestamp-conversion}
+
+プレーンテキストフォーマット (TSV、CSV など) では、`COPY` hook は現在の `datestyle` 設定に関係なく、DateTime および DateTime64 の値を ISO-8601 形式 (`YYYY-MM-DDThh:mm:ssZ`) で出力します。これにより、値をインポートする側が異なる time zone を使用していても、timestamptz の値は一貫して保たれます。`structure` の出力で `Datetime64(3, 'America/Los_Angeles')` のような別の型を指定しても、出力のオフセットには影響せず、精度のみが変わります。
+
+Timestamp TZ の例:
+
+| timestamptz                               | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| ----------------------------------------- | ----------------------------- | -------------------------- |
+| `2026-08-28T12:00:00Z`                    | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `2026-08-28T11:00:00 America/Los_Angeles` | `2026-08-28T18:00:00.000000Z` | `2026-08-28T18:00:00.000Z` |
+| `2026-08-28T10:00:00.723923 Asia/Tokyo`   | `2026-08-28T01:00:00.723923Z` | `2026-08-28T01:00:00.723Z` |
+
+また `COPY` hook は、timestamp の値を session time zone から UTC へ変換し、その time zone を基準として出力されるようにします。新しいシステムに読み込まれた際には、そのシステムのローカル time zone に変換されます。したがって、time zone が異なれば値も異なりますが、time zone の差分を考慮すれば同一の時点を表します。
+
+`timezone` 設定が timestamp `2026-08-28T12:00:00` に与える影響の例:
+
+| timezone 設定           | `DateTime64(6, 'UTC')`        | `DateTime64(3 'Japan')`    |
+| --------------------- | ----------------------------- | -------------------------- |
+| `UTC`                 | `2026-08-28T12:00:00.000000Z` | `2026-08-28T12:00:00.000Z` |
+| `America/Los_Angeles` | `2026-08-28T19:00:00.000000Z` | `2026-08-28T19:00:00.000Z` |
+| `America/New_York`    | `2026-08-28T16:00:00.000000Z` | `2026-08-28T16:00:00.000Z` |
+| `Japan`               | `2026-08-28T03:00:00.000000Z` | `2026-08-28T03:00:00.000Z` |
+
+### chDB から Postgres へ {#chdb-to-postgres}
+
+chdb&#95;hook は、[`DESCRIBE`] が報告する ClickHouse の型を、次の Postgres の型にマッピングします:
+
+{/* `make type-table` で生成された TYPE-TABLE-BEGIN */}
+
+| chDB                | Postgres                    | 備考                 |
+| ------------------- | --------------------------- | ------------------ |
+| Array(T)            | T[]                         | 深さごとにPGの配列型が1つ     |
+| BFloat16            | real                        | 書き込み時に下位の仮数ビットを破棄  |
+| Bool                | boolean                     |                    |
+| Date                | date                        |                    |
+| Date32              | date                        |                    |
+| DateTime            | timestamp with time zone    |                    |
+| DateTime64(P)       | timestamp(P) with time zone | Pが6を超える場合は6に丸められる  |
+| Decimal(P,S)        | numeric(P,S)                |                    |
+| Decimal32(S)        | numeric(9,S)                |                    |
+| Decimal64(S)        | numeric(18,S)               |                    |
+| Decimal128(S)       | numeric(38,S)               |                    |
+| Decimal256(S)       | numeric(76,S)               |                    |
+| Enum8               | text                        |                    |
+| Enum16              | text                        |                    |
+| FixedString(N)      | text                        | NはCHではバイト数、PGでは文字数 |
+| Float32             | real                        |                    |
+| Float64             | double precision            |                    |
+| IPv4                | inet                        |                    |
+| IPv6                | inet                        |                    |
+| Int8                | smallint                    |                    |
+| Int16               | smallint                    |                    |
+| Int32               | integer                     |                    |
+| Int64               | bigint                      |                    |
+| Int128              | numeric(39,0)               |                    |
+| Int256              | numeric(77,0)               |                    |
+| IntervalDay         | interval                    |                    |
+| IntervalHour        | interval                    |                    |
+| IntervalMicrosecond | interval                    |                    |
+| IntervalMillisecond | interval                    |                    |
+| IntervalMinute      | interval                    |                    |
+| IntervalMonth       | interval                    |                    |
+| IntervalNanosecond  | interval                    | マイクロ秒に切り捨て         |
+| IntervalQuarter     | interval                    |                    |
+| IntervalSecond      | interval                    |                    |
+| IntervalWeek        | interval                    |                    |
+| IntervalYear        | interval                    |                    |
+| JSON                | jsonb                       |                    |
+| LineString          | path                        |                    |
+| LowCardinality(T)   | T                           |                    |
+| Map(K,V)            | text[][]                    | 1ペアにつきテキスト項目1行     |
+| MultiLineString     | path[]                      |                    |
+| MultiPolygon        | polygon[][]                 |                    |
+| Nullable(T)         | T                           | カラムをnullableに設定    |
+| Point               | point                       |                    |
+| Polygon             | polygon[]                   |                    |
+| Ring                | polygon                     |                    |
+| String              | text                        |                    |
+| Time                | time without time zone      |                    |
+| Time64(P)           | time(P) without time zone   | Pが6を超える場合は6に丸められる  |
+| Tuple(...)          | text[]                      | 各フィールドがテキスト項目になる   |
+| UInt8               | smallint                    |                    |
+| UInt16              | integer                     |                    |
+| UInt32              | bigint                      |                    |
+| UInt64              | numeric(20,0)               |                    |
+| UInt128             | numeric(39,0)               |                    |
+| UInt256             | numeric(78,0)               |                    |
+| UUID                | uuid                        |                    |
+
+{/* TYPE-TABLE-END */}
+
+この表に記載されていない chDB の型は、`Nested`、`Variant`、`Dynamic` を含めすべてエラーを送出します。これらをテキストとして読み取るには、`String` にマッピングする [structure](#structure) を使用してください。
+
+Postgres が扱える範囲は、これらの型のいくつかにおいて chDB より狭くなっています。そのため、24 時間を超える `Time` や `Time64`、および Postgres の日付範囲外の `Date32` については、コピー時にエラーが送出されます。
+
+### テキストエンコーディング {#text-encoding}
+
+chDB は `String`、`FixedString`、`Enum`、`JSON` をバイト列として読み取るため、エンコーディングは保証されません。これらのカラムを `text` やその他の非バイナリ型へコピーする際には、バイト列がデータベースのエンコーディングに適合するかが検証され、表現できないデータに対してはエラーが送出されます:
+
+```
+ERROR:  invalid byte sequence for encoding "UTF8": 0x00
+```
+
+いずれのエンコーディングも NUL を拒否します。Postgres は `text` に NUL を格納できないためです。
+
+chDB が書き込んだままのバイト列を保持するには `bytea` にコピーしてください。これらの型に対しては [CREATE TABLE](#create-table-overloading) が `text` を導出するため、次のように名前を付けてください:
+
+```sql
+CREATE TABLE logs (id bigint, payload bytea) WITH (
+    copy_from = 's3://my-bucket/logs.parquet'
+);
+```
+
+`FixedString(N)` は、短い値を NUL バイトで埋めます。`text` にコピーすると
+末尾の NUL は削除されますが、`bytea` では N バイトすべてが保持されます。
+
+## 設定 {#settings}
+
+### `chdb_hook.max_memory` {#chdb_hookmax_memory}
+
+```sql
+SET chdb_hook.max_memory = '1 GB';
+```
+
+chDB クエリで使用するメモリの上限を定義します。chDB の [`max_memory_usage`] 設定に反映されます。superuser 権限が必要です。メガバイト数を表す integer、または次のいずれかのメモリ単位を指定してください。
+
+* `B` (バイト) 
+* `kB` (キロバイト) 
+* `MB` (メガバイト) 
+* `GB` (ギガバイト) 
+* `TB` (テラバイト) 
+
+デフォルトは `0` で、この場合メモリは制限されません。
+
+### `chdb_hook.max_threads` {#chdb_hookmax_threads}
+
+```sql
+SET chdb_hook.max_threads = 4;
+```
+
+chDB クエリのクエリ処理スレッド数の上限で、chDB の [`max_threads`] 設定を指定するために使用します。superuser 権限が必要です。デフォルトは `0` で、この場合は chDB が値を決定します。
+
+大規模な `COPY` を実行する前に `chdb_hook.max_threads` を設定することを強く推奨します。これにより、chDB が PostgreSQL を犠牲にして CPU を使い切ってしまうのを防げます。
+
+### `chdb_hook.max_parsing_threads` {#chdb_hookmax_parsing_threads}
+
+```sql
+SET chdb_hook.max_parsing_threads = 2;
+```
+
+並列パースをサポートする入力フォーマットのデータを chDB がパースする際に使用できるスレッドの最大数で、chDB の [`max_parsing_threads`] 設定に使用されます。superuser 権限が必要です。デフォルトは `0` で、この場合は chDB が値を決定します。
+
+大量のデータを `COPY` する前に `chdb_hook.max_parsing_threads` を設定し、chDB が PostgreSQL を犠牲にして CPU 使用率を使い切ってしまうことを防ぐことを推奨します。
+
+## Versioning Policy {#versioning-policy}
+
+chdb&#95;hook は、公開リリースにおいて [Semantic Versioning] に準拠しています。
+
+* major version は API の変更時にインクリメントされます
+* minor version は後方互換性のある SQL の変更時にインクリメントされます
+* patch バージョンは binary のみの変更時にインクリメントされます
+
+インストール後は、PostgreSQL のバージョンを Postgres 18 の
+[`pg_get_loaded_modules()`] 関数で確認できます。
+
+```sql
+SELECT version FROM pg_get_loaded_modules() WHERE module_name = 'chdb_hook';
+```
+
+## 著者 {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## 著作権 {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - fast, reliable, and scalable in-process database"
+
+[Semantic Versioning]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"
+
+[COPY]: https://www.postgresql.org/docs/current/sql-copy.html "Postgres Docs: COPY"
+
+[CREATE TABLE]: https://www.postgresql.org/docs/current/sql-createtable.html "Postgres Docs: CREATE TABLE"
+
+[`DESCRIBE`]: https://clickhouse.com/docs/sql-reference/statements/describe-table "ClickHouse Docs: DESCRIBE TABLE"
+
+[フォーマット]: https://github.com/chdb-io/chdb/blob/main/refs/clickhouse-formats-settings.md#complete-format-names-table "chDB Docs: Complete Format Names Table"
+
+[access key ID and access secret]: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html "AWS Identity and Access Management: Manage access keys for IAM users"
+
+[HMACキーとシークレット]: https://docs.cloud.google.com/storage/docs/authentication/hmackeys "Google Cloud ストレージ: HMAC keys"
+
+[access key]: https://learn.microsoft.com/en-us/azure/storage/common/storage-account-keys-manage?tabs=azure-cli "Azure: Manage storage account access keys"
+
+[row-level security]: https://www.postgresql.org/docs/current/ddl-rowsecurity.html "Postgres Docs: Row Security Policies"
+
+[JSON type]: /reference/data-types/newjson "ClickHouse Docs: JSON Data Type"
+
+[LOAD]: https://www.postgresql.org/docs/current/sql-load.html "Postgres Docs: LOAD"
+
+[session_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Postgres Docs: `session_preload_libraries`"
+
+[shared_preload_libraries]: https://www.postgresql.org/docs/18/runtime-config-client.html#GUC-SESSION-PRELOAD-LIBRARIES "Postgres Docs: `shared_preload_libraries`"
+
+[ALTER SYSTEM]: https://www.postgresql.org/docs/18/sql-altersystem.html "Postgres Docs: ALTER SYSTEM"
+
+[ALTER DATABASE]: https://www.postgresql.org/docs/current/sql-alterdatabase.html "Postgres Docs: ALTER DATABASE"
+
+[ALTER ROLE]: https://www.postgresql.org/docs/18/sql-alterrole.html "Postgres Docs: ALTER ROLE"
+
+[AWS S3]: https://aws.amazon.com/s3/ "Cloud Object Storage - Amazon S3 - Amazon Web Services"
+
+[Google Cloud ストレージ]: https://cloud.google.com/storage "Cloud Storage - Google Cloud"
+
+[`file()`]: https://clickhouse.com/docs/sql-reference/table-functions/file "ClickHouse Docs: file Table Function"
+
+[`url()`]: https://clickhouse.com/docs/sql-reference/table-functions/url "ClickHouse Docs: url Table Function"
+
+[`s3()`]: https://clickhouse.com/docs/sql-reference/table-functions/s3 "ClickHouse Docs: s3 Table Function"
+
+[`gcs()`]: https://clickhouse.com/docs/sql-reference/table-functions/gcs "ClickHouse Docs: gcs Table Function"
+
+[Azure Blob Storage]: https://azure.microsoft.com/en-us/products/storage/blobs/
+
+[Azure ABFS]: https://learn.microsoft.com/en-us/azure/storage/blobs/data-lake-storage-introduction-abfs-uri "Use the Azure Data Lake Storage URI (ABFS) - Azure Storage"
+
+[`azureBlobStorage()`]: https://clickhouse.com/docs/sql-reference/table-functions/azureBlobStorage "ClickHouse Docs: azureBlobStorage Table Function"
+
+[Hadoop Distributed File System]: https://en.wikipedia.org/wiki/Apache_Hadoop#Overview "Wikipedia: Apache Hadoop Overview"
+
+[`hdfs()`]: https://clickhouse.com/docs/sql-reference/table-functions/hdfs "ClickHouse Docs: hdfs Table Function"
+
+[ClickHouse データ型]: https://clickhouse.com/docs/reference/data-types/index "ClickHouse Docs: Data Types in ClickHouse"
+
+[log_min_messages]: https://www.postgresql.org/docs/current/runtime-config-logging.html#GUC-LOG-MIN-MESSAGES "PostgreSQL Docs: log_min_messages"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* session settings"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* session settings"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads セッション設定"

@@ -23,13 +23,9 @@ doc_type: '참고'
 
 `clickhousectl`은 사람과 AI 에이전트가 ClickHouse로 개발할 수 있도록 지원합니다.
 
-<div id="installation">
-  ## 설치
-</div>
+## 설치 {#installation}
 
-<div id="quick-install">
-  ### 빠른 설치
-</div>
+### 빠른 설치 {#quick-install}
 
 ```bash
 curl https://clickhouse.com/cli | sh
@@ -37,20 +33,14 @@ curl https://clickhouse.com/cli | sh
 
 설치 스크립트는 사용 중인 OS에 맞는 버전을 다운로드한 뒤 `~/.local/bin/clickhousectl`에 설치합니다. 편의를 위해 `chctl` alias도 자동으로 생성됩니다.
 
-<div id="requirements">
-  ## 요구 사항
-</div>
+## 요구 사항 {#requirements}
 
 * macOS (aarch64, x86&#95;64) 또는 Linux (aarch64, x86&#95;64)
 * Cloud 명령에는 [ClickHouse Cloud API Key](/ko/products/cloud/features/admin-features/api/api-overview)가 필요합니다
 
-<div id="local">
-  ## 로컬
-</div>
+## 로컬 {#local}
 
-<div id="installing-versions">
-  ### ClickHouse 버전 설치 및 관리
-</div>
+### ClickHouse 버전 설치 및 관리 {#installing-versions}
 
 `clickhousectl`은 `builds.clickhouse.com`에서 ClickHouse 바이너리를 다운로드하며, 해당 위치에서 빌드를 사용할 수 없으면 `packages.clickhouse.com`(Linux) 또는 [GitHub releases](https://github.com/ClickHouse/ClickHouse/releases)(macOS)에서 대신 다운로드합니다.
 
@@ -77,9 +67,7 @@ clickhousectl local remove 26.5.2.39
 
 `local use`는 선택한 버전의 binary를 가리키는 `~/.local/bin/clickhouse` 심볼릭 링크도 생성하므로, 일반 `clickhouse` 명령(예: `clickhouse local`, `clickhouse client`)을 `PATH`에서 사용할 수 있습니다. 이 동작을 건너뛰려면 `--no-global`을 전달하세요. 해당 경로에 일반 파일이 이미 있으면 경고를 표시하고 그대로 둡니다. 활성 기본 버전에 `local remove`를 실행하면 심볼릭 링크도 제거됩니다.
 
-<div id="binary-storage">
-  #### ClickHouse 실행 파일 저장소
-</div>
+#### ClickHouse 실행 파일 저장소 {#binary-storage}
 
 ClickHouse 실행 파일은 저장 공간을 중복하지 않으면서 여러 프로젝트에서 사용할 수 있도록 전역 리포지토리에 저장됩니다. 실행 파일은 `~/.clickhouse/`에 저장됩니다:
 
@@ -91,9 +79,7 @@ ClickHouse 실행 파일은 저장 공간을 중복하지 않으면서 여러 �
 └── default              # tracks the active version
 ```
 
-<div id="initializing-project">
-  ### 프로젝트 초기화
-</div>
+### 프로젝트 초기화 {#initializing-project}
 
 ```bash
 clickhousectl local init
@@ -118,9 +104,7 @@ postgres/
 └── seed/                   # Seed data / INSERT statements
 ```
 
-<div id="running-queries">
-  ### 쿼리 실행
-</div>
+### 쿼리 실행 {#running-queries}
 
 ```bash
 # clickhouse-client로 실행 중인 서버에 연결
@@ -131,9 +115,7 @@ clickhousectl local client --queries-file schema.sql # 파일에서 쿼리 실�
 clickhousectl local client --host remote-host --port 9000  # 특정 호스트/포트에 연결
 ```
 
-<div id="managing-servers">
-  ### ClickHouse 서버 생성 및 관리
-</div>
+### ClickHouse 서버 생성 및 관리 {#managing-servers}
 
 ClickHouse 서버 인스턴스를 시작하고 관리합니다. 각 서버에는 `.clickhouse/servers/<name>/data/` 아래에 서로 격리된 자체 데이터 디렉터리가 할당됩니다.
 
@@ -170,9 +152,7 @@ clickhousectl local server dotenv --local                 # Write to .env.local 
 
 **전역 서버 관리:** 시스템 전체의 모든 프로젝트에 걸쳐 작업하려면 `list`, `stop`, `stop-all`과 함께 `--global`을 사용하세요. `server list --global`은 실행 중인 모든 ClickHouse 서버를 표시하며, 각 서버가 어느 디렉터리에 속하는지 나타내는 Project 컬럼이 함께 표시됩니다.
 
-<div id="custom-config-files">
-  #### 로컬 서버용 사용자 지정 구성 파일
-</div>
+#### 로컬 서버용 사용자 지정 구성 파일 {#custom-config-files}
 
 로컬 서버는 기본적으로 적절한 설정으로 시작되지만, 때로는 일부 설정을 변경해야 할 수 있습니다. 구성 파일을 `~/.clickhouse/configs/`에 넣고 서버를 시작할 때 이름으로 적용하세요:
 
@@ -193,9 +173,7 @@ clickhousectl local server start --config-file querylog
 
 지정한 파일은 **ClickHouse에 내장된 기본 설정 위에 덮어써집니다** (`config.d`를 통해). 따라서 변경하려는 설정만 포함하면 되며, 전체 구성을 다시 작성할 필요는 없습니다. 파일은 `.xml`, `.yaml` 또는 `.yml` 형식일 수 있으며, 확장자를 포함하거나 제외한 파일 이름으로 참조할 수 있습니다.
 
-<div id="project-local-data">
-  #### 프로젝트 로컬 데이터 디렉터리
-</div>
+#### 프로젝트 로컬 데이터 디렉터리 {#project-local-data}
 
 모든 서버 데이터는 프로젝트 디렉터리 내 `.clickhouse/`에 저장됩니다:
 
@@ -212,9 +190,7 @@ clickhousectl local server start --config-file querylog
 
 이름이 지정된 각 서버는 자체 데이터 디렉터리를 사용하므로 서버끼리는 완전히 격리됩니다. 데이터는 재시작 후에도 유지됩니다. 서버 이름으로 서버를 중지했다가 다시 시작하면 중단한 지점부터 작업을 이어갈 수 있습니다. 서버 데이터를 영구적으로 삭제하려면 `clickhousectl local server remove <name>`를 사용하십시오.
 
-<div id="local-postgres">
-  ### 로컬 Postgres 실행
-</div>
+### 로컬 Postgres 실행 {#local-postgres}
 
 ClickHouse뿐만 아니라 `clickhousectl`로 로컬 Postgres 인스턴스도 실행하고 관리할 수 있습니다. 로컬 Postgres는 Docker를 기반으로 하므로 Docker가 설치되어 있고 실행 중이어야 합니다. 각 인스턴스는 이름과 주 버전으로 식별되므로 여러 Postgres 버전을 각각 별도의 데이터 디렉터리로 나란히 실행할 수 있습니다.
 
@@ -240,17 +216,13 @@ clickhousectl local postgres stop dev
 clickhousectl local postgres remove dev
 ```
 
-<div id="authentication">
-  ## 인증
-</div>
+## 인증 {#authentication}
 
 API Key(권장) 또는 OAuth(브라우저 기반)를 사용하여 ClickHouse Cloud에 인증합니다.
 
 아직 ClickHouse Cloud 계정이 없다면, `clickhousectl cloud auth signup`를 실행하면 브라우저에서 가입 페이지가 열립니다.
 
-<div id="api-key">
-  ### API Key/Secret (권장)
-</div>
+### API Key/Secret (권장) {#api-key}
 
 API Key는 인증에 권장되는 방식이며, 특히 AI Agent가 CLI를 구동할 때 더욱 적합합니다. 선택한 권한만 부여하는(읽기 전용 또는 읽기/쓰기) [범위가 지정된 API Key를 생성](/ko/products/cloud/features/admin-features/api/openapi)할 수 있으며, 각 키는 하나의 조직에 연결됩니다. 따라서 CLI에 안전하게 액세스 권한을 부여할 수 있는 최소 권한 방식입니다.
 
@@ -284,9 +256,7 @@ CLICKHOUSE_CLOUD_API_SECRET=your-secret
 clickhousectl cloud --api-key KEY --api-secret SECRET ...
 ```
 
-<div id="oauth-login">
-  ### OAuth 로그인
-</div>
+### OAuth 로그인 {#oauth-login}
 
 ```bash
 clickhousectl cloud auth login
@@ -298,9 +268,7 @@ clickhousectl cloud auth login
   OAuth 액세스는 현재 **읽기 전용**이며 **속한 모든 조직에** 대한 액세스를 제공합니다. 쓰기 액세스가 필요하거나 CLI의 범위를 단일 조직으로 제한하려면 대신 [범위가 지정된 API Key를 생성하세요](#api-key).
 </Note>
 
-<div id="auth-status">
-  ### 인증 상태 및 로그아웃
-</div>
+### 인증 상태 및 로그아웃 {#auth-status}
 
 ```bash
 clickhousectl cloud auth status    # Show current auth state
@@ -309,9 +277,7 @@ clickhousectl cloud auth logout    # Clear all saved credentials (credentials.js
 
 자격 증명 확인 우선순위: CLI 플래그 &gt; `.clickhouse/credentials.json` &gt; export로 설정된 환경 변수 &gt; `.env` 파일 &gt; OAuth 토큰.
 
-<div id="debug-credentials">
-  ### 사용된 자격 증명 소스 디버깅
-</div>
+### 사용된 자격 증명 소스 디버깅 {#debug-credentials}
 
 명령이 실행되기 전에 선택된 자격 증명 소스(및 API URL)를 stderr에 출력하려면 모든 `cloud` 명령에 `--debug`를 전달하세요.
 
@@ -322,15 +288,11 @@ clickhousectl cloud --debug service list
 # ... normal output ...
 ```
 
-<div id="cloud">
-  ## Cloud
-</div>
+## Cloud {#cloud}
 
 API를 사용해 ClickHouse Cloud 서비스를 관리합니다.
 
-<div id="organizations">
-  ### 조직
-</div>
+### 조직 {#organizations}
 
 ```bash
 clickhousectl cloud org list              # 조직 목록 조회
@@ -345,9 +307,7 @@ clickhousectl cloud org usage <org-id> \
   --to-date 2024-01-31
 ```
 
-<div id="services">
-  ### 서비스
-</div>
+### 서비스 {#services}
 
 ```bash
 # List services
@@ -426,9 +386,7 @@ clickhousectl cloud service delete <service-id>
 clickhousectl cloud service delete <service-id> --force
 ```
 
-<div id="service-create-options">
-  #### 서비스 생성 옵션
-</div>
+#### 서비스 생성 옵션 {#service-create-options}
 
 | 옵션                                         | 설명                                            |
 | ------------------------------------------ | --------------------------------------------- |
@@ -455,9 +413,7 @@ clickhousectl cloud service delete <service-id> --force
 | `--private-preview-terms-checked`          | 필요 시 비공개 프리뷰 약관 동의                            |
 | `--enable-core-dumps`                      | 서비스 코어 dump 수집 활성화 또는 비활성화                    |
 
-<div id="query-api-auth-modes">
-  #### Query API 인증 모드
-</div>
+#### Query API 인증 모드 {#query-api-auth-modes}
 
 `cloud service query`는 `clickhouse` 바이너리나 서비스 비밀번호 없이 HTTP를 통해 cloud service에 SQL을 실행하는 기본 방식입니다. 이 명령은 두 가지 자격 증명 모드를 모두 지원합니다.
 
@@ -466,9 +422,7 @@ clickhousectl cloud service delete <service-id> --force
 
 두 인증 모드 모두에서 **idled** 상태인 서비스를 쿼리하면 자동으로 다시 활성화됩니다(첫 번째 쿼리는 1분 정도 걸릴 수 있습니다). **중지된** 서비스는 자동으로 다시 활성화되지 않으며, 쿼리는 `cloud service start`를 실행하라는 안내와 함께 실패합니다. 파생된 Query API host를 재정의하려면 `CLICKHOUSE_CLOUD_QUERY_HOST`를 설정하십시오.
 
-<div id="query-endpoints">
-  #### 쿼리 엔드포인트 관리
-</div>
+#### 쿼리 엔드포인트 관리 {#query-endpoints}
 
 ```bash
 clickhousectl cloud service query-endpoint get <service-id>
@@ -479,18 +433,14 @@ clickhousectl cloud service query-endpoint create <service-id> \
 clickhousectl cloud service query-endpoint delete <service-id>
 ```
 
-<div id="private-endpoints">
-  #### Private Endpoint 관리
-</div>
+#### Private Endpoint 관리 {#private-endpoints}
 
 ```bash
 clickhousectl cloud service private-endpoint create <service-id> --endpoint-id vpce-123
 clickhousectl cloud service private-endpoint get-config <service-id>
 ```
 
-<div id="backup-config">
-  #### Backup 구성
-</div>
+#### Backup 구성 {#backup-config}
 
 ```bash
 clickhousectl cloud service backup-config get <service-id>
@@ -500,11 +450,9 @@ clickhousectl cloud service backup-config update <service-id> \
   --backup-start-time 02:00
 ```
 
-<div id="postgres-services">
-  ### Postgres 서비스
-</div>
+### Postgres 서비스 {#postgres-services}
 
-`clickhousectl`로도 위의 ClickHouse 서비스 명령과 동일하게 [ClickHouse Cloud Postgres](/ko/products/managed-postgres/overview) 서비스를 생성하고 관리할 수 있습니다.
+`clickhousectl`로도 위의 ClickHouse 서비스 명령과 동일하게 [ClickHouse Cloud Postgres](/ko/products/managed-postgres/overview) 서비스를 생성하고 관리할 수 있습니다. GCP는 [비공개 프리뷰](https://clickhouse.com/cloud/postgres#gcp-waitlist) 상태이며, GCP 리전 및 인스턴스 크기와 함께 `--provider gcp`를 전달하십시오.
 
 ```bash
 # List and inspect
@@ -512,13 +460,21 @@ clickhousectl cloud postgres list
 clickhousectl cloud postgres list --filter state=running
 clickhousectl cloud postgres get <pg-id>
 
-# Create a service
+# Create a service on AWS (the default provider)
 clickhousectl cloud postgres create \
   --name my-pg \
   --region us-east-1 \
   --size m7i.2xlarge \
   --pg-version 17 \
   --ha-type sync
+
+# Create a service on GCP (private preview); region and size use GCP names
+clickhousectl cloud postgres create \
+  --name my-pg \
+  --provider gcp \
+  --region us-central1 \
+  --size c4-standard-4 \
+  --pg-version 18
 
 # Update and delete
 clickhousectl cloud postgres update <pg-id> --size m7i.4xlarge
@@ -547,34 +503,28 @@ clickhousectl cloud postgres read-replica create <pg-id> --name replica-1
 clickhousectl cloud postgres restore <pg-id> --name restored --restore-target 2026-04-16T12:00:00Z
 ```
 
-<div id="postgres-create-options">
-  #### Postgres 서비스 생성 옵션
-</div>
+#### Postgres 서비스 생성 옵션 {#postgres-create-options}
 
-| 옵션                         | 설명                                    |
-| -------------------------- | ------------------------------------- |
-| `--name`                   | 서비스 이름(필수)                            |
-| `--region`                 | 리전(예: `us-east-1`, 필수)                |
-| `--size`                   | 인스턴스 크기(예: `m7i.2xlarge`, 필수)         |
-| `--provider`               | 클라우드 제공업체(기본값: `aws`)                 |
-| `--pg-version`             | 주 버전: `18`, `17`                      |
-| `--ha-type`                | 고가용성: `none`, `async`, `sync`         |
-| `--tag`                    | 리소스 태그 `key` 또는 `key=value`(반복 지정 가능) |
-| `--pg-config-file`         | `PgConfig` 객체가 포함된 JSON 파일 경로         |
-| `--pg-bouncer-config-file` | `PgBouncerConfig` 객체가 포함된 JSON 파일 경로  |
+| 옵션                         | 설명                                                         |
+| -------------------------- | ---------------------------------------------------------- |
+| `--name`                   | 서비스 이름(필수)                                                 |
+| `--region`                 | 리전(예: AWS의 `us-east-1` 또는 GCP의 `us-central1`, 필수)          |
+| `--size`                   | 인스턴스 크기(예: AWS의 `m7i.2xlarge` 또는 GCP의 `c4-standard-4`, 필수) |
+| `--provider`               | 클라우드 제공업체: `aws`, `gcp`(기본값: `aws`)                        |
+| `--pg-version`             | 주 버전: `18`, `17`                                           |
+| `--ha-type`                | 고가용성: `none`, `async`, `sync`                              |
+| `--tag`                    | 리소스 태그 `key` 또는 `key=value`(반복 지정 가능)                      |
+| `--pg-config-file`         | `PgConfig` 객체가 포함된 JSON 파일 경로                              |
+| `--pg-bouncer-config-file` | `PgBouncerConfig` 객체가 포함된 JSON 파일 경로                       |
 
-<div id="backups">
-  ### 백업
-</div>
+### 백업 {#backups}
 
 ```bash
 clickhousectl cloud backup list <service-id>
 clickhousectl cloud backup get <service-id> <backup-id>
 ```
 
-<div id="clickpipes">
-  ### ClickPipes
-</div>
+### ClickPipes {#clickpipes}
 
 외부 소스의 데이터를 ClickHouse Cloud로 수집하는 ClickPipes를 관리합니다.
 
@@ -603,9 +553,7 @@ clickhousectl cloud clickpipe settings update <service-id> <clickpipe-id> \
   --streaming-max-insert-wait-ms 10000
 ```
 
-<div id="creating-clickpipes">
-  #### ClickPipes 생성
-</div>
+#### ClickPipes 생성 {#creating-clickpipes}
 
 `clickpipe create`에는 소스 유형별로 고유한 하위 명령이 있습니다:
 
@@ -680,9 +628,7 @@ clickhousectl cloud clickpipe create bigquery <service-id> \
 
 각 소스 유형별 전체 옵션 목록은 `clickhousectl cloud clickpipe create <source> --help` 명령으로 확인하십시오.
 
-<div id="members">
-  ### 구성원
-</div>
+### 구성원 {#members}
 
 ```bash
 clickhousectl cloud member list
@@ -691,9 +637,7 @@ clickhousectl cloud member update <user-id> --role-id <role-id>
 clickhousectl cloud member remove <user-id>
 ```
 
-<div id="invitations">
-  ### 초대
-</div>
+### 초대 {#invitations}
 
 ```bash
 clickhousectl cloud invitation list
@@ -702,9 +646,7 @@ clickhousectl cloud invitation get <invitation-id>
 clickhousectl cloud invitation delete <invitation-id>
 ```
 
-<div id="keys">
-  ### 키
-</div>
+### 키 {#keys}
 
 ```bash
 clickhousectl cloud key list
@@ -718,18 +660,14 @@ clickhousectl cloud key update <key-id> \
 clickhousectl cloud key delete <key-id>
 ```
 
-<div id="activity">
-  ### 활동
-</div>
+### 활동 {#activity}
 
 ```bash
 clickhousectl cloud activity list --from-date 2024-01-01 --to-date 2024-12-31
 clickhousectl cloud activity get <activity-id>
 ```
 
-<div id="json-output">
-  ### JSON 출력
-</div>
+### JSON 출력 {#json-output}
 
 JSON 형식으로 응답을 출력하려면 `--json` 플래그를 사용하세요.
 
@@ -740,9 +678,7 @@ clickhousectl cloud --json service get <service-id>
 
 `clickhousectl`은 코딩 에이전트 Context(Claude Code, Cursor, Codex, Gemini CLI, Goose, Devin, 및 표준 `AGENT` env var를 설정하는 모든 도구)를 자동으로 감지하고, `--json`을 설정하지 않아도 JSON을 stdout으로 자동 출력합니다.
 
-<div id="exit-codes">
-  ### 종료 코드
-</div>
+### 종료 코드 {#exit-codes}
 
 종료 코드는 `gh` CLI 관례를 따릅니다:
 
@@ -753,9 +689,7 @@ clickhousectl cloud --json service get <service-id>
 | `2` | 취소됨 (사용자가 중단함)                            |
 | `4` | 인증 필요 (자격 증명 없음, 401/403, OAuth 전용 쓰기 작업) |
 
-<div id="skills">
-  ## Skills
-</div>
+## Skills {#skills}
 
 [ClickHouse/agent-skills](https://github.com/ClickHouse/agent-skills)에서 공식 ClickHouse Agent Skills를 설치하세요.
 
@@ -776,9 +710,7 @@ clickhousectl skills --global --all
 clickhousectl skills --agent claude --agent codex
 ```
 
-<div id="non-interactive-flags">
-  ### 비대화형 플래그
-</div>
+### 비대화형 플래그 {#non-interactive-flags}
 
 | 플래그               | 설명                                 |
 | ----------------- | ---------------------------------- |
@@ -787,9 +719,7 @@ clickhousectl skills --agent claude --agent codex
 | `--all`           | 지원되는 모든 에이전트용 Skills를 설치합니다        |
 | `--detected-only` | 시스템에서 감지된 지원 에이전트용 Skills를 설치합니다   |
 
-<div id="self-update">
-  ## 자체 업데이트
-</div>
+## 자체 업데이트 {#self-update}
 
 `clickhousectl` 자체를 최신 릴리스로 업데이트할 수 있습니다:
 
@@ -803,9 +733,7 @@ clickhousectl update --check
 
 CLI는 백그라운드에서 업데이트를 확인하며(24시간에 최대 1회), 최신 버전을 사용할 수 있으면 알림을 표시합니다.
 
-<div id="telemetry">
-  ## 텔레메트리
-</div>
+## 텔레메트리 {#telemetry}
 
 `clickhousectl`은 CLI 사용 방식을 파악하기 위해 익명의 사용 텔레메트리를 수집합니다. 기본적으로 활성화되어 있지만, 사용자에게 안내하기 전에는 어떠한 정보도 전송하지 않습니다. 처음 실행하면 CLI가 수집하는 항목과 비활성화 방법을 설명하는 안내를 표시하며, 이때는 아무것도 전송하지 않습니다. 수집은 이후 실행부터 시작되므로, 정보가 수집되기 전에 언제든지 거부할 수 있습니다.
 

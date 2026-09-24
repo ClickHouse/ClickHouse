@@ -13,10 +13,6 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePl
 
 import { VersionBadge } from "/snippets/ru/components/VersionBadge/VersionBadge.jsx";
 
-import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-
-<BetaBadge />
-
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="JWT-аутентификация с пользовательским провайдером идентификации" />
@@ -30,7 +26,7 @@ ClickHouse Cloud позволяет аутентифицировать подк�
 Вы можете самостоятельно настроить эти JWKS-провайдеры для каждого сервиса в разделе **Settings → Security** консоли ClickHouse Cloud.
 
 <div id="before-you-begin">
-  ## Перед началом работы
+  ## Перед началом работы {#before-you-begin}
 </div>
 
 Для настройки JWT-провайдеров для сервиса необходимы:
@@ -44,9 +40,7 @@ ClickHouse Cloud позволяет аутентифицировать подк�
   Провайдеры на основе JWKS поддерживают ключи **RSA** и, начиная с версии 26.8, ключи **EC** на кривых P-256, P-384 и P-521. Документ JWKS может содержать ключи других типов, но в нём должен присутствовать хотя бы один пригодный для использования ключ.
 </Note>
 
-<div id="how-it-works">
-  ## Как это работает
-</div>
+## Как это работает {#how-it-works}
 
 Клиент (ваш провайдер идентификации или приложение) создаёт JWT и подписывает его своим **закрытым ключом**. Токен должен соответствовать ожидаемому [формату токена](/ru/concepts/features/security/external-authenticators/jwt#token-claims). Затем ClickHouse проверяет его с помощью **открытых** ключей, опубликованных по указанному вами URL JWKS:
 
@@ -57,7 +51,7 @@ ClickHouse Cloud позволяет аутентифицировать подк�
 ClickHouse проверяет доступность URL JWKS и получает данные по нему при добавлении или обновлении провайдера, поэтому неверно настроенный или недоступный URL отклоняется сразу.
 
 <div id="add-a-jwt-provider">
-  ## Добавление JWT-провайдера
+  ## Добавление JWT-провайдера {#add-a-jwt-provider}
 </div>
 
 <Steps>
@@ -93,7 +87,7 @@ ClickHouse проверяет доступность URL JWKS и получае�
 </Warning>
 
 <div id="limits">
-  ## Ограничения
+  ## Ограничения {#limits}
 </div>
 
 * Для каждого сервиса допускается не более **пяти** JWT-провайдеров.
@@ -101,7 +95,7 @@ ClickHouse проверяет доступность URL JWKS и получае�
 * URL JWKS должен быть общедоступной конечной точкой HTTPS. Частные, внутренние и локальные адреса канального уровня отклоняются.
 
 <div id="related">
-  ## Связанные материалы
+  ## Связанные материалы {#related}
 </div>
 
 * [JWT-аутентификация](/ru/concepts/features/security/external-authenticators/jwt) — утверждения токена, эфемерные пользователи и использование клиентом.

@@ -6,21 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'ログ', 'インテグレーション', 'アプリケーション監視']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack React Native SDK を使用すると、React Native
 アプリケーションをインストルメントして、イベントを ClickStack に送信できます。これにより、モバイルのネットワーク
 リクエストや例外をバックエンドイベントとあわせて、1 つのタイムラインで確認できます。
 
-このガイドで統合する項目:
+<ClickStackIntegrates signals={['traces']} />
 
-* **XHR/Fetch リクエスト**
+## はじめに {#getting-started}
 
-<div id="getting-started">
-  ## はじめに
-</div>
-
-<div id="install-via-npm">
-  ### NPM 経由でインストール
-</div>
+### NPM 経由でインストール {#install-via-npm}
 
 [ClickStack React Native パッケージ](https://www.npmjs.com/package/@hyperdx/otel-react-native)をインストールするには、以下のコマンドを使用します。
 
@@ -28,9 +24,7 @@ ClickStack React Native SDK を使用すると、React Native
 npm install @hyperdx/otel-react-native
 ```
 
-<div id="initialize-clickstack">
-  ### ClickStack を初期化する
-</div>
+### ClickStack を初期化する {#initialize-clickstack}
 
 アプリのライフサイクルのできるだけ早い段階で、ライブラリを初期化してください。
 
@@ -38,16 +32,14 @@ npm install @hyperdx/otel-react-native
 import { HyperDXRum } from '@hyperdx/otel-react-native';
 
 HyperDXRum.init({
-  url: 'http://your-otel-collector:4318',
+  url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
-  apiKey: '<YOUR_INGESTION_API_KEY>', // Managed ClickStackの場合は省略
-  tracePropagationTargets: [/api.myapp.domain/i], // フロントエンドからバックエンドリクエストへのトレースを連携するために設定
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
+  tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
 
-<div id="attach-user-information-metadata">
-  ### ユーザー情報またはメタデータを関連付ける (任意)
-</div>
+### ユーザー情報またはメタデータを関連付ける (任意) {#attach-user-information-metadata} 
 
 ユーザー情報を関連付けると、HyperDX で
 セッションやイベントを検索・絞り込みできるようになります。これはクライアント
@@ -70,9 +62,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-<div id="instrument-lower-versions">
-  ### 古いバージョンをインストルメントする
-</div>
+### 古いバージョンをインストルメントする {#instrument-lower-versions}
 
 React Native 0.68 未満で動作するアプリケーションをインストルメントするには、
 `metro.config.js` ファイルを編集し、metro がブラウザー固有の
@@ -118,9 +108,7 @@ module.exports = {
 };
 ```
 
-<div id="view-navigation">
-  ## 画面ナビゲーション
-</div>
+## 画面ナビゲーション {#view-navigation}
 
 [react-navigation](https://github.com/react-navigation/react-navigation) バージョン 5 および 6 に対応しています。
 

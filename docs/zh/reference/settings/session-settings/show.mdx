@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="show_data_lake_catalogs_in_system_tables">
-  ## show_data_lake_catalogs_in_system_tables
-</div>
+## show_data_lake_catalogs_in_system_tables {#show_data_lake_catalogs_in_system_tables}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用在系统表中显示数据湖目录的功能。
 
-<div id="show_processlist_include_internal">
-  ## show_processlist_include_internal
-</div>
+## show_processlist_include_internal {#show_processlist_include_internal}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 内部进程包括字典重新加载、可刷新materialized view 重新加载、在 `SHOW ...` 查询中执行的辅助 `SELECT`，以及为处理损坏表而在内部执行的辅助 `CREATE DATABASE ...` 查询等。
 
-<div id="show_remote_databases_in_system_tables">
-  ## show_remote_databases_in_system_tables
-</div>
+## show_remote_databases_in_system_tables {#show_remote_databases_in_system_tables}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +39,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 启用后，会在系统表中显示 `MySQL` 和 `PostgreSQL` 数据库。
 
-<div id="show_table_uuid_in_table_create_query_if_not_nil">
-  ## show_table_uuid_in_table_create_query_if_not_nil
-</div>
+## show_table_uuid_in_table_create_query_if_not_nil {#show_table_uuid_in_table_create_query_if_not_nil}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

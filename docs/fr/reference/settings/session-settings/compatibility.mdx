@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="compatibility">
-  ## compatibility
-</div>
+## compatibility {#compatibility}
 
-Le paramètre `compatibility` fait que ClickHouse utilise les paramètres par défaut d’une version antérieure de ClickHouse, spécifiée comme valeur du paramètre.
+Le paramètre `compatibility` fait que ClickHouse utilise les paramètres par défaut d’une version antérieure de ClickHouse, à l’exception des modifications consignées dans l’historique des changements de paramètres.
 
 Si certains paramètres sont définis sur des valeurs autres que les valeurs par défaut, ils sont respectés (seuls les paramètres qui n’ont pas été modifiés sont affectés par le paramètre `compatibility`).
+
+Les changements marqués `Ignore` dans [`system.settings_changes`](/fr/reference/system-tables/settings_changes) empêchent le rollback de ce changement ainsi que de tous les changements antérieurs portant sur le même paramètre.
 
 Ce paramètre prend comme valeur un numéro de version ClickHouse sous forme de chaîne, par exemple `22.3` ou `22.8`. Une valeur vide signifie que ce paramètre est désactivé.
 
@@ -30,9 +30,7 @@ Désactivé par défaut.
   Cependant, le paramètre `compatibility` peut être surchargé au niveau de l’utilisateur, du rôle, du profil, de la requête ou de la session à l’aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '22.3'` dans une session ou `SETTINGS compatibility = '22.3'` dans une requête.
 </Note>
 
-<div id="compatibility_s3_presigned_url_query_in_path">
-  ## compatibility_s3_presigned_url_query_in_path
-</div>
+## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

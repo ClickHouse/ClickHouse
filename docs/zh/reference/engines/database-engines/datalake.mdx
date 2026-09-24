@@ -13,9 +13,7 @@ doc_type: 'reference'
 这使 ClickHouse 成为一个强大的查询引擎，可与您现有的
 数据湖基础设施无缝集成。
 
-<div id="supported-catalogs">
-  ## 支持的目录
-</div>
+## 支持的目录 {#supported-catalogs}
 
 DataLakeCatalog 引擎 支持以下数据目录：
 
@@ -24,16 +22,14 @@ DataLakeCatalog 引擎 支持以下数据目录：
 * **Hive Metastore** - 传统 Hadoop 生态系统中的目录
 * **REST Catalogs** - 任何支持 Iceberg REST 规范的目录
 
-<div id="creating-a-database">
-  ## 创建数据库
-</div>
+## 创建数据库 {#creating-a-database}
 
 要使用 `DataLakeCatalog` 引擎，你需要启用下面的相关设置：
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
-SET allow_experimental_database_unity_catalog = 1;
-SET allow_experimental_database_glue_catalog = 1;
+SET allow_database_iceberg = 1;
+SET allow_database_unity_catalog = 1;
+SET allow_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -70,16 +66,14 @@ catalog_type,
 | `dlf_access_key_secret` | 用于访问 DLF 的 access key Secret                                                                                                                                                                        |
 | `force_add_bucket`      | 根据目录提供的表位置和 `storage_endpoint` 构造对象存储 URL 时，即使端点中已包含 bucket/container 名称，也会在前面再加上该名称。默认值：`false`。对于返回不带 bucket 且需要在 URL 构造阶段补上的目录，请将其设为 `true` (Polaris 风格路径) 。                                     |
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 有关使用 DataLakeCatalog 引擎 的示例，请参见以下章节：
 
 * [Unity Catalog](/zh/guides/use-cases/data-warehousing/unity-catalog)
 * [Glue Catalog](/zh/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-  可通过启用 `allow_experimental_database_iceberg` 或 `allow_database_iceberg` 使用。
+  可通过启用 `allow_database_iceberg` 使用。
 
 ```sql
 CREATE DATABASE database_name

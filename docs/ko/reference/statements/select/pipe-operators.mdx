@@ -39,9 +39,7 @@ ORDER BY total DESC
 LIMIT 3
 ```
 
-<div id="from-queries">
-  ## FROM 쿼리
-</div>
+## FROM 쿼리 {#from-queries}
 
 쿼리는 `FROM` 절로 시작할 수 있으며, 이러한 쿼리에서는 `SELECT` 절을 선택적으로 지정할 수 있습니다. `SELECT` 절을 생략하면 `SELECT *`를 작성한 것처럼 동작합니다:
 
@@ -53,15 +51,13 @@ FROM orders |> WHERE amount > 100;
 
 테이블 별칭은 일반 `SELECT` 쿼리의 `FROM` 절처럼 `AS` 키워드의 사용 여부와 관계없이 작성할 수 있습니다: `FROM orders o WHERE o.amount > 100`. 유일한 예외는 별칭으로 `select`라는 단어만 단독으로 사용하는 경우입니다. 테이블 뒤에 `select`가 오면 별칭이 아니라 명시적 `SELECT` 절의 시작으로 해석됩니다. 이름이 `select`인 테이블에는 영향을 주지 않으며, 자체 별칭을 그대로 사용할 수 있습니다: `FROM select s WHERE s.id = 1`.
 
+괄호 안의 서브쿼리도 `FROM` 절로 시작할 수 있으며, 이 때문에 `(from IN ('a'))`는 모호해집니다. 이는 `from`이라는 이름의 컬럼에 대한 `from IN ('a')` 표현식으로 읽을 수도 있고, `IN`이라는 이름의 테이블 함수에 대한 서브쿼리 `SELECT * FROM IN('a')`로 읽을 수도 있습니다. 컬럼으로 해석하는 방식이 더 오래된 것이며 우선합니다. 즉, 괄호 안의 내용이 `from`이라는 단어 뒤에 연산자가 오는 표현식으로 읽히면 그것은 해당 표현식이며, 결코 서브쿼리가 아닙니다. 다른 해석을 원한다면 `SELECT` 절을 명시적으로 작성하십시오: `1 IN (SELECT * FROM in)`.
+
 마지막 테이블의 샘플 오프셋을 쿼리 수준 `OFFSET`으로도 해석할 수 있는 경우에는 `SELECT` 절을 생략할 수 없습니다. `FROM t SAMPLE 1/10 OFFSET 5`에서 `OFFSET`은 `SAMPLE`에 속하지만, `FROM t SAMPLE 1/10 SELECT * OFFSET 5`에서는 쿼리 수준 `OFFSET`이므로 둘을 구분하려면 명시적 `SELECT`가 필요합니다. 쿼리가 쿼리 수준 `OFFSET` 앞에 올 수 없는 절로 이어지는 경우에는 모호하지 않으므로, 평소처럼 `SELECT` 절은 선택 사항입니다: `FROM t SAMPLE 1/10 OFFSET 5 WHERE x > 0`, `FROM t SAMPLE 1/10 OFFSET 5 JOIN dim USING (id)`.
 
-<div id="operators">
-  ## 연산자
-</div>
+## 연산자 {#operators}
 
-<div id="where">
-  ### WHERE
-</div>
+### WHERE {#where}
 
 `|> WHERE condition`은 입력 행을 필터링합니다. 집계 뒤에 적용하면 `HAVING`처럼 작동합니다:
 
@@ -71,9 +67,7 @@ FROM orders
 |> WHERE total > 100
 ```
 
-<div id="select">
-  ### SELECT
-</div>
+### SELECT {#select}
 
 `|> SELECT [DISTINCT] expr1 [AS alias1], ...`는 나열된 표현식만 출력 컬럼으로 유지합니다:
 
@@ -83,9 +77,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 
 표현식 목록 끝에는 일반 쿼리의 `SELECT` 절과 동일한 위치에 후행 쉼표를 사용할 수 있습니다. 이 경우 뒤에는 쿼리의 끝이나 다음 `|>` 연산자가 올 수 있습니다: `FROM orders |> SELECT customer, amount, |> LIMIT 1`. 이는 `EXTEND` 및 `AGGREGATE` 연산자에도 동일하게 적용됩니다.
 
-<div id="extend">
-  ### EXTEND
-</div>
+### EXTEND {#extend}
 
 `|> EXTEND expr1 [AS alias1], ...`는 나열된 표현식을 입력 컬럼에 추가합니다. 이는 `SELECT *, expr1 AS alias1, ...`와 동일합니다:
 
@@ -93,9 +85,7 @@ FROM orders |> SELECT customer, amount * 2 AS doubled
 FROM orders |> EXTEND amount * 10 AS big
 ```
 
-<div id="set">
-  ### SET
-</div>
+### SET {#set}
 
 `|> SET column1 = expr1, ...`는 나열된 컬럼의 값을 대체하며, `SELECT * REPLACE (expr1 AS column1, ...)`와 동일합니다:
 
@@ -103,9 +93,7 @@ FROM orders |> EXTEND amount * 10 AS big
 FROM orders |> SET amount = amount + 1000
 ```
 
-<div id="drop">
-  ### DROP
-</div>
+### DROP {#drop}
 
 `|> DROP column1, ...`은 나열된 컬럼을 삭제합니다. 이는 `SELECT * EXCEPT (column1, ...)`와 동일합니다:
 
@@ -113,9 +101,7 @@ FROM orders |> SET amount = amount + 1000
 FROM orders |> DROP cancelled
 ```
 
-<div id="as">
-  ### AS
-</div>
+### AS {#as}
 
 `|> AS alias`는 다음 연산자의 입력에 별칭을 지정하여 해당 연산자에서 참조할 수 있게 하며, 주로 조인에 유용합니다:
 
@@ -126,9 +112,7 @@ FROM orders
 |> JOIN orders AS o ON agg.customer = o.customer
 ```
 
-<div id="aggregate">
-  ### AGGREGATE
-</div>
+### AGGREGATE {#aggregate}
 
 `|> AGGREGATE agg1 [AS alias1], ... [GROUP BY expr1 [AS alias1], ...]`는 입력 행을 집계합니다. 출력 컬럼은 그룹화 컬럼 뒤에 집계 컬럼이 이어지는 순서로 구성됩니다. `GROUP BY`가 없으면 전체 입력을 단일 행으로 집계합니다:
 
@@ -137,15 +121,11 @@ FROM orders |> AGGREGATE count() AS c, sum(amount) AS total GROUP BY customer;
 FROM orders |> AGGREGATE count() AS c;
 ```
 
-<div id="distinct">
-  ### DISTINCT
-</div>
+### DISTINCT {#distinct}
 
 `|> DISTINCT`는 중복된 행을 제거하며, `SELECT DISTINCT *`와 동일합니다.
 
-<div id="order-by">
-  ### ORDER BY
-</div>
+### ORDER BY {#order-by}
 
 `|> ORDER BY expr1 [ASC/DESC], ...`는 입력 행을 정렬합니다. `ORDER BY ALL`, `WITH FILL`, `INTERPOLATE`를 포함하여 `ORDER BY` 절의 전체 구문을 지원합니다:
 
@@ -155,9 +135,7 @@ FROM orders |> SELECT customer, amount |> ORDER BY ALL;
 FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 ```
 
-<div id="limit-and-offset">
-  ### LIMIT 및 OFFSET
-</div>
+### LIMIT 및 OFFSET {#limit-and-offset}
 
 `|> LIMIT length [OFFSET offset]` 및 `|> OFFSET offset`는 반환되는 행 수를 제한합니다:
 
@@ -165,9 +143,7 @@ FROM points |> ORDER BY x WITH FILL FROM 1 TO 10 INTERPOLATE (y AS y + 1)
 FROM orders |> ORDER BY amount DESC |> LIMIT 3 OFFSET 1
 ```
 
-<div id="join-and-array-join">
-  ### JOIN 및 ARRAY JOIN
-</div>
+### JOIN 및 ARRAY JOIN {#join-and-array-join}
 
 `|> [GLOBAL] [ANY/ALL/ASOF/SEMI/ANTI] [INNER/LEFT/RIGHT/FULL/CROSS] JOIN table [ON expr | USING (columns)]`는 입력을 다른 테이블, 서브쿼리 또는 테이블 함수와 조인합니다. 모든 유형의 [JOIN](/ko/reference/statements/select/join) 및 [ARRAY JOIN](/ko/reference/statements/select/array-join)이 지원되며, 하나의 연산자에 `FROM` 절처럼 여러 조인을 포함할 수 있습니다:
 
@@ -184,9 +160,7 @@ FROM customers
 
 일반 쿼리의 `FROM` 절과 마찬가지로 `ARRAY JOIN` 바로 뒤에서는 쉼표(크로스) 조인이 지원되지 않습니다. `ARRAY JOIN` 뒤의 쉼표는 항상 해당 표현식 목록에 속합니다.
 
-<div id="union-intersect-and-except">
-  ### UNION, INTERSECT 및 EXCEPT
-</div>
+### UNION, INTERSECT 및 EXCEPT {#union-intersect-and-except}
 
 `|> UNION [ALL/DISTINCT] (query1) [, (query2), ...]`, `|> INTERSECT [ALL/DISTINCT] ...`, `|> EXCEPT [ALL/DISTINCT] ...`는 입력을 다른 쿼리 결과와 결합합니다.
 
@@ -199,14 +173,12 @@ FROM orders
 
 단일 쿼리에서는 피연산자 주위의 괄호를 생략할 수 있습니다. 하지만 집합 연산 뒤에 다른 파이프 연산자가 이어지는 경우에는 괄호가 필요합니다. 그렇지 않으면 다음 연산자가 마지막 피연산자에 적용되는지, 전체 결과에 적용되는지 알 수 없기 때문입니다.
 
-<div id="notes">
-  ## 참고
-</div>
+## 참고 {#notes}
 
 * 쿼리의 `WITH` 절은 스칼라 별칭과 CTE 모두에서 이후의 모든 파이프 연산자에 계속 적용됩니다. `WITH 10 AS threshold FROM t |> WHERE x < threshold`
 * `INSERT ... SELECT`에서 `INSERT` 앞에 작성한 `WITH` 절은 생성된 가장 바깥쪽 `SELECT`에 연결되며, 수동으로 작성한 중첩 서브쿼리와 마찬가지로 `enable_global_with_statement` 설정(기본적으로 활성화됨)을 통해 해석 과정에서 내부 파이프 단계까지 적용됩니다. 이 설정이 비활성화되면 `INSERT` 범위의 `WITH`에 정의된 별칭과 CTE는 수동으로 작성한 서브쿼리 내부에서 보이지 않는 것과 마찬가지로 파이프 단계 내부에서도 보이지 않습니다.
 * 다른 모든 `SELECT` 쿼리와 마찬가지로 파이프 연산자가 생성한 쿼리는 해당 생성 쿼리에 연결되는 `SETTINGS` 절로 끝날 수 있습니다. `FROM t |> LIMIT 1 SETTINGS max_threads = 1`은 `SELECT * FROM (SELECT * FROM t) LIMIT 1 SETTINGS max_threads = 1`과 같습니다. 이는 서브쿼리, `CREATE VIEW`, `view` 테이블 함수처럼 쿼리 설정을 별도로 처리하는 단계가 없는 경우에도 작동합니다. 체인 중간의 `SETTINGS` 절은 해당 단계에 유지되며, 이 단계는 다음 연산자의 서브쿼리가 됩니다. 괄호로 묶인 피연산자가 있는 집합 연산 뒤에는 후행 `SETTINGS`를 사용할 수 없습니다. 서브쿼리를 사용한 동등한 쿼리도 해당 위치에 `SETTINGS` 절을 사용할 수 없습니다.
-* 첫 번째 파이프 연산자 앞의 쿼리에 있는 `SETTINGS` 절은 해당 쿼리에 유지되며, 이 쿼리는 생성된 래퍼의 서브쿼리가 됩니다. 일반 설정은 서브쿼리 해석 시 해당 서브쿼리의 설정이 적용되므로 계속 작동합니다. 유일한 예외는 쿼리 분석기를 선택하는 설정 쌍인 `enable_analyzer`와 그 별칭 `allow_experimental_analyzer`입니다. 서브쿼리에서 이 설정들을 변경할 수 없으므로 `SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0 |> LIMIT 1`은 `INCORRECT_QUERY`를 발생시킵니다. 이는 수동으로 작성한 동등한 쿼리인 `SELECT * FROM (SELECT number FROM numbers(1) SETTINGS enable_analyzer = 0) LIMIT 1`도 마찬가지입니다. 이 두 설정은 마지막 파이프 연산자 뒤에 작성하거나 쿼리 외부에서 전달하십시오.
+* 첫 번째 파이프 연산자 앞의 쿼리에 있는 `SETTINGS` 절은 해당 쿼리에 유지되며, 이 쿼리는 생성된 래퍼의 서브쿼리가 됩니다. 일반 설정은 서브쿼리 해석 시 해당 서브쿼리의 설정이 적용되므로 계속 작동합니다.
 * 파이프 연산자는 집합 연산을 포함해 앞에 있는 전체 쿼리에 결합됩니다. `SELECT 1 UNION ALL SELECT 2 |> AGGREGATE count()`에서는 집계가 `UNION ALL`의 결과에 적용됩니다. 파이프 연산자 뒤에 `UNION`으로 쿼리를 이어가려면 `|> UNION` 연산자 또는 괄호를 사용하십시오.
 * 파이프 연산자는 서브쿼리, `INSERT ... SELECT`(`INSERT INTO t FROM src |> ...` 형식 포함), `CREATE VIEW`, `view` 테이블 함수 등 `SELECT` 쿼리가 필요한 모든 곳에서 사용할 수 있습니다.
 * 컬럼 이름을 제자리에서 변경하는 별도 연산자는 제공되지 않습니다. `|> SELECT * EXCEPT (old_name), old_name AS new_name` 또는 `SET` 및 `DROP` 연산자를 사용하십시오.

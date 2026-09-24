@@ -17,9 +17,7 @@ import RowBinaryFormatSettings from '/snippets/es/common-row-binary-format-setti
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
 El formato `RowBinary` analiza los datos fila por fila en formato binario.
 Las filas y los valores se muestran consecutivamente, sin separadores.
@@ -38,9 +36,7 @@ Como los datos están en formato binario, el delimitador después de `FORMAT Row
   Este formato es menos eficiente que el formato [Native](/es/reference/formats/Native), ya que está basado en filas.
 </Note>
 
-<div id="data-types-wire-format">
-  ## Formato de transmisión de los tipos de datos
-</div>
+## Formato de transmisión de los tipos de datos {#data-types-wire-format}
 
 <Tip>
   La mayoría de las consultas incluidas en los ejemplos pueden ejecutarse con curl y guardar la salida en un archivo.
@@ -53,36 +49,26 @@ Como los datos están en formato binario, el delimitador después de `FORMAT Row
 
 A continuación, los datos pueden examinarse con un editor hexadecimal.
 
-<div id="unsigned-leb128">
-  ### LEB128 sin signo (Base 128 little-endian)
-</div>
+### LEB128 sin signo (Base 128 little-endian) {#unsigned-leb128}
 
 Una codificación de enteros sin signo de longitud variable en formato **little-endian** que se usa para codificar la longitud de tipos de datos de tamaño variable, como `String`, `Array` y `Map`. Se puede encontrar una implementación de ejemplo en la [página de Wikipedia sobre LEB128](https://en.wikipedia.org/wiki/LEB128#Decode_unsigned_integer).
 
-<div id="integer-types">
-  ### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256
-</div>
+### (U)Int8, (U)Int16, (U)Int32, (U)Int64, (U)Int128, (U)Int256 {#integer-types}
 
 Todos los tipos enteros se codifican con el número de bytes correspondiente en formato **little-endian**. Los tipos con signo (`Int8` a `Int256`) usan la representación en **complemento a dos**. La mayoría de los lenguajes permiten extraer estos enteros de arrays de bytes, ya sea con herramientas integradas o con bibliotecas conocidas. Para `Int128`/`Int256` y `UInt128`/`UInt256`, que superan el tamaño de entero nativo de la mayoría de los lenguajes, puede ser necesaria una deserialización personalizada.
 
-<div id="bool">
-  ### Bool
-</div>
+### Bool {#bool}
 
 Los valores booleanos se codifican en un solo byte y pueden deserializarse de forma similar a `UInt8`.
 
 * `0` es `false`
 * `1` es `true`
 
-<div id="float32-float64">
-  ### Float32, Float64
-</div>
+### Float32, Float64 {#float32-float64}
 
 Números de coma flotante en formato **little-endian**, codificados en 4 bytes para `Float32` y en 8 bytes para `Float64`. Al igual que con los enteros, la mayoría de los lenguajes ofrecen herramientas adecuadas para deserializar estos valores.
 
-<div id="bfloat16">
-  ### BFloat16
-</div>
+### BFloat16 {#bfloat16}
 
 [BFloat16](/es/reference/data-types/float#bfloat16) (Brain Floating Point) es un formato de punto flotante de 16 bits con el mismo rango que Float32, pero con menor precisión, lo que lo hace útil para cargas de trabajo de aprendizaje automático. El formato de transmisión es, básicamente, los 16 bits más altos de un valor Float32. Si tu lenguaje no lo admite de forma nativa, la forma más sencilla de manejarlo es leerlo y escribirlo como UInt16, convirtiéndolo desde y hacia Float32:
 
@@ -115,9 +101,7 @@ SELECT CAST(1.25, 'BFloat16')
 0xA0, 0x3F, // 1.25 como BFloat16
 ```
 
-<div id="decimal">
-  ### Decimal32, Decimal64, Decimal128, Decimal256
-</div>
+### Decimal32, Decimal64, Decimal128, Decimal256 {#decimal}
 
 Los tipos Decimal se representan como enteros **little-endian** con el ancho en bits correspondiente.
 
@@ -146,9 +130,7 @@ let result = whole_part * scale_multiplier + fractional_part
 
 Consulta más información en la [documentación de ClickHouse sobre los tipos Decimal](/es/reference/data-types/decimal).
 
-<div id="string">
-  ### String
-</div>
+### String {#string}
 
 Las cadenas de ClickHouse son **secuencias arbitrarias de bytes**. No es necesario que sean UTF-8 válidas. El prefijo de longitud es la **longitud en bytes**, no el número de caracteres.
 
@@ -169,9 +151,7 @@ Por ejemplo, una cadena `foobar` se codificará usando *siete* bytes de la sigui
 0x72, // 'r'
 ```
 
-<div id="fixedstring">
-  ### FixedString
-</div>
+### FixedString {#fixedstring}
 
 A diferencia de `String`, `FixedString` tiene una longitud fija, definida en el esquema. Se codifica como una secuencia de bytes, rellenada con bytes cero al final si el valor es más corto que `N`.
 
@@ -203,9 +183,7 @@ Un `FixedString(3)` vacío contiene únicamente ceros de relleno:
 
 No se necesita relleno en el último ejemplo, ya que se usan los *tres* bytes.
 
-<div id="date">
-  ### Date
-</div>
+### Date {#date}
 
 Se almacena como `UInt16` (dos bytes), que representa el número de días ***desde*** `1970-01-01`.
 
@@ -221,9 +199,7 @@ SELECT CAST('2024-01-15', 'Date') AS d
 0x19, 0x4D, // 19737 como UInt16 (little-endian) = 19737 días desde 1970-01-01
 ```
 
-<div id="date32">
-  ### Date32
-</div>
+### Date32 {#date32}
 
 Se almacena como `Int32` (cuatro bytes), que representa el número de días ***antes o después de*** `1970-01-01`.
 
@@ -249,9 +225,7 @@ SELECT CAST('1900-01-01', 'Date32') AS d
 0x21, 0x9C, 0xFF, 0xFF, // -25567 as Int32 (little-endian) = 25567 days before 1970-01-01
 ```
 
-<div id="datetime">
-  ### DateTime
-</div>
+### DateTime {#datetime}
 
 Se almacena como `UInt32` (cuatro bytes), que representa el número de segundos transcurridos ***desde*** `1970-01-01 00:00:00 UTC`.
 
@@ -279,9 +253,7 @@ SELECT CAST('2024-01-15 10:30:00', 'DateTime(\'UTC\')') AS d
 0x28, 0x09, 0xA5, 0x65, // 1705314600 como UInt32 (little-endian)
 ```
 
-<div id="datetime64">
-  ### DateTime64
-</div>
+### DateTime64 {#datetime64}
 
 Se almacena como `Int64` (ocho bytes), que representa el número de **ticks** ***anteriores o posteriores*** a `1970-01-01 00:00:00 UTC`. La resolución del tick se define mediante el parámetro `precision`; consulte la sintaxis a continuación:
 
@@ -317,9 +289,7 @@ Valores subyacentes de ejemplo para `DateTime64`:
   Debido a que el rango de ticks `Int64` subyacente es más limitado a mayor precisión, el valor máximo admitido se reduce: con precisión 8 es `4892-10-07` y con precisión 9 (nanosegundos) es `2262-04-11 23:47:16` en UTC.
 </Note>
 
-<div id="time">
-  ### Time
-</div>
+### Time {#time}
 
 Se almacena como `Int32` y representa un valor de tiempo en segundos. Los valores negativos son válidos.
 
@@ -340,9 +310,7 @@ SELECT CAST('15:32:16', 'Time') AS t
 0x80, 0xDA, 0x00, 0x00, // 55936 segundos = 15:32:16
 ```
 
-<div id="time64">
-  ### Time64
-</div>
+### Time64 {#time64}
 
 Se almacena internamente como un `Decimal64` (que a su vez se almacena como `Int64`) y representa un valor de tiempo con segundos fraccionarios y precisión configurable. Se permiten valores negativos.
 
@@ -375,9 +343,7 @@ SELECT CAST('15:32:16.123456', 'Time64(6)') AS t
 // 55936123456 / 10^6 = 55936.123456 Seconds = 15:32:16.123456
 ```
 
-<div id="interval-types">
-  ### Tipos de intervalos
-</div>
+### Tipos de intervalos {#interval-types}
 
 Todos los tipos de intervalos se almacenan como `Int64` (ocho bytes, little-endian). El valor representa la cantidad de la unidad de tiempo correspondiente. Los valores negativos son válidos.
 
@@ -410,9 +376,7 @@ SELECT INTERVAL 5 SECOND   AS a,
 0xF4, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ```
 
-<div id="enum8-enum16">
-  ### Enum8, Enum16
-</div>
+### Enum8, Enum16 {#enum8-enum16}
 
 Se almacenan como un solo byte (`Enum8` == `Int8`) o dos bytes (`Enum16` == `Int16`) que representan el índice del valor del enum en la definición del enum. Ten en cuenta que el tipo de almacenamiento es **con signo**: los valores del enum pueden ser negativos (p. ej., `Enum8('a' = -128, 'b' = 0)`).
 
@@ -463,9 +427,7 @@ Map<Int16, String> {
 
 En el analizador de tipos de datos, la principal dificultad consiste en seguir la pista de los caracteres escapados en la definición de `enum`, como `\'`, y de los símbolos especiales como `=` que pueden aparecer dentro de cadenas entre comillas.
 
-<div id="uuid">
-  ### UUID
-</div>
+### UUID {#uuid}
 
 Se representa como una secuencia de 16 bytes. El UUID se almacena como **dos valores `UInt64` little-endian**: los primeros 8 bytes de la representación estándar del UUID se almacenan con el orden de bytes invertido, y los segundos 8 bytes se invierten de forma independiente.
 
@@ -493,9 +455,7 @@ Valores subyacentes de ejemplo para `UUID`:
 
 Se puede usar cuando se ha insertado un registro nuevo, pero no se ha especificado un valor UUID.
 
-<div id="ipv4">
-  ### IPv4
-</div>
+### IPv4 {#ipv4}
 
 Se almacena en cuatro bytes como `UInt32` en orden de bytes **little-endian**. Tenga en cuenta que esto difiere del orden de bytes de red tradicional (big-endian), usado habitualmente para las direcciones IP. Valores internos de ejemplo para `IPv4`:
 
@@ -516,9 +476,7 @@ SELECT
 0xcc, 0xe2, 0xd4, 0xa8, // 168.212.226.204
 ```
 
-<div id="ipv6">
-  ### IPv6
-</div>
+### IPv6 {#ipv6}
 
 Se almacena en 16 bytes en **orden de bytes big-endian / de red** (MSB primero). Valores internos de ejemplo para `IPv6`:
 
@@ -541,9 +499,7 @@ SELECT
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
 ```
 
-<div id="nullable">
-  ### Nullable
-</div>
+### Nullable {#nullable}
 
 Un tipo de dato Nullable se codifica de la siguiente manera:
 
@@ -566,9 +522,7 @@ SELECT
 0x01,                   // NULL - no hay nada a continuación
 ```
 
-<div id="lowcardinality">
-  ### LowCardinality
-</div>
+### LowCardinality {#lowcardinality}
 
 En el formato RowBinary, el marcador de baja cardinalidad no afecta al wire format. Por ejemplo, `LowCardinality(String)` se codifica de la misma manera que un `String` normal.
 
@@ -582,9 +536,7 @@ En el formato RowBinary, el marcador de baja cardinalidad no afecta al wire form
 
 Al hacer pruebas, [allow&#95;suspicious&#95;low&#95;cardinality&#95;types](/es/reference/settings/session-settings/allow-suspicious#allow_suspicious_low_cardinality_types) puede establecerse en `1` para permitir la mayoría de los tipos de datos dentro de `LowCardinality` y conseguir una mejor cobertura.
 
-<div id="array">
-  ### Array
-</div>
+### Array {#array}
 
 Un array se codifica de la siguiente manera:
 
@@ -647,9 +599,7 @@ Y se codificará así:
 
 Un ejemplo de cómo trabajar con arrays multidimensionales se encuentra en la [sección Geo](#geo-types).
 
-<div id="tuple">
-  ### Tuple
-</div>
+### Tuple {#tuple}
 
 Una Tuple se codifica como todos sus elementos, uno a continuación del otro, en el wire format correspondiente, sin metainformación ni delimitadores adicionales.
 
@@ -689,9 +639,7 @@ CREATE OR REPLACE TABLE foo
 ) ENGINE = Memory;
 ```
 
-<div id="map">
-  ### Map
-</div>
+### Map {#map}
 
 Un `Map` puede verse como un `Array(Tuple(K, V))`, donde `K` es el tipo de clave y `V` es el tipo de valor. El `Map` se codifica de la siguiente manera:
 
@@ -718,9 +666,7 @@ SELECT CAST(map('foo', 1, 'bar', 2), 'Map(String, UInt32)') AS m
   Es posible tener maps con estructuras muy anidadas, como `Map(String, Map(Int32, Array(Nullable(String))))`, que se codificarán de forma similar a lo descrito anteriormente.
 </Note>
 
-<div id="variant">
-  ### Variant
-</div>
+### Variant {#variant}
 
 Este tipo representa una unión de otros tipos de datos. El tipo `Variant(T1, T2, ..., TN)` significa que cada fila de este tipo tiene un valor de tipo `T1`, `T2`, …, `TN` o ninguno de ellos (valor `NULL`).
 
@@ -786,9 +732,7 @@ SELECT NULL :: Variant(UInt32, String)
 
 La opción de configuración [allow&#95;suspicious&#95;variant&#95;types](/es/reference/settings/session-settings/allow-suspicious#allow_suspicious_variant_types) puede utilizarse para permitir pruebas más exhaustivas del tipo `Variant`.
 
-<div id="dynamic">
-  ### Dynamic
-</div>
+### Dynamic {#dynamic}
 
 El tipo `Dynamic` puede contener valores de cualquier tipo, determinados en tiempo de ejecución. En el formato RowBinary, cada valor se describe a sí mismo: la primera parte es la especificación del tipo en [este formato](/es/reference/data-types/data-types-binary-encoding). A continuación va el contenido, con la codificación del valor tal como se describe en este documento. Por lo tanto, para analizar un valor, solo necesitas usar el índice de tipo para determinar el parser adecuado y luego reutilizar la lógica de análisis de RowBinary que ya tengas en otro lugar.
 
@@ -832,9 +776,7 @@ SELECT toDateTime64('2024-01-15 10:30:00', 3, 'America/New_York')::Dynamic
 c0 6c be 0d 8d 01 00 00   # Int64: timestamps
 ```
 
-<div id="json">
-  ### JSON
-</div>
+### JSON {#json}
 
 El tipo JSON codifica los datos en dos categorías distintas:
 
@@ -986,9 +928,7 @@ Nota: Los objetos anidados se aplanan en rutas separadas por puntos (p. ej., `us
 
 Con la configuración `output_format_binary_write_json_as_string=1`, las columnas JSON se serializan como una única cadena de texto JSON en lugar de en formato binario estructurado. Existe una configuración correspondiente para escribir en columnas JSON: `input_format_binary_read_json_as_string`. La elección entre una u otra configuración depende de si desea procesar el JSON en el cliente o en el servidor.
 
-<div id="geo-types">
-  ### Tipos Geo
-</div>
+### Tipos Geo {#geo-types}
 
 Geo es una categoría de tipos de datos que representan datos geográficos. Incluye:
 
@@ -1073,9 +1013,7 @@ SELECT    (1.0, 2.0)                                       :: Point           AS
      0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3C, 0x40,
 ```
 
-<div id="geometry">
-  ### Geometry
-</div>
+### Geometry {#geometry}
 
 `Geometry` es un tipo `Variant` que puede contener cualquiera de los tipos Geo mencionados anteriormente. En el wire format, se codifica exactamente igual que un `Variant`, con un byte discriminante que indica qué tipo geo viene a continuación.
 
@@ -1123,9 +1061,7 @@ Codificación de ejemplo de un `Ring` como `Geometry`:
 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x40, // Y = 6.0
 ```
 
-<div id="nested">
-  ### Nested
-</div>
+### Nested {#nested}
 
 El wire format de `Nested` depende de la configuración `flatten_nested`.
 
@@ -1133,9 +1069,7 @@ El wire format de `Nested` depende de la configuración `flatten_nested`.
   Todos los arrays de componentes de una misma fila **deben tener la misma longitud**. Es una restricción impuesta por el servidor. Si las longitudes no coinciden, se producirán errores de inserción.
 </Warning>
 
-<div id="nested-flattened">
-  #### `flatten_nested = 1` (valor predeterminado)
-</div>
+#### `flatten_nested = 1` (valor predeterminado) {#nested-flattened}
 
 Con la configuración predeterminada, `Nested` se descompone en arrays independientes. Cada subcolumna se convierte en una columna `Array` independiente con un nombre separado por puntos:
 
@@ -1170,9 +1104,7 @@ Cada array se serializa de forma independiente, tal como se describe en la secci
  0x90, 0x00, 0x00, 0x00, // 144 como Int32
 ```
 
-<div id="nested-unflattened">
-  #### `flatten_nested = 0`
-</div>
+#### `flatten_nested = 0` {#nested-unflattened}
 
 Con `flatten_nested = 0`, `Nested` se mantiene como una única columna del tipo `Array(Tuple(...))`. El nombre de la columna no se separa con puntos:
 
@@ -1207,9 +1139,7 @@ La codificación es `Array(Tuple(String, Int32))`: un prefijo con la longitud de
 
 Observa cómo los campos se intercalan por elemento (a₁, b₁, a₂, b₂) en lugar de agruparse por columna (a₁, a₂, b₁, b₂), como en la representación plana.
 
-<div id="simpleaggregatefunction">
-  ### SimpleAggregateFunction
-</div>
+### SimpleAggregateFunction {#simpleaggregatefunction}
 
 `SimpleAggregateFunction(func, T)` se codifica de forma idéntica a su tipo de dato subyacente `T`. El nombre de la función de agregación no afecta al wire format.
 
@@ -1232,9 +1162,7 @@ El encabezado RowBinaryWithNamesAndTypes muestra el tipo como `SimpleAggregateFu
 0x2A, 0x00, 0x00, 0x00, // 42 como UInt32
 ```
 
-<div id="aggregatefunction">
-  ### AggregateFunction
-</div>
+### AggregateFunction {#aggregatefunction}
 
 `AggregateFunction(func, T)` almacena el estado intermedio completo de una función de agregación. A diferencia de `SimpleAggregateFunction`, que también almacena un estado intermedio pero lo codifica igual que el tipo de dato subyacente, `AggregateFunction` almacena un blob binario opaco cuyo formato es específico de cada función de agregación.
 
@@ -1257,11 +1185,11 @@ SELECT countState(number) FROM numbers(5)
 **`sumState`** — almacena la suma acumulada en un entero de tamaño fijo. El tamaño depende del tipo del argumento (`UInt64` para argumentos enteros):
 
 ```sql
-SELECT sumState(toUInt32(number)) FROM numbers(5) -- suma = 0+1+2+3+4 = 10
+SELECT sumState(toUInt32(number)) FROM numbers(5) -- sum = 0+1+2+3+4 = 10
 ```
 
 ```text
-0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10 como UInt64
+0x0A, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 10 as UInt64
 ```
 
 **`minState` / `maxState`** — almacena un byte de indicador seguido del valor en el tipo subyacente. El indicador es `0x00` para un estado vacío (sin valores registrados) o `0x01` cuando hay un valor presente:
@@ -1271,8 +1199,8 @@ SELECT maxState(toUInt32(number)) FROM numbers(5) -- max = 4
 ```
 
 ```text
-0x01,                   // indicador: tiene valor
-0x04, 0x00, 0x00, 0x00, // 4 como UInt32
+0x01,                   // flag: has value
+0x04, 0x00, 0x00, 0x00, // 4 as UInt32
 ```
 
 Un estado vacío (sin filas agregadas):
@@ -1282,16 +1210,16 @@ SELECT minState(toUInt32(number)) FROM numbers(0)
 ```
 
 ```text
-0x00, // indicador: sin valor
+0x00, // flag: no value
 ```
 
 <Note>
   Las funciones más complejas, como `uniq`, `quantile` o `groupArray`, utilizan formatos específicos de la implementación. Si necesita leer o escribir estos estados, consulte el código fuente de ClickHouse correspondiente a la función en cuestión.
 </Note>
 
-<div id="qbit">
-  ### QBit
-</div>
+Con el ajuste `aggregate_function_input_format` establecido en `value` o `array`, una columna `AggregateFunction(func, T)` se lee como un valor de tipo `T` (o como una `Tuple` de los tipos de los argumentos si hay varios), o como un `Array` de dichos valores, codificado exactamente como se codifica ese tipo en RowBinary. El estado se construye a partir de los valores en el lado del servidor. Por ejemplo, con `aggregate_function_input_format = 'array'`, una celda de `AggregateFunction(avg, UInt32)` es un `Array(UInt32)`: una longitud LEB128 seguida de los elementos.
+
+### QBit {#qbit}
 
 `QBit` es un tipo de vector para realizar consultas eficientes con distintos niveles de precisión. Internamente, se almacena en un formato transpuesto. A nivel de protocolo, QBit es simplemente un `Array` del tipo de elemento subyacente (`Int8`, `Float32`, `Float64` o `BFloat16`). La optimización de transposición de bits para el almacenamiento se realiza en el servidor, no en el protocolo RowBinary.
 
@@ -1324,9 +1252,7 @@ SELECT [1.0, 2.0, 3.0, 4.0]::QBit(Float32, 4)
 0x00, 0x00, 0x80, 0x40, // 4.0 as Float32
 ```
 
-<div id="format-settings">
-  ## Configuración del formato
-</div>
+## Configuración del formato {#format-settings}
 
 <RowBinaryFormatSettings />
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="cast_ipv4_ipv6_default_on_conversion_error">
-  ## cast_ipv4_ipv6_default_on_conversion_error
-</div>
+## cast_ipv4_ipv6_default_on_conversion_error {#cast_ipv4_ipv6_default_on_conversion_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 سيُرجع المعامل CAST إلى IPv4، والمعامل CAST إلى النوع IPv6، والدالتان toIPv4 و toIPv6 القيمة الافتراضية بدلًا من إطلاق استثناء عند حدوث خطأ في التحويل.
 
-<div id="cast_keep_nullable">
-  ## cast_keep_nullable
-</div>
+## cast_keep_nullable {#cast_keep_nullable}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -55,7 +51,7 @@ SELECT CAST(toNullable(toInt32(0)) AS Int32) as x, toTypeName(x);
 └───┴───────────────────────────────────────────────────┘
 ```
 
-يؤدي الاستعلام التالي إلى تطبيق المُعدِّل `Nullable` على نوع البيانات الهدف:
+يؤدي الاستعلام التالي إلى تطبيق المُعدِّل `Nullable` على نوع البيانات الهدف:
 
 ```sql
 SET cast_keep_nullable = 1;

@@ -15,15 +15,11 @@ doc_type: 'reference'
 | ------- | ------ | ----- |
 | ✔       | ✔      |       |
 
-<div id="description">
-  ## Descripción
-</div>
+## Descripción {#description}
 
 [Apache Parquet](https://parquet.apache.org/) es un formato de almacenamiento columnar muy extendido en el ecosistema de Hadoop. ClickHouse admite operaciones de lectura y escritura en este formato.
 
-<div id="data-types-matching-parquet">
-  ## Correspondencia de tipos de datos
-</div>
+## Correspondencia de tipos de datos {#data-types-matching-parquet}
 
 La tabla siguiente muestra cómo se corresponden los tipos de datos de Parquet con los [tipos de datos](/es/reference/data-types/index) de ClickHouse.
 
@@ -39,7 +35,8 @@ La tabla siguiente muestra cómo se corresponden los tipos de datos de Parquet c
 | `UINT_64`                                     | [UInt64](/es/reference/data-types/int-uint)                                     |
 | `INT_64`                                      | [Int64](/es/reference/data-types/int-uint)                                      |
 | `DATE`                                        | [Date32](/es/reference/data-types/date)                                         |
-| `TIMESTAMP`, `TIME`                           | [DateTime64](/es/reference/data-types/datetime64)                               |
+| `TIMESTAMP`                                   | [DateTime64](/es/reference/data-types/datetime64)                               |
+| `TIME`                                        | [Time64](/es/reference/data-types/time64)                                       |
 | `FLOAT`                                       | [Float32](/es/reference/data-types/float)                                       |
 | `DOUBLE`                                      | [Float64](/es/reference/data-types/float)                                       |
 | `INT96`                                       | [DateTime64(9, &#39;UTC&#39;)](/es/reference/data-types/datetime64)             |
@@ -79,9 +76,7 @@ Al escribir un archivo Parquet, los tipos de datos que no tienen un tipo de Parq
 
 Los arrays pueden estar anidados y pueden tener un valor de tipo `Nullable` como argumento. Los tipos `Tuple` y `Map` también pueden estar anidados.
 
-<div id="wide-integers">
-  ### Enteros anchos
-</div>
+### Enteros anchos {#wide-integers}
 
 De forma predeterminada, ClickHouse escribe `Int128`, `UInt128`, `Int256` y `UInt256` como valores `FIXED_LEN_BYTE_ARRAY(16/32)` sin anotaciones en orden little-endian. Esta representación heredada sigue siendo la predeterminada para que los archivos puedan leerse con versiones anteriores de ClickHouse.
 
@@ -102,19 +97,14 @@ Los tipos de datos de las columnas de una tabla de ClickHouse pueden diferir de 
 
 Para algunos tipos de Parquet no hay un tipo de ClickHouse que coincida estrechamente. Los leemos de la siguiente manera:
 
-* `TIME` (hora del día) se lee como una marca temporal. P. ej., `10:23:13.000` se convierte en `1970-01-01 10:23:13.000`.
-* `TIMESTAMP`/`TIME` con `isAdjustedToUTC=false` es una hora local de reloj (campos de año, mes, día, hora, minuto, segundo y fracción de segundo en una zona horaria local, independientemente de qué zona horaria específica se considere local), igual que SQL `TIMESTAMP WITHOUT TIME ZONE`. Sin embargo, ClickHouse lo lee como si fuera una marca temporal UTC. P. ej., `2025-09-29 18:42:13.000` (que representa la hora de un reloj local) se convierte en `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')`, que representa un punto en el tiempo). Si se convierte a String, muestra el año, mes, día, hora, minuto, segundo y fracción de segundo correctos, que luego pueden interpretarse como pertenecientes a alguna zona horaria local en lugar de UTC. Aunque resulte contraintuitivo, cambiar el tipo de `DateTime64(3, 'UTC')` a `DateTime64(3)` no ayudaría, ya que ambos tipos representan un punto en el tiempo en lugar de una lectura de reloj, pero `DateTime64(3)` se formatearía incorrectamente usando la zona horaria local.
+* `TIMESTAMP` con `isAdjustedToUTC=false` es una hora local de reloj (campos de año, mes, día, hora, minuto, segundo y fracción de segundo en una zona horaria local, independientemente de qué zona horaria específica se considere local), igual que SQL `TIMESTAMP WITHOUT TIME ZONE`. Sin embargo, ClickHouse lo lee como si fuera una marca temporal UTC. P. ej., `2025-09-29 18:42:13.000` (que representa la hora de un reloj local) se convierte en `2025-09-29 18:42:13.000` (`DateTime64(3, 'UTC')`, que representa un punto en el tiempo). Si se convierte a String, muestra el año, mes, día, hora, minuto, segundo y fracción de segundo correctos, que luego pueden interpretarse como pertenecientes a alguna zona horaria local en lugar de UTC. Aunque resulte contraintuitivo, cambiar el tipo de `DateTime64(3, 'UTC')` a `DateTime64(3)` no ayudaría, ya que ambos tipos representan un punto en el tiempo en lugar de una lectura de reloj, pero `DateTime64(3)` se formatearía incorrectamente usando la zona horaria local.
 * `INTERVAL` actualmente se lee como `FixedString(12)` con la representación binaria sin procesar del intervalo de tiempo, tal como está codificada en el archivo Parquet.
 
-<div id="geo-types">
-  ## Tipos geo (GeoParquet)
-</div>
+## Tipos geo (GeoParquet) {#geo-types}
 
 ClickHouse admite la lectura y escritura de columnas de geometría conforme a la especificación [GeoParquet](https://geoparquet.org/). Las columnas de geometría se almacenan como payloads `BYTE_ARRAY` codificados en [WKB](https://libgeos.org/specifications/wkb/) (o en WKT al leer), con una clave JSON `geo` en los metadatos de Parquet a nivel de archivo que describe la codificación, el tipo de geometría y el CRS de cada columna de geometría.
 
-<div id="read">
-  ### Comportamiento de lectura
-</div>
+### Comportamiento de lectura {#read}
 
 Al leer, las columnas de geometría se asignan a los [tipos de datos geo](/es/reference/data-types/geo) correspondientes de ClickHouse:
 
@@ -122,21 +112,15 @@ Al leer, las columnas de geometría se asignan a los [tipos de datos geo](/es/re
 * Una columna con varios tipos de geometría o con tipos de geometría desconocidos se lee como el tipo [`Geometry`](/es/reference/data-types/geo#geometry), que es un `Variant` de todos los tipos geo compatibles.
 * Si el tipo de columna solicitado es `String`, se ignoran los metadatos de GeoParquet y se devuelve el payload de geometría codificada sin procesar, tal cual: bytes WKB o WKT, según la codificación que declare la columna de GeoParquet. Esto también se aplica si la configuración [`input_format_parquet_allow_geoparquet_parser`](/es/reference/settings/formats/input-format#input_format_parquet_allow_geoparquet_parser) está establecida en `0`.
 
-<div id="write">
-  ### Comportamiento de escritura
-</div>
+### Comportamiento de escritura {#write}
 
 Al escribir, las columnas de nivel superior de tipo `Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString` o `MultiPolygon` se codifican como `BYTE_ARRAY` (WKB) y se añaden los metadatos JSON `geo` correspondientes al pie de página del archivo Parquet. Un [`Geometry`](/es/reference/data-types/geo#geometry) `Variant` de nivel superior también se codifica como un payload `BYTE_ARRAY` de WKB (sus subvalores se convierten a WKB y se almacenan como una columna `Nullable(String)`), pero no se emiten metadatos `geo` para él, por lo que el resultado no se reconoce como una columna de geometría GeoParquet al leerlo. Otros tipos relacionados con geo, como [`Ring`](/es/reference/data-types/geo#ring), se escriben usando su representación subyacente nativa, sin metadatos GeoParquet. Este comportamiento puede deshabilitarse por completo configurando [`output_format_parquet_geometadata`](/es/reference/settings/formats/output-format#output_format_parquet_geometadata) en `0`, en cuyo caso incluso los tipos geo compatibles se escriben usando su representación subyacente nativa (`Point` como `Tuple(Float64, Float64)`, `LineString` como `Array(Point)`, `Polygon` como `Array(Array(Point))`, etc.) y no se emiten metadatos GeoParquet.
 
 Las columnas de geometría deben aparecer en la raíz del esquema o anidadas dentro de `Tuple` (`struct`); no se admite anidarlas dentro de `Array` o `Map`. `Nullable` tampoco se admite para las columnas geo.
 
-<div id="example-usage">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#example-usage}
 
-<div id="inserting-data">
-  ### Inserción de datos
-</div>
+### Inserción de datos {#inserting-data}
 
 Utiliza un archivo Parquet con los siguientes datos, llamado `football.parquet`:
 
@@ -168,9 +152,7 @@ Inserte los datos:
 INSERT INTO football FROM INFILE 'football.parquet' FORMAT Parquet;
 ```
 
-<div id="reading-data">
-  ### Leer datos
-</div>
+### Leer datos {#reading-data}
 
 Lea los datos con el formato `Parquet`:
 
@@ -187,9 +169,7 @@ FORMAT Parquet
 
 Para intercambiar datos con Hadoop, puede usar el [`motor de tabla HDFS`](/es/reference/engines/table-engines/integrations/hdfs).
 
-<div id="format-settings">
-  ## Configuración de formato
-</div>
+## Configuración de formato {#format-settings}
 
 | Ajuste                                                                         | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Predeterminado                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

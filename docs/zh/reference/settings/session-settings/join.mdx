@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，且由 [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="join_algorithm">
-  ## join_algorithm
-</div>
+## join_algorithm {#join_algorithm}
 
 <SettingsInfoBlock type="JoinAlgorithm" default_value="direct,parallel_hash,hash,ie_join" />
 
@@ -24,6 +22,8 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 指定使用哪种 [JOIN](/zh/reference/statements/select/join) 算法。
 
 可以指定多种算法，系统会根据具体查询的 kind/严格性 和表引擎选择可用的算法。
+
+基于哈希的算法是否落盘不属于此选择的一部分：[`max_bytes_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) 是所有这些算法的落盘阈值 (且其中任一项非零后，`enable_adaptive_memory_spill_scheduler` 可在内存压力下更早地将 join 落盘) ，而 [`max_rows_in_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) / [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 是所有这些算法的硬上限，除非 `legacy_join_size_limits_trigger_spilling` 将这两个上限重新变为磁盘落盘触发条件。您选择的值决定 join 如何落盘：`grace_hash` 从第一个块起就对右表进行分区，`hash` 和 `parallel_hash` 则先在内存中收集数据，并在超过阈值后切换。
 
 大多数算法仅在被选用于查询时才会影响查询。不过，有些算法仅因被列出就会改变规划 — 即使它们只是最终未被选中的低优先级回退选项 — 因为决策会在选择算法之前作出。此类影响有两种：
 
@@ -38,29 +38,31 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 使用 [Grace hash join](https://en.wikipedia.org/wiki/Hash_join#Grace_hash_join)。Grace hash 提供了一种算法选项，可在限制内存使用的同时，高效处理复杂连接。
 
-grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆分为 N 个桶 (初始时，N 为 `grace_hash_join_initial_buckets`) 。这样做是为了确保每个桶都能独立处理。第一个桶中的行会加入内存中的哈希表，其余行则保存到磁盘。如果哈希表增长到超出内存限制 (例如，由 [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 设置) ，则会增加桶的数量，并重新确定每一行所属的桶。不属于当前桶的行都会被刷出并重新分配。
+`grace_hash` 从第一个块起即采用外部算法：它会立即对右表进行分区，而 `hash` 和 `parallel_hash` 会先在内存中收集数据，仅在超过落盘阈值后才进行分区。如果您已知右侧数据无法容纳于内存中，并希望跳过内存阶段，请选择它。落盘阈值本身与所有哈希算法使用的阈值相同，即 [`max_bytes_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) / [`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)，并且两者之一必须非零，除非启用了 `legacy_join_size_limits_trigger_spilling`。如果没有阈值，`grace_hash` 会被跳过并使用列表中的下一个算法；如果它是唯一算法，则会被拒绝。
+
+grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆分为 N 个桶 (初始时，N 为 `grace_hash_join_initial_buckets`) 。这样可确保每个桶都能独立处理。第一个桶中的行会添加到内存中的哈希表，其他桶则保存到磁盘。如果哈希表增长超过溢写阈值，则会增加桶的数量，并重新分配每行所属的桶。任何不属于当前桶的行都会被刷新并重新分配。
 
 支持 `INNER/LEFT/RIGHT/FULL ALL/ANY JOIN`。
 
 * hash
 
-使用 [Hash join algorithm](https://en.wikipedia.org/wiki/Hash_join)。这是最通用的实现，支持所有 kind 和 严格性 的组合，也支持在 `JOIN ON` 部分中通过 `OR` 组合的多个连接键。
+使用 [哈希连接算法](https://en.wikipedia.org/wiki/Hash_join)。这是最通用的实现，支持所有类型和严格性的组合，以及在 `JOIN ON` 部分通过 `OR` 组合的多个连接键。
 
-使用 `hash` 算法时，`JOIN` 的右侧部分会被加载到 RAM 中。
+使用 `hash` 算法时，`JOIN` 的右侧部分会加载到 RAM 中。
 
 * parallel&#95;hash
 
-这是 `hash` join 的一种变体，它会将数据拆分到多个桶中，并并发构建多个哈希表，而不是只构建一个，以加快这一过程。
+`hash` join 的一种变体，会将数据拆分为多个桶，并同时构建多个哈希表而非一个哈希表，以加快此过程。
 
-使用 `parallel_hash` 算法时，`JOIN` 的右侧部分会被加载到 RAM 中。
+使用 `parallel_hash` 算法时，`JOIN` 的右侧部分会加载到 RAM 中。
 
 * partial&#95;merge
 
-这是 [sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) 的一种变体，其中只有右表会被完全排序。
+[sort-merge algorithm](https://en.wikipedia.org/wiki/Sort-merge_join) 的一种变体，其中仅右表会被完全排序。
 
-`RIGHT JOIN` 和 `FULL JOIN` 仅在 `ALL` 严格性 下受支持 (不支持 `SEMI`、`ANTI`、`ANY` 和 `ASOF`) 。
+`RIGHT JOIN` 和 `FULL JOIN` 仅支持 `ALL` 严格性 (`SEMI`、`ANTI`、`ANY` 和 `ASOF` 不受支持)。
 
-使用 `partial_merge` 算法时，ClickHouse 会对数据进行排序并将其转储到磁盘。ClickHouse 中的 `partial_merge` 算法与经典实现略有不同。首先，ClickHouse 会按连接键对右表数据进行分块排序，并为已排序的块创建 min-max 索引。然后，它会按 `join key` 对左表的分片进行排序，并将其与右表连接。min-max 索引还用于跳过不需要的右表块。
+使用 `partial_merge` 算法时，ClickHouse 会对数据进行排序并将其转储到磁盘。ClickHouse 中的 `partial_merge` 算法与经典实现略有不同。首先，ClickHouse 会按连接键对右表数据进行分块排序，并为已排序的块创建 min-max 索引。然后，它会按 `连接键` 对左表的分片进行排序，并将其与右表连接。min-max 索引还用于跳过不需要的右表块。
 
 * direct
 
@@ -83,34 +85,32 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 基于排序的 [IEJoin](https://vldb.org/pvldb/vol8/p2074-khayyat.pdf) 算法，适用于其 `ON` 部分包含两个参与连接表表达式之间不等比较 (`<`、`<=`、`>`、`>=`) 的 `JOIN`。支持 `ALL INNER/LEFT/RIGHT/FULL JOIN` 和 `SEMI`/`ANTI` `LEFT/RIGHT JOIN`。
 
-在列表中的位置决定优先级：若列在其他算法之后，仅当其他算法不适用时才使用 IEJoin (即 `ON` 部分没有等值条件)；若列在首位，只要 `ON` 部分包含两个不等式条件便会使用它。对于 `ALL INNER JOIN`，其余条件 (包括等值条件) 会作为过滤器应用于连接结果；对于其他 kind，则会在 operator 内部作为影响匹配的残余条件进行评估。如果列表中没有 `ie_join`，仅含不等条件的 `INNER JOIN` 会作为带过滤器的 `CROSS JOIN` 执行，其他 kind 不受支持。
+在列表中的位置决定优先级：若列在其他算法之后，仅当其他算法不适用时才使用 IEJoin (即 `ON` 部分没有等值条件)；若列在首位，只要 `ON` 部分包含两个不等式条件便会使用它。对于 `ALL INNER JOIN`，其余条件 (包括等值条件) 会作为过滤器应用于连接结果；对于其他 kind，则会在 operator 内部作为影响匹配的残余条件进行评估。当 `ON` 部分包含超过两个符合条件的不等式条件时，算法使用的两个条件会根据列 min/max 统计信息估算的选择性来选定 (参见 [Column statistics](/zh/reference/engines/table-engines/mergetree-family/mergetree#column-statistics) 中的 `basic` 类型)；当估算不可用时 (没有统计信息，或禁用了 [`use_statistics`](/zh/reference/settings/session-settings/use-statistics#use_statistics))，则使用语法顺序中的前两个条件。如果列表中没有 `ie_join`，仅含不等条件的 `INNER JOIN` 会作为带过滤器的 `CROSS JOIN` 执行，其他 kind 不受支持。
 
-连接前，两个输入都会累积到内存中：[`max_rows_in_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) 和 [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 会限制两侧合计的累积输入 (而不只是右侧)，溢出时的操作由 [`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 设置；operator 在累积输入之上构建的排序索引不计入该限制。连接 operator 本身在单个线程中运行；只有输入在连接前的排序会并行执行。
+两个输入都会在连接前累积到内存中：[`max_rows_in_join`](/zh/reference/settings/session-settings/max-rows#max_rows_in_join) 和 [`max_bytes_in_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join) 限制两侧累积输入的总量 (而非仅限右侧) ，溢出时的处理方式由 [`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 设置；operator 在累积输入上构建的排序索引不计入该限制。join operator 本身以单线程运行；仅输入在 join 前的排序会并行执行。
 
 * parallel&#95;full&#95;sorting&#95;merge
 
-与 `full_sorting_merge` 相同，但兼容哈希的等值连接会按连接键的哈希分片为相互独立、并行运行的每分片 merge join (最多 `max_threads` 个)，而不是单个 merge join。这在使用所有线程的同时保留了 merge join 较低的流式内存使用量，且结果不保证有序。
+与 `full_sorting_merge` 相同，但哈希兼容的等值 join 会根据连接键的哈希分片为相互独立的每分片 merge join，并行运行 (最多使用 `max_threads`) ，而非作为单个 merge join 运行。这在使用所有线程的同时保留了 merge join 较低的流式内存使用量，且结果不保证有序。
 
-仅对键类型的普通等值连接应用按连接键哈希分片，且该键类型的哈希必须与 merge join 比较结果一致，并且仅在两侧均未排序时应用。以下情况会跳过：
+仅对键类型的哈希与 merge join 比较结果一致的普通等值 join 应用基于连接键的哈希分片，并且仅在两侧均未排序时应用。以下情况会跳过：
 
 * `ASOF` join，以及浮点数 / `JSON` / `Object` / `Dynamic` 键类型：其哈希与 merge join 比较结果不一致，因此相等的键可能落在不同分片中。
 * 已排序的侧 (按顺序读取的 MergeTree，或任何预排序输入)：保序地将数据分散到每分片 merge join 中可能会导致管道死锁。因此会保留按顺序读取及其 `read_in_order_use_virtual_row` 优化。
 * 当 initiator 构建分布式查询计划 (`make_distributed_plan`) 时，因为分散排序无法序列化以供远程执行。本地单片段计划和每个 worker 的片段会在禁用该设置后重新优化，因此仍可进行分片。
 
-跳过它只会禁用此重写，而不会禁用一般的并行性：join 将作为单个 `full_sorting_merge` 运行，并且当启用 `query_plan_join_shard_by_pk_ranges` 时，按顺序读取的 MergeTree 侧仍可在源端按主键范围分片 (主键范围使用与 join 相同的比较方式排序，因此相等的键会保持在一起)。
+跳过它只会禁用这一 rewrite，而不会禁用整体的 parallelism：join 会作为单个 `full_sorting_merge` 运行；当启用 `query_plan_join_shard_by_pk_ranges` 时，按顺序读取的 MergeTree 侧仍可在数据源处按主键 ranges 进行分片 (这些 ranges 按与 join 相同的比较方式排序，因此相等的键会保持在一起)。
 
 * prefer&#95;partial&#95;merge
 
-如果可能，ClickHouse 总是会尝试使用 `partial_merge` join，否则使用 `hash`。*已弃用*，等同于 `partial_merge,hash`。
+ClickHouse 总是尽可能使用 `partial_merge` join，否则使用 `hash`。*已弃用*，等同于 `partial_merge,hash`。
 
-* default (deprecated)
+* default (已弃用)
 
-旧版取值，请不要再使用。
-等同于 `direct,hash`，即尝试使用 direct join 和 hash join (按此顺序) 。
+遗留值，请不要再使用。
+等同于 `direct,hash`，即依次尝试使用 direct join 和 hash join。
 
-<div id="join_any_take_last_row">
-  ## join_any_take_last_row
-</div>
+## join_any_take_last_row {#join_any_take_last_row}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -133,9 +133,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * [Join 表引擎](/zh/reference/engines/table-engines/special/join)
 * [join&#95;default&#95;strictness](/zh/reference/settings/session-settings/join#join_default_strictness)
 
-<div id="join_default_strictness">
-  ## join_default_strictness
-</div>
+## join_default_strictness {#join_default_strictness}
 
 <SettingsInfoBlock type="JoinStrictness" default_value="ALL" />
 
@@ -148,9 +146,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * `ASOF` — 用于连接匹配关系不确定的序列。
 * `Empty string` — 如果查询中未指定 `ALL` 或 `ANY`，ClickHouse 会抛出异常。
 
-<div id="join_on_disk_max_files_to_merge">
-  ## join_on_disk_max_files_to_merge
-</div>
+## join_on_disk_max_files_to_merge {#join_on_disk_max_files_to_merge}
 
 <SettingsInfoBlock type="UInt64" default_value="64" />
 
@@ -162,9 +158,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 * 任意大于等于 2 的正整数。
 
-<div id="join_output_by_rowlist_perkey_rows_threshold">
-  ## join_output_by_rowlist_perkey_rows_threshold
-</div>
+## join_output_by_rowlist_perkey_rows_threshold {#join_output_by_rowlist_perkey_rows_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="5" />
 
@@ -172,9 +166,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 
 在 hash join 中，用于判断是否按行列表输出的右表每个键平均行数下限。
 
-<div id="join_overflow_mode">
-  ## join_overflow_mode
-</div>
+## join_overflow_mode {#join_overflow_mode}
 
 <SettingsInfoBlock type="OverflowMode" default_value="throw" />
 
@@ -183,8 +175,10 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * [max&#95;bytes&#95;in&#95;join](/zh/reference/settings/session-settings/max-bytes#max_bytes_in_join)
 * [max&#95;rows&#95;in&#95;join](/zh/reference/settings/session-settings/max-rows#max_rows_in_join)
 
-此设置仅对 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)
-为 `hash`、`parallel_hash` 和 `ie_join` 时生效。其他算法 (例如 `partial_merge`、`grace_hash`、`auto`) 处理这些限制的方式不同——例如落盘、重新分区或切换策略——请参见
+所有基于哈希的 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)
+取值都会遵循此设置，包括那些会落盘的算法：达到限制时会停止查询，而不是触发落盘。例外是
+`legacy_join_size_limits_trigger_spilling`：启用它后，join 中已经在磁盘上运行的部分会继续落盘，而不按此设置执行。
+`ie_join` 同样遵循此设置，作用于它从两侧累积的输入。`partial_merge` 则仍然通过切换策略来处理这些限制——请参见
 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)。
 
 可能值：
@@ -199,9 +193,7 @@ grace join 的第一阶段会读取右表，并根据键列的哈希值将其拆
 * [JOIN 子句](/zh/reference/statements/select/join)
 * [Join 表引擎](/zh/reference/engines/table-engines/special/join)
 
-<div id="join_use_nulls">
-  ## join_use_nulls
-</div>
+## join_use_nulls {#join_use_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

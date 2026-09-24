@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="optimize_injective_functions_in_group_by">
-  ## optimize_injective_functions_in_group_by
-</div>
+## optimize_injective_functions_in_group_by {#optimize_injective_functions_in_group_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 GROUP BY 절의 단사 함수를 인수로 대체합니다
 
-<div id="optimize_injective_functions_in_limit_by">
-  ## optimize_injective_functions_in_limit_by
-</div>
+## optimize_injective_functions_in_limit_by {#optimize_injective_functions_in_limit_by}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,9 +31,7 @@ LIMIT BY 절에서 단사 함수를 인수로 대체합니다.
 
 예시: `LIMIT 5 BY toString(x)`는 `LIMIT 5 BY x`가 됩니다.
 
-<div id="optimize_injective_functions_inside_uniq">
-  ## optimize_injective_functions_inside_uniq
-</div>
+## optimize_injective_functions_inside_uniq {#optimize_injective_functions_inside_uniq}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

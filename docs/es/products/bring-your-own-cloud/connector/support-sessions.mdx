@@ -6,34 +6,35 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Las sesiones de soporte permiten otorgar a ClickHouse acceso temporal con fines de diagnóstico mediante ClickHouse Connector. Esta página explica qué es una sesión, cómo activarla y desactivarla, qué pueden hacer los operadores de ClickHouse mientras está activa y cómo auditar todo lo ocurrido.
+<PrivatePreviewBadge />
 
-<div id="what-a-support-session-is">
-  ## Qué es una sesión de soporte
-</div>
+Una sesión de soporte otorga a ClickHouse acceso temporal con fines de diagnóstico mediante ClickHouse Connector. Esta página explica qué es una sesión, cómo activarla y desactivarla, qué pueden hacer los ingenieros de soporte de ClickHouse durante una sesión y cómo auditarla.
 
-Una sesión de soporte es un periodo limitado durante el cual el solucionador de problemas acepta comandos de los ingenieros de soporte de ClickHouse. Cuando no hay ninguna sesión activa, el solucionador de problemas rechaza todos los comandos, incluso si su WebSocket saliente está conectado. No existe ninguna otra vía de ejecución: no se ejecuta nada sin una sesión y ClickHouse no puede abrir una por usted. El plano de control de ClickHouse nunca se conecta a su entorno; solo recibe lo que el solucionador de problemas envía a través de su canal saliente, y ese canal solo transporta comandos mientras el estado de la sesión lo permita.
+## Qué es una sesión de soporte {#what-a-support-session-is}
+
+Una sesión de soporte es una ventana de tiempo acotada en la cual el solucionador de problemas acepta comandos de los ingenieros de soporte de ClickHouse. Fuera de una sesión, rechaza todos los comandos, incluso mientras su WebSocket saliente permanece conectado. No existe ninguna otra vía de ejecución, y ClickHouse no puede abrir una sesión en su nombre. ClickHouse Cloud nunca se conecta a su entorno; solo recibe lo que el solucionador de problemas envía por su canal saliente.
+
+Las sesiones rigen únicamente los diagnósticos. Los comandos de ciclo de vida de los servicios en modo Managed viajan por el canal independiente del executor, que una sesión de soporte ni abre ni controla; consulte [servicios administrados](/es/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
 <Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Flujo de confianza de la sesión de soporte de ClickHouse Connector" />
 
-Puede controlar las sesiones mediante dos mecanismos:
+Usted controla las sesiones a través de dos superficies:
 
-* **El gateway de sesión**, una API autenticada integrada en el solucionador de problemas con endpoints `enable`, `disable` y `status`. Cada llamada al gateway requiere un token de ID de OIDC de corta duración cuyo correo electrónico figure en su lista de permitidos de operadores.
-* **El archivo de sesión local** en instalaciones de VM Linux, que se escribe directamente en el host con acceso root.
+* **El gateway de sesión**, una API autenticada integrada en el solucionador de problemas. Expone `POST /v1/clctl/session/enable`, `POST /v1/clctl/session/disable` y `GET /v1/clctl/session/status`. Cada llamada requiere un token de ID OIDC de corta duración cuyo correo electrónico figure en su lista de permitidos de operadores.
+* **El archivo de sesión local**, en las instalaciones en VM Linux, escrito en el host con acceso root.
 
-El transporte del gateway depende del destino. Un gateway de VM ofrece TLS autofirmado, cuya huella digital cada operador fija. Un gateway de Kubernetes escucha localmente en el pod de Kubernetes mediante HTTP; se accede a él mediante `kubectl reenvío de puertos` (el túnel utiliza el TLS del servidor de API) o a través de un Ingreso que termina TLS con un certificado emitido por una CA.
+El transporte del gateway depende del destino. Un gateway en VM expone TLS autofirmado cuya huella digital fija cada operador. Un gateway en Kubernetes escucha de forma local en el pod de Kubernetes sobre HTTP; se accede a él mediante `kubectl port-forward` (el túnel viaja sobre el TLS del API server) o mediante un Ingreso que termina TLS con un certificado emitido por una CA.
 
-Elija la configuración de las sesiones, incluida la lista de permitidos de operadores, durante `clicklink clctl init`.
+Usted define su postura de sesión, incluida la lista de permitidos de operadores, durante `clicklink clctl init`.
 
-<div id="enabling-and-disabling-sessions">
-  ## Activación y desactivación de sesiones
-</div>
+## Activación y desactivación de sesiones {#enabling-and-disabling-sessions}
 
 <Tabs>
-  <Tab title="Kubernetes">
-    El gateway escucha en el puerto 8443 del pod de Kubernetes del solucionador de problemas. Si tiene acceso al clúster, acceda a él mediante un reenvío de puertos; el túnel utiliza TLS del servidor de la API de Kubernetes:
+  <Tab title="Kubernetes" id="sessions-kubernetes">
+    El gateway escucha en el puerto 8443 del pod de Kubernetes del solucionador de problemas. Con acceso al clúster, acceda a él mediante un reenvío de puertos:
 
     ```bash
     CONNECTOR_NAMESPACE='clicklink'   # el espacio de nombres del conector que eligió durante la inicialización
@@ -56,11 +57,11 @@ Elija la configuración de las sesiones, incluida la lista de permitidos de oper
     clicklink clctl troubleshoot session disable --gateway-url http://localhost:8443
     ```
 
-    La identidad OIDC del llamador debe estar en la lista de permitidos de operadores; los llamadores no autenticados o que no figuren en la lista recibirán un 401 o un 403, y el intento quedará registrado. Si prefiere no requerir credenciales del clúster, el chart puede exponer el gateway mediante un Ingreso opcional que termina TLS con un certificado emitido por una CA; consulte la [configuración](/es/products/bring-your-own-cloud/connector/configuration).
+    La identidad OIDC del llamador debe estar en la lista de permitidos de operadores. Los llamadores no autenticados o que no figuren en la lista recibirán un 401 o un 403, y el gateway registrará el intento. Para que los operadores puedan trabajar sin credenciales del clúster, exponga el gateway mediante el Ingreso opcional del chart, que termina TLS con un certificado emitido por una CA; consulte la [configuración](/es/products/bring-your-own-cloud/connector/configuration).
   </Tab>
 
-  <Tab title="VM Linux">
-    Con acceso de root al host, administre la sesión directamente. El estado se persiste en `/var/lib/clicklink/session.json`, que el daemon y la CLI leen y escriben de forma atómica:
+  <Tab title="VM Linux" id="sessions-vm">
+    Con acceso de root al host, administre la sesión directamente. El daemon y la CLI leen y escriben el state file `/var/lib/clicklink/session.json` de forma atómica:
 
     ```bash
     sudo clicklink clctl troubleshoot session enable --duration 4h --reason "<ticket reference>"
@@ -76,60 +77,60 @@ Elija la configuración de las sesiones, incluida la lista de permitidos de oper
       --gateway-fingerprint <sha256-fingerprint>
     ```
 
-    La fijación se almacena en `~/.clicklink/clctl.yaml`, y las conexiones fallan de forma segura si el certificado presentado no coincide con ella.
+    La fijación se almacena en `~/.clicklink/clctl.yaml`. Una conexión falla de forma segura cuando el certificado presentado no coincide con ella. Si, en cambio, el gateway presenta un certificado de su propia CA, indique ese CA bundle con `--gateway-ca` en cada comando de sesión.
   </Tab>
 </Tabs>
 
-<div id="session-expiry">
-  ## Caducidad de la sesión
-</div>
+## Caducidad de la sesión {#session-expiry}
 
-Las sesiones caducan automáticamente. La duración predeterminada es de 4 horas; `session enable --duration` permite establecer una duración de hasta 24 horas. Cuando la sesión caduca o en cuanto ejecuta `session disable`, el solucionador de problemas deja de aceptar comandos. Deshabilitar la sesión es la vía de revocación inmediata: no requiere reiniciar ni coordinarse con ClickHouse.
+Las sesiones caducan automáticamente. La duración predeterminada es de 4 horas; `session enable --duration` acepta hasta 24 horas. Al caducar, o en cuanto ejecuta `session disable`, el solucionador de problemas deja de aceptar comandos. Deshabilitarla revoca el acceso de inmediato: no requiere reiniciar ni coordinarse con ClickHouse.
 
-<div id="operator-allowlist">
-  ## Lista de permitidos de operadores
-</div>
+## Lista de permitidos de operadores {#operator-allowlist}
 
-Cada llamada al gateway se autoriza conforme a una lista de permitidos de correos electrónicos de operadores y se coteja con el correo electrónico acreditado por el token OIDC validado, nunca con lo que el client declare sobre sí mismo.
+Cada llamada al gateway se autoriza conforme a una lista de permitidos de correos electrónicos de operadores. El cotejo utiliza el correo electrónico acreditado por el token OIDC validado, nunca un valor que proporcione el client.
 
-* **Kubernetes:** configure `clctl.gateway.allowedOperators` en su superposición de values. La lista se procesa en un ConfigMap que el gateway vuelve a leer cada 30 segundos, por lo que un cambio en values junto con `helm upgrade` rota la lista de permitidos sin reiniciar el pod de Kubernetes.
-* **Linux VM:** la lista de permitidos se encuentra en `/etc/clicklink/allowed-operators.txt` y `clicklink clctl init` la escribe a partir de los correos electrónicos de operadores que proporcione.
+* **Kubernetes:** configure `clctl.gateway.allowedOperators` en su superposición de values. El chart procesa la lista en un ConfigMap, por lo que un cambio en values junto con `helm upgrade` rota la lista de permitidos sin reiniciar el pod de Kubernetes.
+* **VM Linux:** la lista de permitidos se encuentra en `/etc/clicklink/allowed-operators.txt` y `clicklink clctl init` la escribe a partir de los correos electrónicos de operadores que proporcione.
 
-<div id="what-operators-can-do">
-  ## Lo que los operadores pueden hacer durante una sesión
-</div>
+En ambos targets, el gateway vuelve a leer el archivo en la siguiente request una vez transcurridos 30 segundos desde la última lectura. Las modificaciones surten efecto sin reiniciar.
 
-Mientras una sesión está activa, los ingenieros de soporte de ClickHouse pueden ejecutar:
+## Qué pueden hacer los operadores durante una sesión {#what-operators-can-do}
 
-* **SQL de solo lectura** en sus clústeres con el usuario `pcm_troubleshooter`, restringido a una lista explícita de tablas permitidas. De forma predeterminada, la lista de tablas permitidas incluye tablas `system` de ClickHouse, como `system.parts`, `system.merges`, `system.replicas`, `system.metrics` y `system.settings`; `system.query_log` y `system.text_log` se deniegan incondicionalmente, por lo que el historial de consultas nunca sale del sistema. La lista predeterminada también incluye `system.processes`, cuya columna `query` muestra el texto de las sentencias que se ejecutan en ese momento; elimínela de la lista de tablas permitidas para la sesión (`troubleshooter.allowedTables` en la superposición de Helm, `troubleshooter.allowed_tables` en el archivo de configuración de la VM) si el texto de las consultas en ejecución no debe ser visible nunca durante una sesión. El usuario solo dispone de privilegios `SELECT` por tabla, sin privilegios de escritura, DDL ni administración.
-* **Vistas de Kubernetes de solo lectura** en cada implementación aprovisionada (los paquetes de acceso están asociados a ServiceAccounts de Kubernetes en ambos destinos de instalación): `get`, `list` y `watch` sobre pods, registros de pods, servicios, configmaps, eventos, PersistentVolumeClaims, implementaciones, statefulsets y replicasets de los espacios de nombres autorizados. Sin un paquete aprovisionado, el solucionador de problemas rechaza directamente los comandos de tipo kubectl.
+Mientras una sesión está activa, los ingenieros de soporte de ClickHouse pueden ejecutar dos tipos de comandos.
 
-El RBAC del solucionador de problemas no incluye permisos `exec`, `delete` ni `patch`, por lo que los operadores no pueden abrir una shell en sus pods ni modificar nada a través del conector. La enumeración completa de privilegios y RBAC se encuentra en la referencia del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
+**SQL de solo lectura** se ejecuta sobre sus clusters con el usuario `pcm_troubleshooter`, cuyos grants se limitan a la lista de permitidos de tablas de la sesión. El solucionador de problemas también rechaza cualquier sentencia que no comience por `SELECT`, `WITH`, `SHOW`, `DESCRIBE` o `EXPLAIN`. El usuario solo dispone de grants de `SELECT` por tabla, sin privilegios de escritura, DDL ni de administración.
 
-<div id="audit-log">
-  ## Registro de auditoría
-</div>
+La lista de permitidos predeterminada abarca tablas de `system` como `system.parts`, `system.merges`, `system.replicas`, `system.metrics` y `system.settings`. `system.query_log` y `system.text_log` no pueden añadirse a ella: el daemon rechaza cualquier configuración que las incluya, por lo que nunca se aprovisiona un grant sobre ellas. La lista de permitidos predeterminada sí incluye `system.processes`, cuya columna `query` muestra el texto de las sentencias en ejecución. Elimínela de `troubleshooter.allowedTables` (overlay de Helm) o de `troubleshooter.allowed_tables` (archivo de configuración de la VM) si el texto de las consultas en vivo nunca debe ser visible en una sesión.
 
-Cada llamada al gateway y cada comando ejecutado durante una sesión se añade a `/var/log/clicklink/troubleshoot-audit.log` como un objeto JSON por línea (NDJSON). El campo `submitted_by` registra la identidad asociada a cada entrada, que depende de cómo se haya originado: las llamadas al gateway incluyen el correo electrónico acreditado por el token validado, nunca un valor proporcionado por el client; los cambios de sesión realizados localmente en una VM registran el usuario del host que los ejecuta; y los comandos ejecutados durante una sesión registran la identidad de la org incluida en el canal de comandos autenticado. Una entrada del gateway para habilitar una sesión tiene este aspecto:
+**Las vistas de Kubernetes de solo lectura** son `get`, `list` y `watch` sobre pods, estado de pods, logs de pods, services, configmaps, eventos, PersistentVolumeClaims, deployments, statefulsets y replicasets en los espacios de nombres concedidos. Los access bundles están vinculados a ServiceAccounts de Kubernetes en ambos destinos de instalación. Sin un paquete aprovisionado, el solucionador de problemas rechaza de plano los comandos de tipo kubectl. El executor aprovisiona el scraper para un managed service, pero no el solucionador de problemas; consulte [sesiones de soporte para un managed service](/es/products/bring-your-own-cloud/connector/managed-services#support-sessions).
+
+El RBAC del solucionador de problemas no contiene ningún permiso `exec`, `delete` ni `patch`, de modo que los operadores no pueden abrir una shell en sus pods ni modificar nada a través de una sesión. La enumeración completa de grants y RBAC se encuentra en la referencia del [modelo de privilegios](/es/products/bring-your-own-cloud/connector/reference/privilege-model).
+
+## Log de auditoría {#audit-log}
+
+Cada comando ejecutado durante una sesión se añade a `/var/log/clicklink/troubleshoot-audit.log` como un objeto JSON por línea (NDJSON). Los comandos bloqueados también se registran, indicando en `blocked_by` el motivo (por ejemplo, `session inactive`). `submitted_by` es el Organization ID del canal de comandos: el ID de su propia organización. El ingeniero de ClickHouse concreto queda registrado del lado de ClickHouse Cloud, no en este archivo. Una entrada de comando de sesión tiene este aspecto:
 
 ```json
 {
   "timestamp": "2026-06-22T22:30:00.123456789Z",
   "command_id": "11111111-2222-4333-8444-555555555555",
-  "submitted_by": "operator@clickhouse.com",
-  "command_type": "clctl.session.enable",
-  "command_text": "ticket #1234",
-  "instance_id": "",
-  "status": "ok",
+  "submitted_by": "<org-id>",
+  "command_type": "sql",
+  "command_text": "SELECT database, table, active, count() FROM system.parts GROUP BY ALL",
+  "instance_id": "analytics",
+  "status": "completed",
   "duration_ms": 42,
-  "output_lines": 0,
-  "remote_addr": "10.20.30.40"
+  "output_lines": 12
 }
 ```
 
-Las entradas del ciclo de vida de la sesión usan los tipos de comando `clctl.session.enable`, `clctl.session.disable` y `clctl.session.status`; el `--reason` de activación se registra como `command_text`, y los comandos ejecutados durante una sesión se registran con el mismo esquema. `status` distingue las llamadas correctas de los intentos `unauthorized`, `forbidden` y `rate_limited`, por lo que el acceso denegado también queda registrado.
+`status` indica el resultado del comando: `completed`, `error` o `rejected`.
 
-En una VM, lea el archivo directamente con `clicklink clctl troubleshoot audit tail`. En Kubernetes, el registro se almacena dentro del pod de Kubernetes del solucionador de problemas y la imagen de contenedor no incluye una shell, así que invoque el lector integrado del binario mediante `kubectl exec`:
+Las llamadas al gateway se registran por separado. Cada llamada, incluidas las rechazadas, se emite como una línea estructurada `clctl.gateway` en el log propio del solucionador de problemas: el journal en una VM o el log del contenedor en Kubernetes. La línea contiene `submitted_by` (el correo electrónico acreditado por el token validado, nunca un valor proporcionado por el client) y `command_type` (`clctl.session.enable`, `clctl.session.disable` o `clctl.session.status`). También contiene `reason` (el `--reason` de la habilitación), `remote_addr` y `status`. `status` puede ser `ok`, `unauthorized`, `forbidden`, `rate_limited`, `bad_request`, `conflict` o `error`, de modo que los accesos denegados también quedan reflejados en el log.
+
+Los cambios de sesión locales en una VM no son entradas del log de auditoría. El usuario del host que invoca el comando se registra como `enabled_by` en `/var/lib/clicklink/session.json` y se muestra mediante `session status`.
+
+En una VM, consulta el log de auditoría con `clicklink clctl troubleshoot audit tail`. En Kubernetes, el log reside dentro del pod de Kubernetes del solucionador de problemas y la imagen del contenedor no incluye shell, así que invoca el reader propio del binary mediante `kubectl exec`:
 
 ```bash
 CONNECTOR_NAMESPACE='clicklink'   # the connector namespace you chose at init
@@ -137,17 +138,13 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
   /clicklink clctl troubleshoot audit tail
 ```
 
-El registro es un archivo sin formato dentro de su entorno; envíelo a su propio SIEM como cualquier otro registro de host o contenedor.
+El log de auditoría es un archivo plano dentro de su entorno; envíelo a su propio SIEM como cualquier otro log de host o de contenedor.
 
-<div id="redaction">
-  ## Redacción
-</div>
+## Redacción {#redaction}
 
-Todo lo que devuelve el solucionador de problemas se censura antes de salir de su entorno. Los patrones integrados cubren direcciones IPv4 e IPv6, tokens Bearer, claves de acceso de AWS, direcciones de correo electrónico, JWT, claves privadas SSH y credenciales incluidas en cadenas de conexión. Puede ampliarlos o sobrescribirlos en `/etc/clicklink/redaction-patterns.yaml`; una entrada con el mismo nombre que un patrón integrado lo reemplaza. El daemon no se inicia si el archivo de patrones no es válido, y `clicklink clctl preflight` lo valida, de modo que una configuración de redacción incorrecta falla de forma explícita en lugar de dejar pasar datos silenciosamente.
+Todo lo que devuelve el solucionador de problemas se censura antes de salir de su entorno. Los patrones integrados cubren direcciones IPv4 e IPv6, tokens Bearer, claves de acceso de AWS, direcciones de correo electrónico, JWT, claves privadas SSH y credenciales incluidas en cadenas de conexión. Puede ampliarlos o sobrescribirlos en `/etc/clicklink/redaction-patterns.yaml`; una entrada con el mismo nombre que un patrón integrado lo reemplaza. El daemon no se inicia si el archivo de patrones no es válido, y `clicklink clctl preflight` lo valida, de modo que una configuración de redacción incorrecta falla de forma explícita.
 
-<div id="related-pages">
-  ## Páginas relacionadas
-</div>
+## Páginas relacionadas {#related-pages}
 
 * [Arquitectura](/es/products/bring-your-own-cloud/connector/architecture): todas las conexiones que realiza el conector y el flujo de datos en las sesiones.
 * [Configuración](/es/products/bring-your-own-cloud/connector/configuration): configuración de gateway, allowlist y redacción.

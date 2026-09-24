@@ -13,9 +13,7 @@ doc_type: 'reference'
 クエリできます。これにより、ClickHouse は既存の
 データレイクインフラストラクチャとシームレスに連携する強力なクエリエンジンとなります。
 
-<div id="supported-catalogs">
-  ## サポートされるカタログ
-</div>
+## サポートされるカタログ {#supported-catalogs}
 
 `DataLakeCatalog` エンジンは、以下のデータカタログに対応しています。
 
@@ -24,16 +22,14 @@ doc_type: 'reference'
 * **Hive Metastore** - 従来の Hadoop エコシステムで使われるカタログ
 * **REST Catalogs** - Iceberg REST 仕様をサポートする任意のカタログ
 
-<div id="creating-a-database">
-  ## データベースの作成
-</div>
+## データベースの作成 {#creating-a-database}
 
 `DataLakeCatalog` エンジンを使用するには、以下の関連設定を有効にする必要があります。
 
 ```sql
-SET allow_experimental_database_iceberg = 1;
-SET allow_experimental_database_unity_catalog = 1;
-SET allow_experimental_database_glue_catalog = 1;
+SET allow_database_iceberg = 1;
+SET allow_database_unity_catalog = 1;
+SET allow_database_glue_catalog = 1;
 SET allow_experimental_database_hms_catalog = 1;
 SET allow_experimental_database_paimon_rest_catalog = 1;
 ```
@@ -70,16 +66,14 @@ catalog_type,
 | `dlf_access_key_secret` | DLF へのアクセスに使用する access key secret                                                                                                                                                                                                                    |
 | `force_add_bucket`      | カタログから提供される table location と `storage_endpoint` からオブジェクトストレージの URL を構築する際、エンドポイントにすでに bucket/コンテナー 名が含まれている場合でも、その名前を先頭に追加します。既定値: `false`。bucket を含まないパスを返し、URL 構築時にそれを追加する必要があるカタログ (Polaris 形式のパス) では `true` に設定してください。                           |
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 `DataLakeCatalog` エンジン の使用例については、以下のセクションを参照してください。
 
 * [Unity Catalog](/ja/guides/use-cases/data-warehousing/unity-catalog)
 * [Glue カタログ](/ja/guides/use-cases/data-warehousing/glue-catalog)
 * OneLake Catalog
-  `allow_experimental_database_iceberg` または `allow_database_iceberg` を有効にすると使用できます。
+  `allow_database_iceberg` を有効にすると使用できます。
 
 ```sql
 CREATE DATABASE database_name

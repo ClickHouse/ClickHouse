@@ -12,7 +12,7 @@ import SelfManaged from '/snippets/es/_self_managed_only_no_roadmap.mdx';
 El servidor HTTP puede utilizarse para autenticar a los usuarios de ClickHouse. La autenticación HTTP solo puede utilizarse como autenticador externo para usuarios existentes, definidos en `users.xml` o en las rutas locales de control de acceso. Actualmente, se admite el esquema de autenticación [Basic](https://datatracker.ietf.org/doc/html/rfc7617) mediante el método GET.
 
 <div id="http-auth-server-definition">
-  ## Definición del servidor de autenticación HTTP
+  ## Definición del servidor de autenticación HTTP {#http-auth-server-definition}
 </div>
 
 Para definir un servidor de autenticación HTTP, debe añadir la sección `http_authentication_servers` a `config.xml`.
@@ -64,9 +64,7 @@ Reenviar encabezados:
 
 Esta parte define qué encabezados se reenviarán desde los encabezados de la solicitud del cliente al autenticador HTTP externo. Ten en cuenta que los encabezados se compararán con los configurados sin distinguir entre mayúsculas y minúsculas, pero se reenviarán tal cual, es decir, sin modificarlos.
 
-<div id="enabling-http-auth-in-users-xml">
-  ### Habilitar la autenticación HTTP en `users.xml`
-</div>
+### Habilitar la autenticación HTTP en `users.xml` {#enabling-http-auth-in-users-xml}
 
 Para habilitar la autenticación HTTP para el usuario, especifique la sección `http_authentication` en lugar de `password` o de secciones similares en la definición del usuario.
 
@@ -95,7 +93,7 @@ Ejemplo (va en `users.xml`):
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### Habilitación de la autenticación HTTP mediante SQL
+  ### Habilitación de la autenticación HTTP mediante SQL {#enabling-http-auth-using-sql}
 </div>
 
 Cuando el [Control de acceso y gestión de cuentas mediante SQL](/es/concepts/features/security/access-rights#access-control-usage) está habilitado en ClickHouse, también se pueden crear con sentencias SQL usuarios identificados mediante autenticación HTTP.
@@ -111,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### Pasar ajustes de sesión
+  ### Pasar ajustes de sesión {#passing-session-settings}
 </div>
 
 Si el cuerpo de respuesta del servidor de autenticación HTTP tiene formato JSON y contiene el subobjeto `settings`, ClickHouse intentará analizar sus pares clave-valor como valores de tipo cadena y establecerlos como ajustes de sesión para la sesión actual del usuario autenticado. Si el análisis falla, se ignorará el cuerpo de respuesta del servidor.

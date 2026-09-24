@@ -1,0 +1,206 @@
+---
+description: '独立于客户端连接运行查询，并监控其执行情况。'
+sidebarTitle: '后台查询'
+slug: /operations/background-queries
+title: '后台查询'
+doc_type: 'guide'
+---
+
+## 概述 {#overview}
+
+后台查询允许客户端通过设置 `run_query_in_background=1` 提交查询，使其独立于客户端会话执行。提交后，ClickHouse server 会立即向客户端返回响应，而查询仍在服务端继续运行直至结束 (成功或失败) 。
+
+由于查询执行与客户端网络连接解耦，后台任务可以完全不受客户端断开连接或瞬时网络故障的影响。
+
+后台查询主要面向长时间运行的操作，例如 `INSERT ... SELECT`、
+`CREATE TABLE ... AS SELECT`、`CREATE MATERIALIZED VIEW ... POPULATE` 或 `OPTIMIZE TABLE ... FINAL`，
+这些操作不应因客户端连接中断而停止。
+
+并非所有查询都可以脱离其连接执行。哪些请求会被拒绝，请参见[不支持的查询形式](#unsupported-query-forms)。
+
+<Warning>
+  后台查询的结果会被丢弃，既无法获取，也无法在之后重新关联。
+  请使用查询的 `query_id`：运行期间通过 `system.processes` 监控，结束后通过 `system.query_log` 查看。
+</Warning>
+
+后台查询无法在服务器重启后继续存在。服务器关闭时的行为由
+`shutdown_wait_unfinished_queries` 和 `shutdown_wait_unfinished` 控制。
+
+## 不受支持的查询形式 {#unsupported-query-forms}
+
+后台查询的存活时间比提交它的 connection 更长，因此 server 必须在接受该查询的那一刻就已具备运行它所需的一切条件。
+不满足该条件的 request 会在提交请求的 connection 上被同步拒绝，查询不会启动。
+
+### 通过连接流式传输的数据 {#data-that-streams-over-the-connection}
+
+如果在分发查询后，服务器仍需从提交该查询的连接中读取数据，则该 `INSERT` 会被拒绝。
+
+这会影响 `INSERT ... FORMAT ...` 以及通过 `input` 读取数据的查询。此类请求会被拒绝，并返回 `A query whose data streams over the connection cannot be run in the background`：
+
+```sql
+-- Rejected over the native protocol: the client sends the data separately
+INSERT INTO target_table FORMAT TSV
+INSERT INTO target_table SELECT * FROM input('n UInt64') FORMAT TSV
+
+-- Accepted: the server produces the data itself
+INSERT INTO target_table SELECT number FROM numbers(1000000)
+```
+
+`ClickHouse 客户端` 会将 `INSERT ... FORMAT ...` 的数据拆分为独立的 packet 发送，因此在 原生协议 上，这种形式永远无法在后台运行。
+
+在 HTTP 上，只要完整的查询及其数据能装入初始的 parsing buffer (其大小受 `max_query_size` 限制) ，两种形式都可以被接受。
+
+其中也包括通过 `input` 读取 inline payload 的 HTTP 查询。如果 body 较大，数据会在已缓冲的 query text 之后继续以流式方式传输，此时请求会被拒绝。
+
+请不要依赖这一大小界限：对于必须在后台加载的数据，请使用 `INSERT ... SELECT`，或 `url`、`s3` 之类的 table function。
+
+### 其他被拒绝的请求 {#other-rejected-requests}
+
+| 请求                                                                            | 错误                                                                                           |
+| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| `SET run_query_in_background = 1`                                             | `run_query_in_background cannot be changed with SET, because it must be requested per query` |
+| 显式事务内的查询                                                                      | `Background queries inside transactions are not supported`                                   |
+| 带有 `implicit_transaction = 1` 的查询                                             | `Background queries with 'implicit_transaction' are not supported`                           |
+| 次级查询，例如通过 `clickhouse-client --query_kind secondary_query` 发起                 | `run_query_in_background cannot be used for a secondary query`                               |
+| 非 `Complete` 的查询处理阶段，例如通过 `clickhouse-client --stage with_mergeable_state` 发起 | `run_query_in_background cannot be used with the WithMergeableState query processing stage`  |
+| 带有存储定义的 `CREATE` 或 `ATTACH` 语句中的 `SETTINGS` 子句，因为客户端会将该子句原样发送给服务器             | `run_query_in_background cannot be changed in the SETTINGS clause of this particular query`  |
+
+该设置永远不会传播到分布式查询的次级查询：后台执行的分布式 `INSERT`
+会在后台运行的初始查询内，以前台方式执行各个分片上的查询。
+
+## 提交后台查询 {#submit-a-background-query}
+
+### 原生 TCP 协议 {#native-tcp-protocol}
+
+使用 ClickHouse 客户端时，将 `run_query_in_background` 作为命令行设置传入：
+
+```bash
+clickhouse-client --echo-query-id --run_query_in_background=1 \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000)"
+```
+
+你也可以使用内联的 `SETTINGS` 子句：
+
+```bash
+clickhouse-client --echo-query-id \
+  -q "INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1"
+```
+
+原生协议 (原生协议) 将查询设置与 SQL 文本分开传输。ClickHouse 客户端会解析大多数内联查询设置，并将其放入该设置部分中发送。
+
+原生协议驱动则可以在其按查询设置的映射中传入 `run_query_in_background`，从而无需改动 SQL 文本。
+
+原生协议不会返回由服务端生成的 `query_id`。原生客户端应自行生成一个唯一 ID，并随查询一并发送。
+
+`clickhouse-client --echo-query-id` 即可实现这一点，它会在提交查询前打印该 ID：
+
+```response
+Query id: 6b57dffd-8aac-4be5-b331-fa8b2e70227e
+```
+
+### HTTP protocol {#http-protocol}
+
+对于 HTTP 请求，请将 `run_query_in_background` 作为 URL 参数传递：
+
+```bash
+curl -sS -D - -o /dev/null \
+  'http://localhost:8123/?run_query_in_background=1' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+响应会在 `X-ClickHouse-Query-Id` 响应头中包含生成的查询 ID：
+
+```response
+X-ClickHouse-Query-Id: 689d4147-7531-46ee-b74e-8dced676b397
+```
+
+该请求头只会传递给读取响应的客户端。如果你需要一种不依赖响应返回就能引用查询的方式，请改为通过 URL 参数自行传入 `query_id`。
+
+这样客户端在发起请求之前就已知道该 ID，即使始终未收到响应，也能在接收请求的节点上监控或 `KILL` 该查询：
+
+```bash
+curl -sS 'http://localhost:8123/?run_query_in_background=1&query_id=nightly_load_2026_09_03' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000)'
+```
+
+与 原生协议 不同，HTTP 无法通过内联的 SQL `SETTINGS` 子句启用后台执行：
+
+```bash
+curl 'http://localhost:8123/' \
+  --data-binary 'INSERT INTO target_table SELECT number FROM numbers(1000000) SETTINGS run_query_in_background=1'
+```
+
+该请求会返回 `BAD_ARGUMENTS` 异常。HTTP handler 必须在解析请求体之前决定是否创建 detached 查询 Context。
+
+请在 URL 中传递该设置，或在用户或 profile 级别进行配置。
+
+## 监控执行 {#monitor-execution}
+
+使用 `query_id` 检查查询当前是否正在运行：
+
+```sql
+SELECT
+    query_id,
+    elapsed,
+    query
+FROM system.processes
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+```
+
+查询完成后，检查 `system.query_log` 以查看其最终状态：
+
+```sql
+SELECT
+    type,
+    query_duration_ms,
+    exception_code,
+    exception
+FROM system.query_log
+WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e'
+  AND type IN ('QueryFinish', 'ExceptionBeforeStart', 'ExceptionWhileProcessing')
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+```
+
+即使后台执行随后失败，提交请求仍可能成功。在这种情况下，异常会记录到 `system.query_log` 中，而不会通过原始连接返回。
+
+<Note title="集群与负载均衡部署">
+  `system.processes`、`system.query_log` 和 `KILL QUERY` 都是节点本地的：它们只能看到响应该请求的那台服务器上的查询。
+
+  后台查询归属于接受该查询的服务器，而这台服务器不一定就是下一个请求经负载均衡器到达的那台。请改为读取整个集群：
+
+  ```sql
+  SELECT hostName(), query_id, elapsed, query
+  FROM clusterAllReplicas(my_cluster, system.processes)
+  WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+
+  `system.query_log` 同理，取消操作也需要使用集群级的形式：
+
+  ```sql
+  KILL QUERY ON CLUSTER my_cluster WHERE query_id = '6b57dffd-8aac-4be5-b331-fa8b2e70227e';
+  ```
+</Note>
+
+## 查询日志刷新延迟 {#query-log-flush-delay}
+
+条目会先经过缓冲，之后才会出现在 `system.query_log` 中。
+对于自管理 ClickHouse，示例服务器配置将 `query_log.flush_interval_milliseconds` 设置为 `7500`。
+
+在 ClickHouse Cloud 中，条目最多可能需要 30 秒才会出现。监控短时运行的后台查询时，请将这一延迟考虑在内。
+
+在自管理服务器上，具备足够特权的用户可以强制刷新查询日志。请明确指定日志名称，以免影响其他系统日志：
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+```
+
+刷新会在接收该语句的服务器上执行。
+
+后台查询由接受该查询的服务器负责跟踪，而该服务器不一定就是当前会话所连接的服务器；因此在集群环境中，查找该查询之前需要在所有节点上执行刷新：
+
+```sql
+SYSTEM FLUSH LOGS ON CLUSTER my_cluster query_log;
+```
+
+在集群级执行 flush 只会让每台服务器写出各自缓冲的记录，并不会使其他服务器的 `system.query_log` 在本地可见，因此仍需按照[监控执行](#monitor-execution)中所述，通过 `clusterAllReplicas` 读取日志。

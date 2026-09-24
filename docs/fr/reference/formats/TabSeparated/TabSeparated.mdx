@@ -15,9 +15,7 @@ doc_type: 'reference'
 | ------ | ------ | ----- |
 | ✔      | ✔      | `TSV` |
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 Dans le format TabSeparated, les données sont écrites ligne par ligne. Chaque ligne contient des valeurs séparées par des tabulations. Chaque valeur est suivie d’une tabulation, sauf la dernière valeur de la ligne, qui est suivie d’un saut de ligne. Le format suppose partout des sauts de ligne Unix stricts. La dernière ligne doit également se terminer par un saut de ligne. Les valeurs sont écrites au format texte, sans guillemets, avec échappement des caractères spéciaux.
 
@@ -44,11 +42,9 @@ SELECT EventDate, count() AS c FROM test.hits GROUP BY EventDate WITH TOTALS ORD
 2014-03-23      1406958
 ```
 
-<div id="tabseparated-data-formatting">
-  ## Formatage des données
-</div>
+## Formatage des données {#tabseparated-data-formatting}
 
-Les nombres entiers sont écrits sous forme décimale. Ils peuvent contenir un caractère `+` supplémentaire au début (ignoré lors de l’analyse et non conservé lors du formatage). Les nombres non négatifs ne peuvent pas contenir de signe moins. À la lecture, une chaîne vide peut être analysée comme zéro, ou (pour les types signés) une chaîne constituée uniquement d’un signe moins peut également être analysée comme zéro. Les nombres qui ne tiennent pas dans le type de données correspondant peuvent être analysés comme une autre valeur, sans message d’erreur.
+Les nombres entiers sont écrits sous forme décimale. Ils peuvent contenir un caractère `+` supplémentaire au début (ignoré lors de l’analyse et non conservé lors du formatage), et les zéros de tête sont ignorés lors de l’analyse (`007` est lu comme `7`). Les nombres non négatifs ne peuvent pas contenir de signe moins. À la lecture, une chaîne vide peut être analysée comme zéro, ou (pour les types signés) une chaîne constituée uniquement d’un signe moins peut également être analysée comme zéro. Les nombres qui ne tiennent pas dans le type de données correspondant peuvent être analysés comme une autre valeur, sans message d’erreur.
 
 Les nombres à virgule flottante sont écrits sous forme décimale. Le point est utilisé comme séparateur décimal. La notation exponentielle est prise en charge, ainsi que `inf`, `+inf`, `-inf` et `nan`. Une valeur à virgule flottante peut commencer ou se terminer par un point décimal.
 Lors du formatage, une perte de précision peut se produire pour les nombres à virgule flottante.
@@ -61,7 +57,7 @@ Lors d’une opération de lecture, des dates incorrectes et des dates avec heur
 
 Exceptionnellement, l’analyse des dates avec heure est également prise en charge au format Unix timestamp, s’il se compose d’exactement 10 chiffres décimaux. Le résultat ne dépend pas du fuseau horaire. Les formats `YYYY-MM-DD hh:mm:ss` et `NNNNNNNNNN` sont différenciés automatiquement.
 
-Les chaînes sont produites avec des caractères spéciaux précédés d’une barre oblique inverse. Les séquences d’échappement suivantes sont utilisées en sortie : `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. L’analyse prend également en charge les séquences `\a`, `\v` et `\xHH` (séquences d’échappement hexadécimales), ainsi que toute séquence `\c`, où `c` est n’importe quel caractère (ces séquences sont converties en `c`). Ainsi, la lecture des données prend en charge les formats dans lesquels un saut de ligne peut être écrit comme `\n`, comme `\`, ou comme un saut de ligne réel. Par exemple, la chaîne `Hello world` avec un saut de ligne entre les mots au lieu d’un espace peut être analysée sous l’une des formes suivantes :
+Les chaînes sont produites avec des caractères spéciaux précédés d’une barre oblique inverse. Les séquences d’échappement suivantes sont utilisées en sortie : `\b`, `\f`, `\r`, `\n`, `\t`, `\0`, `\'`, `\\`. L’analyse prend également en charge les séquences `\a`, `\v` et `\xHH` (séquences d’échappement hexadécimales), ainsi que toute séquence `\c`, où `c` est n’importe quel caractère (ces séquences sont converties en `c`). Ainsi, la lecture des données prend en charge les formats dans lesquels un saut de ligne peut être écrit comme `\n`, comme `\`, ou comme un saut de ligne réel. Par exemple, la chaîne `Hello world` avec un saut de ligne entre les mots au lieu d’un espace peut être analysée sous l’une des formes suivantes :
 
 ```text
 Hello\nworld
@@ -72,7 +68,7 @@ world
 
 La deuxième variante est prise en charge, car MySQL l&#39;utilise lors de l&#39;écriture de dumps tabulés.
 
-L&#39;ensemble minimal de caractères à échapper lorsque vous transmettez des données au format TabSeparated : tabulation, saut de ligne (LF) et antislash.
+L&#39;ensemble minimal de caractères à échapper lorsque vous transmettez des données au format TabSeparated : tabulation, saut de ligne (LF) et antislash.
 
 Seul un petit nombre de symboles est échappé. Vous pouvez facilement vous retrouver avec une valeur de chaîne dont l&#39;affichage sera corrompu par votre terminal.
 
@@ -85,7 +81,7 @@ Si les données d&#39;entrée ne contiennent que des identifiants ENUM, il est r
 
 Chaque élément des structures [Nested](/fr/reference/data-types/nested-data-structures/index) est représenté sous forme de tableau.
 
-Par exemple :
+Par exemple :
 
 ```sql
 CREATE TABLE nestedt
@@ -111,13 +107,9 @@ SELECT * FROM nestedt FORMAT TSV
 1  [1]    ['a']
 ```
 
-<div id="example-usage">
-  ## Exemple d’utilisation
-</div>
+## Exemple d’utilisation {#example-usage}
 
-<div id="inserting-data">
-  ### Insertion de données
-</div>
+### Insertion de données {#inserting-data}
 
 À l’aide du fichier TSV suivant, nommé `football.tsv` :
 
@@ -147,9 +139,7 @@ Insérez les données :
 INSERT INTO football FROM INFILE 'football.tsv' FORMAT TabSeparated;
 ```
 
-<div id="reading-data">
-  ### Lecture des données
-</div>
+### Lecture des données {#reading-data}
 
 Lisez les données au format `TabSeparated` :
 
@@ -181,9 +171,7 @@ La sortie sera au format à champs séparés par des tabulations :
 2022-05-07      2021    Walsall Swindon Town    0       3
 ```
 
-<div id="format-settings">
-  ## Paramètres de format
-</div>
+## Paramètres de format {#format-settings}
 
 | Paramètre                                                                                                                                               | Description                                                                                                                                                                                                                                                                                  | Par défaut |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |

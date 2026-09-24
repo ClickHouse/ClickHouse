@@ -11,9 +11,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
-<div id="manual-horizontal-scaling">
-  ## Escalado horizontal manual
-</div>
+## Escalado horizontal manual {#manual-horizontal-scaling}
 
 <ScalePlanFeatureBadge feature="Escalado horizontal manual" />
 
@@ -22,12 +20,10 @@ Puede usar las [API públicas](/es/products/cloud/api-reference/service/instance
 Los niveles **Scale** y **Enterprise** también admiten servicios con una sola réplica. Una vez ampliados horizontalmente, los servicios pueden volver a reducirse hasta un mínimo de una sola réplica. Tenga en cuenta que los servicios con una sola réplica tienen una disponibilidad reducida y no se recomiendan para uso en producción.
 
 <Note>
-  Los servicios pueden escalar horizontalmente hasta un máximo de 20 réplicas. Si necesita réplicas adicionales, póngase en contacto con nuestro equipo de soporte.
+  Para conocer los límites de réplicas que se aplican a su servicio, consulte [Límites de uso](/es/cloud/bestpractices/usage-limits). Póngase en contacto con nuestro equipo de soporte si necesita réplicas adicionales.
 </Note>
 
-<div id="horizontal-scaling-via-api">
-  ### Escalado horizontal mediante la API
-</div>
+### Escalado horizontal mediante la API {#horizontal-scaling-via-api}
 
 Para escalar horizontalmente un clúster, envíe una solicitud `PATCH` a través de la API para ajustar el número de réplicas. Las capturas de pantalla a continuación muestran una llamada a la API para ampliar un clúster de `3` réplicas a `6` réplicas, y la respuesta correspondiente.
 
@@ -41,9 +37,7 @@ Para escalar horizontalmente un clúster, envíe una solicitud `PATCH` a través
 
 Si envía una nueva solicitud de escalado, o varias solicitudes seguidas, mientras ya hay una en curso, el servicio de escalado ignorará los estados intermedios y convergerá al número final de réplicas.
 
-<div id="horizontal-scaling-via-ui">
-  ### Escalado horizontal mediante la UI
-</div>
+### Escalado horizontal mediante la UI {#horizontal-scaling-via-ui}
 
 Para escalar un servicio horizontalmente desde la UI, puedes ajustar el número de réplicas del servicio en la página **Settings**.
 

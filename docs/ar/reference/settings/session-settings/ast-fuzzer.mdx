@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُنشأة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="ast_fuzzer_any_query">
-  ## ast_fuzzer_any_query
-</div>
+## ast_fuzzer_any_query {#ast_fuzzer_any_query}
 
 <ExperimentalBadge />
 
@@ -26,9 +24,17 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 عندما تكون القيمة false (وهي القيمة الافتراضية)، فإن أداة تشويش AST من جهة الخادم (التي يضبطها `ast_fuzzer_runs`) لا تُشوِّش إلا استعلامات القراءة فقط (SELECT, EXPLAIN, SHOW, DESCRIBE, EXISTS). وعندما تكون القيمة true، يتم تشويش جميع أنواع الاستعلامات، بما في ذلك DDL و INSERT.
 
-<div id="ast_fuzzer_runs">
-  ## ast_fuzzer_runs
-</div>
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين تحققات أوراكل الصحة في أداة تشويش AST من جانب الخادم."}]}]} />
+
+عند تمكينه مع `ast_fuzzer_runs`، يطبّق مجموعة من تحققات أوراكل الصحة على استعلامات SELECT الخاضعة للتشويش التي نُفِّذت بنجاح: TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate، وNoREC، وDQP (بتبديل إعدادات المُحسِّن الفردية)، وIdentity WHERE، وSubquery wrap. يؤدي عدم التطابق إلى إطلاق استثناء `AST_FUZZER_ORACLE_MISMATCH`.
+
+## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge />
 

@@ -13,14 +13,12 @@ doc_type: 'reference'
   ClickHouse recommande d’utiliser les fonctions de table intégrées à ClickHouse, qui offrent une meilleure alternative pour les scénarios de requêtes ad hoc (Postgres, MySQL, MongoDB, etc.).
 </Note>
 
-La fonction de table JDBC renvoie une table connectée via un pilote JDBC.
+La fonction de table JDBC renvoie une table connectée via le pilote JDBC.
 
 Cette fonction de table nécessite l’exécution d’un programme distinct, [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge).
 Elle prend en charge les types Nullable (d’après le DDL de la table distante interrogée).
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -28,9 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Au lieu d’un nom de base de données externe, on peut spécifier un schéma :
 

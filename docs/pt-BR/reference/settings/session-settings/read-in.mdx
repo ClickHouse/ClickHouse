@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="read_in_order_two_level_merge_threshold">
-  ## read_in_order_two_level_merge_threshold
-</div>
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Número mínimo de partes que devem ser lidas para executar a etapa de merge preliminar durante a leitura multithread na ordem da chave primária.
 
-<div id="read_in_order_use_buffering">
-  ## read_in_order_use_buffering
-</div>
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -31,9 +27,7 @@ Número mínimo de partes que devem ser lidas para executar a etapa de merge pre
 
 Usa bufferização antes da mesclagem ao ler na ordem da chave primária. Isso aumenta o paralelismo da execução da consulta
 
-<div id="read_in_order_use_virtual_row">
-  ## read_in_order_use_virtual_row
-</div>
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ Usa bufferização antes da mesclagem ao ler na ordem da chave primária. Isso a
 
 Usa linha virtual ao ler na ordem da chave primária ou de sua função monotônica. Isso é útil ao pesquisar em várias partes, pois apenas as partes que podem realmente contribuir para o resultado são lidas, além de uma janela limitada de leitura antecipada de, no máximo, `max_threads` partes, que mantém as leituras paralelas.
 
-<div id="read_in_order_use_virtual_row_per_block">
-  ## read_in_order_use_virtual_row_per_block
-</div>
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

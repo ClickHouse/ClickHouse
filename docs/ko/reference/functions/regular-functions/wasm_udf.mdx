@@ -15,9 +15,7 @@ ClickHouse는 WebAssembly로 작성된 사용자 정의 함수(UDF)를 생성할
 
 <ExperimentalBadge />
 
-<div id="overview">
-  ## 개요
-</div>
+## 개요 {#overview}
 
 WebAssembly 모듈은 ClickHouse에서 호출할 수 있는 하나 이상의 함수를 포함하는 컴파일된 바이너리 파일입니다.
 모듈은 한 번 로드해 여러 번 재사용하는 라이브러리나 공유 객체로 생각하면 됩니다.
@@ -34,9 +32,7 @@ WebAssembly로 컴파일된 코드(&quot;guest&quot; 코드)와 ClickHouse에서
 컴파일이 완료되면 모듈의 바이너리 코드는 `system.webassembly_modules` 테이블에 삽입되어 ClickHouse에 로드됩니다.
 그 후 `CREATE FUNCTION ... LANGUAGE WASM` 구문을 사용해 모듈이 내보낸 함수를 참조하는 UDF를 생성할 수 있습니다.
 
-<div id="prerequisites">
-  ## 사전 요구 사항
-</div>
+## 사전 요구 사항 {#prerequisites}
 
 ClickHouse 구성에서 WebAssembly 지원을 사용 설정하세요:
 
@@ -51,9 +47,7 @@ ClickHouse 구성에서 WebAssembly 지원을 사용 설정하세요:
 
 * `wasmtime` (기본값이며 현재 유일한 구현) — [Wasmtime](https://github.com/bytecodealliance/wasmtime)을 사용합니다
 
-<div id="quick-start">
-  ## 빠른 시작
-</div>
+## 빠른 시작 {#quick-start}
 
 이 예시는 [콜라츠 추측](https://en.wikipedia.org/wiki/Collatz_conjecture) 계산기를 구현하여 WebAssembly UDF를 만드는 전체 워크플로를 보여줍니다.
 
@@ -109,9 +103,7 @@ FORMAT TSV
 [0,1,7,2,5,8,16,3,19,6,14,9,9,17,17,4,12,20,20,7,7,15,15,10,23,10,111,18,18,18,106,5,26,13,13,21,21,21,34,8,109,8,29,16,16,16,104,11,24,24,24,11,11,112,112,19,32,19,32,19,19,107,107,6,27,27,27,14,14,14,102,22,115,22,14,22,22,35,35,9,22,110,110,9,9,30,30,17,30,17,92,17,17,105,105,12,118,25,25,25]
 ```
 
-<div id="manage-wasm-modules-via-system-table">
-  ## 시스템 테이블을 통해 WASM 모듈 관리
-</div>
+## 시스템 테이블을 통해 WASM 모듈 관리 {#manage-wasm-modules-via-system-table}
 
 WebAssembly 모듈은 다음 구조를 가진 `system.webassembly_modules` 테이블에 저장됩니다:
 
@@ -122,9 +114,7 @@ WebAssembly 모듈은 다음 구조를 가진 `system.webassembly_modules` 테�
 
 모듈 관리는 이 테이블에 대한 표준 SQL 작업을 통해 수행됩니다:
 
-<div id="insert-a-module">
-  ### 모듈 삽입
-</div>
+### 모듈 삽입 {#insert-a-module}
 
 ```sql
 INSERT INTO system.webassembly_modules (name, code)
@@ -140,9 +130,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 제공된 해시가 모듈 코드에서 계산된 SHA256과 일치하지 않으면 삽입이 실패합니다. S3 또는 HTTP 같은 외부 소스에서 모듈을 로드할 때 유용합니다.
 
-<div id="distribute-a-module-across-a-cluster">
-  ### 클러스터 전체에 모듈 배포
-</div>
+### 클러스터 전체에 모듈 배포 {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules`는 인스턴스별 table이므로 `INSERT`는 connection을 처리하는 레플리카에만 적용됩니다. `INSERT` 문에는 `ON CLUSTER` 형식이 없으므로, 이어서 `CREATE FUNCTION ... ON CLUSTER`를 실행하면 모듈이 없는 레플리카에서는 실패합니다:
 
@@ -181,9 +169,7 @@ SELECT hostName(), name FROM clusterAllReplicas('default', system.webassembly_mo
 
 `system.webassembly_modules`에 대한 삽입은 동일한 `(name, hash)` 쌍에 대해 멱등적이므로, 팬아웃된 삽입을 다시 실행해도 안전하며 레플리카 교체 후 상태를 복구하는 합리적인 방법입니다. 새로 추가된 서버에는 기존 모듈이 자동으로 전달되지 않는다는 점에 유의하십시오. 업데이트된 클러스터를 대상으로 삽입을 다시 실행하거나, 새 호스트의 `user_scripts/wasm/` 디렉터리에 바이너리를 배치해야 합니다.
 
-<div id="list-modules">
-  ### 모듈 목록 보기
-</div>
+### 모듈 목록 보기 {#list-modules}
 
 ```sql
 SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.webassembly_modules
@@ -193,9 +179,7 @@ SELECT name, lower(hex(reinterpretAsFixedString(hash))) AS sha256 FROM system.we
    └─────────┴──────────────────────────────────────────────────────────────────┘
 ```
 
-<div id="delete-a-module">
-  ### 모듈 삭제
-</div>
+### 모듈 삭제 {#delete-a-module}
 
 삭제는 `DELETE FROM system.webassembly_modules WHERE name = '...'` 문을 사용해 수행합니다.
 프레디케이트는 정확한 일치에는 `name = 'literal'`, 패턴과 일치하는 모든 모듈을 삭제할 때는 `name LIKE 'pattern'`여야 하며, 그 밖의 형태는 허용되지 않습니다.
@@ -209,9 +193,7 @@ DELETE FROM system.webassembly_modules WHERE name LIKE 'tmp\_%';
 
 기존 UDF 중 일치하는 모듈을 참조하는 UDF가 있으면 삭제에 실패하므로, 먼저 해당 UDF를 삭제해야 합니다.
 
-<div id="create-a-webassembly-udf">
-  ## WebAssembly UDF 생성하기
-</div>
+## WebAssembly UDF 생성하기 {#create-a-webassembly-udf}
 
 **구문**:
 
@@ -242,9 +224,7 @@ RETURNS return_type
   * `serialization_format` String — 모듈에 전달되는 인수 블록을 직렬화하고 반환된 결과를 파싱하는 데 사용하는 포맷입니다. `ABI BUFFERED_V1`에서만 사용됩니다. 지원되는 값: `MsgPack`, `JSONEachRow`, `CSV`, `TSV`, `TSVRaw`, `RowBinary`, `Buffers`. 기본값: `MsgPack`. `Buffers`와 같은 블록 기반 포맷은 선언된 함수 시그니처와 타입이 일치하는 단일 컬럼 하나를 반환해야 합니다.
   * `webassembly_udf_enable_fuel` Bool — 함수에 대한 제한된 연료 예산을 활성화합니다. 기본값: `true`. `false`이면 이 함수에서는 쿼리 수준 설정 `webassembly_udf_max_fuel`이 무시됩니다. 연료 제한을 비활성화하면 성능이 향상될 수 있습니다. 하지만 신뢰할 수 없거나 버그가 있는 게스트 코드의 경우, 제어되지 않는 실행 위험이 커질 수 있습니다.
 
-<div id="abis-versions">
-  ## ABI 버전
-</div>
+## ABI 버전 {#abis-versions}
 
 ClickHouse와 상호작용하려면 WebAssembly 모듈이 지원되는 ABI(Application Binary Interface) 중 하나를 따라야 합니다.
 
@@ -252,9 +232,7 @@ ClickHouse와 상호작용하려면 WebAssembly 모듈이 지원되는 ABI(Appli
 * `BUFFERED_V1`: 직렬화를 사용하는 복합 타입
 * `ASSEMBLYSCRIPT`: [AssemblyScript](https://www.assemblyscript.org) 모듈과의 행 단위 상호 운용; 숫자 타입과 `String`을 지원
 
-<div id="abi-row_direct">
-  ### ABI ROW_DIRECT
-</div>
+### ABI ROW_DIRECT {#abi-row_direct}
 
 내보낸 WASM 함수를 각 행에 대해 직접 호출합니다.
 
@@ -277,9 +255,7 @@ CREATE FUNCTION my_func ARGUMENTS (Int32, UInt64, Float32) RETURNS Float64 ...
 
 WebAssembly는 부호 있는 인수와 부호 없는 인수를 구분하지 않으며, 대신 값을 해석할 때 서로 다른 명령어를 사용합니다. 따라서 인수의 크기는 정확히 일치해야 하고, 부호 여부는 함수 내부에서 수행하는 연산에 따라 결정됩니다.
 
-<div id="abi-buffered_v1">
-  ### ABI BUFFERED_V1
-</div>
+### ABI BUFFERED_V1 {#abi-buffered_v1}
 
 <Note>
   이 ABI는 실험적 기능이며 향후 릴리스에서 변경될 수 있습니다.
@@ -287,7 +263,7 @@ WebAssembly는 부호 있는 인수와 부호 없는 인수를 구분하지 않�
 
 WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리합니다. 모든 인수 및 반환 타입을 지원합니다.
 
-데이터는 WASM 메모리의 버퍼를 통해 교환됩니다. 버퍼는 데이터에 대한 포인터와 데이터 크기를 저장하는 8바이트 구조체이며, 리틀 엔디언 `u32` 값 2개로 구성됩니다. 버퍼는 데이터 자체가 아니라 이 구조체를 가리키는 포인터인 handle로 전달됩니다. 게스트 코드는 이러한 버퍼를 생성하고 제거하기 위한 2개의 함수를 내보내야 합니다.
+데이터는 WASM 메모리의 버퍼를 통해 교환됩니다. 버퍼는 데이터에 대한 포인터와 데이터 크기를 저장하는 8바이트 구조체이며, 리틀 엔디언 `u32` 값 2개로 구성됩니다. 버퍼는 데이터 자체가 아니라 이 구조체를 가리키는 포인터인 handle로 전달됩니다. 게스트 코드는 이러한 버퍼를 생성하고 제거하기 위한 2개의 함수를 내보내야 합니다. 크기가 0이 아닌 경우 데이터 포인터도 0이 아니어야 합니다. 양수 크기를 선언하면서 선형 메모리 오프셋 `0`을 가리키는 버퍼는 유효한 버퍼가 아니며, 게스트 코드는 이러한 버퍼를 생성해서는 안 됩니다. ClickHouse는 이러한 버퍼를 거부하고 `WASM_ERROR`와 함께 쿼리를 실패시킵니다.
 
 각 입력 블록에 대해 ClickHouse는 다음을 수행합니다.
 
@@ -297,7 +273,9 @@ WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리
 4. 결과 버퍼를 읽습니다. 이 버퍼에는 동일한 포맷으로 직렬화된, 정확히 같은 수의 행을 포함하는 컬럼이 정확히 하나 있어야 합니다. `JSONEachRow`처럼 이름이 지정된 필드가 있는 포맷에서는 결과 컬럼의 이름이 `result`여야 합니다.
 5. 입력 버퍼(있는 경우)와 결과 버퍼 handle 모두에 대해 `clickhouse_destroy_buffer`를 호출합니다. 게스트 코드는 결과 버퍼를 직접 해제해서는 안 되며, 입력 handle을 결과로 반환해서도 안 됩니다. 그렇게 하면 버퍼가 두 번 제거됩니다.
 
-함수는 입력 블록마다 한 번 호출됩니다. 대규모 쿼리는 쿼리 파이프라인에 의해 여러 블록으로 분할되므로(`webassembly_udf_max_input_block_size` 설정으로 호출당 최대 행 수를 추가로 제한할 수 있음), 각 호출에서 전달되는 행 수는 전체 쿼리가 아니라 해당 블록의 크기입니다.
+함수는 입력 블록마다 한 번 호출됩니다. 대규모 쿼리는 쿼리 파이프라인에 의해 여러 블록으로 분할되므로, 각 호출에서 전달되는 행 수는 전체 쿼리가 아니라 해당 블록의 크기입니다.
+
+파이프라인 블록도 모듈의 선형 메모리에 비해 지나치게 클 수 있으므로 추가로 분할됩니다. 기본적으로 `webassembly_udf_input_split_memory_ratio`가 이를 동적으로 분할합니다. ClickHouse는 직렬화된 행을 측정하여 입력이 게스트 선형 메모리의 해당 비율을 넘어서기 전에 새 호출을 시작하므로, 행 수는 데이터에 따라 달라집니다. `webassembly_udf_max_input_block_size`가 0이 아니면 이를 대체하여 호출당 지정된 행 수의 고정 상한이 적용되며, 비율이 `0`이면 전체 블록을 한 번의 호출로 전달합니다. 호출은 결코 1개 행 미만으로 줄어들지 않으므로, 단일 행 자체가 모듈 메모리에 비해 너무 큰 경우에는 여전히 게스트 내부에서 실패합니다.
 
 <Note>
   버퍼 내부의 정확한 바이트는 선택한 포맷에 따라 결정되며, 게스트 코드는 이를 직접 디코딩하고 인코딩해야 합니다. 특히 `String` 값의 경우:
@@ -328,7 +306,7 @@ WASM 메모리를 통해 (역)직렬화하여 전체 블록을 한 번에 처리
 )
 ```
 
-freestanding C로 작성한 완전한 예시입니다. `str_reverse`는 `serialization_format = 'RowBinary'`를 사용해 각 입력 문자열의 바이트 순서를 뒤집습니다. 모듈 인스턴스는 여러 블록에서 재사용되므로 `clickhouse_destroy_buffer`가 실제로 메모리를 회수해야 합니다. 여기서는 모든 버퍼가 소멸되면 할당자가 재설정됩니다.
+freestanding C로 작성된 완전한 예시입니다. `str_reverse`는 `serialization_format = 'RowBinary'`를 사용하여 각 입력 문자열의 바이트를 뒤집습니다. 모듈 인스턴스는 여러 블록에 걸쳐 재사용되므로 `clickhouse_destroy_buffer`가 실제로 메모리를 회수해야 합니다. 여기서는 모든 버퍼가 소멸되면 할당자가 초기화됩니다.
 
 ```c
 #include <stdint.h>
@@ -440,9 +418,7 @@ SELECT str_reverse(toString(number + 100)) FROM numbers(3);
 201
 ```
 
-<div id="abi-assemblyscript">
-  ### ABI ASSEMBLYSCRIPT
-</div>
+### ABI ASSEMBLYSCRIPT {#abi-assemblyscript}
 
 [AssemblyScript](https://www.assemblyscript.org) 컴파일러로 생성된 모듈을 대상으로 합니다. 각 행마다 내보낸 함수가 한 번 호출되며, ClickHouse 값은 AssemblyScript 기본 타입과 문자열 객체로 매핑됩니다.
 
@@ -491,9 +467,7 @@ CREATE FUNCTION as_greet
     ARGUMENTS (name String) RETURNS String;
 ```
 
-<div id="note-for-developing-udfs-in-rust">
-  ### Rust로 UDF를 개발할 때 참고할 사항
-</div>
+### Rust로 UDF를 개발할 때 참고할 사항 {#note-for-developing-udfs-in-rust}
 
 Rust 프로그램용으로는 ClickHouse의 WebAssembly UDF 개발을 간소화할 수 있도록 헬퍼 크레이트 [clickhouse-wasm-udf](https://crates.io/crates/clickhouse-wasm-udf)를 제공합니다. 이 크레이트는 메모리 관리 함수를 제공하므로 `clickhouse_create_buffer`와 `clickhouse_destroy_buffer` 함수를 직접 구현할 필요 없이 크레이트를 의존성으로 추가하면 됩니다. 또한 일반적인 Rust 함수를 필요한 ABI 형식으로 감싸는 매크로 `#[clickhouse_wasm_udf]`도 제공합니다.
 
@@ -512,9 +486,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 매크로는 버퍼 구조체를 인자로 받아 버퍼 구조체를 반환하는 래퍼 함수를 생성하고, `serde`를 사용해 직렬화/역직렬화를 자동으로 처리합니다.
 
-<div id="host-api-available-to-modules">
-  ## 모듈에서 사용할 수 있는 호스트 API
-</div>
+## 모듈에서 사용할 수 있는 호스트 API {#host-api-available-to-modules}
 
 다음 호스트 함수는 import하여 모듈에서 사용할 수 있습니다:
 
@@ -524,9 +496,7 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 * `clickhouse_random(ptr: i32, size: i32)` — 메모리를 무작위 바이트로 채웁니다.
 * `env.abort(message: i32, fileName: i32, line: i32, column: i32)` — AssemblyScript 호환 모듈을 위해 제공됩니다. 이를 호출하거나(또는 이를 호출하는 AssemblyScript 런타임 트랩이 트리거되면) 디코딩된 메시지와 소스 위치가 포함된 `WASM_ERROR` 예외와 함께 UDF가 종료됩니다. `env.abort`를 import하지 않는 모듈은 영향을 받지 않습니다.
 
-<div id="settings">
-  ## 설정
-</div>
+## 설정 {#settings}
 
 다음 쿼리 수준 설정은 WebAssembly UDF 실행을 제어합니다:
 
@@ -534,7 +504,9 @@ pub fn some_udf(data: String) -> HashMap<String, String> {
 
 * `webassembly_udf_max_memory` — WebAssembly UDF 인스턴스당 바이트 단위의 메모리 한도입니다.
 
-* `webassembly_udf_max_input_block_size` — 단일 블록에서 WebAssembly UDF에 전달되는 최대 행 수입니다. 모든 행을 한 번에 처리하려면 0으로 설정합니다.
+* `webassembly_udf_max_input_block_size` — 모든 ABI에 대해, 단일 블록에서 WebAssembly UDF에 전달되는 최대 행 수입니다. 0으로 설정하면 `ABI BUFFERED_V1` 함수의 호출 크기를 `webassembly_udf_input_split_memory_ratio`가 결정하며, 다른 ABI는 파이프라인 블록 전체를 받습니다.
+
+* `webassembly_udf_input_split_memory_ratio` — 모듈이 시작 시점에 보유한다고 선언한 선형 메모리(페이지 없이 시작하는 모듈의 경우 메모리 상한) 중 한 번의 호출 입력이 차지할 수 있는 비율입니다. `webassembly_udf_max_input_block_size`가 0일 때 `ABI BUFFERED_V1` 함수의 블록을 분할하는 데 사용되며, 다른 ABI는 직렬화된 입력 블록을 전달하지 않으므로 이 설정을 무시합니다. 기본값: `0.5`로, 나머지 메모리는 게스트 자체의 작업 집합에 남겨둡니다 — 비율이 1에 가까우면 게스트의 할당자 내부에서 여전히 실패할 수 있습니다. 파이프라인 블록 전체를 한 번의 호출로 전달하려면 0으로 설정하거나 `compatibility`를 26.9 이전 버전으로 설정합니다. 값은 0 이상 1 이하여야 합니다.
 
 * `webassembly_udf_max_instances` — 함수별로 병렬 실행할 수 있는 WebAssembly UDF 인스턴스의 최대 개수입니다.
 
@@ -545,8 +517,6 @@ SET webassembly_udf_max_fuel = 200000;
 SELECT my_wasm_udf(column) FROM table;
 ```
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [ClickHouse UDF 개요](/ko/reference/functions/regular-functions/udf)

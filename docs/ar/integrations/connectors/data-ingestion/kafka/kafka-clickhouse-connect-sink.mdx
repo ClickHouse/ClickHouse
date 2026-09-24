@@ -15,21 +15,15 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 **ClickHouse Kafka Connect Sink** هو موصل لـ Kafka ينقل البيانات من Kafka موضوع إلى ClickHouse table.
 
-<div id="license">
-  ### الترخيص
-</div>
+### الترخيص {#license}
 
 يُوزَّع Kafka Connector Sink بموجب [ترخيص Apache 2.0](https://www.apache.org/licenses/LICENSE-2.0)
 
-<div id="requirements-for-the-environment">
-  ### متطلبات البيئة
-</div>
+### متطلبات البيئة {#requirements-for-the-environment}
 
 يجب أن يكون إطار عمل [Kafka Connect](https://docs.confluent.io/platform/current/connect/index.html) بالإصدار 2.7 أو أحدث مثبّتًا في البيئة، وأن يعمل على Java 11 أو أحدث.
 
-<div id="version-compatibility-matrix">
-  ### مصفوفة توافق الإصدارات
-</div>
+### مصفوفة توافق الإصدارات {#version-compatibility-matrix}
 
 | إصدار ClickHouse Kafka Connect | إصدار ClickHouse | Kafka Connect | Confluent Platform | عميل Java لـ ClickHouse |
 | ------------------------------ | ---------------- | ------------- | ------------------ | ----------------------- |
@@ -41,9 +35,7 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 يرفض الموصل البدء عند استخدام خوادم ClickHouse بإصدار أقدم من 23.3. استخدم دائمًا [أحدث إصدار](https://github.com/ClickHouse/clickhouse-kafka-connect/releases/latest)، ما لم يكن لديك سبب لتثبيت إصدار أقدم.
 
-<div id="main-features">
-  ### الميزات الرئيسية
-</div>
+### الميزات الرئيسية {#main-features}
 
 * يأتي مزوّدًا بضمانات exactly-once جاهزة للاستخدام. ويعتمد على ميزة أساسية جديدة في ClickHouse باسم [KeeperMap](https://github.com/ClickHouse/ClickHouse/pull/39976) (تُستخدم كمخزن للحالة بواسطة الموصل)، ما يتيح معمارية مبسطة للغاية.
 * دعم مخازن الحالة التابعة لجهات خارجية: يستخدم حاليًا In-memory افتراضيًا، ويمكنه أيضًا استخدام KeeperMap (ستتم إضافة Redis قريبًا).
@@ -52,19 +44,13 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 * يدعم إدراج البيانات بمخطط مُعلن أو بدون مخطط.
 * يدعم جميع أنواع البيانات في ClickHouse.
 
-<div id="installation-instructions">
-  ### إرشادات التثبيت
-</div>
+### إرشادات التثبيت {#installation-instructions}
 
-<div id="gather-your-connection-details">
-  #### اجمع بيانات الاتصال الخاصة بك
-</div>
+#### اجمع بيانات الاتصال الخاصة بك {#gather-your-connection-details}
 
 <ConnectionDetails />
 
-<div id="general-installation-instructions">
-  #### إرشادات التثبيت العامة
-</div>
+#### إرشادات التثبيت العامة {#general-installation-instructions}
 
 يُوزَّع هذا الموصل على هيئة ملف JAR واحد يحتوي على جميع ملفات الفئات اللازمة لتشغيل المكوّن الإضافي.
 
@@ -97,9 +83,7 @@ schemas.enable=false
 * أعد تشغيل Confluent Platform.
 * إذا كنت تستخدم Confluent Platform، فسجّل الدخول إلى واجهة المستخدم الخاصة بـ Confluent Control Center للتحقق من أن ClickHouse Sink متاح في قائمة الموصلات المتاحة.
 
-<div id="configuration-options">
-  ### خيارات التهيئة
-</div>
+### خيارات التهيئة {#configuration-options}
 
 لربط ClickHouse Sink بخادم ClickHouse، يلزم توفير ما يلي:
 
@@ -144,24 +128,18 @@ schemas.enable=false
 | `reportInsertedOffsets` (اعتبارًا من الإصدار v1.3.6) | يتيح إرجاع الإزاحات التي نجح إدراجها فقط من `preCommit` (بدلًا من `currentOffsets`) عندما يكون `exactlyOnce=false`. ولا ينطبق ذلك عندما يكون `ignorePartitionsWhenBatching=true`، إذ تظل `currentOffsets` هي المُعادة.                                                        | `"false"`                                                |
 | `client_version` (اعتبارًا من v1.2.0)                | يحدد [ClickHouse Java client](/ar/integrations/language-clients/java/client) الذي يستخدمه الموصل. القيم الصالحة هي `"V1"` و`"V2"`.                                                                                                                                               | `"V1"`                                                   |
 
-<div id="target-tables">
-  ### الجداول المستهدفة
-</div>
+### الجداول المستهدفة {#target-tables}
 
 يقرأ ClickHouse Connect Sink الرسائل من موضوعات Kafka ويكتبها إلى الجداول المناسبة. ويكتب ClickHouse Connect Sink البيانات إلى الجداول الموجودة مسبقًا. يُرجى التأكد من إنشاء جدول مستهدف ذي مخطط مناسب في ClickHouse قبل البدء في إدراج البيانات فيه.
 
 يتطلب كل موضوع في Kafka جدولًا مستهدفًا مخصصًا في ClickHouse. يجب أن يتطابق اسم الجدول المستهدف مع اسم موضوع المصدر.
 
-<div id="pre-processing">
-  ### المعالجة المسبقة
-</div>
+### المعالجة المسبقة {#pre-processing}
 
 إذا كنت بحاجة إلى تحويل الرسائل الصادرة قبل إرسالها إلى ClickHouse Kafka Connect
 Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/platform/current/connect/transforms/overview.html).
 
-<div id="supported-data-types">
-  ### أنواع البيانات المدعومة
-</div>
+### أنواع البيانات المدعومة {#supported-data-types}
 
 **مع تعريف مخطط:**
 
@@ -195,15 +173,11 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 
 يُحوَّل السجل إلى JSON ويُرسَل إلى ClickHouse كقيمة بتنسيق [JSONEachRow](/ar/reference/formats/JSON/JSONEachRow).
 
-<div id="configuration-recipes">
-  ### وصفات التهيئة
-</div>
+### وصفات التهيئة {#configuration-recipes}
 
 فيما يلي بعض وصفات التهيئة الشائعة لمساعدتك على البدء بسرعة.
 
-<div id="basic-configuration">
-  #### التهيئة الأساسية
-</div>
+#### التهيئة الأساسية {#basic-configuration}
 
 هذه أبسط تهيئة للبدء. وهي تفترض أنك تشغّل Kafka Connect في الوضع الموزّع، وأن لديك خادم ClickHouse يعمل على `localhost:8443` مع تمكين SSL، وأن البيانات بتنسيق JSON بلا مخطط.
 
@@ -236,9 +210,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
   يتطلب إعداد الموصل أعلاه تمكين تجاوزات العميل في إعدادات العامل عبر `connector.client.config.override.policy=All`. راجع [وثائق Kafka Connect](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration) لمزيد من المعلومات.
 </Note>
 
-<div id="basic-configuration-with-multiple-topics">
-  #### تهيئة أساسية مع موضوعات متعددة
-</div>
+#### تهيئة أساسية مع موضوعات متعددة {#basic-configuration-with-multiple-topics}
 
 يمكن للموصل استهلاك البيانات من عدة موضوعات
 
@@ -254,9 +226,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 }
 ```
 
-<div id="basic-configuration-with-dlq">
-  #### تهيئة أساسية مع DLQ
-</div>
+#### تهيئة أساسية مع DLQ {#basic-configuration-with-dlq}
 
 ```json
 {
@@ -271,9 +241,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 }
 ```
 
-<div id="avro-schema-support">
-  ### دعم مخططات Avro
-</div>
+### دعم مخططات Avro {#avro-schema-support}
 
 ```json
 {
@@ -288,9 +256,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 }
 ```
 
-<div id="avro-type-mapping">
-  #### تعيين أنواع Avro
-</div>
+#### تعيين أنواع Avro {#avro-type-mapping}
 
 تُحدَّد تعيين الأنواع أدناه بواسطة `io.confluent.connect.avro.AvroConverter`، وهو التنفيذ الرسمي لتسلسل/إلغاء تسلسل Avro في Kafka Connect. راجع [وثائق](https://docs.confluent.io/platform/current/connect/userguide.html#avro) Kafka Connect للحصول على معلومات متقدمة حول منطق التحويل.
 
@@ -319,9 +285,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 
 ارجع إلى [أنواع البيانات المدعومة](#supported-data-types) للاطلاع على التعيين بين أنواع Kafka Connect وأنواع ClickHouse.
 
-<div id="unsupported-avro-schemas">
-  #### مخططات Avro غير المدعومة
-</div>
+#### مخططات Avro غير المدعومة {#unsupported-avro-schemas}
 
 مخططات Avro التالية غير مدعومة في الموصّل:
 
@@ -367,9 +331,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 }
 ```
 
-<div id="protobuf-schema-support">
-  ### دعم مخطط Protobuf
-</div>
+### دعم مخطط Protobuf {#protobuf-schema-support}
 
 ```json
 {
@@ -386,9 +348,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 
 يرجى ملاحظة ما يلي: إذا واجهت مشكلات بسبب فئات مفقودة، فليست كل البيئات تتضمن محوّل Protobuf، وقد تحتاج إلى إصدار بديل من ملف JAR يتضمن التبعيات.
 
-<div id="proto-type-mapping">
-  #### تعيين أنواع Protobuf
-</div>
+#### تعيين أنواع Protobuf {#proto-type-mapping}
 
 يُحدَّد تعيين الأنواع أدناه بواسطة `io.confluent.connect.protobuf.ProtobufConverter`، وهو التنفيذ الرسمي لتسلسل/إلغاء تسلسل Protobuf في Kafka Connect. راجع [وثائق](https://docs.confluent.io/platform/current/connect/userguide.html#json-schema-and-protobuf) Kafka Connect للحصول على معلومات متقدمة حول منطق التحويل.
 
@@ -438,9 +398,7 @@ Sink، فاستخدم [تحويلات Kafka Connect](https://docs.confluent.io/p
 
 ارجع إلى [أنواع البيانات المدعومة](#supported-data-types) للاطلاع على التعيين بين أنواع Kafka Connect وأنواع ClickHouse.
 
-<div id="oneof-translation">
-  #### ملاحظة حول ترجمة حقول `oneof` إلى أعمدة ClickHouse
-</div>
+#### ملاحظة حول ترجمة حقول `oneof` إلى أعمدة ClickHouse {#oneof-translation}
 
 لا يدعم الموصّل ترجمة اتحادات في Protobuf (`oneof`) إلى النوع Variant في ClickHouse. وبدلًا من ذلك، أدرِج حقول `oneof` كحقول Nullable منفصلة في مخطط جدول ClickHouse لديك.
 
@@ -470,13 +428,11 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 ) ENGINE = ...;
 ```
 
-<div id="unsupported-proto-schemas">
-  #### مخططات Protobuf غير المدعومة
-</div>
+#### مخططات Protobuf غير المدعومة {#unsupported-proto-schemas}
 
-مخططات Protobuf التالية غير مدعومة في الموصل:
+مخططات Protobuf التالية غير مدعومة في الموصل على إصدارات ClickHouse الأقدم:
 
-* بُنى اتحاد متعددة الرسائل (**قبل الإصدار 26.1 من CH**)
+* بُنى اتحاد متعددة الرسائل (**قبل الإصدار 26.1 من CH**، وقبل الإصدار 26.9 من CH ما لم يتم تفعيل أحد الإعدادات، انظر أدناه)
 
 ```protobuf
 syntax = "proto3";
@@ -489,23 +445,21 @@ message TwoRecords {
     TypeB type_b = 3;
   }
 
-  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported
+  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported before 26.1
   message TypeA {
     string label = 1;
   }
 
-  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported
+  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported before 26.1
   message TypeB {
     int32 count = 1;
   }
 }
 ```
 
-اعتبارًا من الإصدار 26.1 من CH وما بعده، أصبح هذا المخطط مدعومًا عند ضبط `allow_experimental_nullable_tuple_type=1` (راجع [صفحة التوثيق هذه](/ar/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
+اعتبارًا من الإصدار 26.9 من ClickHouse وما بعده، أصبح هذا المخطط مدعومًا بشكل افتراضي. أما في الإصدارات من 26.1 إلى 26.8 فيتطلب الإعداد `allow_experimental_nullable_tuple_type = 1` (راجع [صفحة التوثيق هذه](/ar/reference/settings/session-settings/enable#enable_nullable_tuple_type)).
 
-<div id="json-schema-support">
-  ### دعم مخطط JSON
-</div>
+### دعم مخطط JSON {#json-schema-support}
 
 ```json
 {
@@ -518,9 +472,7 @@ message TwoRecords {
 }
 ```
 
-<div id="string-support">
-  ### دعم String
-</div>
+### دعم String {#string-support}
 
 يدعم الموصّل محوّل String في تنسيقات ClickHouse المختلفة: [JSON](/ar/reference/formats/JSON/JSONEachRow)، و[CSV](/ar/reference/formats/CSV/CSV)، و[TSV](/ar/reference/formats/TabSeparated/TabSeparated).
 
@@ -537,9 +489,7 @@ message TwoRecords {
 }
 ```
 
-<div id="internal-buffering">
-  ### التخزين المؤقت الداخلي
-</div>
+### التخزين المؤقت الداخلي {#internal-buffering}
 
 يتيح التخزين المؤقت الداخلي لمهمة الـ sink تجميع السجلات من عدة استدعاءات `poll()` ثم flush لها إلى ClickHouse على شكل دفعات أكبر. ويمكن أن يحسّن ذلك الإنتاجية في أعباء العمل التي ينتج فيها كل استدعاء `poll()` العديد من الدفعات الصغيرة لكل partition.
 
@@ -570,9 +520,7 @@ message TwoRecords {
 }
 ```
 
-<div id="logging">
-  ### التسجيل
-</div>
+### التسجيل {#logging}
 
 يوفَّر التسجيل تلقائيًا بواسطة Kafka Connect Platform.
 يمكن تهيئة وجهة التسجيل وتنسيقه عبر [ملف التهيئة](https://docs.confluent.io/platform/current/connect/logging.html#log4j-properties-file) الخاص بـ Kafka Connect.
@@ -585,15 +533,11 @@ confluent local services connect log
 
 لمزيد من التفاصيل، راجع [الدليل العملي](https://docs.confluent.io/platform/current/connect/logging.html).
 
-<div id="monitoring">
-  ### المراقبة
-</div>
+### المراقبة {#monitoring}
 
 يبلّغ ClickHouse Kafka Connect عن مقاييس وقت التشغيل عبر [Java Management Extensions (JMX)](https://www.oracle.com/technical-resources/articles/javase/jmx.html). ويكون JMX مفعّلًا في Kafka Connector بشكل افتراضي.
 
-<div id="clickhouse-specific-metrics">
-  #### المقاييس الخاصة بـ ClickHouse
-</div>
+#### المقاييس الخاصة بـ ClickHouse {#clickhouse-specific-metrics}
 
 يوفّر الموصل مقاييس مخصّصة عبر اسم MBean التالي:
 
@@ -607,9 +551,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 | `recordProcessingTime` | long  | إجمالي الوقت بالنانوثانية المستغرَق في تجميع السجلات وتحويلها إلى بنية موحَّدة. |
 | `taskProcessingTime`   | long  | إجمالي الوقت بالنانوثانية المستغرَق في معالجة البيانات وإدخالها إلى ClickHouse. |
 
-<div id="kafka-producer-consumer-metrics">
-  #### مقاييس منتِج/مستهلك Kafka
-</div>
+#### مقاييس منتِج/مستهلك Kafka {#kafka-producer-consumer-metrics}
 
 يعرض الموصّل مقاييس Kafka القياسية الخاصة بالمنتِج والمستهلك، والتي توفّر رؤى حول تدفّق البيانات، ومعدل النقل، والأداء.
 
@@ -645,9 +587,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 * **الضغط**: قياس كفاءة ضغط البيانات
 * **سلامة الاتصال**: مراقبة اتصال الشبكة واستقراره
 
-<div id="kafka-connect-framework-metrics">
-  #### مقاييس Kafka Connect Framework
-</div>
+#### مقاييس Kafka Connect Framework {#kafka-connect-framework-metrics}
 
 يتكامل الموصل مع إطار عمل Kafka Connect ويعرض مقاييس لدورة حياة المهام وتتبع الأخطاء.
 
@@ -680,9 +620,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 * `put-batch-max-time-ms`: أقصى وقت لمعالجة دفعة
 * `source-record-poll-total`: إجمالي السجلات التي جرى سحبها
 
-<div id="monitoring-best-practices">
-  #### أفضل ممارسات المراقبة
-</div>
+#### أفضل ممارسات المراقبة {#monitoring-best-practices}
 
 1. **راقب تأخر المستهلك**: تتبّع `records-lag` لكل تقسيم لتحديد مواضع اختناق المعالجة
 2. **تتبّع معدلات الأخطاء**: راقب `errors-total` و`records-skip-total` لاكتشاف مشكلات جودة البيانات
@@ -693,23 +631,17 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 
 للاطلاع على تعريفات مقاييس JMX التفصيلية وتكامل Prometheus، راجع ملف الإعدادات [jmx-export-connector.yml](https://github.com/ClickHouse/clickhouse-kafka-connect/blob/main/jmx-export-connector.yml).
 
-<div id="limitations">
-  ### القيود
-</div>
+### القيود {#limitations}
 
 * عمليات الحذف غير مدعومة.
 * يُورَّث حجم الدفعة من خصائص مستهلك Kafka.
 * عند استخدام KeeperMap لتحقيق ضمان المعالجة مرة واحدة فقط وتغيير الإزاحة أو إرجاعها إلى قيمة سابقة، تحتاج إلى حذف المحتوى من KeeperMap لذلك الـموضوع المحدد. (راجع دليل استكشاف الأخطاء وإصلاحها أدناه لمزيد من التفاصيل)
 
-<div id="tuning-performance">
-  ### ضبط الأداء وتحسين معدل النقل
-</div>
+### ضبط الأداء وتحسين معدل النقل {#tuning-performance}
 
 يتناول هذا القسم استراتيجيات ضبط الأداء الخاصة بـ ClickHouse Kafka Connect Sink. ويُعد ضبط الأداء أمرًا أساسيًا عند التعامل مع حالات استخدام ذات معدل نقل مرتفع، أو عندما تحتاج إلى تحسين استخدام الموارد وتقليل زمن التأخر.
 
-<div id="when-is-performance-tuning-needed">
-  #### متى تكون هناك حاجة إلى ضبط الأداء؟
-</div>
+#### متى تكون هناك حاجة إلى ضبط الأداء؟ {#when-is-performance-tuning-needed}
 
 تكون هناك حاجة إلى ضبط الأداء عادةً في السيناريوهات التالية:
 
@@ -726,9 +658,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 * تكون إعدادات الموصّل الافتراضية تلبي بالفعل متطلبات معدل النقل لديك
 * يمكن لعنقود ClickHouse لديك التعامل بسهولة مع الحمل الوارد
 
-<div id="understanding-the-data-flow">
-  #### فهم تدفق البيانات
-</div>
+#### فهم تدفق البيانات {#understanding-the-data-flow}
 
 قبل إجراء الضبط، من المهم فهم كيفية تدفق البيانات عبر الموصّل:
 
@@ -740,15 +670,11 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
 
 يمكن تحسين الأداء في كل مرحلة من هذه المراحل.
 
-<div id="connect-fetch-vs-connector-poll">
-  #### ضبط حجم الدُفعات في Kafka Connect
-</div>
+#### ضبط حجم الدُفعات في Kafka Connect {#connect-fetch-vs-connector-poll}
 
 أول مستويات التحسين يتمثل في التحكم بكمية البيانات التي يتلقاها الموصل في كل دفعة من Kafka.
 
-<div id="fetch-settings">
-  ##### إعدادات الجلب
-</div>
+##### إعدادات الجلب {#fetch-settings}
 
 يجلب Kafka Connect (الإطار) الرسائل من موضوعات Kafka في الخلفية، بشكل مستقل عن الموصل:
 
@@ -760,9 +686,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
   في Confluent Cloud، يتطلب تعديل هذه الإعدادات فتح تذكرة دعم عبر Confluent Cloud.
 </Note>
 
-<div id="poll-settings">
-  ##### إعدادات الاستطلاع
-</div>
+##### إعدادات الاستطلاع {#poll-settings}
 
 يجلب الموصّل الرسائل من المخزن المؤقت الخاص بإطار العمل عبر عملية استطلاع:
 
@@ -773,9 +697,7 @@ com.clickhouse:type=ClickHouseKafkaConnector,name=SinkTask{id}
   في Confluent Cloud، يتطلّب تعديل هذه الإعدادات فتح تذكرة دعم عبر Confluent Cloud.
 </Note>
 
-<div id="recommended-batch-settings">
-  ##### الإعدادات الموصى بها لمعدل النقل العالي
-</div>
+##### الإعدادات الموصى بها لمعدل النقل العالي {#recommended-batch-settings}
 
 للحصول على أفضل أداء مع ClickHouse، احرص على استخدام دفعات أكبر:
 
@@ -807,15 +729,11 @@ consumer.override.fetch.max.wait.ms=300
 
 مزيد من التفاصيل: [وثائق Confluent](https://docs.confluent.io/platform/current/connect/references/allconfigs.html#override-the-worker-configuration) | [وثائق Kafka](https://kafka.apache.org/documentation/#consumerconfigs)
 
-<div id="asynchronous-inserts">
-  #### عمليات الإدراج غير المتزامنة
-</div>
+#### عمليات الإدراج غير المتزامنة {#asynchronous-inserts}
 
 تُعد عمليات الإدراج غير المتزامنة ميزة فعّالة عندما يرسل الموصّل دفعات صغيرة نسبيًا، أو عندما تريد تحسين إدخال البيانات بشكل أكبر عبر إسناد مسؤولية التجميع إلى ClickHouse.
 
-<div id="when-to-use-async-inserts">
-  ##### متى تستخدم عمليات الإدراج غير المتزامنة
-</div>
+##### متى تستخدم عمليات الإدراج غير المتزامنة {#when-to-use-async-inserts}
 
 فكّر في تمكين عمليات الإدراج غير المتزامنة عندما:
 
@@ -832,9 +750,7 @@ consumer.override.fetch.max.wait.ms=300
 * كانت دلالات ضمان المعالجة مرة واحدة فقط مع `wait_for_async_insert=0` تتعارض مع متطلباتك
 * كان سيناريو الاستخدام لديك سيستفيد بدلًا من ذلك من تحسينات التجميع على جهة العميل
 
-<div id="how-async-inserts-work">
-  ##### كيف تعمل عمليات الإدراج غير المتزامنة
-</div>
+##### كيف تعمل عمليات الإدراج غير المتزامنة {#how-async-inserts-work}
 
 عند تمكين عمليات الإدراج غير المتزامنة، يقوم ClickHouse بما يلي:
 
@@ -848,9 +764,7 @@ consumer.override.fetch.max.wait.ms=300
 
 يقلل هذا بشكل كبير عدد الأجزاء التي يتم إنشاؤها ويحسّن معدل النقل الإجمالي.
 
-<div id="enabling-async-inserts">
-  ##### تمكين async inserts
-</div>
+##### تمكين async inserts {#enabling-async-inserts}
 
 أضف إعدادات async insert إلى معلَمة التهيئة `clickhouseSettings`:
 
@@ -871,9 +785,7 @@ consumer.override.fetch.max.wait.ms=300
 * **`wait_for_async_insert=1`** (موصى به): ينتظر الموصل حتى تُفرَّغ البيانات إلى تخزين ClickHouse قبل إرسال الإقرار. يوفّر ضمانات للتسليم.
 * **`wait_for_async_insert=0`**: يرسل الموصل الإقرار فورًا بعد التخزين المؤقت. يوفّر أداءً أفضل، لكن قد تُفقد البيانات إذا تعطّل الخادم قبل تفريغها.
 
-<div id="tuning-async-inserts">
-  ##### ضبط سلوك `async insert`
-</div>
+##### ضبط سلوك `async insert` {#tuning-async-inserts}
 
 يمكنك ضبط سلوك `flush` في `async insert` بدقة:
 
@@ -894,9 +806,7 @@ consumer.override.fetch.max.wait.ms=300
 * **اعتبارات**: لا تصبح البيانات قابلة للاستعلام فورًا، مع زيادة طفيفة في زمن الوصول من البداية إلى النهاية
 * **المخاطر**: فقدان البيانات عند تعطل الخادم إذا كانت قيمة `wait_for_async_insert=0`، واحتمال زيادة الضغط على الذاكرة مع المخازن المؤقتة الكبيرة
 
-<div id="async-inserts-with-exactly-once">
-  ##### الإدراجات غير المتزامنة مع ضمان المعالجة مرة واحدة فقط
-</div>
+##### الإدراجات غير المتزامنة مع ضمان المعالجة مرة واحدة فقط {#async-inserts-with-exactly-once}
 
 عند استخدام `exactlyOnce=true` مع الإدراجات غير المتزامنة:
 
@@ -913,15 +823,11 @@ consumer.override.fetch.max.wait.ms=300
 
 لمزيد من المعلومات حول async inserts، راجع [وثائق ClickHouse الخاصة بـ async inserts](/ar/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts).
 
-<div id="connector-parallelism">
-  #### توازي الموصّل
-</div>
+#### توازي الموصّل {#connector-parallelism}
 
 زِد التوازي لتحسين معدل النقل:
 
-<div id="tasks-per-connector">
-  ##### المهام لكل موصل
-</div>
+##### المهام لكل موصل {#tasks-per-connector}
 
 ```json
 "tasks.max": "4"
@@ -935,9 +841,7 @@ consumer.override.fetch.max.wait.ms=300
 
 **التوصية**: ابدأ بتعيين `tasks.max` ليعادل عدد أقسام موضوع، ثم اضبطه بناءً على مقاييس CPU ومعدل النقل.
 
-<div id="ignoring-partitions">
-  ##### تجاهل الأقسام عند التجميع على دفعات
-</div>
+##### تجاهل الأقسام عند التجميع على دفعات {#ignoring-partitions}
 
 افتراضيًا، يجمع الموصل الرسائل على دفعات لكل قسم. ولزيادة معدل النقل، يمكنك التجميع على دفعات عبر الأقسام:
 
@@ -947,9 +851,7 @@ consumer.override.fetch.max.wait.ms=300
 
 ** تحذير**: استخدم هذا فقط عندما يكون `exactlyOnce=false`. يمكن أن يحسّن هذا الإعداد معدل النقل من خلال إنشاء دفعات أكبر، لكنه يفقد ضمانات الترتيب داخل كل قسم.
 
-<div id="multiple-high-throughput-topics">
-  #### عدة موضوعات عالية الإنتاجية
-</div>
+#### عدة موضوعات عالية الإنتاجية {#multiple-high-throughput-topics}
 
 إذا كان موصل لديك مُعدًّا للاشتراك في عدة موضوعات، وكنت تستخدم `topic2TableMap` لربط الـ موضوعات بالجداول، وكنت تواجه اختناقًا عند الإدراج يؤدي إلى تأخر المستهلك، ففكّر في إنشاء موصل مستقل لكل موضوع بدلًا من ذلك.
 
@@ -957,9 +859,7 @@ consumer.override.fetch.max.wait.ms=300
 
 **التوصية**: عند التعامل مع عدة موضوعات كبيرة الحجم، قم بنشر instance واحدة من موصل لكل موضوع لتحقيق أقصى معدل نقل متوازٍ لعمليات الإدراج.
 
-<div id="table-engine-considerations">
-  #### اعتبارات محرّك جدول ClickHouse
-</div>
+#### اعتبارات محرّك جدول ClickHouse {#table-engine-considerations}
 
 اختر محرّك جدول ClickHouse المناسب لحالة الاستخدام لديك:
 
@@ -986,9 +886,7 @@ SETTINGS
 "clickhouseSettings": "insert_quorum=2,insert_quorum_timeout=60000"
 ```
 
-<div id="connection-pooling">
-  #### تجميع الاتصالات والمهل الزمنية
-</div>
+#### تجميع الاتصالات والمهل الزمنية {#connection-pooling}
 
 يحتفظ الموصّل باتصالات HTTP مع ClickHouse. اضبط قيم المهلة للشبكات ذات زمن الاستجابة المرتفع:
 
@@ -1001,9 +899,7 @@ SETTINGS
 
 ارفع هذه القيم إذا واجهت أخطاء انتهاء المهلة مع الدفعات الكبيرة.
 
-<div id="client-network-buffer">
-  #### مخزن الشبكة المؤقت للعميل
-</div>
+#### مخزن الشبكة المؤقت للعميل {#client-network-buffer}
 
 عند استخدام العميل V2 (`"client_version": "V2"`)، تُنسخ البيانات بين المقبس وذاكرة التطبيق عبر مخزن مؤقت يتحكم فيه `client_network_buffer_size` (بالبايت). الحجم الافتراضي هو `300000` بايت. يمكن أن يؤدي استخدام مخزن مؤقت أكبر إلى تحسين معدل النقل عبر الوصلات ذات زمن الاستجابة المرتفع أو النطاق الترددي العالي، لكنه يزيد من استخدام الذاكرة لكل مهمة اتصال.
 
@@ -1019,9 +915,7 @@ SETTINGS
 "jdbcConnectionProperties": "?ssl=true&client_network_buffer_size=1000000"
 ```
 
-<div id="monitoring-performance">
-  #### مراقبة الأداء واستكشاف المشكلات
-</div>
+#### مراقبة الأداء واستكشاف المشكلات {#monitoring-performance}
 
 راقب هذه المقاييس الأساسية:
 
@@ -1044,9 +938,7 @@ SETTINGS
 | أخطاء OutOfMemory                | حجم batch كبير جدًا              | قلّل `max.poll.records` و`max.partition.fetch.bytes`    |
 | حمل المهام غير متوازن            | توزيع التقسيمات غير متوازن      | أعد موازنة التقسيمات أو اضبط `tasks.max`           |
 
-<div id="performance-best-practices">
-  #### ملخص أفضل الممارسات
-</div>
+#### ملخص أفضل الممارسات {#performance-best-practices}
 
 1. **ابدأ بالإعدادات الافتراضية**، ثم قِس واضبط استنادًا إلى الأداء الفعلي
 2. **فضّل الدُفعات الأكبر**: استهدف 10,000-100,000 صف لكل insert متى أمكن
@@ -1057,9 +949,7 @@ SETTINGS
 7. **راقب باستمرار**: تتبّع تأخر المستهلك، وعدد الأجزاء، ونشاط الدمج
 8. **اختبر جيدًا**: اختبر دائمًا تغييرات التكوين تحت حمل واقعي قبل النشر في بيئة الإنتاج
 
-<div id="example-high-throughput">
-  #### مثال: إعداد لمعدل نقل عالٍ
-</div>
+#### مثال: إعداد لمعدل نقل عالٍ {#example-high-throughput}
 
 فيما يلي مثال كامل مُحسَّن لمعدل نقل عالٍ:
 
@@ -1106,13 +996,9 @@ SETTINGS
 * يشغّل 8 tasks متوازية (طابقها مع عدد الأقسام لديك)
 * مُحسَّن لتحقيق أعلى معدل النقل بدلًا من الالتزام الصارم بالترتيب
 
-<div id="troubleshooting">
-  ### استكشاف الأخطاء وإصلاحها
-</div>
+### استكشاف الأخطاء وإصلاحها {#troubleshooting}
 
-<div id="state-mismatch-for-topic-sometopic-partition-0">
-  #### &quot;عدم تطابق الحالة للموضوع `[someTopic]` والتقسيم `[0]`&quot;
-</div>
+#### &quot;عدم تطابق الحالة للموضوع `[someTopic]` والتقسيم `[0]`&quot; {#state-mismatch-for-topic-sometopic-partition-0}
 
 يحدث هذا عندما تكون الإزاحة المخزنة في KeeperMap مختلفة عن الإزاحة المخزنة في Kafka، ويحدث ذلك عادةً عند حذف موضوع
 أو تعديل الإزاحة يدويًا.
@@ -1130,9 +1016,7 @@ ALTER TABLE [database].connect_state DELETE WHERE key = [keyname]
   قد يؤثر هذا التعديل في ضمان المعالجة مرة واحدة فقط.
 </Note>
 
-<div id="what-errors-will-the-connector-retry">
-  #### &quot;ما الأخطاء التي سيُعيد الموصل المحاولة معها؟&quot;
-</div>
+#### &quot;ما الأخطاء التي سيُعيد الموصل المحاولة معها؟&quot; {#what-errors-will-the-connector-retry}
 
 ينصبّ التركيز حاليًا على تحديد الأخطاء العابرة التي يمكن إعادة المحاولة معها، بما في ذلك:
 
@@ -1157,9 +1041,7 @@ ALTER TABLE [database].connect_state DELETE WHERE key = [keyname]
 * `UnknownHostException` - يُطرح هذا عندما يتعذر تحديد المضيف.
 * `IOException` - يُطرح هذا عندما تكون هناك مشكلة في الشبكة.
 
-<div id="all-my-data-is-blankzeroes">
-  #### &quot;كل بياناتي فارغة/أصفار&quot;
-</div>
+#### &quot;كل بياناتي فارغة/أصفار&quot; {#all-my-data-is-blankzeroes}
 
 من المرجّح أن الحقول في بياناتك لا تتطابق مع الحقول في الجدول، وهذا شائع خصوصًا مع CDC (وتنسيق Debezium).
 أحد الحلول الشائعة هو إضافة تحويل flatten إلى إعدادات الموصل:
@@ -1172,9 +1054,7 @@ transforms.flatten.delimiter=_
 
 سيؤدي ذلك إلى تحويل بياناتك من JSON متداخل إلى JSON مُسطَّح (باستخدام `_` كفاصل). وستتبع الحقول في الجدول بعد ذلك التنسيق &quot;field1&#95;field2&#95;field3&quot; (أي &quot;before&#95;id&quot; و&quot;after&#95;id&quot; وما إلى ذلك).
 
-<div id="i-want-to-use-my-kafka-keys-in-clickhouse">
-  #### &quot;أريد استخدام مفاتيح Kafka الخاصة بي في ClickHouse&quot;
-</div>
+#### &quot;أريد استخدام مفاتيح Kafka الخاصة بي في ClickHouse&quot; {#i-want-to-use-my-kafka-keys-in-clickhouse}
 
 لا تُحفَظ مفاتيح Kafka في حقل القيمة بشكل افتراضي، لكن يمكنك استخدام التحويل `KeyToValue` لنقل المفتاح إلى حقل القيمة (ضمن حقل جديد باسم `_key`):
 

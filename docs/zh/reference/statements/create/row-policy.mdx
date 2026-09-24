@@ -22,7 +22,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name [, ...]
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* }
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -31,7 +31,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE] policy_name
     [ON CLUSTER cluster_name]
     ON { [db.]table | db.* } [, ...]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 
@@ -40,7 +40,7 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
     policy_name ON { [db.]table | db.* } [, policy_name ON { [db.]table | db.* } ...]
     [ON CLUSTER cluster_name]
     [IN access_storage_type]
-    [FOR SELECT] USING condition
+    [[FOR SELECT] USING {condition | NONE}]
     [AS {PERMISSIVE | RESTRICTIVE}]
     [TO {role1 [, role2 ...] | ALL | ALL EXCEPT role1 [, role2 ...]}]
 ```
@@ -55,9 +55,9 @@ CREATE [ROW] POLICY [IF NOT EXISTS | OR REPLACE]
 
 可选的 `ON CLUSTER` 适用于整个语句 (仅指定一个集群名称) 。ClickHouse **不**接受在单个创建语句中为每个策略名称指定不同的 `ON CLUSTER` — 若必须在不同集群上创建策略，请分别执行 `CREATE ROW POLICY` 语句。
 
-<div id="multiple-names-and-tables">
-  ## 多个名称和表
-</div>
+`CREATE ROW POLICY` 需要对创建该策略所在的表具有 [CREATE ROW POLICY](/zh/reference/statements/grant#access-management) 权限。`OR REPLACE` 会丢弃同名的现有策略，包括其所适用的角色，因此还需要对该表具有 [DROP ROW POLICY](/zh/reference/statements/grant#access-management) 权限。无论该策略是否已存在，都需要 `DROP ROW POLICY` 权限，因此无法借助该语句来探测哪些策略存在。
+
+## 多个名称和表 {#multiple-names-and-tables}
 
 有效：
 
@@ -94,23 +94,19 @@ CREATE ROW POLICY p1, p2 ON t1, t2
 CREATE ROW POLICY pol1 ON CLUSTER cluster1 ON table1, pol2 ON CLUSTER cluster2 ON table2
 ```
 
-<div id="using-clause">
-  ## USING 子句
-</div>
+## USING 子句 {#using-clause}
 
 允许指定用于过滤行的条件。若某一行上的该条件计算结果非零，用户就能看到该行。
 
-<div id="to-clause">
-  ## TO 子句
-</div>
+## TO 子句 {#to-clause}
 
-在 `TO` 部分中，您可以指定此策略适用的用户和 roles 列表。例如，`CREATE ROW POLICY ... TO accountant, john@localhost`。
+在 `TO` 部分中，您可以指定此策略适用的用户和 角色 列表。例如，`CREATE ROW POLICY ... TO accountant, john@localhost`。
 
 关键字 `ALL` 表示所有 ClickHouse 用户，包括当前用户。关键字 `ALL EXCEPT` 允许从所有用户列表中排除某些用户，例如 `CREATE ROW POLICY ... TO ALL EXCEPT accountant, john@localhost`
 
-<div id="as-clause">
-  ## AS 子句
-</div>
+`TO` 部分中列出的 角色 (包括 `ALL EXCEPT` 之后的那些) 会与当前用户已启用的 角色 ([`system.enabled_roles`](/zh/reference/system-tables/enabled_roles)) 进行匹配，而非与授予该用户的所有 角色 匹配，因此 [`SET ROLE`](/zh/reference/statements/set-role) 会改变哪些 策略 生效。
+
+## AS 子句 {#as-clause}
 
 允许同一用户在同一张表上同时启用多个策略。因此，我们需要一种方式来组合多个策略中的条件。
 
@@ -130,9 +126,11 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 TO peter, antonio
 以下是通用公式：
 
 ```text
-row_is_visible = (one or more of the permissive policies' conditions are non-zero) AND
-                 (all of the restrictive policies's conditions are non-zero)
+row_is_visible = (one or more of the conditions from the permissive policies that apply to the current user and their enabled roles are non-zero) AND
+                 (all of the conditions from the restrictive policies that apply to the current user and their enabled roles are non-zero)
 ```
+
+如果没有任何宽松型条件适用，则第一个条件不产生任何作用，仅由限制型策略决定结果，因为 `access_control_improvements.users_without_row_policies_can_read_rows` 默认处于启用状态。因此，没有任何条件适用的用户可以看到所有行；而 `access_control_improvements.throw_on_unmatched_row_policies` 默认处于禁用状态，启用后，当表确实存在条件但没有任何条件适用时，会改为引发异常。
 
 例如，以下策略：
 
@@ -155,9 +153,7 @@ CREATE ROW POLICY pol2 ON mydb.table1 USING c=2 AS RESTRICTIVE TO peter, antonio
 使用户 `peter` 只有在同时满足 `b=1` 且 `c=2` 时才能看到 table1 的行，尽管
 mydb 中的任何其他表对该用户都只会应用 `b=1` 策略。
 
-<div id="distributed-and-remote-backed-tables">
-  ## Distributed 和由远程服务器支持的表
-</div>
+## Distributed 和由远程服务器支持的表 {#distributed-and-remote-backed-tables}
 
 行策略会在实际读取表数据的位置过滤行。将读取操作委托给远程服务器的表，例如 [Distributed](/zh/reference/engines/table-engines/special/distributed) 表或其封装 (例如，目标为 `Distributed` 的 materialized view) ，只会将查询文本发送到远程服务器，无法对远程读取应用策略过滤器。为避免过滤器被悄然忽略，策略适用用户对这类表发起的查询会因 `ILLEGAL_PREWHERE` 错误而被拒绝。
 
@@ -172,15 +168,11 @@ CREATE ROW POLICY filter ON mydb.local_table USING a < 1000 TO john;
   此机制仅在查询以文本形式发送时生效，默认即为此方式。使用 [`serialize_query_plan = 1`](/zh/reference/settings/session-settings/serialize#serialize_query_plan) 时，发起节点会改为发送已构建的读取计划；执行该计划的远程服务器不会应用其自身的行策略。因此，通过 `local_table` 读取 `Distributed` 表会返回未过滤的行。对于必须强制执行行策略的用户，请保持 `serialize_query_plan = 0`。参见 [issue #112891](https://github.com/ClickHouse/ClickHouse/issues/112891)。
 </Warning>
 
-<div id="on-cluster-clause">
-  ## ON CLUSTER 子句
-</div>
+## ON CLUSTER 子句 {#on-cluster-clause}
 
 允许在集群中创建行策略，参见 [Distributed DDL](/zh/reference/statements/distributed-ddl)。这也是在集群中每台服务器的本地表上创建策略的便捷方式。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 `CREATE ROW POLICY filter1 ON mydb.mytable USING a<1000 TO accountant, john@localhost`
 

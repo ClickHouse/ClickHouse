@@ -10,20 +10,18 @@ keywords: ['备份', '灾难恢复', '数据保护', '恢复', '云功能']
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Note>
-  系统已配置为每 24 小时向您的外部存储桶执行一次“完整”自动备份，且该频率无法配置。
+  向您的外部存储桶执行的自动备份是完整且独立的备份，遵循为该服务配置的备份频率和开始时间 (默认每 24 小时一次) 。此外，ClickHouse 还会每 24 小时在由 ClickHouse 托管的存储桶中另外创建一份备份，该周期是固定的。
 </Note>
 
 <div id="AWS">
-  ## AWS
+  ## AWS {#AWS}
 </div>
 
 <div id="taking-backups-to-aws">
-  ### 将备份存储到 AWS
+  ### 将备份存储到 AWS {#taking-backups-to-aws}
 </div>
 
-<div id="aws-steps">
-  #### 1. 在 AWS 中执行的步骤
-</div>
+#### 1. 在 AWS 中执行的步骤 {#aws-steps}
 
 <Note>
   这些步骤与[&quot;安全访问 S3 数据&quot;](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)中介绍的安全 S3 配置类似，但在角色权限方面还需要执行一些额外操作。
@@ -106,9 +104,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="cloud-steps">
-  #### 2. 在 ClickHouse Cloud 中执行的步骤
-</div>
+#### 2. 在 ClickHouse Cloud 中执行的步骤 {#cloud-steps}
 
 按照以下步骤，在 ClickHouse Cloud 控制台中配置外部存储桶：
 
@@ -132,9 +128,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="更改默认备份计划" id="changing-the-backup-schedule">
     外部备份现在会按默认计划写入你的存储桶。
     你也可以在 “Settings” 页面中配置备份计划。
-    如果配置了不同的计划，则会按自定义计划将备份写入你的
-    存储桶，而默认计划 (每 24 小时备份一次) 仍用于备份到
-    ClickHouse Cloud 拥有的存储桶。
+    如果配置了不同的计划，则自定义计划和保留设置将应用于
+    写入你的存储桶的备份。而 ClickHouse Cloud 托管存储桶中的备份
+    仍使用默认计划 (每 24 小时备份一次) 和默认保留策略。
   </Step>
 
   <Step title="查看存储在你的存储桶中的备份" id="view-backups-stored-in-your-bucket">
@@ -145,9 +141,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="restoring-backups-from-aws">
-  ### 从 AWS 恢复备份
-</div>
+### 从 AWS 恢复备份 {#restoring-backups-from-aws}
 
 按照以下步骤从 AWS 恢复备份：
 
@@ -190,18 +184,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="gcp">
-  ## GCP
+  ## GCP {#gcp}
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### 将备份保存到 GCP
+  ### 将备份保存到 GCP {#taking-backups-to-gcp}
 </div>
 
 按照以下步骤将备份保存到 GCP：
 
-<div id="gcp-steps-to-follow">
-  #### 在 GCP 中执行以下步骤
-</div>
+#### 在 GCP 中执行以下步骤 {#gcp-steps-to-follow}
 
 <Steps>
   <Step title="创建 GCP 存储桶" id="create-a-gcp-storage-bucket">
@@ -229,9 +221,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### 在 ClickHouse Cloud 中执行以下步骤
-</div>
+#### 在 ClickHouse Cloud 中执行以下步骤 {#gcp-cloud-steps}
 
 按照以下步骤在 ClickHouse Cloud 控制台中配置外部存储桶：
 
@@ -255,9 +245,9 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="将备份计划从默认计划改为自定义计划" id="gcp-changing-the-backup-schedule">
     现在，外部备份将按默认计划写入你的存储桶。
     你也可以在 `Settings` 页面中配置备份计划。
-    如果配置了不同的计划，则会使用自定义计划将备份写入你的
-    存储桶，而默认计划 (每 24 小时备份一次) 仍将用于备份到
-    ClickHouse Cloud 拥有的存储桶中。
+    如果配置了不同的计划，则自定义计划和保留设置将应用于
+    写入你的存储桶的备份。而 ClickHouse Cloud 托管存储桶中的备份
+    使用默认计划 (每 24 小时备份一次) 和默认保留策略。
   </Step>
 
   <Step title="查看存储在你的存储桶中的备份" id="gcp-view-backups-stored-in-your-bucket">
@@ -267,9 +257,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="gcp-restoring-backups-from-gcp">
-  ### 从 GCP 恢复备份
-</div>
+### 从 GCP 恢复备份 {#gcp-restoring-backups-from-gcp}
 
 按照以下步骤从 GCP 恢复备份：
 
@@ -310,18 +298,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Steps>
 
 <div id="azure">
-  ## Azure
+  ## Azure {#azure}
 </div>
 
 <div id="taking-backups-to-azure">
-  ### 将备份存储到 Azure
+  ### 将备份存储到 Azure {#taking-backups-to-azure}
 </div>
 
 按照以下步骤将备份存储到 Azure：
 
-<div id="steps-to-follow-in-azure">
-  #### 在 Azure 中执行以下步骤
-</div>
+#### 在 Azure 中执行以下步骤 {#steps-to-follow-in-azure}
 
 <Steps>
   <Step title="创建存储账户" id="azure-create-a-storage-account">
@@ -335,9 +321,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="azure-cloud-steps">
-  #### 在 ClickHouse Cloud 中执行的步骤
-</div>
+#### 在 ClickHouse Cloud 中执行的步骤 {#azure-cloud-steps}
 
 按照以下步骤在 ClickHouse Cloud 控制台中配置外部存储桶：
 
@@ -349,7 +333,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="提供 Azure 存储账户的连接字符串和容器名称" id="azure-provide-connection-string-and-container-name-azure">
-    在下一页中，输入上一节创建的 Azure 存储账户的 Connection String 和 Container Name：
+    在下一页中，输入上一节创建的 Azure 存储账户的连接字符串和 Container Name：
 
     <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="提供 Azure 存储账户的连接字符串和容器名称" size="md" />
   </Step>
@@ -359,7 +343,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 
   <Step title="更改默认备份计划" id="azure-changing-the-backup-schedule">
-    此后，外部备份会按默认计划保存到你的存储桶中。你也可以在 `Settings` 页面配置备份计划。如果配置了不同的计划，则会按照自定义计划将备份写入你的存储桶，而默认计划 (每 24 小时备份一次) 则用于 ClickHouse Cloud 拥有的存储桶中的备份。
+    此后，外部备份会按默认计划保存到你的存储桶中。你也可以在 “Settings” 页面配置备份计划。如果配置了不同的计划，则自定义计划和保留设置将应用于写入你的存储桶的备份。而 ClickHouse Cloud 托管存储桶中的备份仍使用默认计划 (每 24 小时备份一次) 和默认保留策略。
   </Step>
 
   <Step title="查看存储在你的存储桶中的备份" id="azure-view-backups-stored-in-your-bucket">
@@ -369,9 +353,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="azure-restore-steps">
-  ### 从 Azure 恢复备份
-</div>
+### 从 Azure 恢复备份 {#azure-restore-steps}
 
 要从 Azure 恢复备份，请按照以下步骤操作：
 

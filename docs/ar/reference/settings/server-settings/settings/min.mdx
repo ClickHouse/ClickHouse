@@ -12,9 +12,23 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 تُهيِّئ هذه الإعدادات خادم ClickHouse، وهي مُولَّدة تلقائيًا من الشيفرة المصدرية لـ ClickHouse.
 
-<div id="min_allocation_size_to_throw_on_memory_limit">
-  ## min_allocation_size_to_throw_on_memory_limit
-</div>
+## min_allocation_size_to_log_stack_trace {#min_allocation_size_to_log_stack_trace}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+الحد الأدنى للحجم، بالبايت، لعملية تحميل واحدة على متتبّع الذاكرة العام (على مستوى الخادم) يتم عنده التقاط تتبّع المكدس، وكتابته في سجل الخادم عند مستوى `Warning`، وإدراجه في [`system.trace_log`](/ar/reference/system-tables/trace_log) بنوع التتبّع `MemoryLargeAllocation`.
+
+الحجم الذي تتم مقارنته بالعتبة ويُبلَّغ عنه هو ما يحمّله استدعاء واحد للمتتبّع، وهو ليس بالضرورة تخصيصًا واحدًا: إذ يؤجّل خيط التنفيذ تخصيصاته الصغيرة ثم يفرّغها كعملية تحميل واحدة، لذا قد يتجاوز الحجم المُبلَّغ عنه التخصيص الموجود في أعلى المكدس المُبلَّغ عنه بمقدار يصل إلى `max_untracked_memory`. وإبقاء العتبة أعلى بكثير من `max_untracked_memory` يجعل هذا الفارق عديم الأثر.
+
+هذا تشخيص لحالة يتضخم فيها الإجمالي العام المتتبَّع إلى ما يفوق بكثير استهلاك الذاكرة الفعلي للعملية. في هذه الحالة يرفض الخادم كل تخصيص، حتى ما كان حجمه صفر بايت، رغم أنه لا يستخدم سوى جزء يسير من حده الأقصى، ولا تستطيع بيانات القياس عن بُعد الاعتيادية تحديد مصدر هذه القفزة: فالتخصيصات المحمّلة تحت `MemoryTrackerBlockerInThread` تتخطى فحص الحد والتتبّعات المصاحبة له، كما تفشل عمليات الإدراج في `system.trace_log` التي كانت ستحمل بقية المعلومات بمجرد تعطّل الخادم. أما سجل الخادم فتستمر الكتابة فيه، ولذلك يصل إليه تتبّع المكدس.
+
+يتم التقاط 10 تتبّعات كحد أقصى في كل تشغيل للخادم، لأن التقاط المكدس وترميزه رمزيًا عملية مكلفة، ولأن المُطلِق غالبًا ما يتكرر. وتغيير هذا الإعداد أثناء التشغيل، في أي من الاتجاهين، لا يرفع هذا الحد.
+
+يتطلب ذلك تهيئة `trace_log`. فبدون مُجمِّع تتبّع قيد التشغيل تُتجاهل القيمة ويُبلَّغ عنها بالقيمة `0` في [`system.server_settings`](/ar/reference/system-tables/server_settings)، إذ لن يكون بالإمكان سوى التقاط التتبّع ثم التخلص منه. أما التتبّع الذي يعالجه المُجمِّع قبل إرفاق ذلك الجدول، وهو ما يحدث في مرحلة متأخرة من بدء التشغيل، فيصل إلى سجل الخادم فقط.
+
+القيمة `0` (الافتراضية) تعطّل هذا التشخيص. اضبطها عند مستوى أعلى بكثير من أكبر تخصيص يقوم به الخادم بصورة مشروعة، وإلا فسيتم تسجيل التخصيصات الكبيرة الاعتيادية أيضًا، وقد يستهلك بدء التشغيل الميزانية بالكامل.
+
+## min_allocation_size_to_throw_on_memory_limit {#min_allocation_size_to_throw_on_memory_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -26,9 +40,7 @@ import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/Setting
 
 ملاحظة: لتجنب الآثار الجانبية، يُوصى بضبط قيمة أكبر من `max_untracked_memory`.
 
-<div id="min_os_cpu_wait_time_ratio_to_drop_connection">
-  ## min_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## min_os_cpu_wait_time_ratio_to_drop_connection {#min_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 

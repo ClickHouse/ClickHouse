@@ -12,7 +12,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Архитектура ClickStack зависит от способа развертывания. Между **ClickStack с открытым исходным кодом**, где всеми компонентами вы управляете самостоятельно, и **Управляемым ClickStack**, где ClickHouse и интерфейс HyperDX размещаются и обслуживаются в ClickHouse Cloud, есть важные архитектурные различия. Хотя в обеих моделях используются одни и те же основные компоненты, ответственность за размещение, масштабирование и защиту каждого компонента различается.
 
 <div id="architecture-overview">
-  ## Обзор архитектуры
+  ## Обзор архитектуры {#architecture-overview}
 </div>
 
 Ниже представлен обзор архитектур управляемого ClickStack и ClickStack с открытым исходным кодом.
@@ -25,7 +25,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="Управляемая архитектура" size="lg" />
 
-    ### ClickHouse Cloud: движок
+### ClickHouse Cloud: движок {#clickhouse-cloud}
 
     В основе Управляемого ClickStack лежит ClickHouse Cloud — бессерверная версия ClickHouse, столбцовой базы данных, созданной для Real-time аналитики в любом масштабе. Она обеспечивает ингестию и выполнение запросов к данным обсервабилити, позволяя:
 
@@ -41,13 +41,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     * Автоматическое масштабирование вычислительных ресурсов независимо от хранилища
     * Недорогое и фактически неограниченное хранение на базе объектного хранилища
-    * Возможность независимо изолировать рабочие нагрузки чтения и записи с помощью хранилищ
+    * Возможность [независимо изолировать рабочие нагрузки чтения и записи](/ru/clickstack/managing/isolating-read-write) с помощью хранилищ
     * Встроенная аутентификация
     * Автоматические резервные копии
     * Возможности безопасности и соответствия требованиям
     * Обновления без простоев
 
-    ### OpenTelemetry Collector: ингестия данных
+### OpenTelemetry Collector: ингестия данных {#open-telemetry-collector-managed}
 
     Управляемый ClickStack включает предварительно настроенный OpenTelemetry Collector (OTel) для ингестии телеметрии открытым стандартизированным способом. Вы можете отправлять данные по протоколу OTLP через:
 
@@ -58,7 +58,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     **Этот компонент архитектуры управляется пользователем**
 
-    ### ClickStack UI (HyperDX): интерфейс
+### ClickStack UI (HyperDX): интерфейс {#hyperdx}
 
     ClickStack UI (HyperDX) — это пользовательский интерфейс ClickStack. Он предлагает:
 
@@ -79,7 +79,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="Архитектура" size="lg" />
 
-    ### ClickHouse: движок базы данных
+### ClickHouse: движок базы данных {#clickhouse}
 
     В основе ClickStack лежит ClickHouse — столбцовая база данных, созданная для Real-time аналитики в большом масштабе. Она обеспечивает ингестию и выполнение запросов к данным обсервабилити, позволяя:
 
@@ -91,7 +91,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     ClickHouse обрабатывает данные обсервабилити как широкие события, обеспечивая глубокую корреляцию между журналами, метриками и трассировками в единой структуре.
 
-    ### OpenTelemetry collector: ингестия данных
+### OpenTelemetry collector: ингестия данных {#open-telemetry-collector}
 
     ClickStack включает предварительно настроенный коллектор OpenTelemetry (OTel) для приёма телеметрии открытым стандартизованным способом. Вы можете отправлять данные по протоколу OTLP через:
 
@@ -100,7 +100,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Коллектор экспортирует телеметрию в ClickHouse эффективными батчами. Он поддерживает оптимизированные схемы таблиц для каждого источника данных, обеспечивая масштабируемую производительность для всех типов сигналов.
 
-    ### ClickStack UI (HyperDX): интерфейс
+### ClickStack UI (HyperDX): интерфейс {#hyperdx-ui}
 
     ClickStack UI (HyperDX) — это пользовательский интерфейс ClickStack. Он предлагает:
 
@@ -113,7 +113,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Разработанный специально для ClickHouse, HyperDX сочетает мощные возможности поиска с интуитивно понятными сценариями работы, помогая быстро находить аномалии, исследовать проблемы и получать ценные инсайты.
 
-    ### MongoDB: состояние приложения
+### MongoDB: состояние приложения {#mongo}
 
     ClickStack использует MongoDB для хранения состояния на уровне приложения, включая:
 

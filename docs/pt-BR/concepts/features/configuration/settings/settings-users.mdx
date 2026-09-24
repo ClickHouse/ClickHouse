@@ -54,6 +54,8 @@ Estrutura da seção `users`:
         </auth_methods>
 
         <access_management>0|1</access_management>
+        <named_collection_control>0|1</named_collection_control>
+        <show_named_collections_secrets>0|1</show_named_collections_secrets>
 
         <networks incl="networks" replace="replace">
         </networks>
@@ -78,9 +80,7 @@ Estrutura da seção `users`:
 </users>
 ```
 
-<div id="user-namepassword">
-  ### user_name/password
-</div>
+### user_name/password {#user-namepassword}
 
 A senha pode ser especificada em texto simples ou em SHA256 (formato hexadecimal).
 
@@ -116,9 +116,7 @@ A senha pode ser especificada em texto simples ou em SHA256 (formato hexadecimal
 
   A primeira linha do resultado é a senha. A segunda linha é o hash double SHA1 correspondente.
 
-<div id="totp-authentication-configuration">
-  ### Configuração da autenticação TOTP
-</div>
+### Configuração da autenticação TOTP {#totp-authentication-configuration}
 
 A senha de uso único baseada em tempo (TOTP) pode ser usada para autenticar usuários do ClickHouse, gerando códigos de acesso temporários válidos por um período limitado.
 Esse método de autenticação TOTP está em conformidade com os padrões da [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), o que o torna compatível com aplicativos TOTP populares, como Google Authenticator, 1Password e ferramentas semelhantes.
@@ -127,6 +125,9 @@ Esse recurso ainda não tem suporte no controle de acesso orientado por SQL.
 
 Para autenticar usando TOTP, os usuários devem fornecer uma senha primária junto com uma senha de uso único gerada pelo aplicativo TOTP, por meio da opção de linha de comando `--one-time-password` ou concatenada à senha principal com o caractere &#39;+&#39;.
 Por exemplo, se a senha primária for `some_password` e o código TOTP gerado for `345123`, o usuário pode especificar `--password some_password+345123` ou `--password some_password --one-time-password 345123` ao se conectar ao ClickHouse. Se nenhuma senha for especificada, o `clickhouse-client` solicitará a senha interativamente.
+
+Cada código é aceito no máximo uma vez, conforme exigido pela [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), portanto um usuário pode se autenticar com sucesso no máximo uma vez por `period`.
+Tenha isso em mente no caso de clientes que se autenticam a cada request ou connection (por exemplo, scripts que usam a interface HTTP): cada autenticação exige um código novo.
 
 Para habilitar a autenticação TOTP para um usuário, configure a seção `time_based_one_time_password` em `users.xml`. Essa seção define as configurações de TOTP, como Secret, período de validade, número de dígitos e algoritmo de hash.
 
@@ -137,32 +138,32 @@ Para habilitar a autenticação TOTP para um usuário, configure a seção `time
     <!-- ... -->
     <users>
         <my_user>
-            <!-- Autenticação primária baseada em senha: -->
+            <!-- Primary password-based authentication: -->
             <password>some_password</password>
             <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
-            <!-- ... ou qualquer outro método de autenticação suportado ... -->
+            <!-- ... or any other supported authentication method ... -->
 
-            <!-- Configuração de autenticação TOTP -->
+            <!-- TOTP authentication configuration -->
             <time_based_one_time_password>
-                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Segredo TOTP codificado em Base32 -->
-                <period>30</period>                    <!-- Opcional: período de validade do OTP em segundos -->
-                <digits>6</digits>                     <!-- Opcional: número de dígitos no OTP -->
-                <algorithm>SHA1</algorithm>            <!-- Opcional: algoritmo de hash: SHA1, SHA256, SHA512 -->
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32-encoded TOTP secret -->
+                <period>30</period>                    <!-- Optional: OTP validity period in seconds -->
+                <digits>6</digits>                     <!-- Optional: Number of digits in the OTP -->
+                <algorithm>SHA1</algorithm>            <!-- Optional: Hash algorithm: SHA1, SHA256, SHA512 -->
             </time_based_one_time_password>
         </my_user>
     </users>
 </clickhouse>
 
-Parâmetros:
+Parameters:
 
-- secret - (Obrigatório) A chave secreta codificada em base32 utilizada para gerar códigos TOTP.
-- period - Opcional. Define o período de validade de cada OTP em segundos. Deve ser um número positivo não superior a 120. O valor padrão é 30.
-- digits - Opcional. Especifica o número de dígitos em cada OTP. Deve estar entre 4 e 10. O valor padrão é 6.
-- algorithm - Opcional. Define o algoritmo de hash para geração de OTPs. Os valores suportados são SHA1, SHA256 e SHA512. O valor padrão é SHA1.
+- secret - (Required) The base32-encoded secret key used to generate TOTP codes.
+- period - Optional. Sets the validity period of each OTP in seconds. Must be a positive number not exceeding 120. Default is 30.
+- digits - Optional. Specifies the number of digits in each OTP. Must be between 4 and 10. Default is 6.
+- algorithm - Optional. Defines the hash algorithm for generating OTPs. Supported values are SHA1, SHA256, and SHA512. Default is SHA1.
 
-Gerando um Secret TOTP
+Generating a TOTP Secret
 
-Para gerar um secret compatível com TOTP para uso com o ClickHouse, execute o seguinte comando no terminal:
+To generate a TOTP-compatible secret for use with ClickHouse, run the following command in the terminal:
 
 ```bash
 $ base32 -w32 < /dev/urandom | head -1
@@ -299,6 +300,46 @@ Valores possíveis:
 * 1 — Habilitado.
 
 Valor padrão: 0.
+
+### named_collection_control
+
+Esta configuração habilita ou desabilita o gerenciamento de [named collections](/pt-BR/concepts/features/configuration/server-config/named-collections) para o usuário.
+Corresponde ao privilégio `NAMED COLLECTION ADMIN`, com exceção de `SHOW NAMED COLLECTIONS SECRETS`, que é controlado separadamente por [`show_named_collections_secrets`](#show_named_collections_secrets-user-setting).
+
+`named_collection_admin` é aceito como sinônimo desta configuração.
+
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
+
+Valor padrão: 0.
+
+### show_named_collections_secrets
+
+Esta configuração habilita ou desabilita o privilégio `SHOW NAMED COLLECTIONS SECRETS` para o usuário, o que lhe permite ver os valores armazenados em [named collections](/pt-BR/concepts/features/configuration/server-config/named-collections), por exemplo na tabela [`system.named_collections`](/pt-BR/reference/system-tables/named_collections).
+
+Está desabilitado por padrão: poder gerenciar named collections não significa poder ler as credenciais já armazenadas nelas.
+
+Esta configuração só tem efeito em conjunto com `named_collection_control`, pois, com `named_collection_control` desabilitado, todos os privilégios de named collections, incluindo `SHOW NAMED COLLECTIONS SECRETS`, são revogados de qualquer forma.
+
+Valores possíveis:
+
+* 0 — Desabilitado.
+* 1 — Habilitado.
+
+Valor padrão: 0.
+
+<Note>
+  Um usuário só pode conceder os privilégios que ele próprio possui, portanto um usuário para o qual qualquer uma das configurações `access_management`, `named_collection_control` e `show_named_collections_secrets` esteja desabilitada não tem o conjunto completo de privilégios e não pode repassá-lo a outra pessoa. Por exemplo, `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` é rejeitado para um usuário com apenas `access_management` e `named_collection_control` habilitados:
+
+  ```text
+  Not enough privileges. To execute this query, it's necessary to have the grant ALL ON *.* WITH GRANT OPTION.
+  (Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)
+  ```
+
+  Habilite as três configurações para tornar o usuário um administrador completo.
+</Note>
 
 ### grants
 

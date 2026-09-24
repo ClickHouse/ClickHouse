@@ -18,7 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 صُممت ClickStack للتعامل بكفاءة مع أعباء العمل عالية الكاردينالية، بالاستفادة من البنية الموجهة بالأعمدة في ClickHouse، ومخطط مرن للسمات عالية الكاردينالية، ومحرك تنفيذ متوازٍ بالكامل. ويتيح ذلك تنفيذ استعلامات في أقل من ثانية عبر مجموعات بيانات ضخمة، وإجراء تجميعات سريعة عبر نطاقات زمنية واسعة، وفحصًا متعمقًا للتتبعات الفردية.
 
 <div id="features">
-  ## الميزات
+  ## الميزات {#features}
 </div>
 
 يتضمن المكدس عدة ميزات أساسية مصممة لتصحيح الأخطاء وتحليل الأسباب الجذرية:
@@ -39,7 +39,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * فتح صفحات ClickStack مباشرةً باستخدام [الروابط العميقة](/ar/clickstack/url-parameters) عبر معاملات استعلام URL
 
 <div id="components">
-  ## المكوّنات
+  ## المكوّنات {#components}
 </div>
 
 يتكوّن ClickStack من ثلاثة مكوّنات أساسية:
@@ -55,56 +55,54 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 للبدء، تفضّل بزيارة [دليل البدء](/ar/clickstack/getting-started/index) قبل تحميل [مجموعة بيانات تجريبية](/ar/clickstack/example-datasets/index). يمكنك أيضًا استكشاف الوثائق الخاصة بـ [خيارات النشر](/ar/clickstack/deployment/overview) و[أفضل الممارسات لبيئات الإنتاج](/ar/clickstack/managing/production).
 
 <div id="clickstack-principles">
-  ## المبادئ
+  ## المبادئ {#clickstack-principles}
 </div>
 
 صُمِّم ClickStack استنادًا إلى مجموعة من المبادئ الأساسية التي تعطي الأولوية لسهولة الاستخدام والأداء والمرونة في كل طبقة من مكدس observability:
 
 <div id="clickstack-easy-to-setup">
-  ### سهل الإعداد في دقائق
+  ### سهل الإعداد في دقائق {#clickstack-easy-to-setup}
 </div>
 
 يعمل ClickStack فورًا مع أي مثيل ClickHouse وأي مخطط بيانات، ولا يتطلب سوى الحد الأدنى من الإعداد. سواء كنت تبدأ من الصفر أو تدمجه مع إعداد قائم، يمكنك البدء والعمل خلال دقائق.
 
 <div id="user-friendly-purpose-built">
-  ### سهلة الاستخدام ومصممة خصيصًا لهذا الغرض
+  ### سهلة الاستخدام ومصممة خصيصًا لهذا الغرض {#user-friendly-purpose-built}
 </div>
 
 يدعم HyperDX UI كلاً من SQL وصياغة الاستعلام على نمط Lucene، ما يتيح للمستخدمين اختيار واجهة الاستعلام التي تناسب سير عملهم. ولأنه مصمم خصيصًا لـ observability، فقد جرى تحسين UI لمساعدة الفرق على تحديد الأسباب الجذرية بسرعة والتنقل في البيانات المعقدة بسلاسة.
 
 <div id="end-to-end-observability">
-  ### Observability الشاملة من البداية إلى النهاية
+  ### Observability الشاملة من البداية إلى النهاية {#end-to-end-observability}
 </div>
 
 يوفّر ClickStack رؤية شاملة عبر جميع طبقات stack، من جلسات المستخدم في الواجهة الأمامية إلى metrics البنية التحتية في backend، وlogs التطبيق، وtraces الموزعة. وتتيح هذه الرؤية الموحّدة إجراء ربط وتحليل متعمّقين على مستوى النظام بأكمله.
 
 <div id="built-for-clickhouse">
-  ### مصمم لـ ClickHouse
+  ### مصمم لـ ClickHouse {#built-for-clickhouse}
 </div>
 
 صُمِّمت كل طبقة من طبقات المكدس لتحقيق أقصى استفادة من إمكانات ClickHouse. كما جرى تحسين الاستعلامات للاستفادة من الوظائف التحليلية ومحركه العمودي في ClickHouse، بما يضمن سرعة البحث والتجميع حتى مع كميات هائلة من البيانات.
 
 <div id="open-telemetry-native">
-  ### مدمج أصلاً مع OpenTelemetry
+  ### مدمج أصلاً مع OpenTelemetry {#open-telemetry-native}
 </div>
 
 يتكامل ClickStack تكاملًا أصيلًا مع OpenTelemetry، إذ تُستقبل جميع البيانات عبر نقطة نهاية لـ OpenTelemetry Collector. وللمستخدمين المتقدمين، يدعم أيضًا الإدخال المباشر إلى ClickHouse باستخدام تنسيقات الملفات الأصلية، أو مسارات معالجة مخصصة، أو أدوات خارجية مثل Vector.
 
 <div id="open-source-and-customizable">
-  ### مفتوح المصدر وقابل للتخصيص بالكامل
+  ### مفتوح المصدر وقابل للتخصيص بالكامل {#open-source-and-customizable}
 </div>
 
 ClickStack مفتوح المصدر بالكامل ويمكن نشره في أي مكان. يتميز المخطط بالمرونة ويمكن للمستخدم تعديله، كما صُممت واجهة المستخدم بحيث يمكن تهيئتها لتلائم المخططات المخصصة من دون الحاجة إلى إدخال تغييرات. ويمكن توسيع نطاق جميع المكوّنات — بما في ذلك المجمِّعات وClickHouse وواجهة المستخدم - بشكل مستقل لتلبية متطلبات الاستيعاب أو الاستعلام أو التخزين.
 
-<div id="architectural-overview">
-  ## نظرة عامة على البنية المعمارية
-</div>
+## نظرة عامة على المعمارية {#architectural-overview}
 
-تختلف بنية ClickStack باختلاف طريقة نشره. وهناك فروق معمارية مهمة بين **ClickStack Open Source**، حيث تُدار جميع المكوّنات ذاتيًا، و**Managed ClickStack**، حيث تتم استضافة ClickHouse وHyperDX UI وتشغيلهما في ClickHouse Cloud. ومع أن المكوّنات الأساسية تبقى نفسها في كلا النموذجين، فإن مسؤولية استضافة كل مكوّن وتوسيع نطاقه وتأمينه تختلف.
+تختلف معمارية ClickStack باختلاف طريقة نشره. وهناك فروق معمارية مهمة بين **ClickStack Open Source**، حيث تُدار جميع المكوّنات ذاتيًا، و**Managed ClickStack**، حيث تتم استضافة ClickHouse وHyperDX UI وتشغيلهما في ClickHouse Cloud. ومع أن المكوّنات الأساسية تبقى نفسها في كلا النموذجين، فإن مسؤولية استضافة كل مكوّن وتوسيع نطاقه وتأمينه تختلف.
 
 <Tabs>
   <Tab title="Managed ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="بنية Managed ClickStack" size="md" />
+    <Image img="/images/use-cases/observability/clickstack-simple-managed-architecture.webp" alt="معمارية Managed ClickStack" size="md" />
 
     يعمل Managed ClickStack بالكامل داخل **ClickHouse Cloud**، موفّرًا منصة رصد مُدارة بالكامل مع الحفاظ على نموذج بيانات ClickStack نفسه وتجربة المستخدم نفسها.
 
@@ -125,7 +123,7 @@ ClickStack مفتوح المصدر بالكامل ويمكن نشره في أي 
 
     * **توسيع تلقائي للحوسبة بشكل مستقل عن التخزين**
     * **احتفاظ منخفض التكلفة وعمليًا غير محدود** ومدعوم بالتخزين الكائني
-    * **عزل مستقل لعمليات القراءة والكتابة** باستخدام ClickHouse Cloud Warehouses
+    * **[عزل مستقل لعمليات القراءة والكتابة](/ar/clickstack/managing/isolating-read-write)** باستخدام ClickHouse Cloud Warehouses
     * **تكامل المصادقة والتحكم في الوصول**
     * **نسخ احتياطية مؤتمتة**
     * **ميزات الأمان والامتثال**
@@ -147,14 +145,14 @@ ClickStack مفتوح المصدر بالكامل ويمكن نشره في أي 
        واجهة سهلة الاستخدام ومصممة لأغراض الرصد. وهي تدعم كلاً من الاستعلامات بأسلوب Lucene واستعلامات SQL، ولوحات المعلومات التفاعلية، والتنبيهات، واستكشاف التتبعات، وغير ذلك الكثير، وكلها مُحسّنة للعمل مع ClickHouse كواجهة خلفية.
 
     2. **OpenTelemetry collector**
-       مجمّع مخصّص ومُهيّأ باستخدام مخطط مُعدّ مسبقًا ومُحسَّن لاستيعاب البيانات في ClickHouse. يستقبل السجلات والمقاييس والتتبعات عبر بروتوكولات OpenTelemetry ويكتبها مباشرةً إلى ClickHouse باستخدام عمليات إدراج دفعية فعّالة.
+       مجمّع مخصّص ومُهيّأ باستخدام مخطط مُعدّ مسبقًا ومُحسَّن لاستيعاب البيانات في ClickHouse. يستقبل السجلات والمقاييس والتتبعات عبر بروتوكولات OpenTelemetry ويكتبها مباشرةً إلى ClickHouse باستخدام عمليات إدراج دفعية فعّالة.
 
     3. **ClickHouse**
        قاعدة البيانات التحليلية عالية الأداء التي تعمل كمخزن البيانات المركزي للأحداث الواسعة. يوفّر ClickHouse بحثًا سريعًا وتصفية وتجميعًا على نطاق واسع، مستفيدًا من محرّكه العمودي ودعمه الأصلي لـ JSON.
 
     بالإضافة إلى هذه المكوّنات الثلاثة، يستخدم ClickStack **مثيل MongoDB** لتخزين حالة التطبيق، مثل لوحات المعلومات وحسابات المستخدمين وإعدادات التهيئة.
 
-    يمكن العثور على مخطط معماري كامل وتفاصيل النشر في [قسم البنية المعمارية](/ar/clickstack/architecture).
+    يمكن العثور على مخطط كامل للمعمارية وتفاصيل النشر في [قسم المعمارية](/ar/clickstack/architecture).
 
     بالنسبة إلى المستخدمين المهتمين بنشر Open Source ClickStack في بيئة الإنتاج، نوصي بقراءة دليل [&quot;Production&quot;](/ar/clickstack/managing/production).
 

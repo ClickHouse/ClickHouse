@@ -11,20 +11,18 @@ doc_type: 'reference'
 
 > 結果から除外する1つ以上のカラム名を指定します。一致するすべてのカラム名は出力から除外されます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
-<div id="examples">
-  ## 例
-</div>
+単一のカラムを除外する場合、括弧は任意です。
+
+## 例 {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i FROM columns_transformers;
 ```
 
 ```response title="Response"

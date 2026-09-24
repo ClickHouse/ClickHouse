@@ -6,30 +6,18 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'オブザーバビリティ', 'aws-lambda', 'lambda-layers']
 ---
 
-**このガイドでは以下を統合します:**
+import { ClickStackIntegrates } from '/snippets/ja/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ ログ</td>
-      <td className="pe-2">✅ メトリクス</td>
-      <td className="pe-2">✅ トレース</td>
-    </tr>
-  </tbody>
-</table>
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-<div id="installing-the-otel-lambda-layers">
-  ## OpenTelemetry Lambda レイヤーをインストールする
-</div>
+## OpenTelemetry Lambda レイヤーをインストールする {#installing-the-otel-lambda-layers}
 
 OpenTelemetry プロジェクトでは、次の目的に応じて個別の Lambda レイヤーが提供されています。
 
 1. OpenTelemetry の自動インストルメンテーションを使用して、Lambda 関数のコードを自動的にインストルメントする。
 2. 収集したログ、メトリクス、トレースを ClickStack に転送する。
 
-<div id="adding-language-specific-auto-instrumentation">
-  ### 言語別の自動インストルメンテーションレイヤーを追加する
-</div>
+### 言語別の自動インストルメンテーションレイヤーを追加する {#adding-language-specific-auto-instrumentation}
 
 言語別の自動インストルメンテーション Lambda レイヤーを使用すると、対象の言語向け OpenTelemetry 自動インストルメンテーションパッケージによって、Lambda 関数のコードが自動的にインストルメントされます。
 
@@ -110,9 +98,7 @@ Lambda がすでに OpenTelemetry SDK でインストルメントされている
   </Tab>
 </Tabs>
 
-<div id="installing-the-otel-collector-layer">
-  ### OpenTelemetry collector Lambda レイヤーのインストール
-</div>
+### OpenTelemetry collector Lambda レイヤーのインストール {#installing-the-otel-collector-layer}
 
 collector Lambda レイヤーを使用すると、エクスポーターのレイテンシによる応答時間への影響を抑えながら、Lambda 関数から ClickStack にログ、メトリクス、トレースを転送できます。
 
@@ -155,7 +141,7 @@ collector Lambda レイヤーを使用すると、エクスポーターのレイ
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -192,7 +178,7 @@ collector Lambda レイヤーを使用すると、エクスポーターのレイ
 
     exporters:
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip
@@ -221,9 +207,7 @@ collector Lambda レイヤーを使用すると、エクスポーターのレイ
 OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 ```
 
-<div id="checking-the-installation">
-  ## インストールの確認
-</div>
+## インストールの確認 {#checking-the-installation}
 
 レイヤーをデプロイすると、Lambda 関数から自動的に収集された
 トレースが HyperDX に表示されるようになります。`decouple` と `batching`
@@ -231,28 +215,20 @@ OPENTELEMETRY_COLLECTOR_CONFIG_FILE=/var/task/collector.yaml
 表示に時間がかかることがあります。カスタムのログやメトリクスを出力するには、言語固有の
 OpenTelemetry SDKs を使用してコードをインストルメントする必要があります。
 
-<div id="troubleshoting">
-  ## トラブルシューティング
-</div>
+## トラブルシューティング {#troubleshoting}
 
-<div id="custom-instrumentation-not-sending">
-  ### カスタムインストルメンテーションでデータが送信されない
-</div>
+### カスタムインストルメンテーションでデータが送信されない {#custom-instrumentation-not-sending}
 
 手動で定義したトレースやその他のテレメトリーが表示されない場合は、
 互換性のないバージョンのOpenTelemetry APIパッケージを使用している可能性があります。
 OpenTelemetry APIパッケージのバージョンが、AWS Lambdaに含まれている
 バージョン以下であることを確認してください。
 
-<div id="enabling-sdk-debug-logs">
-  ### SDK のデバッグログを有効にする
-</div>
+### SDK のデバッグログを有効にする {#enabling-sdk-debug-logs}
 
 OpenTelemetry SDK のデバッグログを有効にするには、`OTEL_LOG_LEVEL` 環境変数を `DEBUG` に設定します。これにより、自動インストルメンテーションレイヤーがアプリケーションを正しくインストルメントしているか確認しやすくなります。
 
-<div id="enabling-collector-debug-logs">
-  ### collector のデバッグログを有効にする
-</div>
+### collector のデバッグログを有効にする {#enabling-collector-debug-logs}
 
 collector の問題をデバッグするには、collector の
 設定ファイルを変更して `logging` エクスポーター を追加し、テレメトリー の
@@ -274,7 +250,7 @@ collector の問題をデバッグするには、collector の
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         compression: gzip
 
     service:
@@ -312,7 +288,7 @@ collector の問題をデバッグするには、collector の
       logging:
         verbosity: detailed
       otlphttp:
-        endpoint: "<YOU_OTEL_COLLECTOR_HTTP_ENDPOINT>"
+        endpoint: "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>"
         headers:
           authorization: <YOUR_INGESTION_API_KEY>
         compression: gzip

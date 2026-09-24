@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="lightweight_delete_mode">
-  ## lightweight_delete_mode
-</div>
+## lightweight_delete_mode {#lightweight_delete_mode}
 
 <SettingsInfoBlock type="LightweightDeleteMode" default_value="alter_update" />
 
@@ -29,9 +27,7 @@ Valores possíveis:
 * `lightweight_update` - executa atualização leve, se possível; caso contrário, executa `ALTER UPDATE`.
 * `lightweight_update_force` - executa atualização leve, se possível; caso contrário, gera uma exceção.
 
-<div id="lightweight_deletes_sync">
-  ## lightweight_deletes_sync
-</div>
+## lightweight_deletes_sync {#lightweight_deletes_sync}
 
 <SettingsInfoBlock type="UInt64" default_value="2" />
 
@@ -41,12 +37,12 @@ O mesmo que [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutati
 
 Valores possíveis:
 
-| Valor | Descrição                                                                                                                                                             |
-| ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `0`   | As mutações são executadas de forma assíncrona.                                                                                                                       |
-| `1`   | A consulta aguarda a conclusão das exclusões leves no servidor atual.                                                                                                 |
-| `2`   | A consulta aguarda a conclusão das exclusões leves em todas as réplicas (se existirem).                                                                               |
-| `3`   | A consulta aguarda apenas as réplicas ativas. Compatível apenas com `SharedMergeTree`. Para `ReplicatedMergeTree`, o comportamento é o mesmo de `mutations_sync = 2`. |
+| Valor | Descrição                                                                                                              |
+| ----- | ---------------------------------------------------------------------------------------------------------------------- |
+| `0`   | As mutações são executadas de forma assíncrona.                                                                        |
+| `1`   | A consulta aguarda a conclusão das exclusões leves no servidor atual.                                                  |
+| `2`   | A consulta aguarda a conclusão das exclusões leves em todas as réplicas (se existirem).                                |
+| `3`   | A consulta aguarda apenas as réplicas ativas. As réplicas inativas aplicam as exclusões leves quando se tornam ativas. |
 
 **Veja também**
 

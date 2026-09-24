@@ -10,7 +10,7 @@ O cache de consultas permite processar consultas `SELECT` apenas uma vez e atend
 Dependendo do tipo de consulta, isso pode reduzir drasticamente a latência e o consumo de recursos do servidor ClickHouse.
 
 <div id="background-design-and-limitations">
-  ## Contexto, design e limitações
+  ## Contexto, design e limitações {#background-design-and-limitations}
 </div>
 
 Os caches de consultas geralmente podem ser classificados como transacionalmente consistentes ou inconsistentes.
@@ -33,7 +33,7 @@ configuração costuma ser duplicada. Com o cache de consultas do ClickHouse, a 
 de manutenção e evita redundância.
 
 <div id="configuration-settings-and-usage">
-  ## Configurações e uso
+  ## Configurações e uso {#configuration-settings-and-usage}
 </div>
 
 <Note>
@@ -175,7 +175,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 Para remover apenas as entradas com a tag `tag` do cache de consultas, você pode usar a instrução `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
 <div id="subquery-caching">
-  ## Armazenamento em cache de subconsultas
+  ## Armazenamento em cache de subconsultas {#subquery-caching}
 </div>
 
 Por padrão, `use_query_cache` na consulta externa não é propagado para as subconsultas. Isso significa que cada subconsulta deve habilitar explicitamente o armazenamento em cache:
@@ -251,7 +251,7 @@ ser marcadas como acessíveis a outros usuários (isto é, compartilhadas) infor
 [query&#95;cache&#95;share&#95;between&#95;users](/pt-BR/reference/settings/session-settings/query-cache#query_cache_share_between_users).
 
 <div id="related-content">
-  ## Conteúdo relacionado
+  ## Conteúdo relacionado {#related-content}
 </div>
 
 * Blog: [Conheça o cache de consultas do ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

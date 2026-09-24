@@ -9,9 +9,7 @@ doc_type: '参考'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-<div id="customer-managed-vpc-gcp">
-  ## 适用于 GCP 的客户自管 VPC (BYO-VPC)
-</div>
+## 适用于 GCP 的客户自管 VPC (BYO-VPC) {#customer-managed-vpc-gcp}
 
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按以下步骤操作。这样做可以让您更好地控制网络配置，并将 ClickHouse BYOC 集成到现有网络基础设施中。
 
@@ -21,12 +19,21 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     2. 在该私有子网中，至少分配 1 个供 GKE 集群 Pod (容器组) 使用的辅助 IPv4 范围。该辅助范围必须至少为 `/21`。较小的范围无法为 GKE 集群完成预配提供足够的 Pod (容器组) IP 地址，基础设施设置将会失败。
     3. 在该子网上启用 **Private Google Access**。这样，GKE 节点无需外部 IP 地址即可访问 Google API 和服务。
 
+    <Note>
+      若要通过 [Private Service Connect](/zh/cloud/reference/byoc/onboarding/network-gcp#setup-psc) 暴露服务，您还需要在该 VPC 中创建一个用途为 `PRIVATE_SERVICE_CONNECT` 的专用子网。您可以现在创建，也可以稍后在启用 private link 之前创建。
+    </Note>
+
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="BYOC GCP 子网详情，显示主 IPv4 范围和辅助 IPv4 范围，且已启用 Private Google Access" />
   </Step>
 
   <Step title="确保网络连通性" id="ensure-network-connectivity">
     **Cloud NAT Gateway**
-    请确保已为该 VPC 部署 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)。ClickHouse BYOC 组件需要具备出站互联网访问能力，以便与 Tailscale control plane 通信。Tailscale 用于为私有管理操作提供安全的零信任网络。Cloud NAT gateway 可为没有外部 IP 地址的实例提供这种出站连接能力。
+    请确保已为该 VPC 部署 [Cloud NAT gateway](https://cloud.google.com/nat/docs/overview)。它可为没有外部 IP 地址的实例提供出站连接能力，并且有两项内容依赖于它：
+
+    * **Tailscale。** ClickHouse BYOC 组件会向 Tailscale control plane 注册，由其为私有管理操作提供安全的零信任网络，而无需开放入站公网访问。
+    * **容器镜像。** 部署运行的部分镜像并未镜像到 BYOC 注册表中 (包括社区镜像) ，需从其上游注册表拉取。
+
+    没有出站路径的 VPC 将无法完成预配；预检验证会检查是否有 Cloud NAT gateway 覆盖该网络。目前没有统一公布的端点清单；如果您的网络策略要求提供明确清单，请联系支持团队审核您的设置。
 
     **DNS 解析**
     请确保您的 VPC 具备正常的 DNS 解析能力，并且不会阻止、干扰或覆盖标准 DNS 名称。ClickHouse BYOC 依赖 DNS 来解析 Tailscale 控制服务器和 ClickHouse 服务端点。如果 DNS 不可用或配置不当，BYOC 服务可能无法正常连接或运行。
@@ -34,7 +41,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
   <Step title="设置 BYOC 基础设施" id="set-up-byoc-infrastructure">
     <Note>
-      当您点击 **Set up Infrastructure** 时，ClickHouse Cloud 会在预配前自动运行[预检验证](/zh/products/bring-your-own-cloud/onboarding/standard#preflight-validation)，检查管理服务账号是否具有所需权限，以及是否已启用所需的 Google Cloud API。自带 VPC 的自动验证尚未纳入 GCP 预检流程，因此开始前请确保您的 VPC 满足上述[网络要求](#configure-existing-vpc)。
+      当您点击 **Set up Infrastructure** 时，ClickHouse Cloud 会在预配前自动运行[预检验证](/zh/products/bring-your-own-cloud/onboarding/standard#preflight-validation)。它会检查管理服务账号是否具有所需权限、是否已启用所需的 Google Cloud API，并会验证您自带的 VPC：网络和子网能否解析、子网的主范围和 Pod 辅助范围是否足够大，以及是否有 Cloud NAT gateway 覆盖该网络。如果存在任何缺失项，设置将会中止，并列出需要修复的具体问题。
     </Note>
 
     在 ClickHouse Cloud 控制台中，设置新基础设施时请配置以下内容：
@@ -42,8 +49,32 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     1. 在 **VPC configuration** 下，选择 **Use existing VPC**。
     2. 输入您的 **VPC network name**。
     3. 输入您为 ClickHouse 分配的 **Subnet name**。
-    4. 点击 **Set up Infrastructure** 开始预配。
+    4. 可选填写 **Secondary range names**，用于指定 GKE 将子网的哪些辅助范围用于 Pod (容器组)。留空表示使用全部辅助范围；您列出的每个名称都必须已存在于该子网上。
+    5. 如果您的 VPC 位于共享 VPC 宿主项目中，请输入 **共享 VPC host project ID**。当 VPC 与基础设施位于同一项目中时，请留空。请参阅下文[来自宿主项目的共享 VPC](#shared-vpc-host-project)。
+    6. 点击 **Set up Infrastructure** 开始预配。
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="适用于 GCP 的 ClickHouse Cloud BYOC 设置界面，其中已选择 Use existing VPC" />
+    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="适用于 GCP 的 ClickHouse Cloud BYOC 设置界面，其中已选择 Use existing VPC，并显示 VPC network name、subnet name、secondary range names 和 共享 VPC host project ID 字段" />
   </Step>
 </Steps>
+
+### 来自宿主项目的共享 VPC {#shared-vpc-host-project}
+
+你可以在某个服务项目中运行 BYOC，而其使用的网络位于另一个独立的[共享 VPC](https://cloud.google.com/vpc/docs/shared-vpc) 宿主项目中，从而实现网络的集中管理。VPC 及其子网归**宿主**项目所有，而 BYOC 基础设施运行在关联的**服务**项目中。上述要求保持不变，只是改为适用于宿主项目中的子网。
+
+此类配置有两个特有的前置条件：
+
+* **在开始之前，先将宿主项目启用为共享 VPC 宿主，并将服务项目关联到该宿主项目。** 这两步都是必需的，且彼此独立：尚未成为共享 VPC 宿主的项目必须先启用为宿主，之后才能关联服务项目。共享 VPC 的 GKE 集群要求该关联关系已经存在。预检验证会通过宿主项目的 grants 读取你的网络和子网，因此两种情况下都能通过，而预配会在随后创建 cluster 时失败。这两项操作都属于 organization 级别，需由你所在 organization 中负责管理共享 VPC 的人员执行，onboarding Terraform 无法代为完成。
+* **运行 onboarding Terraform 时设置宿主项目。** 向 [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) 传入 `shared_vpc_host_project_id`、`shared_vpc_host_subnet_region` 和 `shared_vpc_host_private_subnet_id`。`shared_vpc_host_private_subnet_id` 指的是 GKE 节点所在的宿主子网，即你在上文中配置的那个子网，而不是下文介绍的 Private Service Connect 子网。若将其指向 PSC 子网，`roles/compute.networkUser` 授权就会被添加到错误的子网上，预配会在随后创建 cluster 时失败。单次调用会同时向两个项目写入，因此运行它的 credentials 需要同时具备服务项目和宿主项目的 IAM 管理权限。
+
+module 向宿主项目添加的 grants 范围很小，但并非全都是只读的：
+
+| 宿主项目上的 grant                                                                                                                                                        | 授予对象                                                          | 原因                                                                                                                                                                                                                   |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `compute.networks.get`、`compute.subnetworks.get`、`compute.subnetworks.use`                                                                                          | ClickHouse 管理服务账号                                             | 读取你的网络和子网，并允许 Private Service Connect 关联使用你的 PSC 子网                                                                                                                                                                  |
+| 节点子网上的 `roles/compute.networkUser`                                                                                                                                  | ClickHouse 管理服务账号、你的服务项目的 GKE 服务代理，以及你的服务项目的 Google APIs 服务账号 | 使用该子网的三个 identities                                                                                                                                                                                                  |
+| `roles/container.hostServiceAgentUser`                                                                                                                              | 你的服务项目的 GKE 服务代理                                              | 任何共享 VPC 的 GKE 集群都需要                                                                                                                                                                                           |
+| `compute.firewalls.create`、`compute.firewalls.delete`、`compute.firewalls.get`、`compute.firewalls.list`、`compute.firewalls.update` 和 `compute.networks.updatePolicy` | 你的服务项目的 GKE 服务代理                                              | 在共享 VPC 下，GKE 会在宿主项目而非服务项目中创建其 cluster 和 load balancer 的 firewall 规则。缺少这些权限时，内部 load balancer 的 health 检查规则不会被创建，入口 backend 会一直处于不健康状态，private link 也无法工作。这是 Google 文档中给出的细粒度方案，可替代授予 `roles/compute.securityAdmin`。 |
+
+最后一行是唯一的写入权限，且授予对象是你自己项目的 GKE 服务代理，而非 ClickHouse。ClickHouse 管理服务账号绝不会向宿主项目写入。module 还会在宿主项目上启用 `container.googleapis.com` API，从而为该项目预配其自身的 GKE 服务代理。
+
+然后在上文所述的 **Shared VPC host project ID** 字段中填入宿主项目。如果你需要 private link，请在宿主项目中创建一个独立的 `PRIVATE_SERVICE_CONNECT` 子网，与节点子网位于同一网络和同一区域。它与节点子网并存，而非取代节点子网，并且它不是你作为 `shared_vpc_host_private_subnet_id` 传入的子网。

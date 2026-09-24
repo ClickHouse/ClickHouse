@@ -11,53 +11,39 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.faq-beta" />
 
-<div id="monitoring-and-metrics">
-  ## المراقبة والمقاييس
-</div>
+## المراقبة والمقاييس {#monitoring-and-metrics}
 
-<div id="metrics-access">
-  ### كيف يمكنني الوصول إلى المقاييس الخاصة بمثيل ClickHouse Managed Postgres لدي؟
-</div>
+### كيف يمكنني الوصول إلى المقاييس الخاصة بمثيل ClickHouse Managed Postgres لدي؟ {#metrics-access}
 
 يمكنك مراقبة استخدام CPU والذاكرة وIOPS والتخزين مباشرةً من ClickHouse Cloud console، ضمن علامة التبويب **Monitoring** الخاصة بمثيل ClickHouse Managed Postgres لديك.
 
 بالإضافة إلى ذلك، يمكنك استعراض [Query Performance Insights](https://clickhouse.com/blog/postgres-query-insights-clickhouse-cloud) للحصول على تحليل مفصل لاستعلاماتك ضمن علامة التبويب **Query Insights**.
 
-<div id="backup-and-recovery">
-  ## النسخ الاحتياطي والاستعادة
-</div>
+## النسخ الاحتياطي والاستعادة {#backup-and-recovery}
 
-<div id="backup-options">
-  ### ما خيارات النسخ الاحتياطي المتاحة؟
-</div>
+### ما خيارات النسخ الاحتياطي المتاحة؟ {#backup-options}
 
-يتضمن ClickHouse Managed Postgres نسخًا احتياطية يومية تلقائية مع أرشفة مستمرة لسجل WAL، ما يتيح الاستعادة إلى أي نقطة زمنية ضمن فترة احتفاظ تمتد 7 أيام. وتُخزَّن النسخ الاحتياطية في S3.
+يتضمن ClickHouse Managed Postgres نسخًا احتياطية يومية تلقائية مع أرشفة مستمرة لسجل WAL، ما يتيح الاستعادة إلى أي نقطة زمنية ضمن فترة احتفاظ تمتد 7 أيام. وتُخزَّن النسخ الاحتياطية في تخزين الكائنات.
 
 للاطلاع على التفاصيل الكاملة بشأن وتيرة النسخ الاحتياطي، وفترة الاحتفاظ، وكيفية إجراء الاستعادة إلى نقطة زمنية محددة، راجع وثائق [النسخ الاحتياطي والاستعادة](/ar/products/managed-postgres/backup-and-restore).
 
-<div id="infrastructure-and-automation">
-  ## البنية التحتية والأتمتة
-</div>
+## البنية التحتية والأتمتة {#infrastructure-and-automation}
 
-<div id="terraform-support">
-  ### هل يتوفر دعم Terraform لـ ClickHouse Managed Postgres؟
-</div>
+### ما هي مزوّدات السحابة المدعومة؟ {#supported-cloud-providers}
 
-لا يتوفر دعم Terraform لـ ClickHouse Managed Postgres حاليًا. نوصي باستخدام ClickHouse Cloud console أو [OpenAPI](/ar/products/managed-postgres/openapi) لإنشاء المثيلات وإدارتها.
+يتوفّر ClickHouse Managed Postgres على AWS ضمن مرحلة Public Beta، بينما يوجد GCP في مرحلة private preview. يمكنك التسجيل في قائمة انتظار private preview الخاصة بـ GCP [من هنا](https://clickhouse.com/cloud/postgres#gcp-waitlist)، والاطلاع على [الإعلان](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) لمعرفة المزيد. راجع [مزوّدات السحابة المدعومة](/ar/products/managed-postgres/overview#supported-cloud-providers) لمزيد من التفاصيل.
 
-<div id="extensions-and-configuration">
-  ## الامتدادات والإعدادات
-</div>
+### هل يتوفر دعم Terraform لـ ClickHouse Managed Postgres؟ {#terraform-support}
 
-<div id="extensions-supported">
-  ### ما الامتدادات المتوفرة؟
-</div>
+نعم. يمكنك إنشاء خدمات ClickHouse Managed Postgres وإدارتها باستخدام Terraform provider الخاص بـ ClickHouse عبر المورد `clickhouse_postgres_service`. راجع [مرجع Terraform](/ar/products/managed-postgres/terraform) لمزيد من التفاصيل. كما يمكنك استخدام ClickHouse Cloud console أو [OpenAPI](/ar/products/managed-postgres/openapi) لإنشاء المثيلات وإدارتها.
+
+## الامتدادات والإعدادات {#extensions-and-configuration}
+
+### ما الامتدادات المتوفرة؟ {#extensions-supported}
 
 يتضمن ClickHouse Managed Postgres أكثر من 90 امتدادًا لـ PostgreSQL، بما في ذلك امتدادات شائعة مثل PostGIS وpgvector وpg&#95;cron وغيرها الكثير. للاطلاع على القائمة الكاملة بالامتدادات المتاحة وإرشادات التثبيت، راجع وثائق [الامتدادات](/ar/products/managed-postgres/extensions).
 
-<div id="config-customization">
-  ### هل يمكنني تخصيص معلمات إعداد PostgreSQL؟
-</div>
+### هل يمكنني تخصيص معلمات إعداد PostgreSQL؟ {#config-customization}
 
 نعم، يمكنك تعديل معلمات إعداد PostgreSQL وPgBouncer من خلال علامة التبويب **Settings** في Console. لمزيد من التفاصيل حول المعلمات المتاحة وكيفية تغييرها، راجع وثائق [Settings](/ar/products/managed-postgres/settings).
 
@@ -65,13 +51,9 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   إذا كنت بحاجة إلى معلمة غير متاحة حاليًا، فتواصل مع [الدعم](https://clickhouse.com/support/program) لطلبها.
 </Tip>
 
-<div id="connection-pooling">
-  ## تجميع الاتصالات
-</div>
+## تجميع الاتصالات {#connection-pooling}
 
-<div id="prepared-statement-errors">
-  ### لماذا تظهر لي أخطاء `prepared statement does not exist` عند استخدام PgBouncer؟
-</div>
+### لماذا تظهر لي أخطاء `prepared statement does not exist` عند استخدام PgBouncer؟ {#prepared-statement-errors}
 
 يُشغِّل ClickHouse Managed Postgres ‏PgBouncer في وضع **تجميع المعاملات**. في هذا الوضع، لا يُخصَّص اتصال Postgres خلفي لعميلك إلا طوال مدة معاملة واحدة، ثم يُعاد إلى المجمّع — وقد تُوجَّه المعاملة التالية من العميل نفسه إلى backend مختلف.
 
@@ -100,9 +82,7 @@ ERROR:  unnamed prepared statement does not exist
 
 إذا كانت الـ workload لديك تعتمد على العبارات المُحضّرة، فاتصل **مباشرةً بـ PostgreSQL** (المنفذ 5432) بدلًا من PgBouncer pooler — فالاتصالات المباشرة تدعم العبارات المُحضّرة بشكل طبيعي. راجع [الاتصال](/ar/products/managed-postgres/connection) للحصول على تفاصيل حول الاختيار بين endpoints المجمّعة والمباشرة.
 
-<div id="pgbouncer-vs-pg-connections">
-  ### ماذا يعني الإعداد `max_client_conn` في PgBouncer، وكيف يرتبط بـ `max_connections` في Postgres؟
-</div>
+### ماذا يعني الإعداد `max_client_conn` في PgBouncer، وكيف يرتبط بـ `max_connections` في Postgres؟ {#pgbouncer-vs-pg-connections}
 
 يتحكم كلٌّ منهما في شيء مختلف:
 
@@ -111,19 +91,13 @@ ERROR:  unnamed prepared statement does not exist
 
 عادةً ما يُضبط مثيل ClickHouse Managed Postgres بحيث يقبل PgBouncer عددًا من اتصالات client يزيد بنحو **10× على عدد backends في Postgres** (مثلًا 5000 client / 500 backend). إذا ظهرت لك أخطاء connection عند pooler، فمن المرجح بدرجة كبيرة أنك وصلت إلى حد backend الخاص بكل pool (`default_pool_size`) لا إلى الحد الإجمالي المعلن لاتصالات client.
 
-<div id="database-capabilities">
-  ## إمكانات قاعدة البيانات
-</div>
+## إمكانات قاعدة البيانات {#database-capabilities}
 
-<div id="multiple-databases-schemas">
-  ### هل يمكنني إنشاء عدة قواعد بيانات ومخططات؟
-</div>
+### هل يمكنني إنشاء عدة قواعد بيانات ومخططات؟ {#multiple-databases-schemas}
 
 نعم. يوفّر ClickHouse Managed Postgres وظائف PostgreSQL الأصلية كاملةً، بما في ذلك دعم عدة قواعد بيانات ومخططات ضمن مثيل واحد. يمكنك إنشاء قواعد البيانات والمخططات وإدارتها باستخدام أوامر PostgreSQL القياسية.
 
-<div id="rbac-support">
-  ### هل يتوفر دعم للتحكم في الوصول المستند إلى الأدوار (RBAC)؟
-</div>
+### هل يتوفر دعم للتحكم في الوصول المستند إلى الأدوار (RBAC)؟ {#rbac-support}
 
 لديك صلاحيات مستخدم فائق كاملة على مثيل ClickHouse Managed Postgres الخاص بك، مما يتيح لك إنشاء الأدوار وإدارة الأذونات باستخدام أوامر PostgreSQL القياسية.
 
@@ -131,23 +105,15 @@ ERROR:  unnamed prepared statement does not exist
   من المخطط طرح ميزات RBAC محسّنة مع تكامل مع Console خلال هذا العام.
 </Note>
 
-<div id="upgrades">
-  ## الترقيات
-</div>
+## الترقيات {#upgrades}
 
-<div id="version-upgrades">
-  ### كيف تُدار ترقيات إصدارات PostgreSQL؟
-</div>
+### كيف تُدار ترقيات إصدارات PostgreSQL؟ {#version-upgrades}
 
 تُجرى ترقيات الإصدارات الثانوية والرئيسية عبر failover، وعادةً لا ينتج عنها سوى بضع ثوانٍ من التوقف. يمكنك تهيئة [الترقيات المجدولة](/ar/products/managed-postgres/upgrades#scheduled-upgrades) للتحكم في الأيام والنافذة الزمنية ذات الساعتين بتوقيت UTC التي تُطبَّق خلالها الترقيات. للاطلاع على التفاصيل الكاملة، راجع توثيق [الترقيات](/ar/products/managed-postgres/upgrades).
 
-<div id="migration">
-  ## الترحيل
-</div>
+## الترحيل {#migration}
 
-<div id="migration-tools">
-  ### ما الأدوات المتاحة للترحيل إلى ClickHouse Managed Postgres؟
-</div>
+### ما الأدوات المتاحة للترحيل إلى ClickHouse Managed Postgres؟ {#migration-tools}
 
 يدعم ClickHouse Managed Postgres عدة طرق للترحيل:
 

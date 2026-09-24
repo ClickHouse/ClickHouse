@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وقد وُلِّدت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="read_in_order_two_level_merge_threshold">
-  ## read_in_order_two_level_merge_threshold
-</div>
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 الحد الأدنى لعدد الأجزاء التي يجب قراءتها لتشغيل خطوة دمج أوّلي أثناء القراءة متعددة الخيوط بترتيب المفتاح الأساسي.
 
-<div id="read_in_order_use_buffering">
-  ## read_in_order_use_buffering
-</div>
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -31,9 +27,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 استخدم التخزين المؤقت قبل الدمج عند القراءة وفق ترتيب المفتاح الأساسي. يزيد ذلك من التوازي في تنفيذ الاستعلام
 
-<div id="read_in_order_use_virtual_row">
-  ## read_in_order_use_virtual_row
-</div>
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 استخدم الصف الافتراضي أثناء القراءة وفق ترتيب المفتاح الأساسي أو دالته الرتيبة. يفيد ذلك عند البحث عبر عدة أجزاء، إذ لا تُقرأ إلا الأجزاء التي يمكن أن تسهم فعليًا في النتيجة، إلى جانب نافذة قراءة مسبقة محدودة لا تتجاوز `max_threads` جزءًا تحافظ على توازي عمليات القراءة.
 
-<div id="read_in_order_use_virtual_row_per_block">
-  ## read_in_order_use_virtual_row_per_block
-</div>
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

@@ -30,15 +30,13 @@ Los tipos de consulta disponibles son:
 * [SQL Editor](#sql-editor): el SQL Editor puede usarse cuando necesitas un control total sobre la consulta. En este modo, se puede ejecutar cualquier consulta SQL.
 
 <div id="query-types">
-  ## Tipos de consulta
+  ## Tipos de consulta {#query-types}
 </div>
 
 La configuración *Tipo de consulta* cambiará el diseño del constructor de consultas para ajustarlo al tipo de consulta que se esté creando.
 El tipo de consulta también determina qué panel se utiliza al visualizar los datos.
 
-<div id="table">
-  ### Tabla
-</div>
+### Tabla {#table}
 
 El tipo de consulta más flexible es la consulta de tabla. Sirve como opción general para los demás constructores de consultas, diseñados para manejar consultas simples y de agregación.
 
@@ -56,9 +54,7 @@ El tipo de consulta más flexible es la consulta de tabla. Sirve como opción ge
 
 Este tipo de consulta mostrará los datos en forma de tabla.
 
-<div id="logs">
-  ### Logs
-</div>
+### Logs {#logs}
 
 El tipo de consulta de logs ofrece un constructor de consultas centrado en consultar datos de logs.
 Los valores predeterminados pueden configurarse en la [configuración de logs](/es/integrations/connectors/data-visualization/grafana/config#logs) de la fuente de datos para que el constructor de consultas se cargue previamente con una base de datos/tabla y columnas predeterminadas.
@@ -92,9 +88,7 @@ Las columnas adicionales seleccionadas en la consulta pueden verse en la fila de
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Ejemplo de campos adicionales en la consulta de logs" border />
 
-<div id="time-series">
-  ### Series temporales
-</div>
+### Series temporales {#time-series}
 
 El tipo de consulta de series temporales es similar a [tabla](#table), pero se centra en datos de series temporales.
 
@@ -128,9 +122,7 @@ Ambas vistas son prácticamente iguales, con estas diferencias principales:
 
 Este tipo de consulta mostrará los datos en el panel de series temporales.
 
-<div id="traces">
-  ### Trazas
-</div>
+### Trazas {#traces}
 
 El tipo de consulta de trazas ofrece un constructor de consultas para buscar y ver trazas fácilmente.
 Está diseñado para datos de OpenTelemetry, pero se pueden seleccionar columnas para mostrar trazas a partir de un esquema distinto.
@@ -167,9 +159,7 @@ El tipo de consulta de trazas admite [enlaces de datos](#data-links).
 
 Este tipo de consulta mostrará los datos con la vista de tabla para el modo Búsqueda de trazas y con el panel de trazas para el modo Trace ID.
 
-<div id="sql-editor">
-  ## Editor SQL
-</div>
+## Editor SQL {#sql-editor}
 
 Para las consultas demasiado complejas para el constructor de consultas, puede usar el SQL Editor.
 Esto le da control total sobre la consulta, ya que le permite escribir y ejecutar ClickHouse SQL directamente.
@@ -183,9 +173,7 @@ Este cambio también surte efecto en la vista de dashboard, especialmente con da
 
 <Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Ejemplo de consulta SQL sin formato" border />
 
-<div id="data-links">
-  ## Enlaces de datos
-</div>
+## Enlaces de datos {#data-links}
 
 Los [enlaces de datos](https://grafana.com/docs/grafana/latest/panels-visualizations/configure-data-links)
 de Grafana pueden usarse para enlazar a nuevas consultas.
@@ -204,18 +192,18 @@ Esta función se ha habilitado en el plugin de ClickHouse para enlazar una traza
 </div>
 
 <div id="how-to-make-a-data-link">
-  ### Cómo crear un enlace de datos
+  ### Cómo crear un enlace de datos {#how-to-make-a-data-link}
 </div>
 
 Puedes crear un enlace de datos seleccionando una columna llamada `traceID` en tu consulta. Este nombre no distingue entre mayúsculas y minúsculas y admite añadir un guion bajo antes de &quot;ID&quot;. Por ejemplo, `traceId`, `TraceId`, `TRACE_ID` y `tracE_iD` serían válidos.
 
 Si OpenTelemetry está habilitado en una consulta de [logs](#logs) o [traza](#traces), se incluirá automáticamente una columna de ID de traza.
 
-Al incluir una columna de ID de traza, los enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; se añadirán a los datos.
+Cuando hay una columna de ID de traza, el plugin puede añadir enlaces &quot;**Ver traza**&quot; y &quot;**Ver logs**&quot; a los datos.
 
-<div id="linking-abilities">
-  ### Funciones de enlace
-</div>
+Los interruptores están habilitados de forma predeterminada. Un enlace para el tipo de consulta actual no requiere valores predeterminados configurados, mientras que un enlace entre señales aparece solo cuando la fuente de datos tiene valores predeterminados configurados para la señal de destino. Puedes ocultarlos con los interruptores **Mostrar enlaces de &quot;Ver traza&quot;** y **Mostrar enlaces de &quot;Ver logs&quot;** en las secciones de configuración de [traza](/es/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) y [logs](/es/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) de la fuente de datos.
+
+### Funciones de enlace {#linking-abilities}
 
 Con los enlaces de datos disponibles, puedes abrir trazas y logs con el ID de traza proporcionado.
 
@@ -231,7 +219,7 @@ Es necesario tener valores predeterminados configurados tanto para [logs](/es/in
 </div>
 
 <div id="macros">
-  ## Macros
+  ## Macros {#macros}
 </div>
 
 Las macros son una forma sencilla de añadir SQL dinámico a la consulta.
@@ -240,7 +228,7 @@ Antes de que una consulta se envíe al servidor de ClickHouse, el plugin expandi
 Las consultas tanto del SQL Editor como del constructor de consultas pueden usar macros.
 
 <div id="using-macros">
-  ### Uso de macros
+  ### Uso de macros {#using-macros}
 </div>
 
 Las macros pueden incluirse en cualquier parte de la consulta, varias veces si es necesario.
@@ -268,7 +256,7 @@ En este ejemplo, el intervalo de tiempo del dashboard de Grafana se aplica a la 
 El plugin también admite la notación con llaves `{}`. Use esta notación cuando se necesiten consultas dentro de los [parámetros](/es/reference/syntax#defining-and-using-query-parameters).
 
 <div id="list-of-macros">
-  ### Lista de macros
+  ### Lista de macros {#list-of-macros}
 </div>
 
 Esta es una lista de todas las macros disponibles en el plugin:

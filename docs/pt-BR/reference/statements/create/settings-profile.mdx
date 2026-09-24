@@ -22,9 +22,9 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 A cláusula `ON CLUSTER` permite criar SETTINGS PROFILES em um cluster; consulte [DDL distribuído](/pt-BR/reference/statements/distributed-ddl).
 
-<div id="example">
-  ## Exemplo
-</div>
+`CREATE SETTINGS PROFILE` requer o privilégio [CREATE SETTINGS PROFILE](/pt-BR/reference/statements/grant#access-management). `OR REPLACE` descarta um profile existente com o mesmo nome, incluindo as funções às quais ele se aplica, portanto requer adicionalmente o privilégio [DROP SETTINGS PROFILE](/pt-BR/reference/statements/grant#access-management). O privilégio `DROP SETTINGS PROFILE` é necessário independentemente de o profile já existir ou não, de modo que a instrução não pode ser usada para descobrir quais profiles existem.
+
+## Exemplo {#example}
 
 Crie um usuário:
 

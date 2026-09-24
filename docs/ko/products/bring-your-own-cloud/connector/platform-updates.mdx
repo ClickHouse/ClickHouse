@@ -1,0 +1,164 @@
+---
+title: '플랫폼 업데이트'
+sidebarTitle: '플랫폼 업데이트'
+slug: /products/bring-your-own-cloud/connector/platform-updates
+description: '관리형 클러스터에 대해 ClickHouse Cloud가 제안하는 플랫폼 번들을 승인합니다. 번들이란 무엇인지, 승인은 어떻게 이루어지는지, 어떤 권한이 부여되는지 설명합니다'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'managed mode', 'executor', 'platform']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+관리형 클러스터에는 ClickHouse 서비스가 의존하는 소규모 플랫폼 계층이 함께 실행됩니다. ClickHouse Cloud는 이 계층에 대한 업데이트를 제안하지만, 사용자가 자신의 클러스터 자격 증명으로 각 업데이트를 승인하기 전까지 실행기는 어떤 변경도 적용하지 않습니다.
+
+## 플랫폼 업데이트란 {#what-a-platform-update-is}
+
+플랫폼 계층은 snapshot controller, ClickHouse Operator, 모니터링 collector의 세 가지 구성 요소로 이루어집니다. 각 구성 요소가 이전 구성 요소의 사용자 지정 리소스 정의를 필요로 하므로 이 순서대로 설치됩니다. 서비스는 이들과 함께 제공되는 `gp3-encrypted`라는 이름의 StorageClass(암호화된 gp3 volume)를 사용합니다.
+
+플랫폼 번들은 ClickHouse Cloud가 사용자 환경에 맞게 렌더링하는 매니페스트입니다. 번들은 해당 구성 요소들의 차트 및 image 버전을 고정하고, 이들을 가져올 registry를 지정합니다. 모든 번들은 해당 매니페스트의 sha256으로 식별됩니다. ClickHouse Cloud는 명령 채널을 통해 번들을 실행기로 전송하며, 실행기는 승인을 받기 위해 번들을 대기 상태로 준비합니다.
+
+번들은 두 부분으로 나뉘어 적용됩니다.
+
+* **권한 부분**은 액세스를 부여하거나 그 형태를 지정하는 모든 것입니다. 네임스페이스, CustomResourceDefinition, ServiceAccount, 클러스터 역할 및 ClusterRoleBinding, 역할 및 RoleBinding, 웹훅 및 admission 구성, PriorityClass, StorageClass가 여기에 해당합니다. 이 부분은 `clicklink clctl platform approve`를 실행하여 사용자 본인의 자격 증명으로 직접 적용해야 합니다.
+* **워크로드 부분**은 실제로 실행되는 것입니다. 배포, Service, ConfigMap, Secret, Job, 파드 중단 예산이 여기에 해당합니다. 실행기는 이러한 종류만 기록할 수 있는 전용 `pcm-platform` 아이덴티티로 이 부분을 적용하며, 승인 시 발급된 단기 토큰이 유효한 동안에만 적용합니다.
+
+실행기는 승인되지 않은 번들을 절대 적용하지 않습니다. 권한 부분이 누락되었거나, sha256이 승인된 값과 다르거나, 토큰이 만료된 플랫폼 동기화는 거부됩니다. 거부 시에는 승인이 필요하다는 사실과 스테이징된 번들의 sha256이 함께 보고됩니다. 현재 플랫폼에 없는 사용자 지정 리소스 정의를 필요로 하는 서비스 생성도 동일한 방식으로 실패하며, 실행해야 할 명령도 동일합니다.
+
+## 플랫폼 업데이트 승인 {#approve-a-platform-update}
+
+<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="ClickHouse Connector 플랫폼 승인 흐름" />
+
+### 레지스트리 자격 증명 {#registry-credentials}
+
+레지스트리 인증 방식은 해당 환경에 등록된 image 배포 모드에 따라 달라집니다.
+
+* **ClickHouse 레지스트리에 직접 액세스.** 커넥터의 EC2 VM에서 승인을 실행하십시오. `approve`와 실행기의 플랫폼 동기화는 모두 EC2 instance metadata service에서 가져온 자격 증명으로 해당 환경의 읽기 전용 ECR 풀러 역할을 assume합니다. 이 역할이 차트 레지스트리에 로그인하며, 실행기는 플랫폼 image의 존재 여부를 확인할 때도 이 역할을 사용합니다. workstation의 AWS 프로필, 환경 자격 증명, SSO 자격 증명으로는 인스턴스 프로필을 대체할 수 없습니다. 권한 부분을 적용하는 별도의 cluster-admin 자격 증명은 여전히 kubeconfig에서 제공됩니다.
+* **자체 미러를 포함한 다른 ECR 레지스트리의 차트.** 차트 로그인은 `approve` 또는 실행기를 실행하는 프로세스의 ambient AWS 자격 증명을 사용합니다. 해당 자격 증명에 그 레지스트리를 읽을 수 있는 권한이 부여되어 있어야 합니다.
+
+아래 Kubernetes workstation 절차는 Kubernetes 플랫폼 승인이 활성화된 미러 레지스트리 배포에서만 사용하십시오. 직접 액세스 방식이라면 먼저 계정 담당 팀에 필요한 EC2 인스턴스 프로필을 갖춘 지원되는 실행 환경인지 확인을 요청하십시오.
+
+<Steps>
+  <Step title="스테이징된 번들을 찾으십시오" id="find-the-staged-bundle">
+    ClickHouse Cloud는 제안된 각 bundle을 먼저 실행기로 전송합니다. 실행기는 이를 pending bundle로 스테이징하고 하트비트에 해당 sha256을 보고합니다. 스테이징된 bundle은 한 번에 하나만 존재하며, 더 새로운 제안이 기존 것을 대체합니다. 이어서 실행기는 동기화를 거부하고 실패한 명령을 기록하며, 그 결과의 마지막에는 실행해야 할 명령이 포함됩니다.
+
+    ```bash
+    clicklink clctl commands list --status failed --action sync_platform
+    ```
+
+    `result` 필드는 `run: clctl platform approve (pending bundle sha <sha256>)`로 끝납니다. Kubernetes에서는 힌트가 `run: clctl platform approve --secret-namespace <connector-namespace> (pending bundle sha <sha256>)`로 표시됩니다. 사용자 지정 리소스 정의가 없어 실패한 create 작업에도 동일한 `clctl platform approve` 줄이 포함됩니다. 이 줄은 실패한 명령 자체와 `clicklink clctl instances create --wait`가 출력하는 오류에 모두 나타납니다. 또한 플랫폼 업데이트가 제안되면 계정 담당 팀에서도 알려 줍니다.
+
+    승인하기 전에 스테이징된 번들을 확인하십시오. 번들에는 매니페스트와 해당 sha256이 들어 있습니다.
+
+    <Tabs>
+      <Tab title="Linux VM" id="inspect-vm">
+        실행기는 커넥터 호스트에서 access bundles와 같은 위치에 번들을 파일로 스테이징합니다:
+
+        ```bash
+        sudo cat /etc/clicklink/access/executor/platform-pending.json
+        ```
+      </Tab>
+
+      <Tab title="Kubernetes" id="inspect-kubernetes">
+        실행기 파드는 번들을 state 볼륨에 스테이징하고 로컬 API를 통해 제공합니다. 포트 포워딩을 연 후 내용을 확인하십시오:
+
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # init 단계에서 선택한 커넥터 네임스페이스
+        kubectl -n "${CONNECTOR_NAMESPACE}" port-forward deployment/clicklink-connector-executor 9999:9999 &
+        curl -s http://127.0.0.1:9999/v1/platform/pending
+        ```
+
+        첫 번째 제안이 도착하기 전까지 API는 `no platform bundle is staged` 메시지와 함께 `404`를 반환합니다. 다음 단계를 위해 포트 포워딩은 열어 두십시오.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="승인 실행" id="run-approve">
+    플래그 없이 `approve`를 실행하면 스테이징된 번들을 읽어 해시를 계산하므로, 실행기가 수신한 것과 정확히 동일한 대상을 승인하게 됩니다. 모든 chart를 실행기와 동일한 방식으로 렌더링하고, 선택한 kube context로 permission 부분을 적용합니다. 필요한 경우 `pcm-platform` 아이덴티티를 생성하고 해당 토큰을 발급합니다. 커넥터 엔드포인트로는 어떠한 요청도 보내지 않습니다.
+
+    `approve`에는 관리형 클러스터에 대한 cluster-admin 권한을 가진 kube context(kubeconfig에 여러 개가 있는 경우 `--context <name>` 사용)와 사용 환경의 image 배포 모드에 맞는 [레지스트리 자격 증명](#registry-credentials)이 필요합니다. `--dry-run`은 아무것도 적용하거나 발급하지 않고 permission 부분을 렌더링하여 나열하지만, chart를 렌더링하려면 여전히 레지스트리 액세스가 필요합니다.
+
+    <Tabs>
+      <Tab title="Linux VM" id="approve-vm">
+        실행기가 번들을 스테이징한 커넥터 호스트에서 root로 실행하십시오:
+
+        ```bash
+        sudo clicklink clctl platform approve --config /etc/clicklink/config.yaml
+        ```
+
+        `approve`는 실행기의 다른 자격 증명이 있는 `/etc/clicklink/access/executor/_platform`에 토큰을 기록합니다. 새 번들은 live 번들 옆에 build하고 해당 토큰이 생성된 후에만 스왑하므로, approve가 실패해도 아직 유효한 토큰은 그대로 유지됩니다.
+      </Tab>
+
+      <Tab title="Kubernetes" id="approve-kubernetes">
+        Kubernetes 플랫폼 승인이 활성화된 미러링 레지스트리 배포에서는 `approve`가 이전 단계에서 설정한 포트 포워딩을 통해 스테이징된 번들을 읽습니다. 토큰 번들은 커넥터 네임스페이스의 Secret으로 전달되며, chart가 이를 파드에 mount합니다. kubeconfig로 클러스터에 접근할 수 있는 workstation에서 커넥터 구성 사본과 [레지스트리 액세스](#registry-credentials)를 갖춘 상태로 실행하십시오. chart가 실행기의 ConfigMap에 구성을 렌더링해 두며, `approve`는 네임스페이스 접두사를 확인하는 데에만 이 구성이 필요할 뿐 여기에서 자격 증명을 읽지는 않습니다.
+
+        ```bash
+        CONNECTOR_NAMESPACE='clicklink'   # init 단계에서 선택한 커넥터 네임스페이스
+        kubectl -n "${CONNECTOR_NAMESPACE}" get configmap clicklink-connector-executor \
+          -o jsonpath='{.data.config\.yaml}' > clicklink-config.yaml
+        clicklink clctl platform approve --config clicklink-config.yaml \
+          --secret-namespace "${CONNECTOR_NAMESPACE}"
+        ```
+
+        `approve`는 기본적으로 `http://127.0.0.1:9999`에서 스테이징된 번들을 읽습니다. 포트 포워딩이 다른 로컬 포트를 사용하는 경우 `--endpoint`를 전달하십시오. 포트 포워딩이 없으면 실행을 중단하고 실행해야 할 `kubectl port-forward` 명령을 출력합니다. 번들은 Secret `clicklink-platform-bundle`에 저장됩니다(변경하려면 `--secret-name`을 사용하며, chart의 `executor.platformBundleSecret`과 일치해야 합니다). 큐블릿이 mount를 갱신하면 약 1분 이내에 실행기 파드가 이를 인식합니다.
+      </Tab>
+    </Tabs>
+  </Step>
+
+  <Step title="확인" id="confirm">
+    `approve`는 다음으로 끝납니다:
+
+    ```text
+    Approved: <n> permission object(s) applied, platform token valid until <expiry>.
+    The executor may now apply the <n> workload object(s) of this bundle inside <namespaces>.
+    ```
+
+    Kubernetes에서는 세 번째 줄이 추가로 표시됩니다: `Bundle written to Secret <namespace>/<name>; the executor pod sees it once the kubelet refreshes the mount, within about a minute.`
+
+    ClickHouse Cloud는 실행기의 다음 하트비트에서 승인이 확인되면 동기화를 다시 전송합니다. 이미 진행 중인 동기화는 최대 20분까지 기다리며, 마지막 하트비트가 5분이 넘은 실행기는 건너뜁니다. 하나의 bundle에 대해 3회 시도한 뒤에는 중단되며, 이후에는 account team이 다시 트리거합니다. 실행기는 워크로드 측 설정을 적용하고 플랫폼을 `synced`로 보고합니다. 다음 명령으로 동기화가 반영되었는지 확인하십시오:
+
+    ```bash
+    clicklink clctl commands list --action sync_platform
+    ```
+
+    가장 최근의 `sync_platform` 명령이 `completed` 상태로 바뀝니다. 또한 실행기는 하트비트마다 플랫폼 상태와 구성 요소 버전을 ClickHouse Cloud에 보고하므로, 계정 담당 팀도 동일한 결과를 확인할 수 있습니다.
+  </Step>
+</Steps>
+
+## 승인 윈도우 {#the-approval-window}
+
+승인 시 `pcm-platform` 아이덴티티에 대한 토큰이 발급되며, 이 토큰은 기본적으로 2시간 동안 유효합니다(`--ttl`로 변경 가능). 실행기는 이 토큰을 갱신하지 않습니다. 토큰이 만료되면 실행기는 더 이상 플랫폼 계층을 변경할 수 없으며, 다음 플랫폼 동기화 요청을 다시 승인 메시지와 함께 거부합니다. 이는 의도된 설계이며 네트워크 연결 여부와는 무관합니다. 커넥터가 오프라인인 상태에서 부여된 승인도 자체 시계에 따라 만료됩니다.
+
+다음과 같은 경우에는 `approve`를 다시 실행하십시오.
+
+* 동기화가 완료되기 전에 토큰이 만료된 경우
+* ClickHouse Cloud가 다른 번들을 제안하는 경우. 승인한 sha256은 `pcm-platform` ServiceAccount에 기록되며, 실행기는 해당 번들을 승인하기 전까지 다른 번들에 대한 동기화를 거부합니다.
+* 서비스 생성 시 사용자 지정 리소스 정의가 누락되었다고 보고되는 경우
+
+동일한 번들을 다시 승인해도 안전하며, 기존 토큰은 새 토큰으로 대체됩니다. 스테이징된 번들은 동기화 이후에도 그대로 유지되므로, 다시 승인할 때 새로운 제안이 필요하지 않습니다.
+
+## 승인이 부여하는 권한 {#what-the-approval-grants}
+
+권한 부분은 사용자가 직접 적용하므로 사용자의 권한으로 수행되며, 실행기는 그중 어떤 것도 적용하지 않습니다. `approve`는 여기에 번들의 sha256을 새기며, 실행기는 어떤 작업을 수행하기 전에 전달받은 번들의 모든 권한 객체가 존재하고 승인되었는지 검증합니다.
+
+실행기는 워크로드 부분을 `pcm-platform`으로 적용합니다. 이 아이덴티티는 Secret, ConfigMap, Service, 배포, Job, 파드 중단 예산을 생성하고 업데이트할 수 있으며, 그 범위는 플랫폼 네임스페이스 내부로 한정되고 이는 admission 정책으로 강제됩니다. preflight에 필요한 객체(파드, 이벤트, 네임스페이스, ServiceAccount, 위에 나열된 권한 kind)는 읽을 수 있습니다. 다만 다음은 할 수 없습니다.
+
+* 클러스터 범위의 kind나 RBAC 객체에 대한 쓰기
+* `escalate`, `bind`, `impersonate`
+* 자체 토큰의 발급 또는 갱신
+
+실행기의 서비스 수명 주기 아이덴티티인 `pcm-executor`는 이와 별개이며 서비스 네임스페이스로 한정됩니다. 플랫폼 네임스페이스에는 쓸 수 없으나, 읽기는 접두사 가드의 제한을 받지 않습니다. 두 아이덴티티의 전체 목록은 [권한 모델](/ko/products/bring-your-own-cloud/connector/reference/privilege-model)을 참조하십시오.
+
+## 테스트 클러스터 재설정 {#resetting-a-test-cluster}
+
+`clicklink clctl platform reset`은 테스트 클러스터를 위한 명령입니다. 플랫폼 구성 요소를 제거하여 최초 설치 과정을 다시 수행해 볼 수 있도록 합니다. 변경 작업을 시작하기 전에 이 커넥터가 소유한 네임스페이스의 ClickHouse 클러스터 목록을 나열하며, 서비스가 하나라도 존재하면 실행을 거부합니다.
+
+비어 있는 클러스터에서는 플랫폼 릴리스를 의존성 역순으로 제거합니다. 그런 다음 실행기의 플랫폼 토큰 번들을 제거합니다. VM에서는 로컬 디렉터리를, Kubernetes에서는 `--secret-namespace <connector-namespace>`로 지정된 Secret을 제거합니다. CustomResourceDefinition, RBAC, StorageClass는 그대로 유지됩니다. 다음 플랫폼 동기화 전에 `approve`를 다시 실행하십시오.
+
+```bash
+sudo clicklink clctl platform reset --bundle <manifest-file> --config /etc/clicklink/config.yaml --dry-run
+```
+
+`reset`는 렌더링된 플랫폼 매니페스트를 파일(`--bundle`) 형태로 입력받으며, 스테이징된 번들은 읽지 않습니다. `--dry-run`은 서비스를 검사한 뒤 클러스터를 변경하지 않고 계획만 출력합니다.

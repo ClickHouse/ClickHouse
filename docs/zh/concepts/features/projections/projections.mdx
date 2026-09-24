@@ -11,7 +11,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
-  ## 简介
+  ## 简介 {#introduction}
 </div>
 
 ClickHouse 提供了多种机制，可在实时场景下加速海量数据上的分析查询。其中一种加速
@@ -29,9 +29,7 @@ ClickHouse 提供了多种机制，可在实时场景下加速海量数据上的
   <iframe src="https://www.youtube.com/embed/6CdnUdZSEG0?si=1zUyrP-tCvn9tXse" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
 </Frame>
 
-<div id="how-do-projections-work">
-  ## 投影如何工作？
-</div>
+## 投影如何工作？ {#how-do-projections-work}
 
 实际上，Projection 可以看作原始表的一个额外隐藏表。Projection 可以采用与原始表不同的行顺序，因此也会拥有
 不同于原始表的主索引，还能够自动
@@ -54,7 +52,7 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
 <Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse 中的投影" />
 
 <div id="smarter_storage_with_part_offset">
-  ### 使用 `_part_offset` 实现更智能的存储
+  ### 使用 `_part_offset` 实现更智能的存储 {#smarter_storage_with_part_offset}
 </div>
 
 从 25.5 版本开始，ClickHouse 在
@@ -75,7 +73,7 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
 `_part_offset` 间接引用其他列。
 
 <div id="when-to-use-projections">
-  ## 何时使用投影？
+  ## 何时使用投影？ {#when-to-use-projections}
 </div>
 
 对于新用户来说，投影是一项很有吸引力的功能，因为它们会在数据插入时自动维护。此外，查询只需发送到
@@ -111,11 +109,11 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
   [评估存储开销](/zh/guides/clickhouse/data-modelling/compression/compression-in-clickhouse)。
 
 <div id="examples">
-  ## 示例
+  ## 示例 {#examples}
 </div>
 
 <div id="filtering-without-using-primary-keys">
-  ### 对不在主键中的列进行过滤
+  ### 对不在主键中的列进行过滤 {#filtering-without-using-primary-keys}
 </div>
 
 在本示例中，我们将演示如何为表添加投影。
@@ -203,9 +201,7 @@ WHERE query_id='<query_id>'
    └───────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────┘
 ```
 
-<div id="using-projections-to-speed-up-UK-price-paid">
-  ### 使用 投影 加速英国房产成交价查询
-</div>
+### 使用 投影 加速英国房产成交价查询 {#using-projections-to-speed-up-UK-price-paid}
 
 为了演示如何使用 投影 提升查询性能，我们来看一个基于真实数据集的示例。在这个示例中，我们将使用 [UK Property Price Paid](/zh/get-started/sample-datasets/uk-price-paid) 教程中的表，该表包含 3003 万行。这个数据集也可以在我们的 [sql.clickhouse.com](https://sql.clickhouse.com/?query_id=6IDMHK3OMR1C97J6M9EUQS) 环境中查看。
 
@@ -404,7 +400,7 @@ projections:    ['uk.uk_price_paid_with_projections.prj_obj_town_price']
 ```
 
 <div id="further-examples">
-  ### 更多示例
+  ### 更多示例 {#further-examples}
 </div>
 
 下面的示例使用同一个英国价格数据集，对比了使用投影与不使用投影时的查询。
@@ -416,25 +412,29 @@ CREATE TABLE uk.uk_price_paid_with_projections_v2 AS uk.uk_price_paid;
 INSERT INTO uk.uk_price_paid_with_projections_v2 SELECT * FROM uk.uk_price_paid;
 ```
 
-<div id="build-projection">
-  #### 创建PROJECTION
-</div>
+#### 创建PROJECTION {#build-projection}
 
-我们按维度 `toYear(date)`、`district` 和 `town` 创建一个聚合PROJECTION：
+我们按维度 `year`、`district` 和 `town` 创建一个聚合PROJECTION。
+该PROJECTION按每笔销售发生的年份对销售数据进行分组，因此我们将该表达式物化为一个列，使其可被过滤器引用：
+
+```sql
+ALTER TABLE uk.uk_price_paid_with_projections_v2
+    ADD COLUMN year UInt16 MATERIALIZED toYear(date)
+```
 
 ```sql
 ALTER TABLE uk.uk_price_paid_with_projections_v2
     ADD PROJECTION projection_by_year_district_town
     (
         SELECT
-            toYear(date),
+            year,
             district,
             town,
             avg(price),
             sum(price),
             count()
         GROUP BY
-            toYear(date),
+            year,
             district,
             town
     )
@@ -448,16 +448,16 @@ ALTER TABLE uk.uk_price_paid_with_projections_v2
 SETTINGS mutations_sync = 1
 ```
 
-以下查询对比了使用投影与不使用投影时的性能差异。若要禁用投影的使用，我们使用设置 [`optimize_use_projections`](/zh/reference/settings/session-settings/optimize-use#optimize_use_projections)，该设置默认处于启用状态。
+以下查询对比了使用PROJECTION与不使用PROJECTION时的性能差异。若要禁用PROJECTION的使用，我们使用设置 [`optimize_use_projections`](/zh/reference/settings/session-settings/optimize-use#optimize_use_projections)，该设置默认处于启用状态。
 
 <div id="average-price-projections">
-  #### 查询 1. 每年平均价格
+  #### 查询 1. 每年平均价格 {#average-price-projections}
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -470,7 +470,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 1000000, 80)
   FROM uk.uk_price_paid_with_projections_v2
@@ -483,13 +483,13 @@ SETTINGS mutations_sync = 1
 结果应该相同，但后一个示例的性能更好！
 
 <div id="average-price-london-projections">
-  #### 查询 2. 伦敦每年的平均房价
+  #### 查询 2. 伦敦每年的平均房价 {#average-price-london-projections}
 </div>
 
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -503,7 +503,7 @@ SETTINGS mutations_sync = 1
 <RunnableCode>
   ```sql
   SELECT
-      toYear(date) AS year,
+      year,
       round(avg(price)) AS price,
       bar(price, 0, 2000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
@@ -514,10 +514,10 @@ SETTINGS mutations_sync = 1
 </RunnableCode>
 
 <div id="most-expensive-neighborhoods-projections">
-  #### 查询 3. 最昂贵的街区
+  #### 查询 3. 最昂贵的街区 {#most-expensive-neighborhoods-projections}
 </div>
 
-条件 `(date >= '2020-01-01')` 需要调整为与 projection 的维度一致 (`toYear(date) >= 2020)`) ：
+筛选 2020 年及以后行的过滤条件直接引用了已存储的 PROJECTION 维度 `year`：
 
 <RunnableCode>
   ```sql
@@ -528,7 +528,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE toYear(date) >= 2020
+  WHERE year >= 2020
   GROUP BY
       town,
       district
@@ -548,7 +548,7 @@ SETTINGS mutations_sync = 1
       round(avg(price)) AS price,
       bar(price, 0, 5000000, 100)
   FROM uk.uk_price_paid_with_projections_v2
-  WHERE toYear(date) >= 2020
+  WHERE year >= 2020
   GROUP BY
       town,
       district
@@ -560,8 +560,15 @@ SETTINGS mutations_sync = 1
 
 同样，结果没有变化，但请注意第 2 个查询的查询性能有所提升。
 
+<Note>
+  过滤条件必须直接引用已存储的维度 `year`。写成
+  `WHERE toYear(date) >= 2020` 则不会使用该 PROJECTION：优化器会把该条件改写为
+  `date` 上的范围，而 PROJECTION 中并未存储 `date`
+  列，因此 ClickHouse 会退回到扫描基表。
+</Note>
+
 <div id="combining-projections">
-  ### 在单个查询中组合使用投影
+  ### 在单个查询中组合使用投影 {#combining-projections}
 </div>
 
 从 25.6 版本开始，在前一版本引入的 `_part_offset` 支持基础上，ClickHouse 现在可以使用多个投影来加速带有多个过滤条件的单个查询。
@@ -680,9 +687,7 @@ SELECT * FROM page_views WHERE region = 'us_west' AND user_id = 107;
 通过结合多个 projection 的索引分析，ClickHouse 显著减少了扫描的数据量，
 在保持较低存储开销的同时提升了性能。
 
-<div id="related-content">
-  ## 相关内容
-</div>
+## 相关内容 {#related-content}
 
 * [ClickHouse 主索引实用入门](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#option-3-projections)
 * [Materialized Views](/zh/concepts/features/materialized-views/index)

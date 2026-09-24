@@ -13,9 +13,19 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="max_bytes_before_external_group_by">
-  ## max_bytes_before_external_group_by
-</div>
+## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于在内存使用量超过指定阈值（以字节为单位）时将 `DISTINCT` 落盘。若为 0，则仅 `max_bytes_ratio_before_external_distinct` 生效。"}]}]} />
+
+将 `DISTINCT` 数据落盘的查询内存阈值，以字节为单位。实际内存使用量可能超过该阈值。
+
+`0` 表示禁用该阈值。如果 `max_bytes_ratio_before_external_distinct` 也指定了阈值，则取两者中较小的一个。将两个设置均设为 `0` 即可禁用落盘。
+
+参见 [外部内存中的 DISTINCT](/zh/reference/statements/select/distinct#distinct-in-external-memory)。
+
+## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -36,19 +46,15 @@ Cloud 默认值：每个副本内存总量的一半。
   建议值为可用系统内存的一半。
 </Note>
 
-<div id="max_bytes_before_external_join">
-  ## max_bytes_before_external_join
-</div>
+## max_bytes_before_external_join {#max_bytes_before_external_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "用于控制哈希 JOIN 自动落盘的新设置。非零值会启用落盘并设置字节阈值。"}]}]} />
 
-如果设置为非零值，且 `join_algorithm` 为 `hash`、`parallel_hash`、`default` 或 `auto`，当右侧数据超过该字节数时，哈希 JOIN 会自动转换为 grace hash join，以支持落盘。设置为 `0` (默认值) 时，此绝对字节阈值将被禁用，但仍可能通过 `max_bytes_ratio_before_external_join` (其默认值为 `0.5`) 自动落盘；将两者都设为 `0` 可完全禁用自动落盘。它会阻止通过 JOIN 优化实现的 read in order。
+如果设置为非零值，当右侧数据超过该字节数时，哈希 JOIN 会自动转换为 grace hash join，以支持落盘。它与 `max_bytes_ratio_before_external_join` 一起，构成所有基于哈希的 `join_algorithm` 的基于阈值的落盘触发条件，其中包括 `grace_hash`，后者要求两者之一必须为非零值。一旦非零阈值使 JOIN 具备落盘能力，`enable_adaptive_memory_spill_scheduler` 就可以在内存压力下强制其在达到阈值之前落盘；若两项设置均为 `0`，则该 JOIN 永不落盘，调度器也就无从触发。例外情况是 `legacy_join_size_limits_trigger_spilling`：启用该设置后，独立使用的 `grace_hash` 会忽略这两项设置，改为依据 `max_rows_in_join` / `max_bytes_in_join` 落盘。设置为 `0` (默认值) 时，此绝对字节阈值将被禁用，但仍可能通过 `max_bytes_ratio_before_external_join` (其默认值为 `0.5`) 自动落盘；将两者都设为 `0` 可完全禁用自动落盘。它会阻止通过 JOIN 优化实现的 read in order。
 
-<div id="max_bytes_before_external_sort">
-  ## max_bytes_before_external_sort
-</div>
+## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -63,17 +69,13 @@ Cloud 默认值：每个副本内存的一半。
   建议值为可用系统内存的一半
 * `0` — 禁用使用外部内存执行 `ORDER BY`。
 
-<div id="max_bytes_before_remerge_sort">
-  ## max_bytes_before_remerge_sort
-</div>
+## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 对于带有 LIMIT 的 ORDER BY，当内存使用量超过指定阈值时，会在最终合并前额外执行几步块合并，以便只保留前 LIMIT 行。
 
-<div id="max_bytes_for_lazy_final">
-  ## max_bytes_for_lazy_final
-</div>
+## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -81,18 +83,14 @@ Cloud 默认值：每个副本内存的一半。
 
 lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普通 FINAL。
 
-<div id="max_bytes_in_distinct">
-  ## max_bytes_in_distinct
-</div>
+## max_bytes_in_distinct {#max_bytes_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 使用 DISTINCT 时，哈希表在内存中使用的状态的最大字节数
 (按未压缩字节计算) 。
 
-<div id="max_bytes_in_join">
-  ## max_bytes_in_join
-</div>
+## max_bytes_in_join {#max_bytes_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -100,24 +98,34 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 
 此设置适用于 [SELECT ... JOIN](/zh/reference/statements/select/join) 操作以及 [Join table engine](/zh/reference/engines/table-engines/special/join)。
 
-如果一个查询包含多个 JOIN，ClickHouse 会对每个中间结果检查此设置。达到限制时，具体行为取决于所选的 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm)——请参阅该设置，了解各算法对应的行为 (落盘、重新分区、切换，或根据 [`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 执行 throw/break) 。
+如果一个查询包含多个 JOIN，ClickHouse 会对每个中间结果检查此设置。对于所有基于哈希的 `join_algorithm`，它都是一个硬性上限：达到该限制时，查询会根据 [`join_overflow_mode`](/zh/reference/settings/session-settings/join#join_overflow_mode) 抛出异常或中断。它绝不会促使 join 落盘——落盘与否由 [`max_bytes_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_before_external_join) 和 [`max_bytes_ratio_before_external_join`](/zh/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join) 决定。由于它是上限而非触发条件，将其设置为等于或低于落盘阈值通常会导致查询在 join 尚未落盘之前就失败——除非该 join 支持落盘且 `enable_adaptive_memory_spill_scheduler` 先强制触发了落盘，或者 `legacy_join_size_limits_trigger_spilling` 将此限制重新变为已在磁盘上运行的那部分 join 的落盘触发条件。
+
+该限制统计的是哈希表所持有的数据量，因此已落盘的 join 是在逐个加载各 bucket 时达到该限制，而不是在读取右侧数据的过程中达到：与内存中的哈希 JOIN相比，它在停止之前可以读取更多的右侧数据。
 
 可能的值：
 
 * 正整数。
 * 0 — 禁用内存控制。
 
-<div id="max_bytes_in_set">
-  ## max_bytes_in_set
-</div>
+## max_bytes_in_set {#max_bytes_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 由子查询创建的 IN 子句中的 Set 所使用的最大字节数 (按未压缩数据计算) 。
 
-<div id="max_bytes_ratio_before_external_group_by">
-  ## max_bytes_ratio_before_external_group_by
-</div>
+## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "新增设置：当内存使用量超过可用内存的指定比例时，允许 `DISTINCT` 落盘。若为 0，则仅 `max_bytes_before_external_distinct` 生效。"}]}]} />
+
+在执行开始时，用于计算外部 `DISTINCT` 阈值的可用服务器或用户内存的比例。例如，`0.5` 表示使用可用内存的一半。
+
+取值必须不小于 `0` 且小于 `1`。`0` 表示禁用该阈值。如果不存在适用的服务器或用户内存限制，该比例不会生效。
+
+`max_memory_usage` 不参与此计算。若要基于该限制配置落盘行为，请使用 `max_bytes_before_external_distinct`，并为额外的内存使用量预留空间。
+
+## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -130,13 +138,11 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 (相对于 server/user/merges 可用的内存) ，之后将
 开始使用外部聚合。
 
-<div id="max_bytes_ratio_before_external_join">
-  ## max_bytes_ratio_before_external_join
-</div>
+## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新设置：可用内存中用作 哈希 JOIN 落盘阈值的比例。默认启用，值为 `0.5`，与 `max_bytes_ratio_before_external_group_by` 和 `max_bytes_ratio_before_external_sort` 保持一致。与绝对值设置 `max_bytes_before_external_join` 结合使用时，取两者中较小者。"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "0.5"},{"label": "新增设置：可用内存中用作 哈希 JOIN 落盘阈值的比例。默认启用，值为 `0.5`，与 `max_bytes_ratio_before_external_group_by` 和 `max_bytes_ratio_before_external_sort` 保持一致。与绝对值设置 `max_bytes_before_external_join` 结合使用时，取两者中较小者。"}]}]} />
 
 允许 `JOIN` 使用的可用内存比例。达到该比例后，哈希 JOIN 会转换为 grace hash join，并将右侧数据落盘到磁盘。
 
@@ -144,11 +150,9 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 
 如果同时设置了 `max_bytes_before_external_join` 和 `max_bytes_ratio_before_external_join`，则使用较小的结果阈值。如果该比例为 `0`，则仅应用绝对值设置。
 
-仅当 `join_algorithm` 为 `hash`、`parallel_hash`、`default` 或 `auto`，且已配置临时数据路径时，此设置才生效。
+只要已配置临时数据路径，此设置对每一种基于哈希的 `join_algorithm` 都生效，包括 `grace_hash`。
 
-<div id="max_bytes_ratio_before_external_sort">
-  ## max_bytes_ratio_before_external_sort
-</div>
+## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -160,18 +164,14 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
 
 请注意，`max_bytes_before_external_sort` 仍然有效，只有当排序块大于 `max_bytes_before_external_sort` 时才会落盘。
 
-<div id="max_bytes_to_read">
-  ## max_bytes_to_read
-</div>
+## max_bytes_to_read {#max_bytes_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 运行查询时，从表中可读取的最大字节数 (未压缩数据) 。
 该限制会对每个已处理的数据块检查一次，仅适用于最内层的表表达式；从远程服务器读取时，则只在远程服务器上检查。
 
-<div id="max_bytes_to_read_leaf">
-  ## max_bytes_to_read_leaf
-</div>
+## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -185,18 +185,14 @@ lazy FINAL 优化中集合的最大字节数。超过该值时，将回退到普
   当 `prefer_localhost_replica=1` 时，此设置不稳定。
 </Note>
 
-<div id="max_bytes_to_sort">
-  ## max_bytes_to_sort
-</div>
+## max_bytes_to_sort {#max_bytes_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 进行排序前允许处理的最大字节数。如果 ORDER BY 操作需要处理的未压缩字节数
 超过指定数量，则其行为由 `sort_overflow_mode` 决定；该参数默认设置为 `throw`。
 
-<div id="max_bytes_to_transfer">
-  ## max_bytes_to_transfer
-</div>
+## max_bytes_to_transfer {#max_bytes_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

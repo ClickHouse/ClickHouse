@@ -20,9 +20,7 @@ doc_type: 'reference'
   Существует еще один способ выполнить агрегацию по таблице. Если запрос содержит столбцы таблицы только внутри агрегатных функций, `предложение GROUP BY` можно опустить — в этом случае предполагается агрегация по пустому множеству ключей. Такие запросы всегда возвращают ровно одну строку.
 </Note>
 
-<div id="null-processing">
-  ## Обработка NULL
-</div>
+## Обработка NULL {#null-processing}
 
 При группировке ClickHouse рассматривает [NULL](/ru/reference/syntax#null) как значение, и `NULL==NULL`. В большинстве других случаев `NULL` обрабатывается иначе.
 
@@ -54,9 +52,7 @@ doc_type: 'reference'
 
 Если передать в `GROUP BY` несколько ключей, в результате будут все комбинации из выборки, как будто `NULL` — это конкретное значение.
 
-<div id="rollup-modifier">
-  ## Модификатор ROLLUP
-</div>
+## Модификатор ROLLUP {#rollup-modifier}
 
 Модификатор `ROLLUP` используется для вычисления промежуточных итогов по ключевым выражениям на основе их порядка в списке `GROUP BY`. Строки промежуточных итогов добавляются после результирующей таблицы.
 
@@ -127,9 +123,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH ROLLUP;
 
 * Настройка [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings/group-by#group_by_use_nulls) для обеспечения совместимости со стандартом SQL.
 
-<div id="cube-modifier">
-  ## Модификатор CUBE
-</div>
+## Модификатор CUBE {#cube-modifier}
 
 Модификатор `CUBE` используется для вычисления промежуточных итогов для всех комбинаций ключевых выражений в списке `GROUP BY`. Строки с промежуточными итогами добавляются после результирующей таблицы.
 
@@ -224,9 +218,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 * настройку [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings/group-by#group_by_use_nulls) для совместимости со стандартом SQL.
 
-<div id="with-totals-modifier">
-  ## Модификатор WITH TOTALS
-</div>
+## Модификатор WITH TOTALS {#with-totals-modifier}
 
 Если указан модификатор `WITH TOTALS`, вычисляется ещё одна строка. В этой строке столбцы ключа содержат значения по умолчанию (нули или пустые строки), а столбцы агрегатных функций — значения, вычисленные по всем строкам (значения «итого»).
 
@@ -244,9 +236,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 При наличии [HAVING](/ru/reference/statements/select/having) модификатор `WITH TOTALS` может работать по-разному. Поведение зависит от настройки `totals_mode`.
 
-<div id="configuring-totals-processing">
-  ### Настройка обработки totals
-</div>
+### Настройка обработки totals {#configuring-totals-processing}
 
 По умолчанию используется `totals_mode = 'before_having'`. В этом случае `totals` вычисляется по всем строкам, включая те, которые не проходят HAVING и ограничение `max_rows_to_group_by`.
 
@@ -264,9 +254,7 @@ SELECT year, month, day, count(*) FROM t GROUP BY year, month, day WITH CUBE;
 
 Вы можете использовать `WITH TOTALS` в подзапросах, включая подзапросы в условии [JOIN](/ru/reference/statements/select/join) (в этом случае соответствующие итоговые значения объединяются).
 
-<div id="group-by-all">
-  ## GROUP BY ALL
-</div>
+## GROUP BY ALL {#group-by-all}
 
 `GROUP BY ALL` равносилен перечислению всех выражений в SELECT, которые не являются агрегатными функциями.
 
@@ -314,9 +302,7 @@ FROM t
 GROUP BY substring(a, 4, 2), substring(a, 1, 2)
 ```
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 Пример:
 
@@ -343,9 +329,7 @@ GROUP BY domain
 
 Для каждого уникального значения ключа `GROUP BY` вычисляет набор значений агрегатных функций.
 
-<div id="grouping-sets-modifier">
-  ## Модификатор GROUPING SETS
-</div>
+## Модификатор GROUPING SETS {#grouping-sets-modifier}
 
 Это наиболее общий модификатор.
 Он позволяет вручную задать несколько наборов ключей агрегации (grouping sets).
@@ -382,21 +366,15 @@ GROUPING SETS
 
 * настройку [group&#95;by&#95;use&#95;nulls](/ru/reference/settings/session-settings/group-by#group_by_use_nulls) для совместимости со стандартом SQL.
 
-<div id="implementation-details">
-  ## Подробности реализации
-</div>
+## Подробности реализации {#implementation-details}
 
 Агрегация — одна из важнейших возможностей колоночной СУБД, поэтому её реализация — одна из самых тщательно оптимизированных частей ClickHouse. По умолчанию агрегация выполняется в памяти с использованием хеш-таблицы. Для неё предусмотрено более 40 специализаций, которые автоматически выбираются в зависимости от типов данных ключа группировки.
 
-<div id="group-by-optimization-depending-on-table-sorting-key">
-  ### Оптимизация GROUP BY в зависимости от ключа сортировки таблицы
-</div>
+### Оптимизация GROUP BY в зависимости от ключа сортировки таблицы {#group-by-optimization-depending-on-table-sorting-key}
 
 Агрегацию можно выполнять эффективнее, если таблица отсортирована по некоторому ключу, а выражение `GROUP BY` содержит как минимум префикс ключа сортировки или инъективные функции. В этом случае, когда из таблицы считывается новый ключ, промежуточный результат агрегации можно завершить и отправить клиенту. Это поведение включается настройкой [optimize&#95;aggregation&#95;in&#95;order](/ru/reference/settings/session-settings/optimize-aggregation-in-order#optimize_aggregation_in_order). Такая оптимизация уменьшает использование памяти при агрегации, но в некоторых случаях может замедлить выполнение запроса.
 
-<div id="group-by-in-external-memory">
-  ### GROUP BY во внешней памяти
-</div>
+### GROUP BY во внешней памяти {#group-by-in-external-memory}
 
 Вы можете включить сброс временных данных на диск, чтобы ограничить использование памяти при `GROUP BY`.
 Параметр [max&#95;bytes&#95;before&#95;external&#95;group&#95;by](/ru/reference/settings/session-settings/max-bytes#max_bytes_before_external_group_by) задает порог потребления оперативной памяти, при достижении которого временные данные `GROUP BY` сбрасываются в файловую систему. Если установлено значение 0 (по умолчанию), эта возможность отключена.
@@ -412,6 +390,6 @@ GROUPING SETS
 
 Когда внешняя агрегация включена, если объем данных был меньше `max_bytes_before_external_group_by` (то есть данные не были сброшены), запрос выполняется так же быстро, как и без внешней агрегации. Если какие-либо временные данные были сброшены, время выполнения увеличится в несколько раз (примерно втрое).
 
-Если после `GROUP BY` у вас есть [ORDER BY](/ru/reference/statements/select/order-by) с [LIMIT](/ru/reference/statements/select/limit), то объем используемой оперативной памяти зависит от объема данных, попадающих в `LIMIT`, а не во всей таблице. Но если в `ORDER BY` нет `LIMIT`, не забудьте включить внешнюю сортировку (`max_bytes_before_external_sort`).
+Если после `GROUP BY` у вас есть [ORDER BY](/ru/reference/statements/select/order-by) с [LIMIT](/ru/reference/statements/select/limit), то объем используемой оперативной памяти зависит от объема данных, попадающих в `LIMIT`, а не во всей таблице. Диапазон [`LIMIT ... AFTER ... UNTIL`](/ru/reference/statements/select/limit#limit-after-until) такой экономии не дает, поскольку сортировка не может знать, сколько строк потребуется этому диапазону. Но если в `ORDER BY` нет `LIMIT`, не забудьте включить внешнюю сортировку (`max_bytes_before_external_sort`).
 
 {/*AUTOGENERATED_END*/}

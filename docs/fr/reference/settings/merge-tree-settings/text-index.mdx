@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="text_index_dictionary_block_frontcoding_compression">
-  ## text_index_dictionary_block_frontcoding_compression
-</div>
+## text_index_dictionary_block_frontcoding_compression {#text_index_dictionary_block_frontcoding_compression}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/r
 Compression front-coding par défaut des blocs de dictionnaire de l’index de texte.
 Peut être surchargée par l’argument d’index explicite `dictionary_block_frontcoding_compression`.
 
-<div id="text_index_dictionary_block_size">
-  ## text_index_dictionary_block_size
-</div>
+## text_index_dictionary_block_size {#text_index_dictionary_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="512" />
 
@@ -35,9 +31,7 @@ Peut être surchargée par l’argument d’index explicite `dictionary_block_fr
 Taille de bloc de dictionnaire par défaut pour les index de texte.
 Peut être redéfinie par l’argument d’index explicite `dictionary_block_size`.
 
-<div id="text_index_max_memory_usage_before_flush">
-  ## text_index_max_memory_usage_before_flush
-</div>
+## text_index_max_memory_usage_before_flush {#text_index_max_memory_usage_before_flush}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -45,9 +39,7 @@ Peut être redéfinie par l’argument d’index explicite `dictionary_block_siz
 
 Estimation maximale de la mémoire utilisée par un générateur d’index de texte avant le vidage d’un segment temporaire.
 
-<div id="text_index_max_processed_tokens_before_flush">
-  ## text_index_max_processed_tokens_before_flush
-</div>
+## text_index_max_processed_tokens_before_flush {#text_index_max_processed_tokens_before_flush}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100000000" />
 
@@ -55,9 +47,7 @@ Estimation maximale de la mémoire utilisée par un générateur d’index de te
 
 Nombre maximal de tokens traités accumulés par un générateur d’index de texte avant le vidage d’un segment temporaire.
 
-<div id="text_index_posting_list_block_size">
-  ## text_index_posting_list_block_size
-</div>
+## text_index_posting_list_block_size {#text_index_posting_list_block_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
@@ -66,20 +56,16 @@ Nombre maximal de tokens traités accumulés par un générateur d’index de te
 Taille de bloc par défaut de la posting list pour les index de texte (lignes).
 Peut être remplacée par l’argument d’index explicite `posting_list_block_size`.
 
-<div id="text_index_posting_list_codec">
-  ## text_index_posting_list_codec
-</div>
+## text_index_posting_list_codec {#text_index_posting_list_codec}
 
 <SettingsInfoBlock type="TextIndexPostingListCodec" default_value="none" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "none"},{"label": "Nouveau paramètre"}]}]} />
 
-Codec par défaut de la liste de postings pour les index de texte.
+Codec par défaut de la liste de postings pour les index de texte. L&#39;une des valeurs `none`, `bitpacking`, `pfor`.
 Peut être surchargé par l&#39;argument d&#39;index explicite `posting_list_codec`.
 
-<div id="text_index_serialization_version">
-  ## text_index_serialization_version
-</div>
+## text_index_serialization_version {#text_index_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeTextIndexSerializationVersion" default_value="v2_with_positions" />
 

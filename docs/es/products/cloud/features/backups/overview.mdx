@@ -13,12 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureB
 Las copias de seguridad de la base de datos están diseñadas para permitirle restaurar un servicio a un estado anterior a partir de la última copia de seguridad completada correctamente.
 
 <div id="backups">
-  ## Copias de seguridad
+  ## Copias de seguridad {#backups}
 </div>
 
-<div id="how-backups-work-in-clickhouse-cloud">
-  ### Cómo funcionan las copias de seguridad en ClickHouse Cloud
-</div>
+### Cómo funcionan las copias de seguridad en ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
 Las copias de seguridad de ClickHouse Cloud combinan copias de seguridad &quot;completas&quot; e &quot;incrementales&quot; que forman una cadena de copias de seguridad. La cadena comienza con una copia de seguridad completa y, a continuación, se realizan copias de seguridad incrementales durante los siguientes períodos programados para crear una secuencia de copias de seguridad. Cuando una cadena de copias de seguridad alcanza cierta longitud, se inicia una nueva cadena. Toda esta cadena de copias de seguridad puede utilizarse para restaurar datos en un nuevo servicio si es necesario. Cuando todas las copias de seguridad incluidas en una cadena concreta superan el período de retención establecido para el servicio (más información sobre la retención más adelante), la cadena se descarta.
 
@@ -28,18 +26,14 @@ El día 1, se realiza una copia de seguridad completa para iniciar la cadena de 
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Ejemplo de cadena de copias de seguridad en ClickHouse Cloud" />
 
-<div id="default-backup-policy">
-  ### Política predeterminada de copias de seguridad
-</div>
+### Política predeterminada de copias de seguridad {#default-backup-policy}
 
 Las copias de seguridad se contabilizan y facturan por separado del almacenamiento en los niveles Basic, Scale y Enterprise.
 Actualmente, los servicios incluyen por defecto una copia de seguridad diaria con una retención de 24 horas. La configuración de las copias de seguridad puede variar según el servicio y el acuerdo.
 
 Consulta [&quot;Revisar y restaurar copias de seguridad&quot;](/es/products/cloud/guides/backups/review-and-restore-backups) para obtener más detalles.
 
-<div id="configurable-backups">
-  ## Copias de seguridad configurables
-</div>
+## Copias de seguridad configurables {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -58,16 +52,17 @@ ClickHouse Cloud le permite configurar la programación de las copias de segurid
 Consulte [&quot;Configurar programaciones de copias de seguridad&quot;](/es/products/cloud/guides/backups/configurable-backups) para ver los pasos necesarios para configurar sus copias de seguridad.
 
 <div id="byob">
-  ## Copias de seguridad con tu propio bucket (BYOB)
+  ## Copias de seguridad con tu propio bucket (BYOB) {#byob}
 </div>
 
 ClickHouse Cloud permite exportar copias de seguridad al almacenamiento de tu cuenta en tu proveedor de servicios en la nube (CSP) (AWS S3, Google Cloud Storage o Azure Blob Storage).
 Si configuras las copias de seguridad en tu propio bucket, ClickHouse Cloud también seguirá realizando sus propias copias de seguridad de forma predeterminada.
+La configuración de retención de copias de seguridad se aplica a las copias de seguridad escritas en tu bucket. Las copias de seguridad gestionadas por ClickHouse Cloud utilizan la política de retención predeterminada.
 
 Para obtener más información sobre cómo funcionan las copias de seguridad de ClickHouse Cloud, consulta la documentación de [copia de seguridad](/es/products/cloud/guides/backups/review-and-restore-backups).
 
 En esta guía, te mostramos cómo exportar copias de seguridad a tu almacenamiento de objetos en AWS, GCP y Azure, así como cómo restaurar esas copias de seguridad desde tu cuenta en un nuevo servicio de ClickHouse Cloud.
-También compartimos comandos de backup / restore que te permiten exportar copias de seguridad a tu bucket y restaurarlas.
+También compartimos comandos de copia de seguridad / restauración que te permiten exportar copias de seguridad a tu bucket y restaurarlas.
 
 <Info>
   **Copias de seguridad entre regiones**
@@ -75,14 +70,12 @@ También compartimos comandos de backup / restore que te permiten exportar copia
   Cualquier uso en el que las copias de seguridad se exporten a una
   región diferente dentro del mismo proveedor de nube generará cargos por [transferencia de datos](/es/products/cloud/reference/billing/network-data-transfer).
 
-  Actualmente, no admitimos backup / restore para servicios que utilicen [Transparent Data Encryption (TDE)](/es/products/cloud/guides/security/cmek#transparent-data-encryption-tde) ni para servicios regulados.
+  Actualmente, no admitimos copias de seguridad / restauración para servicios que utilicen [Transparent Data Encryption (TDE)](/es/products/cloud/guides/security/cmek#transparent-data-encryption-tde) ni para servicios regulados.
 </Info>
 
 Consulta [&quot;Exportar copias de seguridad a tu propia cuenta de Cloud&quot;](/es/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) para ver ejemplos de cómo realizar copias de seguridad completas e incrementales en el almacenamiento de objetos de AWS, GCP y Azure, así como de cómo restaurar a partir de ellas.
 
-<div id="backup-options">
-  ### Opciones de copias de seguridad
-</div>
+### Opciones de copias de seguridad {#backup-options}
 
 Para exportar copias de seguridad a su propia cuenta en la nube, tiene dos opciones:
 
@@ -100,7 +93,7 @@ Para exportar copias de seguridad a su propia cuenta en la nube, tiene dos opcio
 </Steps>
 
 <Warning>
-  ClickHouse Cloud no gestionará el ciclo de vida de las copias de seguridad en los buckets del cliente.
-  Los clientes son responsables de garantizar que las copias de seguridad de su bucket se gestionen adecuadamente para cumplir los estándares de cumplimiento normativo, así como de gestionar los costos.
+  ClickHouse Cloud no gestiona el ciclo de vida de las copias de seguridad exportadas mediante comandos SQL.
+  Los clientes son responsables de garantizar que estas copias de seguridad se gestionen adecuadamente para cumplir los estándares de cumplimiento normativo, así como de gestionar los costos.
   Si las copias de seguridad están dañadas, no podrán restaurarse.
 </Warning>

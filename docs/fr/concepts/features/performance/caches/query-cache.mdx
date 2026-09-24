@@ -10,7 +10,7 @@ Le cache des requêtes permet de calculer les requêtes `SELECT` une seule fois,
 Selon le type de requêtes, cela peut réduire considérablement la latence et la consommation de ressources du serveur ClickHouse.
 
 <div id="background-design-and-limitations">
-  ## Contexte, conception et limites
+  ## Contexte, conception et limites {#background-design-and-limitations}
 </div>
 
 Les caches de requêtes peuvent généralement être considérés comme cohérents ou incohérents sur le plan transactionnel.
@@ -33,7 +33,7 @@ configuration sont souvent dupliquées. Avec le cache de requêtes de ClickHouse
 et évite les redondances.
 
 <div id="configuration-settings-and-usage">
-  ## Paramètres de configuration et utilisation
+  ## Paramètres de configuration et utilisation {#configuration-settings-and-usage}
 </div>
 
 <Note>
@@ -111,7 +111,7 @@ enregistrements) peuvent être configurés à l’aide de différentes [options 
 
 Il est également possible de limiter l’utilisation du cache pour chaque utilisateur à l’aide des [profils de paramètres](/fr/concepts/features/configuration/settings/settings-profiles) et des [contraintes
 sur les paramètres](/fr/concepts/features/configuration/settings/constraints-on-settings). Plus précisément, vous pouvez restreindre la quantité maximale de mémoire (en octets) qu’un utilisateur peut
-allouer au cache des requêtes ainsi que le nombre maximal de résultats de requête stockés. Pour cela, définissez d’abord les paramètres
+allouer au cache de requêtes ainsi que le nombre maximal de résultats de requête stockés. Pour cela, définissez d’abord les paramètres
 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/fr/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) et
 [query&#95;cache&#95;max&#95;entries](/fr/reference/settings/session-settings/query-cache#query_cache_max_entries) dans un profil utilisateur dans `users.xml`, puis rendez les deux paramètres
 readonly:
@@ -145,10 +145,10 @@ FROM table
 SETTINGS use_query_cache = true, query_cache_min_query_duration = 5000;
 ```
 
-n&#39;est mis en cache que si la requête s&#39;exécute pendant plus de 5 secondes. Il est également possible de spécifier à quelle fréquence une requête doit s&#39;exécuter pour que son résultat soit
+n&#39;est mis en cache que si la requête s&#39;exécute pendant plus de 5 secondes. Il est également possible de spécifier à quelle fréquence une requête doit s&#39;exécuter pour que son résultat soit
 mis en cache — pour cela, utilisez le paramètre [query&#95;cache&#95;min&#95;query&#95;runs](/fr/reference/settings/session-settings/query-cache#query_cache_min_query_runs).
 
-Les entrées du cache de requêtes deviennent obsolètes après une certaine période (time-to-live). Par défaut, cette période est de 60 secondes, mais une autre
+Les entrées du cache de requêtes deviennent obsolètes après une certaine période (time-to-live). Par défaut, cette période est de 60 secondes, mais une autre
 valeur peut être spécifiée au niveau de la session, du profil ou de la requête à l&#39;aide du paramètre [query&#95;cache&#95;ttl](/fr/reference/settings/session-settings/query-cache#query_cache_ttl). Le cache de
 requêtes évince les entrées de manière &quot;paresseuse&quot;, c.-à-d. que lorsqu&#39;une entrée devient obsolète, elle n&#39;est pas immédiatement supprimée du cache. Au lieu de cela, lorsqu&#39;une nouvelle entrée
 doit être insérée dans le cache de requêtes, la base de données vérifie si le cache dispose de suffisamment d&#39;espace libre pour la nouvelle entrée. Si ce n&#39;est pas le
@@ -164,7 +164,7 @@ Il est parfois utile de conserver en cache plusieurs résultats pour la même re
 [query&#95;cache&#95;tag](/fr/reference/settings/session-settings/query-cache#query_cache_tag), qui agit comme une étiquette (ou un espace de noms) pour les entrées du cache de requêtes. Le cache de requêtes
 considère comme différents les résultats de la même requête avec des tags différents.
 
-Exemple de création de trois entrées différentes dans le cache de requêtes pour la même requête :
+Exemple de création de trois entrées différentes dans le cache de requêtes pour la même requête :
 
 ```sql
 SELECT 1 SETTINGS use_query_cache = true; -- query_cache_tag is implicitly '' (empty string)
@@ -175,7 +175,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 Pour supprimer uniquement les entrées portant le tag `tag` du cache de requêtes, vous pouvez utiliser l’instruction `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
 <div id="subquery-caching">
-  ## Mise en cache des sous-requêtes
+  ## Mise en cache des sous-requêtes {#subquery-caching}
 </div>
 
 Par défaut, `use_query_cache` dans la requête externe n&#39;est pas appliqué aux sous-requêtes. Cela signifie que chaque sous-requête doit activer explicitement la mise en cache :
@@ -251,7 +251,7 @@ ROW POLICY sur une table en exécutant la même requête qu’un autre utilisate
 [query&#95;cache&#95;share&#95;between&#95;users](/fr/reference/settings/session-settings/query-cache#query_cache_share_between_users).
 
 <div id="related-content">
-  ## Contenu connexe
+  ## Contenu connexe {#related-content}
 </div>
 
 * Blog : [Présentation du cache de requêtes de ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

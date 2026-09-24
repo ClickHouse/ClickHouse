@@ -10,15 +10,13 @@ doc_type: 'referencia'
 En la versión `24.3` de ClickHouse, el analizador de consultas estaba habilitado de forma predeterminada.
 Puede obtener más información sobre su funcionamiento [aquí](/es/guides/clickhouse/performance-and-monitoring/understanding-query-execution-with-the-analyzer#analyzer).
 
-<div id="known-incompatibilities">
-  ## Incompatibilidades conocidas
-</div>
+Desde la versión `26.9`, el analizador es obligatorio: el ajuste `enable_analyzer` está obsoleto, se rechaza cualquier intento de establecerlo en `0` y ya no se admite el análisis de consultas que ClickHouse utilizaba antes de la `24.3`. Las incompatibilidades que se enumeran a continuación describen en qué se diferenciaba aquel análisis anterior, de modo que pueda actualizarse una consulta escrita para él; para observar su comportamiento, ejecute la consulta en una versión de ClickHouse anterior a la `26.9`.
+
+## Incompatibilidades conocidas {#known-incompatibilities}
 
 A pesar de corregir una gran cantidad de errores e introducir nuevas optimizaciones, también se introducen algunos cambios incompatibles en el comportamiento de ClickHouse. Lea los siguientes cambios para determinar cómo reescribir sus consultas para el analizador.
 
-<div id="invalid-queries-are-no-longer-optimized">
-  ### Las consultas no válidas ya no se optimizan
-</div>
+### Las consultas no válidas ya no se optimizan {#invalid-queries-are-no-longer-optimized}
 
 La infraestructura anterior de planificación de consultas aplicaba optimizaciones a nivel de AST antes del paso de validación de la consulta.
 Las optimizaciones podían reescribir la consulta inicial para que fuera válida y ejecutable.
@@ -27,9 +25,7 @@ En el analizador, la validación de la consulta se realiza antes del paso de opt
 Esto significa que las consultas no válidas que antes podían ejecutarse ahora ya no se admiten.
 En esos casos, la consulta debe corregirse manualmente.
 
-<div id="example-1">
-  #### Ejemplo 1
-</div>
+#### Ejemplo 1 {#example-1}
 
 La siguiente consulta usa la columna `number` en la lista de proyección cuando, tras la agregación, solo está disponible `toString(number)`.
 En el analizador anterior, `GROUP BY toString(number)` se optimizaba a `GROUP BY number,`, lo que hacía que la consulta fuera válida.
@@ -40,9 +36,7 @@ FROM numbers(1)
 GROUP BY toString(number)
 ```
 
-<div id="example-2">
-  #### Ejemplo 2
-</div>
+#### Ejemplo 2 {#example-2}
 
 El mismo problema se produce en esta consulta. La columna `number` se usa después de la agregación con otra clave.
 El analizador de consultas anterior corrigió esta consulta al mover el filtro `number > 5` de la cláusula `HAVING` a la cláusula `WHERE`.
@@ -69,9 +63,7 @@ GROUP BY n
 
 Como ayuda para la migración, el analizador puede replicar la antigua reescritura de `HAVING` a `WHERE` para conjunciones AND no agregadas. Habilita `analyzer_compatibility_allow_non_aggregate_in_having = 1` para activar este comportamiento. Esta configuración está disponible desde ClickHouse `26.7`. La configuración se ignora para `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS` y `GROUPING SETS`. Las conjunciones que contienen funciones de agregación, `grouping` o no deterministas permanecen en `HAVING`; si alguna conjunción contiene una función de ventana o una función con estado (por ejemplo, `rowNumberInBlock`), la reescritura se desactiva para toda la cláusula `HAVING`, en consonancia con el comportamiento heredado.
 
-<div id="create-view-with-invalid-query">
-  ### `CREATE VIEW` con una consulta no válida
-</div>
+### `CREATE VIEW` con una consulta no válida {#create-view-with-invalid-query}
 
 El analizador siempre realiza la verificación de tipos.
 Anteriormente, era posible crear una `VIEW` con una consulta `SELECT` no válida.
@@ -79,9 +71,7 @@ El error aparecía durante el primer `SELECT` o `INSERT` (en el caso de `MATERIA
 
 Ya no es posible crear una `VIEW` de esta forma.
 
-<div id="example-view">
-  #### Ejemplo
-</div>
+#### Ejemplo {#example-view}
 
 ```sql
 CREATE TABLE source (data String)
@@ -93,13 +83,9 @@ AS SELECT JSONExtract(data, 'test', 'DateTime64(3)')
 FROM source;
 ```
 
-<div id="known-incompatibilities-of-the-join-clause">
-  ### Incompatibilidades conocidas de la cláusula `JOIN`
-</div>
+### Incompatibilidades conocidas de la cláusula `JOIN` {#known-incompatibilities-of-the-join-clause}
 
-<div id="join-using-column-from-projection">
-  #### `JOIN` usando una columna de una proyección
-</div>
+#### `JOIN` usando una columna de una proyección {#join-using-column-from-projection}
 
 De forma predeterminada, no se puede usar un alias de la lista `SELECT` como clave de `JOIN USING`.
 
@@ -119,9 +105,7 @@ El resultado será `2, 'two'`.
 Cuando la configuración está en `false`, la condición de join pasa a ser `t1.b = t2.b` de forma predeterminada, y la consulta devolverá `2, 'one'`.
 Si `b` no está presente en `t1`, la consulta fallará con un error.
 
-<div id="changes-in-behavior-with-join-using-and-aliasmaterialized-columns">
-  #### Cambios de comportamiento con `JOIN USING` y columnas `ALIAS`/`MATERIALIZED`
-</div>
+#### Cambios de comportamiento con `JOIN USING` y columnas `ALIAS`/`MATERIALIZED` {#changes-in-behavior-with-join-using-and-aliasmaterialized-columns}
 
 En el analizador, usar `*` en una consulta `JOIN USING` que involucre columnas `ALIAS` o `MATERIALIZED` hará que esas columnas se incluyan en el conjunto de resultados de forma predeterminada.
 
@@ -144,9 +128,7 @@ y las columnas podían aparecer en un orden diferente.
 
 Para garantizar resultados coherentes y previsibles, especialmente al migrar consultas antiguas al analizador, es aconsejable especificar las columnas explícitamente en la cláusula `SELECT` en lugar de usar `*`.
 
-<div id="handling-of-type-modifiers-for-columns-in-using-clause">
-  #### Manejo de los modificadores de tipo de las columnas en la cláusula `USING`
-</div>
+#### Manejo de los modificadores de tipo de las columnas en la cláusula `USING` {#handling-of-type-modifiers-for-columns-in-using-clause}
 
 En el analizador, se han estandarizado las reglas para determinar el supertipo común de las columnas especificadas en la cláusula `USING`, con el fin de producir resultados más predecibles,
 especialmente al trabajar con modificadores de tipo como `LowCardinality` y `Nullable`.
@@ -165,9 +147,7 @@ USING (id);
 
 En esta consulta, el supertipo común de `id` se establece como `String`, descartando el modificador `LowCardinality` de `t1`.
 
-<div id="projection-column-names-changes">
-  ### Cambios en los nombres de las columnas de la proyección
-</div>
+### Cambios en los nombres de las columnas de la proyección {#projection-column-names-changes}
 
 Durante el cálculo de los nombres de la proyección, no se sustituyen los alias.
 
@@ -175,27 +155,26 @@ Durante el cálculo de los nombres de la proyección, no se sustituyen los alias
 SELECT
     1 + 1 AS x,
     x + 1
-SETTINGS enable_analyzer = 0
 FORMAT PrettyCompact
+```
 
+Antes de `24.3`, la segunda columna recibía el nombre del alias sustituido:
+
+```text
    ┌─x─┬─plus(plus(1, 1), 1)─┐
 1. │ 2 │                   3 │
    └───┴─────────────────────┘
+```
 
-SELECT
-    1 + 1 AS x,
-    x + 1
-SETTINGS enable_analyzer = 1
-FORMAT PrettyCompact
+El analizador conserva el alias en el nombre:
 
+```text
    ┌─x─┬─plus(x, 1)─┐
 1. │ 2 │          3 │
    └───┴────────────┘
 ```
 
-<div id="incompatible-function-arguments-types">
-  ### Tipos incompatibles en los argumentos de función
-</div>
+### Tipos incompatibles en los argumentos de función {#incompatible-function-arguments-types}
 
 En el analizador, la inferencia de tipos se produce durante el análisis inicial de la consulta.
 Este cambio significa que las comprobaciones de tipos se realizan antes de la evaluación de cortocircuito; por lo tanto, los argumentos de la función `if` siempre deben tener un supertipo común.
@@ -206,39 +185,24 @@ Por ejemplo, la siguiente consulta falla con `There is no supertype for types Ar
 SELECT toTypeName(if(0, [2, 3, 4], 'String'))
 ```
 
-<div id="heterogeneous-clusters">
-  ### Clústeres heterogéneos
-</div>
+### Clústeres heterogéneos {#heterogeneous-clusters}
 
-El analizador cambia de forma significativa el protocolo de comunicación entre los servidores del clúster. Por lo tanto, es imposible ejecutar consultas distribuidas en servidores con valores distintos de la configuración `enable_analyzer`.
+El analizador cambia de forma significativa el protocolo de comunicación entre los servidores del clúster. Por lo tanto, es imposible ejecutar consultas distribuidas en servidores que no coincidan en si se usa el analizador, lo que, en un clúster de servidores anteriores a la versión `26.9`, significa servidores con valores distintos de la SETTING `enable_analyzer`.
 
-<div id="mutations-are-interpreted-by-previous-analyzer">
-  ### Las mutaciones se interpretan con el analizador anterior
-</div>
+Un servidor de la versión `26.10` o posterior ya no dispone de ningún otro análisis de consultas, por lo que ignora el valor que envía un iniciador más antiguo y analiza la consulta con el analizador de todos modos. Ambos análisis no nombran igual las columnas del resultado, y el iniciador hace coincidir el bloque que devuelve un segmento por el nombre de la columna, de modo que una consulta así puede fallar en el iniciador con `NOT_FOUND_COLUMN_IN_BLOCK`; por ejemplo, cuando selecciona una función escrita con una grafía no canónica (`hostname()`), que el analizador resuelve a su nombre canónico (`hostName()`). Por consiguiente, un clúster que siga funcionando con el análisis de consultas antiguo debe establecer `enable_analyzer = 1` en todos los servidores antes de actualizar cualquiera de ellos a `26.10`.
 
-Las mutaciones siguen usando el analizador anterior.
-Esto significa que algunas funciones nuevas de ClickHouse SQL no se pueden usar en las mutaciones. Por ejemplo, la cláusula `QUALIFY`.
-Se puede consultar el estado [aquí](https://github.com/ClickHouse/ClickHouse/issues/61563).
-
-<div id="unsupported-features">
-  ### Funcionalidades no compatibles
-</div>
+### Funcionalidades no compatibles {#unsupported-features}
 
 A continuación se muestra la lista de funcionalidades que el analizador no admite actualmente:
 
 * Índice Annoy.
 * Índice Hypothesis. Trabajo en curso [aquí](https://github.com/ClickHouse/ClickHouse/pull/48381).
-* window view no es compatible. No hay planes de admitirla en el futuro.
 
-<div id="cloud-migration">
-  ## Migración a Cloud
-</div>
+## Migración a Cloud {#cloud-migration}
 
 Estamos habilitando el analizador en todas las instancias donde actualmente está deshabilitado para permitir nuevas optimizaciones funcionales y de rendimiento. Este cambio impone reglas de ámbito de SQL más estrictas, por lo que los clientes deberán actualizar manualmente las consultas que no las cumplan.
 
-<div id="migration-workflow">
-  ### Flujo de migración
-</div>
+### Flujo de migración {#migration-workflow}
 
 1. Identifique la consulta filtrando `system.query_log` con `normalized_query_hash`:
 
@@ -250,21 +214,18 @@ LIMIT 1
 SETTINGS skip_unavailable_shards=1
 ```
 
-2. Ejecute la consulta con el analizador habilitado agregando esta configuración.
+2. Ejecute la consulta con el analizador, agregando la configuración de compatibilidad que restaura la resolución de identificadores del análisis anterior en los casos en que la consulta dependa de ella.
 
 ```sql
 SETTINGS
-    enable_analyzer=1,
     analyzer_compatibility_join_using_top_level_identifier=1
 ```
 
-3. Refactoriza y verifica los resultados de la consulta para asegurarte de que coincidan con la salida generada cuando el analizador está desactivado.
+3. Refactoriza y verifica los resultados de la consulta para asegurarte de que coincidan con la salida que producía la consulta antes de la migración.
 
 Consulta las incompatibilidades más frecuentes detectadas durante las pruebas internas.
 
-<div id="unknown-expression-identifier">
-  ### Identificador de expresión desconocido
-</div>
+### Identificador de expresión desconocido {#unknown-expression-identifier}
 
 Error: `Unknown expression identifier ... in scope ... (UNKNOWN_IDENTIFIER)`. Código de excepción: 47
 
@@ -277,9 +238,7 @@ Solución: Actualice sus patrones SQL de la siguiente manera:
 * Claves de JOIN: Use ON con expresiones completas en lugar de USING si la clave es un alias.
 * En las consultas externas, haga referencia al alias de la propia subconsulta/CTE, no a las tablas que contiene.
 
-<div id="non-aggregated-columns-in-group-by">
-  ### Columnas no agregadas en GROUP BY
-</div>
+### Columnas no agregadas en GROUP BY {#non-aggregated-columns-in-group-by}
 
 Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. Código de excepción: 215
 
@@ -298,9 +257,7 @@ SELECT user_id, any(device_id) FROM table GROUP BY user_id
 SELECT user_id, device_id FROM table GROUP BY user_id, device_id
 ```
 
-<div id="non-aggregated-columns-in-having">
-  ### Columnas no agregadas en HAVING
-</div>
+### Columnas no agregadas en HAVING {#non-aggregated-columns-in-having}
 
 Error: `Column ... is not under aggregate function and not in GROUP BY keys (NOT_AN_AGGREGATE)`. código de excepción: 215
 
@@ -316,33 +273,38 @@ SELECT category, sum(value) FROM t GROUP BY category HAVING service = 'svc1';
 SELECT category, sum(value) FROM t WHERE service = 'svc1' GROUP BY category;
 ```
 
-<div id="duplicate-cte-names">
-  ### Nombres de CTE duplicados
-</div>
+### Nombres de CTE duplicados {#duplicate-cte-names}
 
 Error: `CTE with name ... already exists (MULTIPLE_EXPRESSIONS_FOR_ALIAS)`. Código de excepción: 179
 
-Causa: El analizador anterior permitía definir varias Common Table Expressions (WITH ...) con el mismo nombre, de modo que una ocultaba a la anterior. El analizador prohíbe esta ambigüedad.
+Causa: El analizador anterior permitía definir varias expresiones de tabla comunes (Common Table Expressions, WITH ...) con el mismo nombre, de modo que cada definición posterior ocultaba a la anterior. El analizador rechaza esta ambigüedad de forma predeterminada.
 
-Solución: Renombre los CTE duplicados para que tengan nombres únicos.
+Solución: Cambie el nombre de las CTE duplicadas para que sean únicos. Para facilitar la migración, puede habilitar `analyzer_compatibility_allow_cte_redefinition = 1` (disponible desde ClickHouse `26.10`) y restaurar así el comportamiento heredado: una referencia se vincula a la definición más reciente del nombre que no se esté resolviendo en ese momento, de modo que una redefinición puede leer la definición anterior y el cuerpo de la consulta lee la última.
+
+Limitaciones: una CTE declarada como `MATERIALIZED` y una CTE en una cláusula `WITH RECURSIVE` no pueden redefinirse, ni siquiera con el ajuste habilitado. Hay un caso en el que el comportamiento difiere del analizador anterior: una CTE declarada entre dos definiciones de un mismo nombre también se vincula a la última definición, mientras que el analizador anterior la vinculaba a la definición visible en el punto donde se declaraba.
 
 ```sql
-/* CONSULTA ORIGINAL */
-WITH 
-  data AS (SELECT 1 AS id), 
-  data AS (SELECT 2 AS id) -- Redefinida
+/* ORIGINAL QUERY */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data) -- Redefined, reads the previous definition
 SELECT * FROM data;
 
-/* CONSULTA CORREGIDA */
-WITH 
-  raw_data AS (SELECT 1 AS id), 
-  processed_data AS (SELECT 2 AS id)
+/* FIXED QUERY */
+WITH
+  raw_data AS (SELECT 1 AS id),
+  processed_data AS (SELECT id + 1 AS id FROM raw_data)
 SELECT * FROM processed_data;
+
+/* LEGACY BEHAVIOR AS A MIGRATION AID */
+WITH
+  data AS (SELECT 1 AS id),
+  data AS (SELECT id + 1 AS id FROM data)
+SELECT * FROM data
+SETTINGS analyzer_compatibility_allow_cte_redefinition = 1;
 ```
 
-<div id="ambiguous-column-identifiers">
-  ### Identificadores de columna ambiguos
-</div>
+### Identificadores de columna ambiguos {#ambiguous-column-identifiers}
 
 Error: `JOIN [JOIN TYPE] ambiguous identifier ... (AMBIGUOUS_IDENTIFIER)` Código de excepción: 207
 
@@ -358,9 +320,7 @@ SELECT table1.ID AS ID FROM table1, table2 WHERE ID...
 SELECT table1.ID AS ID_RENAMED FROM table1, table2 WHERE ID_RENAMED...
 ```
 
-<div id="invalid-usage-of-final">
-  ### Uso no válido de FINAL
-</div>
+### Uso no válido de FINAL {#invalid-usage-of-final}
 
 Error: `Table expression modifiers FINAL are not supported for subquery...` o `Storage ... doesn't support FINAL` (`UNSUPPORTED_METHOD`). Códigos de excepción: 1, 181
 
@@ -379,9 +339,7 @@ SELECT * FROM (SELECT * FROM my_table) AS subquery FINAL ...
 SELECT * FROM (SELECT * FROM my_table FINAL) AS subquery ...
 ```
 
-<div id="countdistinct-case-insensitivity">
-  ### Insensibilidad a mayúsculas y minúsculas en la función `countDistinct()`
-</div>
+### Insensibilidad a mayúsculas y minúsculas en la función `countDistinct()` {#countdistinct-case-insensitivity}
 
 Error: `Function with name countdistinct does not exist (UNKNOWN_FUNCTION)`. Código de excepción: 46
 

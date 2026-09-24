@@ -1,0 +1,50 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-10
+title: 'Demo days - 2026-09-10'
+sidebarTitle: '2026-09-10'
+description: 'ClickStack demo days del 2026-09-10'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Filtros de dashboard obligatorios {#required-dashboard-filters}
+
+*Demo por [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Ahora los filtros de un dashboard pueden marcarse como obligatorios, de modo que los tiles no se cargan hasta que se selecciona un valor para ellos. Antes todos los filtros eran opcionales, y al abrir un dashboard construido sobre una source grande se ejecutaban todos sus tiles sin filtrar, antes de haber acotado nada.
+
+La definición de un filtro incorpora un nuevo toggle **Required**. Por sí solo bloquea los tiles que realmente usan el filtro: los que lo referencian como variable y los que reciben de él un valor por broadcast. En la demo, un filtro de nombre de servicio difundido por broadcast a las sources de log y de traces bloqueó todos los tiles del dashboard, mientras que un filtro de severidad que solo existe en la table de log bloqueó los tiles de log y dejó los de traces cargándose como antes.
+
+Una segunda opción extiende la obligatoriedad a todos los tiles del dashboard, usen o no el filtro como variable y reciban o no de él un valor por broadcast. Por debajo, cada tipo de filtro incorporó dos campos: `minSelections`, donde un valor de 1 significa obligatorio, e `isGlobalRequirement` para la versión aplicada a todo el dashboard. `minSelections` es un número y no un valor Boolean para que más adelante sigan siendo posibles un límite `maxSelections` equivalente y mínimos superiores a 1.
+
+Los filtros dependientes aún no quedan bloqueados por los filtros obligatorios de los que dependen, así que un filtro cuya consulta de opciones referencia una variable obligatoria sigue consultando sus opciones antes de que esa variable tenga un valor.
+
+Las selecciones de filtros y variables del dashboard también se aplican ahora a la vista previa del chart en el editor de tiles, tal como sugirió Brandon al revisar el PR de los filtros obligatorios. Antes las variables y los filtros principales se propagaban a la vista previa, pero los filtros por broadcast no, lo cual era una inconsistencia; y con los filtros obligatorios ya disponibles, hay un argumento de performance para editar un tile con los mismos filtros que aplica el dashboard. El toggle **Apply filters** está activado de forma predeterminada y puedes desactivarlo para ver el tile de ambas maneras.
+
+El toggle se desactiva de forma forzosa cuando el tile tiene una alert configurada, porque las alerts se evalúan sin ningún filtro aplicado. Así la vista previa coincide con lo que la alert consultará realmente.
+
+Cuando un filtro obligatorio bloquea la vista previa, el mensaje del editor de tiles ahora indica que desactivar **Apply filters** es la forma de superar el bloqueo.
+
+**PR relacionados:** [#3078](https://github.com/hyperdxio/hyperdx/pull/3078) Support configuring dashboard filters as required, [#3093](https://github.com/hyperdxio/hyperdx/pull/3093) Optionally apply dashboard filters to tile editor preview, [#3098](https://github.com/hyperdxio/hyperdx/pull/3098) Add getBlockingRequiredFilterNames, update tile editor blocked copy
+
+## Progreso de consultas en vivo en la página de búsqueda {#live-query-progress-on-the-search-page}
+
+*Demo por [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/W7Z32B1Xtng?start=143" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Antes, una búsqueda lenta mostraba un indicador de carga indeterminado durante todo el proceso. No había forma de saber si ClickHouse había recorrido un 5 % o un 95 % de un rango, ni si estaba haciendo algo en absoluto, que es justamente la situación en la que te encuentras cuando una source tiene una primary key que no se ajusta a la consulta. El footer de la Results Table y la franja de filas escaneadas y tiempo transcurrido del histogram ahora informan los propios counters de progreso de ClickHouse: cuánto tiempo lleva ejecutándose la consulta, cuántas filas se han escaneado y un porcentaje. Es muy parecido a lo que muestra la ClickHouse CLI mientras una consulta transmite datos.
+
+El progreso proviene del formato `JSONEachRowWithProgress`, que intercala líneas `{"progress":...}` con las filas en el cuerpo de la respuesta. Los encabezados resultaron un callejón sin salida: ClickHouse deja de emitir `X-ClickHouse-Progress` una vez que ha comenzado el cuerpo y, de todos modos, `fetch()` no puede exponer encabezados de forma incremental. El formato requiere ClickHouse 25.1 o posterior, por lo que se selecciona por connection según la versión del servidor informada, y los servidores más antiguos o desconocidos mantienen la ruta existente sin transmisión.
+
+La página de búsqueda consulta una ventana de tiempo a la vez en lugar de todo el rango de una sola vez, de modo que una búsqueda de una semana se ejecuta día a día y se detiene cuando ya tiene suficientes filas. El progreso se calcula sobre el conjunto completo de ventanas y, de forma deliberada, se mantiene en los huecos entre ellas: borrarlo en ese límite hacía que la barra desapareciera y que el temporizador de tiempo transcurrido se reiniciara en cada ventana, decenas de veces a lo largo de un rango de un mes. Una ventana se registra como en curso al 0 % antes de empezar a leer, para que a una ventana recién abierta no se le acredite todo su rango.
+
+Esto solo está disponible en la página de búsqueda principal. Se oculta durante el seguimiento en vivo, donde la consulta se vuelve a ejecutar cada pocos segundos y una barra solo parpadearía. Con la primera ventana corta, una búsqueda que alcanza su `LIMIT` de inmediato muestra alrededor del 0 % por un instante antes de que la barra desaparezca.
+
+Lo que se transmite es el progreso, no los resultados. Las filas siguen llegando de a una ventana, y devolverlas a medida que se escanean requiere compatibilidad con transmisión del lado de ClickHouse, en lo que ya se está trabajando, como preguntó Jordan durante la llamada. El proxy que se interpone añade ahí su propia complejidad, así que todavía no está implementado.
+
+La fragmentación tiene una carencia relacionada que surgió como comentario: mientras el histogram se va completando fragmento a fragmento, nada distingue una ventana que aún se está consultando de una que no devolvió datos, y vendría bien alguna indicación de progreso en el propio chart. Eso reside en una parte del código distinta a la de este cambio.
+
+**PR relacionados:** [#3103](https://github.com/hyperdxio/hyperdx/pull/3103) Mostrar el progreso en vivo de la consulta de ClickHouse durante una búsqueda (abierto). El particionado día a día de la búsqueda sobre el que informa la barra es un trabajo anterior y no forma parte de este cambio; las ventanas de búsqueda incrementales llegaron en [#1125](https://github.com/hyperdxio/hyperdx/pull/1125) y la fragmentación de charts en [#1233](https://github.com/hyperdxio/hyperdx/pull/1233).

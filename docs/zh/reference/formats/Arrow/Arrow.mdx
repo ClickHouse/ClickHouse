@@ -15,17 +15,13 @@ doc_type: 'reference'
 | -- | -- | -- |
 | ✔  | ✔  |    |
 
-<div id="description">
-  ## 说明
-</div>
+## 说明 {#description}
 
 [Apache Arrow](https://arrow.apache.org/) 提供两种内置的列式存储格式。
 ClickHouse 支持对这些格式进行读写。
 `Arrow` 是 Apache Arrow 的“文件模式”格式，专为内存中的随机访问而设计。
 
-<div id="data-types-matching">
-  ## 数据类型匹配
-</div>
+## 数据类型匹配 {#data-types-matching}
 
 下表列出了支持的数据类型，以及它们在 `INSERT` 和 `SELECT` 查询中与 ClickHouse [数据类型](/zh/reference/data-types/index) 的对应关系。
 
@@ -70,15 +66,11 @@ Array 可以嵌套，其参数也可以是 `Nullable` 类型的值。`Tuple` 和
 
 ClickHouse 表列的数据类型不必与对应的 Arrow 数据字段完全一致。插入数据时，ClickHouse 会先根据上表解释数据类型，然后再将数据[转换](/zh/reference/functions/regular-functions/type-conversion-functions#CAST)为 ClickHouse 表列设置的数据类型。
 
-<div id="example-usage">
-  ## 示例用法
-</div>
+## 示例用法 {#example-usage}
 
 在下面的示例中，我们使用 [ClickHouse SQL playground](https://sql.clickhouse.com) 提供的 `forex` 数据集。
 
-<div id="selecting-data">
-  ### 选择数据
-</div>
+### 选择数据 {#selecting-data}
 
 我们从 Playground 中选取一天的 `EUR/USD` 汇率数据，并将其保存到本地
 `forex_eurusd.arrow` 文件中。我们通过 HTTP 接口查询 Playground，
@@ -102,9 +94,7 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-<div id="reading-data">
-  ### 读取文件内容
-</div>
+### 读取文件内容 {#reading-data}
 
 现在，我们可以使用
 [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local) 和
@@ -130,9 +120,7 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-<div id="inserting-data">
-  ### 插入数据
-</div>
+### 插入数据 {#inserting-data}
 
 要将 Arrow 文件加载到 ClickHouse 表中，请将其通过 `clickhouse-client`
 并使用 `FORMAT Arrow` 导入：
@@ -141,22 +129,23 @@ clickhouse-local --query "
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-<div id="format-settings">
-  ## 格式设置
-</div>
+## 格式设置 {#format-settings}
 
-| 设置                                                                           | 说明                                                                                      | 默认值         |
-| ---------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ----------- |
-| `input_format_arrow_allow_missing_columns`                                   | 读取 Arrow 输入格式时允许缺失列                                                                     | `1`         |
-| `input_format_arrow_case_insensitive_column_matching`                        | 匹配 Arrow 列与 CH 列时忽略大小写。                                                                 | `0`         |
-| `input_format_arrow_import_nested`                                           | 已废弃，无任何作用。                                                                              | `0`         |
-| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | 对 Arrow 格式进行 schema 推断时，跳过类型不受支持的列                                                      | `0`         |
-| `output_format_arrow_compression_method`                                     | Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd、none (未压缩)                                   | `lz4_frame` |
-| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | 对 FixedString 列使用 Arrow FIXED&#95;SIZE&#95;BINARY 类型，而不是 Binary 类型。                     | `1`         |
-| `output_format_arrow_low_cardinality_as_dictionary`                          | 启用将 LowCardinality 类型输出为 Arrow 的 字典 类型                                                  | `0`         |
-| `output_format_arrow_string_as_string`                                       | 对 String 列使用 Arrow String 类型，而不是 Binary 类型                                              | `1`         |
-| `output_format_arrow_unsupported_types_as_binary`                            | 将没有对应 Arrow 等价类型的类型 (例如 `BFloat16`、`AggregateFunction`) 输出为原始二进制数据。如果为 false，此类类型会引发异常。 | `1`         |
-| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | 在 Arrow 格式中始终对字典索引使用 64 位整数                                                             | `0`         |
-| `output_format_arrow_use_signed_indexes_for_dictionary`                      | 在 Arrow 格式中对字典索引使用有符号整数                                                                 | `1`         |
+| 设置                                                                           | 说明                                                                                                                                                                                                                                                                                   | 默认值         |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------- |
+| `input_format_arrow_allow_missing_columns`                                   | 读取 Arrow 输入格式时允许缺失列                                                                                                                                                                                                                                                                  | `1`         |
+| `input_format_arrow_case_insensitive_column_matching`                        | 匹配 Arrow 列与 CH 列时忽略大小写。                                                                                                                                                                                                                                                              | `0`         |
+| `input_format_arrow_import_nested`                                           | 已废弃，无任何作用。                                                                                                                                                                                                                                                                           | `0`         |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | 对 Arrow 格式进行 schema 推断时，跳过类型不受支持的列                                                                                                                                                                                                                                                   | `0`         |
+| `output_format_arrow_compression_method`                                     | Arrow 输出格式的压缩方法。支持的编解码器：lz4&#95;frame、zstd、none (未压缩)                                                                                                                                                                                                                                | `lz4_frame` |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | 对 FixedString 列使用 Arrow FIXED&#95;SIZE&#95;BINARY 类型，而不是 Binary 类型。                                                                                                                                                                                                                  | `1`         |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | 启用将 LowCardinality 类型输出为 Arrow 的 字典 类型                                                                                                                                                                                                                                               | `0`         |
+| `output_format_arrow_record_batch_size`                                      | 合并小块时每个 record batch 的目标行数。缓冲可能增加内存占用，并使第一个批次延迟到查询结束后才输出。`0` 表示禁用行数目标。                                                                                                                                                                                                               | `0`         |
+| `output_format_arrow_record_batch_size_bytes`                                | 每个 record batch 累积块数据的目标字节数。缓冲可能增加内存占用，并使第一个批次延迟到查询结束后才输出。`0` 表示禁用字节数目标。                                                                                                                                                                                                             | `0`         |
+| `output_format_arrow_string_as_string`                                       | 对 String 列使用 Arrow String 类型，而不是 Binary 类型                                                                                                                                                                                                                                           | `1`         |
+| `output_format_arrow_unsupported_types`                                      | 对于没有对应 Arrow 等价类型的类型 (例如 `JSON`、`Dynamic`、`QBit`、`AggregateFunction`) 写出何种内容：`throw`、`text` (每行一个 `serializeText` 值，使用 `String` 列所对应的 Arrow 类型) 或 `binary` (每行一个 `serializeBinary` 值，以 Arrow `Binary` 表示)。在 `text` 模式下 `AggregateFunction` 同样为 `Binary`，因为其文本形式即为原始 aggregate state。 | `binary`    |
+| `output_format_arrow_unsupported_types_as_binary`                            | 已被 `output_format_arrow_unsupported_types` 取代：`0` 表示 `throw`，`1` 表示 `binary`。仅当该设置保持默认值时才会生效。                                                                                                                                                                                        | `1`         |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | 在 Arrow 格式中始终对字典索引使用 64 位整数                                                                                                                                                                                                                                                          | `0`         |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | 在 Arrow 格式中对字典索引使用有符号整数                                                                                                                                                                                                                                                              | `1`         |
 
 {/*AUTOGENERATED_END*/}

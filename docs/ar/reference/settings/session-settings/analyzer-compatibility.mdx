@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، ويتم توليدها تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested">
-  ## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested
-</div>
+## analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested {#analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,19 +21,15 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يسمح بإضافة معرّفات مركّبة إلى Nested. هذا إعداد توافق لأنه يغيّر نتيجة الاستعلام. عند تعطيله، لا يعمل `SELECT a.b.c FROM table ARRAY JOIN a`، ولا يضمّن `SELECT a FROM table` العمود `a.b.c` ضمن نتيجة `Nested a`.
 
-<div id="analyzer_compatibility_allow_non_aggregate_in_having">
-  ## analyzer_compatibility_allow_non_aggregate_in_having
-</div>
+## analyzer_compatibility_allow_non_aggregate_in_having {#analyzer_compatibility_allow_non_aggregate_in_having}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد توافق جديد. عند تمكينه، يحاكي المحلّل سلوك إعادة الكتابة القديم من `HAVING` إلى `WHERE` للأجزاء غير التجميعية المرتبطة بـ AND بدلًا من إصدار `NOT_AN_AGGREGATE`."}]}]} />
 
-عند تمكينه، يحاكي المحلّل السلوك القديم المتمثل في نقل الأجزاء غير التجميعية المرتبطة بـ AND من `HAVING` إلى `WHERE` بدلًا من إصدار `NOT_AN_AGGREGATE`. ويكون الرفض المتوافق مع المعيار هو السلوك الافتراضي؛ وهذا الإعداد وسيلة مساعدة في الترحيل للاستعلامات التي كان المحلّل القديم يقبلها بصمت (`enable_analyzer = 0`). وتبقى الأجزاء المرتبطة التي تحتوي على دوال aggregate أو `grouping` أو دوال غير حتمية في `HAVING`. وإذا احتوى أي جزء مرتبط على دالة window function أو دالة ذات حالة (مثل `rowNumberInBlock`)، تُعطَّل إعادة الكتابة لكامل `HAVING`، بما يطابق سلوك `PredicateExpressionsOptimizer` القديم. كما يتم تجاهل هذا الإعداد عندما يستخدم `GROUP BY` `WITH CUBE` أو `WITH ROLLUP` أو `WITH TOTALS` أو `GROUPING SETS`.
+عند تمكينه، يحاكي المحلّل السلوك القديم المتمثل في نقل الأجزاء غير التجميعية المرتبطة بـ AND من `HAVING` إلى `WHERE` بدلًا من إصدار `NOT_AN_AGGREGATE`. ويكون الرفض المتوافق مع المعيار هو السلوك الافتراضي؛ وهذا الإعداد وسيلة مساعدة في الترحيل للاستعلامات التي كانت تُقبل بصمت في تحليل الاستعلامات الذي كان ClickHouse يستخدمه قبل الإصدار v24.3. وتبقى الأجزاء المرتبطة التي تحتوي على دوال aggregate أو `grouping` أو دوال غير حتمية في `HAVING`. وإذا احتوى أي جزء مرتبط على دالة window function أو دالة ذات حالة (مثل `rowNumberInBlock`)، تُعطَّل إعادة الكتابة لكامل `HAVING`، بما يطابق سلوك `PredicateExpressionsOptimizer` القديم. كما يتم تجاهل هذا الإعداد عندما يستخدم `GROUP BY` `WITH CUBE` أو `WITH ROLLUP` أو `WITH TOTALS` أو `GROUPING SETS`.
 
-<div id="analyzer_compatibility_apply_final_to_all_joined_tables">
-  ## analyzer_compatibility_apply_final_to_all_joined_tables
-</div>
+## analyzer_compatibility_apply_final_to_all_joined_tables {#analyzer_compatibility_apply_final_to_all_joined_tables}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -48,9 +42,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - يُطبَّق `FINAL` على الجدول المحدد عليه فقط.
 * 1 - يُطبَّق `FINAL` الموجود على الجدول أقصى اليسار في JOIN على جميع الجداول المنضمة.
 
-<div id="analyzer_compatibility_join_using_top_level_identifier">
-  ## analyzer_compatibility_join_using_top_level_identifier
-</div>
+## analyzer_compatibility_join_using_top_level_identifier {#analyzer_compatibility_join_using_top_level_identifier}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -58,31 +50,25 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 يفرض حلّ المعرّف في JOIN USING انطلاقًا من الإسقاط (على سبيل المثال، في `SELECT a + 1 AS b FROM t1 JOIN t2 USING (b)` سيُجرى join باستخدام `t1.a + 1 = t2.b` بدلًا من `t1.b = t2.b`). وتُؤخذ أيضًا الأسماء المستعارة المعرّفة في التعبيرات الفرعية ضمن قائمة SELECT في الاعتبار (على سبيل المثال، في `SELECT uniqExact(a + 1 AS b) FROM t1 JOIN t2 USING (b)` يُجرى join باستخدام `t1.a + 1 = t2.b`). عندما يُعرَّف الاسم المستعار المطابق في تعبير فرعي ضمن قائمة SELECT بدلًا من تعريفه كاسم مستعار على المستوى الأعلى، تُعطَّل النسخ المتماثلة المتوازية لهذا الاستعلام. بالنسبة إلى الاستعلامات المُرسلة إلى الخوادم البعيدة (جداول `Distributed`، ودالة الجدول `remote`)، لا يُرفض هذا الاستعلام مع استثناء إلا إذا تعذر حلّ المعرّف على الخادم البعيد تمامًا؛ وإذا كان الاسم المستعار يحجب عمودًا حقيقيًا في الجدول الأيسر، فإن الخادم البعيد يجري join باستخدام ذلك العمود بدلًا منه، لذا قد تختلف النتائج عن التنفيذ المحلي.
 
-<div id="analyzer_compatibility_multiple_joins_qualify_column_names">
-  ## analyzer_compatibility_multiple_joins_qualify_column_names
-</div>
+## analyzer_compatibility_multiple_joins_qualify_column_names {#analyzer_compatibility_multiple_joins_qualify_column_names}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد توافق جديد. عند تفعيله، يحاكي المحلّل أسماء أعمدة النتائج المؤهَّلة التي كان يستخدمها المحلّل القديم للاستعلامات التي تحتوي عبارة FROM فيها على عمليتي JOIN أو أكثر."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد توافق جديد. عند تفعيله، يحاكي المحلّل أسماء أعمدة النتائج المؤهَّلة التي كان يستخدمها المحلّل القديم للاستعلامات التي تحتوي عبارة FROM فيها على عمليتي JOIN أو أكثر."}]}]} />
 
 عند تفعيله، وإذا كانت عبارة `FROM` في الاستعلام تحتوي على عمليتي `JOIN` أو أكثر (تُحتسب الجداول المفصولة بفواصل، بينما لا يُحتسب `ARRAY JOIN`)، يسمّي المحلّل أعمدة النتائج بالطريقة التي كانت تستخدمها إعادة كتابة عمليات الربط المتعددة في المحلّل القديم:
 
-* تُسمّى الأعمدة الناتجة عن توسيع `*` أو `<table>.*` أو `COLUMNS('<regexp>')` بالشكل `<alias-or-table>.<column>` (يكون المؤهِّل هو الاسم المستعار لتعبير الجدول إن وُجد، وإلا فاسم الجدول من دون اسم قاعدة البيانات، وإلا فاسم تعبير الجدول الشائع؛ أما أعمدة الاستعلام الفرعي المربوط الذي لا يحمل اسماً مستعاراً فتظل غير مؤهَّلة). ويحتفظ نوعان من الأعمدة باسميهما غير المؤهَّلين لأنهما ينتميان إلى عملية الربط لا إلى تعبير جدول واحد: عمود ناتج عن `ARRAY JOIN`، ومفتاح مدمج بواسطة `JOIN ... USING`. لذلك، لا تُحلّ المراجع الخارجية مثل `SELECT ll.arr` أو `SELECT ll.k` في هاتين الحالتين؛
+* تُسمّى الأعمدة الناتجة عن توسيع `*` أو `<table>.*` أو `COLUMNS('<regexp>')` بالشكل `<alias-or-table>.<column>` (يكون المؤهِّل هو الاسم المستعار لتعبير الجدول إن وُجد، وإلا فاسم الجدول من دون اسم قاعدة البيانات، وإلا فاسم تعبير الجدول الشائع؛ أما أعمدة الاستعلام الفرعي المربوط الذي لا يحمل اسماً مستعاراً فتظل غير مؤهَّلة). ويحتفظ نوعان من الأعمدة باسميهما غير المؤهَّلين لأنهما ينتميان إلى عملية الربط لا إلى تعبير جدول واحد: عمود ناتج عن `ARRAY JOIN`، ومفتاح مدمج بواسطة `JOIN ... USING`. لذلك، لا تُحلّ المراجع الخارجية مثل `SELECT ll.arr` أو `SELECT ll.k` في هاتين الحالتين؛
 * صيغة قائمة المعرّفات `COLUMNS(col1, col2)` ليست توسيعاً لمطابقة: إذ يحتفظ كل عمود بالاسم تماماً كما كُتب معرّفه، لذا ينتج `COLUMNS(x)` الاسم `x` وينتج `COLUMNS(a.x)` الاسم `a.x`؛
 * يحتفظ مرجع عمود بلا اسم مستعار في قائمة `SELECT` بالاسم تماماً كما كُتب (مثلاً، ينتج `SELECT a.x` عموداً باسم `a.x` حتى عندما يكون `x` غير ملتبس).
 
-يتيح ذلك عمل الاستعلامات الخارجية التي تشير إلى هذه الأعمدة بأسمائها المؤهَّلة، على سبيل المثال:
+يتيح ذلك عمل الاستعلامات الخارجية التي تشير إلى هذه الأعمدة بأسمائها المؤهَّلة، على سبيل المثال:
 
 ```sql
 SELECT ll.Date FROM (SELECT * FROM t AS ll LEFT JOIN t1 ON ll.k = t1.k LEFT JOIN t2 ON ll.k = t2.k);
 ```
 
-لا يسري مفعوله إلا عند تفعيل محلّل (`enable_analyzer = 1`).
-
-<div id="analyzer_compatibility_prefer_alias_over_subcolumn">
-  ## analyzer_compatibility_prefer_alias_over_subcolumn
-</div>
+## analyzer_compatibility_prefer_alias_over_subcolumn {#analyzer_compatibility_prefer_alias_over_subcolumn}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

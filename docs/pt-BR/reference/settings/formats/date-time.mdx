@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
-  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
-</div>
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Remove dinamicamente os zeros à direita dos valores de datetime64 para ajustar a escala de saída para [0, 3, 6],
-correspondendo a &#39;segundos&#39;, &#39;milissegundos&#39; e &#39;microssegundos&#39;
+Remove dinamicamente os zeros à direita dos valores de `DateTime64`, arredondando a escala de saída para cima até o próximo
+múltiplo de três que preserva todos os dígitos significativos: [0, 3, 6, 9]. Uma fração composta somente por zeros é removida.
 
-<div id="date_time_input_format">
-  ## date_time_input_format
-</div>
+## date_time_input_format {#date_time_input_format}
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -51,9 +47,7 @@ Veja também:
 * [Tipo de dado DateTime.](/pt-BR/reference/data-types/datetime)
 * [Funções para trabalhar com datas e horas.](/pt-BR/reference/functions/regular-functions/date-time-functions)
 
-<div id="date_time_output_format">
-  ## date_time_output_format
-</div>
+## date_time_output_format {#date_time_output_format}
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -78,13 +72,11 @@ Veja também:
 * [tipo de dado DateTime.](/pt-BR/reference/data-types/datetime)
 * [Funções para trabalhar com datas e horas.](/pt-BR/reference/functions/regular-functions/date-time-functions)
 
-<div id="date_time_overflow_behavior">
-  ## date_time_overflow_behavior
-</div>
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-Define o comportamento quando [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64) ou inteiros são convertidos em Date, Date32, DateTime ou DateTime64, mas o valor não pode ser representado no tipo resultante.
+Define o comportamento quando [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime), [DateTime64](/pt-BR/reference/data-types/datetime64) ou inteiros são convertidos em Date, Date32, DateTime ou DateTime64, mas o valor não pode ser representado no tipo resultante. Também se aplica quando um `Date` ou `DateTime` é convertido a partir de texto, inclusive por um input format.
 
 Possible values:
 

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas opciones de configuración están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Estas opciones de configuración están disponibles en [system.settings](/es/ref
 /// se prefiere frente a &#39;allow&#95;statistics&#95;optimize&#39; por coherencia con &#39;use&#95;primary&#95;key&#39; y &#39;use&#95;skip&#95;indexes&#39;
 Permite usar estadísticas para optimizar las consultas
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ Permite usar estadísticas para optimizar las consultas
 
 Use la caché de estadísticas en una consulta para evitar el coste adicional de cargar las estadísticas de todas las partes
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nueva configuración para resolver las agregaciones `min`, `max` y `count` sin `GROUP BY` ni filtros a partir de las estadísticas de columna por parte, en las partes que las tienen materializadas, leyendo únicamente las partes restantes. previous_value=false, de modo que la `compatibility` con versiones anteriores a la 26.9 mantiene la optimización deshabilitada y restaura el plan preexistente."}]}]} />
+
+Resuelve las agregaciones `min`, `max` y `count` a partir de las estadísticas de columna por parte en lugar de leer los datos.
+
+Cuando está habilitada, una consulta de la forma `SELECT min(column), max(column), count() FROM table` sin `GROUP BY` ni filtros
+se resuelve a partir de las estadísticas de columna (por ejemplo, las estadísticas MinMax; consulte la MergeTree setting `auto_statistics_types`)
+en las partes que las tienen materializadas, y solo se leen las partes restantes.
+
+Valores posibles:
+
+* 0 — Deshabilitado.
+* 1 — Habilitado.
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

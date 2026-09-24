@@ -12,9 +12,7 @@ integration:
 
 ClickHouse 연결을 위한 공식 Rust 클라이언트입니다. 최초 개발자는 [Paul Loyd](https://github.com/loyd)이며, 클라이언트 소스 코드는 [GitHub 리포지토리](https://github.com/ClickHouse/clickhouse-rs)에서 확인할 수 있습니다.
 
-<div id="overview">
-  ## 개요
-</div>
+## 개요 {#overview}
 
 * 행 인코딩/디코딩에 `serde`를 사용합니다.
 * `serde` 속성인 `skip_serializing`, `skip_deserializing`, `rename`을 지원합니다.
@@ -25,9 +23,7 @@ ClickHouse 연결을 위한 공식 Rust 클라이언트입니다. 최초 개발�
 * 데이터 조회 및 삽입, DDL 실행, 클라이언트 측 배칭을 위한 API를 제공합니다.
 * 단위 테스트를 위한 편리한 모의 객체를 제공합니다.
 
-<div id="installation">
-  ## 설치
-</div>
+## 설치 {#installation}
 
 크레이트를 사용하려면 다음을 `Cargo.toml`에 추가하십시오:
 
@@ -41,16 +37,14 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
 
 관련 항목: [crates.io 페이지](https://crates.io/crates/clickhouse).
 
-<div id="cargo-features">
-  ## Cargo 기능
-</div>
+## Cargo 기능 {#cargo-features}
 
-* `lz4` (기본적으로 활성화됨) — `Compression::Lz4` 및 `Compression::Lz4Hc(_)` variant를 활성화합니다. 활성화되면 `WATCH`를 제외한 모든 쿼리에 기본적으로 `Compression::Lz4`가 사용됩니다.
+* `lz4` (기본적으로 활성화됨) — `Compression::Lz4` 및 `Compression::Lz4Hc(_)` variant를 활성화합니다. 활성화되면 v26.9 이전 ClickHouse에서만 허용되는 `WATCH`를 제외한 모든 쿼리에 기본적으로 `Compression::Lz4`가 사용됩니다.
 * `native-tls` — OpenSSL에 링크되는 `hyper-tls`를 통해 `HTTPS` 스키마의 URL을 지원합니다.
 * `rustls-tls` — OpenSSL에 링크되지 않는 `hyper-rustls`를 통해 `HTTPS` 스키마의 URL을 지원합니다.
 * `inserter` — `client.inserter()`를 활성화합니다.
 * `test-util` — 모의 객체를 추가합니다. [예시](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs)를 참조하십시오. `dev-dependencies`에서만 사용하십시오.
-* `watch` — `client.watch` 기능을 활성화합니다. 자세한 내용은 해당 섹션을 참조하십시오.
+* `watch` — `client.watch` 기능을 활성화합니다. `WATCH` 쿼리를 실행하며, 이 쿼리는 `WINDOW VIEW`와 함께 ClickHouse v26.9에서 제거되었으므로 이전 서버에서만 작동합니다.
 * `uuid` — [uuid](https://docs.rs/uuid) 크레이트와 함께 사용할 수 있도록 `serde::uuid`를 추가합니다.
 * `time` — [time](https://docs.rs/time) 크레이트와 함께 사용할 수 있도록 `serde::time`를 추가합니다.
 
@@ -59,34 +53,26 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   둘 다 활성화된 경우 `rustls-tls` 기능이 우선 적용됩니다.
 </Warning>
 
-<div id="clickhouse-versions-compatibility">
-  ## ClickHouse 버전 호환성
-</div>
+## ClickHouse 버전 호환성 {#clickhouse-versions-compatibility}
 
 이 클라이언트는 LTS 및 그 이후 버전의 ClickHouse는 물론 ClickHouse Cloud와도 호환됩니다.
 
 v22.6 이전의 ClickHouse 서버는 드물게 일부 경우에 RowBinary를 [잘못 처리합니다](https://github.com/ClickHouse/ClickHouse/issues/37420).
 이 문제를 해결하려면 v0.11+를 사용하고 `wa-37420` 기능을 활성화할 수 있습니다. 참고: 이 기능은 더 최신 버전의 ClickHouse에서는 사용하지 않아야 합니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 클라이언트 리포지토리의 [예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples)를 통해 클라이언트 사용의 다양한 시나리오를 다루고자 합니다. 개요는 [예시 README](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/README.md#overview)에서 확인할 수 있습니다.
 
 예시나 아래 문서에서 불명확하거나 누락된 내용이 있으면 언제든지 [문의해 주세요](/ko/integrations/language-clients/rust/index#contact-us).
 
-<div id="usage">
-  ## 사용법
-</div>
+## 사용법 {#usage}
 
 <Note>
   [ch2rs](https://github.com/ClickHouse/ch2rs) 크레이트는 ClickHouse로부터 행 타입을 생성하는 데 유용합니다.
 </Note>
 
-<div id="creating-a-client-instance">
-  ### 클라이언트 인스턴스 생성
-</div>
+### 클라이언트 인스턴스 생성 {#creating-a-client-instance}
 
 <Tip>
   기반이 되는 hyper 연결 풀을 재사용하려면, 생성한 클라이언트를 재사용하거나 복제하세요.
@@ -103,9 +89,7 @@ let client = Client::default()
     .with_database("test");
 ```
 
-<div id="https-or-clickhouse-cloud-connection">
-  ### HTTPS 또는 ClickHouse Cloud 연결
-</div>
+### HTTPS 또는 ClickHouse Cloud 연결 {#https-or-clickhouse-cloud-connection}
 
 HTTPS는 cargo 기능인 `rustls-tls` 또는 `native-tls`와 함께 사용할 수 있습니다.
 
@@ -130,9 +114,7 @@ let client = Client::default()
 
 * 클라이언트 리포지토리의 [ClickHouse Cloud HTTPS 예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/clickhouse_cloud.rs)를 참조하십시오. 이는 온프레미스 환경의 HTTPS 연결에도 적용됩니다.
 
-<div id="selecting-rows">
-  ### 행 조회
-</div>
+### 행 조회 {#selecting-rows}
 
 ```rust
 use serde::Deserialize;
@@ -167,9 +149,7 @@ while let Some(row) = cursor.next().await? { .. }
   행을 조회할 때는 `wait_end_of_query`를 주의해서 사용하십시오. 서버 측 메모리 사용량이 증가할 수 있으며, 전체 성능도 저하될 가능성이 높습니다.
 </Warning>
 
-<div id="inserting-rows">
-  ### 행 삽입
-</div>
+### 행 삽입 {#inserting-rows}
 
 ```rust
 use serde::Serialize;
@@ -191,9 +171,7 @@ insert.end().await?;
 * 네트워크 부하를 분산하기 위해 행은 스트림 형태로 순차적으로 전송됩니다.
 * ClickHouse는 모든 행이 동일한 파티션에 속하고 행 수가 [`max_insert_block_size`](/ko/reference/settings/session-settings#max_insert_block_size) 미만인 경우에만 배치를 원자적으로 삽입합니다.
 
-<div id="async-insert-server-side-batching">
-  ### Async insert (서버 측 배칭)
-</div>
+### Async insert (서버 측 배칭) {#async-insert-server-side-batching}
 
 수신 데이터에 대해 클라이언트 측 배칭을 하지 않으려면 [ClickHouse asynchronous inserts](/ko/concepts/features/operations/insert/asyncinserts)를 사용할 수 있습니다. 이렇게 하려면 `insert` 메서드에 `async_insert` 옵션만 지정하면 됩니다(또는 `Client` 인스턴스 자체에 지정하여 모든 `insert` 호출에 적용되도록 할 수도 있습니다).
 
@@ -208,9 +186,7 @@ let client = Client::default()
 
 * 클라이언트 리포지토리의 [async insert 예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/async_insert.rs)
 
-<div id="inserter-feature-client-side-batching">
-  ### Inserter 기능(클라이언트 측 배칭)
-</div>
+### Inserter 기능(클라이언트 측 배칭) {#inserter-feature-client-side-batching}
 
 `inserter` Cargo 기능이 필요합니다.
 
@@ -250,9 +226,7 @@ inserter.end().await?;
   ```
 </Warning>
 
-<div id="executing-ddls">
-  ### DDL 실행
-</div>
+### DDL 실행 {#executing-ddls}
 
 단일 노드로 배포한 경우 다음과 같이 DDL을 실행하면 됩니다:
 
@@ -270,9 +244,7 @@ client
     .await?;
 ```
 
-<div id="clickhouse-settings">
-  ### ClickHouse 설정
-</div>
+### ClickHouse 설정 {#clickhouse-settings}
 
 `with_option` 메서드로 다양한 [ClickHouse 설정](/ko/reference/settings/session-settings)을 적용할 수 있습니다. 예시는 다음과 같습니다:
 
@@ -288,9 +260,7 @@ let numbers = client
 
 `query`뿐만 아니라 `insert` 및 `inserter` 메서드도 같은 방식으로 동작하며, 또한 `Client` 인스턴스에서 동일한 메서드를 호출해 모든 쿼리에 적용되는 전역 설정을 지정할 수 있습니다.
 
-<div id="query-id">
-  ### 쿼리 ID
-</div>
+### 쿼리 ID {#query-id}
 
 `.with_option`을 사용하면 `query_id` 옵션을 설정해 ClickHouse query log에서 쿼리를 식별할 수 있습니다.
 
@@ -310,9 +280,7 @@ let numbers = client
 
 관련 항목: 클라이언트 리포지토리의 [query&#95;id 예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/query_id.rs).
 
-<div id="session-id">
-  ### 세션 ID
-</div>
+### 세션 ID {#session-id}
 
 `query_id`와 마찬가지로 `session_id`를 설정하면 동일한 session에서 SQL 문을 실행할 수 있습니다. `session_id`는 클라이언트 수준에서 전역으로 설정하거나 각 `query`, `insert` 또는 `inserter` 호출별로 설정할 수 있습니다.
 
@@ -328,9 +296,7 @@ let client = Client::default()
 
 관련 항목: 클라이언트 리포지토리의 [session&#95;id 예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/session_id.rs).
 
-<div id="custom-http-headers">
-  ### 사용자 지정 HTTP 헤더
-</div>
+### 사용자 지정 HTTP 헤더 {#custom-http-headers}
 
 프록시 인증을 사용하거나 사용자 지정 헤더를 전달해야 하는 경우, 다음과 같이 할 수 있습니다:
 
@@ -342,9 +308,7 @@ let client = Client::default()
 
 관련 항목: 클라이언트 리포지토리의 [사용자 지정 HTTP 헤더 예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/custom_http_headers.rs)를 참조하십시오.
 
-<div id="custom-http-client">
-  ### 사용자 지정 HTTP 클라이언트
-</div>
+### 사용자 지정 HTTP 클라이언트 {#custom-http-client}
 
 이 기능은 내부 HTTP 연결 풀 설정을 조정할 때 유용할 수 있습니다.
 
@@ -372,9 +336,7 @@ let client = Client::with_http_client(hyper_client).with_url("http://localhost:8
 
 관련 항목: 클라이언트 리포지토리의 [사용자 지정 HTTP 클라이언트 예시](https://github.com/ClickHouse/clickhouse-rs/blob/main/examples/custom_http_client.rs).
 
-<div id="data-types">
-  ## 데이터 타입
-</div>
+## 데이터 타입 {#data-types}
 
 <Info>
   추가 예시는 다음을 참조하십시오:
@@ -552,21 +514,15 @@ struct MyRow {
 
 * `Variant`, `Dynamic`, (새로운) `JSON` 데이터 타입은 아직 지원되지 않습니다.
 
-<div id="mocking">
-  ## 모킹
-</div>
+## 모킹 {#mocking}
 
-이 크레이트는 CH 서버를 모킹하고 DDL, `SELECT`, `INSERT`, `WATCH` 쿼리를 테스트하기 위한 유틸리티를 제공합니다. 이 기능은 `test-util` 기능을 활성화하면 사용할 수 있습니다. **반드시** 개발 의존성으로만 사용하세요.
+이 크레이트는 CH 서버를 모킹하고 DDL, `SELECT`, `INSERT`, `WATCH` 쿼리를 테스트하기 위한 유틸리티를 제공합니다(`WATCH`는 v26.9 이전 버전의 ClickHouse에서만 허용됩니다). 이 기능은 `test-util` 기능을 활성화하면 사용할 수 있습니다. **반드시** 개발 의존성으로만 사용하세요.
 
 [예시](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs)를 참조하세요.
 
-<div id="troubleshooting">
-  ## 문제 해결
-</div>
+## 문제 해결 {#troubleshooting}
 
-<div id="cannot_read_all_data">
-  ### CANNOT_READ_ALL_DATA
-</div>
+### CANNOT_READ_ALL_DATA {#cannot_read_all_data}
 
 `CANNOT_READ_ALL_DATA` 오류의 가장 일반적인 원인은 애플리케이션 측의 행 정의가 ClickHouse의 행 정의와 일치한다는 것입니다.
 
@@ -602,15 +558,11 @@ struct EventLog {
 }
 ```
 
-<div id="known-limitations">
-  ## 알려진 제한 사항
-</div>
+## 알려진 제한 사항 {#known-limitations}
 
 * `Variant`, `Dynamic`, (new) `JSON` 데이터 타입은 아직 지원되지 않습니다.
 * 서버 측 매개변수 바인딩은 아직 지원되지 않습니다. 관련 진행 상황은 [this issue](https://github.com/ClickHouse/clickhouse-rs/issues/142)에서 추적하고 있습니다.
 
-<div id="contact-us">
-  ## 문의하기
-</div>
+## 문의하기 {#contact-us}
 
 질문이 있거나 도움이 필요하시면 [Community Slack](https://clickhouse.com/slack) 또는 [GitHub 이슈](https://github.com/ClickHouse/clickhouse-rs/issues)를 통해 언제든지 문의하세요.

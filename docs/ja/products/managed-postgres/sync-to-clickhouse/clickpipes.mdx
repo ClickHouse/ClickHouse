@@ -1,0 +1,80 @@
+---
+slug: /cloud/managed-postgres/clickpipes
+sidebarTitle: 'ClickPipes'
+title: 'ClickPipes で ClickHouse に同期する'
+description: '組み込みの CDC（変更データキャプチャ）機能を使用して、Postgres のデータを ClickHouse にレプリケートします'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'clickpipes', 'data sync']
+doc_type: 'guide'
+---
+
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+<BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
+
+ClickHouse Managed Postgres のインスタンスにはすべて、任意の ClickHouse service への CDC (変更データキャプチャ) 機能が標準で備わっています。これにより、Postgres インスタンス上のデータの一部またはすべてを ClickHouse に移行し、Postgres 側でのデータ変更を継続的かつほぼリアルタイムに ClickHouse へ反映できます。この機能は内部的に [ClickPipes](/ja/integrations/clickpipes/home) によって実現されています。
+
+利用するには、Postgres インスタンスのサイドバーにある **Sync to ClickHouse** をクリックします。
+
+<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="ClickHouse 連携 landing page showing the integration option in the sidebar" size="md" border />
+
+<Note>
+  次に進む前に、Postgres service に ClickPipes サービスからアクセスできることを確認してください。デフォルトではアクセス可能ですが、IP アクセスを制限している場合は、**ClickHouse service** が配置されているリージョンに応じて、[こちら](/ja/integrations/clickpipes/networking/static-ips)のリストに記載されたソース IP からのアクセスを許可する必要があります。
+</Note>
+
+**Replicate data in ClickHouse** をクリックすると、ClickPipe のセットアップを開始できます。
+
+<Steps>
+  <Step title="レプリケーションサービスの構成" id="configure-replication-service">
+    レプリケーションの設定を入力します。
+
+    * **インテグレーション名**: この ClickPipe の名前
+    * **ClickHouse service**: 既存の ClickHouse Cloud service を選択するか、新規に作成します
+    * **Postgres database**: レプリケーション元となるソースデータベース
+    * **Replication method**: 次のいずれかを選択します。
+      * **初期ロード + CDC (変更データキャプチャ)&#x20;**: 既存データを取り込み、その後もテーブルを新しい変更で更新し続けます (推奨)
+      * **初期ロード only**: 既存データの snapshot を一度だけ取得し、以降の更新は行いません
+      * **CDC (変更データキャプチャ)  only**: 初回 snapshot をスキップし、以降の新しい変更のみをキャプチャします
+
+    <Image img="/images/managed-postgres/replication-service-step.webp" alt="インテグレーション名、宛先サービス、レプリケーション方式のオプションを示すレプリケーションサービスの構成画面" size="md" border />
+
+    **Next** をクリックして次に進みます。
+  </Step>
+
+  <Step title="レプリケーション設定の構成" id="replication-settings">
+    データのレプリケーション方法を細かく調整します。
+
+    * **Sync interval (seconds)**: Postgres から変更を取得する頻度 (デフォルト: 60)
+    * **Parallel threads for 初期ロード**: 初回 snapshot 時に使用するスレッド数 (デフォルト: 4)
+    * **Pull バッチサイズ**: レプリケーション中に 1 バッチで取得する行数 (デフォルト: 100000)
+    * **Snapshot number of rows per partition**: 初回 snapshot 時のパーティションあたりの行数 (デフォルト: 100000)
+    * **Snapshot number of tables in parallel**: 同時に snapshot を取得するテーブル数 (デフォルト: 1)
+
+    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="同期間隔、並列スレッド数、Pull バッチサイズ、snapshot 構成オプションを示すレプリケーション設定のステップ" size="md" border />
+
+    **Next** をクリックして次に進みます。
+  </Step>
+
+  <Step title="レプリケーションするテーブルの選択" id="select-tables">
+    宛先データベースを選択し、レプリケーション対象のテーブルを指定します。
+
+    * **宛先データベース**: 既存の ClickHouse データベースを選択するか、新規に作成します
+    * **Prefix default destination table names with schema name**: 名前の競合を避けるため、Postgres のスキーマ名をプレフィックスとして付加します
+    * **Preserve NULL values from source**: 型のデフォルト値に変換せず、NULL 値をそのまま保持します。この設定はパイプ内のすべてのテーブルに適用され、パイプの作成後は変更できません。
+    * **Remove deleted rows during merges**: [ReplacingMergeTree](/ja/reference/engines/table-engines/mergetree-family/replacingmergetree) テーブルの場合、バックグラウンドの merge 中に削除済みの行を物理的に削除します
+
+    スキーマを展開し、レプリケーションするテーブルを個別に選択します。宛先テーブル名やカラム設定をカスタマイズすることもできます。
+
+    <Image img="/images/managed-postgres/select-tables-step.webp" alt="データベースの選択、レプリケーションオプション、スキーマごとにグループ化されたテーブル選択画面を示すテーブル選択のステップ" size="md" border />
+
+    **Replicate data to ClickHouse** をクリックしてレプリケーションを開始します。
+  </Step>
+
+  <Step title="ClickPipe の監視" id="monitor-clickpipe">
+    ClickPipe が開始されると、同じメニューに一覧表示されます。全データの初回 snapshot には、テーブルのサイズに応じて時間がかかる場合があります。
+
+    <Image img="/images/managed-postgres/integration-running.webp" alt="実行中の ClickPipe と、その宛先サービスおよびステータスを示す ClickHouse 連携一覧" size="md" border />
+
+    インテグレーション名をクリックすると、詳細なステータスの確認、進捗の監視、エラーの表示、ClickPipe の管理を行えます。ClickPipe が取り得るさまざまな状態については、[Postgres ClickPipe のライフサイクル](/ja/integrations/clickpipes/postgres/lifecycle)を参照してください。
+  </Step>
+</Steps>

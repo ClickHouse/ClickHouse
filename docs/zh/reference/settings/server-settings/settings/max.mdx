@@ -12,15 +12,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 这些设置用于配置 ClickHouse 服务器，且由 ClickHouse 源代码自动生成。
 
-<div id="max_active_parts_loading_thread_pool_size">
-  ## max_active_parts_loading_thread_pool_size
-</div>
+## max_active_parts_loading_thread_pool_size {#max_active_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="是" />启动时用于加载活动数据分区片段集合的线程数。
 
-<div id="max_authentication_methods_per_user">
-  ## max_authentication_methods_per_user
-</div>
+## max_authentication_methods_per_user {#max_authentication_methods_per_user}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />
 
@@ -32,15 +28,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   值为 `0` 表示无限制。
 </Note>
 
-<div id="max_backup_bandwidth_for_server">
-  ## max_backup_bandwidth_for_server
-</div>
+## max_backup_bandwidth_for_server {#max_backup_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="否" />server 上所有备份的最大读取速度 (单位：字节/秒) 。0 表示无限制。
 
-<div id="max_build_vector_similarity_index_thread_pool_size">
-  ## max_build_vector_similarity_index_thread_pool_size
-</div>
+## max_build_vector_similarity_index_thread_pool_size {#max_build_vector_similarity_index_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="16" changeable_without_restart="No" />
 
@@ -50,33 +42,23 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   值为 `0` 表示使用所有 CPU 核心。
 </Note>
 
-<div id="max_connections">
-  ## max_connections
-</div>
+## max_connections {#max_connections}
 
 <SettingsInfoBlock type="Int32" default_value="4096" changeable_without_restart="No" />服务器最大连接数。
 
-<div id="max_entries_for_hash_table_stats">
-  ## max_entries_for_hash_table_stats
-</div>
+## max_entries_for_hash_table_stats {#max_entries_for_hash_table_stats}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />聚合期间允许收集的哈希表统计信息的最大条目数
 
-<div id="max_fetch_partition_thread_pool_size">
-  ## max_fetch_partition_thread_pool_size
-</div>
+## max_fetch_partition_thread_pool_size {#max_fetch_partition_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="64" changeable_without_restart="Yes" />用于 ALTER TABLE FETCH PARTITION 的线程数。
 
-<div id="max_held_snapshots">
-  ## max_held_snapshots
-</div>
+## max_held_snapshots {#max_held_snapshots}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />可同时持有的轻量级快照的最大数量。零表示无限制。如果快照数量达到此限制，则在尝试创建新快照时会抛出异常。
 
-<div id="max_http_index_page_size">
-  ## max_http_index_page_size
-</div>
+## max_http_index_page_size {#max_http_index_page_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10485760" changeable_without_restart="No" />
 
@@ -85,9 +67,21 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 默认值：`10485760` (10 MiB) 。
 
-<div id="max_keep_alive_requests">
-  ## max_keep_alive_requests
-</div>
+## max_iceberg_manifest_decode_thread_pool_free_size {#max_iceberg_manifest_decode_thread_pool_free_size}
+
+<SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
+
+在用于解码 Iceberg 数据 manifest 文件的线程池中，可保留的空闲备用线程的最大数量。
+
+## max_iceberg_manifest_decode_thread_pool_size {#max_iceberg_manifest_decode_thread_pool_size}
+
+<SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Yes" />
+
+用于解码 Iceberg 数据 manifest 文件的最大线程总数。
+
+该 pool 特意与 IO pool 分开：解码 task 可能会阻塞，直到查询消费掉它已产生的 entries；而 delete manifest 的解码则会在任何 entry 被消费之前，先等待其在 IO pool 上的 tasks 完成——共用同一个 pool 可能导致死锁。
+
+## max_keep_alive_requests {#max_keep_alive_requests}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" changeable_without_restart="No" />
 
@@ -99,9 +93,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <max_keep_alive_requests>10</max_keep_alive_requests>
 ```
 
-<div id="max_materialized_views_count_for_table">
-  ## max_materialized_views_count_for_table
-</div>
+## max_materialized_views_count_for_table {#max_materialized_views_count_for_table}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -111,21 +103,15 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   这里只考虑直接依赖的视图，不包括在另一个视图之上再创建视图的情况。
 </Note>
 
-<div id="max_merges_bandwidth_for_server">
-  ## max_merges_bandwidth_for_server
-</div>
+## max_merges_bandwidth_for_server {#max_merges_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />server 上所有 merges 的最大读取速度，单位为每秒字节数。0 表示不受限制。
 
-<div id="max_mutations_bandwidth_for_server">
-  ## max_mutations_bandwidth_for_server
-</div>
+## max_mutations_bandwidth_for_server {#max_mutations_bandwidth_for_server}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="否" />服务器上所有变更的最大读取速度，以字节/秒为单位。0 表示无限制。
 
-<div id="max_open_files">
-  ## max_open_files
-</div>
+## max_open_files {#max_open_files}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -135,24 +121,18 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   建议在 macOS 上使用此选项，因为 getrlimit() 函数返回的值不正确。
 </Note>
 
-<div id="max_os_cpu_wait_time_ratio_to_drop_connection">
-  ## max_os_cpu_wait_time_ratio_to_drop_connection
-</div>
+## max_os_cpu_wait_time_ratio_to_drop_connection {#max_os_cpu_wait_time_ratio_to_drop_connection}
 
 <SettingsInfoBlock type="Float" default_value="0" changeable_without_restart="Yes" />
 
 用于判断是否应断开连接时，OS CPU 等待时间 (`OSCPUWaitMicroseconds` 指标) 与忙碌时间 (`OSCPUVirtualTimeMicroseconds` 指标) 之间的最大比率。系统会使用最小比率与最大比率之间的线性插值来计算概率；在该比率下，概率为 1。
 更多详情，请参见[控制服务器 CPU 过载时的行为](/zh/concepts/features/configuration/settings/server-overload)。
 
-<div id="max_outdated_parts_loading_thread_pool_size">
-  ## max_outdated_parts_loading_thread_pool_size
-</div>
+## max_outdated_parts_loading_thread_pool_size {#max_outdated_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="32" changeable_without_restart="Yes" />启动时用于加载非活动数据分区片段集合 (即过期的数据分区片段) 的线程数。
 
-<div id="max_part_num_to_warn">
-  ## max_part_num_to_warn
-</div>
+## max_part_num_to_warn {#max_part_num_to_warn}
 
 <SettingsInfoBlock type="UInt64" default_value="100000" changeable_without_restart="Yes" />
 
@@ -164,9 +144,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <max_part_num_to_warn>400</max_part_num_to_warn>
 ```
 
-<div id="max_partition_size_to_drop">
-  ## max_partition_size_to_drop
-</div>
+## max_partition_size_to_drop {#max_partition_size_to_drop}
 
 <SettingsInfoBlock type="UInt64" default_value="50000000000" changeable_without_restart="Yes" />
 
@@ -187,23 +165,17 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <max_partition_size_to_drop>0</max_partition_size_to_drop>
 ```
 
-<div id="max_parts_cleaning_thread_pool_size">
-  ## max_parts_cleaning_thread_pool_size
-</div>
+## max_parts_cleaning_thread_pool_size {#max_parts_cleaning_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="128" changeable_without_restart="Yes" />用于并发删除非活动数据分区片段的线程数。
 
-<div id="max_per_cpu_untracked_memory">
-  ## max_per_cpu_untracked_memory
-</div>
+## max_per_cpu_untracked_memory {#max_per_cpu_untracked_memory}
 
 <SettingsInfoBlock type="UInt64" default_value="8388608" changeable_without_restart="Yes" />
 
 在刷新到 memory tracker 之前，单个 CPU 上运行的所有线程可同时持有的未跟踪内存总量上限 (以字节为单位) 。`max_untracked_memory` 限制的是单个线程，而此设置限制的是每个 CPU 的总量，因此多个线程无法将各自的线程配额叠加成整个服务器范围内的大量 overcommit。因此，未跟踪内存总量大致受限于 `number_of_cpus * max_per_cpu_untracked_memory`。值为 `0` 时将禁用每 CPU 上限 (仅应用每线程的 `max_untracked_memory`) 。仅适用于 Linux。
 
-<div id="max_session_timeout">
-  ## max_session_timeout
-</div>
+## max_session_timeout {#max_session_timeout}
 
 最大会话超时时长 (以秒为单位) 。
 
@@ -213,9 +185,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 <max_session_timeout>3600</max_session_timeout>
 ```
 
-<div id="max_temporary_data_on_disk_size">
-  ## max_temporary_data_on_disk_size
-</div>
+## max_temporary_data_on_disk_size {#max_temporary_data_on_disk_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 
@@ -231,15 +201,11 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 * [`max_temporary_data_on_disk_size_for_user`](/zh/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_user)
 * [`max_temporary_data_on_disk_size_for_query`](/zh/reference/settings/session-settings/max-temporary#max_temporary_data_on_disk_size_for_query)
 
-<div id="max_unexpected_parts_loading_thread_pool_size">
-  ## max_unexpected_parts_loading_thread_pool_size
-</div>
+## max_unexpected_parts_loading_thread_pool_size {#max_unexpected_parts_loading_thread_pool_size}
 
 <SettingsInfoBlock type="UInt64" default_value="8" changeable_without_restart="No" />启动时用于加载非活动数据分区片段集合 (即异常数据分区片段) 的线程数。
 
-<div id="max_waiting_queries">
-  ## max_waiting_queries
-</div>
+## max_waiting_queries {#max_waiting_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />
 
@@ -264,9 +230,7 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
   此设置可在运行时修改，并会立即生效。已在运行中的查询不会受到影响。
 </Note>
 
-<div id="max_zookeeper_pooled_connections">
-  ## max_zookeeper_pooled_connections
-</div>
+## max_zookeeper_pooled_connections {#max_zookeeper_pooled_connections}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="No" />
 

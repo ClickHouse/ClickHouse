@@ -13,13 +13,13 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="compatibility">
-  ## compatibility
-</div>
+## compatibility {#compatibility}
 
-A configuração `compatibility` faz com que o ClickHouse use as configurações padrão de uma versão anterior do ClickHouse, especificada no valor da própria configuração.
+A configuração `compatibility` faz com que o ClickHouse use as configurações padrão de uma versão anterior do ClickHouse, com exceções registradas no histórico de mudanças de configurações.
 
 Se houver configurações definidas com valores diferentes do padrão, esses valores serão mantidos (somente as configurações que não foram modificadas são afetadas pela configuração `compatibility`).
+
+Mudanças marcadas como `Ignore` em [`system.settings_changes`](/pt-BR/reference/system-tables/settings_changes) bloqueiam o rollback dessa mudança e de todas as mudanças anteriores na mesma configuração.
 
 Essa configuração recebe um número de versão do ClickHouse como string, como `22.3` ou `22.8`. Um valor vazio significa que essa configuração está desabilitada.
 
@@ -30,9 +30,7 @@ Desabilitada por padrão.
   No entanto, a configuração `compatibility` pode ser substituída nos níveis de usuário, função, perfil, consulta ou sessão usando os mecanismos padrão de configuração do ClickHouse, como `SET compatibility = '22.3'` em uma sessão ou `SETTINGS compatibility = '22.3'` em uma consulta.
 </Note>
 
-<div id="compatibility_s3_presigned_url_query_in_path">
-  ## compatibility_s3_presigned_url_query_in_path
-</div>
+## compatibility_s3_presigned_url_query_in_path {#compatibility_s3_presigned_url_query_in_path}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

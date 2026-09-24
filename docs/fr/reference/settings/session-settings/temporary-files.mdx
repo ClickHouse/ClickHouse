@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont auto-générés à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="temporary_files_buffer_size">
-  ## temporary_files_buffer_size
-</div>
+## temporary_files_buffer_size {#temporary_files_buffer_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1048576" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.10"},{"label": "1048576"},{"label": "Nouveau paramètre"}]}]} />
 
-Taille du tampon pour l’écriture des fichiers temporaires. Une taille de tampon plus importante réduit le nombre d’appels système, mais augmente la consommation de mémoire.
+Taille du tampon pour l’écriture des fichiers temporaires. Une taille de tampon plus importante réduit le nombre d’appels système, mais augmente la consommation de mémoire. Une valeur supérieure à 1 Gio est ramenée à 1 Gio.
 
-<div id="temporary_files_codec">
-  ## temporary_files_codec
-</div>
+## temporary_files_codec {#temporary_files_codec}
 
 <SettingsInfoBlock type="String" default_value="LZ4" />
 

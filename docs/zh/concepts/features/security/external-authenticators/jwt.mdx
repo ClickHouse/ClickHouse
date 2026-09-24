@@ -7,7 +7,6 @@ doc_type: 'reference'
 ---
 
 import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnlyBadge.jsx";
-import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { VersionBadge } from "/snippets/zh/components/VersionBadge/VersionBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
@@ -18,7 +17,7 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 这使得 JWT 身份验证与基于密码或证书的方法有本质区别：不存在 `CREATE USER ... IDENTIFIED WITH jwt` 语句，尝试这样做会引发异常。JWT 用户完全由标记的生命周期管理。
 
 <div id="overview">
-  ## 概览
+  ## 概览 {#overview}
 </div>
 
 身份验证流程如下：
@@ -30,11 +29,11 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 5. 当令牌过期时，后台垃圾回收任务会移除该用户。
 
 <div id="token-claims">
-  ## 令牌声明
+  ## 令牌声明 {#token-claims}
 </div>
 
 <div id="required-claims">
-  ### 必需声明
+  ### 必需声明 {#required-claims}
 </div>
 
 提交给 ClickHouse 的每个 JWT 都必须包含以下声明：
@@ -51,7 +50,7 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 使用基于 JWKS 的密钥解析时，还必须提供 `kid` (密钥 ID) 请求头声明。
 
 <div id="other-recognized-claims">
-  ### 其他已识别的声明
+  ### 其他已识别的声明 {#other-recognized-claims}
 </div>
 
 | 声明    | 描述                                       |
@@ -60,7 +59,7 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 | `jti` | 保留字段。令牌中可以包含该声明，但当前不会对其进行验证或使用。          |
 
 <div id="optional-claims">
-  ### 可选 claims
+  ### 可选 claims {#optional-claims}
 </div>
 
 | Claim                                             | 默认名称                | 描述                                                                                                   |
@@ -70,7 +69,7 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 | 如果身份提供商使用不同的命名约定，可以将默认的 claim 名称重映射为自定义 claim 名称。 |                     |                                                                                                      |
 
 <div id="example-token-header-and-payload">
-  ### 令牌标头和载荷示例
+  ### 令牌标头和载荷示例 {#example-token-header-and-payload}
 </div>
 
 ```json
@@ -93,13 +92,13 @@ ClickHouse 可以使用 JSON Web Token (JWT) 对用户进行身份验证。与�
 ```
 
 <div id="ephemeral-user-behavior">
-  ## 临时用户的行为
+  ## 临时用户的行为 {#ephemeral-user-behavior}
 </div>
 
 JWT 用户与常规 ClickHouse 用户在几个重要方面有所不同。
 
 <div id="identity-and-naming">
-  ### 身份与命名
+  ### 身份与命名 {#identity-and-naming}
 </div>
 
 每个 JWT 用户都会获得一个根据 `iss`、`sub` 和 `aud` 声明 计算出的确定性 UUID。该 UUID 在不同登录之间是**稳定的**。同一用户即使用不同的令牌多次登录 (只要签发方、主体和受众相同) ，获得的 UUID 也始终相同。
@@ -115,7 +114,7 @@ JWT::<subject>::<claims_hash>
 `<claims_hash>` 部分会在 `clickhouse:roles` 或 `clickhouse:grants` 声明发生变化时相应变化。这意味着，即使是同一身份，具有不同角色或授权集合的令牌也会生成不同的用户名。
 
 <div id="access-rights">
-  ### 访问权限
+  ### 访问权限 {#access-rights}
 </div>
 
 有效访问权限按如下方式计算：
@@ -127,13 +126,13 @@ effective_rights = permission_limit ∩ (token_grants ∪ token_roles)
 其中，`permission_limit` 是作为上限参考而配置的角色或用户所拥有的访问权限集合。令牌请求的任何超出该上限的权限都会被静默丢弃。
 
 <div id="token-freshness">
-  ### 令牌新鲜度
+  ### 令牌新鲜度 {#token-freshness}
 </div>
 
 ClickHouse 会跟踪每个稳定身份最近一次通过身份验证的令牌的 `iat` (签发时间) 声明。如果提供的令牌其 `iat` 等于或早于已存储的值，服务器会复用现有的临时用户，而不会重新评估声明。这样可以防止旧令牌降低用户权限。
 
 <div id="lifetime-and-garbage-collection">
-  ### 生命周期与垃圾回收
+  ### 生命周期与垃圾回收 {#lifetime-and-garbage-collection}
 </div>
 
 临时用户会在令牌首次通过身份验证时创建，并在 `valid_until` (由 `exp` 推导得出) 到期后，由后台垃圾回收任务删除。GC 间隔由 `gc_interval` 参数控制 (默认值：5 分钟) 。
@@ -141,7 +140,7 @@ ClickHouse 会跟踪每个稳定身份最近一次通过身份验证的令牌的
 在两次 GC 运行之间，已过期的用户可能仍会显示在 `system.users` 中，但已无法再进行身份验证。
 
 <div id="persistent-access-assignments">
-  ### 持久化访问分配
+  ### 持久化访问分配 {#persistent-access-assignments}
 </div>
 
 由于 UUID 是固定的，你可以使用 SQL 语句将 profile、配额、行策略和列脱敏策略分配给 JWT 用户。这些分配会持久保存在 access control 存储中 (磁盘上或 ZooKeeper 中) ，并且在令牌过期和重新身份验证后依然有效。
@@ -159,7 +158,7 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 请注意，`ALTER USER` 不能直接用于 JWT 用户，因为它们是只读的。要分配 settings profile、配额或策略，请使用上文所示的 `ALTER SETTINGS PROFILE`、`ALTER QUOTA` 或 `ALTER ROW POLICY` 语句。
 
 <div id="differences-from-regular-users">
-  ## 与普通用户的区别
+  ## 与普通用户的区别 {#differences-from-regular-users}
 </div>
 
 | Feature                               | JWT 用户                     | 普通用户               |
@@ -179,7 +178,7 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 | 默认角色                                  | 不可配置                       | 可配置                |
 
 <div id="sql-security-definer-views">
-  ## `SQL SECURITY DEFINER` 视图
+  ## `SQL SECURITY DEFINER` 视图 {#sql-security-definer-views}
 </div>
 
 当临时 JWT 用户使用 `SQL SECURITY DEFINER` 创建视图时，服务器会自动为该用户创建一个持久的影子副本，作为该视图的定义者。该影子用户：
@@ -191,11 +190,11 @@ ALTER SETTINGS PROFILE my_profile ADD TO 'JWT::jane.doe::<claims_hash>';
 这样可以确保在临时用户的令牌过期、原始用户被垃圾回收机制清理后，视图仍能继续正常工作。
 
 <div id="client-usage">
-  ## 客户端使用
+  ## 客户端使用 {#client-usage}
 </div>
 
 <div id="passing-token-directly">
-  ### 直接传入令牌
+  ### 直接传入令牌 {#passing-token-directly}
 </div>
 
 使用 `clickhouse-client` 的 `--jwt` 选项，通过预先获取的令牌进行身份验证：
@@ -209,7 +208,7 @@ clickhouse-client --host your-instance.clickhouse.cloud --secure --jwt '<your_jw
 </Note>
 
 <div id="http-interface">
-  ### HTTP 接口
+  ### HTTP 接口 {#http-interface}
 </div>
 
 在 `Authorization` 请求头中以 Bearer 令牌的形式发送该令牌：
@@ -224,7 +223,7 @@ curl -H 'Authorization: Bearer <your_jwt_token>' \
 </Warning>
 
 <div id="oauth2-device-code-login">
-  ### OAuth2 设备代码登录
+  ### OAuth2 设备代码登录 {#oauth2-device-code-login}
 </div>
 
 `clickhouse-client` 支持通过 `--login` 标志使用交互式 OAuth2 设备代码流程。对于 ClickHouse Cloud 端点，客户端会自动执行令牌交换，以获取 ClickHouse 专用 JWT。令牌会在会话期间自动刷新，整个过程对用户透明。获取到新令牌后，客户端会自动重新连接。
@@ -234,7 +233,7 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 ```
 
 <div id="clickhouse-cloud-built-in">
-  ## ClickHouse Cloud 内置 JWT 身份验证器
+  ## ClickHouse Cloud 内置 JWT 身份验证器 {#clickhouse-cloud-built-in}
 </div>
 
 每个 ClickHouse Cloud 服务都带有一个预定义的 JWT 身份验证器，供 SQL 控制台和 `clickhouse-client` 的 `--login` 流程使用。该身份验证器配置如下：
@@ -250,16 +249,14 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 使用此身份验证器无需进行任何配置。服务创建时会自动为其预配。
 
 <div id="enabling-jwt-authentication-for-your-service">
-  ## 为服务启用 JWT 身份验证
+  ## 为服务启用 JWT 身份验证 {#enabling-jwt-authentication-for-your-service}
 </div>
-
-<BetaBadge />
 
 <VersionBadge minVersion="26.4" />
 
 <EnterprisePlanFeatureBadge feature="通过自定义身份提供商进行 JWT 身份验证" />
 
-除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。这是一项 Beta 功能，适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 方案服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
+除内置身份验证器外，您还可以将 ClickHouse Cloud 服务配置为接受由自己的身份提供商 (例如 Microsoft Entra 或 Okta) 签发的 JWT。此功能适用于运行 ClickHouse 26.4 或更高版本的 Enterprise 计划服务。您可以在 Cloud 控制台的 **设置 → 安全 → JWT 身份验证** 中自行配置；有关分步说明，请参阅 [JWT 身份验证设置](/zh/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)。每个提供商由以下内容定义：
 
 | 参数        | 说明                                                                                                                                                                                                                                                     |
 | --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -270,13 +267,13 @@ clickhouse-client --host your-instance.clickhouse.cloud --login
 | 角色声明 (可选) | 包含临时用户 ClickHouse 角色的标记声明名称。留空以使用默认声明名称 `clickhouse:roles`。该声明必须包含角色名称的 JSON 数组，例如 `["analyst", "reader"]`。                                                                                                                                            |
 
 <div id="interserver-communication">
-  ## 服务器间通信
+  ## 服务器间通信 {#interserver-communication}
 </div>
 
 当查询被转发到另一分片或副本时，JWT 令牌会包含在服务器间协议中。远程节点会独立重新验证该令牌，并创建自己的临时用户。
 
 <div id="troubleshooting">
-  ## 故障排除
+  ## 故障排除 {#troubleshooting}
 </div>
 
 * **未授予访问权限：** 引用的角色或用户可能缺少所需的授权。请确保 `clickhouse:roles` 中引用的角色存在，并且已授予相应权限。

@@ -12,7 +12,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <div id="manual-horizontal-scaling">
-  ## 手动水平扩缩容
+  ## 手动水平扩缩容 {#manual-horizontal-scaling}
 </div>
 
 <ScalePlanFeatureBadge feature="手动水平扩缩容" />
@@ -22,12 +22,10 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 **Scale** 和 **Enterprise** 层级也支持单副本服务。服务在完成横向扩容后，最少可再缩减回 1 个副本。请注意，单副本服务的可用性较低，不建议用于生产环境。
 
 <Note>
-  服务最多可水平扩容到 20 个副本。如果您需要更多副本，请联系我们的支持团队。
+  有关适用于您的服务的副本数量限制，请参阅[使用限制](/zh/cloud/bestpractices/usage-limits)。如果您需要更多副本，请联系我们的支持团队。
 </Note>
 
-<div id="horizontal-scaling-via-api">
-  ### 通过 API 进行水平扩缩容
-</div>
+### 通过 API 进行水平扩缩容 {#horizontal-scaling-via-api}
 
 要对集群进行水平扩缩容，请通过 API 发送 `PATCH` 请求来调整副本数量。下方截图展示了一个 API 调用：将一个 `3` 副本集群横向扩容到 `6` 个副本，以及对应的响应。
 
@@ -41,9 +39,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 如果某个扩缩容操作已在进行中，而你又发起了新的扩缩容请求，或连续发起多个请求，扩缩容服务会忽略中间状态，并最终收敛到最后指定的副本数量。
 
-<div id="horizontal-scaling-via-ui">
-  ### 通过 UI 进行水平扩缩容
-</div>
+### 通过 UI 进行水平扩缩容 {#horizontal-scaling-via-ui}
 
 要通过 UI 对服务进行水平扩缩容，可以在 **Settings** 页面调整该服务的副本数量。
 

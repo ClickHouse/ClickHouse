@@ -6,17 +6,15 @@ doc_type: 'guide'
 keywords: ['SDK для Deno и ClickStack', 'Deno OpenTelemetry', 'интеграция ClickStack с Deno', 'обсервабилити Deno', 'SDK для логирования в Deno']
 ---
 
-В этом руководстве рассматривается интеграция следующего:
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
 
-* **Журналы**
+<ClickStackIntegrates signals={['logs']} />
 
 <Note>
   Сейчас поддерживается только логирование OpenTelemetry. Поддержку трассировки см. в [следующем руководстве](https://dev.to/grunet/leveraging-opentelemetry-in-deno-45bj#a-minimal-interesting-example).
 </Note>
 
-<div id="logging">
-  ## Логирование
-</div>
+## Логирование {#logging}
 
 Для модуля `std/log` поддерживается экспорт пользовательского логгера.
 
@@ -42,15 +40,13 @@ log.setup({
 log.getLogger('my-otel-logger').info('Hello from Deno!');
 ```
 
-<div id="run-the-application">
-  ### Запустите приложение
-</div>
+### Запустите приложение {#run-the-application}
 
 <Tabs>
   <Tab title="Управляемый ClickStack">
     ```shell
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
     deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
     ```
   </Tab>
@@ -58,8 +54,8 @@ log.getLogger('my-otel-logger').info('Hello from Deno!');
   <Tab title="ClickStack с открытым исходным кодом">
     ```shell
     OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
-    OTEL_EXPORTER_OTLP_ENDPOINT=http://your-otel-collector:4318 \
-    OTEL_SERVICE_NAME="<NAME_OF_YOUR_APP_OR_SERVICE>" \
+    OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
+    OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
     deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
     ```
   </Tab>

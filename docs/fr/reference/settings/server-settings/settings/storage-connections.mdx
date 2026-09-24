@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/Setting
 
 Ces paramètres configurent ClickHouse server et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="storage_connections_hard_limit">
-  ## storage_connections_hard_limit
-</div>
+## storage_connections_hard_limit {#storage_connections_hard_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200000" changeable_without_restart="No" />Une exception est levée lors de toute tentative de création une fois cette limite atteinte. Définissez cette valeur sur 0 pour désactiver cette limitation stricte. La limite s&#39;applique aux connexions de stockage.
 
-<div id="storage_connections_rcvbuf">
-  ## storage_connections_rcvbuf
-</div>
+## storage_connections_rcvbuf {#storage_connections_rcvbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Oui" />Taille de l’option SO&#95;RCVBUF pour les connexions de stockage (réplication, requêtes distribuées). Si elle est définie sur une valeur supérieure à 0, elle remplace l’autotuning TCP du noyau pour le tampon de réception. 0 = valeur par défaut du noyau (autotuning). Remarque : remettre ce paramètre à 0 ne rétablit l’autotuning que pour les connexions nouvellement créées ; les connexions existantes du pool conservent des tailles de tampon fixes jusqu’à ce qu’elles soient recréées.
 
-<div id="storage_connections_sndbuf">
-  ## storage_connections_sndbuf
-</div>
+## storage_connections_sndbuf {#storage_connections_sndbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Oui" />Taille de l’option SO&#95;SNDBUF pour les connexions de stockage (réplication, requêtes distribuées). Si cette valeur est supérieure à 0, elle remplace l’autotuning TCP du noyau pour le tampon d’envoi. 0 = valeur par défaut du noyau (autotuning). Remarque : rétablir ce paramètre à 0 ne restaure l’autotuning que pour les connexions nouvellement créées ; les connexions existantes du pool conservent des tailles de tampon fixes jusqu’à leur recréation.
 
-<div id="storage_connections_soft_limit">
-  ## storage_connections_soft_limit
-</div>
+## storage_connections_soft_limit {#storage_connections_soft_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="Non" />Les connexions dépassant cette limite ont une durée de vie nettement plus courte. Cette limite s’applique aux connexions de stockage.
 
-<div id="storage_connections_store_limit">
-  ## storage_connections_store_limit
-</div>
+## storage_connections_store_limit {#storage_connections_store_limit}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Les connexions au-delà de cette limite sont réinitialisées après utilisation. Définissez cette valeur sur 0 pour désactiver le cache de connexions. Cette limite s’applique aux connexions de stockage.
+<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />Le nombre maximal de connexions inactives conservées dans le pool en vue de leur réutilisation. Une fois ce nombre atteint, les connexions supplémentaires sont réinitialisées après utilisation au lieu d’être conservées. La limite ne borne pas les connexions utilisées. Définissez cette valeur sur 0 pour désactiver le cache de connexions. Cette limite s’applique aux connexions de stockage.
 
-<div id="storage_connections_warn_limit">
-  ## storage_connections_warn_limit
-</div>
+## storage_connections_warn_limit {#storage_connections_warn_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />Des messages d’avertissement sont consignés dans les logs si le nombre de connexions utilisées dépasse cette limite. Cette limite s’applique aux connexions de stockage.
 

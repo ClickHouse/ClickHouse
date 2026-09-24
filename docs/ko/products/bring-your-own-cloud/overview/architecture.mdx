@@ -9,9 +9,7 @@ doc_type: '참고'
 
 import { Image } from "/snippets/ko/components/Image.jsx";
 
-<div id="key-concepts">
-  ## 핵심 개념
-</div>
+## 핵심 개념 {#key-concepts}
 
 아래 다이어그램은 ClickHouse Cloud 조직, 클라우드 계정, BYOC 인프라가 서로 어떤 관계에 있는지 보여줍니다.
 
@@ -28,57 +26,53 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 </Note>
 
 <div id="glossary">
-  ## 용어집
+  ## 용어집 {#glossary}
 </div>
 
 * **ClickHouse VPC:** ClickHouse Cloud가 소유한 VPC입니다.
 * **Customer BYOC VPC:** 고객의 클라우드 계정이 소유한 VPC로, ClickHouse Cloud가 프로비저닝 및 관리하며 ClickHouse Cloud BYOC 배포 전용으로 사용됩니다.
 * **Customer VPC:** Customer BYOC VPC에 연결해야 하는 애플리케이션에 사용되는, 고객의 클라우드 계정이 소유한 기타 VPC입니다.
 
-<div id="architecture">
-  ## 기술 아키텍처
-</div>
+## 기술 아키텍처 {#architecture}
 
 BYOC는 ClickHouse VPC에서 실행되는 **ClickHouse 컨트롤 플레인**과 고객의 클라우드 계정에서 전적으로 실행되는 **데이터 플레인**을 분리합니다. ClickHouse VPC에는 ClickHouse Cloud 콘솔, 인증, 사용자 관리, API, 청구, BYOC 컨트롤러와 같은 인프라 관리 구성 요소, 그리고 알림/인시던트 대응 도구가 호스팅됩니다. 이러한 서비스는 배포를 오케스트레이션하고 모니터링하지만, 데이터를 저장하지는 않습니다.
 
-**Customer BYOC VPC**에서는 ClickHouse가 ClickHouse 데이터 플레인을 실행하는 Kubernetes 클러스터(예: Amazon EKS)를 프로비저닝합니다. 다이어그램에 표시된 것처럼 여기에는 ClickHouse 클러스터 자체, ClickHouse Operator, 그리고 인그레스, DNS, 인증서 관리, State Exporter, scraper와 같은 지원 서비스가 포함됩니다. 전용 모니터링 스택(Prometheus, Grafana, AlertManager, Thanos)도 VPC 내에서 실행되므로 메트릭과 알림이 사용자 환경에서 생성되고 해당 환경에 그대로 유지됩니다.
+**Customer BYOC VPC**에서는 ClickHouse가 ClickHouse 데이터 플레인을 실행하는 Kubernetes 클러스터(예: Amazon EKS)를 프로비저닝합니다. 다이어그램에 표시된 것처럼 여기에는 ClickHouse 클러스터 자체, ClickHouse Operator, 그리고 인그레스, DNS, 인증서 관리, State Exporter, scraper와 같은 지원 서비스가 포함됩니다. 전용 모니터링 스택(Prometheus, Grafana, AlertManager, Thanos)도 VPC 내에서 실행되므로 메트릭과 알림은 사용자 환경에서 생성되고 모니터링 데이터 자체도 사용자 계정에 그대로 유지됩니다. 제한된 범위의 운영 텔레메트리, 즉 청구용 사용량 메트릭, 서비스 및 백업 상태 이벤트, 상태 알림만 ClickHouse Cloud로 전달되며 그 외에는 아무것도 내보내지지 않습니다. 전체 항목은 [네트워크 경계](/ko/products/bring-your-own-cloud/reference/network-security#outbound-connections)를 참조하십시오. 이러한 내보내기와는 별개로, ClickHouse의 대시보드와 승인된 에스컬레이션 시 ClickHouse 엔지니어는 Tailscale을 통해 스택과 사용자 로그를 원래 위치에서 조회할 수 있으며, ClickHouse 측에는 아무것도 저장되지 않습니다. [ClickHouse data access](/ko/products/bring-your-own-cloud/reference/clickhouse-data-access)를 참조하십시오.
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-1.webp" size="lg" alt="BYOC 아키텍처" background="black" />
+<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC 아키텍처: ClickHouse VPC의 ClickHouse 컨트롤 플레인이 고객 클라우드 계정 내부의 Kubernetes 데이터 플레인을 관리합니다. ClickHouse 데이터, 백업, 로그, 모니터링 데이터는 고객 계정에 유지되며 제한된 운영 텔레메트리만 외부로 내보내집니다." />
 
 <br />
 
 ClickHouse Cloud가 계정에 배포하는 주요 클라우드 리소스는 다음과 같습니다:
 
 * **VPC:** ClickHouse 배포 전용 Virtual Private Cloud입니다. ClickHouse 또는 고객이 관리할 수 있으며, 일반적으로 애플리케이션 VPC와 피어링됩니다.
-* **IAM 역할 and policies:** Kubernetes, ClickHouse 서비스, 모니터링 스택에 필요한 역할과 권한입니다. ClickHouse가 프로비저닝할 수도 있고 고객이 제공할 수도 있습니다.
+* **IAM role and policies:** Kubernetes, ClickHouse 서비스, 모니터링 스택에 필요한 역할과 권한입니다. ClickHouse가 프로비저닝할 수도 있고 고객이 제공할 수도 있습니다.
 * **Storage 버킷:** 데이터 파트, 백업, 그리고 (선택적으로) 장기 메트릭 및 로그 아카이브를 저장하는 데 사용됩니다.
 * **Kubernetes 클러스터:** 클라우드 제공업체에 따라 Amazon EKS, Google GKE 또는 Azure AKS가 될 수 있습니다. 아키텍처 다이어그램에 표시된 ClickHouse 서버와 지원 서비스를 호스팅합니다.
 
-기본적으로 ClickHouse Cloud는 새 전용 VPC를 프로비저닝하고 Kubernetes 서비스가 안전하게 운영되도록 필요한 IAM 역할을 설정합니다. 고급 네트워킹 또는 보안 요구 사항이 있는 조직을 위해 VPC와 IAM 역할을 별도로 관리할 수 있는 옵션도 제공합니다. 이 접근 방식은 네트워크 구성을 더 유연하게 사용자 지정하고 권한을 더욱 세밀하게 제어할 수 있게 해줍니다. 다만 이러한 리소스를 자체 관리하면 운영 책임이 더 커집니다.
+기본적으로 ClickHouse Cloud는 새 전용 VPC를 프로비저닝하고 Kubernetes 서비스가 안전하게 운영되도록 필요한 IAM role을 설정합니다. 고급 네트워킹 또는 보안 요구 사항이 있는 조직을 위해 VPC와 IAM role을 별도로 관리할 수 있는 옵션도 제공합니다. 이 접근 방식은 네트워크 구성을 더 유연하게 사용자 지정하고 권한을 더욱 세밀하게 제어할 수 있게 해줍니다. 다만 이러한 리소스를 자체 관리하면 운영 책임이 더 커집니다.
 
 <div id="data-storage">
-  ### 데이터 저장소
+  ### 데이터 저장소 {#data-storage}
 </div>
 
-모든 ClickHouse 데이터, 백업, 관측성 데이터는 클라우드 계정에 유지됩니다. 데이터 파트와 백업은 객체 스토리지(예: Amazon S3)에 저장되며, 로그는 ClickHouse 노드에 연결된 스토리지 볼륨에 저장됩니다. 향후 업데이트에서는 로그가 BYOC VPC 내부에서도 실행되는 ClickHouse 기반 로깅 서비스인 LogHouse에 기록됩니다. 메트릭은 장기 보관을 위해 로컬에 저장하거나 BYOC VPC의 별도 버킷에 저장할 수 있습니다. ClickHouse VPC와 BYOC VPC 간의 컨트롤 플레인 연결은 안전하고 범위가 엄격하게 제한된 채널(예: 다이어그램에 표시된 Tailscale)을 통해 제공되며, 이는 쿼리 트래픽이 아니라 관리 작업에만 사용됩니다.
+ClickHouse 데이터, 백업, 로그, 모니터링 데이터는 클라우드 계정에 유지되며, 외부로 내보내지는 데이터는 [네트워크 경계](/ko/products/bring-your-own-cloud/reference/network-security#outbound-connections)에 나열된 제한된 사용량 및 상태 텔레메트리뿐입니다. 데이터 파트와 백업은 객체 스토리지(예: Amazon S3)에 저장되며, 로그는 ClickHouse 노드에 연결된 스토리지 볼륨에 저장됩니다. 향후 업데이트에서는 로그가 BYOC VPC 내부에서도 실행되는 ClickHouse 기반 로깅 서비스인 LogHouse에 기록됩니다. 메트릭은 로컬에 저장하거나 장기 보관을 위해 사용자 계정의 전용 버킷에 저장할 수 있습니다. 객체 스토리지는 VPC/VNet 외부에 위치하며 공급자의 스토리지 API 경로를 통해 접근합니다. ClickHouse VPC와 BYOC VPC 간의 컨트롤 플레인 연결은 관리 작업에만 사용되며, 쿼리 트래픽에는 절대 사용되지 않습니다. 기본적으로 ClickHouse 관리 서비스는 퍼블릭 엔드포인트를 통해 클러스터의 Kubernetes API에 접근하며, 이 엔드포인트는 결코 무방비로 열려 있지 않습니다. AWS에서는 IP 허용 목록을 통해 ClickHouse 이그레스(egress) 대역으로만 접근이 제한되고, GCP에서는 Google Cloud IAM으로, Azure에서는 Microsoft Entra ID와 Azure RBAC를 함께 사용하여 인가됩니다. 또는 배포별로 프라이빗 연결을 활성화할 수도 있으며, 다이어그램에 표시된 것처럼 AWS VPC Lattice, GCP의 GKE DNS 기반 컨트롤 플레인 엔드포인트, Azure Private Link를 사용할 수 있습니다. 모든 클라우드에서 Tailscale은 ClickHouse 엔지니어의 문제 해결 접근과 메트릭 및 대시보드 트래픽을 전달하며, Kubernetes API 경로가 프라이빗으로 구성된 경우에도 그대로 유지됩니다.
 
 <div id="control-plane-communication">
-  ### 컨트롤 플레인 통신
+  ### 컨트롤 플레인 통신 {#control-plane-communication}
 </div>
 
 ClickHouse VPC는 구성 변경, 상태 점검, 배포 명령 등 서비스 관리 작업을 위해 HTTPS(포트 443)를 통해 BYOC VPC와 통신합니다. 이 트래픽은 오케스트레이션에 필요한 컨트롤 플레인 데이터만 전달합니다. 리소스 사용률 및 상태 모니터링을 위해 중요한 텔레메트리와 알림은 BYOC VPC에서 ClickHouse VPC로 전송됩니다.
 
 <div id="key-requirements">
-  ## BYOC의 핵심 요구 사항
+  ## BYOC의 핵심 요구 사항 {#key-requirements}
 </div>
 
 BYOC 배포 모델은 안정적인 운영, 손쉬운 유지 관리, 보안을 위해 두 가지 필수 구성 요소를 갖춰야 합니다:
 
-<div id="cross-account-iam-permissions">
-  ### 교차 계정 IAM 권한
-</div>
+### 교차 계정 IAM 권한 {#cross-account-iam-permissions}
 
 ClickHouse Cloud가 클라우드 계정 내에서 리소스를 프로비저닝하고 관리하려면 교차 계정 IAM 권한이 필요합니다. 이를 통해 ClickHouse는 다음을 수행할 수 있습니다.
 
@@ -93,28 +87,28 @@ ClickHouse Cloud가 클라우드 계정 내에서 리소스를 프로비저닝�
 필요한 구체적인 권한에 대한 자세한 내용은 [BYOC Privilege Reference](/ko/products/bring-your-own-cloud/reference/privilege)를 참조하십시오.
 
 <div id="tailscale-private-network">
-  ### Tailscale 프라이빗 네트워크 연결
+  ### Tailscale 프라이빗 네트워크 연결 {#tailscale-private-network}
 </div>
 
-Tailscale은 ClickHouse Cloud의 관리 서비스와 BYOC 배포 간에 안전한 제로 트러스트 프라이빗 네트워크 연결을 제공합니다. 이 연결을 통해 다음이 가능합니다:
+Tailscale은 ClickHouse Cloud와 BYOC 배포 간에 안전한 제로 트러스트 프라이빗 네트워크를 제공합니다. 이 네트워크를 통해 ClickHouse 엔지니어의 문제 해결 접근이 이루어지고, ClickHouse가 배포를 모니터링하는 데 사용하는 메트릭과 대시보드가 전달되며, 프라이빗 API 엔드포인트가 활성화된 경우에는 Kubernetes API 트래픽도 전달됩니다. 이 연결을 통해 다음이 가능합니다:
 
 * **지속적인 모니터링**: ClickHouse 엔지니어가 BYOC VPC에 배포된 Prometheus 모니터링 스택에 액세스하여 서비스 상태와 성능을 모니터링할 수 있습니다
 * **선제적 유지 관리**: 엔지니어가 정기적인 유지 관리, 업그레이드, 문제 해결 작업을 수행할 수 있습니다
 * **긴급 지원**: 서비스 문제가 발생할 경우 엔지니어가 환경에 신속하게 액세스하여 문제를 진단하고 해결할 수 있습니다
-* **인프라 관리**: 관리 서비스가 자동화된 작업을 위해 BYOC 인프라와 연계될 수 있습니다
+* **인프라 관리**: 프라이빗 Kubernetes API 엔드포인트가 활성화된 경우, 관리 서비스는 퍼블릭 엔드포인트 대신 이 연결을 통해 Kubernetes API에 접근합니다
 
-Tailscale 연결은 BYOC VPC에서 **아웃바운드 전용**으로만 이루어지며, 인바운드 연결은 필요하지 않으므로 보안 노출을 줄일 수 있습니다. 모든 액세스는 다음과 같습니다:
+클러스터 내 Tailscale 에이전트는 **아웃바운드 전용** 연결만 생성합니다. 따라서 Tailscale 자체를 위한 인바운드 보안 그룹, 방화벽 또는 네트워크 보안 그룹 규칙이 필요하지 않아 노출을 줄일 수 있습니다. 모든 액세스는 다음과 같습니다:
 
 * **승인 및 감사**: 엔지니어는 내부 승인 시스템을 통해 액세스를 요청해야 합니다
 * **기간 제한**: 액세스 권한은 설정된 기간이 지나면 자동으로 만료됩니다
 * **제한됨**: 엔지니어는 시스템 테이블과 인프라 구성 요소에만 액세스할 수 있으며, 고객 데이터에는 절대 액세스할 수 없습니다
 * **암호화됨**: 모든 통신은 종단 간 암호화됩니다
 
+이러한 아웃바운드 전용 특성은 Tailscale 자체에만 적용되며, 모든 관리 경로에 적용되는 것은 아닙니다. 클러스터의 Kubernetes API 서버는 퍼블릭 엔드포인트를 통하든 프라이빗 연결을 통하든 여전히 TCP 443에서 ClickHouse 관리 서비스의 연결을 수락합니다. 전체 리스너 목록은 [인바운드 연결](/ko/products/bring-your-own-cloud/reference/network-security#inbound-connections) 목록을 참조하십시오.
+
 BYOC에서 Tailscale이 작동하는 방식과 보안 제어에 관한 자세한 내용은 [네트워크 보안 문서](/ko/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)를 참조하십시오.
 
-<div id="why-requirements-matter">
-  ### 이러한 요구 사항이 중요한 이유
-</div>
+### 이러한 요구 사항이 중요한 이유 {#why-requirements-matter}
 
 이 두 구성 요소는 함께 ClickHouse Cloud가 다음을 수행할 수 있게 합니다.
 

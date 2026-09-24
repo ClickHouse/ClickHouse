@@ -10,9 +10,7 @@ doc_type: 'guide'
 
 Este motor permite integrar ClickHouse con [Redis](https://redis.io/). Dado que Redis utiliza un modelo clave-valor, recomendamos encarecidamente realizar únicamente consultas puntuales, como `where k=xx` o `where k in (xx, xx)`.
 
-<div id="creating-a-table">
-  ## Crear una tabla
-</div>
+## Crear una tabla {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,25 +30,19 @@ PRIMARY KEY(primary_key_name);
 * `pool_size` — tamaño máximo del grupo de conexiones de Redis; el valor predeterminado es 16.
 * `primary_key_name` - cualquier nombre de columna de la lista de columnas.
 
-<Info>
-  **Serialización**
-
+<Note title="Serialización">
   `PRIMARY KEY` solo admite una columna. La clave primaria se serializará en binario como una clave de Redis.
   Las columnas distintas de la clave primaria se serializarán en binario como valor de Redis en el orden correspondiente.
   Los escaneos completos con `SELECT * FROM redis_table` pueden fallar con errores de deserialización binaria si la base de datos de Redis seleccionada contiene claves o valores que no fueron escritos por ClickHouse.
-</Info>
+</Note>
 
 Los argumentos también pueden pasarse mediante [colecciones con nombre](/es/concepts/features/configuration/server-config/named-collections). En este caso, `host` y `port` deben especificarse por separado. Este enfoque se recomienda para entornos de producción. En este momento, todos los parámetros pasados a Redis mediante colecciones con nombre son obligatorios.
 
-<Info>
-  **Filtrado**
-
+<Note title="Filtrado">
   Las consultas con `key equals` o con filtrado `in` se optimizarán para realizar búsquedas de múltiples claves en Redis. Si las consultas no incluyen una clave de filtrado, se realizará un escaneo completo de la tabla, lo que supone una operación costosa.
-</Info>
+</Note>
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#usage-example}
 
 Cree una tabla en ClickHouse usando el motor `Redis` con argumentos básicos:
 
@@ -156,9 +148,7 @@ Join con otras tablas.
 SELECT * FROM redis_table JOIN merge_tree_table ON merge_tree_table.key=redis_table.key;
 ```
 
-<div id="limitations">
-  ## Limitaciones
-</div>
+## Limitaciones {#limitations}
 
 El motor Redis también admite consultas de escaneo, como `where k > xx`, pero tiene algunas limitaciones:
 

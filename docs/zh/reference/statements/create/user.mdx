@@ -28,9 +28,9 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 `ON CLUSTER` 子句支持在集群中创建用户，参见 [分布式 DDL](/zh/reference/statements/distributed-ddl)。
 
-<div id="identification">
-  ## 身份标识
-</div>
+`CREATE USER` 需要 [CREATE USER](/zh/reference/statements/grant#access-management) 权限。`OR REPLACE` 会覆盖同名的现有用户——包括其身份验证方法、已获授角色及其设置——因此还额外需要 [DROP USER](/zh/reference/statements/grant#access-management) 权限。无论语句中列出的用户是否已存在，都需要对每个名称拥有 `DROP USER` 权限，因此无法利用该语句来探测哪些用户存在。
+
+## 身份标识 {#identification}
 
 用户身份标识有多种方式：
 
@@ -76,9 +76,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   * 至少包含 1 个特殊字符
 </Note>
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 1. 以下用户名为 `name1`，且无需密码——显然，这样几乎没有什么安全性可言：
 
@@ -172,9 +170,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 2. 出于安全原因，`no_password` 不能与其他身份验证方法同时存在。因此，只有当它是查询中唯一的身份验证方法时，您才可以指定
    `no_password`。
 
-<div id="user-host">
-  ## 用户主机
-</div>
+## 用户主机 {#user-host}
 
 用户主机是指可用于建立与 ClickHouse 服务器 连接的主机。可以在查询的 `HOST` 部分中按以下方式指定主机：
 
@@ -195,9 +191,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   ClickHouse 将 `user_name@'address'` 视为一个完整的用户名。因此，严格来说，你可以创建多个 `user_name` 相同、但 `@` 后部分不同的用户。不过，我们不建议这样做。
 </Tip>
 
-<div id="valid-until-clause">
-  ## VALID UNTIL 子句
-</div>
+## VALID UNTIL 子句 {#valid-until-clause}
 
 用于指定身份验证方法的到期日期，以及可选的到期时间。它接受字符串参数。建议日期时间采用 `YYYY-MM-DD [hh:mm:ss] [timezone]` 格式，其中 `[timezone]` 必须是数值偏移量 (如 `+09:00`) ，或 `UTC`、`GMT`、`Z`、`MSK`、`MSD` 之一；不支持 `Asia/Tokyo` 这类命名 IANA 时区 (请参阅下方说明) 。默认情况下，此参数为 `'infinity'`。可接受的截止时间范围为 `1900-01-01 00:00:00 UTC` 至 `9999-12-31 09:59:59 UTC`——后者是在所有时区中均仍处于 9999 年内的最晚时刻，因此存储的时刻在显示时绝不会被截断。过去的截止时间表示凭据已过期。早于 `1970-01-01 00:00:01 UTC` 的截止时间仅会作为“已过期”标记被接受：它们会被规范化为最早的过期时刻，即 Unix 纪元后一秒 (`1970-01-01 00:00:01 UTC`) ，因此 `SHOW CREATE USER` 显示的是该时刻，而非您指定的截止时间。自该时刻起的截止时间将按原样存储。
 
@@ -221,9 +215,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
   日期时间字符串由 `parseDateTimeBestEffort` 解析，该函数仅识别时区标记 `UTC`、`GMT`、`Z`、`MSK`、`MSD`，以及 `+09:00` 或 `-05:00` 等数值偏移量。不支持 `Asia/Tokyo` 或 `Europe/London` 这类命名 IANA 时区；对于采用夏令时的区域，固定偏移量并不等同于 IANA 时区，因此必须根据要编码的具体日期计算正确的偏移量。
 </Note>
 
-<div id="valid-for-clause">
-  ## VALID FOR 子句
-</div>
+## VALID FOR 子句 {#valid-for-clause}
 
 `VALID FOR` 子句是 `VALID UNTIL` 的便捷简写。它不使用绝对日期和时间，而是接受一个[时间间隔](/zh/reference/data-types/special-data-types/interval)，并在执行查询时将过期截止时间计算为当前时间加上该时间间隔。结果随后以 `VALID UNTIL` 形式存储，因此 `SHOW CREATE USER` 始终显示解析出的绝对截止时间。它可在任何可使用 `VALID UNTIL` 的位置使用，并遵循相同的放置规则：位于 `IDENTIFIED` 之前 (或未指定身份验证方法时) 时，它是适用于所有方法的用户级截止时间；位于某个身份验证方法之后时，则仅适用于该方法。截止时间以秒级精度存储和强制执行，因此不接受亚秒级时间间隔 (`NANOSECOND`、`MICROSECOND`、`MILLISECOND`) ；可接受的最小单位为 `SECOND`。负时间间隔可用于将凭据标记为已过期；如果计算得到的截止时间早于 `1970-01-01 00:00:01 UTC`，则会将其规范化为该最早的过期时刻，之后 `SHOW CREATE USER` 将报告该时刻——如 [`VALID UNTIL`](#valid-until-clause) 所述，它会以服务器或会话时区显示。
 
@@ -235,9 +227,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 * `CREATE USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 用户级截止时间适用于这两种方法。
 * `CREATE USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — 截止时间仅适用于 `bcrypt_password` 方法；`plaintext_password` 永不过期。
 
-<div id="grants-clause">
-  ## GRANTS 子句
-</div>
+## GRANTS 子句 {#grants-clause}
 
 可限制通过特定身份验证方法登录的会话所拥有的访问权限。该子句接受一个用括号括起的特权列表，其格式与 [GRANT](/zh/reference/statements/grant) 语句相同。它应指定在身份验证方法之后 (如有 `VALID UNTIL` 子句，则位于其后) ，且仅适用于该方法。
 
@@ -266,9 +256,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 出于同样的原因，此组合仅在由 服务器 本地验证的身份验证方法之间进行检查：如上所述，对于外部验证的方法，该子句本身会被拒绝，因为重新检查凭据需要对外部系统进行一次不安全的额外探测。因此，如果同一用户的外部验证方法 (`ldap`、`kerberos`、`http`、`jwt`) 恰好也接受相同的凭据，则该方法自身的 `VALID UNTIL` 不会纳入此组合，为其配置的较早到期时间也不会缩短通过本地验证方法获得的 会话。
 
-<div id="grantees-clause">
-  ## GRANTEES 子句
-</div>
+## GRANTEES 子句 {#grantees-clause}
 
 指定允许从该用户接收[权限](/zh/reference/statements/grant#privileges)的用户或角色，前提是该用户本身也已通过 [GRANT OPTION](/zh/reference/statements/grant#granting-privilege-syntax) 获得了所有必需的访问授权。`GRANTEES` 子句的选项包括：
 
@@ -279,9 +267,7 @@ CREATE USER [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 你可以使用 `EXCEPT` 表达式来排除任意用户或角色。例如，`CREATE USER user1 GRANTEES ANY EXCEPT user2`。这表示如果 `user1` 拥有某些通过 `GRANT OPTION` 授予的权限，它就能够将这些权限授予除 `user2` 之外的任何人。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples-1}
 
 创建用户账户 `mira`，并使用密码 `qwerty` 进行保护：
 
@@ -313,6 +299,18 @@ CREATE USER john ROLE role1, role2 DEFAULT ROLE ALL EXCEPT role2;
 
 ```sql
 CREATE USER john GRANTEES jack;
+```
+
+创建用户账户 `john`，并指定默认数据库：
+
+```sql
+CREATE USER john DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` 表示不设置默认数据库。若要使用名为 `NONE` 的数据库，请用反引号将其名称引起来：
+
+```sql
+DEFAULT DATABASE `NONE`
 ```
 
 使用查询参数来创建用户账户 `john`：

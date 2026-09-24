@@ -14,9 +14,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中找到，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="distributed_cache_alignment">
-  ## distributed_cache_alignment
-</div>
+## distributed_cache_alignment {#distributed_cache_alignment}
 
 <CloudOnlyBadge />
 
@@ -26,9 +24,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。此设置仅用于测试，请勿更改
 
-<div id="distributed_cache_bypass_connection_pool">
-  ## distributed_cache_bypass_connection_pool
-</div>
+## distributed_cache_bypass_connection_pool {#distributed_cache_bypass_connection_pool}
 
 <CloudOnlyBadge />
 
@@ -38,9 +34,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。允许绕过分布式缓存连接池。
 
-<div id="distributed_cache_client_id">
-  ## distributed_cache_client_id
-</div>
+## distributed_cache_client_id {#distributed_cache_client_id}
 
 <CloudOnlyBadge />
 
@@ -48,9 +42,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。此设置仅用于 CI 测试：非空时，会覆盖 registry 中为该查询请求配置的分布式缓存客户端 ID。它使测试能够将数据分布在一组数量有限的客户端 ID 上，同时确保相同的数据始终位于同一客户端 ID 上。要求在分布式缓存客户端配置中启用 `ci_mode`：如果未启用 (默认情况，例如在生产环境中) ，通过分布式缓存路由读写的查询将以 `SUPPORT_IS_DISABLED` 失败，而不会静默回退到已配置的客户端 ID。从不访问分布式缓存的查询不受影响，因此会忽略此值。
 
-<div id="distributed_cache_connect_backoff_max_ms">
-  ## distributed_cache_connect_backoff_max_ms
-</div>
+## distributed_cache_connect_backoff_max_ms {#distributed_cache_connect_backoff_max_ms}
 
 <CloudOnlyBadge />
 
@@ -60,9 +52,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。分布式缓存创建连接时的最大退避毫秒数。
 
-<div id="distributed_cache_connect_backoff_min_ms">
-  ## distributed_cache_connect_backoff_min_ms
-</div>
+## distributed_cache_connect_backoff_min_ms {#distributed_cache_connect_backoff_min_ms}
 
 <CloudOnlyBadge />
 
@@ -72,9 +62,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。分布式缓存创建连接时的最小退避毫秒数。
 
-<div id="distributed_cache_connect_max_tries">
-  ## distributed_cache_connect_max_tries
-</div>
+## distributed_cache_connect_max_tries {#distributed_cache_connect_max_tries}
 
 <CloudOnlyBadge />
 
@@ -84,9 +72,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。连接分布式缓存失败时的重试次数
 
-<div id="distributed_cache_connect_timeout_ms">
-  ## distributed_cache_connect_timeout_ms
-</div>
+## distributed_cache_connect_timeout_ms {#distributed_cache_connect_timeout_ms}
 
 <CloudOnlyBadge />
 
@@ -96,9 +82,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。连接到 Distributed Cache 服务器时的连接超时。
 
-<div id="distributed_cache_credentials_refresh_period_seconds">
-  ## distributed_cache_credentials_refresh_period_seconds
-</div>
+## distributed_cache_credentials_refresh_period_seconds {#distributed_cache_credentials_refresh_period_seconds}
 
 <CloudOnlyBadge />
 
@@ -108,9 +92,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。凭证刷新周期。
 
-<div id="distributed_cache_data_packet_ack_window">
-  ## distributed_cache_data_packet_ack_window
-</div>
+## distributed_cache_data_packet_ack_window {#distributed_cache_data_packet_ack_window}
 
 <CloudOnlyBadge />
 
@@ -120,9 +102,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。用于在单个分布式缓存读取请求中为 DataPacket 序列发送 ACK 的窗口大小
 
-<div id="distributed_cache_discard_connection_if_unread_data">
-  ## distributed_cache_discard_connection_if_unread_data
-</div>
+## distributed_cache_discard_connection_if_unread_data {#distributed_cache_discard_connection_if_unread_data}
 
 <CloudOnlyBadge />
 
@@ -132,9 +112,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。如果存在未读取的数据，则断开连接。
 
-<div id="distributed_cache_fetch_metrics_only_from_current_az">
-  ## distributed_cache_fetch_metrics_only_from_current_az
-</div>
+## distributed_cache_fetch_metrics_only_from_current_az {#distributed_cache_fetch_metrics_only_from_current_az}
 
 <CloudOnlyBadge />
 
@@ -144,9 +122,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。在 system.distributed&#95;cache&#95;metrics 和 system.distributed&#95;cache&#95;events 中，仅从当前可用区拉取指标。
 
-<div id="distributed_cache_file_cache_name">
-  ## distributed_cache_file_cache_name
-</div>
+## distributed_cache_file_cache_name {#distributed_cache_file_cache_name}
 
 <CloudOnlyBadge />
 
@@ -154,9 +130,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。此设置仅用于 CI 测试，用于指定分布式缓存使用的文件系统缓存名称。
 
-<div id="distributed_cache_log_mode">
-  ## distributed_cache_log_mode
-</div>
+## distributed_cache_log_mode {#distributed_cache_log_mode}
 
 <CloudOnlyBadge />
 
@@ -166,9 +140,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。用于写入 system.distributed&#95;cache&#95;log 的模式
 
-<div id="distributed_cache_max_unacked_inflight_packets">
-  ## distributed_cache_max_unacked_inflight_packets
-</div>
+## distributed_cache_max_unacked_inflight_packets {#distributed_cache_max_unacked_inflight_packets}
 
 <CloudOnlyBadge />
 
@@ -178,9 +150,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。单个分布式缓存读取请求中处于传输中的未确认数据包的最大数量
 
-<div id="distributed_cache_min_bytes_for_seek">
-  ## distributed_cache_min_bytes_for_seek
-</div>
+## distributed_cache_min_bytes_for_seek {#distributed_cache_min_bytes_for_seek}
 
 <CloudOnlyBadge />
 
@@ -190,21 +160,64 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。分布式缓存中执行寻道的最小字节数。
 
-<div id="distributed_cache_min_inflight_bytes_to_discard_connection_on_seek">
-  ## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek
-</div>
+## distributed_cache_min_inflight_bytes_to_discard_connection_on_seek {#distributed_cache_min_inflight_bytes_to_discard_connection_on_seek}
 
 <CloudOnlyBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="4194304" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}, {"id": "row-2","items": [{"label": "26.8"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}, {"id": "row-3","items": [{"label": "26.7"},{"label": "4194304"},{"label": "新增设置：当寻道时原本需丢弃的在途字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"}]}]} />
+<VersionHistory
+  rows={[
+{
+  id: "row-1",
+  items: [
+    { label: "26.9" },
+    { label: "4194304" },
+    {
+      label:
+        "新增设置：当寻道时原本需丢弃的在传输中的字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"
+    }
+  ]
+},
+{
+  id: "row-2",
+  items: [
+    { label: "26.8" },
+    { label: "4194304" },
+    {
+      label:
+        "新增设置：当寻道时原本需丢弃的在传输中的字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"
+    }
+  ]
+},
+{
+  id: "row-3",
+  items: [
+    { label: "26.8" },
+    { label: "4194304" },
+    {
+      label:
+        "新增设置：当寻道时原本需丢弃的在传输中的字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"
+    }
+  ]
+},
+{
+  id: "row-4",
+  items: [
+    { label: "26.7" },
+    { label: "4194304" },
+    {
+      label:
+        "新增设置：当寻道时原本需丢弃的在传输中的字节过多，可丢弃并重新建立分布式缓存连接。默认值为 4 MiB；设为 0 将恢复之前的行为（始终通过读取范围 ID 重用连接）。"
+    }
+  ]
+}
+]}
+/>
 
-仅在 ClickHouse Cloud 中有效。当从已打开的分布式缓存 stream 的当前位置寻道至其他位置时，如果为继续通过读取范围 ID 机制重用连接而需丢弃的预估在途字节数超过此值，则会丢弃该连接并新建连接。这样可避免在频繁寻道时排空大量未使用的数据。设为 0 可禁用此功能，并始终重用连接。
+仅在 ClickHouse Cloud 中有效。当从已打开的分布式缓存 stream 的当前位置寻道至其他位置时，如果为继续通过读取范围 ID 机制重用连接而需丢弃的预估在传输中的字节数超过此值，则会丢弃该连接并新建连接。这样可避免在频繁寻道时排空大量未使用的数据。设为 0 可禁用此功能，并始终重用连接。
 
-<div id="distributed_cache_pool_behaviour_on_limit">
-  ## distributed_cache_pool_behaviour_on_limit
-</div>
+## distributed_cache_pool_behaviour_on_limit {#distributed_cache_pool_behaviour_on_limit}
 
 <CloudOnlyBadge />
 
@@ -214,9 +227,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。用于指定分布式缓存连接在达到连接池限制时的行为
 
-<div id="distributed_cache_prefer_bigger_buffer_size">
-  ## distributed_cache_prefer_bigger_buffer_size
-</div>
+## distributed_cache_prefer_bigger_buffer_size {#distributed_cache_prefer_bigger_buffer_size}
 
 <CloudOnlyBadge />
 
@@ -226,9 +237,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中有效。与 filesystem&#95;cache&#95;prefer&#95;bigger&#95;buffer&#95;size 相同，但适用于分布式缓存。
 
-<div id="distributed_cache_read_only_from_current_az">
-  ## distributed_cache_read_only_from_current_az
-</div>
+## distributed_cache_read_only_from_current_az {#distributed_cache_read_only_from_current_az}
 
 <CloudOnlyBadge />
 
@@ -238,9 +247,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。允许只从当前可用区读取数据。若禁用，则会从所有可用区中的所有缓存服务器读取。
 
-<div id="distributed_cache_read_request_max_tries">
-  ## distributed_cache_read_request_max_tries
-</div>
+## distributed_cache_read_request_max_tries {#distributed_cache_read_request_max_tries}
 
 <CloudOnlyBadge />
 
@@ -250,9 +257,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。分布式缓存读取请求失败时的最大重试次数
 
-<div id="distributed_cache_receive_response_wait_milliseconds">
-  ## distributed_cache_receive_response_wait_milliseconds
-</div>
+## distributed_cache_receive_response_wait_milliseconds {#distributed_cache_receive_response_wait_milliseconds}
 
 <CloudOnlyBadge />
 
@@ -262,9 +267,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 仅在 ClickHouse Cloud 中生效。从分布式缓存接收请求数据的等待时间 (毫秒) 。
 
-<div id="distributed_cache_receive_timeout_milliseconds">
-  ## distributed_cache_receive_timeout_milliseconds
-</div>
+## distributed_cache_receive_timeout_milliseconds {#distributed_cache_receive_timeout_milliseconds}
 
 <CloudOnlyBadge />
 
@@ -276,9 +279,7 @@ import { CloudOnlyBadge } from "/snippets/zh/components/CloudOnlyBadge/CloudOnly
 
 Cloud 默认值：`20000`。
 
-<div id="distributed_cache_receive_timeout_ms">
-  ## distributed_cache_receive_timeout_ms
-</div>
+## distributed_cache_receive_timeout_ms {#distributed_cache_receive_timeout_ms}
 
 <CloudOnlyBadge />
 
@@ -288,9 +289,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。该设置表示从 Distributed Cache 服务器接收数据的超时时间，单位为毫秒。如果在此时间间隔内未接收到任何字节，则会抛出异常。
 
-<div id="distributed_cache_registry_show_certificate_and_signature">
-  ## distributed_cache_registry_show_certificate_and_signature
-</div>
+## distributed_cache_registry_show_certificate_and_signature {#distributed_cache_registry_show_certificate_and_signature}
 
 <CloudOnlyBadge />
 
@@ -300,9 +299,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。显示 `system.distributed_cache_registry` 表中的 `certificate` 和 `signature` 列。默认情况下，这些列为空，以保持输出简洁；启用此设置可查看其内容。
 
-<div id="distributed_cache_send_timeout_ms">
-  ## distributed_cache_send_timeout_ms
-</div>
+## distributed_cache_send_timeout_ms {#distributed_cache_send_timeout_ms}
 
 <CloudOnlyBadge />
 
@@ -312,9 +309,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。向 Distributed Cache 服务器发送数据的超时时间，单位为毫秒。如果客户端需要发送数据，但在此时间间隔内无法发送任何字节，则会抛出异常。
 
-<div id="distributed_cache_tcp_keep_alive_timeout_ms">
-  ## distributed_cache_tcp_keep_alive_timeout_ms
-</div>
+## distributed_cache_tcp_keep_alive_timeout_ms {#distributed_cache_tcp_keep_alive_timeout_ms}
 
 <CloudOnlyBadge />
 
@@ -324,9 +319,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。该值表示在 TCP 开始发送 keepalive 探测之前，与 Distributed Cache 服务器的连接需保持空闲的时间 (毫秒) 。
 
-<div id="distributed_cache_throw_on_error">
-  ## distributed_cache_throw_on_error
-</div>
+## distributed_cache_throw_on_error {#distributed_cache_throw_on_error}
 
 <CloudOnlyBadge />
 
@@ -336,9 +329,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。若在与分布式缓存通信期间发生异常，或收到来自分布式缓存的异常，则重新抛出该异常。否则，出错时回退为跳过分布式缓存。
 
-<div id="distributed_cache_use_clients_cache_for_read">
-  ## distributed_cache_use_clients_cache_for_read
-</div>
+## distributed_cache_use_clients_cache_for_read {#distributed_cache_use_clients_cache_for_read}
 
 <CloudOnlyBadge />
 
@@ -348,9 +339,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。对读取请求使用 clients cache。
 
-<div id="distributed_cache_wait_connection_from_pool_milliseconds">
-  ## distributed_cache_wait_connection_from_pool_milliseconds
-</div>
+## distributed_cache_wait_connection_from_pool_milliseconds {#distributed_cache_wait_connection_from_pool_milliseconds}
 
 <CloudOnlyBadge />
 
@@ -360,9 +349,7 @@ Cloud 默认值：`20000`。
 
 仅在 ClickHouse Cloud 中生效。当 distributed&#95;cache&#95;pool&#95;behaviour&#95;on&#95;limit 为 wait 时，表示从连接池中获取连接的等待时间，单位为毫秒。
 
-<div id="distributed_cache_write_request_max_tries">
-  ## distributed_cache_write_request_max_tries
-</div>
+## distributed_cache_write_request_max_tries {#distributed_cache_write_request_max_tries}
 
 <CloudOnlyBadge />
 

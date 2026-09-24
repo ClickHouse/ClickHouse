@@ -1,0 +1,110 @@
+---
+description: '查看预付费额度余额，并在 ClickHouse 组织之间转移承诺合同额度。'
+sidebarTitle: '自助式预付额度管理'
+slug: /cloud/manage/billing/self-service-prepaid-credit-management
+title: '自助式预付额度管理'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+如果您通过承诺合同购买了预付费额度，则可以管理这些额度在各个 ClickHouse 组织之间的分配方式。
+在 **预付费额度** 页面中，您可以查看余额并在组织之间转移额度。
+
+## 访问预付费额度 {#access-prepaid-credits}
+
+在 ClickHouse Cloud 控制台中打开 **Settings**，然后在 **Account** 下选择 **预付费额度**。
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Settings 侧边栏中 Account 下的 预付费额度" size="sm" />
+
+若要查看预付费额度余额，你需要在已分配承诺合同额度的组织中至少拥有以下角色之一：
+
+* [Admin](/zh/products/cloud/reference/security/console-roles#organization-roles)
+* [Billing](/zh/products/cloud/reference/security/console-roles#organization-roles)
+* 具备[查看或管理账单详情](/zh/products/cloud/reference/security/console-roles#console-permissions)权限的[自定义角色](/zh/products/cloud/guides/security/cloud-access-management/manage-custom-roles#create-custom-role)
+
+该页面会列出你拥有上述任一角色或权限的所有组织，包括没有预付费额度的组织。
+
+<Note>
+  如果你所在的组织均没有预付费额度，该选项卡会显示空状态，并提供定价计算器的链接以及联系销售团队的表单。
+</Note>
+
+## 查看额度余额 {#view-credit-balances}
+
+该摘要展示你拥有上述访问权限的各组织的预付费额度合计。
+
+| 指标          | 说明                            |
+| ----------- | ----------------------------- |
+| **已授予额度总计** | 分配给这些组织的全部预付费额度，包括有效额度和已过期额度。 |
+| **已过期额度**   | 这些组织中所有已过期的预付费额度。             |
+| **已使用额度**   | 这些组织已消耗的全部预付费额度。              |
+| **可用额度**    | 这些组织尚未消耗的全部有效预付费额度。           |
+
+<Note>
+  如果你无法访问某个预付费契约下所有已分配额度的组织，则此处的合计可能低于该契约的完整额度总量。
+</Note>
+
+所有金额均以 ClickHouse Credits (CHC) 计量，1 CHC 相当于 $1 的用量。如果你以折扣价购买额度，获得的 CHC 数量可能多于实际支付的美元金额。
+
+### 组织余额 {#organization-balances}
+
+摘要下方表格中的每一行代表一个组织，数据反映该组织的全部预付费余额。
+
+* **Organization** 显示组织名称、部分掩码处理的组织 ID，以及指向其账单页面的链接，可在该页面查看额度余额明细。
+* **已授予额度**、**Expired credits**、**Credits used** 和 **可用额度** 的含义与摘要中相同，但仅针对该组织的预付费额度。
+* **Credit status** 显示该组织预付费余额的状态，详见下文。
+* **Expiration Date** 显示预付费余额的到期日期；如存在多笔余额，则显示最晚的到期日期。
+
+| 状态                     | 说明                                           |
+| ---------------------- | -------------------------------------------- |
+| **Active**             | 该组织有一笔或多笔尚未到期的预付费额度余额。                       |
+| **Expires soon**       | 该组织仅有一笔有效的预付费余额，且将在 60 天内到期。该状态会一直保持至余额到期。   |
+| **Expired**            | 该组织所有预付费余额的结束日期均已过去。                         |
+| **Spent**              | 该组织的所有预付费余额均已用尽，但尚未到期。该状态的优先次序高于 **Active**。 |
+| **No Prepaid Credits** | 该组织没有预付费额度。                                  |
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Prepaid credit summary metrics and balances by organization" size="lg" />
+
+## 转移额度 {#transfer-credits}
+
+额度转移 (也称为拆分) 是指将预付费额度从源组织转移到目标组织。
+
+要转移额度，你需要具备 [管理账单详情](/zh/products/cloud/reference/security/console-roles#console-permissions) 权限。View billing details 权限只能查看余额，无法执行转移操作。
+
+1. 在源组织所在行中点击 **Transfer**。
+2. 选择一项有效的额度授予。面板中会列出源组织的有效额度授予及其到期日期。
+3. 从你有权访问的组织中选择一个目标组织。
+4. 输入要转移的金额。
+5. 核对转移后的余额，然后点击 **转移额度**。
+
+<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="额度转移面板，包含源额度授予、目标组织、转移金额以及转移后的余额" size="md" />
+
+### 转移规则 {#transfer-rules}
+
+* 只能转移**有效的预付费额度**，试用额度不可转移。
+* 额度转移会改变源组织和目标组织可用的预付费额度，但不会改变承诺合同项下授予的有效额度总量。
+* 将预付费额度转入处于试用期或因未付款而处于宽限期的组织后，该组织将变为预付费组织，并开始消耗这些额度。
+* 只有当源组织已配置[备用付款方式](/zh/products/cloud/reference/billing/managing-payment-methods#add-backup-cc-to-marketplace-org)或没有任何服务时，才能将其剩余预付费额度全部转出；否则最多只能转移源组织额度余额的 75%。
+* 无法在 ClickHouse Cloud 组织与[自备 Cloud (BYOC)](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 组织之间转移额度。
+* 无法在通过不同云市场 (例如 AWS Marketplace 和 Google Cloud Marketplace) 计费的组织之间转移额度。
+
+### 转移后的 Marketplace 计费 {#marketplace-billing-after-a-transfer}
+
+如果源组织通过有效的 AWS、Google Cloud 或 Azure Marketplace 契约进行计费，则后续行为取决于目标组织的计费配置：
+
+| 目标组织的计费配置                 | 结果                                                     |
+| ------------------------- | ------------------------------------------------------ |
+| **没有 Marketplace 订阅**     | 目标组织会自动关联到源组织的订阅。在所有额度用尽或过期后，超额费用将计费至该 Marketplace 账户。 |
+| **在同一 Marketplace 上已有订阅** | 转移照常完成，目标组织继续使用其现有订阅结算超额费用，不会复制源组织的订阅。                 |
+| **在不同 Marketplace 上已有订阅** | 转移将被阻止。                                                |
+
+如需通过同一个 Marketplace 订阅结算两个组织的超额费用，请参阅[如何使用其他组织的 Marketplace 订阅](/zh/products/cloud/reference/billing/managing-payment-methods#steps-switch-org-different-org)。
+
+## 查看转移历史与通知 {#review-transfer-history-and-notifications}
+
+转移完成后：
+
+* 组织表下方的 **Transfer History** 表中会新增一条记录。
+* 源组织和目标组织都会通过 UI、电子邮件和 Slack 收到通知。只有拥有[账单通知访问权限](/zh/products/cloud/features/monitoring/notifications#customizing-notifications)的用户才会收到这些通知。
+
+只要转移过程中有任何环节失败，整个事务都会被阻止并提示错误，不会应用任何部分变更。

@@ -12,23 +12,21 @@ doc_type: 'reference'
 L’instruction Lightweight `DELETE` supprime les lignes de la table `[db.]table` qui correspondent à l’expression `expr`. Elle n’est disponible que pour les moteurs de table de la famille *MergeTree.
 
 ```sql
-DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr] WHERE expr;
+DELETE FROM [db.]table [ON CLUSTER cluster] [IN PARTITION partition_expr1 [, partition_expr2 ...]] WHERE expr;
 ```
 
 On parle de &quot;lightweight `DELETE`&quot; pour le distinguer de la commande [ALTER TABLE ... DELETE](/fr/reference/statements/alter/delete), qui est une opération lourde.
 
-<div id="examples">
-  ## Exemples
-</div>
+La clause `IN PARTITION` limite la suppression aux partitions listées. En son absence, sur les tables de la famille `ReplicatedMergeTree`, lorsque le paramètre [optimize&#95;mutations&#95;with&#95;partition&#95;pruning](/fr/reference/settings/session-settings/optimize) est activé (comportement par défaut), ClickHouse détecte automatiquement les conditions portant sur la partition key dans `expr` et ne supprime que dans les partitions concernées. Sur les tables `MergeTree` non-replicated, utilisez une clause `IN PARTITION` explicite pour limiter une suppression à des partitions spécifiques.
+
+## Exemples {#examples}
 
 ```sql
 -- Deletes all rows from the `hits` table where the `Title` column contains the text `hello`
 DELETE FROM hits WHERE Title LIKE '%hello%';
 ```
 
-<div id="lightweight-delete-does-not-delete-data-immediately">
-  ## Lightweight `DELETE` ne supprime pas immédiatement les données
-</div>
+## Lightweight `DELETE` ne supprime pas immédiatement les données {#lightweight-delete-does-not-delete-data-immediately}
 
 Lightweight `DELETE` est implémenté sous forme d’une [mutation](/fr/reference/statements/alter/index#mutations) qui marque les lignes comme supprimées, sans les supprimer physiquement immédiatement.
 
@@ -38,27 +36,19 @@ La mutation ne supprime pas physiquement les lignes marquées comme supprimées 
 
 Si vous devez garantir que vos données soient supprimées du stockage dans un délai prévisible, envisagez d’utiliser le paramètre de table [`min_age_to_force_merge_seconds`](/fr/reference/settings/merge-tree-settings/min-age#min_age_to_force_merge_seconds). Vous pouvez également utiliser la commande [ALTER TABLE ... DELETE](/fr/reference/statements/alter/delete). Notez que la suppression de données à l’aide de `ALTER TABLE ... DELETE` peut consommer des ressources importantes, car elle recrée toutes les parts affectées.
 
-<div id="deleting-large-amounts-of-data">
-  ## Suppression de grandes quantités de données
-</div>
+## Suppression de grandes quantités de données {#deleting-large-amounts-of-data}
 
 Les suppressions massives peuvent nuire aux performances de ClickHouse. Si vous cherchez à supprimer toutes les lignes d’une table, envisagez d’utiliser la commande [`TRUNCATE TABLE`](/fr/reference/statements/truncate).
 
 Si vous prévoyez des suppressions fréquentes, envisagez d’utiliser une [clé de partitionnement personnalisée](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Vous pourrez ensuite utiliser la commande [`ALTER TABLE ... DROP PARTITION`](/fr/reference/statements/alter/partition#drop-partitionpart) pour supprimer rapidement toutes les lignes associées à cette partition.
 
-<div id="limitations-of-lightweight-delete">
-  ## Limitations du Lightweight `DELETE`
-</div>
+## Limitations du Lightweight `DELETE` {#limitations-of-lightweight-delete}
 
-<div id="lightweight-deletes-with-projections">
-  ### Lightweight `DELETE` avec projections
-</div>
+### Lightweight `DELETE` avec projections {#lightweight-deletes-with-projections}
 
 Par défaut, `DELETE` ne fonctionne pas sur les tables avec projections. En effet, les lignes d&#39;une projection peuvent être affectées par une opération `DELETE`. Cependant, le [paramètre MergeTree](/fr/reference/settings/merge-tree-settings) `lightweight_mutation_projection_mode` permet de modifier ce comportement.
 
-<div id="performance-considerations-when-using-lightweight-delete">
-  ## Considérations relatives aux performances lors de l’utilisation de Lightweight `DELETE`
-</div>
+## Considérations relatives aux performances lors de l’utilisation de Lightweight `DELETE` {#performance-considerations-when-using-lightweight-delete}
 
 **La suppression de gros volumes de données avec l’instruction Lightweight `DELETE` peut dégrader les performances des requêtes SELECT.**
 
@@ -69,9 +59,7 @@ Les facteurs suivants peuvent également dégrader les performances de Lightweig
 * La table concernée comporte un très grand nombre de part de données.
 * Un volume important de données dans des part compactes. Dans une partie compacte, toutes les colonnes sont stockées dans un seul fichier.
 
-<div id="delete-permissions">
-  ## Autorisations de suppression
-</div>
+## Autorisations de suppression {#delete-permissions}
 
 `DELETE` nécessite le privilège `ALTER DELETE`. Pour autoriser les instructions `DELETE` sur une table spécifique pour un utilisateur donné, exécutez la commande suivante :
 
@@ -79,9 +67,7 @@ Les facteurs suivants peuvent également dégrader les performances de Lightweig
 GRANT ALTER DELETE ON db.table to username;
 ```
 
-<div id="how-lightweight-deletes-work-internally-in-clickhouse">
-  ## Fonctionnement interne des Lightweight `DELETE` dans ClickHouse
-</div>
+## Fonctionnement interne des Lightweight `DELETE` dans ClickHouse {#how-lightweight-deletes-work-internally-in-clickhouse}
 
 1. **Un « masque » est appliqué aux lignes affectées**
 
@@ -111,9 +97,7 @@ GRANT ALTER DELETE ON db.table to username;
 
    Comme le montrent les étapes ci-dessus, le Lightweight `DELETE` utilisant la technique du masquage améliore les performances par rapport au `ALTER TABLE ... DELETE` traditionnel, car il ne réécrit pas les fichiers de toutes les colonnes pour les parts affectées.
 
-<div id="related-content">
-  ## Contenu connexe
-</div>
+## Contenu connexe {#related-content}
 
 * Blog : [Gestion des mises à jour et des suppressions dans ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands">
-  ## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands
-</div>
+## date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands {#date_time_64_output_format_cut_trailing_zeros_align_to_groups_of_thousands}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Динамически удаляет конечные нули в значениях datetime64, чтобы привести масштаб вывода к [0, 3, 6],
-что соответствует &#39;секундам&#39;, &#39;миллисекундам&#39; и &#39;микросекундам&#39;
+Динамически удаляет конечные нули в значениях `DateTime64`, округляя масштаб вывода вверх до следующего
+кратного трём значения, сохраняющего все значащие цифры: [0, 3, 6, 9]. Дробная часть, состоящая из одних нулей, отбрасывается.
 
-<div id="date_time_input_format">
-  ## date_time_input_format
-</div>
+## date_time_input_format {#date_time_input_format}
 
 <SettingsInfoBlock type="DateTimeInputFormat" default_value="best_effort" />
 
@@ -51,9 +47,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * [Тип данных DateTime.](/ru/reference/data-types/datetime)
 * [Функции для работы с датами и временем.](/ru/reference/functions/regular-functions/date-time-functions)
 
-<div id="date_time_output_format">
-  ## date_time_output_format
-</div>
+## date_time_output_format {#date_time_output_format}
 
 <SettingsInfoBlock type="DateTimeOutputFormat" default_value="simple" />
 
@@ -78,13 +72,11 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * [Тип данных DateTime.](/ru/reference/data-types/datetime)
 * [Функции для работы с датами и временем.](/ru/reference/functions/regular-functions/date-time-functions)
 
-<div id="date_time_overflow_behavior">
-  ## date_time_overflow_behavior
-</div>
+## date_time_overflow_behavior {#date_time_overflow_behavior}
 
 <SettingsInfoBlock type="DateTimeOverflowBehavior" default_value="ignore" />
 
-Определяет поведение при преобразовании [Date](/ru/reference/data-types/date), [Date32](/ru/reference/data-types/date32), [DateTime](/ru/reference/data-types/datetime), [DateTime64](/ru/reference/data-types/datetime64) или целых чисел в Date, Date32, DateTime или DateTime64, если значение не может быть представлено в результирующем типе.
+Определяет поведение при преобразовании [Date](/ru/reference/data-types/date), [Date32](/ru/reference/data-types/date32), [DateTime](/ru/reference/data-types/datetime), [DateTime64](/ru/reference/data-types/datetime64) или целых чисел в Date, Date32, DateTime или DateTime64, если значение не может быть представлено в результирующем типе. Также применяется при разборе `Date` или `DateTime` из текста, в том числе входным форматом.
 
 Возможные значения:
 

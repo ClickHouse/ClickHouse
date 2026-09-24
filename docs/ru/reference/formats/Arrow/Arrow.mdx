@@ -15,17 +15,13 @@ doc_type: 'reference'
 | ---- | ----- | --------- |
 | ✔    | ✔     |           |
 
-<div id="description">
-  ## Описание
-</div>
+## Описание {#description}
 
 [Apache Arrow](https://arrow.apache.org/) включает два встроенных формата столбцового хранения.
 ClickHouse поддерживает чтение и запись в этих форматах.
 `Arrow` — это формат Apache Arrow в «файловом режиме», предназначенный для произвольного доступа к данным в памяти.
 
-<div id="data-types-matching">
-  ## Соответствие типов данных
-</div>
+## Соответствие типов данных {#data-types-matching}
 
 В таблице ниже показаны поддерживаемые типы данных и их соответствие [типам данных](/ru/reference/data-types/index) ClickHouse в запросах `INSERT` и `SELECT`.
 
@@ -70,16 +66,12 @@ ClickHouse поддерживает чтение и запись в этих ф�
 
 Типы данных столбцов таблицы ClickHouse не обязаны совпадать с типами данных соответствующих полей Arrow. При вставке данных ClickHouse интерпретирует типы данных в соответствии с таблицей выше, а затем [приводит](/ru/reference/functions/regular-functions/type-conversion-functions#CAST) данные к типу данных, заданному для столбца таблицы ClickHouse.
 
-<div id="example-usage">
-  ## Пример использования
-</div>
+## Пример использования {#example-usage}
 
 В примере ниже используется набор данных `forex`, доступный в
 [Песочнице ClickHouse](https://sql.clickhouse.com).
 
-<div id="selecting-data">
-  ### Выборка данных
-</div>
+### Выборка данных {#selecting-data}
 
 Мы выбираем курсы `EUR/USD` за один день из Песочницы ClickHouse и сохраняем их
 в локальный файл `forex_eurusd.arrow`. Мы отправляем запрос к песочнице через HTTP-
@@ -103,9 +95,7 @@ curl "https://sql-clickhouse.clickhouse.com:8443/?user=demo&database=forex" \
         SETTINGS output_format_arrow_compression_method='zstd'" > forex_eurusd.arrow
 ```
 
-<div id="reading-data">
-  ### Чтение файла
-</div>
+### Чтение файла {#reading-data}
 
 Теперь мы можем прочитать локальный файл Arrow с помощью
 [`clickhouse-local`](/ru/concepts/features/tools-and-utilities/clickhouse-local), используя
@@ -131,9 +121,7 @@ clickhouse-local --query "
    └────────────┴─────────────────────────┴─────────┴─────────┴───────────────────────┘
 ```
 
-<div id="inserting-data">
-  ### Вставка данных
-</div>
+### Вставка данных {#inserting-data}
 
 Чтобы загрузить файл Arrow в таблицу ClickHouse, передайте его в `clickhouse-client`,
 указав `FORMAT Arrow`:
@@ -142,22 +130,23 @@ clickhouse-local --query "
 cat forex_eurusd.arrow | clickhouse-client --query="INSERT INTO some_table FORMAT Arrow"
 ```
 
-<div id="format-settings">
-  ## Настройки формата
-</div>
+## Настройки формата {#format-settings}
 
-| Настройка                                                                    | Описание                                                                                                                                                                       | По умолчанию |
-| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------ |
-| `input_format_arrow_allow_missing_columns`                                   | Разрешить отсутствие столбцов при чтении входных форматов Arrow                                                                                                                | `1`          |
-| `input_format_arrow_case_insensitive_column_matching`                        | Игнорировать регистр при сопоставлении столбцов Arrow со столбцами ClickHouse                                                                                                  | `0`          |
-| `input_format_arrow_import_nested`                                           | Устаревшая настройка, ничего не делает.                                                                                                                                        | `0`          |
-| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата Arrow                                                                                          | `0`          |
-| `output_format_arrow_compression_method`                                     | Метод сжатия для выходного формата Arrow. Поддерживаемые кодеки: lz4&#95;frame, zstd, none (без сжатия)                                                                        | `lz4_frame`  |
-| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Использовать тип Arrow FIXED&#95;SIZE&#95;BINARY вместо Binary для столбцов FixedString                                                                                        | `1`          |
-| `output_format_arrow_low_cardinality_as_dictionary`                          | Включить вывод типа LowCardinality как типа Arrow Dictionary                                                                                                                   | `0`          |
-| `output_format_arrow_string_as_string`                                       | Использовать тип Arrow String вместо Binary для столбцов String                                                                                                                | `1`          |
-| `output_format_arrow_unsupported_types_as_binary`                            | Выводить типы, у которых нет эквивалента в Arrow (например, `BFloat16`, `AggregateFunction`), как необработанные бинарные данные. Если `false`, такой тип вызывает исключение. | `1`          |
-| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Всегда использовать 64-битные целые числа для индексов словаря в формате Arrow                                                                                                 | `0`          |
-| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Использовать знаковые целые числа для индексов словаря в формате Arrow                                                                                                         | `1`          |
+| Настройка                                                                    | Описание                                                                                                                                                                                                                                                                                                                                                                                                                                                      | По умолчанию |
+| ---------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| `input_format_arrow_allow_missing_columns`                                   | Разрешить отсутствие столбцов при чтении входных форматов Arrow                                                                                                                                                                                                                                                                                                                                                                                               | `1`          |
+| `input_format_arrow_case_insensitive_column_matching`                        | Игнорировать регистр при сопоставлении столбцов Arrow со столбцами ClickHouse                                                                                                                                                                                                                                                                                                                                                                                 | `0`          |
+| `input_format_arrow_import_nested`                                           | Устаревшая настройка, ничего не делает.                                                                                                                                                                                                                                                                                                                                                                                                                       | `0`          |
+| `input_format_arrow_skip_columns_with_unsupported_types_in_schema_inference` | Пропускать столбцы с неподдерживаемыми типами при определении схемы для формата Arrow                                                                                                                                                                                                                                                                                                                                                                         | `0`          |
+| `output_format_arrow_compression_method`                                     | Метод сжатия для выходного формата Arrow. Поддерживаемые кодеки: lz4&#95;frame, zstd, none (без сжатия)                                                                                                                                                                                                                                                                                                                                                       | `lz4_frame`  |
+| `output_format_arrow_fixed_string_as_fixed_byte_array`                       | Использовать тип Arrow FIXED&#95;SIZE&#95;BINARY вместо Binary для столбцов FixedString                                                                                                                                                                                                                                                                                                                                                                       | `1`          |
+| `output_format_arrow_low_cardinality_as_dictionary`                          | Включить вывод типа LowCardinality как типа Arrow Dictionary                                                                                                                                                                                                                                                                                                                                                                                                  | `0`          |
+| `output_format_arrow_record_batch_size`                                      | Целевое число строк в record batch при объединении небольших блоков. Буферизация может увеличить потребление памяти и задержать первый батч до завершения запроса. `0` отключает целевое число строк.                                                                                                                                                                                                                                                         | `0`          |
+| `output_format_arrow_record_batch_size_bytes`                                | Целевой объём накопленных данных блоков в байтах на record batch. Буферизация может увеличить потребление памяти и задержать первый батч до завершения запроса. `0` отключает целевой объём в байтах.                                                                                                                                                                                                                                                         | `0`          |
+| `output_format_arrow_string_as_string`                                       | Использовать тип Arrow String вместо Binary для столбцов String                                                                                                                                                                                                                                                                                                                                                                                               | `1`          |
+| `output_format_arrow_unsupported_types`                                      | Что записывать для типа, у которого нет эквивалента в Arrow (например, `JSON`, `Dynamic`, `QBit`, `AggregateFunction`): `throw`, `text` (одно значение `serializeText` на строку, в том типе Arrow, который использовал бы столбец `String`) или `binary` (одно значение `serializeBinary` на строку, как Arrow `Binary`). `AggregateFunction` также имеет тип `Binary` в режиме `text`, поскольку его текстовая форма — необработанное агрегатное состояние. | `binary`     |
+| `output_format_arrow_unsupported_types_as_binary`                            | Заменена настройкой `output_format_arrow_unsupported_types`: `0` означает `throw`, `1` означает `binary`. Учитывается, только если значение этой настройки не изменено.                                                                                                                                                                                                                                                                                       | `1`          |
+| `output_format_arrow_use_64_bit_indexes_for_dictionary`                      | Всегда использовать 64-битные целые числа для индексов словаря в формате Arrow                                                                                                                                                                                                                                                                                                                                                                                | `0`          |
+| `output_format_arrow_use_signed_indexes_for_dictionary`                      | Использовать знаковые целые числа для индексов словаря в формате Arrow                                                                                                                                                                                                                                                                                                                                                                                        | `1`          |
 
 {/*AUTOGENERATED_END*/}

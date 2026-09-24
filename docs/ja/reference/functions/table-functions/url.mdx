@@ -15,17 +15,13 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 `url` 関数は、[URL](/ja/reference/engines/table-engines/special/url) テーブルのデータに対する `SELECT` クエリおよび `INSERT` クエリで使用できます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 url(URL [,format] [,structure] [,headers])
 ```
 
-<div id="parameters">
-  ## パラメーター
-</div>
+## パラメーター {#parameters}
 
 | Parameter   | Description                                                                                                                                                                                                                                                                                                                           |
 | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -34,15 +30,11 @@ url(URL [,format] [,structure] [,headers])
 | `structure` | `'UserID UInt64, Name String'` フォーマットで指定するテーブル構造です。カラム名と型を決定します。型: [String](/ja/reference/data-types/string)。                                                                                                                                                                                                                            |
 | `headers`   | `'headers('key1'='value1', 'key2'='value2')'` フォーマットのヘッダーです。HTTP 呼び出し用のヘッダーを設定できます。                                                                                                                                                                                                                                                   |
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 指定されたフォーマットと構造を持ち、指定した`URL`のデータを含むテーブル。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 [CSV](/ja/reference/formats/CSV/CSV) フォーマットで応答する HTTP サーバーから、`String` 型と [UInt32](/ja/reference/data-types/int-uint) 型のカラムを含むテーブルの先頭 3 行を取得します。
 
@@ -58,44 +50,40 @@ INSERT INTO FUNCTION url('http://127.0.0.1:8123/?query=INSERT+INTO+test_table+FO
 SELECT * FROM test_table;
 ```
 
-<div id="scheme-dispatch">
-  ## URL スキームによる振り分け
-</div>
+## URL 認証スキームによる振り分け {#scheme-dispatch}
 
-`url` 関数は、他のファイルストレージおよびオブジェクトストレージのテーブル関数を統一的に扱うラッパーとして機能します。URL スキームに基づいて適切なバックエンドに振り分けられるため、サポートされている任意の場所から単一の統一された構文で読み取ることができます。
+`url` 関数は、他のファイルストレージおよびオブジェクトストレージのテーブル関数を統一的に扱うラッパーとして機能します。URL 認証スキームに基づいて適切なバックエンドに振り分けられるため、サポートされている任意の場所から単一の統一された構文で読み取ることができます。
 
-| Scheme                             | 振り分け先                                                                          |
+| 認証スキーム                             | 振り分け先                                                                          |
 | ---------------------------------- | ------------------------------------------------------------------------------ |
-| `http`, `https` (および認識されない任意のスキーム) | `URL` エンジン自体 (HTTP `GET`/`POST`)                                               |
+| `http`, `https` (および認識されない任意の認証スキーム) | `URL` エンジン自体 (HTTP `GET`/`POST`)                                               |
 | `file`                             | [`file`](/ja/reference/functions/table-functions/file) 関数                         |
 | `s3`, `gs`, `gcs`, `oss`           | [`s3`](/ja/reference/functions/table-functions/s3) 関数                             |
 | `az`, `azure`, `abfss`, `abfs`     | [`azureBlobStorage`](/ja/reference/functions/table-functions/azureBlobStorage) 関数 |
 | `hdfs`                             | [`hdfs`](/ja/reference/functions/table-functions/hdfs) 関数                         |
 
-追加設定なしで S3 URI mapper が具体的なエンドポイントに解決できる S3 スキーム (`s3` と `gs`/`gcs`/`oss`) のみが振り分けの対象です。その他の S3-compatible ベンダーのスキーム (`cos`、`obs`、`eos`、…) はリージョン固有で、デフォルトのエンドポイントマッピングがありません。そのため、`cos://…` URL は認識されないスキームとして扱われ、エラーとして報告されます。これらのバックエンドでは、[`s3`](/ja/reference/functions/table-functions/s3) 関数を直接使用してください (`url_scheme_mappers` を設定したうえで) 。
+追加設定なしで S3 URI mapper が具体的なエンドポイントに解決できる S3 認証スキーム (`s3` と `gs`/`gcs`/`oss`) のみが振り分けの対象です。その他の S3-compatible ベンダーの認証スキーム (`cos`、`obs`、`eos`、…) はリージョン固有で、デフォルトのエンドポイントマッピングがありません。そのため、`cos://…` URL は認識されない認証スキームとして扱われ、エラーとして報告されます。これらのバックエンドでは、[`s3`](/ja/reference/functions/table-functions/s3) 関数を直接使用してください (`url_scheme_mappers` を設定したうえで) 。
 
 `file://` の場合、相対パス (`file://data.csv`) は [user&#95;files](/ja/reference/settings/server-settings/settings/user#user_files_path) ディレクトリ内で解決され、絶対パス (`file:///home/user/data.csv`) は通常どおりその配下を指している必要があります。
 
-`フォーマット`、`構造`、`compression_method` の引数と [url&#95;base](#resolving-relative-urls) 設定は、振り分け先にかかわらず同じように機能します。
+`format`、`structure`、`compression_method` の引数と [url&#95;base](#resolving-relative-urls) 設定は、振り分け先にかかわらず同じように機能します。
 
 ```sql
 SELECT * FROM url('file://data.csv', CSV, 'a UInt32, b String');
 SELECT * FROM url('s3://clickhouse-public-datasets/hits_compatible/hits.csv');
 ```
 
-スキームの振り分けは、[`urlCluster`](/ja/reference/functions/table-functions/urlCluster) ではまだサポートされていません。`urlCluster` に `http(s)` 以外のスキームを渡すと、エラーになって拒否されます。そうしたバックエンドでは、代わりに対応するクラスター関数 (`s3Cluster`、`azureBlobStorageCluster`、`hdfsCluster`、…) を使用してください。
+認証スキームの振り分けは、[`urlCluster`](/ja/reference/functions/table-functions/urlCluster) ではまだサポートされていません。`urlCluster` に `http(s)` 以外の認証スキームを渡すと、エラーになって拒否されます。そうしたバックエンドでは、代わりに対応するクラスター関数 (`s3Cluster`、`azureBlobStorageCluster`、`hdfsCluster`、…) を使用してください。
 
-<div id="globs-in-url">
-  ## URL 内の globs
-</div>
+同じ理由から、振り分けられた `url` の呼び出しは、クエリを受け取ったノード上で読み取られます。つまり、[parallel&#95;replicas&#95;for&#95;cluster&#95;engines](/ja/reference/settings/session-settings/parallel-replicas#parallel_replicas_for_cluster_engines) による fan-out は適用されません。読み取りをレプリカ間で分散させたい場合は、対応するクラスター関数を直接使用してください。
+
+## URL 内の globs {#globs-in-url}
 
 `{ }` 内のパターンは、分片のセットを生成したり、フェイルオーバー先のアドレスを指定したりするために使用されます。サポートされているパターンの種類と例については、[remote](/ja/reference/functions/table-functions/remote#globs-in-addresses) 関数の説明を参照してください。
 パターン内の文字 `|` は、フェイルオーバー先のアドレスを指定するために使用されます。これらは、パターンに記載された順序どおりに順番に試行されます。生成されるアドレス数は、[glob&#95;expansion&#95;max&#95;elements](/ja/reference/settings/session-settings/other#glob_expansion_max_elements) 設定によって制限されます。
 URL パスでの glob 構文 (`*`、`{a,b}`、`{N..M}`、`**` など) については、[パス内の globs](/ja/reference/functions/table-functions/file#globs-in-path) を参照してください。なお、`?` は URL ではクエリ文字列の開始を表すため、パス部分ではワイルドカードとして使用できません。
 
-<div id="wildcards-with-http-index-pages">
-  ## HTTPインデックスページでのワイルドカード
-</div>
+## HTTPインデックスページでのワイルドカード {#wildcards-with-http-index-pages}
 
 `url` および `URL` テーブルエンジンでは、ClickHouse は HTTP インデックスページ (HTML または平文) を取得し、レスポンスボディから URL を抽出することでワイルドカードを展開できます。これにより、サーバーがディレクトリ一覧を公開している場合は、`/**/` のようなパターンを使用できます。
 
@@ -115,12 +103,10 @@ URL パスでの glob 構文 (`*`、`{a,b}`、`{N..M}`、`**` など) につい�
 ```sql
 SELECT count()
 FROM url('https://ftp.gnu.org/gnu/wget/wget-1.21*.tar.gz', 'RawBLOB')
-SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
+SETTINGS max_threads = 1, allow_url_wildcard_from_index_pages = 1;
 ```
 
-<div id="virtual-columns">
-  ## 仮想カラム
-</div>
+## 仮想カラム {#virtual-columns}
 
 * `_path` — `URL` のパス。型: `LowCardinality(String)`。
 * `_file` — `URL` のリソース名。型: `LowCardinality(String)`。
@@ -128,9 +114,7 @@ SETTINGS max_threads = 1, allow_experimental_url_wildcard_from_index_pages = 1;
 * `_time` — ファイルの最終更新時刻。型: `Nullable(DateTime)`。時刻が不明な場合、値は `NULL` です。
 * `_headers` - HTTP レスポンスヘッダー。型: `Map(LowCardinality(String), LowCardinality(String))`。
 
-<div id="hive-style-partitioning">
-  ## `use_hive_partitioning` 設定
-</div>
+## `use_hive_partitioning` 設定 {#hive-style-partitioning}
 
 `use_hive_partitioning` 設定を 1 にすると、ClickHouse はパス (`/name=value/`) 内の Hive スタイルのパーティション化を検出し、クエリ内でパーティションカラムを仮想カラムとして使用できるようになります。これらの仮想カラムには、パーティション化されたパス内と同じ名前が付きます。
 
@@ -142,9 +126,7 @@ Hive スタイルのパーティション化で作成された仮想カラムを
 SELECT * FROM url('http://data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="resolving-relative-urls">
-  ## 相対 URL の解決
-</div>
+## 相対 URL の解決 {#resolving-relative-urls}
 
 [url&#95;base](/ja/reference/settings/session-settings/url#url_base) 設定を使用すると、`url` 関数に相対 URL を渡せます。`url_base` が設定されていて、関数の引数が相対参照である場合、その参照は [RFC 3986](https://datatracker.ietf.org/doc/html/rfc3986) に従ってベース URL を基準に解決されます。
 
@@ -166,23 +148,17 @@ SET url_base = 'https://raw.githubusercontent.com/ClickHouse/ClickHouse/master/'
 SELECT * FROM url('tests/queries/0_stateless/data_csv/data.csv', CSV) LIMIT 3;
 ```
 
-<div id="storage-settings">
-  ## ストレージ設定
-</div>
+## ストレージ設定 {#storage-settings}
 
 * [engine&#95;url&#95;skip&#95;empty&#95;files](/ja/reference/settings/session-settings/other#engine_url_skip_empty_files) - 読み取り時に空のファイルをスキップできます。デフォルトでは無効です。
 * [enable&#95;url&#95;encoding](/ja/reference/settings/session-settings/enable#enable_url_encoding) - URI 内のパスのデコード/エンコードを有効または無効にできます。デフォルトでは有効です。
 * [url&#95;base](/ja/reference/settings/session-settings/url#url_base) - `url` 関数に渡された相対 URL を解決するためのベース URL です。
 
-<div id="permissions">
-  ## 権限
-</div>
+## 権限 {#permissions}
 
 `url` 関数を使用するには、`CREATE TEMPORARY TABLE` 権限が必要です。そのため、[readonly](/ja/concepts/features/configuration/settings/permissions-for-queries#readonly) = 1 に設定されているユーザーは利用できません。少なくとも readonly = 2 が必要です。
 
-<div id="related">
-  ## 関連
-</div>
+## 関連 {#related}
 
 * [仮想カラム](/ja/reference/engines/table-engines/index#table_engines-virtual_columns)
 

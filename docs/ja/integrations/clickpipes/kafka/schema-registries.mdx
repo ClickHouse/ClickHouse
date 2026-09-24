@@ -14,9 +14,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickPipes は、Avro および Protobuf でエンコードされたレコード値と[構造化 Kafka キー](/ja/integrations/clickpipes/kafka/reference#structured-message-keys)をデコードするためのスキーマレジストリとの連携をサポートしています。
 
-<div id="supported-schema-registries">
-  ## Kafka ClickPipes でサポートされるスキーマレジストリ
-</div>
+Protobuf のレコード値については、スキーマレジストリを設定せずに[スキーマを直接アップロードする](/ja/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)こともできます。
+
+## Kafka ClickPipes でサポートされるスキーマレジストリ {#supported-schema-registries}
 
 Kafka ClickPipes は、2 種類のスキーマレジストリをサポートしています。
 
@@ -25,13 +25,9 @@ Kafka ClickPipes は、2 種類のスキーマレジストリをサポートし�
 
 ClickPipes は現在、Azure Schema Registry をサポートしていません。サポートが必要な場合は、[チームまでお問い合わせください](https://clickhouse.com/company/contact?loc=clickpipes)。
 
-<div id="confluent-compatible-registries">
-  ## Confluent 互換レジストリ
-</div>
+## Confluent 互換レジストリ {#confluent-compatible-registries}
 
-<div id="schema-registry-configuration">
-  ### 設定
-</div>
+### 設定 {#schema-registry-configuration}
 
 ClickPipes の設定でスキーマレジストリを統合するには、次のいずれかの方法を使用する必要があります。
 
@@ -40,9 +36,7 @@ ClickPipes の設定でスキーマレジストリを統合するには、次の
 2. スキーマ ID への完全なパスを指定します (例: `https://registry.example.com/schemas/ids/1000`)
 3. スキーマレジストリのルート URL を指定します (例: `https://registry.example.com`)
 
-<div id="network-connectivity">
-  ### ネットワーク接続
-</div>
+### ネットワーク接続 {#network-connectivity}
 
 ClickPipes は、指定した URL を使用して HTTPS 経由でスキーマレジストリに接続します。スキーマレジストリをパブリックに公開しておく必要はありません。
 
@@ -53,9 +47,7 @@ Kafka ブローカーに [reverse private endpoint](/ja/integrations/clickpipes/
 * スキーマレジストリの URL には `https://` を使用する必要があります。
 * レジストリのホスト名がプライベートアドレスに解決される場合は、ClickPipe 用に選択された reverse private endpoint 経由で到達可能である必要があります。そうでないと、Setup 中の接続チェックは失敗します。
 
-<div id="how-schema-registries-work">
-  ### 仕組み
-</div>
+### 仕組み {#how-schema-registries-work}
 
 ClickPipes は、設定されたスキーマレジストリからスキーマを動的に取得して適用します。
 
@@ -67,9 +59,7 @@ ClickPipes は、設定されたスキーマレジストリからスキーマを
 
 `_key.id` などのフィールドのマッピングが設定されている場合、ClickPipes は Kafka のキーに埋め込まれたスキーマ ID をレコード値とは独立して解決します。キーには異なるスキーマ ID を使用できますが、値と同じレジストリファミリーおよびシリアライゼーションフォーマットを使用する必要があります。解決されたキースキーマはキャッシュされ、スキーマ変更は自動的に検出されます。
 
-<div id="aws-glue-schema-registry">
-  ## AWS Glue Schema Registry
-</div>
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
 
 プロデューサーが AWS Glue SerDe を使用して Avro をシリアル化する場合 (たとえば、Amazon MSK トピックに対して `AWSKafkaAvroSerializer` を使用する場合) 、ClickPipes は AWS Glue Schema Registry からこれらのスキーマを直接解決できます。Glue は Confluent 互換レジストリとは異なるワイヤ形式と API を使用するため、個別に設定する必要があります。
 
@@ -79,9 +69,7 @@ AWS Glue Schema Registry の設定は現在、ClickHouse Cloud console でのみ
   **Avro のみ。** AWS Glue レジストリは Avro フォーマットでのみサポートされています。Glue SerDe は JSON と Protobuf のフレーミングにも対応していますが、ClickPipes ではサポートされておらず、パイプの作成時に拒否されます。
 </Note>
 
-<div id="schema-registry-configuration">
-  ### 設定
-</div>
+### 設定 {#glue-configuration}
 
 ClickPipe 作成ウィザードの Kafka 接続ステップで **スキーマレジストリ** を有効にし、**レジストリタイプ** を **AWS Glue** に設定します。
 
@@ -96,15 +84,11 @@ ClickPipe 作成ウィザードの Kafka 接続ステップで **スキーマレ
 
 設定するレジストリ URL はありません。Glue SerDe で生成された各レコードには、そのスキーマバージョンの ID が含まれます。ClickPipes は `glue:GetSchemaVersion` を使用してスキーマバージョンを解決し、異なるスキーマバージョンごとに API 呼び出しを 1 回行ってキャッシュします。スキーマ進化は自動的に処理されます。ストリームの途中でレコードが新しいスキーマバージョンに切り替わった場合は、最初に検出された時点で解決されます。
 
-<div id="glue-iam-setup">
-  ### IAM の設定
-</div>
+### IAM の設定 {#glue-iam-setup}
 
 環境に合った方のオプションを使用してください。Amazon MSK では通常、オプション A を使用します。
 
-<div id="glue-iam-option-a">
-  #### オプション A: ブローカーの IAM ID を再利用する
-</div>
+#### オプション A: ブローカーの IAM ID を再利用する {#glue-iam-option-a}
 
 Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合、ClickPipes は同じ IAM ID を使用してレジストリを読み取ります。**IAM ロール ARN** フィールドは空のままにして、次のステートメントを ID の権限に追加します。
 
@@ -127,9 +111,7 @@ Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合
 
 ロールベースの認証では、信頼ポリシーを変更する必要はありません。MSK 用に設定されている信頼関係が、このアクセスをすでにカバーしています。IAM 認証情報では、ロールの信頼ポリシーは使用しません。
 
-<div id="glue-iam-option-b">
-  #### オプション B: 専用のレジストリロールを使用する
-</div>
+#### オプション B: 専用のレジストリロールを使用する {#glue-iam-option-b}
 
 ブローカーが IAM で認証されない場合 (SASL/SCRAM、SASL/PLAIN、mTLS) 、またはレジストリとブローカーが異なる AWS アカウントにある場合に使用します。
 
@@ -192,9 +174,7 @@ Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合
   **IAM リソースのスコープ。** これらの例は、どちらも `"*"` に対する `glue:GetSchemaVersion` を許可する、[AWS のデシリアライザー向けドキュメント化されたポリシー](https://docs.aws.amazon.com/glue/latest/dg/schema-registry-gs-serde.html)と、その [`AWSGlueSchemaRegistryReadonlyAccess` マネージドポリシー](https://docs.aws.amazon.com/aws-managed-policy/latest/reference/AWSGlueSchemaRegistryReadonlyAccess.html)に従っています。ClickPipes は、解決された各スキーマが設定した **レジストリ名** に一致するかを個別に確認し、他のレジストリのバージョンは拒否します。
 </Note>
 
-<div id="glue-troubleshooting">
-  ### トラブルシューティング
-</div>
+### トラブルシューティング {#glue-troubleshooting}
 
 | エラー                                                                                          | 原因と対処法                                                                                                                                          |
 | -------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -204,16 +184,12 @@ Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合
 | `schema version … belongs to Glue registry "X", but the pipe is configured for registry "Y"` | producer が、パイプで指定されているものとは異なるレジストリにスキーマを登録しています。**レジストリ名** を修正するか、producer が正しいレジストリを使用するよう設定してください。                                            |
 | `the AWS Glue schema registry only supports the Avro format`                                 | Glue パイプは Avro のみをサポートします。Glue SerDe 経由の JSON および Protobuf はサポートされていません。                                                                        |
 
-<div id="glue-limitations">
-  ### 制限事項
-</div>
+### 制限事項 {#glue-limitations}
 
 * Avro のみをサポートします。Glue SerDe 経由の JSON Schema および Protobuf はサポートされていません。
 * Kafka ログソースのみをサポートします。Kinesis ClickPipes では Glue registry を使用できません。
 
-<div id="schema-mapping">
-  ## スキーママッピング
-</div>
+## スキーママッピング {#schema-mapping}
 
 次のルールは、Confluent 互換レジストリと AWS Glue Schema Registry の両方に適用されます。これらのルールは、取得した値のスキーマと ClickHouse の宛先テーブルのマッピングを規定し、`_key.` プレフィックスを持つ構造化キーからマッピングされたレコードまたはメッセージのフィールドにも適用されます。
 

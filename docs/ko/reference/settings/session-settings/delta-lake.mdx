@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이러한 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)에서 자동 생성됩니다.
 
-<div id="delta_lake_enable_engine_predicate">
-  ## delta_lake_enable_engine_predicate
-</div>
+## delta_lake_accurate_write_cast {#delta_lake_accurate_write_cast}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "새로운 설정: 기록되는 값을 Delta 쓰기 스키마 타입으로 CAST할 때, 대상 타입에 맞지 않는 값을 조용히 잘라내는 대신 예외를 발생시키는 정확한 CAST를 사용합니다. 26.9 미만의 `compatibility`에서는 예외를 발생시키지 않는 일반 CAST가 사용됩니다."}]}]} />
+
+DeltaLake 테이블에 기록할 때, 각 값을 Delta 쓰기 스키마 타입으로 CAST하되 값이 대상 타입에 맞지 않으면 예외를 발생시키는 정확한 CAST를 사용합니다. 반면 일반 CAST는 값을 조용히 잘라냅니다(예: Delta `byte` 컬럼에 `300`을 기록하는 경우). 예외를 발생시키지 않는 일반 CAST를 사용하려면 `false`로 설정하거나 26.9 미만의 `compatibility` 설정을 사용하십시오.
+
+## delta_lake_enable_engine_predicate {#delta_lake_enable_engine_predicate}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -23,9 +29,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 delta-kernel의 내부 데이터 프루닝을 활성화합니다.
 
-<div id="delta_lake_enable_expression_visitor_logging">
-  ## delta_lake_enable_expression_visitor_logging
-</div>
+## delta_lake_enable_expression_visitor_logging {#delta_lake_enable_expression_visitor_logging}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -33,9 +37,7 @@ delta-kernel의 내부 데이터 프루닝을 활성화합니다.
 
 DeltaLake 표현식 visitor에 대한 Test 수준 로그를 활성화합니다. 이 로그는 테스트 로깅에도 지나치게 상세할 수 있습니다.
 
-<div id="delta_lake_insert_max_bytes_in_data_file">
-  ## delta_lake_insert_max_bytes_in_data_file
-</div>
+## delta_lake_insert_max_bytes_in_data_file {#delta_lake_insert_max_bytes_in_data_file}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1073741824" />
 
@@ -43,9 +45,7 @@ DeltaLake 표현식 visitor에 대한 Test 수준 로그를 활성화합니다. 
 
 Delta Lake에서 삽입 시 생성되는 단일 데이터 파일의 바이트 제한을 정의합니다.
 
-<div id="delta_lake_insert_max_rows_in_data_file">
-  ## delta_lake_insert_max_rows_in_data_file
-</div>
+## delta_lake_insert_max_rows_in_data_file {#delta_lake_insert_max_rows_in_data_file}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="1000000" />
 
@@ -53,9 +53,7 @@ Delta Lake에서 삽입 시 생성되는 단일 데이터 파일의 바이트 �
 
 Delta Lake의 단일 데이터 파일에 삽입할 수 있는 행 수 제한을 정의합니다.
 
-<div id="delta_lake_log_metadata">
-  ## delta_lake_log_metadata
-</div>
+## delta_lake_log_metadata {#delta_lake_log_metadata}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -63,9 +61,7 @@ Delta Lake의 단일 데이터 파일에 삽입할 수 있는 행 수 제한을 
 
 Delta Lake 메타데이터 파일을 시스템 테이블에 로깅하도록 설정합니다.
 
-<div id="delta_lake_reload_schema_for_consistency">
-  ## delta_lake_reload_schema_for_consistency
-</div>
+## delta_lake_reload_schema_for_consistency {#delta_lake_reload_schema_for_consistency}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -74,9 +70,7 @@ Delta Lake 메타데이터 파일을 시스템 테이블에 로깅하도록 설�
 활성화하면 쿼리 분석에 사용되는 스키마(schema)와 실행에 사용되는 스키마 간의
 일관성을 보장하기 위해 각 쿼리 실행 전에 DeltaLake 메타데이터에서 스키마를 다시 로드합니다.
 
-<div id="delta_lake_snapshot_end_version">
-  ## delta_lake_snapshot_end_version
-</div>
+## delta_lake_snapshot_end_version {#delta_lake_snapshot_end_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -84,9 +78,7 @@ Delta Lake 메타데이터 파일을 시스템 테이블에 로깅하도록 설�
 
 읽을 Delta Lake snapshot의 종료 버전입니다. 값이 -1이면 최신 버전을 읽습니다(값 0도 유효한 snapshot 버전입니다).
 
-<div id="delta_lake_snapshot_start_version">
-  ## delta_lake_snapshot_start_version
-</div>
+## delta_lake_snapshot_start_version {#delta_lake_snapshot_start_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -94,9 +86,7 @@ Delta Lake 메타데이터 파일을 시스템 테이블에 로깅하도록 설�
 
 Delta Lake snapshot을 읽기 시작할 버전입니다. 값이 -1이면 최신 버전을 읽습니다(값 0은 유효한 snapshot 버전입니다).
 
-<div id="delta_lake_snapshot_version">
-  ## delta_lake_snapshot_version
-</div>
+## delta_lake_snapshot_version {#delta_lake_snapshot_version}
 
 <SettingsInfoBlock type="Int64" default_value="-1" />
 
@@ -104,9 +94,7 @@ Delta Lake snapshot을 읽기 시작할 버전입니다. 값이 -1이면 최신 
 
 읽을 Delta Lake snapshot 버전입니다. 값이 -1이면 최신 버전을 읽으며, 0도 유효한 snapshot 버전입니다.
 
-<div id="delta_lake_throw_on_engine_predicate_error">
-  ## delta_lake_throw_on_engine_predicate_error
-</div>
+## delta_lake_throw_on_engine_predicate_error {#delta_lake_throw_on_engine_predicate_error}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

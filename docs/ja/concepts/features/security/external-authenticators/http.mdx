@@ -12,7 +12,7 @@ import SelfManaged from '/snippets/ja/_self_managed_only_no_roadmap.mdx';
 HTTPサーバーを使用して、ClickHouseユーザーを認証できます。HTTP認証は、`users.xml` またはローカルのアクセス制御パスで定義された既存ユーザーに対する外部認証方式としてのみ使用できます。現在サポートされているのは、GETメソッドを使用する [Basic](https://datatracker.ietf.org/doc/html/rfc7617) 認証スキームです。
 
 <div id="http-auth-server-definition">
-  ## HTTP認証サーバーの定義
+  ## HTTP認証サーバーの定義 {#http-auth-server-definition}
 </div>
 
 HTTP認証サーバーを定義するには、`config.xml` に `http_authentication_servers` セクションを追加します。
@@ -64,9 +64,7 @@ HTTP認証サーバーを定義するには、`config.xml` に `http_authenticat
 
 この部分では、クライアントのリクエストヘッダーから外部 HTTP 認証サービスに転送するヘッダーを定義します。ヘッダーは設定内のヘッダーと大文字・小文字を区別せずに照合されますが、転送時にはそのまま、つまり変更されずに送られます。
 
-<div id="enabling-http-auth-in-users-xml">
-  ### `users.xml` で HTTP 認証を有効にする
-</div>
+### `users.xml` で HTTP 認証を有効にする {#enabling-http-auth-in-users-xml}
 
 ユーザーの HTTP 認証を有効にするには、ユーザー定義で `password` などのセクションの代わりに、`http_authentication` セクションを指定します。
 
@@ -95,7 +93,7 @@ HTTP認証サーバーを定義するには、`config.xml` に `http_authenticat
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### SQL を使用した HTTP 認証の有効化
+  ### SQL を使用した HTTP 認証の有効化 {#enabling-http-auth-using-sql}
 </div>
 
 ClickHouse で [SQL ベースの Access Control and Account Management](/ja/concepts/features/security/access-rights#access-control-usage) が有効になっている場合は、HTTP 認証で識別されるユーザーも SQL ステートメントを使って作成できます。
@@ -111,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### セッション設定の受け渡し
+  ### セッション設定の受け渡し {#passing-session-settings}
 </div>
 
 HTTP認証サーバーからのレスポンスボディがJSON形式で、`settings` サブオブジェクトを含んでいる場合、ClickHouseはその key: value ペアを文字列の値としてパースし、認証済みユーザーの現在のセッションのセッション設定として適用を試みます。パースに失敗した場合、サーバーからのレスポンスボディは無視されます。

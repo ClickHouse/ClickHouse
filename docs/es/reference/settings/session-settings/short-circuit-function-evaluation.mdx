@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="short_circuit_function_evaluation">
-  ## short_circuit_function_evaluation
-</div>
+## short_circuit_function_evaluation {#short_circuit_function_evaluation}
 
 <SettingsInfoBlock type="ShortCircuitFunctionEvaluation" default_value="enable" />
 
@@ -27,9 +25,7 @@ Valores posibles:
 * `force_enable` — Habilita la evaluación de funciones con cortocircuito para todas las funciones.
 * `disable` — Deshabilita la evaluación de funciones con cortocircuito.
 
-<div id="short_circuit_function_evaluation_for_nulls">
-  ## short_circuit_function_evaluation_for_nulls
-</div>
+## short_circuit_function_evaluation_for_nulls {#short_circuit_function_evaluation_for_nulls}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -37,9 +33,9 @@ Valores posibles:
 
 Optimiza la evaluación de funciones que devuelven NULL cuando algún argumento es NULL. Cuando el porcentaje de valores NULL en los argumentos de la función supera short&#95;circuit&#95;function&#95;evaluation&#95;for&#95;nulls&#95;threshold, el sistema omite evaluar la función fila por fila. En su lugar, devuelve NULL de inmediato para todas las filas, evitando cálculos innecesarios.
 
-<div id="short_circuit_function_evaluation_for_nulls_threshold">
-  ## short_circuit_function_evaluation_for_nulls_threshold
-</div>
+Esta configuración controla únicamente una optimización. Las funciones que no pueden ejecutarse sobre el valor predeterminado de sus argumentos —como `parseDateTime`, `IPv4StringToNum` o `intDiv`— siempre omiten las filas que contienen un NULL, independientemente de esta configuración, porque el valor almacenado detrás de un NULL es el valor predeterminado del tipo del argumento y ejecutarlas sobre él lanzaría una excepción con datos que por lo demás son válidos.
+
+## short_circuit_function_evaluation_for_nulls_threshold {#short_circuit_function_evaluation_for_nulls_threshold}
 
 <SettingsInfoBlock type="Double" default_value="1" />
 

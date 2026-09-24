@@ -1,0 +1,166 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-08-28
+title: 'Demo days - 2026-08-28'
+sidebarTitle: '2026-08-28'
+description: 'ClickStack demo days ليوم 2026-08-28'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## متغيرات اللوحة في PromQL وLucene {#dashboard-variables-in-promql-and-lucene}
+
+*عرض تقديمي من [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/q5pP20p4nY4" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+أصبحت متغيرات اللوحة تعمل الآن في مخططات PromQL، مع إكمال تلقائي لمراجع المتغيرات وتحذيرات عند وجود متغيرات مفقودة أو استخدام غير مدعوم، مثل الماكرو أو المراجع التي تحتاج إلى علامات اقتباس. وتظهر معاينة PromQL المُولَّدة إلى جانب لوحة SQL المُولَّدة الحالية، بحيث تعرض الاستعلام مع استبدال اختياراتك الحالية فيه.
+
+كما تدعم متغيرات Lucene الآن التطابق التام. في السابق، كان `ServiceName:$service` يتوسّع إلى `ServiceName:("add" OR "cart")`. ولأن مطابقة حقل Lucene غير المقتبسة هي مطابقة سلسلة فرعية، فإن ذلك يصبح `ServiceName ILIKE '%add%' OR ServiceName ILIKE '%cart%'`. وهكذا كان بإمكانك اختيار خدمتين فتحصل على أربع.
+
+أما اقتباس المتغير، `ServiceName:"$service"`، فيتوسّع الآن إلى `(ServiceName:"add" OR ServiceName:"cart")`، مطابقًا كل قيمة مختارة تطابقًا تامًا. وهذا يتوافق مع السلوك الحالي لمطابقات الحقول المقتبسة دون متغيرات. كما يقترح الإكمال التلقائي الصيغة المقتبسة.
+
+وعند الانتقال بالتنقيب من تلميح مخطط أو صف جدول إلى صفحة البحث، تُوسَّع الآن المتغيرات والماكرو قبل الانتقال. فصفحة البحث لا تفهم المتغيرات، ولذلك كان تمرير `$service` كما هو يؤدي سابقًا إلى نتائج غير صحيحة أو إلى خطأ في الاستعلام. أما الماكرو دون اختيار فيتوسّع إلى `(1=1)`. وقد يبدو ذلك غير أنيق قليلًا في حقل `WHERE` بصفحة البحث، لكنه يُبقي الاستعلام صالحًا.
+
+وأصبحت اختيارات عوامل التصفية الآن مفهرسة باسم المتغير بدلًا من التعبير. فعاملا تصفية يستخدمان التعبير نفسه، مثل `ServiceName` من مصادر مختلفة، لم يعودا يتشاركان الاختيار نفسه.
+
+وأصبح الضغط على Escape أثناء تحرير عامل تصفية يطلب تأكيدًا قبل تجاهل التغييرات، كما اقترح Brandon. في السابق، كانت محاولة إغلاق تلميح قد تؤدي إلى فقدان التحرير بالكامل.
+
+وقد انتقلت متغيرات اللوحة إلى الإنتاج هذا الأسبوع. فأُزيل مفتاح تفعيل الميزة، وتغطي [الوثائق العامة](https://clickhouse.com/docs/clickstack/features/dashboards/overview#dashboard-variables) صيغ المراجع والماكرو.
+
+**طلبات السحب ذات الصلة:** [#2994](https://github.com/hyperdxio/hyperdx/pull/2994) استبدال المتغيرات في مخططات PromQL، [#2995](https://github.com/hyperdxio/hyperdx/pull/2995) إضافة إكمالات لمتغيرات PromQL، [#2997](https://github.com/hyperdxio/hyperdx/pull/2997) عرض تحذيرات للاستخدام غير الصالح لمتغيرات PromQL، [#2998](https://github.com/hyperdxio/hyperdx/pull/2998) إضافة معاينة PromQL المُولَّدة، [#2987](https://github.com/hyperdxio/hyperdx/pull/2987) توزيع مراجع متغيرات Lucene ذات التطابق التام، [#3008](https://github.com/hyperdxio/hyperdx/pull/3008) توسيع المتغيرات قبل الانتقال إلى صفحة البحث عبر التنقيب، [#2963](https://github.com/hyperdxio/hyperdx/pull/2963) قبول قيم عوامل تصفية اللوحة المفهرسة بالمتغيرات، [#2964](https://github.com/hyperdxio/hyperdx/pull/2964) حفظ وقراءة حالة عوامل التصفية المفهرسة بالمتغيرات، [#3005](https://github.com/hyperdxio/hyperdx/pull/3005) التأكيد قبل تجاهل التغييرات غير المحفوظة عند إغلاق محرر عامل التصفية، [#3009](https://github.com/hyperdxio/hyperdx/pull/3009) إزالة مفتاح تفعيل ميزة متغيرات اللوحة
+
+## روابط span في الاتجاهين {#span-links-in-both-directions}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/tdK9JU6unoE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كانت روابط span معروضة منذ فترة، لكن من جهة consumer فقط. فقد كان كل رابط يظهر كإجراء &quot;Open trace&quot;، دون أي وسيلة للانطلاق من span الخاص بـ producer والعثور على spans المرتبطة به. وقد طلب أحد المستخدمين هذه الميزة في issue على GitHub.
+
+يعرض قسم Span Links الآن اسم كل span هدف وخدمته ومدته وطابعه الزمني، مما يسهّل الاختيار بين عدة روابط دون الحاجة إلى فتح كل واحد منها. ويبقى &quot;Open trace&quot; هو الحل الاحتياطي عندما يتعذّر العثور على span الهدف.
+
+ويسرد قسم جديد باسم &quot;Linked from&quot; الـ spans التي ترتبط بالـ span الحالي. فيمكنك الآن تتبّع رابط consumer إلى producer الخاص به ورؤية consumer مدرجًا هناك.
+
+وتتبّع رابط يؤدي إلى span السابق في مسار التنقّل يعيدك إلى ذلك المدخل، بحيث لا يؤدي الانتقال بين span مرتبطين إلى إضافة مداخل مكرّرة باستمرار. وإن وُجدت مداخل أخرى بينهما، فسيضيف التنقّل مدخلًا جديدًا كالمعتاد.
+
+يبحث البحث العكسي عن الصفوف التي تتضمّن روابط span فيها معرّف span المحدد، ثم يتحقق من تطابق trace ID. وتستفيد عمليات البحث عن trace ID من فهرس bloom filter على ذلك العمود، أما البحث العكسي فيتطلّب فحصًا وقد يكون أبطأ على جداول traces الكبيرة مما هو عليه في العرض التوضيحي. وإذا أصبح ذلك مشكلة، فيمكننا إضافة فهرس على معرّف span الخاص بالرابط، كما تقترح تعليقات الشيفرة.
+
+**طلبات السحب ذات الصلة:** [#3011](https://github.com/hyperdxio/hyperdx/pull/3011) إضافة روابط span العكسية، وعرض تفاصيل رابط span
+
+## observability لنماذج LLM جاهزة للاستخدام {#llm-observability-out-of-the-box}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/m49DZ5cuI64" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+تُرسل فرق كثيرة بالفعل بيانات telemetry الخاصة بنماذج LLM ووكلاء البرمجة إلى ClickStack، لكن لم يكن هناك دعم مخصص لها: لا عرض للدردشة، ولا تتبّع للـ tokens أو التكلفة، ولا analytics للنماذج.
+
+أصبحت هناك الآن لوحة مخصصة لنماذج LLM إلى جانب الإعدادات المسبقة الموجودة لـ ClickHouse وKubernetes والخدمات. وهي تغطي استخدام الـ tokens والتكلفة واستدعاءات النماذج واستدعاءات الأدوات وcache hits وأزمنة الاستجابة، مع تفصيل بحسب المستخدم عند توفّر attribute للمستخدم.
+
+وتقرأ الـ traces والسجلات الموجودة لديك في وقت تنفيذ الـ query، دون الحاجة إلى schema ثابت أو جداول مخصصة أو processing عند الـ ingest. وتُدعم بيانات telemetry التي تستخدم الأعراف الشائعة أو OpenLLMetry أو OpenInference، بما في ذلك البيانات الواردة من OpenAI وAnthropic SDKs وVercel AI SDK وLangChain وClaude Code وopencode. كما ينطبق ذلك على بيانات telemetry التي جمعتها مسبقًا.
+
+ويُبرز منظور الـ latency الـ spans المرتبطة بالذكاء الاصطناعي في المقدمة، مما يسهّل العثور على استدعاء نموذج بطيء دون الحاجة إلى تفحّص بقية الـ trace.
+
+ويجمع منظور الـ sessions الـ spans بحسب الـ conversation. افتح session لعرض الـ spans الخاصة بها، ثم اختر واحدًا لعرض التفاصيل، بما في ذلك الـ prompt إن كان قد سُجِّل. ويفيد ذلك عند debugging تنفيذ أحد الوكلاء، ويمكنك البحث في السجلات باستخدام عامل التصفية نفسه الخاص بالـ session.
+
+والنطاق أضيق عن قصد مما تقدّمه أداة observability مخصصة لنماذج LLM مثل Langfuse، التي تدعم أيضًا عمليات التقييم وغير ذلك بكثير. أما هذه الميزة فتغطي احتياجات الـ monitoring الشائعة، بما في ذلك معدلات الأخطاء والتكلفة والـ tokens والـ latency، باستخدام بيانات telemetry الموجودة أصلًا في ClickStack.
+
+**طلبات السحب ذات الصلة:** [#2990](https://github.com/hyperdxio/hyperdx/pull/2990) لوحة الخاصة بـ observability لنماذج LLM، وعرض الدردشة للـ span، والـ sessions
+
+## استعراض المقاييس في محرر المخططات {#browsing-metrics-in-the-chart-editor}
+
+*عرض تقديمي من [@MikeShi42](https://github.com/MikeShi42)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/TkFa6Zzq23o" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كان اختيار المقياس يستلزم البحث في قائمة مسطّحة تضم ما يصل إلى 3000 اسم لكل نوع. ويفيد الإكمال التلقائي إن كنت تعرف تقريبًا ما تبحث عنه، لكن الحاجة إلى الاستعراض تكرّرت في ملاحظات المستخدمين عدة مرات.
+
+أصبح الآن بجوار حقل اختيار المقياس عنصر تحكم &quot;Browse metrics&quot; يفتح مستعرضًا يعرض الفهرس على اليسار وتفاصيل المقياس المحدد على اليمين. وتُقسَّم أسماء المقاييس عند النقاط والشُرَط السفلية لتكوين شجرة، وتُدمج المقاطع التي لها عنصر فرعي واحد فقط لتجنّب النقرات غير الضرورية. وتبقى أعمدة `Metric` و`Type` و`Unit` متناسقة في كل مستوى، ويمكنك البحث في الفهرس بالكامل أو التبديل إلى قائمة مسطّحة.
+
+وفي السابق، لم تكن الوحدة والوصف والوسوم متاحة إلا بعد اختيار المقياس، داخل لوحة مطوية أسفل صف السلسلة. أما لوحة التفاصيل فتتيح لك فحص هذه المعلومات قبل الاختيار، فترى ما يُصدره نشرك وأي الوسوم يمكنك التجميع بحسبها. انقر على &quot;Use metric&quot; لتطبيق اختيارك على السلسلة التي تحرّرها.
+
+وقد وُضع بعيدًا عن مسار العمل في الوقت الحالي حتى تستقر تجربته.
+
+**طلبات السحب ذات الصلة:** [#3000](https://github.com/hyperdxio/hyperdx/pull/3000) إضافة Metrics Explorer إلى محرر المخططات، [#3025](https://github.com/hyperdxio/hyperdx/pull/3025) بث أسماء المقاييس من الفهرس الأساسي (مفتوح)، [#3054](https://github.com/hyperdxio/hyperdx/pull/3054) تحسينات على تجربة المستخدم في قائمة المقاييس المنسدلة
+
+## حجم السجلات لاستعلامات SQL الخام في Grafana {#log-volume-for-raw-sql-queries-in-grafana}
+
+*عرض تقديمي من [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/uehh44q56yE" title="مشغل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+تغيير مرئي بسيط تطلّب جهدًا أكبر مما كان متوقعًا.
+
+في Grafana، تحصل استعلامات السجلات المُنشأة عبر query builder على مُدرَّج تكراري للحجم أعلى النتائج، لأن الـ plugin يعرف أي columns ينبغي استخدامها. أما الاستعلام نفسه في محرر SQL فلم يكن له مُدرَّج تكراري، إذ لم يكن بإمكان الـ plugin معرفة الـ columns التي اخترتها. وفي Explore، كنت تحصل بدلًا من ذلك على المُدرَّج التكراري القائم على الصفوف الخاص بـ Grafana، مقيَّدًا بقيمة `LIMIT` في الاستعلام ودون أن يتبع النطاق الزمني المحدد.
+
+أصبح الـ plugin الآن يحذف `ORDER BY` و`LIMIT` من نهاية الاستعلام، ويغلّف الـ SQL الخاص بك كجدول مشتق، ثم يُجمّع البيانات على كامل النطاق الزمني. وحذف `LIMIT` أمر مهم هنا، إذ إن إبقاءه يقصر العدّ على الصفوف التي يعيدها الاستعلام الأصلي.
+
+يعكس المُدرَّج التكراري عوامل التصفية في الـ SQL الخاص بك، ويتحدّث عند تغيير النطاق الزمني. ويعمل هذا مع الـ SQL الذي تكتبه بنفسك ومع الاستعلامات التي تُفتح عبر &quot;Edit as SQL&quot; في query builder.
+
+ومن المرجّح أنه لا تزال هناك حالات حدّية لن تعمل فيها إعادة كتابة الاستعلام.
+
+**طلبات السحب ذات الصلة:** [grafana/clickhouse-datasource#2141](https://github.com/grafana/clickhouse-datasource/pull/2141) عرض حجم السجلات لاستعلامات محرر SQL (مفتوح)
+
+## قنوات الإشعارات في صفحات التنبيهات {#notification-channels-on-the-alerts-pages}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/Gr-QkVVWam8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+يمكن للتنبيه أن يُشعِر ما يصل إلى عشرة webhooks، لكن قائمة التنبيهات وترويسة التفاصيل كانتا تعرضان الأول فقط، موسومًا بـ &quot;Webhook&quot; بدلًا من استخدام اسمه، إذ كانت كلتاهما لا تزالان تقرآن حقل القناة الواحدة legacy.
+
+كان توزيع الإشعارات على أهداف متعددة يعمل فعلًا، لكن طريقة العرض كانت توحي بأن القنوات الإضافية لم تُحفظ.
+
+أصبحت القائمة وترويسة التفاصيل تعرضان الآن كل قناة مهيأة باسمها. كما أصبحت إضافة القنوات وإزالتها أسهل، بما في ذلك تكامُلات webhooks و incident.io. ويُسجَّل وقت الإشعار لكل هدف على حدة، ممّا يتيح لك تحديد التكامل البطيء.
+
+وتُشعَر القنوات المهيأة الآن مباشرةً، بعد أن كانت تُحوَّل إلى إشارات webhook تُلحق بـ body الرسالة، وهو ما كان قد يؤدي إلى فقدان بعض الإشعارات: فإذا كان الـ body يحتوي أصلًا على عدد من الإشارات المُضافة يدويًا يكفي للوصول إلى الحد الأقصى لكل حدث، فإن القنوات المهيأة للتنبيه كانت تُتجاهل.
+
+ومع عناصر التحكم الإضافية، بدأت الصفحة تزدحم؛ لذا جُمعت إجراءات الصف، بما في ذلك التصدير و Terraform، في قائمة واحدة.
+
+**طلبات السحب ذات الصلة:** [#3001](https://github.com/hyperdxio/hyperdx/pull/3001) عرض كل هدف إشعار في صفحات التنبيهات، [#2991](https://github.com/hyperdxio/hyperdx/pull/2991) عرض كل قناة إشعار في سطر الملخص، [#2984](https://github.com/hyperdxio/hyperdx/pull/2984) إشعار القنوات المهيأة مباشرة وليس عبر سلاسل الإشارات، [#2961](https://github.com/hyperdxio/hyperdx/pull/2961) منع الإشارات الفاشلة من استهلاك slots الإشعارات، [#3003](https://github.com/hyperdxio/hyperdx/pull/3003) إسناد وقت إشعار التنبيه إلى كل هدف، [#3002](https://github.com/hyperdxio/hyperdx/pull/3002) منح كل صف في صفحة التنبيهات نفس عناصر التحكم الطرفية، [#3016](https://github.com/hyperdxio/hyperdx/pull/3016) دمج ترويسة تفاصيل التنبيه في قائمة الصف المشتركة
+
+## عرض عشرات الآلاف من التنبيهات {#rendering-1000s-alerts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/P9BPD9yoElo" title="مشغّل فيديو YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+جرى اختبار تقييم التنبيهات على 16,000 تنبيه متزامن وأظهر أداءً جيدًا، إلا أن فتح صفحة التنبيهات بهذا العدد الكبير كان يُعطّلها.
+
+أصبحت القائمة الآن افتراضية (virtualized) وقادرة على عرض 16,000 تنبيه. ولا يزال التحميل بطيئًا لأن جميع التنبيهات تُجلب وتُرشَّح في جهة العميل، ويجري العمل حاليًا على إضافة الترقيم لمعالجة ذلك.
+
+ويتضمّن التغيير أيضًا برنامجًا نصيًا لتوليد أعداد كبيرة من التنبيهات وتنظيفها في MongoDB، ما يسهّل اختبار الصفحة بهذا الحجم محليًا.
+
+**طلبات السحب ذات الصلة:** [#3012](https://github.com/hyperdxio/hyperdx/pull/3012) جعل قائمة صفحة التنبيهات افتراضية
+
+## إخفاء مفاتيح API خلف زر كشف {#hiding-api-keys-behind-a-reveal}
+
+*عرض توضيحي بواسطة [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/MNXABmTVEkE" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كانت بيانات الاعتماد تظهر كنص صريح في أنحاء التطبيق. فصفحة Team Settings كانت تعرض مفتاح API الخاص بالاستيعاب كاملاً، كما كانت مقتطفات تثبيت MCP تتضمن مفتاح الوصول الشخصي ضمن الأمر، وكلاهما عرضة للانكشاف بسهولة أثناء مشاركة الشاشة أو في لقطة شاشة.
+
+أصبحت المفاتيح الآن مُقنّعة افتراضياً، مع عنصر تحكم لكشفها عند الحاجة. ويتولى مكوّن مشترك هذه المهمة لمفتاح الاستيعاب ومفتاح الوصول الشخصي ومقتطفات تثبيت MCP، بما فيها المقتطفات المُساهَم بها من المجتمع.
+
+ولا يزال النسخ يمنحك القيمة الحقيقية، فلا حاجة لكشف المفتاح كي تنسخه. وسيصل التغيير نفسه قريباً إلى عملية onboarding في ClickStack Cloud.
+
+**طلبات السحب ذات الصلة:** [#2988](https://github.com/hyperdxio/hyperdx/pull/2988) تقنيع الأسرار في مفتاح API ومقتطفات تثبيت MCP باستخدام مكوّن RevealSnippet مشترك
+
+## ملاحظات الإصدار داخل المنتج {#release-notes-in-the-product}
+
+*Demo by [@jordan-simonovski](https://github.com/jordan-simonovski)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/4vrzXy8JwZY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+كانت لوحة &quot;ما الجديد&quot; في قائمة المساعدة تعتمد على مجموعات التغييرات الخاصة بكل طلب سحب، فتنتقي الـ entries التي تحمل البادئة `feat:`. ونتيجة لذلك، أدرج الإصدار v2.36.0 dashboard variables ثلاث مرات، بينما أغفل الصيغ وأعمال تنبيه التي كانت التغييرات الرئيسية في ذلك الإصدار.
+
+أما الآن فهي تقرأ ملف `CHANGELOG.md` في الجذر، الذي يُكتب ويُراجع ضمن طلب سحب الإصدار. كما يوفّر مولّد الإصدارات العنوان الرئيسي لكل إصدار داخل اللوحة، وتظهر أسفله breaking changes والميزات الجديدة وإصلاحات الأخطاء والتحسينات، مع روابط تنقلك إلى سجل التغييرات.
+
+ويتلألأ زر المساعدة الآن عند وجود ملاحظات إصدار غير مقروءة، مستخدمًا ملف SVG متحرك دون الحاجة إلى JavaScript.
+
+وكان تتبّع غير المقروء بحاجة إلى إصلاح هو الآخر؛ إذ كان يعتمد على إصدار build التطبيق، ما جعل عمليات النشر التي تتضمّن SHA قصيرًا من git أو رقم build من CI تُشعل التلألؤ مع كل عملية نشر، حتى دون صدور إصدار جديد. وهو يعتمد الآن على أحدث إصدار مذكور في سجل التغييرات.
+
+كذلك يشهد format ملاحظات الإصدار تغييرًا، لذا توقّع ظهور المزيد من هذا المحتوى في اللوحة.
+
+**طلبات السحب ذات الصلة:** [#2993](https://github.com/hyperdxio/hyperdx/pull/2993) بناء &quot;ما الجديد&quot; من ملاحظات الإصدار المولّدة، [#3042](https://github.com/hyperdxio/hyperdx/pull/3042) ربط تلألؤ &quot;ما الجديد&quot; بالإصدار لا بالـ build، [#3007](https://github.com/hyperdxio/hyperdx/pull/3007) تحذير مميّز عند فشل query وسم الإصدار

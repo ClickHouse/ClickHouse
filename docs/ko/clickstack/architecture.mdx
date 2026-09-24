@@ -12,7 +12,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구성 요소를 자가 관리하는 **ClickStack Open Source**와 ClickHouse 및 HyperDX UI를 ClickHouse Cloud에서 호스팅하고 운영하는 **Managed ClickStack** 사이에는 중요한 아키텍처상 차이가 있습니다. 두 모델 모두 핵심 구성 요소는 동일하지만, 각 구성 요소의 호스팅, 스케일링, 보안에 대한 책임은 다릅니다.
 
 <div id="architecture-overview">
-  ## 아키텍처 개요
+  ## 아키텍처 개요 {#architecture-overview}
 </div>
 
 다음에서는 관리형 및 오픈 소스 ClickStack 아키텍처를 개괄적으로 설명합니다.
@@ -25,7 +25,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="관리형 아키텍처" size="lg" />
 
-    ### ClickHouse Cloud: 엔진
+### ClickHouse Cloud: 엔진 {#clickhouse-cloud}
 
     Managed ClickStack의 핵심은 ClickHouse Cloud입니다. ClickHouse Cloud는 ClickHouse의 서버리스 버전으로, ClickHouse는 대규모 실시간 분석을 위해 설계된 컬럼 지향 데이터베이스입니다. 이를 통해 관측성 데이터의 수집과 쿼리를 처리하며, 다음이 가능합니다.
 
@@ -41,13 +41,13 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     * 스토리지와 독립적으로 컴퓨트를 자동 스케일링
     * 객체 스토리지를 기반으로 한 저비용의 사실상 무제한 보존
-    * Warehouses를 통해 읽기 및 쓰기 워크로드를 각각 독립적으로 격리하는 기능
+    * Warehouses를 통해 [읽기 및 쓰기 워크로드를 각각 독립적으로 격리](/ko/clickstack/managing/isolating-read-write)하는 기능
     * 통합 인증
     * 자동화된 백업
     * 보안 및 컴플라이언스 기능
     * 원활한 업그레이드
 
-    ### OpenTelemetry collector: 데이터 수집
+### OpenTelemetry collector: 데이터 수집 {#open-telemetry-collector-managed}
 
     ClickStack Managed에는 개방적이고 표준화된 방식으로 텔레메트리 데이터를 수집할 수 있도록 미리 구성된 OpenTelemetry (OTel) collector가 포함되어 있습니다. 다음을 통해 OTLP 프로토콜로 데이터를 전송할 수 있습니다.
 
@@ -58,7 +58,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     **이 아키텍처 구성 요소는 사용자가 관리합니다**
 
-    ### ClickStack UI (HyperDX): 인터페이스
+### ClickStack UI (HyperDX): 인터페이스 {#hyperdx}
 
     ClickStack UI (HyperDX)는 ClickStack의 사용자 인터페이스로, 다음 기능을 제공합니다.
 
@@ -79,7 +79,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="아키텍처" size="lg" />
 
-    ### ClickHouse: 데이터베이스 엔진
+### ClickHouse: 데이터베이스 엔진 {#clickhouse}
 
     ClickStack의 핵심에는 대규모 실시간 분석을 위해 설계된 컬럼 지향 데이터베이스인 ClickHouse가 있습니다. ClickHouse는 관측성 데이터의 수집과 쿼리를 담당하며, 다음을 가능하게 합니다:
 
@@ -91,7 +91,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     ClickHouse는 관측성 데이터를 와이드 이벤트로 처리하므로, 로그, 메트릭, 트레이스를 단일한 통합 구조에서 심층적으로 연관 분석할 수 있습니다.
 
-    ### OpenTelemetry collector: 데이터 수집
+### OpenTelemetry collector: 데이터 수집 {#open-telemetry-collector}
 
     ClickStack에는 개방적이고 표준화된 방식으로 telemetry를 수집할 수 있도록 미리 구성된 OpenTelemetry (OTel) collector가 포함되어 있습니다. 다음을 통해 OTLP 프로토콜로 데이터를 전송할 수 있습니다:
 
@@ -100,7 +100,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     collector는 telemetry를 효율적인 배치 단위로 ClickHouse에 내보냅니다. 또한 데이터 소스별로 최적화된 테이블 스키마를 지원하여 모든 신호 유형에서 확장 가능한 성능을 보장합니다.
 
-    ### ClickStack UI (HyperDX): 인터페이스
+### ClickStack UI (HyperDX): 인터페이스 {#hyperdx-ui}
 
     ClickStack UI (HyperDX)는 ClickStack의 사용자 인터페이스입니다. 다음 기능을 제공합니다:
 
@@ -113,7 +113,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     ClickHouse에 맞춰 특별히 설계된 HyperDX는 강력한 검색 기능과 직관적인 워크플로를 결합하여 이상 징후를 빠르게 발견하고, 문제를 조사하며, 인사이트를 신속하게 얻을 수 있도록 지원합니다.
 
-    ### MongoDB: 애플리케이션 상태
+### MongoDB: 애플리케이션 상태 {#mongo}
 
     ClickStack은 MongoDB를 사용하여 다음을 포함한 애플리케이션 수준의 상태를 저장합니다:
 

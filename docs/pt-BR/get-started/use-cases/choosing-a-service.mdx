@@ -1,0 +1,67 @@
+---
+title: 'Escolha um serviço para sua carga de trabalho'
+sidebarTitle: 'Escolha um serviço'
+description: 'Escolha serviços ClickHouse ou Postgres no ClickHouse Cloud para analytics ou transações, Managed ClickStack para observabilidade ou chDB para análise local.'
+keywords: ['database selection', 'analytical database', 'transactional database', 'managed postgres', 'report history']
+doc_type: 'guide'
+---
+
+Comece pelas consultas e pelos requisitos de correção que sua aplicação precisa atender. Um grande número de linhas, por si só, não determina o banco de dados, e uma aplicação que gera relatórios pode envolver cargas de trabalho tanto analíticas quanto transacionais.
+
+O ClickHouse Cloud é a plataforma de serviços gerenciados, que inclui o ClickHouse para analytics e o ClickHouse Managed Postgres para cargas de trabalho transacionais. Esses serviços executam motores de banco de dados diferentes — ClickHouse e PostgreSQL — com comportamentos de SQL distintos. Você pode usar cada serviço de forma independente ou combiná-los no ClickHouse Cloud.
+
+## Mapeie a carga de trabalho para um ponto de partida {#workload-map}
+
+| O que sua aplicação precisa                                                                                                            | Comece avaliando                                                                            | O que verificar antes de escolher                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Agregações, filtragem e comparações sobre grandes históricos de eventos ou resultados                                                  | [serviço ClickHouse no ClickHouse Cloud](/pt-BR/products/cloud/getting-started/intro)             | Consultas representativas, batches de ingestão, atualidade dos dados, consultas concorrentes e o design de atualizações ou novas tentativas |
+| Estado transacional da aplicação, como pedidos, reservas de estoque ou jobs cujas transições de estado exigem transações e constraints | [ClickHouse Managed Postgres no ClickHouse Cloud](/pt-BR/products/managed-postgres/overview)      | Limites de transação, constraints, índices, gerenciamento de conexões e os recursos e a disponibilidade suportados pelo service             |
+| Estado transacional da aplicação somado a consultas analíticas que exigem um sistema de atendimento independente                       | [Services Postgres e ClickHouse no ClickHouse Cloud](/pt-BR/products/managed-postgres/clickpipes) | Quais tabelas precisam de replicação, defasagem de replicação aceitável, mudanças de schema e o custo e a operação de dois services         |
+| Uma experiência gerenciada para buscar e investigar logs, métricas e traces de aplicações                                              | [Managed ClickStack](/pt-BR/clickstack/getting-started/managed)                                   | Instrumentação, ingestão de telemetria, retenção e os fluxos de trabalho de observabilidade de que sua equipe precisa                       |
+| Análise de arquivos ou dados in-memory dentro de uma aplicação local ou notebook                                                       | [chDB](/pt-BR/chdb/index)                                                                         | Recursos locais e se você precisa de um serviço de banco de dados compartilhado hospedado separadamente                                     |
+
+Consulte a documentação do produto vinculada para verificar disponibilidade, regiões e limitações atuais. O ClickHouse Managed Postgres está atualmente em beta público; consulte seu [quickstart](/pt-BR/products/managed-postgres/quickstart).
+
+Para um ClickHouse server autogerenciado ou outras opções locais, consulte [modos de implantação](/pt-BR/get-started/about/deployment-modes).
+
+## Exemplo: resultados de relatórios e histórico de execuções {#report-results-and-history}
+
+Suponha que uma aplicação processe arquivos enviados, gere relatórios e precise manter resultados consultáveis e um histórico de execuções. Antes de escolher um banco de dados, distinga as linhas de resultado dos registros de execução:
+
+* **Resultados:** as consultas recuperam poucas linhas de um único relatório ou agregam dados de muitos relatórios, conjuntos de dados e intervalos de tempo? Qual tabela deve chegar a centenas de milhões de linhas?
+* **Registros de execução:** um único registro imutável é gravado ao término de uma execução ou a aplicação precisa coordenar a propriedade de jobs ativos e as transições de status?
+* **Correção:** vários registros precisam ser alterados em uma única transação? O banco de dados precisa impor unicidade ou impedir que dois workers reivindiquem o mesmo job?
+* **Atualidade:** em quanto tempo uma gravação bem-sucedida precisa estar visível e as consultas toleram uma cópia analítica incompleta ou defasada?
+
+### Execuções concluídas e resultados analíticos {#completed-runs}
+
+Um serviço ClickHouse no ClickHouse Cloud é uma opção adequada quando a carga de trabalho predominante é a análise de linhas de resultado e os registros de execução podem ser anexados no momento da conclusão. Uma pequena tabela de metadados não justifica, por si só, um segundo banco de dados.
+
+Projete e teste como os leitores distinguem uma execução completa de uma parcialmente ingerida. Defina identificadores de execução estáveis, o comportamento de nova tentativa e como as linhas de resultado duplicadas são tratadas. Inserções separadas em uma tabela de resultados e em uma tabela de histórico de execuções não devem ser tratadas como uma única transação entre tabelas.
+
+Se você armazenar múltiplas versões de um registro de execução, defina como as consultas selecionam a versão atual. O [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree) oferece suporte à desduplicação em tempo de consulta com `FINAL`; a correção não deve depender de os merges em segundo plano já terem ocorrido. A [referência de update](/pt-BR/reference/statements/update) descreve outro mecanismo de atualização e suas limitações. Não se deve presumir que qualquer um desses padrões ofereça garantias transacionais no estilo do PostgreSQL.
+
+### Estado transacional do job {#transactional-job-state}
+
+Avalie o ClickHouse Managed Postgres quando a tabela de execuções também funcionar como fila de trabalho transacional ou sistema de registro: por exemplo, quando um worker precisa reivindicar um job de forma atômica enquanto outros workers competem por ele, ou quando vários registros da aplicação precisam ser alterados em conjunto, com constraints sendo aplicadas.
+
+O Postgres também pode atender consultas de relatórios. Adicione um serviço analítico quando os requisitos representativos de desempenho de consultas, concorrência ou isolamento justificarem, em vez de presumir que toda aplicação de relatórios precisa de dois bancos de dados.
+
+### Transações e analytics em conjunto {#transactions-and-analytics}
+
+Quando ambas as cargas de trabalho justificam services separados, mantenha o estado transacional no Postgres e replique as tabelas necessárias para o ClickHouse usando [ClickPipes](/pt-BR/products/managed-postgres/clickpipes) ou [WalShadow](/pt-BR/products/managed-postgres/walshadow). Leve em conta a defasagem de replicação e continue usando a fonte transacional para decisões que exigem o estado atual da aplicação. A replicação não faz com que uma escrita no Postgres e uma leitura no ClickHouse passem a fazer parte de uma mesma transação.
+
+A [extensão pg&#95;clickhouse](/pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction) pode fornecer acesso ao ClickHouse por meio do Postgres. Um entry point de consultas compartilhado não transforma os dois services em um único motor de banco de dados nem elimina a necessidade de levar em conta a atualidade dos dados.
+
+## Verifique a adequação antes do provisionamento {#check-fit}
+
+Escreva um pequeno conjunto de consultas representativas e teste-as com volumes de dados realistas. Inclua tanto lookups pontuais quanto agregações que abrangem todo o histórico, a carga concorrente esperada e os casos de correção que importam para sua aplicação. Ao relatar qualquer resultado de benchmark, informe também o schema, as shapes das consultas, o tamanho do hardware ou do service e o comportamento de ingestão.
+
+Para uma implantação gerenciada, verifique também:
+
+* Requisitos de region, rede, access control e recovery.
+* Tempo ativo esperado, dados armazenados, backups e cobranças de transferência no [guia de billing do ClickHouse Cloud](/pt-BR/products/cloud/reference/billing/billing-overview) ou no [guia de preços do Managed Postgres](/pt-BR/products/managed-postgres/pricing).
+* Se uma carga de trabalho analítica intermitente tolera o atraso de connection associado ao [automatic idling](/pt-BR/products/cloud/features/autoscaling/idling).
+* A responsabilidade da equipe pelo design do schema, pelas novas tentativas da aplicação, pelo ajuste de consultas e pelos controles de custo, mesmo quando o service gerencia a infrastructure.
+
+Para services ClickHouse ou Postgres no ClickHouse Cloud, use a [ClickHouse CLI](/pt-BR/products/cloud/features/cli) para criar e gerenciar resources a partir de um terminal. Para Managed ClickStack e chDB, siga os guias de produto vinculados no mapa de carga de trabalho.

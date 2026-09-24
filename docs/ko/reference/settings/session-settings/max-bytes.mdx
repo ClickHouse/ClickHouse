@@ -13,9 +13,19 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정들은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 바탕으로 자동 생성됩니다.
 
-<div id="max_bytes_before_external_group_by">
-  ## max_bytes_before_external_group_by
-</div>
+## max_bytes_before_external_distinct {#max_bytes_before_external_distinct}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "메모리 사용량이 지정된 임계값(바이트)을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_ratio_before_external_distinct`만 적용됩니다."}]}]} />
+
+`DISTINCT` 데이터를 디스크로 스필하는 기준이 되는 쿼리 메모리 임계값(바이트 단위)입니다. 실제 메모리 사용량은 이 임계값을 초과할 수 있습니다.
+
+`0`으로 지정하면 이 임계값이 비활성화됩니다. `max_bytes_ratio_before_external_distinct`에도 임계값이 지정되어 있으면 둘 중 더 작은 값이 사용됩니다. 스필을 비활성화하려면 두 설정을 모두 `0`으로 지정하십시오.
+
+[외부 메모리에서의 DISTINCT](/ko/reference/statements/select/distinct#distinct-in-external-memory)를 참고하십시오.
+
+## max_bytes_before_external_group_by {#max_bytes_before_external_group_by}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -36,19 +46,15 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
   권장 값은 사용 가능한 시스템 메모리의 절반입니다.
 </Note>
 
-<div id="max_bytes_before_external_join">
-  ## max_bytes_before_external_join
-</div>
+## max_bytes_before_external_join {#max_bytes_before_external_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "해시 조인의 자동 디스크 스필을 제어하는 새로운 설정입니다. 0이 아닌 값을 지정하면 스필이 활성화되고 바이트 임계값이 설정됩니다."}]}]} />
 
-0이 아닌 값으로 설정하고 `join_algorithm`이 `hash`, `parallel_hash`, `default` 또는 `auto`인 경우, 오른쪽 데이터가 이 바이트 수를 초과하면 디스크로 스필할 수 있도록 해시 조인이 자동으로 grace hash join으로 변환됩니다. `0`(기본값)으로 설정하면 이 절대 바이트 임계값은 비활성화되지만, `max_bytes_ratio_before_external_join`(기본값 `0.5`)을 통해 자동 스필이 계속 발생할 수 있습니다. 자동 스필을 완전히 비활성화하려면 두 값 모두 `0`으로 설정하십시오. 이 설정을 사용하면 조인을 통한 read in order 최적화는 적용되지 않습니다.
+0이 아닌 값으로 설정하면, 오른쪽 데이터가 이 바이트 수를 초과할 때 디스크로 스필할 수 있도록 해시 조인이 자동으로 grace hash join으로 변환됩니다. `max_bytes_ratio_before_external_join`과 함께, 이 설정은 `grace_hash`를 포함한 모든 해시 기반 `join_algorithm`에 대한 임계값 기반 스필 트리거이며, `grace_hash`는 둘 중 하나가 0이 아니어야 합니다. 0이 아닌 임계값으로 조인이 스필 가능한 상태가 되면, `enable_adaptive_memory_spill_scheduler`가 임계값에 도달하기 전에도 메모리 압박 상황에서 스필을 강제할 수 있습니다. 두 설정이 모두 `0`이면 조인은 절대 스필하지 않으므로 스케줄러가 트리거할 대상이 없습니다. 예외는 `legacy_join_size_limits_trigger_spilling`으로, 이 설정이 켜져 있으면 독립형 `grace_hash`는 두 설정을 모두 무시하고 대신 `max_rows_in_join` / `max_bytes_in_join`을 기준으로 스필합니다. `0`(기본값)으로 설정하면 이 절대 바이트 임계값은 비활성화되지만, `max_bytes_ratio_before_external_join`(기본값 `0.5`)을 통해 자동 스필이 계속 발생할 수 있습니다. 자동 스필을 완전히 비활성화하려면 두 값 모두 `0`으로 설정하십시오. 이 설정을 사용하면 조인을 통한 read in order 최적화는 적용되지 않습니다.
 
-<div id="max_bytes_before_external_sort">
-  ## max_bytes_before_external_sort
-</div>
+## max_bytes_before_external_sort {#max_bytes_before_external_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -63,17 +69,13 @@ Cloud 기본값: 레플리카당 메모리 용량의 절반입니다.
   권장 값은 사용 가능한 시스템 메모리의 절반입니다.
 * `0` — 외부 메모리를 사용하는 `ORDER BY`가 비활성화됩니다.
 
-<div id="max_bytes_before_remerge_sort">
-  ## max_bytes_before_remerge_sort
-</div>
+## max_bytes_before_remerge_sort {#max_bytes_before_remerge_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000" />
 
 ORDER BY와 LIMIT를 함께 사용하는 경우, 메모리 사용량이 지정된 임계값을 초과하면 상위 LIMIT개 행만 유지하도록 최종 머지 전에 블록을 추가로 머지합니다.
 
-<div id="max_bytes_for_lazy_final">
-  ## max_bytes_for_lazy_final
-</div>
+## max_bytes_for_lazy_final {#max_bytes_for_lazy_final}
 
 <SettingsInfoBlock type="UInt64" default_value="256000000" />
 
@@ -81,17 +83,13 @@ ORDER BY와 LIMIT를 함께 사용하는 경우, 메모리 사용량이 지정�
 
 지연 실행 FINAL 최적화에서 사용하는 집합의 최대 바이트 수입니다. 이 값을 초과하면 일반 FINAL로 되돌아갑니다.
 
-<div id="max_bytes_in_distinct">
-  ## max_bytes_in_distinct
-</div>
+## max_bytes_in_distinct {#max_bytes_in_distinct}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태의 최대 크기(비압축 바이트 기준)입니다.
 
-<div id="max_bytes_in_join">
-  ## max_bytes_in_join
-</div>
+## max_bytes_in_join {#max_bytes_in_join}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -102,26 +100,47 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 연산과 [Join 테이블 엔진](/ko/reference/engines/table-engines/special/join)에 적용됩니다.
 
 쿼리에 여러 개의 조인이 포함된 경우 ClickHouse는 모든
-중간 결과에 대해 이 설정을 확인합니다. 제한에 도달하면 동작은
-선택한 [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)에 따라 달라집니다. 알고리즘별 동작(spill, 재파티셔닝, 전환 또는
-[`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)에 따른 throw/break)은 해당 설정을 참조하십시오.
+중간 결과에 대해 이 설정을 확인합니다. 이 값은 해시 기반의 모든 `join_algorithm`에 적용되는 하드 상한이며, 제한에
+도달하면 쿼리는
+[`join_overflow_mode`](/ko/reference/settings/session-settings/join#join_overflow_mode)에 따라 throw하거나 중단됩니다.
+이 설정 때문에 조인이 디스크로 스필되는 일은 결코 없으며, 스필 여부는
+[`max_bytes_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_before_external_join)
+및
+[`max_bytes_ratio_before_external_join`](/ko/reference/settings/session-settings/max-bytes#max_bytes_ratio_before_external_join)이 결정합니다.
+이는 트리거가 아니라 상한이므로, 스필 임계값 이하로 설정하면
+일반적으로 조인이 스필하기도 전에 쿼리가 실패합니다. 다만 조인이 스필 가능하고
+`enable_adaptive_memory_spill_scheduler`가 먼저 스필을 강제하는 경우,
+또는 `legacy_join_size_limits_trigger_spilling`이 이미 디스크에서 실행 중인 조인의 해당 파트에 대해
+이 제한을 다시 스필 트리거로 되돌리는 경우는 예외입니다.
+
+이 제한은 해시 테이블이 보유한 양을 집계하므로, 스필된 조인은 오른쪽을 읽는 도중이 아니라
+각 버킷이 로드될 때 제한에 도달합니다. 즉, 인메모리 해시 조인보다
+중단되기 전까지 오른쪽을 더 많이 읽을 수 있습니다.
 
 가능한 값:
 
 * 양의 정수
 * 0 — 메모리 제어가 비활성화됩니다.
 
-<div id="max_bytes_in_set">
-  ## max_bytes_in_set
-</div>
+## max_bytes_in_set {#max_bytes_in_set}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 서브쿼리로 생성된 IN 절의 집합에서 사용할 수 있는 최대 바이트 수(비압축 데이터 기준)입니다.
 
-<div id="max_bytes_ratio_before_external_group_by">
-  ## max_bytes_ratio_before_external_group_by
-</div>
+## max_bytes_ratio_before_external_distinct {#max_bytes_ratio_before_external_distinct}
+
+<SettingsInfoBlock type="Double" default_value="0.5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0.5"},{"label": "메모리 사용량이 사용 가능한 메모리의 지정된 비율을 초과할 때 `DISTINCT`를 디스크로 스필하도록 하는 새로운 설정입니다. 0이면 `max_bytes_before_external_distinct`만 적용됩니다."}]}]} />
+
+실행 시작 시점에 외부 `DISTINCT` 임계값을 계산하는 데 사용되는 서버 또는 사용자 가용 메모리의 비율입니다. 예를 들어 `0.5`는 사용 가능한 메모리의 절반을 사용합니다.
+
+값은 `0` 이상 `1` 미만이어야 합니다. `0`이면 이 임계값이 비활성화됩니다. 적용 가능한 서버 또는 사용자 메모리 제한이 없으면 이 비율은 아무런 효과가 없습니다.
+
+`max_memory_usage`는 이 계산에 영향을 주지 않습니다. 해당 제한을 기준으로 스필을 구성하려면 `max_bytes_before_external_distinct`를 사용하여 추가 메모리 사용을 위한 여유를 남겨 두십시오.
+
+## max_bytes_ratio_before_external_group_by {#max_bytes_ratio_before_external_group_by}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -134,9 +153,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 (서버/사용자/머지 기준)까지 사용할 수 있으며, 이후에는
 외부 집계를 사용하기 시작합니다.
 
-<div id="max_bytes_ratio_before_external_join">
-  ## max_bytes_ratio_before_external_join
-</div>
+## max_bytes_ratio_before_external_join {#max_bytes_ratio_before_external_join}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -148,11 +165,9 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 
 `max_bytes_before_external_join`과 `max_bytes_ratio_before_external_join`이 모두 설정된 경우 계산된 임계값 중 더 작은 값이 사용됩니다. 비율이 `0`이면 절대값 설정만 적용됩니다.
 
-`join_algorithm`이 `hash`, `parallel_hash`, `default`, `auto` 중 하나이고 임시 데이터 경로가 구성된 경우에만 적용됩니다.
+임시 데이터 경로가 구성되어 있다면 `grace_hash`를 포함한 모든 해시 기반 `join_algorithm`에 적용됩니다.
 
-<div id="max_bytes_ratio_before_external_sort">
-  ## max_bytes_ratio_before_external_sort
-</div>
+## max_bytes_ratio_before_external_sort {#max_bytes_ratio_before_external_sort}
 
 <SettingsInfoBlock type="Double" default_value="0.5" />
 
@@ -164,9 +179,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 
 참고로 `max_bytes_before_external_sort`는 계속 적용되며, 정렬 block이 `max_bytes_before_external_sort`보다 큰 경우에만 디스크로 스필됩니다.
 
-<div id="max_bytes_to_read">
-  ## max_bytes_to_read
-</div>
+## max_bytes_to_read {#max_bytes_to_read}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -175,9 +188,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 가장 안쪽의 테이블 표현식에만 적용됩니다. 원격 서버에서 읽는 경우에는
 원격 서버에서만 확인됩니다.
 
-<div id="max_bytes_to_read_leaf">
-  ## max_bytes_to_read_leaf
-</div>
+## max_bytes_to_read_leaf {#max_bytes_to_read_leaf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -199,9 +210,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
   이 설정은 `prefer_localhost_replica=1`과 함께 사용할 때 안정적이지 않습니다.
 </Note>
 
-<div id="max_bytes_to_sort">
-  ## max_bytes_to_sort
-</div>
+## max_bytes_to_sort {#max_bytes_to_sort}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -209,9 +218,7 @@ DISTINCT를 사용할 때 해시 테이블이 사용하는 메모리 내 상태�
 비압축 바이트를 처리해야 하는 경우, 동작은 `sort_overflow_mode`에 따라
 결정되며 기본값은 `throw`입니다.
 
-<div id="max_bytes_to_transfer">
-  ## max_bytes_to_transfer
-</div>
+## max_bytes_to_transfer {#max_bytes_to_transfer}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 

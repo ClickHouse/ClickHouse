@@ -22,9 +22,7 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 如需快速了解所有选项，请在[此处](#all-yaml-options)查看完整的配置选项列表。
 
-<div id="common-settings">
-  ## 通用设置
-</div>
+## 通用设置 {#common-settings}
 
 示例配置界面：
 
@@ -57,7 +55,7 @@ secureJsonData:
 请注意，从 UI 保存配置时，系统会自动添加一个 `version` 属性。该属性显示保存此配置时所使用的插件版本。
 
 <div id="http-protocol">
-  ### HTTP 协议
+  ### HTTP 协议 {#http-protocol}
 </div>
 
 如果选择通过 HTTP 协议连接，则会显示更多设置选项。
@@ -65,7 +63,7 @@ secureJsonData:
 <Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="额外的 HTTP 配置选项" border />
 
 <div id="http-path">
-  #### HTTP 路径
+  #### HTTP 路径 {#http-path}
 </div>
 
 如果 HTTP 服务器通过其他 URL 路径对外提供服务，可以在此处添加。
@@ -77,7 +75,7 @@ jsonData:
 ```
 
 <div id="custom-http-headers">
-  #### 自定义 HTTP 请求头
+  #### 自定义 HTTP 请求头 {#custom-http-headers}
 </div>
 
 你可以为发送到服务器的请求添加自定义请求头。
@@ -106,9 +104,7 @@ secureJsonData:
   secureHttpHeaders.X-Example-Secure-Header: secure header value
 ```
 
-<div id="additional-settings">
-  ## 其他设置
-</div>
+## 其他设置 {#additional-settings}
 
 这些附加设置为可选项。
 
@@ -127,7 +123,7 @@ jsonData:
 ```
 
 <div id="opentelemetry">
-  ### OpenTelemetry
+  ### OpenTelemetry {#opentelemetry}
 </div>
 
 OpenTelemetry (OTel) 已深度集成到此插件中。
@@ -136,9 +132,7 @@ OpenTelemetry 数据可通过我们的 [exporter 插件](https://github.com/open
 
 此外，还必须配置这些默认值，以启用 [数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)；这项功能可支持强大的可观测性工作流。
 
-<div id="logs">
-  ### 日志
-</div>
+### 日志 {#logs}
 
 为加快[日志查询构建](/zh/integrations/connectors/data-visualization/grafana/query-builder#logs)速度，您可以为日志查询设置默认数据库/表以及列。这样会在 query builder 中预加载一个可直接运行的日志查询，从而加快在 Explore 页面中的可观测性浏览。
 
@@ -162,15 +156,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
 
-<div id="traces">
-  ### 链路追踪
-</div>
+#### 禁用“View logs”链接 {#disabling-view-logs-links}
+
+日志配置中的 **Trace ID 关联** 部分包含 **Show &quot;View logs&quot; links** 开关。
+此开关控制插件是否会将“View logs”[数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)添加到查询结果中的 trace ID 字段。
+该开关默认启用。同类查询的“View logs”链接无需配置默认日志；而从 trace 查询结果跳转的跨信号“View logs”链接则需要。
+关闭此开关，或在 YAML 中设置 `showLogLinks: false`，即可将其隐藏。
+
+### 链路追踪 {#traces}
 
 为加快[链路追踪查询构建](/zh/integrations/connectors/data-visualization/grafana/query-builder#traces)，你可以为 trace 查询设置默认的数据库/表以及列。这样会为 query builder 预加载一条可直接运行的 trace 搜索查询，从而加快在 Explore 页面中浏览可观测性数据的速度。
 
@@ -193,6 +194,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -206,8 +209,15 @@ jsonData:
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
 
+#### 禁用“查看 trace”链接 {#disabling-view-trace-links}
+
+链路追踪配置中的 **Trace ID 关联**部分包含 **显示“查看 trace”链接**切换开关。
+该开关控制插件是否将“查看 trace”[数据链接](/zh/integrations/connectors/data-visualization/grafana/query-builder#data-links)附加到查询结果中的 trace ID 字段。
+该开关默认启用。同类型查询的“查看 trace”链接无需配置 trace 默认值；而日志查询结果中的跨信号“查看 trace”链接则需要。
+关闭该开关，或在 YAML 中设置 `showTraceLinks: false`，即可将其隐藏。
+
 <div id="column-aliases">
-  ### 列别名
+  ### 列别名 {#column-aliases}
 </div>
 
 列别名是一种便捷方式，让你能够使用不同的名称和类型来查询数据。
@@ -221,7 +231,7 @@ jsonData:
 * 你经常使用函数来转换所选的列
 
 <div id="table-defined-alias-columns">
-  #### 在表中定义的 ALIAS 列
+  #### 在表中定义的 ALIAS 列 {#table-defined-alias-columns}
 </div>
 
 ClickHouse 内置了列别名功能，并且可开箱即用地与 Grafana 配合使用。
@@ -240,9 +250,7 @@ CREATE TABLE alias_example (
 
 如需了解更多信息，请参阅 [ALIAS](/zh/reference/statements/create/table#alias) 列类型的文档。
 
-<div id="column-alias-tables">
-  #### 列别名表
-</div>
+#### 列别名表 {#column-alias-tables}
 
 默认情况下，Grafana 会根据 `DESC table` 的返回结果提供列建议。
 在某些情况下，你可能希望完全覆盖 Grafana 能看到的列。
@@ -284,9 +292,7 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 这两种别名方式都可用于执行复杂的类型转换或提取 JSON 字段。
 
-<div id="all-yaml-options">
-  ## 所有 YAML 选项
-</div>
+## 所有 YAML 选项 {#all-yaml-options}
 
 以下是该插件提供的全部 YAML 配置选项。
 部分字段给出了示例值，其他字段则仅显示字段类型。
@@ -323,6 +329,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +338,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>
