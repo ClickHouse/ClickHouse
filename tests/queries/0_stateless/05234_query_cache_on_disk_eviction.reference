@@ -1,0 +1,18 @@
+-- An entry is stored in several file segments and served from them
+1	1
+QueryCacheOnDiskHits	1
+QueryCacheOnDiskMisses	1
+-- Two more entries push the first one out of the cache: it is a miss and is written again
+QueryCacheOnDiskHits	1
+QueryCacheOnDiskMisses	3
+-- An entry bigger than the whole cache is not stored, the query still works
+10000
+10000
+QueryCacheOnDiskMisses	2
+-- An entry which does not fit into the probationary queue of an SLRU cache is not stored and leaves no file segments behind
+0
+QueryCacheOnDiskMisses	2
+-- SYSTEM DROP FILESYSTEM CACHE removes the entries
+0
+QueryCacheOnDiskHits	1
+QueryCacheOnDiskMisses	2
