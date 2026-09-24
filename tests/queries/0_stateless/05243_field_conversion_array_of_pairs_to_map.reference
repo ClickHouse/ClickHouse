@@ -8,4 +8,9 @@ AggregateFunction(groupArrayInsertAt([], 3), Map(String, Decimal(9, 1)), UInt32)
 [{'a':1}]
 [('a',1)]	1
 [[('a',1)],[('a',1)],[('b',2)]]
+1
+1
+1
+1
+1
 AggregateFunction(1, sumMapFiltered([1, 2]), Array(UInt8), Array(UInt32))

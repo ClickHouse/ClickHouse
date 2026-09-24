@@ -752,21 +752,59 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     {
         /// A Map is stored as [(key1, value1), ...], so it also reads as an array of key-value tuples.
         const FieldVector * src_arr = nullptr;
+        const DataTypeMap * src_map_type = nullptr;
         if (src.getType() == Field::Types::Array)
             src_arr = &src.safeGet<Array>();
         else if (src.getType() == Field::Types::Map)
+        {
             src_arr = &src.safeGet<Map>();
+            src_map_type = typeid_cast<const DataTypeMap *>(from_type_hint);
+        }
 
         if (src_arr)
         {
             size_t src_arr_size = src_arr->size();
 
             const auto & element_type = *(type_array->getNestedType());
+
+            /// A Field stores an Enum as its number and a Date as its day count, so the type a key or a
+            /// value came from is what names the domain to convert it from. A Nullable or LowCardinality
+            /// wrapper is stored the same way as what it wraps, so it names no domain and is removed.
+            const auto * entry_type = typeid_cast<const DataTypeTuple *>(&element_type);
+            DataTypePtr src_key_type;
+            DataTypePtr src_value_type;
+            if (src_map_type && entry_type && entry_type->getElements().size() == 2)
+            {
+                src_key_type = removeLowCardinalityAndNullable(src_map_type->getKeyType());
+                src_value_type = removeLowCardinalityAndNullable(src_map_type->getValueType());
+            }
+
             bool have_unconvertible_element = false;
             Array res(src_arr_size);
             for (size_t i = 0; i < src_arr_size; ++i)
             {
-                res[i] = convertFieldToType((*src_arr)[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+                const Field & src_element = (*src_arr)[i];
+                if (src_key_type && src_element.getType() == Field::Types::Tuple
+                    && src_element.safeGet<Tuple>().size() == 2)
+                {
+                    /// Converted here rather than through the tuple recursion below, which carries no
+                    /// element types of its own.
+                    const auto & src_entry = src_element.safeGet<Tuple>();
+                    const IDataType * src_entry_types[] = {src_key_type.get(), src_value_type.get()};
+                    Tuple res_entry(2);
+                    for (size_t j = 0; j < 2; ++j)
+                    {
+                        const auto & entry_element_type = *(entry_type->getElements()[j]);
+                        res_entry[j] = convertFieldToType(
+                            src_entry[j], entry_element_type, src_entry_types[j], format_settings, strict, convert_inexact_floats);
+                        if (res_entry[j].isNull() && !canContainNull(entry_element_type))
+                            have_unconvertible_element = true;
+                    }
+                    res[i] = res_entry;
+                }
+                else
+                    res[i] = convertFieldToType((*src_arr)[i], element_type, nullptr, format_settings, strict, convert_inexact_floats);
+
                 if (res[i].isNull() && !canContainNull(element_type))
                 {
                     // See the comment for Tuples below.
@@ -970,10 +1008,24 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     else if (const DataTypeMap * type_map = typeid_cast<const DataTypeMap *>(&type))
     {
         const FieldVector * map = nullptr;
+        /// As above: the array-of-pairs spelling of a map keeps the types its keys and values came from in
+        /// the element type of the source array, and nowhere else.
+        DataTypePtr src_key_type;
+        DataTypePtr src_value_type;
         if (src.getType() == Field::Types::Map)
             map = &src.safeGet<Map>();
         else if (src.getType() == Field::Types::Array)
+        {
             map = &src.safeGet<Array>();
+            const auto * array_hint = typeid_cast<const DataTypeArray *>(from_type_hint);
+            const auto * entry_hint
+                = array_hint ? typeid_cast<const DataTypeTuple *>(array_hint->getNestedType().get()) : nullptr;
+            if (entry_hint && entry_hint->getElements().size() == 2)
+            {
+                src_key_type = removeLowCardinalityAndNullable(entry_hint->getElements()[0]);
+                src_value_type = removeLowCardinalityAndNullable(entry_hint->getElements()[1]);
+            }
+        }
 
         if (map)
         {
@@ -1003,12 +1055,14 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
 
                 Tuple updated_entry(2);
 
-                updated_entry[0] = convertFieldToType(key, key_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[0]
+                    = convertFieldToType(key, key_type, src_key_type.get(), format_settings, strict, convert_inexact_floats);
 
                 if (updated_entry[0].isNull() && !canContainNull(key_type))
                     have_unconvertible_element = true;
 
-                updated_entry[1] = convertFieldToType(value, value_type, nullptr, format_settings, strict, convert_inexact_floats);
+                updated_entry[1]
+                    = convertFieldToType(value, value_type, src_value_type.get(), format_settings, strict, convert_inexact_floats);
                 if (updated_entry[1].isNull() && !canContainNull(value_type))
                     have_unconvertible_element = true;
 

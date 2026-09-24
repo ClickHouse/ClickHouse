@@ -10,6 +10,11 @@ DROP TABLE IF EXISTS t_state_05243;
 DROP TABLE IF EXISTS t_persisted_05243;
 DROP TABLE IF EXISTS t_tuple_05243;
 DROP TABLE IF EXISTS t_arr_uint_05243;
+DROP TABLE IF EXISTS t_src_arr_05243;
+DROP TABLE IF EXISTS t_src_pairs_05243;
+DROP TABLE IF EXISTS t_src_enum_05243;
+DROP TABLE IF EXISTS t_src_nullable_05243;
+DROP TABLE IF EXISTS t_src_nullable_arr_05243;
 
 -- an array of pairs written into a map column, next to the CAST of the same array
 CREATE TABLE t_map_05243 (m Map(String, Decimal(9, 1))) ENGINE = Memory;
@@ -49,6 +54,36 @@ SELECT a, a = CAST(map('a', toUInt8(1)), 'Array(Tuple(String, UInt8))') FROM t_a
 SELECT groupArrayInsertAt(map('a', 1), 3)(a, i)
 FROM (SELECT CAST([('b', 2)], 'Array(Tuple(String, UInt8))') AS a, toUInt32(2) AS i);
 
+-- a key or a value nested in the converted collection also converts from its own source type, the
+-- way CAST does: a Date is the day boundary rather than a second past the epoch, and an Enum is its
+-- label rather than its numeric code.
+CREATE TABLE t_src_arr_05243 (a Array(Tuple(DateTime, UInt8))) ENGINE = Memory;
+INSERT INTO t_src_arr_05243 VALUES (map(toDate('1970-01-02'), 1));
+SELECT a = CAST(map(toDate('1970-01-02'), toUInt8(1)), 'Array(Tuple(DateTime, UInt8))') FROM t_src_arr_05243;
+
+-- An array literal in a VALUES clause is converted by an expression template at the column level,
+-- which already matched CAST, so the two spellings below only reach the value conversion with the
+-- templates turned off.
+SET input_format_values_deduce_templates_of_expressions = 0;
+CREATE TABLE t_src_pairs_05243 (m Map(DateTime, UInt8)) ENGINE = Memory;
+INSERT INTO t_src_pairs_05243 VALUES ([(toDate('1970-01-02'), 1)]);
+SELECT m = CAST([(toDate('1970-01-02'), toUInt8(1))], 'Map(DateTime, UInt8)') FROM t_src_pairs_05243;
+
+CREATE TABLE t_src_enum_05243 (a Array(Tuple(String, UInt8))) ENGINE = Memory;
+INSERT INTO t_src_enum_05243 VALUES (map(CAST('a', 'Enum8(''a'' = 1)'), 1));
+SELECT a = CAST(map(CAST('a', 'Enum8(''a'' = 1)'), toUInt8(1)), 'Array(Tuple(String, UInt8))') FROM t_src_enum_05243;
+
+-- a Nullable source is stored in the same way as the value it wraps, so the nested type has to be
+-- unwrapped before it can name the domain to convert from
+CREATE TABLE t_src_nullable_05243 (m Map(DateTime, UInt8)) ENGINE = Memory;
+INSERT INTO t_src_nullable_05243 VALUES ([(CAST(toDate('1970-01-02'), 'Nullable(Date)'), 1)]);
+SELECT m = CAST([(CAST(toDate('1970-01-02'), 'Nullable(Date)'), toUInt8(1))], 'Map(DateTime, UInt8)') FROM t_src_nullable_05243;
+
+CREATE TABLE t_src_nullable_arr_05243 (a Array(Tuple(String, DateTime))) ENGINE = Memory;
+INSERT INTO t_src_nullable_arr_05243 VALUES (map('a', CAST(toDate('1970-01-02'), 'Nullable(Date)')));
+SELECT a = CAST(map('a', CAST(toDate('1970-01-02'), 'Nullable(Date)')), 'Array(Tuple(String, DateTime))') FROM t_src_nullable_arr_05243;
+SET input_format_values_deduce_templates_of_expressions = 1;
+
 -- shapes CAST rejects stay rejected.
 -- Which side converts an inline VALUES block decides whether the rejection is a client or a
 -- server error, so pin the two settings that would move the conversion to the server:
@@ -74,3 +109,8 @@ DROP TABLE t_state_05243;
 DROP TABLE t_persisted_05243;
 DROP TABLE t_tuple_05243;
 DROP TABLE t_arr_uint_05243;
+DROP TABLE t_src_arr_05243;
+DROP TABLE t_src_pairs_05243;
+DROP TABLE t_src_enum_05243;
+DROP TABLE t_src_nullable_05243;
+DROP TABLE t_src_nullable_arr_05243;
