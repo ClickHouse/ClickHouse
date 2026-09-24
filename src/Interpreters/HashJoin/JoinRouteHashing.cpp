@@ -18,8 +18,8 @@ extern const int UNSUPPORTED_JOIN_KEYS;
 namespace
 {
 
-template <typename KeyGetter, typename Hash>
-void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
+template <bool collect_sketch, typename KeyGetter, typename Hash>
+void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog * hll)
 {
     /// The string getters hand out arena key holders. Nothing persists them here, so the arena stays
     /// empty and only exists to satisfy the interface.
@@ -31,8 +31,11 @@ void computeRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key_size
         auto && key_holder = key_getter.getKeyHolder(row, pool);
         const size_t hash_value = hash(keyHolderGetKey(key_holder));
         routes[row] = static_cast<UInt16>(hashJoinTablePlacement(hash_value) >> 48);
-        if (!skip || !skip[row])
-            hll.add(static_cast<UInt32>(hashJoinTableMix(hash_value) >> 32));
+        if constexpr (collect_sketch)
+        {
+            if (!skip || !skip[row])
+                hll->add(static_cast<UInt32>(hashJoinTableMix(hash_value) >> 32));
+        }
     }
 }
 
@@ -53,15 +56,45 @@ void computeFixedRoutesImpl(const ColumnRawPtrs & key_columns, const Sizes & key
     }
 }
 
-template <HashJoinTypes::Type type, typename Table>
-void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog & hll)
+template <bool collect_sketch, HashJoinTypes::Type type, typename Table>
+void computeRoutesForTable(const ColumnRawPtrs & key_columns, const Sizes & key_sizes, size_t rows, const UInt8 * skip, UInt16 * routes, DenseHyperLogLog * hll)
 {
     /// The routing only reads keys, so the getter needs no `JoinUsedFlags` offset.
     using KeyGetter = typename KeyGetterForType<type, Table, /*use_offset=*/false>::Type;
     if constexpr (is_hash_join_table<Table>)
-        computeRoutesImpl<KeyGetter, typename Table::hash_type>(key_columns, key_sizes, rows, skip, routes, hll);
+        computeRoutesImpl<collect_sketch, KeyGetter, typename Table::hash_type>(key_columns, key_sizes, rows, skip, routes, hll);
+    else if constexpr (collect_sketch)
+        computeFixedRoutesImpl<KeyGetter>(key_columns, key_sizes, rows, skip, routes, *hll);
     else
-        computeFixedRoutesImpl<KeyGetter>(key_columns, key_sizes, rows, skip, routes, hll);
+        std::fill_n(routes, rows, static_cast<UInt16>(0));
+}
+
+template <bool collect_sketch>
+void computeJoinRoutesForFillImpl(
+    HashJoinTypes::Type type,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t rows,
+    const UInt8 * skip,
+    UInt16 * routes,
+    DenseHyperLogLog * hll)
+{
+    if (rows == 0)
+        return;
+    chassert(!key_columns.empty());
+
+    switch (type)
+    {
+#define M(TYPE) \
+    case HashJoinTypes::Type::TYPE: \
+        computeRoutesForTable<collect_sketch, HashJoinTypes::Type::TYPE, typename decltype(HashJoinTableMapsAll::TYPE)::element_type>( \
+            key_columns, key_sizes, rows, skip, routes, hll); \
+        return;
+        APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
+#undef M
+        default:
+            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", type);
+    }
 }
 
 }
@@ -75,22 +108,18 @@ void computeJoinRoutesForFill(
     UInt16 * routes,
     DenseHyperLogLog & hll)
 {
-    if (rows == 0)
-        return;
-    chassert(!key_columns.empty());
+    computeJoinRoutesForFillImpl<true>(type, key_columns, key_sizes, rows, skip, routes, &hll);
+}
 
-    switch (type)
-    {
-#define M(TYPE) \
-    case HashJoinTypes::Type::TYPE: \
-        computeRoutesForTable<HashJoinTypes::Type::TYPE, typename decltype(HashJoinTableMapsAll::TYPE)::element_type>( \
-            key_columns, key_sizes, rows, skip, routes, hll); \
-        return;
-        APPLY_FOR_PARTITIONED_JOIN_VARIANTS(M)
-#undef M
-        default:
-            throw Exception(ErrorCodes::UNSUPPORTED_JOIN_KEYS, "Unsupported JOIN keys for the partitioned join (type: {})", type);
-    }
+void computeJoinRoutesForFill(
+    HashJoinTypes::Type type,
+    const ColumnRawPtrs & key_columns,
+    const Sizes & key_sizes,
+    size_t rows,
+    const UInt8 * skip,
+    UInt16 * routes)
+{
+    computeJoinRoutesForFillImpl<false>(type, key_columns, key_sizes, rows, skip, routes, nullptr);
 }
 
 }

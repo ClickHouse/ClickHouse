@@ -193,19 +193,19 @@ public:
     /// One map hash per insertable row. The top 16 bits of the placement word are the route.
     /// The top 32 bits of its mix are fed to `sketch`.
     void computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const;
+    void computeRoutes(FillBlock & fill) const;
 
-    /// The barrier's decision for `rows` build rows, from the sketch estimate set with
+    /// The barrier's decision for `rows` build rows, from the distinct estimate set with
     /// `setDistinctEstimate`: the table degree, the partition count and the scatter passes.
     void decidePartitionPlan(size_t rows);
-    /// `exact` says the estimate is a previous run's exact distinct count from the hash table statistics
-    /// cache, so the table reserve gets no safety factor (`reserveSafety`).
+    /// `exact` identifies a previous build's cached distinct count, which gets no reserve safety factor.
     void setDistinctEstimate(double estimate, bool exact = false)
     {
         hll_estimate = estimate;
         estimate_is_exact = exact;
     }
     double hllEstimate() const { return hll_estimate; }
-    /// The barrier's sketch estimate, floored at one so an empty build never sizes a zero-byte table.
+    /// The barrier's distinct estimate, floored at one so an empty build never sizes a zero-byte table.
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
 
     /// The post-build memory verdict for a partitioned build of `rows` rows, taken once at the barrier from
@@ -314,6 +314,7 @@ public:
     bool growBeforeLastFreeCell(Target & target);
 
 private:
+    void computeRoutesImpl(FillBlock & fill, DenseHyperLogLog * sketch) const;
     /// Shared across the post-build stages: histogram, allocate, scatter, owner waves, drain.
     struct PostBuildContext;
     /// Out-of-line so `unique_ptr<PostBuildContext>` can be destroyed from TUs that only see the

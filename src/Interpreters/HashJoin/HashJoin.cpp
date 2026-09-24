@@ -277,6 +277,7 @@ HashJoin::HashJoin(
     , join_table_mode(join_table_mode_)
     , used_flags_per_row(needUsedFlagsForPerRightTableRow(table_join))
     , cached_distinct_estimates(table_join->getClauses().size())
+    , live_merged_hll(table_join->getClauses().size())
     , build_rows_hint(build_rows_hint_)
     , single_fill_thread(
           !join_table_mode && (num_threads == 1 || (build_rows_hint_ && *build_rows_hint_ < table_join->parallelHashJoinThreshold())))
@@ -506,6 +507,8 @@ HashJoin::HashJoin(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "HashJoin: a Join table cannot be ASOF");
         clauses.front().createJoinTable();
     }
+    else if (!single_fill_thread && max_bytes_before_external_join == 0 && table_join->sizeLimits().max_rows == 0)
+        readDistinctKeysFromStatisticsCache();
 
     /// Charge the constructor's allocations before the plan creates another join.
     CurrentThread::flushUntrackedMemory();
@@ -945,10 +948,20 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /*num_rows*/, s
     }
 
     FillLane & lane = getFillLane(worker_id);
+    if (max_bytes_before_external_join || table_join->sizeLimits().max_rows)
     {
-        /// A sketch merge reads `hll` under this lock, so it never sees a half-written register.
-        /// One hash pass per clause.
+        /// A sketch merge waits for this block's rank updates before reading the lane.
         std::lock_guard hll_lock(lane.hll_mutex);
+        for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
+            clauses[clause_idx].computeRoutes(fill, lane.hll[clause_idx]);
+    }
+    else if (cached_distinct_keys)
+    {
+        for (const auto & clause : clauses)
+            clause.computeRoutes(fill);
+    }
+    else
+    {
         for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
             clauses[clause_idx].computeRoutes(fill, lane.hll[clause_idx]);
     }
@@ -1133,6 +1146,7 @@ void HashJoin::onBuildPhaseFinish()
         build_blocks.reserve(total_blocks);
         for (auto & lane : lanes)
         {
+            if (!cached_distinct_keys)
             {
                 std::lock_guard hll_lock(lane.hll_mutex);
                 for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
@@ -1149,7 +1163,9 @@ void HashJoin::onBuildPhaseFinish()
     /// A previous run's exact count replaces the sketch estimate. The table it sizes needs no safety
     /// margin and, when the data has not changed, no grow. The entry counts the keys of every clause
     /// together, and each clause sizes from it.
-    const bool exact = readDistinctKeysFromStatisticsCache();
+    if (max_bytes_before_external_join || table_join->sizeLimits().max_rows)
+        readDistinctKeysFromStatisticsCache();
+    const bool exact = cached_distinct_keys.has_value();
     for (size_t clause_idx = 0; clause_idx < clauses.size(); ++clause_idx)
         clauses[clause_idx].setDistinctEstimate(exact ? static_cast<double>(*cached_distinct_keys) : merged[clause_idx].estimate(), exact);
     for (auto & fill : build_blocks)
@@ -1479,12 +1495,41 @@ size_t HashJoin::liveDistinctEstimate(size_t clause_idx) const
 
     /// Every clause's sketches are merged in one refresh, lane by lane: a lane in the middle of a hash
     /// pass is waited for, the others keep filling.
-    std::vector<DenseHyperLogLog> merged(clauses.size());
+    const bool incremental_merge = max_bytes_before_external_join && live_estimate_gate_enabled_for_tests;
+    std::vector<DenseHyperLogLog> merged(incremental_merge ? 0 : clauses.size());
+    bool changed = false;
     for (const auto & lane : lanes)
     {
         std::lock_guard hll_lock(lane.hll_mutex);
         for (size_t other = 0; other < clauses.size(); ++other)
-            merged[other].merge(lane.hll[other]);
+        {
+            auto & sketch = lane.hll[other];
+            if (incremental_merge)
+            {
+                if (sketch.dirty)
+                {
+                    live_merged_hll[other].merge(sketch);
+                    sketch.dirty = false;
+                    changed = true;
+                }
+            }
+            else
+            {
+                merged[other].merge(sketch);
+                if (max_bytes_before_external_join)
+                    sketch.dirty = false;
+            }
+        }
+    }
+
+    if (max_bytes_before_external_join && !incremental_merge)
+        for (size_t other = 0; other < clauses.size(); ++other)
+            live_merged_hll[other].merge(merged[other]);
+
+    if (incremental_merge && cached_locked != 0 && !changed)
+    {
+        distinct_estimate_at_rows.store(rows, std::memory_order_release);
+        return cached_locked;
     }
     /// Floor at 1 so a still-empty sketch does not size the prediction as a zero-byte table. The
     /// post-build gate uses the same floor on `hll_estimate`. The value is not kept monotone: an
@@ -1493,7 +1538,8 @@ size_t HashJoin::liveDistinctEstimate(size_t clause_idx) const
     size_t result = 0;
     for (size_t other = 0; other < clauses.size(); ++other)
     {
-        const size_t estimate = std::max(static_cast<size_t>(std::llround(merged[other].estimate())), 1uz);
+        const double distinct = incremental_merge ? live_merged_hll[other].estimate() : merged[other].estimate();
+        const size_t estimate = std::max(static_cast<size_t>(std::llround(distinct)), 1uz);
         cached_distinct_estimates[other].store(estimate, std::memory_order_relaxed);
         if (other == clause_idx)
             result = estimate;
@@ -1618,6 +1664,18 @@ HashJoin::BuildStats HashJoin::getBuildStats(size_t clause_idx) const
     BuildStats res = clauses[clause_idx].buildStats();
     res.row_store_blocks = row_store_blocks;
     return res;
+}
+
+double HashJoin::getFillSketchEstimateForTests(size_t clause_idx)
+{
+    std::lock_guard lock(fill_mutex);
+    DenseHyperLogLog merged;
+    for (const auto & lane : lanes)
+    {
+        std::lock_guard hll_lock(lane.hll_mutex);
+        merged.merge(lane.hll[clause_idx]);
+    }
+    return merged.estimate();
 }
 
 std::unique_ptr<HashJoin::ProbeScratch> HashJoin::acquireProbeScratch(size_t lane)
