@@ -539,6 +539,8 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [like](/reference/functions/regular-functions/string-search-functions#like)                           | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                         | yes¹ | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK`¹ | yes¹ |
 | [ilike](/reference/functions/regular-functions/string-search-functions#like)                          | yes² (`lower`/`upper` only) | `splitByNonAlpha`, `array`² | no² |
+| [position](/reference/functions/regular-functions/string-search-functions#position), [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8), [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings) (`> 0`, see [below](#functions-example-position)) | `lower`/`upper` only | as `like` | as `like` |
+| [positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive), [positionCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8), [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive), [countSubstringsCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) (`> 0`) | `lower`/`upper` only | as `ilike` | no |
 | [mapContainsKey](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)               | yes | all | yes |
 | [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)           | yes | all | yes |
 | [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)       | yes | `splitByNonAlpha`, `ngrams`, `sparseGrams`, `asciiCJK` | yes |
@@ -783,6 +785,20 @@ Similarly, `endsWith` should be used with a leading space:
 
 ```sql
 SELECT count() FROM table WHERE endsWith(comment, ' olap engine');
+```
+
+#### `position` and `countSubstrings` {#functions-example-position}
+
+`position(col, 'value') > 0` ([position](/reference/functions/regular-functions/string-search-functions#position)) is true exactly when `col LIKE '%value%'` is, so it uses the text index the same way as that `LIKE` query, see [LIKE/ILIKE queries](#like-ilike-queries-perf).
+The same holds for `!= 0`, `>= 1` and the mirrored comparisons such as `0 < position(col, 'value')`, and for [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8) and [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings).
+[positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive) (alias `instr`), [positionCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitiveUTF8), [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive) and [countSubstringsCaseInsensitiveUTF8](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitiveUTF8) use the index like `col ILIKE '%value%'`.
+
+The index is not used for the form with a start position argument, for a needle that is not valid UTF-8, or if the index has a preprocessor other than `lower` or `upper`.
+
+Example:
+
+```sql
+SELECT count() FROM table WHERE position(comment, 'clickhouse') > 0;
 ```
 
 #### `hasToken` {#functions-example-hastoken}
@@ -1461,11 +1477,6 @@ The same dictionary scan serves `startsWith(col, 'value')` and `endsWith(col, 'v
 This is the path most `value%` and `%value` patterns actually take, because the analyzer pass [optimize_rewrite_like_perfect_affix](/reference/settings/session-settings/optimize-rewrite#optimize_rewrite_like_perfect_affix) (enabled by default) rewrites `col LIKE 'value%'` into `startsWith(col, 'value')` and `col LIKE '%value'` into `endsWith(col, 'value')`.
 Needles that span several tokens keep using the complete tokens of the needle and do not need a dictionary scan.
 
-A comparison that only tests whether a constant needle occurs in the column is evaluated as `col LIKE '%value%'`, with `%`, `_` and `\` in the needle escaped: `position(col, 'value') > 0`, `!= 0`, `>= 1` and the mirrored forms such as `0 < position(col, 'value')`, and the same comparisons of [positionUTF8](/reference/functions/regular-functions/string-search-functions#positionUTF8) and [countSubstrings](/reference/functions/regular-functions/string-search-functions#countSubstrings).
-[positionCaseInsensitive](/reference/functions/regular-functions/string-search-functions#positionCaseInsensitive) (alias `instr`) and [countSubstringsCaseInsensitive](/reference/functions/regular-functions/string-search-functions#countSubstringsCaseInsensitive) are evaluated as `col ILIKE '%value%'`: like the dictionary scan, they fold ASCII letters only.
-The form with a start position, an empty needle, a needle that is not valid UTF-8, other comparisons and the `...CaseInsensitiveUTF8` variants do not use the index.
-Neither does an index with a postprocessor, or with a preprocessor other than `lower` or `upper`.
-
 As a special case, if the index tokenizer is `array`, then _any_ pattern qualifies for the optimization: anchors, punctuation, `_` wildcards, several `%`-separated needles and escaped metacharacters.
 
 When the optimization is enabled, LIKE/ILIKE queries should be significantly faster than a full-table scan. However, when the pattern matches most dictionary tokens, the performance can be worse compared to a full-table scan. Luckily, there is a fallback mechanism to prevent that.
@@ -1479,7 +1490,7 @@ The fallback mechanism is controlled by two settings:
 - [text_index_like_min_pattern_length](/reference/settings/session-settings/text-index#text_index_like_min_pattern_length)
 - [text_index_like_max_postings_to_read](/reference/settings/session-settings/text-index#text_index_like_max_postings_to_read)
 
-This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`, and the occurrence checks above.
+This optimization supports only functions `like`, `ilike`, `startsWith`, and `endsWith`, and the [`position` comparisons](#functions-example-position) that are evaluated as `like` or `ilike`.
 It generally requires an index without a preprocessor or postprocessor (`ilike` also accepts the `lower` or `upper` as the preprocessor function).
 
 For `ilike`, the search falls back to full-table scan in two special cases, for both the `splitByNonAlpha` and the `array` tokenizer:
