@@ -55,26 +55,6 @@ run_unused_stdin_test()
     rm -f "$output_file"
 }
 
-run_ambiguous_infile_stdin_test()
-{
-    local output_file="${CLICKHOUSE_TMP}/04064_ambiguous_infile_stdin_$$.out"
-
-    if timeout 30 "$@" <&4 > "$output_file" 2>&1
-    then
-        echo "Expected INSERT FROM INFILE with an open inherited stdin to fail" >&2
-        cat "$output_file" >&2
-        exit 1
-    fi
-
-    grep -Fq 'Processing INSERT with inline data or infile and an open stdin without data or EOF is not supported' "$output_file" ||
-    {
-        cat "$output_file" >&2
-        exit 1
-    }
-
-    rm -f "$output_file"
-}
-
 run_unused_stdin_test 6 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE"
 
 # Also test with async_insert enabled — the async insert path has its own
@@ -118,18 +98,18 @@ QUERY_Q_INLINE="CREATE TABLE IF NOT EXISTS test_04064_q_inline (x UInt32) ENGINE
 
 run_unused_stdin_test 600000 $CLICKHOUSE_CLIENT --inline-insert-data -q "$QUERY_Q_INLINE"
 
-# `FROM INFILE` provides the INSERT payload, but an open stdin with neither data nor
-# EOF is ambiguous: it could receive delayed data that cannot be appended safely.
-# Verify that both query entrypoints reject this case promptly instead of blocking.
+# `FROM INFILE` provides the complete INSERT payload, so an unused inherited stdin
+# (open, with neither data nor EOF) must not prevent it from executing, the same as
+# for inline data. Verify both query entrypoints.
 INFILE_DATA="${CLICKHOUSE_TMP}/04064_infile_data_$$.values"
 printf '(42)\n' > "$INFILE_DATA"
 
 $CLICKHOUSE_CLIENT -q "CREATE TABLE IF NOT EXISTS test_04064_infile (x UInt32) ENGINE = MergeTree ORDER BY x"
 QUERIES_FILE_INFILE="${CLICKHOUSE_TMP}/04064_queries_infile_$$.sql"
-printf "INSERT INTO test_04064_infile FROM INFILE '%s' FORMAT Values;\n" "$INFILE_DATA" > "$QUERIES_FILE_INFILE"
+printf "INSERT INTO test_04064_infile FROM INFILE '%s' FORMAT Values;\nSELECT sum(x) FROM test_04064_infile;\n" "$INFILE_DATA" > "$QUERIES_FILE_INFILE"
 
-run_ambiguous_infile_stdin_test $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_INFILE"
-run_ambiguous_infile_stdin_test $CLICKHOUSE_CLIENT -q "INSERT INTO test_04064_infile FROM INFILE '$INFILE_DATA' FORMAT Values"
+run_unused_stdin_test 42 $CLICKHOUSE_CLIENT --queries-file="$QUERIES_FILE_INFILE"
+run_unused_stdin_test 84 $CLICKHOUSE_CLIENT -q "INSERT INTO test_04064_infile FROM INFILE '$INFILE_DATA' FORMAT Values; SELECT sum(x) FROM test_04064_infile"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_04064_infile"
 

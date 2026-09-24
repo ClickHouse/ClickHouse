@@ -2544,20 +2544,16 @@ void ClientBase::sendData(Block & sample, const ColumnsDescription & columns_des
     if (!connection->isSendDataNeeded())
         return;
 
-    /// Inline data is the complete payload of an INSERT, so an open inherited stdin
-    /// must not prevent executing it. For INFILE, use a non-blocking check to reject
-    /// an ambiguous stdin instead of waiting for a possible delayed writer. When
-    /// there is no other data source, use the blocking check as before.
+    /// Inline data and INFILE are complete payloads of an INSERT, so an open inherited
+    /// stdin must not prevent executing it: use a non-blocking check and append stdin
+    /// only when it already has data. When there is no other data source, use the
+    /// blocking check as before.
     bool have_data_in_stdin = false;
     if (!is_interactive && !stdin_is_a_tty)
     {
         if (parsed_insert_query->data || parsed_insert_query->infile)
         {
             const auto stdin_state = getStdinStateNonBlocking(*std_in, stdin_fd);
-            if (parsed_insert_query->infile && stdin_state == StdinState::Ambiguous)
-                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-                    "Processing INSERT with inline data or infile and an open stdin without data or EOF is not supported");
-
             have_data_in_stdin = stdin_state == StdinState::Data && isStdinNotEmptyAndValid(*std_in);
         }
         else
