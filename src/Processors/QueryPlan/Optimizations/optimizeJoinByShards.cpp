@@ -104,6 +104,18 @@ static bool updateDAG(const QueryPlan::Node & node, ActionsDAG & dag)
     return false;
 }
 
+/// Under `join_use_nulls` the right key of a `LEFT` / `FULL` join is `toNullable(x)` when the query also
+/// selects `x` (see `preferNullableRightKey` in `JoinStepLogical.cpp`). `toNullable` keeps every value, and
+/// a primary key column that the sharding reads is never `Nullable` (`isSafePrimaryDataKeyType`), so such a
+/// key compares exactly like `x` and can be matched against the primary key through its argument.
+static const ActionsDAG::Node * skipToNullable(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::FUNCTION && node->children.size() == 1 && node->function_base
+        && node->function_base->getName() == "toNullable")
+        node = node->children.front();
+    return node;
+}
+
 /// This function finds the common prefix of PK for left and right tables,
 /// which is also used in JOIN equality condition.
 ///
@@ -193,8 +205,8 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
                 continue;
 
             /// Check if both keys any match the PK expression.
-            auto lhs_match = lhs_matches.find(it->second);
-            auto rhs_match = rhs_matches.find(jt->second);
+            auto lhs_match = lhs_matches.find(skipToNullable(it->second));
+            auto rhs_match = rhs_matches.find(skipToNullable(jt->second));
             if (lhs_match == lhs_matches.end() || rhs_match == rhs_matches.end())
                 continue;
 
@@ -458,11 +470,11 @@ void optimizeJoinByShards(QueryPlan::Node & root, bool only_parallel_sorted_merg
                 // std::cerr << frame.results.front()->dag.dumpDAG() << std::endl;
                 // std::cerr << frame.results.back()->dag.dumpDAG() << std::endl;
 
-                /// Note: `join_use_nulls` does not defeat the matcher on the analyzer plan (the only
-                /// one reaching this pass): the `toNullable` conversion of the visible output columns
-                /// belongs to the actions after the join step, not to the source-side DAGs inspected
-                /// here, and the sharding applies for the OUTER kinds and for `USING` alike (covered
-                /// by 04760_sorted_merge_join_use_nulls).
+                /// Note: `join_use_nulls` does not defeat the matcher: the `toNullable` conversion of the
+                /// visible output columns mostly belongs to the actions after the join step, and where it
+                /// becomes the right join key instead, `findCommonPrimaryKeyPrefixByJoinKey` looks through
+                /// it (`skipToNullable`). The sharding applies for the OUTER kinds and for `USING` alike
+                /// (covered by 04760_sorted_merge_join_use_nulls).
 
                 sharding = findCommonPrimaryKeyPrefixByJoinKey(
                     frame.results.front()->joins.sources.front(), frame.results.front()->dag,
