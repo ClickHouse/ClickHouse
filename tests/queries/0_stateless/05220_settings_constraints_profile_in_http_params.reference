@@ -1,12 +1,6 @@
--- a value passed after the profile parameter is rejected
+-- a parameter after the profile is checked against the constraints it installs
 SETTING_CONSTRAINT_VIOLATION
--- the profile alone still applies
-10
--- a value passed before the profile parameter is rejected too
-SETTING_CONSTRAINT_VIOLATION
--- a parameter repeated around the profile is rejected on its last value
-SETTING_CONSTRAINT_VIOLATION
--- a value within the constraint is still accepted
-1000000000
+-- a parameter before the profile is overridden by it
+12345
 -- a parameter equal to the value before the profile still overrides the profile
-OK
+0

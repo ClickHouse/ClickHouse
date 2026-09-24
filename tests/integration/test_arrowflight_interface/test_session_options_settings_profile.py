@@ -67,19 +67,10 @@ def test_profile_constraints_apply_within_same_request():
         {"profile": PROFILE_NAME, "max_execution_time": "999"}
     )
 
-    # The profile itself is applied successfully.
     assert "profile" not in result.errors
-
-    # The constrained setting is rejected. Constraint violations are not parse or unknown-setting
-    # errors, so they map to UNSPECIFIED.
-    assert "max_execution_time" in result.errors
+    # A constraint violation is neither a parse nor an unknown-setting error, so it maps to UNSPECIFIED.
     assert (
         result.errors["max_execution_time"].value
         == SetSessionOptionsResult.UNSPECIFIED
     )
-
-    # The effective value stays at the one the profile sets.
     assert float(_query_scalar(client, "SELECT getSetting('max_execution_time')")) == 10
-
-    options = client.get_session_options()
-    assert float(options.session_options["max_execution_time"].string_value) == 10

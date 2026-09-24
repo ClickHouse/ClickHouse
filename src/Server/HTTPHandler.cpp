@@ -421,7 +421,7 @@ void HTTPHandler::processQuery(
         auto tmp_context = Context::createCopy(session->sessionContext());
         SettingsChanges settings_changes_copy = settings_changes;
 
-        tmp_context->checkSettingsConstraintsInAnyOrder(settings_changes_copy, SettingSource::QUERY);
+        tmp_context->checkSettingsConstraints(settings_changes_copy, SettingSource::QUERY);
         tmp_context->applySettingsChanges(settings_changes_copy);
 
         const bool run_query_in_background = tmp_context->getSettingsRef()[Setting::run_query_in_background];
@@ -478,7 +478,7 @@ void HTTPHandler::processQuery(
 
     context->setCurrentQueryId(query_id);
 
-    context->checkSettingsConstraintsInAnyOrder(settings_changes, SettingSource::QUERY);
+    context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
     context->applySettingsChanges(settings_changes);
 
     const auto & settings = context->getSettingsRef();

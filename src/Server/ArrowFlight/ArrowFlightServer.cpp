@@ -1417,14 +1417,9 @@ arrow::Status ArrowFlightServer::DoAction(
                 }
             };
 
-            /// A profile installs a new constraint set which must apply to the rest of the request,
-            /// and the options arrive in a map with no order, so apply profiles first.
-            for (const auto & [setting, value] : request.session_options)
-            {
-                if (setting == "profile")
-                    apply_option(setting, value);
-            }
-
+            /// The options arrive in a map with no order, so `profile` goes first for its constraints to bind the rest.
+            if (auto profile = request.session_options.find("profile"); profile != request.session_options.end())
+                apply_option(profile->first, profile->second);
             for (const auto & [setting, value] : request.session_options)
             {
                 if (setting != "profile")

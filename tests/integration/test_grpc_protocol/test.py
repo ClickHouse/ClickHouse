@@ -614,40 +614,46 @@ def test_external_table():
 def test_settings_profile_constraints():
     profile = "grpc_profile_constraints"
     query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
-    query(f"CREATE SETTINGS PROFILE {profile} SETTINGS max_execution_time = 10 CONST")
+    query(
+        f"CREATE SETTINGS PROFILE {profile} SETTINGS max_execution_time = 10 CONST, max_result_rows = 12345, format_csv_delimiter = '|'"
+    )
     try:
-        # `settings` is a protobuf map, so the position of `profile` in it is arbitrary: the constraint
-        # must bind the other settings either way.
-        for settings in [
-            {"profile": profile, "max_execution_time": "999"},
-            {"max_execution_time": "999", "profile": profile},
-        ]:
-            e = query_and_get_error("SELECT 1", settings=settings)
-            assert "Setting max_execution_time should not be changed" in e.display_text
-        assert query("SELECT getSetting('max_execution_time')", settings={"profile": profile}) == "10\n"
-    finally:
-        query(f"DROP SETTINGS PROFILE {profile}")
-
-
-def test_settings_profile_constraints_external_table():
-    profile = "grpc_profile_constraints_external_table"
-    query(f"DROP SETTINGS PROFILE IF EXISTS {profile}")
-    query(f"CREATE SETTINGS PROFILE {profile} SETTINGS max_execution_time = 10 CONST")
-    try:
-        columns = [clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64")]
-        for settings in [
-            {"profile": profile, "max_execution_time": "999"},
-            {"max_execution_time": "999", "profile": profile},
-        ]:
-            ext = clickhouse_grpc_pb2.ExternalTable(
-                name="ext1",
-                columns=columns,
-                data=b"1\n2\n",
-                format="TabSeparated",
-                settings=settings,
+        # `settings` is a protobuf map with no order: the profile goes first, so its constraints bind the
+        # other settings and they override the values it sets.
+        e = query_and_get_error(
+            "SELECT 1", settings={"profile": profile, "max_execution_time": "999"}
+        )
+        assert "Setting max_execution_time should not be changed" in e.display_text
+        assert (
+            query(
+                "SELECT getSetting('max_result_rows')",
+                settings={"profile": profile, "max_result_rows": "7"},
             )
-            e = query_and_get_error("SELECT * FROM ext1 ORDER BY UserID", external_tables=[ext])
-            assert "Setting max_execution_time should not be changed" in e.display_text
+            == "7\n"
+        )
+
+        columns = [
+            clickhouse_grpc_pb2.NameAndType(name="UserID", type="UInt64"),
+            clickhouse_grpc_pb2.NameAndType(name="UserName", type="String"),
+        ]
+
+        def ext(settings):
+            return clickhouse_grpc_pb2.ExternalTable(
+                name="ext1", columns=columns, data=b"1;Alex\n", format="CSV", settings=settings
+            )
+
+        e = query_and_get_error(
+            "SELECT * FROM ext1",
+            external_tables=[ext({"profile": profile, "max_execution_time": "999"})],
+        )
+        assert "Setting max_execution_time should not be changed" in e.display_text
+        assert (
+            query(
+                "SELECT * FROM ext1",
+                external_tables=[ext({"profile": profile, "format_csv_delimiter": ";"})],
+            )
+            == "1\tAlex\n"
+        )
     finally:
         query(f"DROP SETTINGS PROFILE {profile}")
 

@@ -1285,12 +1285,8 @@ public:
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
-    /// For changes from a source with no order of its own (URL parameters, a protobuf map): each change has to pass
-    /// the constraints both before and after the `profile` changes in the list.
-    void checkSettingsConstraintsInAnyOrder(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
-    /// For the resets in a statement that also changes `profile`: they take effect after the rest of it,
-    /// so `changes_applied_first` decides which constraints they have to pass.
+    /// For the resets of a statement that also changes `profile`: `changes_applied_first` decides their constraints.
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;

@@ -1,6 +1,5 @@
 #include <algorithm>
 #include <atomic>
-#include <functional>
 #include <map>
 #include <set>
 #include <optional>
@@ -3533,52 +3532,35 @@ Settings Context::getSettingsCopy() const
 
 namespace
 {
-/// `profile` is recognised by its literal name, as `Context::setSettingWithLock` does.
-bool hasProfileChange(const SettingsChanges & changes)
+bool isProfileChange(const SettingChange & change)
 {
-    return std::any_of(changes.begin(), changes.end(), [](const SettingChange & change) { return change.name == "profile"; });
+    return change.name == "profile";
 }
 
-/// Enforces the settings constraints on `changes` the way they will actually take effect. A `profile`
-/// change replaces the constraint set halfway through the list, so a change that follows one has to be
-/// enforced against the profile's own constraints, and against the values the changes before it leave
-/// behind: the constraint checker skips a change whose value equals the current value, so enforcing
-/// after the whole list is applied would check nothing. Runs on a scratch copy of `context` and
-/// returns the enforced list - nothing is applied to `context`, the caller is what applies it.
-SettingsChanges enforceConstraintsAlongProfileChanges(
-    const ContextPtr & context,
-    const SettingsChanges & changes,
-    const std::function<void(Context &, SettingsChanges &)> & enforce_segment)
+/// Enforces the constraints on `changes` the way `applySettingsChanges` applies them: a `profile` change
+/// installs a new constraint set for the changes after it. Each run of changes up to the next `profile`
+/// change is enforced against the constraints in force before it, then applied together with that `profile`
+/// change to a scratch copy of `context`, so a rejected list leaves `context` untouched. Returns the enforced list.
+template <typename Enforce>
+SettingsChanges enforceConstraintsAlongProfileChanges(const ContextPtr & context, const SettingsChanges & changes, Enforce && enforce)
 {
     auto scratch_context = Context::createCopy(context);
     SettingsChanges enforced;
-    SettingsChanges segment;
-
-    auto flush_segment = [&]
+    for (auto begin = changes.begin(); begin != changes.end();)
     {
-        if (segment.empty())
-            return;
-        /// A whole run of changes at a time, so that `compatibility` keeps its meaning for the changes
-        /// next to it.
-        enforce_segment(*scratch_context, segment);
+        auto profile = std::find_if(begin, changes.end(), isProfileChange);
+        SettingsChanges segment(begin, profile);
+        enforce(*scratch_context, segment);
+        begin = profile;
+        if (profile != changes.end())
+        {
+            segment.push_back(*profile);
+            ++begin;
+        }
+        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
         scratch_context->applySettingsChanges(segment);
         enforced.insert(enforced.end(), segment.begin(), segment.end());
-        segment.clear();
-    };
-
-    for (const auto & change : changes)
-    {
-        if (change.name != "profile")
-        {
-            segment.push_back(change);
-            continue;
-        }
-        flush_segment();
-        /// `setCurrentProfile` checks the profile's own settings against the constraints in force before it.
-        scratch_context->applySettingsChanges(SettingsChanges{change});
-        enforced.push_back(change);
     }
-    flush_segment();
     return enforced;
 }
 }
@@ -3743,11 +3725,12 @@ void Context::checkSettingsConstraints(const SettingChange & change, SettingSour
 
 void Context::checkSettingsConstraints(const SettingsChanges & changes, SettingSource source)
 {
-    /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.
-    if (hasProfileChange(changes))
+    if (std::ranges::any_of(changes, isProfileChange))
     {
-        enforceConstraintsAlongProfileChanges(
-            shared_from_this(), changes, [source](Context & context, SettingsChanges & segment) { context.checkSettingsConstraints(std::as_const(segment), source); });
+        enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(std::as_const(segment), source);
+        });
         return;
     }
 
@@ -3766,13 +3749,12 @@ void Context::checkSettingsConstraintsForSettingsReset(const std::vector<String>
 void Context::checkSettingsConstraintsForSettingsReset(
     const std::vector<String> & names, const SettingsChanges & changes_applied_first, SettingSource source)
 {
-    if (!hasProfileChange(changes_applied_first))
+    if (std::ranges::none_of(changes_applied_first, isProfileChange))
     {
         checkSettingsConstraintsForSettingsReset(names, source);
         return;
     }
-    /// The resets take effect after the rest of the statement, so a `profile` change in it decides
-    /// which constraints they have to pass. `changes_applied_first` is checked by the caller.
+    /// The resets take effect after the rest of the statement, so a `profile` change in it decides the constraints.
     auto scratch_context = Context::createCopy(shared_from_this());
     scratch_context->applySettingsChanges(changes_applied_first);
     scratch_context->checkSettingsConstraintsForSettingsReset(names, source);
@@ -3780,11 +3762,12 @@ void Context::checkSettingsConstraintsForSettingsReset(
 
 void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
-    /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.
-    if (hasProfileChange(changes))
+    if (std::ranges::any_of(changes, isProfileChange))
     {
-        changes = enforceConstraintsAlongProfileChanges(
-            shared_from_this(), changes, [source](Context & context, SettingsChanges & segment) { context.checkSettingsConstraints(segment, source); });
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.checkSettingsConstraints(segment, source);
+        });
         return;
     }
 
@@ -3792,33 +3775,14 @@ void Context::checkSettingsConstraints(SettingsChanges & changes, SettingSource 
     checkSettingsConstraintsWithLock(changes, source);
 }
 
-void Context::checkSettingsConstraintsInAnyOrder(SettingsChanges & changes, SettingSource source)
-{
-    if (!hasProfileChange(changes))
-    {
-        checkSettingsConstraints(changes, source);
-        return;
-    }
-
-    /// Without an order, a change could be meant to take effect before or after the `profile` change,
-    /// so it has to pass both. The list itself keeps its order, so which assignment wins is unchanged.
-    /// Nothing is dropped as a no-op: a change equal to the value before the profile still overrides it.
-    {
-        SharedLockGuard lock(mutex);
-        checkSettingsConstraintsWithLock(std::as_const(changes), source);
-    }
-    SettingsChanges profiles_first = changes;
-    std::stable_partition(profiles_first.begin(), profiles_first.end(), [](const SettingChange & change) { return change.name == "profile"; });
-    checkSettingsConstraints(std::as_const(profiles_first), source);
-}
-
 void Context::clampToSettingsConstraints(SettingsChanges & changes, SettingSource source)
 {
-    /// A `profile` change moves the goalposts mid-list - see `enforceConstraintsAlongProfileChanges`.
-    if (hasProfileChange(changes))
+    if (std::ranges::any_of(changes, isProfileChange))
     {
-        changes = enforceConstraintsAlongProfileChanges(
-            shared_from_this(), changes, [source](Context & context, SettingsChanges & segment) { context.clampToSettingsConstraints(segment, source); });
+        changes = enforceConstraintsAlongProfileChanges(shared_from_this(), changes, [source](Context & context, SettingsChanges & segment)
+        {
+            context.clampToSettingsConstraints(segment, source);
+        });
         return;
     }
 
