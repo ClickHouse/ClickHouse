@@ -348,6 +348,9 @@ private:
     /// The TopK query condition cache key if it applies to the version of the file being read.
     std::optional<UInt64> getTopKConditionHashForCurrentFile() const;
 
+    /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
+    void writePendingTopKQueryConditionCacheEntries() noexcept;
+
     std::shared_ptr<StorageFile> storage;
     FilesIteratorPtr files_iterator;
     String current_path;
@@ -375,6 +378,19 @@ private:
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
+
+    /// A file read by a TopN read, whose query condition cache entry is written only when the source
+    /// is destroyed: the row groups without a row of the result are known only once the threshold is
+    /// final, and while the file is read, its rows may still wait for the sorting transforms.
+    struct PendingTopKQueryConditionCacheEntry
+    {
+        String cache_file_key;
+        size_t total_row_groups = 0;
+        std::vector<size_t> matched_row_groups;
+        /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
+        std::vector<std::pair<size_t, Field>> best_values;
+    };
+    std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     std::shared_ptr<IArchiveReader> archive_reader;
     std::unique_ptr<IArchiveReader::FileEnumerator> file_enumerator;

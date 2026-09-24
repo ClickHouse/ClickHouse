@@ -52,6 +52,7 @@
 #include <Storages/MergeTree/MarkRange.h>
 #include <Common/Exception.h>
 #include <Processors/Sinks/SinkToStorage.h>
+#include <Processors/TopKThresholdTracker.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
 #include <Processors/Transforms/ExtractColumnsTransform.h>
 #include <Processors/Formats/ISchemaReader.h>
@@ -723,6 +724,37 @@ bool fileCacheVersionTokenStillHolds(const String & path, const String & expecte
 {
     struct stat current_stat{};
     return 0 == stat(path.c_str(), &current_stat) && computeFileCacheVersionToken(current_stat) == expected_token;
+}
+
+/// Records in the query condition cache that the row groups of a file other than `matched_row_groups`
+/// hold no row the condition needs.
+void writeQueryConditionCacheEntry(
+    const UUID & table_uuid,
+    const String & cache_file_key,
+    UInt64 condition_hash,
+    const String & condition,
+    size_t total_row_groups,
+    const std::unordered_set<size_t> & matched_row_groups,
+    const ContextPtr & context)
+{
+    MarkRanges unmatched_ranges;
+    for (size_t i = 0; i < total_row_groups; ++i)
+    {
+        if (!matched_row_groups.contains(i))
+        {
+            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                unmatched_ranges.back().end++;
+            else
+                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+        }
+    }
+
+    if (unmatched_ranges.empty())
+        return;
+
+    if (auto query_condition_cache = context->getQueryConditionCache())
+        query_condition_cache->write(
+            table_uuid, cache_file_key, condition_hash, condition, unmatched_ranges, total_row_groups, /*has_final_mark=*/false);
 }
 
 std::unique_ptr<ReadBuffer> createReadBuffer(
@@ -1730,7 +1762,43 @@ void StorageFileSource::beforeDestroy()
 
 StorageFileSource::~StorageFileSource()
 {
+    writePendingTopKQueryConditionCacheEntries();
     beforeDestroy();
+}
+
+void StorageFileSource::writePendingTopKQueryConditionCacheEntries() noexcept
+{
+    if (pending_top_k_query_condition_cache_entries.empty())
+        return;
+
+    try
+    {
+        /// The threshold only ever tightens towards the final one, whatever state the query is in:
+        /// a row group whose rows all sort strictly beyond it holds no row of the result - `__topKFilter`
+        /// keeps rows equal to the threshold, as they may still tie-break into the result.
+        const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;
+        for (const auto & entry : pending_top_k_query_condition_cache_entries)
+        {
+            std::unordered_set<size_t> matched_row_groups(entry.matched_row_groups.begin(), entry.matched_row_groups.end());
+            if (tracker.isSet())
+                for (const auto & [row_group, best_value] : entry.best_values)
+                    if (!tracker.isValueInsideThreshold(best_value))
+                        matched_row_groups.erase(row_group);
+
+            writeQueryConditionCacheEntry(
+                storage->getStorageID().uuid,
+                entry.cache_file_key,
+                top_k_query_condition_cache_key->condition_hash,
+                top_k_query_condition_cache_key->condition,
+                entry.total_row_groups,
+                matched_row_groups,
+                getContext());
+        }
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("StorageFile"), "Failed to write to query condition cache");
+    }
 }
 
 
@@ -2275,66 +2343,39 @@ Chunk StorageFileSource::generate()
         /// or sort direction, or a read of only one file of the glob. It is written under the TopK
         /// key instead (`TopKQueryConditionCacheKey`), which only the same TopN over the same file
         /// set and the same file versions consults. There it is sound: the threshold only ever
-        /// tightens towards the final one and `__topKFilter` keeps ties, so every row the query
-        /// returns passed it, and a row group that ends up empty holds no row that can beat the
-        /// final threshold - a rerun reading only the other row groups finds the same top-K.
+        /// tightens towards the final one and `__topKFilter` keeps ties, so a row group that returned
+        /// no row, or whose best returned value sorts strictly beyond the threshold, holds no row of
+        /// the result - a rerun reading only the other row groups finds the same top-K. The rows of
+        /// this file may still wait for the sorting transforms, so the verdict is made only when the
+        /// source is destroyed, against the final threshold (see `writePendingTopKQueryConditionCacheEntries`).
         /// A cancelled read may stop before it has seen every row group, and the ones it has not
         /// read report no matching rows either, so it writes nothing.
-        std::optional<UInt64> write_condition_hash;
-        String write_condition;
-        if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info)
-        {
-            if (format_filter_info->top_k_filter)
-            {
-                write_condition_hash = getTopKConditionHashForCurrentFile();
-                if (write_condition_hash)
-                    write_condition = top_k_query_condition_cache_key->condition;
-            }
-            else if (format_filter_info->condition_hash)
-            {
-                write_condition_hash = format_filter_info->condition_hash;
-                write_condition = format_filter_info->filter_actions_dag->dumpNames();
-            }
-        }
-
-        if (write_condition_hash && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
+        if (input_format && current_file_cache_version.has_value() && current_file_version_settled && !isCancelled() && format_filter_info
+            && fileCacheVersionTokenStillHolds(current_path, *current_file_cache_version))
         {
             try
             {
                 auto buckets_opt = input_format->getMatchedBuckets();
-                if (buckets_opt.has_value())
+                const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
+                if (buckets_opt.has_value() && format_filter_info->top_k_filter)
                 {
-                    const auto & matched_groups = buckets_opt->first;
-                    size_t total_groups = buckets_opt->second;
-
-                    std::unordered_set<size_t> matched_set(matched_groups.begin(), matched_groups.end());
-                    MarkRanges unmatched_ranges;
-                    for (size_t i = 0; i < total_groups; ++i)
-                    {
-                        if (!matched_set.contains(i))
-                        {
-                            if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
-                                unmatched_ranges.back().end++;
-                            else
-                                unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
-                        }
-                    }
-
-                    if (!unmatched_ranges.empty())
-                    {
-                        if (auto query_condition_cache = getContext()->getQueryConditionCache())
-                        {
-                            const String cache_file_key = QueryConditionCache::makeFilePartName(current_path, *current_file_cache_version);
-                            query_condition_cache->write(
-                                storage->getStorageID().uuid,
-                                cache_file_key,
-                                *write_condition_hash,
-                                write_condition,
-                                unmatched_ranges,
-                                total_groups,
-                                /*has_final_mark=*/false);
-                        }
-                    }
+                    if (getTopKConditionHashForCurrentFile())
+                        pending_top_k_query_condition_cache_entries.push_back(PendingTopKQueryConditionCacheEntry{
+                            .cache_file_key = cache_file_key,
+                            .total_row_groups = buckets_opt->second,
+                            .matched_row_groups = std::move(buckets_opt->first),
+                            .best_values = input_format->getTopKBestValuesOfBuckets()});
+                }
+                else if (buckets_opt.has_value() && format_filter_info->condition_hash)
+                {
+                    writeQueryConditionCacheEntry(
+                        storage->getStorageID().uuid,
+                        cache_file_key,
+                        *format_filter_info->condition_hash,
+                        format_filter_info->filter_actions_dag->dumpNames(),
+                        buckets_opt->second,
+                        std::unordered_set<size_t>(buckets_opt->first.begin(), buckets_opt->first.end()),
+                        getContext());
                 }
             }
             catch (...)
@@ -2700,6 +2741,14 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto format_filter_info = std::make_shared<FormatFilterInfo>(filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
+    if (top_k_query_condition_cache_key)
+    {
+        /// The verdicts written under the key also cover row groups whose rows were all returned
+        /// before the threshold got tight enough to drop them.
+        auto top_k_filter_tracking_best_values = std::make_shared<FormatTopKFilterInfo>(*top_k_filter);
+        top_k_filter_tracking_best_values->track_row_group_best_values = true;
+        format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
+    }
 
     for (size_t i = 0; i < num_streams; ++i)
     {

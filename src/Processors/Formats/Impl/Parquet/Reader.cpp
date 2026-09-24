@@ -485,6 +485,32 @@ bool Reader::topKShouldSkipRowGroup(const RowGroup & row_group) const
     return !tracker.isValueInsideThreshold(boundary);
 }
 
+void Reader::updateTopKBestValue(RowGroup & row_group, const IColumn & column) const
+{
+    if (column.empty())
+        return;
+
+    /// The same comparison the sorting transforms use, so "best" means "sorts first".
+    const auto & tracker = *format_filter_info->top_k_filter->threshold_tracker;
+    const int direction = tracker.getDirection();
+    const int nulls_direction = tracker.getNullsDirection();
+    const Collator * collator = tracker.getCollator().get();
+    auto compare = [&](const IColumn & lhs, size_t lhs_row, const IColumn & rhs, size_t rhs_row)
+    {
+        int res = collator ? lhs.compareAtWithCollation(lhs_row, rhs_row, rhs, nulls_direction, *collator)
+                           : lhs.compareAt(lhs_row, rhs_row, rhs, nulls_direction);
+        return direction * res;
+    };
+
+    size_t best_row = 0;
+    for (size_t row = 1; row < column.size(); ++row)
+        if (compare(column, row, column, best_row) < 0)
+            best_row = row;
+
+    if (!row_group.top_k_best_value || compare(column, best_row, *row_group.top_k_best_value, 0) < 0)
+        row_group.top_k_best_value = column.cut(best_row, 1);
+}
+
 bool Reader::spatialBboxStatsHaveNoNulls(const parq::RowGroup & meta, size_t spatial_key_condition_idx) const
 {
     for (size_t bbox_pc_idx : spatial_key_condition_bbox_col_indices.at(spatial_key_condition_idx))
@@ -852,6 +878,9 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
                     && output_info.is_primitive
                     && primitive_columns[output_info.primitive_start].decoder.allow_stats)
                     top_k_primitive_idx = output_info.primitive_start;
+
+                if (top_k_column_is_read && format_filter_info->top_k_filter->track_row_group_best_values)
+                    top_k_best_value_column_pos = sample_block->findPositionByName(format_filter_info->top_k_filter->column_name);
             }
         }
     }

@@ -1162,6 +1162,8 @@ ReadManager::ReadResult ReadManager::read()
     for (size_t i = 0; i < output_columns.size(); ++i)
         output_columns[i] = std::move(reader.getOrFormOutputColumn(row_subgroup, i));
     Chunk chunk(std::move(output_columns), row_subgroup.filter.rows_pass);
+    if (reader.top_k_best_value_column_pos)
+        reader.updateTopKBestValue(row_group, *chunk.getColumns()[*reader.top_k_best_value_column_pos]);
     BlockMissingValues block_missing_values = std::move(row_subgroup.block_missing_values);
 
     auto row_numbers_info = std::make_shared<ChunkInfoRowNumbers>(

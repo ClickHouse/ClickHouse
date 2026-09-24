@@ -64,6 +64,7 @@ public:
     void setBucketsToRead(const FileBucketInfoPtr & buckets_to_read_) override;
 
     std::optional<std::pair<std::vector<size_t>, size_t>> getMatchedBuckets() const override;
+    std::vector<std::pair<size_t, Field>> getTopKBestValuesOfBuckets() const override;
 
 private:
     Chunk read() override;

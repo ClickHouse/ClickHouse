@@ -35,6 +35,12 @@ struct FormatTopKFilterInfo
     /// through depends on these, so a query condition cache entry written by a TopK read is keyed
     /// by it (see `StorageFileSource`).
     UInt64 plan_hash = 0;
+    /// Remember, for each row group, the best value of the sort column among the rows the format
+    /// returned (see `IInputFormat::getTopKBestValuesOfBuckets`), which tells a row group whose every
+    /// row is beyond the final threshold - even if the rows were returned before the threshold got
+    /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
+    /// condition cache.
+    bool track_row_group_best_values = false;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
