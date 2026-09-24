@@ -4535,38 +4535,47 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
-    /// Data parts is still alive (since DataPartsVector holds shared_ptrs) and contain useful metainformation for logging
-    /// NOTE: There is no need to log parts deletion somewhere else, all deleting parts pass through this function and pass away
+    /// Data parts are still alive (DataPartsVector holds shared_ptrs) and contain the metadata to log.
+    /// Parts removed by DROP TABLE do not pass through here; dropAllData() logs them itself.
+    writePartRemovalLog(parts);
+}
+
+void MergeTreeData::writePartRemovalLog(const DataPartsVector & parts)
+{
+    if (parts.empty())
+        return;
+
+    auto part_log = getContext()->getPartLog();
+    if (!part_log)
+        return;
 
     auto table_id = getStorageID();
-    if (auto part_log = getContext()->getPartLog())
+
+    PartLogElement part_log_elem;
+
+    part_log_elem.event_type = PartLogElement::REMOVE_PART;
+
+    const auto time_now = std::chrono::system_clock::now();
+    part_log_elem.event_time = timeInSeconds(time_now);
+    part_log_elem.event_time_microseconds = timeInMicroseconds(time_now);
+
+    part_log_elem.duration_ms = 0;
+
+    part_log_elem.database_name = table_id.database_name;
+    part_log_elem.table_name = table_id.table_name;
+    part_log_elem.table_uuid = table_id.uuid;
+
+    for (const auto & part : parts)
     {
-        PartLogElement part_log_elem;
+        part_log_elem.partition_id = part->info.getPartitionId();
+        part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
+        part_log_elem.part_name = part->name;
+        part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
+        part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
+        part_log_elem.rows = part->rows_count;
+        part_log_elem.part_format = part->getFormat();
 
-        part_log_elem.event_type = PartLogElement::REMOVE_PART;
-
-        const auto time_now = std::chrono::system_clock::now();
-        part_log_elem.event_time = timeInSeconds(time_now);
-        part_log_elem.event_time_microseconds = timeInMicroseconds(time_now);
-
-        part_log_elem.duration_ms = 0;
-
-        part_log_elem.database_name = table_id.database_name;
-        part_log_elem.table_name = table_id.table_name;
-        part_log_elem.table_uuid = table_id.uuid;
-
-        for (const auto & part : parts)
-        {
-            part_log_elem.partition_id = part->info.getPartitionId();
-            part_log_elem.partition = part->partition.serializeToString(part->getMetadataSnapshot());
-            part_log_elem.part_name = part->name;
-            part_log_elem.bytes_compressed_on_disk = part->getBytesOnDisk();
-            part_log_elem.bytes_uncompressed = part->getBytesUncompressedOnDisk();
-            part_log_elem.rows = part->rows_count;
-            part_log_elem.part_format = part->getFormat();
-
-            part_log->add([&](PartLogElement & element) { element = part_log_elem; });
-        }
+        part_log->add([&](PartLogElement & element) { element = part_log_elem; });
     }
 }
 
@@ -5083,14 +5092,22 @@ void MergeTreeData::dropAllData()
         /// Parts removal process can be important and on the next try it's better to try to remove
         /// them instead of remove recursive call.
         LOG_WARNING(log, "dropAllData: got exception removing parts from disk, removing successfully removed parts from memory.");
+        DataPartsVector removed_parts;
         for (const auto & part : all_parts)
         {
             if (!part_names_failed.contains(part->name))
+            {
                 data_parts_indexes.erase(part->info);
+                removed_parts.push_back(part);
+            }
         }
+        writePartRemovalLog(removed_parts);
 
         throw;
     }
+
+    /// The parts of a dropped table never reach removePartsFinally(), so log their removal here.
+    writePartRemovalLog(all_parts);
 
     LOG_INFO(log, "dropAllData: clearing temporary directories");
     clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
