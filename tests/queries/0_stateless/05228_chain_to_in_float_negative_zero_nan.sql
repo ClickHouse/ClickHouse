@@ -16,15 +16,15 @@ SELECT -0.0 = 0.0, -0.0 IN (0.0), nan = nan, nan IN (nan);
 
 SELECT 'equals chain';
 SELECT f, (f = 0.0 OR f = 1.0 OR f = 2.0) AS chain
-FROM t_chain_float ORDER BY f SETTINGS optimize_min_equality_disjunction_chain_length = 3;
+FROM t_chain_float ORDER BY toString(f) SETTINGS optimize_min_equality_disjunction_chain_length = 3;
 SELECT f, (f = nan OR f = 1.0 OR f = 2.0) AS chain
-FROM t_chain_float ORDER BY f SETTINGS optimize_min_equality_disjunction_chain_length = 3;
+FROM t_chain_float ORDER BY toString(f) SETTINGS optimize_min_equality_disjunction_chain_length = 3;
 
 SELECT 'not equals chain';
 SELECT f, (f != 0.0 AND f != 1.0 AND f != 2.0) AS chain
-FROM t_chain_float ORDER BY f SETTINGS optimize_min_inequality_conjunction_chain_length = 3;
+FROM t_chain_float ORDER BY toString(f) SETTINGS optimize_min_inequality_conjunction_chain_length = 3;
 SELECT f, (f != nan AND f != 1.0 AND f != 2.0) AS chain
-FROM t_chain_float ORDER BY f SETTINGS optimize_min_inequality_conjunction_chain_length = 3;
+FROM t_chain_float ORDER BY toString(f) SETTINGS optimize_min_inequality_conjunction_chain_length = 3;
 
 SELECT 'in where';
 SELECT count() FROM t_chain_float WHERE f = 0.0 OR f = 1.0 OR f = 2.0 SETTINGS optimize_min_equality_disjunction_chain_length = 3;
