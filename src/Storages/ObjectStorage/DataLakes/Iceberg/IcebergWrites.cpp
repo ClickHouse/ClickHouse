@@ -1300,7 +1300,11 @@ void IcebergStorageSink::finalizeBuffers()
         ++i;
     }
     if (!successed_write)
+    {
+        /// The last conflict kept the files for a retry that will not happen.
+        removeDataFilesAndManifests();
         throw Exception(ErrorCodes::DATALAKE_DATABASE_ERROR, "Write into iceberg was not successful");
+    }
 }
 
 void IcebergStorageSink::releaseBuffers()
@@ -1316,6 +1320,33 @@ void IcebergStorageSink::cancelBuffers()
     for (auto & [_, writer] : writer_per_partition_key)
     {
         writer.cancel();
+    }
+}
+
+void IcebergStorageSink::removeDataFilesAndManifests()
+{
+    for (const auto & [_, writer] : writer_per_partition_key)
+    {
+        try
+        {
+            writer.clearAllDataFiles();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Best-effort cleanup of data files failed");
+        }
+    }
+
+    for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
+    {
+        try
+        {
+            object_storage->removeObjectIfExists(StoredObject(manifest_filename_in_storage));
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Best-effort cleanup failed for {}", manifest_filename_in_storage));
+        }
     }
 }
 
@@ -1369,24 +1400,9 @@ bool IcebergStorageSink::initializeMetadata()
             }
         };
 
-        /// A commit conflict keeps the data files and the manifests. Only the manifest list depends on the attempt.
+        /// A commit conflict keeps the data files and the manifests for the next attempt. Only the manifest list depends on the attempt.
         if (!retry_because_of_metadata_conflict)
-        {
-            for (const auto & [_, writer] : writer_per_partition_key)
-            {
-                try
-                {
-                    writer.clearAllDataFiles();
-                }
-                catch (...)
-                {
-                    tryLogCurrentException(log, "Best-effort cleanup of data files failed");
-                }
-            }
-
-            for (const auto & manifest_filename_in_storage : manifest_entries_in_storage)
-                best_effort_remove(manifest_filename_in_storage);
-        }
+            removeDataFilesAndManifests();
 
         best_effort_remove(storage_manifest_list_name);
 

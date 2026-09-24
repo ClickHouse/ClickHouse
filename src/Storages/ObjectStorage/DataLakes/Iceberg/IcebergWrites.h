@@ -181,6 +181,8 @@ private:
     void finalizeBuffers();
     void releaseBuffers();
     void cancelBuffers();
+    /// Best-effort removal of the files kept across commit retries.
+    void removeDataFilesAndManifests();
     bool initializeMetadata();
 
     FileNamesGenerator filename_generator;
