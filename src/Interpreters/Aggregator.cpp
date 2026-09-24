@@ -12,6 +12,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionArray.h>
 #include <AggregateFunctions/Combinators/AggregateFunctionState.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnSparse.h>
 #include <Common/memcpySmall.h>
 #include <bit>
@@ -849,6 +850,7 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     cache_settings.serialize_string_with_zero_byte = params.serialize_string_with_zero_byte;
     cache_settings.enable_prefetch = params.enable_prefetch;
     cache_settings.min_bytes_for_prefetch = min_bytes_for_prefetch;
+    cache_settings.simple_count = is_simple_count;
     aggregation_state_cache = AggregatedDataVariants::createCache(method_chosen, cache_settings);
 
 #if USE_EMBEDDED_COMPILER
@@ -2268,6 +2270,10 @@ bool Aggregator::executeOnBlock(Columns columns,
             all_keys_are_const &= isColumnConst(*columns.at(keys_positions[i]));
     }
 
+    /// The plan's `top_k` flag stays set after the heap freezes and `executeImpl` falls back to
+    /// ordinary aggregation, which no longer ranks the keys.
+    const bool top_k_active = params.top_k && !result.topKHeapFrozen();
+
     /// Remember the columns we will work with
     for (size_t i = 0; i < params.keys_size; ++i)
     {
@@ -2284,6 +2290,18 @@ bool Aggregator::executeOnBlock(Columns columns,
 
         if (!result.isLowCardinality())
         {
+            /// Serialized methods read key columns through `IColumn` virtuals, so a non-nullable
+            /// `LowCardinality` key can be serialized from its dictionary without being copied into
+            /// a full column first. `LowCardinality(Nullable)` keys need the materialized
+            /// representation, which carries their null map, and so does an active top-K heap, whose
+            /// ranked columns are built from the key columns.
+            if (result.isSerialized() && !top_k_active)
+            {
+                const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
+                if (low_cardinality && !low_cardinality->getDictionary().nestedColumnIsNullable())
+                    continue;
+            }
+
             auto column_no_lc = recursiveRemoveLowCardinality(key_columns[i]->getPtr());
             if (column_no_lc.get() != key_columns[i])
             {

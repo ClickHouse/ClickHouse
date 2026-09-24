@@ -32,6 +32,9 @@ struct HashMethodContextSettings
     /// Threshold on the hash table's buffer size below which prefetching is skipped
     /// because the table fits into caches. Zero disables the threshold.
     size_t min_bytes_for_prefetch = 0;
+    /// Whether the aggregation is a lone `count()` with its counter kept in the hash-table mapped
+    /// slot instead of a state. Caches that copy a mapped value are invalid in that mode.
+    bool simple_count = false;
 };
 
 /// Generic context for HashMethod. Context is shared between multiple threads, all methods must be thread-safe.

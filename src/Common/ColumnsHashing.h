@@ -378,6 +378,8 @@ struct HashMethodSerialized
 {
     using Self = HashMethodSerialized<Value, Mapped, nullable, prealloc>;
     using Base = columns_hashing_impl::HashMethodBase<Self, Value, Mapped, false>;
+    using EmplaceResult = typename Base::EmplaceResult;
+    using FindResult = typename Base::FindResult;
 
     static HashMethodContextPtr createContext(const HashMethodContextSettings & settings)
     {
@@ -405,6 +407,18 @@ struct HashMethodSerialized
     IColumn::SerializationSettings serialization_settings;
     PaddedPODArray<char> serialized_buffer;
     std::vector<std::string_view> serialized_keys;
+
+    /// Dense cache of aggregate state pointers keyed by the linearized positions of the
+    /// `LowCardinality` dictionaries. It is enabled when every key is a non-nullable
+    /// `LowCardinality` column and the product of the dictionary sizes is small, so that a repeated
+    /// key tuple skips serializing and hashing the key entirely. The hash table still stores the
+    /// serialized key values, so the output, merge and spill paths are not affected.
+    static constexpr size_t lc_cache_max_size = 1 << 16;
+    using LcCacheValue = std::conditional_t<std::is_void_v<Mapped>, char *, Mapped>;
+    bool lc_cache_enabled = false;
+    std::vector<size_t> lc_strides;
+    ColumnRawPtrs lc_index_columns;
+    std::vector<LcCacheValue> lc_cache;
     /// Scratch for the non-batch `getKeyHolder`: the serialized key bytes must
     /// outlive `emplaceKey`, because the pre-emplace key snapshot returned in
     /// `EmplaceResult` is consumed after it returns (the top-K heap persists it).
@@ -458,6 +472,12 @@ struct HashMethodSerialized
                     key_columns[i] = nullable_column->getNestedColumnPtr().get();
                 }
             }
+        }
+
+        if constexpr (!nullable && Base::has_mapped)
+        {
+            if (!hash_serialized_context->settings.simple_count)
+                initLowCardinalityCache();
         }
 
         if constexpr (prealloc)
@@ -515,6 +535,83 @@ struct HashMethodSerialized
                 prefetching = std::make_unique<PrefetchingHelper>();
             }
         }
+    }
+
+    /// Set up the dense `LowCardinality` position cache when every key column is a non-nullable
+    /// `LowCardinality` and the product of the dictionary sizes is small enough for a dense array.
+    void initLowCardinalityCache()
+    {
+        if (keys_size < 2)
+            return;
+
+        std::vector<size_t> dict_sizes;
+        dict_sizes.reserve(keys_size);
+        size_t product = 1;
+
+        for (size_t i = 0; i < keys_size; ++i)
+        {
+            const auto * low_cardinality = typeid_cast<const ColumnLowCardinality *>(key_columns[i]);
+            if (!low_cardinality || low_cardinality->getDictionary().nestedColumnIsNullable())
+                return;
+
+            const size_t dict_size = low_cardinality->getDictionary().size();
+            if (dict_size == 0 || product > lc_cache_max_size / dict_size)
+                return;
+
+            product *= dict_size;
+            dict_sizes.push_back(dict_size);
+            lc_index_columns.push_back(low_cardinality->getIndexesPtr().get());
+        }
+
+        lc_strides.assign(keys_size, 1);
+        for (size_t i = keys_size - 1; i > 0; --i)
+            lc_strides[i - 1] = lc_strides[i] * dict_sizes[i];
+
+        lc_cache.assign(product, nullptr);
+        lc_cache_enabled = true;
+    }
+
+    ALWAYS_INLINE size_t getLowCardinalityPosition(size_t row) const
+    {
+        size_t position = 0;
+        for (size_t i = 0; i < lc_index_columns.size(); ++i)
+            position += lc_index_columns[i]->getUInt(row) * lc_strides[i];
+        return position;
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (Base::has_mapped)
+        {
+            if (lc_cache_enabled)
+            {
+                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                if (cached != nullptr)
+                    return EmplaceResult(cached, cached, false);
+
+                auto result = Base::emplaceKey(data, row, pool);
+                if (!result.isInserted())
+                    cached = result.getMapped();
+                return result;
+            }
+        }
+        return Base::emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (Base::has_mapped)
+        {
+            if (lc_cache_enabled)
+            {
+                LcCacheValue & cached = lc_cache[getLowCardinalityPosition(row)];
+                if (cached != nullptr)
+                    return FindResult(&cached, true, 0);
+            }
+        }
+        return Base::findKey(data, row, pool);
     }
 
     /// Compute per-row canonical hashes from `serialized_keys` using `Data::hash`.
