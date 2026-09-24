@@ -2526,7 +2526,7 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     join_settings.updatePlanSettings(settings, version, join_operator);
-    sorting_settings.updatePlanSettings(settings);
+    sorting_settings.updatePlanSettings(settings, version);
 }
 
 static void serializeNodeList(
@@ -2720,7 +2720,10 @@ void registerJoinStep(QueryPlanStepRegistry & registry);
 
 void registerJoinStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Join", JoinStepLogical::deserialize);
+
+    /// Version 1 carries `max_external_merge_fan_in` for the join's sorting steps at global plan version 20.
+    registry.registerStep(
+        "Join", JoinStepLogical::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN}});
 }
 
 

@@ -26,6 +26,8 @@ namespace DB
     DECLARE(UInt64, max_bytes_before_external_distinct, 0, "Tracked query memory threshold that triggers external `DISTINCT`. See the corresponding query setting in `Settings`.", 0) \
     DECLARE(Double, max_bytes_ratio_before_external_distinct, 0., "Fraction of available memory used to derive the external `DISTINCT` trigger. See the corresponding query setting in `Settings`.", 0) \
     \
+    DECLARE(UInt64, max_external_merge_fan_in, 0, "Maximum simultaneous temporary-file inputs for external sorting and `DISTINCT` merges. Zero means unlimited, preserving the behavior of plans that omit this setting.", 0) \
+    \
     DECLARE(UInt64, max_rows_to_sort, 0, "If more than the specified amount of records have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(UInt64, max_bytes_to_sort, 0, "If more than the specified amount of (uncompressed) bytes have to be processed for ORDER BY operation, the behavior will be determined by the 'sort_overflow_mode' which by default is - throw an exception", 0) \
     DECLARE(OverflowMode, sort_overflow_mode, OverflowMode::THROW, "What to do when the limit is exceeded.", 0) \

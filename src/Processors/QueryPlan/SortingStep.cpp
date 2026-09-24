@@ -1,3 +1,4 @@
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <Core/SettingsQuirks.h>
 #include <IO/Operators.h>
@@ -83,6 +84,7 @@ namespace Setting
     extern const SettingsUInt64 max_bytes_before_remerge_sort;
     extern const SettingsUInt64 max_bytes_to_sort;
     extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_external_merge_fan_in;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsUInt64 prefer_external_sort_block_bytes;
     extern const SettingsBool read_in_order_use_virtual_row;
@@ -102,6 +104,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_before_remerge_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_bytes_to_sort;
     extern const QueryPlanSerializationSettingsUInt64 max_rows_to_sort;
+    extern const QueryPlanSerializationSettingsUInt64 max_external_merge_fan_in;
     extern const QueryPlanSerializationSettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const QueryPlanSerializationSettingsUInt64 prefer_external_sort_block_bytes;
     extern const QueryPlanSerializationSettingsFloat remerge_sort_lowered_memory_bytes_ratio;
@@ -159,6 +162,7 @@ SortingStep::Settings::Settings(const DB::Settings & settings)
     max_bytes_in_block_before_external_sort = settings[Setting::max_bytes_before_external_sort];
     max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalSort(settings[Setting::max_bytes_ratio_before_external_sort]);
 
+    max_external_merge_fan_in = ExternalMergeSource::validateFanIn(settings[Setting::max_external_merge_fan_in]);
     min_free_disk_space = settings[Setting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[Setting::prefer_external_sort_block_bytes];
     read_in_order_use_virtual_row_per_block = settings[Setting::read_in_order_use_virtual_row] && settings[Setting::read_in_order_use_virtual_row_per_block];
@@ -183,6 +187,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     max_bytes_in_block_before_external_sort = settings[QueryPlanSerializationSetting::max_bytes_before_external_sort];
     max_bytes_in_query_before_external_sort = getMaxBytesInQueryBeforeExternalSort(settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort]);
 
+    max_external_merge_fan_in = ExternalMergeSource::validateFanIn(settings[QueryPlanSerializationSetting::max_external_merge_fan_in]);
     min_free_disk_space = settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data];
     max_block_bytes = settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes];
     read_in_order_use_buffering = false; //settings.read_in_order_use_buffering;
@@ -191,7 +196,7 @@ SortingStep::Settings::Settings(const QueryPlanSerializationSettings & settings)
     temporary_files_buffer_size = clampTemporaryFilesBufferSize(settings[QueryPlanSerializationSetting::temporary_files_buffer_size]);
 }
 
-void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
     settings[QueryPlanSerializationSetting::max_rows_to_sort] = size_limits.max_rows;
@@ -202,6 +207,10 @@ void SortingStep::Settings::updatePlanSettings(QueryPlanSerializationSettings & 
     settings[QueryPlanSerializationSetting::remerge_sort_lowered_memory_bytes_ratio] = remerge_lowered_memory_bytes_ratio;
     settings[QueryPlanSerializationSetting::max_bytes_before_external_sort] = max_bytes_in_block_before_external_sort;
     settings[QueryPlanSerializationSetting::max_bytes_ratio_before_external_sort] = max_bytes_ratio_before_external_sort;
+
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN)
+        settings[QueryPlanSerializationSetting::max_external_merge_fan_in] = max_external_merge_fan_in;
+
     settings[QueryPlanSerializationSetting::min_free_disk_space_for_temporary_data] = min_free_disk_space;
     settings[QueryPlanSerializationSetting::prefer_external_sort_block_bytes] = max_block_bytes;
     settings[QueryPlanSerializationSetting::temporary_files_codec] = temporary_files_codec;
@@ -502,7 +511,7 @@ void SortingStep::mergeSorting(
                 sort_settings.max_bytes_in_block_before_external_sort / pipeline.getNumStreams(),
                 sort_settings.max_bytes_in_query_before_external_sort,
                 tmp_data_on_disk,
-                sort_settings.min_free_disk_space, threshold_tracker);
+                sort_settings.min_free_disk_space, sort_settings.max_external_merge_fan_in, threshold_tracker);
         });
 }
 
@@ -732,9 +741,9 @@ void SortingStep::describeActions(JSONBuilder::JSONMap & map) const
     }
 }
 
-void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void SortingStep::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    sort_settings.updatePlanSettings(settings);
+    sort_settings.updatePlanSettings(settings, version);
 }
 
 static constexpr UInt64 DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTITIONED_SORTING = 6;
@@ -902,7 +911,10 @@ void SortingStep::describePipeline(FormatSettings & settings) const
 void registerSortingStep(QueryPlanStepRegistry & registry);
 void registerSortingStep(QueryPlanStepRegistry & registry)
 {
-    registry.registerStep("Sorting", SortingStep::deserialize);
+
+    /// Version 1 adds `max_external_merge_fan_in` to the step settings at global plan version 20.
+    registry.registerStep(
+        "Sorting", SortingStep::deserialize, {{0, 0}, {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXTERNAL_MERGE_FAN_IN}});
 }
 
 }
