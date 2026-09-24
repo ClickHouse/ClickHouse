@@ -1,0 +1,57 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT sum(greatest(
+            number,
+            toUInt64(100),
+            toUInt64(1000),
+            toUInt64(10000),
+            toUInt64(100000),
+            toUInt64(1000000),
+            toUInt64(10000000),
+            toUInt64(100000000)))
+        FROM numbers(100000000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(least(
+            number,
+            toUInt64(100),
+            toUInt64(1000),
+            toUInt64(10000),
+            toUInt64(100000),
+            toUInt64(1000000),
+            toUInt64(10000000),
+            toUInt64(100000000)))
+        FROM numbers(100000000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(greatest(
+            toString(number),
+            repeat('a', 256),
+            repeat('b', 256),
+            repeat('c', 256),
+            repeat('d', 256))))
+        FROM numbers(5000000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(length(least(
+            toString(number),
+            repeat('a', 256),
+            repeat('b', 256),
+            repeat('c', 256),
+            repeat('d', 256))))
+        FROM numbers(5000000)
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(greatest(number, number + 1, number + 2, number + 3))
+        FROM numbers(100000000)
+        FORMAT Null
+    </query>
+</test>
