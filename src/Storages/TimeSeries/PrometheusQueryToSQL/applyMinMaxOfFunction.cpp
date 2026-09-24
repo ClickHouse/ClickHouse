@@ -62,15 +62,15 @@ SQLQueryPiece applyMinMaxOfFunction(
         chassert(args.size() == 2);
         const auto & x = args[0];
         const auto & y = args[1];
-        auto zero = timeSeriesScalarToAST(0, context.scalar_data_type);
+        auto zero = timeSeriesScalarToAST(0);
         auto infinity = timeSeriesScalarToAST(
-            is_min ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity(), context.scalar_data_type);
+            is_min ? -std::numeric_limits<Float64>::infinity() : std::numeric_limits<Float64>::infinity());
 
         /// Prometheus uses Go's `math.Min` and `math.Max`: the extremal infinity takes precedence over NaN.
         /// For zero ties, the sign of `1 / x` selects -0 for `min_of` and +0 for `max_of` in either argument order.
         auto zero_result = makeASTFunction("if",
             makeASTFunction("less",
-                makeASTFunction("divide", timeSeriesScalarToAST(1, context.scalar_data_type), x->clone()), zero->clone()),
+                makeASTFunction("divide", timeSeriesScalarToAST(1), x->clone()), zero->clone()),
             is_min ? x->clone() : y->clone(),
             is_min ? y->clone() : x->clone());
 
@@ -80,7 +80,7 @@ SQLQueryPiece applyMinMaxOfFunction(
                 makeASTFunction("equals", y->clone(), infinity->clone())),
             infinity->clone(),
             makeASTFunction("or", makeASTFunction("isNaN", x->clone()), makeASTFunction("isNaN", y->clone())),
-            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN(), context.scalar_data_type),
+            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN()),
             makeASTFunction("and",
                 makeASTFunction("equals", x->clone(), zero->clone()),
                 makeASTFunction("equals", y->clone(), zero->clone())),
