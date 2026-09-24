@@ -80,6 +80,9 @@ $CLICKHOUSE_CLIENT -q "ATTACH TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;"
 echo '-- and reading it is bounded'
 $CLICKHOUSE_CLIENT -q "SELECT * FROM \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
 
+echo '-- and describing it is bounded too'
+$CLICKHOUSE_CLIENT -q "DESCRIBE TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;" 2>&1 | grep -m 1 -o -F 'TOO_DEEP_RECURSION'
+
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE \`${CLICKHOUSE_DATABASE_2}\`.renamed;
 DROP DATABASE \`${CLICKHOUSE_DATABASE_2}\`;
