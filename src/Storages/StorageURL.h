@@ -410,6 +410,8 @@ public:
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
 
+    bool supportsTruncate() const override { return false; }
+
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
     static FormatSettings getFormatSettingsFromArgs(const StorageFactory::Arguments & args);
