@@ -1,8 +1,7 @@
 -- `sorted_merge` is a merge-join algorithm that is available only when both join inputs can be efficiently
 -- read in the order of the join keys (here: MergeTree tables whose primary key is the join key), so the
 -- pre-join sorts become cheap `FinishSorting` instead of full sorts. When the tables' order cannot be
--- exploited - the join key is not a primary-key prefix, reading in order is disabled, or the old analyzer
--- is used - the algorithm is NOT selected and the priority list falls through to the next entry. This is
+-- exploited - the join key is not a primary-key prefix or reading in order is disabled - the algorithm is NOT selected and the priority list falls through to the next entry. This is
 -- the difference from `full_sorting_merge`, which is always available and therefore shadows anything listed
 -- after it.
 
@@ -18,10 +17,6 @@ INSERT INTO smj_left SELECT number % 30000, number FROM numbers(0, 40000);
 INSERT INTO smj_left SELECT number % 30000, number FROM numbers(40000, 40000);
 INSERT INTO smj_right SELECT number % 20000, number * 2 FROM numbers(0, 50000);
 INSERT INTO smj_right SELECT number % 20000, number * 3 FROM numbers(50000, 50000);
-
--- The eligibility of `sorted_merge` is decided on the query plan, which exists only for the analyzer.
--- The default is overridden to 0 in the old-analyzer CI configuration, so pin it explicitly.
-SET enable_analyzer = 1;
 
 -- Pin the settings randomized in CI that the plan shape depends on: the in-order read must be allowed
 -- (`optimize_read_in_order`, `query_plan_read_in_order`), the PK-range sharding stays out of the picture
@@ -84,19 +79,6 @@ SELECT 'any_left',
 SELECT 'full_use_nulls',
     (SELECT (sum(l.a), sum(r.b), count()) FROM smj_left AS l FULL JOIN smj_right AS r ON l.id = r.id SETTINGS join_algorithm = 'sorted_merge,hash', join_use_nulls = 1)
   = (SELECT (sum(l.a), sum(r.b), count()) FROM smj_left AS l FULL JOIN smj_right AS r ON l.id = r.id SETTINGS join_algorithm = 'hash', join_use_nulls = 1);
-
--- The old analyzer has no query plan at selection time, so `sorted_merge` is never selected there: the
--- list falls through to `hash` even on the primary-key join, and `sorted_merge` alone errors out.
-SET enable_analyzer = 0;
-
-SELECT 'legacy_falls_through', countIf(explain LIKE '%MergeJoinTransform%') = 0
-FROM (EXPLAIN PIPELINE SELECT l.a FROM smj_left AS l INNER JOIN smj_right AS r ON l.id = r.id SETTINGS join_algorithm = 'sorted_merge,hash', max_threads = 4);
-
-SELECT 'legacy_result',
-    (SELECT (sum(l.a + r.b), count()) FROM smj_left AS l INNER JOIN smj_right AS r ON l.id = r.id SETTINGS join_algorithm = 'sorted_merge,hash')
-  = (SELECT (sum(l.a + r.b), count()) FROM smj_left AS l INNER JOIN smj_right AS r ON l.id = r.id SETTINGS join_algorithm = 'hash');
-
-SELECT l.a FROM smj_left AS l INNER JOIN smj_right AS r ON l.id = r.id SETTINGS join_algorithm = 'sorted_merge'; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE smj_left;
 DROP TABLE smj_right;
