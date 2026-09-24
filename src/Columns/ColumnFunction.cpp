@@ -199,6 +199,31 @@ void ColumnFunction::doInsertRangeFrom(const IColumn & src, size_t start, size_t
     elements_size += length;
 }
 
+bool ColumnFunction::structureEquals(const IColumn & rhs) const
+{
+    const auto * rhs_func = typeid_cast<const ColumnFunction *>(&rhs);
+    if (!rhs_func)
+        return false;
+
+    const IFunctionBase & func_this = *function;
+    const IFunctionBase & func_rhs = *rhs_func->function;
+    if (typeid(func_this) != typeid(func_rhs))
+        return false;
+
+    if (captured_columns.size() != rhs_func->captured_columns.size())
+        return false;
+
+    for (size_t i = 0; i < captured_columns.size(); ++i)
+    {
+        if (!captured_columns[i].type->equals(*rhs_func->captured_columns[i].type))
+            return false;
+        if (!captured_columns[i].column->structureEquals(*rhs_func->captured_columns[i].column))
+            return false;
+    }
+
+    return true;
+}
+
 ColumnPtr ColumnFunction::filter(const Filter & filt, ssize_t result_size_hint) const
 {
     if (elements_size != filt.size())
