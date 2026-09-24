@@ -36,7 +36,7 @@ If you need to guarantee that your data is deleted from storage in a predictable
 
 The [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight#lightweight_delete_mode) setting selects mutation-based deletes (the default) or lightweight updates that write patch parts containing `_row_exists = 0` for deleted rows. Queries apply these patches before physical cleanup.
 
-See [Choose the delete mode in the `DELETE` reference](/reference/statements/delete#lightweight-delete-mode) for the available modes, prerequisites, a configuration example, and differences in visibility across replicas.
+See [the `DELETE` reference](/reference/statements/delete) for the available modes, prerequisites, a configuration example, and differences in visibility across replicas.
 
 ## Deleting large amounts of data {#deleting-large-amounts-of-data}
 
