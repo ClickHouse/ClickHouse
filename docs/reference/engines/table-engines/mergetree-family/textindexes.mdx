@@ -310,6 +310,8 @@ Preprocessors are in principle equivalent to wrapping the index column or expres
 For example, the `lower` preprocessor in `INDEX idx col TYPE text(tokenizer = 'splitByNonAlpha', preprocessor = lower(col))` can be emulated by `INDEX idx lower(col) TYPE text(tokenizer = 'splitByNonAlpha')`.
 The latter form has the disadvantage that the emulated preprocessor is only applied if it matches the filter condition in the WHERE clause.
 For example, `WHERE hasAllTokens(lower(col), [...])` matches while `WHERE hasAllTokens(col, [...])` does not.
+The index with the preprocessor matches both: it is also used for `WHERE hasAllTokens(lower(col), [...])`, with the index tokenizer, and leaves the search term of that filter as is.
+This does not apply to an index with a postprocessor, an index on an array column, or a `Nullable` preprocessor expression.
 For an optimal user experience, we therefore recommend using preprocessor expressions.
 </Note>
 
