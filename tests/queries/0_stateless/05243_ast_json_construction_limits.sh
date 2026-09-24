@@ -6,10 +6,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `max_ast_depth` / `max_ast_elements` must bound JSON AST deserialization while the tree is built,
 # not only when the finished tree is re-checked. Both report the same error code, so match the message.
+# The leaf carries no `Field`: reading one reports the same element-limit message from its own counter.
 
 OPEN=$(printf '{"type":"ExpressionList","children":[%.0s' $(seq 1 30))
 CLOSE=$(printf ']}%.0s' $(seq 1 30))
-JSON="${OPEN}{\"type\":\"Literal\",\"value\":{\"field_type\":\"UInt64\",\"value\":1}}${CLOSE}"
+JSON="${OPEN}{\"type\":\"Asterisk\"}${CLOSE}"
 
 ${CLICKHOUSE_CLIENT} --max_ast_depth 10 --max_ast_elements 0 --param_json "$JSON" \
     --query "SELECT formatQueryFromJSON({json:String})" 2>&1 |
