@@ -51,6 +51,8 @@ bool isExactValueRange(const ColumnStatsProvenance & provenance);
 /// The range contains the produced rows' range.
 bool isValueRangeSuperset(const ColumnStatsProvenance & provenance);
 /// Values are plausibly spread over the range, as required by uniform-distribution consumers.
+/// A filtered relation is deliberately not representative: interpolating uniformly over an
+/// unfiltered whole-part range can mis-estimate a predicate that cuts that range.
 bool isRepresentativeValueRange(const ColumnStatsProvenance & provenance);
 
 /// GROUP BY preserves the distinct set and value range of a direct grouping key. When the input
