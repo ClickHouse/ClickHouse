@@ -156,7 +156,9 @@ The [`lightweight_delete_mode`](/reference/settings/session-settings/lightweight
 
 With patch parts, ClickHouse writes `_row_exists = 0` only for the deleted rows, together with metadata that identifies those rows. It avoids rewriting the entire mask column in the affected parts. Subsequent `SELECT` queries apply these patches to exclude the deleted rows before physical cleanup.
 
-The patch-part path waits for patch creation before returning, rather than submitting a background mutation controlled by `lightweight_deletes_sync`. It does not need to wait for existing merges and mutations to finish. Applying patches adds work to reads; see [lightweight update performance considerations](/reference/statements/update#performance-considerations).
+The patch-part path waits for patch creation on the executing replica before returning, rather than submitting a background mutation controlled by `lightweight_deletes_sync`. It does not need to wait for existing merges and mutations to finish. Applying patches adds work to reads; see [lightweight update performance considerations](/reference/statements/update#performance-considerations).
+
+On `ReplicatedMergeTree` tables, patch creation completes on the executing replica; other replicas may continue returning deleted rows until they receive the patch. `lightweight_deletes_sync` does not make this path wait for other replicas. To wait for deletion on all replicas, use `lightweight_delete_mode = 'alter_update'` with `lightweight_deletes_sync = 2`.
 
 To use this path, [`enable_lightweight_update`](/reference/settings/session-settings/enable-lightweight#enable_lightweight_update) must be enabled, and the table must meet the [lightweight update requirements](/reference/statements/update#lightweight-update-requirements), including the `enable_block_number_column` and `enable_block_offset_column` table settings. For example, for a supported `hits` table:
 
