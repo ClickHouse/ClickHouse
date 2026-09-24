@@ -13,6 +13,8 @@ CREATE ROW POLICY p ON db.t FOR SELECT USING (tenant = 1) AND (length(comment) >
 -- a subquery over another table keeps that table's column
 subquery policy after rename	[1]
 CREATE ROW POLICY psub ON db.t2 FOR SELECT USING tenant_id IN (SELECT tenant FROM allowed) TO default
+-- IF EXISTS on a missing column stays a no-op even if a stale policy mentions it
+CREATE ROW POLICY pstale ON db.t FOR SELECT USING gone = 1 TO default
 -- a database-wide policy cannot follow a rename on one table
 ALTER_OF_COLUMN_IS_FORBIDDEN
 still readable	[1,3]

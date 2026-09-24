@@ -45,6 +45,13 @@ SELECT 'subquery policy after rename', arraySort(groupArray(id)) FROM t2;
 "
 $CLICKHOUSE_CLIENT -q "SHOW CREATE ROW POLICY psub ON $DB.t2" | sed "s/$DB/db/g"
 
+echo "-- IF EXISTS on a missing column stays a no-op even if a stale policy mentions it"
+$CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pstale ON $DB.t FOR SELECT USING gone = 1 TO CURRENT_USER"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t DROP COLUMN IF EXISTS gone"
+$CLICKHOUSE_CLIENT -q "ALTER TABLE t RENAME COLUMN IF EXISTS gone TO still_gone"
+$CLICKHOUSE_CLIENT -q "SHOW CREATE ROW POLICY pstale ON $DB.t" | sed "s/$DB/db/g"
+$CLICKHOUSE_CLIENT -q "DROP ROW POLICY pstale ON $DB.t"
+
 echo "-- a database-wide policy cannot follow a rename on one table"
 $CLICKHOUSE_CLIENT -q "CREATE ROW POLICY pdb ON $DB.* FOR SELECT USING tenant = 1 TO CURRENT_USER"
 $CLICKHOUSE_CLIENT -q "ALTER TABLE t RENAME COLUMN tenant TO tenant2" 2>&1 | grep -o "ALTER_OF_COLUMN_IS_FORBIDDEN" | head -1
