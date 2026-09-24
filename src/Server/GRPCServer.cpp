@@ -7,6 +7,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/DateLUTImpl.h>
@@ -71,6 +72,11 @@ using GRPCObsoleteTransportCompression = clickhouse::grpc::ObsoleteTransportComp
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char grpc_pause_after_query_id_release[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_settings_after_format_in_insert;
@@ -740,6 +746,7 @@ namespace
         void finishQuery();
         void onException(const Exception & exception);
         void onFatalError();
+        void releaseQueryContext();
         void releaseQueryIDAndSessionID();
         void close();
 
@@ -1533,17 +1540,32 @@ namespace
         }
     }
 
+    void Call::releaseQueryContext()
+    {
+        pipeline_executor.reset();
+        pipeline = nullptr;
+        output_format_processor.reset();
+        auto process_list_entries = std::move(io.process_list_entries);
+        io = {};
+        if (query_context)
+            query_context->setProcessListElement(nullptr);
+        query_context.reset();
+        /// Free the context before the last entry can reset the user's memory tracker.
+        CurrentThread::flushUntrackedMemory();
+        process_list_entries.clear();
+    }
+
     void Call::releaseQueryIDAndSessionID()
     {
         /// releaseQueryIDAndSessionID() should be called before sending the final result to the client
         /// because the client may decide to send another query with the same query ID or session ID
         /// immediately after it receives our final result, and it's prohibited to have
         /// two queries executed at the same time with the same query ID or session ID.
-        io.process_list_entries.clear();
-        if (query_context)
-            query_context->setProcessListElement(nullptr);
+        releaseQueryContext();
         if (session)
             session->releaseSessionID();
+        if (FailPointInjection::hasAnyFailPointBeenRegistered())
+            FailPointInjection::pauseFailPoint(FailPoints::grpc_pause_after_query_id_release);
     }
 
     void Call::close()
@@ -1559,14 +1581,11 @@ namespace
             reading_query_info.wait(false);
         }
 
-        pipeline_executor.reset();
-        pipeline = nullptr;
-        output_format_processor.reset();
+        releaseQueryContext();
         read_buffer.reset();
         write_buffer.reset();
         nested_write_buffer = nullptr;
         compressing_write_buffer = nullptr;
-        io = {};
         ast.reset();
         insert_query = nullptr;
         output = {};
@@ -1576,7 +1595,6 @@ namespace
         result = GRPCResult{};
         logs_queue.reset();
         thread_trace_context.reset();
-        query_context.reset();
         query_scope.reset();
         /// The responder and received messages were allocated before query accounting started.
         responder.reset();
