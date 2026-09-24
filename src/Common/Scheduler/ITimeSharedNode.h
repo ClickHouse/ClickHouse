@@ -58,10 +58,12 @@ public:
     }
 
     /// Helper for introspection metrics. `still_active` is whether the node is still active after dequeueing.
+    /// The counters are written only by the scheduler thread, so a relaxed load and store is enough to update them.
     void incrementDequeued(ResourceCost cost, bool still_active)
     {
-        dequeued_requests.fetch_add(1, std::memory_order_relaxed);
-        dequeued_cost.fetch_add(cost, std::memory_order_relaxed);
+        chassert(event_queue.isInSchedulerOrStopped());
+        dequeued_requests.store(dequeued_requests.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+        dequeued_cost.store(dequeued_cost.load(std::memory_order_relaxed) + cost, std::memory_order_relaxed);
         pending_throughput_cost += cost;
         if (++pending_throughput_requests >= throughput_batch_requests || !still_active)
             flushThroughput(clock_gettime_ns());
