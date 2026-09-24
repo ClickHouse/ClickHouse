@@ -2155,7 +2155,7 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         /// Compare versions rather than iterators: `current_mutations_by_version` keeps old mutations until all parts
         /// cross them, so for a part with a data version above `min_update_block` (e.g. a part inserted after the update
         /// reserved its block number), `mutations_end_it` may point before `mutations_begin_it`.
-        if (min_update_block && mutations_begin_it->first > *min_update_block)
+        if (min_update_block && static_cast<Int64>(mutations_begin_it->first) > *min_update_block)
         {
             LOG_DEBUG(
                 log,
