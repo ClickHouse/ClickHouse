@@ -73,13 +73,19 @@ public:
     }
 
     /// Helper for introspection metrics. Should be called when the node becomes inactive without dequeueing a request:
-    /// when `dequeueRequest` finds it inactive (e.g. its remaining requests were canceled) or when a node leaves its
-    /// parent's active set by itself (e.g. a constraint whose limits were lowered).
+    /// when `dequeueRequest` finds it inactive (e.g. its remaining requests were canceled), when `removeChild` leaves it
+    /// without active children, or when a constraint whose limits were lowered deactivates itself.
     void flushThroughputOnDeactivation()
     {
         if (pending_throughput_requests > 0)
             flushThroughput(clock_gettime_ns());
         throughput_batch_requests = 1; /// The dequeue rate after reactivation is unknown
+    }
+
+    /// Number of dequeued requests not yet added to `throughput` (for tests)
+    UInt64 getPendingThroughputRequests() const
+    {
+        return pending_throughput_requests;
     }
 
     /// Average dequeued_cost per second

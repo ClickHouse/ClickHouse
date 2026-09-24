@@ -779,6 +779,7 @@ private:
         if (child.get() == child_)
         {
             child_active = false; // deactivate
+            flushThroughputOnDeactivation();
             child->setParentNode(nullptr); // detach
             child.reset();
         }

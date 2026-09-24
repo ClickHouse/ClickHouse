@@ -122,6 +122,8 @@ public:
 
             // Deactivate if required
             deactivate(&iter->second);
+            if (current == nullptr)
+                flushThroughputOnDeactivation();
 
             // Detach
             removed->setParentNode(nullptr);

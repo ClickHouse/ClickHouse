@@ -85,6 +85,8 @@ public:
                     items.erase(i);
                     // Element was removed from inside of heap -- heap must be rebuilt
                     std::make_heap(items.begin(), items.end());
+                    if (items.empty())
+                        flushThroughputOnDeactivation();
                     break;
                 }
             }

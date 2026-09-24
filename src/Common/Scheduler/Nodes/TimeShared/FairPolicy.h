@@ -111,6 +111,8 @@ public:
                 // Element was removed from inside of heap -- heap must be rebuilt
                 std::make_heap(items.begin(), items.begin() + heap_size);
                 child_idx = heap_size;
+                if (heap_size == 0)
+                    flushThroughputOnDeactivation();
             }
 
             // Now detach inactive child

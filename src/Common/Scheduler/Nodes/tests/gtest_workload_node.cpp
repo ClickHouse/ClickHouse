@@ -805,3 +805,23 @@ TEST(SchedulerTimeSharedWorkloadNode, UpdateSemaphoreCancelsStaleActivation)
     delete r1;
     delete r2;
 }
+
+TEST(SchedulerTimeSharedWorkloadNode, ThroughputBatchFlushedOnTopologyChange)
+{
+    ResourceTest t;
+
+    auto all = t.createUnifiedNode("all");
+    auto a = t.createUnifiedNode("A", all);
+
+    // Consecutive dequeues grow the `throughput` batch of `A`, leaving a part of it pending.
+    t.enqueue(a, {10, 10, 10, 10, 10, 10, 10, 10});
+    t.dequeue(6);
+    t.consumed("A", 60);
+    ASSERT_GT(a->getPendingThroughputRequests(), 0);
+
+    // The first child replaces the queue of `A` (the queued requests are aborted), so `A` becomes inactive without a dequeue.
+    auto b = t.createUnifiedNode("B", a);
+    t.failed(20);
+    EXPECT_FALSE(a->isActive());
+    EXPECT_EQ(a->getPendingThroughputRequests(), 0);
+}
