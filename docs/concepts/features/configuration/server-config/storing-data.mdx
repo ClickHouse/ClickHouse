@@ -38,14 +38,14 @@ The `s3` disk type can also be used with S3-compatible object storage providers,
 
 Disk configuration requires:
 
-1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`, `gcs` (experimental, from `26.8`).
+1. A `type` section, equal to one of `s3`, `azure_blob_storage`, `hdfs` (unsupported), `local_blob_storage`, `web`, `gcs` (experimental, from `26.10`).
 2. Configuration of a specific external storage type.
 
 Starting from 24.1 clickhouse version, it is possible to use a new configuration option.
 It requires specifying:
 
 1. A `type` equal to `object_storage`
-2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`, `gcs` (experimental, from `26.8`, see [native Google Cloud Storage](/operations/storing-data#native-gcs-storage)).
+2. `object_storage_type`, equal to one of `s3`, `azure_blob_storage` (or just `azure` from `24.3`), `hdfs` (unsupported), `local_blob_storage` (or just `local` from `24.3`), `web`, `gcs` (experimental, from `26.10`, see [native Google Cloud Storage](/operations/storing-data#native-gcs-storage)).
 
 <br/>
 
