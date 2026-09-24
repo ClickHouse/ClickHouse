@@ -20,6 +20,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InternalTextLogsQueue.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/Session.h>
@@ -737,6 +738,7 @@ namespace
         void generateOutput();
 
         void finishQuery();
+        void finishCancelledQuery();
         void onException(const Exception & exception);
         void onFatalError();
         void releaseQueryIDAndSessionID();
@@ -793,7 +795,8 @@ namespace
         bool initial_query_info_read = false;
         bool finalize = false;
         bool responder_finished = false;
-        bool cancelled = false;
+        std::atomic<bool> cancelled = false;
+        std::once_flag cancellation_once;
 
         std::unique_ptr<ReadBuffer> read_buffer;
         std::unique_ptr<WriteBuffer> write_buffer;
@@ -863,7 +866,10 @@ namespace
         }
         catch (Exception & exception)
         {
-            onException(exception);
+            if (cancelled.load() && CurrentThread::isQueryCancellationException(std::current_exception()))
+                finishCancelledQuery();
+            else
+                onException(exception);
         }
         catch (Poco::Exception & exception)
         {
@@ -944,6 +950,7 @@ namespace
         }
 
         query_context = session->makeQueryContext(std::move(client_info));
+        query_context->setInteractiveCancelCallback([this] { return isQueryCancelled(); });
 
         /// Prepare settings.
         SettingsChanges settings_changes;
@@ -1139,7 +1146,11 @@ namespace
         }
 
         if (isQueryCancelled())
+        {
             executor.cancel();
+            if (auto process_list_element = query_context->getProcessListElementSafe())
+                process_list_element->throwIfKilled();
+        }
         else
             executor.finish();
     }
@@ -1316,6 +1327,9 @@ namespace
                     external_table_pipeline.setConcurrencyControl(false);
                     external_table_pipeline.disableReadProgress();
                     CompletedPipelineExecutor executor(external_table_pipeline);
+                    executor.setCancelCallback(
+                        ExecutorCancellation::cancelQuery([this] { return isQueryCancelled(); }, query_context),
+                        interactive_delay / 1000);
                     executor.execute();
                 }
             }
@@ -1388,28 +1402,17 @@ namespace
         {
             auto executor = std::make_shared<PullingAsyncPipelineExecutor>(io.pipeline);
             io.pipeline.setConcurrencyControl(query_context->getSettingsRef()[Setting::use_concurrency_control]);
-            auto check_for_cancel = [&]
-            {
-                if (isQueryCancelled())
-                {
-                    executor->cancel();
-                    return false;
-                }
-                return true;
-            };
+            executor->setCancelCallback(
+                ExecutorCancellation::cancelQuery([this] { return isQueryCancelled(); }, query_context),
+                interactive_delay / 1000);
 
             addOutputFormatToResult();
             addOutputColumnsNamesAndTypesToResult(header);
 
             Block block;
-            while (check_for_cancel())
+            while (executor->pull(block, interactive_delay / 1000))
             {
-                if (!executor->pull(block, interactive_delay / 1000))
-                    break;
-
                 throwIfFailedToSendResult();
-                if (!check_for_cancel())
-                    break;
 
                 if (!block.empty() && !io.null_format)
                     output_format_processor->write(materializeBlock(block));
@@ -1426,16 +1429,11 @@ namespace
                     sendResult();
 
                 throwIfFailedToSendResult();
-                if (!check_for_cancel())
-                    break;
             }
 
-            if (!isQueryCancelled())
-            {
-                addTotalsToResult(executor->getTotalsBlock());
-                addExtremesToResult(executor->getExtremesBlock());
-                addProfileInfoToResult(executor->getProfileInfo());
-            }
+            addTotalsToResult(executor->getTotalsBlock());
+            addExtremesToResult(executor->getExtremesBlock());
+            addProfileInfoToResult(executor->getProfileInfo());
         }
         else
         {
@@ -1453,7 +1451,8 @@ namespace
 
                 return isQueryCancelled();
             };
-            executor->setCancelCallback(std::move(callback), interactive_delay / 1000);
+            executor->setCancelCallback(
+                ExecutorCancellation::cancelQuery(std::move(callback), query_context), interactive_delay / 1000);
             executor->execute();
         }
 
@@ -1474,6 +1473,28 @@ namespace
         LOG_INFO(
             log,
             "Finished call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
+            getCallName(call_type),
+            query_time.elapsedSeconds(),
+            static_cast<double>(waited_for_client_reading) / 1000000000ULL,
+            static_cast<double>(waited_for_client_writing) / 1000000000ULL);
+    }
+
+    void Call::finishCancelledQuery()
+    {
+        finalize = true;
+        io.onException(/*log_as_error=*/false);
+        addProgressToResult();
+        query_scope->logPeakMemoryUsage();
+        addLogsToResult();
+        result.clear_exception();
+        result.set_cancelled(true);
+        releaseQueryIDAndSessionID();
+        sendResult();
+        close();
+
+        LOG_INFO(
+            log,
+            "Cancelled call {} in {:.3f} secs. (including reading by client: {:.3f}, writing by client: {:.3f})",
             getCallName(call_type),
             query_time.elapsedSeconds(),
             static_cast<double>(waited_for_client_reading) / 1000000000ULL,
@@ -1645,21 +1666,20 @@ namespace
 
     bool Call::isQueryCancelled()
     {
-        if (cancelled)
-        {
-            result.set_cancelled(true);
-            return true;
-        }
+        if (!want_to_cancel.load())
+            return cancelled.load();
 
-        if (want_to_cancel)
+        std::call_once(cancellation_once, [this]
         {
             LOG_INFO(log, "Query cancelled");
-            cancelled = true;
-            result.set_cancelled(true);
-            return true;
-        }
-
-        return false;
+            if (query_context)
+            {
+                if (auto process_list_element = query_context->getProcessListElementSafe())
+                    process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER);
+            }
+            cancelled.store(true);
+        });
+        return true;
     }
 
     void Call::addQueryDetailsToResult()
