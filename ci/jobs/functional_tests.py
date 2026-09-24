@@ -3,6 +3,7 @@ import json
 import os
 import random
 import subprocess
+import traceback
 import zlib
 from collections.abc import Mapping
 from pathlib import Path
@@ -10,6 +11,10 @@ from pathlib import Path
 from ci.jobs.scripts.bugfix_validation import bugfix_build_types, find_master_builds
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.test_selection_manifest import (
+    SELECTION_MANIFEST,
+    selection_manifest,
+)
 from ci.jobs.scripts.find_tests import Targeting
 from ci.jobs.scripts.functional_tests.export_coverage import CoverageExporter
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
@@ -198,7 +203,6 @@ def run_tests(
 
 
 OPTIONS_TO_INSTALL_ARGUMENTS = {
-    "old analyzer": "--analyzer",
     "s3 storage": "--s3-storage",
     "DBReplicated": "--db-replicated",
     "DatabaseOrdinary": "--db-ordinary",
@@ -222,42 +226,6 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "flaky check": "--flaky-check",
     "targeted": "--flaky-check --no-self-parallel",
 }
-
-# Job option that replaces the full test suite with the subset of tests selected
-# for the change under test (see `Targeting`): the tests the pull request changes,
-# the tests that already failed in this pull request, and the tests that cover the
-# changed lines according to the coverage database.
-#
-# Unlike the `targeted` check - which reruns that same selection many times to hunt
-# for flakiness - a `selected tests` run is an ordinary functional test run with a
-# shorter list of tests. The pull request workflow uses it for the sanitizer
-# flavors, where the builds with sanitizers are still exercised by the stress tests
-# and the whole suite still runs in the master workflow.
-SELECTED_TESTS_OPTION = "selected tests"
-
-
-def filter_selected_tests_by_flavor(tests, keep_sequential):
-    """Keep the selected tests that a `parallel`/`sequential` job flavor runs.
-
-    `--no-sequential`/`--no-parallel` split the suite into two independently
-    scheduled job flavors, so a test tagged `no-parallel`/`sequential` never runs
-    under the `parallel` flavor and vice versa. Dropping the tests the flavor
-    would not select anyway keeps the reported selection honest and lets the job
-    skip early when nothing is left for it.
-
-    Tests that cannot be resolved to a file in `tests/queries/0_stateless` (a
-    stateful test, or one removed or renamed since the selection data was
-    collected) are kept: `clickhouse-test` filters them out on its own.
-    """
-    res = []
-    for test in tests:
-        source_file = Targeting.functional_test_source_file(test)
-        if source_file is None or (
-            Targeting.is_sequential_functional_test(source_file) == keep_sequential
-        ):
-            res.append(test)
-    return res
-
 
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
@@ -437,14 +405,49 @@ def reconcile_bugfix_crash_repro(result: Result, fatals: list) -> bool:
     return crash_repro
 
 
+def checkpoint_collected_results(
+    job_name: str, collected_results: list, is_local_run: bool
+):
+    """Persist the results collected so far into the job's existing result file, so
+    a job killed during the post-processing that follows still publishes them.
+
+    Assigns NO status: every status decision in `main` runs after this point, so a
+    status here would be published as the verdict on a killed job. Left `RUNNING`,
+    the runner's `KILLED` patch decides it, and that patch keeps the children.
+
+    Updates the existing result instead of building a fresh one, because
+    `Result.create_from` takes no `ext` and would drop the `run_url`. Published by
+    `dump_atomically` because `Result.dump` truncates in place, and `Result.from_fs`
+    refuses to parse the truncation that a kill mid-write would leave.
+
+    Skipped on a local run, which has no runner to publish anything.
+
+    Best-effort, and never raises: the final `complete_job` writes these results
+    again, so a failure here must not cost `main` everything that follows it.
+    """
+    if is_local_run:
+        return
+    try:
+        result = Result.from_fs(job_name)
+        result.results = list(collected_results)
+        result.dump_atomically()
+    except Exception as e:
+        # No temp-file cleanup here: a cleanup that itself raises would defeat the
+        # guard. A leftover is named `*.tmp`, never the published name.
+        print(f"WARNING: Failed to checkpoint collected results: {e}")
+        # Indented so no line starts at column zero: a column-zero
+        # `Traceback (most recent call last):` in `job.log` is read as a runner failure.
+        for line in traceback.format_exc().splitlines():
+            print(f"  {line}")
+
+
 def main():
     args = parse_args()
     test_options = [to.strip() for to in args.options.split(",")]
     batch_num, total_batches = 0, 0
     config_installs_args = ""
     is_flaky_check = False
-    is_targeted_check = False
-    is_selected_tests_run = False
+    is_targeted_check = "targeted" in test_options
     is_bugfix_validation = False
     is_s3_storage = False
     is_azure_storage = False
@@ -471,8 +474,6 @@ def main():
             pass
         elif to == "per_test_coverage":
             pass
-        elif to == SELECTED_TESTS_OPTION:
-            pass
         else:
             assert False, f"Unknown option [{to}]"
 
@@ -481,8 +482,10 @@ def main():
             config_installs_args += f" {OPTIONS_TO_INSTALL_ARGUMENTS[to]}"
 
         if to in OPTIONS_TO_TEST_RUNNER_ARGUMENTS:
-            if to in ("parallel", "sequential") and args.test:
-                # skip setting up parallel/sequential if specific tests are provided
+            if to in ("parallel", "sequential") and (
+                args.test or is_targeted_check
+            ):
+                # Explicit and selected test lists include both execution flavors.
                 continue
             else:
                 runner_options += f" {OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}"
@@ -490,9 +493,7 @@ def main():
                     f"NOTE: Enabled test runner option [{OPTIONS_TO_TEST_RUNNER_ARGUMENTS[to]}]"
                 )
 
-        if to == SELECTED_TESTS_OPTION:
-            is_selected_tests_run = True
-        elif "targeted" in to:
+        if "targeted" in to:
             is_targeted_check = True
         elif "flaky" in to:
             is_flaky_check = True
@@ -533,12 +534,9 @@ def main():
     # "parallel"/"sequential" job flavors need no batch number of their own
     # (e.g. "amd_debug, parallel") - the flavor-applicability check below must
     # not be gated on batching being active.
-    # A `selected tests` run is excluded too: it picks its own test list and
-    # applies the same flavor-applicability check to it below.
     if (
         not is_flaky_check
         and not is_targeted_check
-        and not is_selected_tests_run
         and not is_bugfix_validation
         and not is_llvm_coverage
         and not is_excluded_from_llvm
@@ -673,13 +671,11 @@ def main():
 
     # `--repeat-newly-modified-tests` ranks the tests it is given by name and
     # repeats the highest-numbered ones, which identifies the newly added tests
-    # only when the runner is given the whole suite. For a `selected tests` run
-    # the top of that ranking is just the newest test of the selection, so the
-    # option would multiply the run time without repeating anything new.
+    # only when the runner is given the whole suite. Targeted checks already
+    # repeat the entire related test list.
     if (
         not is_flaky_check
         and not is_targeted_check
-        and not is_selected_tests_run
         and not is_llvm_coverage
         and not is_bugfix_validation
         and not args.test
@@ -708,10 +704,13 @@ def main():
     elif is_targeted_check:
         rerun_count = 50
 
-    if is_flaky_check:
-        # Run no-parallel and no-flaky-check tests sequentially with fewer iterations.
-        # Derived from rerun_count so the ratio stays stable as policy evolves.
-        runner_options += f" --sequential-test-runs {rerun_count // 2}"
+    if is_targeted_check:
+        runner_options += " --long-test-runs-ratio 1"
+
+    if is_flaky_check or is_targeted_check:
+        # Targeted checks repeat sequential tests as often as parallel tests;
+        # flaky checks retain their reduced sequential repetition budget.
+        runner_options += f" --sequential-test-runs {rerun_count if is_targeted_check else rerun_count // 2}"
 
     if (is_azure_storage or is_s3_storage) and is_encrypted_storage:
         config_installs_args += " --encrypted-storage"
@@ -860,47 +859,33 @@ def main():
             ).complete_job()
 
     if is_targeted_check:
-        assert not args.test, "--test not supposed to be used for targeted check"
-        tests, results_with_info = targeter.get_all_relevant_tests_with_info()
-        results.append(results_with_info)
-
-        if not tests:
-            # early exit
-            Result.create_from(
-                status=Result.Status.SKIPPED,
-                info="No failed tests found from previous runs",
-            ).complete_job()
-
-    if is_selected_tests_run:
-        assert not args.test, "--test not supposed to be used for a selected tests run"
+        assert not args.test, "--test cannot override the test selection"
         try:
-            tests, results_with_info = targeter.get_all_relevant_tests_with_info(
+            # Every targeted job selects on its own. The inputs are pinned to
+            # `Targeting.selection_cutoff`, so all jobs of an attempt agree.
+            Shell.check("python3 -m ci.jobs.scripts.test_selection_smoke", strict=True)
+            tests, selection_result = targeter.get_all_relevant_tests_with_info(
                 include_changed_tests=True
             )
-            results.append(results_with_info)
-        except Exception as e:
-            # Selecting the tests needs the pull request diff and the coverage
-            # database. Do not silently run a weaker, unbatched version of the
-            # former sanitizer configuration: its original shards and repeated
-            # newly modified tests cannot be reconstructed from this job. Fail
-            # the check so the selection service problem is visible and retried.
+            SELECTION_MANIFEST.parent.mkdir(parents=True, exist_ok=True)
+            SELECTION_MANIFEST.write_text(
+                json.dumps(
+                    selection_manifest(targeter.selection_diagnostics, info), indent=2
+                )
+                + "\n"
+            )
+            selection_result.files = [str(SELECTION_MANIFEST)]
+            results.append(selection_result)
+        except Exception as ex:
             Result.create_from(
                 status=Result.Status.ERROR,
-                info=f"Failed to select tests: {e}",
+                info=f"Failed to load test selection: {ex}\n{traceback.format_exc()}",
             ).complete_job()
-
-    if is_selected_tests_run:
-        if "parallel" in test_options or "sequential" in test_options:
-            tests = filter_selected_tests_by_flavor(
-                tests, keep_sequential="sequential" in test_options
-            )
-        print(f"[selected tests] {len(tests)} tests to run: {tests}")
-
         if not tests:
-            # early exit
             Result.create_from(
                 status=Result.Status.SKIPPED,
-                info="No tests selected for this change",
+                info="No selected tests to run",
+                results=results,
             ).complete_job()
 
     stage = args.param or JobStages.INSTALL_CLICKHOUSE
@@ -1062,6 +1047,10 @@ def main():
                         build_types[0] if is_bugfix_validation else args.options
                     ),
                     step_timeout=stateful_prep_step_timeout(info),
+                    # Of the lanes this job runs, only the flaky check arms
+                    # `ThreadFuzzer`, and the stateful fixture load is setup, not a
+                    # test: no assertion depends on how its statements interleave.
+                    stop_thread_fuzzer=is_flaky_check,
                 ):
                     print(
                         "SETUP FAILURE: "
@@ -1137,7 +1126,7 @@ def main():
             )
 
         elif is_targeted_check:
-            TARGETED_CHECK_TIME_LIMIT = 50 * 60  # 50 min
+            TARGETED_CHECK_TIME_LIMIT = 30 * 60  # 30 min
             global_time_limit = max(
                 TARGETED_CHECK_TIME_LIMIT - int(stop_watch.duration), 60
             )
@@ -1175,7 +1164,19 @@ def main():
         test_result = ft_res_processor.run(
             runner_exit_code=runner_exit_code,
             is_bugfix_validation=is_labeled_bugfix_validation,
-            allow_no_tests=is_flaky_check or is_targeted_check or is_selected_tests_run,
+            allow_no_tests=is_flaky_check or is_targeted_check,
+        )
+        if is_bugfix_validation:
+            # The job name carries only the architecture, so a row is attributable
+            # to a build type only through this label. Set before it is published.
+            for r in test_result.results:
+                r.set_label(build_types[0])
+
+        # Before any teardown, so an overrun there cannot cost the results.
+        # `results + [test_result]` is the shape `R` is built from below, so the
+        # CIDB insert still finds the per-test rows under the "Tests" sub-result.
+        checkpoint_collected_results(
+            info.job_name, results + [test_result], info.is_local_run
         )
 
         # Run additional build types for bugfix validation.
@@ -1185,14 +1186,17 @@ def main():
         # rather than in the outer CHECK_ERRORS stage, so that crashes in any
         # build type are detected even when logs are cleaned between builds.
         if is_bugfix_validation:
-            for r in test_result.results:
-                r.set_label(build_types[0])
-
             # Check fatal messages for the first build type before cleaning logs
             first_bt_fatals = CH.check_fatal_messages_in_logs()
             for r in first_bt_fatals:
                 r.set_label(build_types[0])
             reconcile_bugfix_crash_repro(test_result, first_bt_fatals)
+
+            # The labels and fatal rows above are the first build's final state, and the
+            # next iteration stops the server before producing anything new.
+            checkpoint_collected_results(
+                info.job_name, results + [test_result], info.is_local_run
+            )
 
             if test_result.is_ok():
                 for bugfix_bt in build_types[1:]:
@@ -1338,6 +1342,16 @@ def main():
                         runner_exit_code=bt_runner_exit_code,
                         is_bugfix_validation=is_labeled_bugfix_validation,
                     )
+                    for r in bt_result.results:
+                        r.set_label(bugfix_bt)
+                    # Until this call the file holds the previous build type's
+                    # rows, and the fatal scan below runs before the next one.
+                    # Re-assigned after that scan, which can change both.
+                    test_result.results = bt_result.results
+                    test_result.status = bt_result.status
+                    checkpoint_collected_results(
+                        info.job_name, results + [test_result], info.is_local_run
+                    )
 
                     # Check fatal messages for this build type. As with the
                     # first build type, a `BLOCKER` fatal is the bug crashing
@@ -1351,14 +1365,25 @@ def main():
                         r.set_label(bugfix_bt)
                     reconcile_bugfix_crash_repro(bt_result, bt_fatals)
 
-                    for r in bt_result.results:
-                        r.set_label(bugfix_bt)
                     test_result.results = bt_result.results
                     test_result.status = bt_result.status
+                    # Per build type, not once after the loop: this REPLACES the
+                    # results, and the next iteration stops the server and
+                    # re-prepares the environment before producing any new ones.
+                    checkpoint_collected_results(
+                        info.job_name, results + [test_result], info.is_local_run
+                    )
                     debug_files += ft_res_processor_bt.debug_files
 
                     if not bt_result.is_ok():
                         break
+
+            # Every exit from this block passes here, including the breaks that
+            # skip the in-loop call: the build-type labels, the reconciled fatal
+            # rows and the startup/setup ERROR rows all land after it.
+            checkpoint_collected_results(
+                info.job_name, results + [test_result], info.is_local_run
+            )
 
         if not info.is_local_run:
             CH.stop_log_exports()
