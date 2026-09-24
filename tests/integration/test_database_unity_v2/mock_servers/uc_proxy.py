@@ -6,6 +6,9 @@
 - reports an Iceberg `securable_kind`, which the open-source server never sends;
 - writes the table location as `file:///tmp/...`, which `setLocation` requires.
 
+For the tables in `MANAGED_TABLE_TYPES` it reports `table_type = MANAGED` or
+`MANAGED_SHALLOW_CLONE`, which the open-source server has no notion of.
+
 It also emulates Databricks authentication:
 
 - `POST /oidc/v1/token` mints OAuth tokens for `CLIENT_ID:CLIENT_SECRET`, and
@@ -29,6 +32,14 @@ UPSTREAM = "http://localhost:8080"
 UNIFORM_TABLES = {"marksheet_uniform"}
 
 ICEBERG_SECURABLE_KIND = "TABLE_DELTA_ICEBERG_EXTERNAL"
+
+# Tables reported as catalog-owned, name -> `table_type`. A static mapping, so no test can
+# change what another test sees. The legacy resolver ignores `table_type` entirely, which is
+# why the shallow-clone value has to be refused by the write guard rather than by the read rule.
+MANAGED_TABLE_TYPES = {
+    "managed_delta": "MANAGED",
+    "clone_delta": "MANAGED_SHALLOW_CLONE",
+}
 
 # The lookahead makes this a no-op on an already-well-formed `file:///tmp/...`.
 SINGLE_SLASH_SCHEME = re.compile(r"file:/(?=tmp/marksheet_uniform)")
@@ -63,8 +74,11 @@ def normalize_scheme(data):
 
 
 def patch_table(table):
-    if table.get("name") in UNIFORM_TABLES:
+    name = table.get("name")
+    if name in UNIFORM_TABLES:
         table["securable_kind"] = ICEBERG_SECURABLE_KIND
+    if name in MANAGED_TABLE_TYPES:
+        table["table_type"] = MANAGED_TABLE_TYPES[name]
     return table
 
 

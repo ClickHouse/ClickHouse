@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/VirtualColumnUtils.h>
+#include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -626,12 +627,12 @@ ReadFromFormatInfo DeltaLakeMetadataDeltaKernel::prepareReadingFromFormat(
 
 SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
     SharedHeader sample_block,
-    const StorageID & /* table_id */,
+    const StorageID & table_id,
     ObjectStoragePtr object_storage_,
     StorageObjectStorageConfigurationPtr configuration,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    std::shared_ptr<DataLake::ICatalog> /* catalog */)
+    std::shared_ptr<DataLake::ICatalog> catalog)
 {
     if (!context->getSettingsRef()[Setting::allow_delta_lake_writes])
     {
@@ -639,6 +640,14 @@ SinkToStoragePtr DeltaLakeMetadataDeltaKernel::write(
             ErrorCodes::SUPPORT_IS_DISABLED,
             "Delta Lake writes are a Beta feature disabled by default. "
             "To enable them, set allow_delta_lake_writes = 1");
+    }
+
+    /// `catalog` is set only for a table reached through a catalog database, whose name always
+    /// carries its namespace, so `parseTableName` cannot throw here.
+    if (catalog)
+    {
+        const auto & [namespace_name, table_name] = DataLake::parseTableName(table_id.getTableName());
+        catalog->checkDirectCommitIsAllowed(namespace_name, table_name);
     }
 
     const auto snapshot_version = getSnapshotVersion(context->getSettingsRef());

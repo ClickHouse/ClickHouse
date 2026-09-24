@@ -3,6 +3,7 @@
 #if USE_PARQUET
 
 #include <sstream>
+#include <unordered_set>
 #include <Common/Exception.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadata.h>
@@ -10,6 +11,7 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace DataLake
@@ -114,6 +116,28 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     body->set("columns", columns);
     body->set("properties", Poco::JSON::Object::Ptr(new Poco::JSON::Object));
     return body;
+}
+
+/// The `table_type` values Unity reports for a table whose data the catalog owns, so its log must
+/// not be committed directly. `EXTERNAL_SHALLOW_CLONE` is deliberately absent: like a plain
+/// `EXTERNAL` table, its data does not live in the catalog's own storage.
+static const std::unordered_set<std::string> MANAGED_TABLE_TYPES = {"MANAGED", "MANAGED_SHALLOW_CLONE"};
+
+bool isManagedUnityTable(const Poco::JSON::Object::Ptr & table_json)
+{
+    if (!table_json || !table_json->has("table_type") || table_json->isNull("table_type"))
+        return false;
+
+    const auto table_type = table_json->get("table_type");
+    return !table_type.isEmpty() && MANAGED_TABLE_TYPES.contains(table_type.extract<String>());
+}
+
+void throwUnityManagedTableWriteRefusal(const String & full_table_name)
+{
+    throw DB::Exception(
+        DB::ErrorCodes::NOT_IMPLEMENTED,
+        "INSERT into Unity Catalog managed table `{}` is not supported, only external tables can be written",
+        full_table_name);
 }
 
 }

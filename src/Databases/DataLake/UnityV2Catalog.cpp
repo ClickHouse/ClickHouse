@@ -456,6 +456,14 @@ void UnityV2Catalog::getTableMetadata(
         throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "No response from Unity catalog");
 }
 
+void UnityV2Catalog::checkDirectCommitIsAllowed(const std::string & schema_name, const std::string & table_name) const
+{
+    auto full_table_name = fmt::format("{}.{}.{}", warehouse, schema_name, table_name);
+    auto json = getJSONRequest(std::filesystem::path{TABLES_ENDPOINT} / full_table_name).first;
+    if (isManagedUnityTable(json.extract<Poco::JSON::Object::Ptr>()))
+        throwUnityManagedTableWriteRefusal(full_table_name);
+}
+
 bool UnityV2Catalog::tryGetTableMetadata(
     const std::string & schema_name,
     const std::string & table_name,

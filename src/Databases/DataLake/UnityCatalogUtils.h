@@ -21,6 +21,12 @@ Poco::JSON::Object::Ptr buildUnityCreateTableBody(
     const String & storage_location,
     Poco::JSON::Array::Ptr columns);
 
+/// Whether Unity reports this table as one whose data the catalog owns, from `table_type`.
+/// An unlisted string value, and an absent or null field, mean not owned.
+bool isManagedUnityTable(const Poco::JSON::Object::Ptr & table_json);
+
+[[noreturn]] void throwUnityManagedTableWriteRefusal(const String & full_table_name);
+
 }
 
 #endif

@@ -485,6 +485,124 @@ def test_create_and_insert_delta_table(started_cluster):
     assert len(commits) == 2, commits
 
 
+# Must match `MANAGED_TABLE_TYPES` in mock_servers/uc_proxy.py, which is what makes the
+# catalog report these tables as catalog-owned: `MANAGED` and `MANAGED_SHALLOW_CLONE`.
+MANAGED_TABLE = "managed_delta"
+CLONE_TABLE = "clone_delta"
+EXTERNAL_TABLE = "external_delta"
+
+
+def create_delta_table(node, db_name, schema_name, table_name):
+    """`DeltaLakeLocal` stores the table in the container's filesystem, so the write
+    needs no object storage and no credentials."""
+    location = f"/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}"
+    node.query(
+        f"CREATE TABLE {db_name}.`{schema_name}.{table_name}` (id Int32)"
+        f" ENGINE = DeltaLakeLocal('{location}')",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    return location
+
+
+def delta_log_commits(node, location):
+    return node.exec_in_container(
+        ["bash", "-c", f"ls {location}/_delta_log/*.json"]
+    ).split()
+
+
+def assert_managed_table_insert_is_rejected(node, creating_db, managed_db):
+    """`INSERT` into a table the catalog reports as managed must be refused up front,
+    while that table stays readable and a non-managed table stays writable.
+
+    Both databases address the same catalog, so they see the same tables; only
+    `managed_db` goes through the proxy that reports `managed_delta` as managed. The
+    tables are created through `creating_db` because the proxy answers no `POST`.
+
+    Returns the schema it created, so a caller can add its own table to it.
+    """
+    schema_name = unique_name("managed")
+    uc_api_post(node, "schemas", {"name": schema_name, "catalog_name": CATALOG})
+
+    managed_location = create_delta_table(node, creating_db, schema_name, MANAGED_TABLE)
+    create_delta_table(node, creating_db, schema_name, EXTERNAL_TABLE)
+
+    managed = f"{managed_db}.`{schema_name}.{MANAGED_TABLE}`"
+    external = f"{managed_db}.`{schema_name}.{EXTERNAL_TABLE}`"
+
+    # Only writes are refused: a managed table must stay readable.
+    assert node.query(f"SELECT count() FROM {managed}").strip() == "0"
+
+    error = node.query_and_get_error(
+        f"INSERT INTO {managed} VALUES (1)", settings=DELTA_WRITE_SETTINGS
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "managed" in error
+    assert "only external tables can be written" in error
+
+    # The refused write left nothing behind: only the commit that CREATE made.
+    assert len(delta_log_commits(node, managed_location)) == 1
+
+    # A non-managed table in the same database is still writable.
+    node.query(f"INSERT INTO {external} VALUES (2)", settings=DELTA_WRITE_SETTINGS)
+    assert node.query(f"SELECT id FROM {external}").strip() == "2"
+
+    # The same table through the database that does not report it as managed accepts
+    # the write, so the refusal tracks what the catalog reports and nothing else.
+    direct = f"{creating_db}.`{schema_name}.{MANAGED_TABLE}`"
+    node.query(f"INSERT INTO {direct} VALUES (3)", settings=DELTA_WRITE_SETTINGS)
+    assert node.query(f"SELECT id FROM {direct}").strip() == "3"
+    assert len(delta_log_commits(node, managed_location)) == 2
+
+    return schema_name
+
+
+def test_managed_delta_table_insert_is_rejected(started_cluster):
+    """The new implementation refuses a write to a managed table."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+
+    creating_db = unique_name("v2_managed_create")
+    managed_db = unique_name("v2_managed")
+    create_database(node, creating_db)
+    create_database(node, managed_db, url=PROXY_URL, catalog_credential=PAT_TOKEN)
+
+    schema_name = assert_managed_table_insert_is_rejected(node, creating_db, managed_db)
+
+    # `MANAGED_SHALLOW_CLONE` is outside `READABLE_TABLE_TYPES`, so this implementation
+    # refuses the table at the read and the write guard is never reached on this arm.
+    create_delta_table(node, creating_db, schema_name, CLONE_TABLE)
+    error = node.query_and_get_error(
+        f"SELECT count() FROM {managed_db}.`{schema_name}.{CLONE_TABLE}`"
+    )
+    assert "Readable table types" in error
+
+
+def test_legacy_managed_delta_table_insert_is_rejected(started_cluster):
+    """The legacy implementation refuses the same write. It reads the table through a
+    different acceptance rule, so it needs its own coverage."""
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+
+    creating_db = unique_name("v1_managed_create")
+    managed_db = unique_name("v1_managed")
+    create_database(node, creating_db)
+    create_legacy_database(node, managed_db)
+
+    schema_name = assert_managed_table_insert_is_rejected(node, creating_db, managed_db)
+
+    # This implementation never reads `table_type`, so a shallow clone of a managed table
+    # is resolvable here and only the write guard can refuse it.
+    clone_location = create_delta_table(node, creating_db, schema_name, CLONE_TABLE)
+    error = node.query_and_get_error(
+        f"INSERT INTO {managed_db}.`{schema_name}.{CLONE_TABLE}` VALUES (1)",
+        settings=DELTA_WRITE_SETTINGS,
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "managed" in error
+    assert "only external tables can be written" in error
+    assert len(delta_log_commits(node, clone_location)) == 1
+
+
 def test_pat_token_authentication(started_cluster):
     node = started_cluster.instances["node1"]
     db_name = unique_name("v2_pat")
