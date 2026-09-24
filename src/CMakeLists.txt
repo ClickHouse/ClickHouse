@@ -549,6 +549,7 @@ set_property(SOURCE
     WindowFunctions/LagLead.cpp                # window functions
     WindowFunctions/NthValue.cpp               # window functions
     WindowFunctions/Distribution.cpp           # window functions
+    WindowFunctions/ExponentialTimeDecayed.cpp # window functions
     Interpreters/Aggregator.cpp                # destroy_aggregate_states
     Common/IntervalTree.cpp                    # range_hashed_dictionary
     PROPERTY COMPILE_FLAGS "-U_LIBCPP_HARDENING_MODE -D_LIBCPP_HARDENING_MODE=_LIBCPP_HARDENING_MODE_NONE")
