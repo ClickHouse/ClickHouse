@@ -33,15 +33,6 @@ echo "$out" | grep -q 'merge-on-read is not implemented' \
     && echo "$out" | grep -q 'NOT_IMPLEMENTED' \
     && echo "COUNT THROWS"
 
-# The opt-in returns the documented-incorrect raw union: (1,'old') is superseded by (1,'new')
-# yet both come back. Spark returns only "1 new" and "2 two".
-${CLICKHOUSE_CLIENT} --paimon_allow_unmerged_primary_key_reads=1 \
-    -q "SELECT * FROM paimonLocal('${PK_TABLE}') ORDER BY id, val;"
-
-# compatibility restores the pre-fix behaviour wholesale.
-${CLICKHOUSE_CLIENT} --compatibility=26.7 \
-    -q "SELECT * FROM paimonLocal('${PK_TABLE}') ORDER BY id, val;"
-
 # The table stays inspectable so a user can see what they have.
 ${CLICKHOUSE_CLIENT} -q "DESCRIBE paimonLocal('${PK_TABLE}');"
 

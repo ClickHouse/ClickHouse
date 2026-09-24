@@ -2254,8 +2254,7 @@ A table with the specified structure for reading data in the specified Paimon ta
 
 Merge-on-read is not implemented, so **primary-key tables cannot be read**: the reader returns the raw union of the
 snapshot's data files, which still contains the row versions superseded by later upserts. Reading a table whose schema
-declares `primary-key` therefore throws. Set `paimon_allow_unmerged_primary_key_reads = 1` to read the data files
-unmerged and accept those incorrect results.
+declares `primary-key` therefore throws.
 
 ## Defining a named collection {#defining-a-named-collection}
 
