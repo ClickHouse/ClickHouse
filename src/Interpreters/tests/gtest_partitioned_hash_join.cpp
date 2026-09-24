@@ -16,6 +16,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/PartitionedHashJoin/DenseHyperLogLog.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinClause.h>
 #include <Interpreters/PartitionedHashJoin/PartitionedHashJoin.h>
 #include <Interpreters/PartitionedHashJoin/HashJoinTable.h>
@@ -621,6 +622,52 @@ void expectCrossingStats(const CrossingBuild & crossing)
 
 }
 
+TEST(PartitionedHashJoin, DenseSketchConcurrentRead)
+{
+    constexpr UInt32 words = 300000;
+    constexpr size_t passes = 16;
+    DenseHyperLogLog expected;
+    expected.add(7);
+    for (UInt32 i = 0; i < words; ++i)
+        expected.add(i);
+
+    DenseHyperLogLog live;
+    std::atomic<size_t> reader_phase{0};
+    std::atomic<size_t> writer_phase{0};
+    std::thread writer([&]
+    {
+        for (size_t phase = 0; phase < passes; ++phase)
+        {
+            reader_phase.wait(phase, std::memory_order_acquire);
+            for (size_t i = 0; i < 1024; ++i)
+                live.add(7);
+            writer_phase.store(phase + 1, std::memory_order_release);
+            writer_phase.notify_one();
+        }
+        for (UInt32 i = 0; i < words; ++i)
+            live.add(i);
+    });
+
+    bool invalid_estimate = false;
+    for (size_t phase = 0; phase < passes; ++phase)
+    {
+        reader_phase.store(phase + 1, std::memory_order_release);
+        reader_phase.notify_one();
+        DenseHyperLogLog snapshot;
+        snapshot.merge(live);
+        const double merged = snapshot.estimate();
+        const double direct = live.estimate();
+        invalid_estimate |= !std::isfinite(merged) || !std::isfinite(direct) || merged < 0 || direct < 0;
+        writer_phase.wait(phase, std::memory_order_acquire);
+    }
+    writer.join();
+
+    EXPECT_FALSE(invalid_estimate);
+    for (size_t i = 0; i < DenseHyperLogLog::register_count; ++i)
+        EXPECT_EQ(live.registers[i].load(std::memory_order_relaxed), expected.registers[i].load(std::memory_order_relaxed));
+    EXPECT_EQ(live.estimate(), expected.estimate());
+}
+
 /// Build blocks carrying a worker id, and probe blocks a lane, the join has no entry for must still
 /// produce the exact multiset.
 TEST(PartitionedHashJoin, OutOfRangeLaneFallsBackToPool)
@@ -923,38 +970,69 @@ TEST(PartitionedHashJoin, ArenaAndScratchPredictionsCoverActuals)
         EXPECT_EQ(stats.scratch_used_high_water, 28u * distinct_keys);
 }
 
-/// The statistics cache receives every build's exact distinct count. No later build under the same
-/// key sizes its table from that count.
-TEST(PartitionedHashJoin, PublishesStatisticsWithoutConsuming)
+TEST(PartitionedHashJoin, ReusesCachedDistinctCountWithoutSketching)
 {
-    /// The count serves the planner's other consumers. A five times larger build under the same key
-    /// must still estimate its own count from the sketch and size the table for it.
     static std::atomic<UInt64> key_counter{0};
     const UInt64 key = 0xC1D15117C4C4E000ULL + key_counter.fetch_add(1);
     const StatsCollectingParams params(
         key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/1ULL << 40);
+    const StatsCollectingParams capped_params(
+        key, /*enable_=*/true, /*max_entries_for_hash_table_stats_=*/1024, /*max_size_to_preallocate_=*/100000);
 
     constexpr size_t small_keys = 50000;
     constexpr size_t large_keys = 250000;
+    constexpr size_t later_keys = 100000;
 
     BuildOptions options;
     options.stats_collecting_params = &params;
-    auto small = buildJoin(small_keys, /*duplicates=*/1, options);
+    options.partition_bits_for_tests = 4;
+    auto small = makeJoin(options);
+    addBuildBlocks(*small.join, small_keys, /*duplicates=*/1, options);
+    EXPECT_GT(small.join->getFillSketchEstimateForTests(), 0.0);
+    finishBuild(small, options);
     expectTableInvariants(small.join->getBuildStats(), small_keys, small_keys);
     const auto published = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(published.has_value());
     EXPECT_EQ(published->ht_size, small_keys);
 
+    auto warm = makeJoin(options);
+    addBuildBlocks(*warm.join, small_keys, /*duplicates=*/2, options);
+    EXPECT_EQ(warm.join->getFillSketchEstimateForTests(), 0.0);
+    warm.join->onBuildPhaseFinish();
+    warm.join->runPostBuildPhase();
+    expectTableInvariants(warm.join->getBuildStats(), small_keys, 2 * small_keys);
+    EXPECT_EQ(warm.join->getBuildStats().hll_estimate, static_cast<double>(small_keys));
+    EXPECT_EQ(warm.join->getBuildStats().bits, 4u);
+    probeAndCheck(warm, small_keys, /*duplicates=*/2, /*misses=*/1000);
+
+    /// A stale count must not lose rows when the table grows.
     auto large = buildJoin(large_keys, /*duplicates=*/1, options);
     const auto large_stats = large.join->getBuildStats();
-    EXPECT_NEAR(large_stats.hll_estimate, static_cast<double>(large_keys), 0.05 * static_cast<double>(large_keys))
-        << "the sketch must have run; a cached count would read 50000";
+    EXPECT_EQ(large_stats.hll_estimate, static_cast<double>(small_keys));
+    EXPECT_GT(large_stats.table_resizes, 0u);
     expectTableInvariants(large_stats, large_keys, large_keys);
     probeAndCheck(large, large_keys, /*duplicates=*/1, /*misses=*/1000);
 
     const auto republished = getHashTablesStatistics<HashJoinEntry>().getSizeHint(params);
     ASSERT_TRUE(republished.has_value());
     EXPECT_EQ(republished->ht_size, large_keys);
+
+    options.stats_collecting_params = &capped_params;
+    auto capped = buildJoin(later_keys, /*duplicates=*/1, options);
+    const auto capped_stats = capped.join->getBuildStats();
+    EXPECT_NEAR(capped_stats.hll_estimate, static_cast<double>(later_keys), 0.05 * static_cast<double>(later_keys));
+    expectTableInvariants(capped_stats, later_keys, later_keys);
+    probeAndCheck(capped, later_keys, /*duplicates=*/1, /*misses=*/1000);
+
+    options.stats_collecting_params = &params;
+    BuildOptions spill_options = options;
+    spill_options.max_bytes_before_external_join = 1ULL << 30;
+    auto spill = makeJoin(spill_options);
+    addBuildBlocks(*spill.join, /*distinct_keys=*/10000, /*duplicates=*/1, spill_options);
+    EXPECT_NEAR(spill.join->getFillSketchEstimateForTests(), 10000.0, 1000.0);
+    EXPECT_GT(spill.join->predictedResidentBytes(), 0u);
+    finishBuild(spill, spill_options);
+    expectTableInvariants(spill.join->getBuildStats(), 10000, 10000);
 }
 
 /// When the owner inserts fill their ranges under a budget that refused the load-factor grow, the drain grows the table

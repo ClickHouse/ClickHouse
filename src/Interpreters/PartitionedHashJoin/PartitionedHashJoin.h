@@ -38,7 +38,8 @@ class TableJoin;
   * with the probe side. Probe rows are joined and passed on at once. Nothing on the probe side
   * is buffered.
   *
-  * Fill stores right-side blocks per lane and records a 16-bit route plus a HyperLogLog sketch.
+  * Fill stores right-side blocks per lane and records a 16-bit route. A HyperLogLog sketch sizes a
+  * cold build; a cached distinct count lets a warm build skip the sketch.
   * Nothing is inserted yet. The barrier sizes the table at 50% max fill and picks the partition
   * count. The partition count is the smallest power of two whose range fits private L2, at least
   * one range per worker.
@@ -201,6 +202,7 @@ public:
     /// `beginStoredBlockDrain`; `target.addBlockToJoin` must accept concurrent callers, as
     /// `GraceHashJoin` does.
     void drainStoredBlocksInto(IJoin & target);
+    double getFillSketchEstimateForTests();
 
 private:
     friend class NotJoinedPartitioned;
@@ -282,8 +284,8 @@ private:
     /// atomic loads. It is sized once and never resized, so the fast path cannot race a rehash.
     /// Lane-less callers keep the thread-id map.
     /// Mutable because `predictedResidentBytes` is a `const` query that still has to refresh the
-    /// cached distinct estimate under this lock. Shared with the per-lane sketch `add`, exclusive
-    /// for the merge: a torn register would persist into the barrier's estimate.
+    /// cached distinct estimate under this lock. Spill-enabled fills take a shared lock across
+    /// each block's sketch update; the live estimate takes an exclusive lock to observe full blocks.
     mutable SharedMutex fill_mutex;
     std::deque<FillLane> lanes;
     std::unordered_map<std::thread::id, FillLane *> lane_by_thread;
@@ -300,9 +302,10 @@ private:
     /// An estimated build below `parallel_hash_join_threshold` runs on one fill thread, which inserts
     /// into the table as the blocks arrive.
     bool single_fill_thread = false;
-    /// Distinct-key statistics for the next run of this query (join reordering, runtime filters). Never
-    /// read to size this build: the sketch sizes the table and a grow corrects it, and a cached count
-    /// would not depend on the data.
+    /// The previous build's count is captured before parallel fill starts when spilling is off.
+    /// Spill-enabled fills still need sketches for the live memory estimate.
+    std::optional<size_t> cached_distinct_keys;
+    /// Distinct-key statistics for this and the next run of the query.
     StatsCollectingParams stats_collecting_params;
     /// The matched-row statistics the planner's row store decision reads.
     StatsCollectingParams match_stats_collecting_params;

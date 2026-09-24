@@ -880,19 +880,36 @@ HashJoinClause::~HashJoinClause() = default;
 
 void HashJoinClause::computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const
 {
-    /// Skipped rows are not inserted and do not reach the sketch, but their routes are still written:
-    /// the scatter reads them. ASOF hashes the equi-key prefix only.
+    computeRoutesImpl(fill, &sketch);
+}
+
+void HashJoinClause::computeRoutes(FillBlock & fill) const
+{
+    computeRoutesImpl(fill, nullptr);
+}
+
+void HashJoinClause::computeRoutesImpl(FillBlock & fill, DenseHyperLogLog * sketch) const
+{
+    /// Skipped rows still need routes for scatter, though they do not reach the sketch when present.
+    /// ASOF hashes the equi-key prefix only.
     const size_t rows = fill.rows;
     fill.routes.resize_exact(rows);
     const Sizes & key_sizes = hash_join.key_sizes[0];
+    const auto route = [&](const ColumnRawPtrs & columns, const Sizes & sizes)
+    {
+        if (sketch)
+            computeJoinRoutesForFill(hash_join.data->type, columns, sizes, rows, fill.skipData(), fill.routes.data(), *sketch);
+        else
+            computeJoinRoutesForFill(hash_join.data->type, columns, sizes, rows, fill.skipData(), fill.routes.data());
+    };
     if (hash_join.getStrictness() == JoinStrictness::Asof)
     {
         ColumnRawPtrs equi_columns(fill.key_columns.begin(), fill.key_columns.end() - 1);
         Sizes equi_sizes(key_sizes.begin(), key_sizes.end() - 1);
-        computeJoinRoutesForFill(hash_join.data->type, equi_columns, equi_sizes, rows, fill.skipData(), fill.routes.data(), sketch);
+        route(equi_columns, equi_sizes);
     }
     else
-        computeJoinRoutesForFill(hash_join.data->type, fill.key_columns, key_sizes, rows, fill.skipData(), fill.routes.data(), sketch);
+        route(fill.key_columns, key_sizes);
 }
 
 bool HashJoinClause::postBuild(size_t rows)
@@ -1345,8 +1362,8 @@ void HashJoinClause::decidePartitionPlan(size_t rows)
     for (const auto & fill : build_blocks)
         narrow_locators = narrow_locators && fill.block_no < (1u << 16) && fill.rows <= (1uz << 16);
 
-    /// The table is sized from the sketch over the whole input at the standard 50% max fill; it may
-    /// grow during post-build when the estimate was low.
+    /// Size the table from the whole-build distinct estimate. It may grow during post-build when
+    /// the estimate was low.
     size_degree = sizeDegreeFor(reserveFor(rows, hll_estimate));
 
     /// ASOF stays single-partition. Its mapped values are per-key sorted vectors. Insert wants the
@@ -1560,12 +1577,11 @@ std::unique_ptr<ThreadPool> HashJoinClause::makePostBuildPool(size_t workers)
 
 size_t HashJoinClause::reserveFor(size_t rows, double distinct_estimate) const
 {
-    /// The safety factor covers the sketch's error. The row clamp says a table cannot hold more keys
-    /// than rows. Above 2^31 estimated words the 32-bit sketch is saturating. The exact upper bound
-    /// then takes over: at most a 2x over-reservation, only for builds already holding 64 GiB of cells.
+    /// Cached exact counts need no sketch safety factor. Above 2^31 estimated words the sketch
+    /// saturates, so use the row count as the bound. A table cannot hold more keys than rows.
     if (reserve_override_for_tests)
         return *reserve_override_for_tests;
-    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * reserve_safety);
+    const double scaled = std::ceil(std::max(distinct_estimate, 1.0) * (estimate_is_exact ? 1.0 : reserve_safety));
     const size_t rows_bound = std::max<size_t>(rows, 1);
     if (scaled >= 2147483648.0)
         return rows_bound;

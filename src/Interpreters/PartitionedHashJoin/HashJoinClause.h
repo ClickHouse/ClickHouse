@@ -152,13 +152,19 @@ public:
     /// One map hash per insertable row. The top 16 bits of the placement word are the route.
     /// The top 32 bits of its mix are fed to `sketch`.
     void computeRoutes(FillBlock & fill, DenseHyperLogLog & sketch) const;
+    void computeRoutes(FillBlock & fill) const;
 
-    /// The barrier's decision for `rows` build rows, from the sketch estimate set with
+    /// The barrier's decision for `rows` build rows, from the distinct estimate set with
     /// `setDistinctEstimate`: the table degree, the partition count and the scatter passes.
     void decidePartitionPlan(size_t rows);
-    void setDistinctEstimate(double estimate) { hll_estimate = estimate; }
+    /// `exact` identifies a previous build's exact cached count, which gets no reserve safety factor.
+    void setDistinctEstimate(double estimate, bool exact = false)
+    {
+        hll_estimate = estimate;
+        estimate_is_exact = exact;
+    }
     double hllEstimate() const { return hll_estimate; }
-    /// The barrier's sketch estimate, floored at one so an empty build never sizes a zero-byte table.
+    /// The barrier's distinct estimate, floored at one so an empty build never sizes a zero-byte table.
     size_t distinctEstimate() const { return std::max<size_t>(static_cast<size_t>(std::llround(hll_estimate)), 1); }
 
     /// The post-build memory verdict for a partitioned build of `rows` rows, taken once at the barrier from
@@ -242,6 +248,7 @@ public:
     bool growBeforeLastFreeCell(Target & target);
 
 private:
+    void computeRoutesImpl(FillBlock & fill, DenseHyperLogLog * sketch) const;
     /// Shared across the post-build stages: histogram, allocate, scatter, owner waves, drain.
     struct PostBuildContext;
     /// Out-of-line so `unique_ptr<PostBuildContext>` can be destroyed from TUs that only see the
@@ -382,7 +389,8 @@ private:
     std::optional<size_t> l1_cache_bytes_for_tests;
     std::optional<size_t> forced_bits_for_tests;
     double hll_estimate = 0;
-    /// Reserve factor over the sketch estimate. Also the multiplicity band below which the arena
+    bool estimate_is_exact = false;
+    /// Reserve factor over a sketch estimate. Also the multiplicity band below which the arena
     /// prediction treats the build as unique (`predictedTableAndArenaBytes`). That second use needs
     /// the wide margin. The ~1.15% sketch error alone would not.
     double reserve_safety = 1.2;
