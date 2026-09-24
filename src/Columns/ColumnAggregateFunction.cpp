@@ -17,7 +17,6 @@
 #include <Common/AlignedBuffer.h>
 #include <Common/Arena.h>
 #include <Common/FailPoint.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/HashTable/Hash.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
@@ -55,21 +54,11 @@ static String getTypeString(const AggregateFunctionPtr & func, std::optional<siz
 
     stream << func->getName();
 
-    const auto & parameters = func->getParameters();
-    const auto & argument_types = func->getArgumentTypes();
-    if (!parameters.empty())
-    {
-        stream << '(';
-        for (size_t i = 0; i < parameters.size(); ++i)
-        {
-            if (i)
-                stream << ", ";
-            stream << applyVisitor(FieldVisitorToString(), parameters[i]);
-        }
-        stream << ')';
-    }
+    /// This name travels with every state serialized into a `Field`, so it must spell the state the
+    /// same way its state type does, or such a `Field` no longer matches the type it came from.
+    stream << DataTypeAggregateFunction::formatParameters(*func, func->getParameters());
 
-    for (const auto & argument_type : argument_types)
+    for (const auto & argument_type : func->getArgumentTypes())
         stream << ", " << argument_type->getName();
 
     stream << ')';
@@ -726,6 +715,14 @@ void ColumnAggregateFunction::popBack(size_t n)
             func->destroy(data[i]);
 
     data.resize_assume_reserved(new_size);
+}
+
+void ColumnAggregateFunction::popBackWithoutDestroy(size_t n)
+{
+    if (n > size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot pop {} rows from {}: there are only {} rows", n, getName(), size());
+
+    data.resize_assume_reserved(data.size() - n);
 }
 
 ColumnPtr ColumnAggregateFunction::replicate(const IColumn::Offsets & offsets) const
