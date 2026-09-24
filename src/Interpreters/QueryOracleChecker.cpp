@@ -335,6 +335,23 @@ bool isOracleUnsafeFunctionName(String name)
     }
 }
 
+/// The sub-ASTs of `ast` that its `children` do not contain.
+/// `ASTColumnsApplyTransformer` copies `parameters` and `lambda` by hand in
+/// `clone()` rather than through `cloneChildren()`, so neither is a child.
+ASTs hiddenApplyMembers(const ASTPtr & ast)
+{
+    const auto * apply = ast->as<ASTColumnsApplyTransformer>();
+    if (!apply)
+        return {};
+
+    ASTs members;
+    if (apply->lambda)
+        members.push_back(apply->lambda);
+    if (apply->parameters)
+        members.push_back(apply->parameters);
+    return members;
+}
+
 /// Walk an AST tree and check whether any `ASTFunction` references something
 /// non-deterministic. The primary source of truth is `FunctionFactory` —
 /// every regular function exposes `isDeterministic`, so newly-added
@@ -581,6 +598,9 @@ bool referencesAnyAlias(const ASTPtr & ast, const std::unordered_set<String> & a
             return true;
     for (const auto & child : ast->children)
         if (referencesAnyAlias(child, aliases))
+            return true;
+    for (const auto & member : hiddenApplyMembers(ast))
+        if (referencesAnyAlias(member, aliases))
             return true;
     return false;
 }
