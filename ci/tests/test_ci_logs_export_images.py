@@ -437,3 +437,27 @@ def test_a_test_can_opt_a_server_out_of_the_export():
     expression = source[start : source.index("\n        )\n", start)]
     assert "and with_ci_logs_export" in expression
     assert "with_ci_logs_export=True," in source
+
+
+def test_an_unrelated_watcher_is_not_taken_for_an_exported_table():
+    """The helper keeps its `_sender`/`_watcher` tables in `system`, a namespace
+    it shares with the test: the list of exported tables must only name the
+    views the helper attempted to create, otherwise `flush_before_shutdown` and
+    `teardown_for_instance` would flush and drop a test's own
+    `system.<name>_watcher` as if the export owned it."""
+    query = HELPER._active_tables_query(["query_log", "text_log"])
+    assert "name IN ('query_log_watcher', 'text_log_watcher')" in query
+
+    class Instance:
+        name = "node"
+
+        def query(self, sql, timeout=None):
+            # The DDL batch ends with the scoped query, never an unscoped one
+            assert "name IN ('query_log_watcher', 'text_log_watcher')" in sql
+            return "query_log_watcher\ntext_log_watcher\n"
+
+    tables = [("query_log", "h1", ""), ("text_log", "h2", ""), ("trace_log", "h3", "")]
+    active = HELPER._create_senders_and_watchers(
+        Instance(), tables, {"query_log", "text_log"}, "1 AS c"
+    )
+    assert active == ["query_log", "text_log"]

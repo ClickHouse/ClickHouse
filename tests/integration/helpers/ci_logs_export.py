@@ -643,14 +643,16 @@ def _discover_log_tables(instance):
     return tables
 
 
-# The names of the `_watcher` views that exist on the instance, i.e. the tables
-# whose export is actually running. It is appended to the DDL batch instead of
-# assuming that every statement of the batch succeeded, so that a partial
-# failure gives a correct list rather than one that makes the shutdown flush
-# fail on a `_sender` table which was never created.
-ACTIVE_TABLES_QUERY = (
-    "SELECT name FROM system.tables WHERE database = 'system' AND endsWith(name, '_watcher')"
-)
+def _active_tables_query(tables):
+    """The names of the `_watcher` views of `tables` that exist on the instance,
+    i.e. the tables whose export is actually running. It is appended to the DDL
+    batch instead of assuming that every statement of the batch succeeded, so
+    that a partial failure gives a correct list rather than one that makes the
+    shutdown flush fail on a `_sender` table which was never created. It is
+    scoped to the views this helper attempted to create, so that an unrelated
+    `system.<name>_watcher` is never flushed or dropped as if it were ours."""
+    names = ", ".join(f"'{_escape_sql_string(table + '_watcher')}'" for table in tables)
+    return f"SELECT name FROM system.tables WHERE database = 'system' AND name IN ({names})"
 
 
 def _create_senders_and_watchers(instance, tables, exportable, expression):
@@ -674,8 +676,11 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
         )
     if not statements:
         return []
+    active_tables_query = _active_tables_query(
+        table for table, _, _ in tables if table in exportable
+    )
     try:
-        output = instance.query("".join(statements) + ACTIVE_TABLES_QUERY, timeout=300)
+        output = instance.query("".join(statements) + active_tables_query, timeout=300)
     except Exception:
         logging.warning(
             "CI logs export: failed to create the sender/watcher tables on %s",
@@ -683,7 +688,7 @@ def _create_senders_and_watchers(instance, tables, exportable, expression):
             exc_info=True,
         )
         # The statements before the failing one did take effect
-        output = instance.query(ACTIVE_TABLES_QUERY, timeout=60)
+        output = instance.query(active_tables_query, timeout=60)
     suffix = "_watcher"
     return sorted(
         line[: -len(suffix)] for line in output.split() if line.endswith(suffix)
