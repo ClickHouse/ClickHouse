@@ -15,26 +15,6 @@
 namespace DB
 {
 
-/// An executed plan, with the statistics it produced, for `system.query_log.query_plan`.
-///
-/// Capturing and writing are separate: `capturePlan` takes the plan apart into owned values while
-/// the plan and its pipeline are alive, and `capturedPlanToJSON` writes the document from those
-/// values afterwards, when neither still exists.
-///
-/// The document is a flat array of nodes rather than a tree:
-///
-///     {"Version": 1, "Root": "<id>", "Output": [...],
-///      "Nodes": [{"Node Id": ..., "Children": [...], ...}]}
-///
-/// A tree would nest to the depth of the plan, and nothing in SQL can walk an arbitrary depth, so
-/// the question the column exists to answer -- which steps spend the time, across many queries --
-/// would be unanswerable. Flat, it is one `arrayJoin` over `Nodes`. Sub-plans (`getChildPlans`,
-/// as a `Merge` table produces) are ordinary entries referenced from a parent's `Children`, not a
-/// second kind of nesting.
-///
-/// Separate from `QueryPlan::explainPlan` on purpose: that one serves `EXPLAIN json=1`, whose
-/// output is a tree and must stay as it is.
-
 /// Written into every plan as `Version`, so a reader can tell what it is looking at rather than
 /// guessing from which keys happen to be present.
 ///
@@ -44,7 +24,7 @@ namespace DB
 /// because `system.query_log` holds whatever version was current when each row was written.
 constexpr UInt64 QUERY_PLAN_JSON_VERSION = 1;
 
-/// Writes the document. A capture is plain data, so this reads it and leaves it alone.
+/// Writes the document.
 JSONBuilder::ItemPtr capturedPlanToJSON(const CapturedPlan & captured);
 
 }

@@ -20,8 +20,12 @@ namespace
 
 /// The step's own account of itself, one string per line. Like: `Filter column: ...`,
 /// `Sort description: ...`, `Limit ...`.
-std::vector<String> stepDetails(const IQueryPlanStep & step, const PrettyNames * plan_pretty_names)
+std::vector<String> stepDetails(
+    const IQueryPlanStep & step, const ExplainPlanOptions & options, const PrettyNames * plan_pretty_names)
 {
+    if (!options.actions)
+        return {};
+
     PrettyNames empty_pretty_names;
     WriteBufferFromOwnString out;
 
@@ -36,6 +40,8 @@ std::vector<String> stepDetails(const IQueryPlanStep & step, const PrettyNames *
         .runtime_filter_names = plan_pretty_names ? plan_pretty_names->runtime_filter_names : empty_pretty_names.runtime_filter_names};
 
     step.describeActions(settings);
+
+    /// Split the resulting lines into a vector of strings
 
     std::vector<String> details;
 
@@ -56,6 +62,61 @@ std::vector<String> stepDetails(const IQueryPlanStep & step, const PrettyNames *
     return details;
 }
 
+/// How the step describes itself in one line, trimmed and cut to length.
+String stepDescription(
+    const IQueryPlanStep & step, const ExplainPlanOptions & options, size_t max_description_length)
+{
+    if (!options.description)
+        return {};
+
+    std::string_view description = step.getStepDescription();
+
+    /// Backs the view when trimming produces a new string, as the text renderer does.
+    String pretty_description;
+    if (options.pretty)
+    {
+        pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
+        description = pretty_description;
+    }
+
+    if (max_description_length)
+        description = description.substr(0, max_description_length);
+
+    return String(description);
+}
+
+/// Only a `ReadFromMergeTree` analyses indexes, and the analysis is data it already holds --
+/// `describeIndexes` is one rendering of it, this capture is another.
+PlanIndexStats stepIndexes(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+{
+    const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step);
+    if (!options.indexes || !read_from_merge_tree)
+        return {};
+
+    return read_from_merge_tree->getIndexStats();
+}
+
+/// See `stepIndexes`: the same data, from the same step.
+PlanProjectionStats stepProjections(const IQueryPlanStep & step, const ExplainPlanOptions & options)
+{
+    const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step);
+    if (!options.projections || !read_from_merge_tree)
+        return {};
+
+    return read_from_merge_tree->getProjectionStats();
+}
+
+/// What the pipeline measured for this step. Absent when there was no pipeline to measure -- a
+/// query that failed before finishing is captured without statistics.
+std::optional<AnalyzedStepData> stepStatistics(
+    const IQueryPlanStep & step, const StepStatisticsCollector * steps_to_stats)
+{
+    if (!steps_to_stats)
+        return {};
+
+    return steps_to_stats->analyzeStep(&step);
+}
+
 /// The names are scoped per plan: a sub-plan is its own naming scope and has its own entry.
 /// A miss is not a mistake: `ReadFromMerge` builds its child plans in `initializePipeline`, which
 /// runs after `buildPrettyNamesPerPlan`, so a child plan reached here may have no entry.
@@ -68,8 +129,8 @@ const PrettyNames * findPrettyNames(const PrettyNamesPerPlan * pretty_names, con
     return it == pretty_names->names.end() ? nullptr : &it->second;
 }
 
-/// Everything the document will need about one step, read off the step and its pipeline now and
-/// held as values. `children` is filled by the walk below, which is what knows the shape.
+/// Everything the document needs about one step, read while the step and its pipeline are alive.
+/// `children` is left empty: only the walk below knows the shape.
 CapturedStep captureStep(
     const IQueryPlanStep & step,
     const ExplainPlanOptions & options,
@@ -78,51 +139,22 @@ CapturedStep captureStep(
     const PrettyNames * plan_pretty_names)
 {
     CapturedStep captured;
+
     captured.id = step.getUniqID();
     captured.type = step.getName();
     captured.consumed_subquery_ids = step.getConsumedSubqueryIds();
-
-    if (options.description)
-    {
-        std::string_view description = step.getStepDescription();
-
-        /// Backs the view when trimming produces a new string, as the text renderer does.
-        String pretty_description;
-        if (options.pretty)
-        {
-            pretty_description = QueryPlanFormat::trimColumnIdentifier(description);
-            description = pretty_description;
-        }
-
-        if (max_description_length)
-            description = description.substr(0, max_description_length);
-
-        captured.description = description;
-    }
-
-    if (options.actions)
-        captured.details = stepDetails(step, plan_pretty_names);
-
-    /// Only a `ReadFromMergeTree` analyses indexes, and the analysis is data it already holds --
-    /// `describeIndexes` is one rendering of it, this capture is another.
-    if (const auto * read_from_merge_tree = dynamic_cast<const ReadFromMergeTree *>(&step))
-    {
-        if (options.indexes)
-            captured.indexes = read_from_merge_tree->getIndexStats();
-        if (options.projections)
-            captured.projections = read_from_merge_tree->getProjectionStats();
-    }
-
-    if (steps_to_stats)
-        captured.statistics = steps_to_stats->analyzeStep(&step);
+    captured.description = stepDescription(step, options, max_description_length);
+    captured.details = stepDetails(step, options, plan_pretty_names);
+    captured.indexes = stepIndexes(step, options);
+    captured.projections = stepProjections(step, options);
+    captured.statistics = stepStatistics(step, steps_to_stats);
 
     return captured;
 }
 
-
-/// Walks a plan and captures every node, children included. Shared by the query's own plan and by
-/// the sub-plans that are captured on their own.
-std::vector<CapturedStep> captureNodes(
+/// Captures every step of a plan, and of any plan its steps own (`getChildPlans`). Only the walk
+/// knows the shape, so this is also what fills in each step's `children`.
+std::vector<CapturedStep> capturePlanSteps(
     const QueryPlan & plan,
     const ExplainPlanOptions & options,
     size_t max_description_length,
@@ -149,17 +181,18 @@ std::vector<CapturedStep> captureNodes(
             continue;
 
         auto & step = *frame.node->step;
+        /// Collect the step
         auto captured = captureStep(
             step, options, max_description_length, steps_to_stats, findPrettyNames(pretty_names, frame.plan));
 
+        /// Collect the children
         for (auto * child : frame.node->children)
         {
             captured.children.push_back(child->step->getUniqID());
             stack.push_back({frame.plan, child});
         }
 
-        /// A sub-plan root is just another node here, referenced like any child. In the tree form
-        /// it needed a second kind of nesting.
+        /// Collect child plans
         for (auto * child_plan : step.getChildPlans())
         {
             if (!child_plan)
@@ -206,12 +239,7 @@ CapturedSubPlan captureSubPlanData(
     result.subquery_id = subquery_id;
     result.kind = kind;
     result.root_id = plan.getRootNode()->step->getUniqID();
-    result.nodes = captureNodes(plan, options, max_description_length, steps_to_stats, pretty_names);
-
-    /// Says which subquery each node belongs to, so a reader walking the flat `Nodes` array can
-    /// tell them apart from the query's own steps without following `Children` from every root.
-    for (auto & node : result.nodes)
-        node.sub_plan_id = subquery_id;
+    result.nodes = capturePlanSteps(plan, options, max_description_length, steps_to_stats, pretty_names);
 
     if (steps_to_stats)
     {
@@ -234,7 +262,7 @@ CapturedPlan capturePlan(
         return result;
 
     result.root_id = plan.getRootNode()->step->getUniqID();
-    result.nodes = captureNodes(plan, options, max_description_length, steps_to_stats, pretty_names);
+    result.nodes = capturePlanSteps(plan, options, max_description_length, steps_to_stats, pretty_names);
 
     if (steps_to_stats)
     {
@@ -242,8 +270,7 @@ CapturedPlan capturePlan(
         result.max_threads = steps_to_stats->getMaxThreads();
     }
 
-    /// The columns the query produces. The text renderer prints these once above the tree rather
-    /// than against a step, so they belong to the plan, not to any node.
+    /// The columns the query produces.
     if (options.pretty)
     {
         const auto * root_pretty_names = findPrettyNames(pretty_names, &plan);

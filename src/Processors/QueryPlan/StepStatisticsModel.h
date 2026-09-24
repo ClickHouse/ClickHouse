@@ -11,8 +11,6 @@
 namespace DB
 {
 
-class IQueryPlanStep;
-
 struct StepIOStats
 {
     UInt64 input_rows = 0;
@@ -56,14 +54,4 @@ struct AnalyzedStepData
     AnalyzedStages stage_reports;
     bool label_stages = false;
 };
-
-struct StepStatisticsContext
-{
-    const IQueryPlanStep * step = nullptr;
-    StepIOStats io;
-    UInt64 execution_query_time_ns = 0;
-    UInt64 max_num_threads_per_query = 0;
-    StepGroupStatsByGroupId group_stats;
-};
-
 }

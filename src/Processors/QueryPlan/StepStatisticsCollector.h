@@ -6,7 +6,7 @@
 #include <vector>
 #include <Processors/IProcessor.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/StepStatisticsModel.h>
+#include <Processors/QueryPlan/StepStatisticsAnalyzer.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <base/types.h>
 #include <boost/container_hash/hash.hpp>

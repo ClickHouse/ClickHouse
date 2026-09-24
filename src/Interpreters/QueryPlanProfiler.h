@@ -139,8 +139,7 @@ private:
 
     WhileRunning running;
 
-    /// Out-of-order use is not loud -- it yields a plan with no statistics, or an empty column --
-    /// so the order the methods must come in is asserted in debug builds.
+    /// The order the methods above must come in is asserted against this in debug builds.
     bool finished = false;
 
     /// Valid once the profiling is finished

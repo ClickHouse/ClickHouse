@@ -473,8 +473,6 @@ void QueryPlanProfiler::capture(const QueryPipeline * pipeline)
 
 String QueryPlanProfiler::render()
 {
-    /// Rendering before `finish` would keep the plan -- and the table locks it owns -- alive for
-    /// the whole of logging, which is what `finish` exists to prevent.
     chassert(finished);
 
     if (!captured)
