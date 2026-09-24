@@ -101,8 +101,12 @@ ${CLICKHOUSE_LOCAL} --allow_delta_lake_writes=1 --query "
     SETTINGS delta_lake_insert_max_bytes_in_data_file = 2000000, ${CHUNKS};
 "
 bytes_report "${ROOT}/bytes_part"
-echo "partition directories: $(find "${ROOT}/bytes_part" -maxdepth 1 -type d -name 'p=*' | wc -l | tr -d ' ')"
-echo "partitions with more than one data file: $(for d in "${ROOT}"/bytes_part/p=*; do find "${d}" -name '*.parquet' | wc -l; done | awk '$1 > 1' | wc -l | tr -d ' ')"
+# Per-partition accounting: every partition gets 5000 rows of each 10000-row chunk, so a partition rotates
+# its file after the 4th chunk (20000 rows of ~117 bytes exceed 2 MB). A budget shared across the two
+# partitions would rotate after 2 chunks and leave 10000-row files instead.
+for d in "${ROOT}"/bytes_part/p=*; do
+    echo "$(basename "${d}"): rows per file: $(find "${d}" -name '*.parquet' | while read -r f; do ${CLICKHOUSE_LOCAL} --query "SELECT count() FROM file('${f}', Parquet)" < /dev/null; done | sort -n | tr '\n' ',' | sed 's/,$//')"
+done
 
 echo "-- default limits (1M rows, 1 GiB): the same INSERT stays in a single file"
 bootstrap "${ROOT}/defaults" '[]'
