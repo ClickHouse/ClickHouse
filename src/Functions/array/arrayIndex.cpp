@@ -26,11 +26,12 @@ ALWAYS_INLINE bool hasInBlock(const T * data, T value)
 template <typename T, size_t N>
 ALWAYS_INLINE size_t findFirstIndexInBlock(const T * data, T value)
 {
-    size_t found = N;
+    constexpr unsigned not_found = static_cast<unsigned>(N);
+    unsigned found = not_found;
 
-    for (size_t j = 0; j < N; ++j)
+    for (unsigned j = 0; j < not_found; ++j)
     {
-        const size_t candidate = data[j] == value ? j : N;
+        const unsigned candidate = data[j] == value ? j : not_found;
         found = std::min(found, candidate);
     }
 
