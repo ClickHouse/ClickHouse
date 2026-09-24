@@ -1,4 +1,5 @@
 local metadata, blob killer started	1
+local metadata, blob copier not needed	1
 plain_rewritable, blob killer started	0
 plain_rewritable, blob killer not needed	1
 plain_rewritable, blob copier not needed	1

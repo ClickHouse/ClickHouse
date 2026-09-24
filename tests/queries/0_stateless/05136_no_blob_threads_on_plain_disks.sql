@@ -25,6 +25,10 @@ SYSTEM FLUSH LOGS text_log;
 SELECT 'local metadata, blob killer started', count() > 0 FROM system.text_log
 WHERE logger_name = '05136_local_metadata::BlobKillerThread' AND message LIKE 'Execution started%';
 
+-- The copier reports this at startup even when `data_background_replication` is not enabled.
+SELECT 'local metadata, blob copier not needed', count() > 0 FROM system.text_log
+WHERE logger_name = '05136_local_metadata::BlobCopierThread' AND message LIKE 'Execution is not needed%';
+
 SELECT 'plain_rewritable, blob killer started', count() FROM system.text_log
 WHERE logger_name = '05136_plain_rewritable::BlobKillerThread' AND message LIKE 'Execution started%';
 

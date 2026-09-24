@@ -354,7 +354,8 @@ public:
     virtual int64_t getMissingBlobsQueueEstimate() { return 0; }
 
     /// The same as `hasDeadBlobsQueue`, but for the queue of blobs missing in some of the cluster locations,
-    /// which is drained in background by `BlobCopierThread`.
+    /// which is drained in background by `BlobCopierThread`. Only a storage spanning several locations
+    /// fills it, so every single-location storage, including `local`, answers `false`.
     virtual bool hasMissingBlobsQueue() const { return true; }
 
     /// Re-read paths or their full subtrees from disk and update cache.
