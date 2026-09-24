@@ -1,5 +1,5 @@
--- `rewrite_in_to_join` below requires this setting, which the 25.8 block of
--- SettingsChangesHistory.cpp turns on, so a randomized older `compatibility` reverts it.
+-- `rewrite_in_to_join` below requires this setting, which its 25.8 history record turns on,
+-- so a randomized older `compatibility` reverts it.
 SET allow_experimental_correlated_subqueries = 1;
 
 -- The `view` table function argument is deliberately excluded from analysis, so the query tree

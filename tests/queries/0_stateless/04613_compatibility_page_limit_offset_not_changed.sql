@@ -1,4 +1,4 @@
--- `page`, `limit`, and `offset` are `Double` settings, and their entries in `SettingsChangesHistory`
+-- `page`, `limit`, and `offset` are `Double` settings, and their history records
 -- must record `Float64` values. With integer values, the type-strict `Field` comparison in
 -- `applyCompatibilitySetting` considers `Float64(0) != UInt64(0)` and marks all three settings as
 -- changed even at the default value, leaking them onto the native wire to older peers.

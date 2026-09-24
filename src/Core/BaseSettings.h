@@ -144,7 +144,7 @@ struct SettingsOwner;
   *     DECLARE(Float, f, 3.11, "Description of f", IMPORTANT) \
   *     DECLARE(String, s, "default", "Description of s", 0) \
   *     DECLARE_WITH_ALIAS(String, experimental, "default", "Description", 0, stable)
-  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, old_name, older_name)
+  *     DECLARE_WITH_ALIAS(String, renamed_twice, "default", "Description", 0, SETTING_ALIASES(old_name, older_name))
   *
   * DECLARE_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MY_SETTINGS_SUPPORTED_TYPES)
   * IMPLEMENT_SETTINGS_TRAITS(MySettingsTraits, APPLY_FOR_MYSETTINGS, MySettings, MySetting)
@@ -1525,11 +1525,22 @@ using AliasMap = UnorderedMapWithMemoryTracking<std::string_view, std::string_vi
 #define SETTING_SKIP_TRAIT(...)
 
 
-/// Generates one or two alias mapping entries.
+/// Generates one or two alias mapping entries. The arguments after ALIAS are the change history of the setting.
 /// NOLINTNEXTLINE
 #define DECLARE_SETTINGS_WITH_ALIAS_TRAITS_(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ALIAS, ...) \
+    SETTING_ALIAS_ENTRIES_(NAME, ALIAS)
+
+/// `ALIAS` is expanded before this is called, so `SETTING_ALIASES(a, b)` arrives as two arguments.
+/// NOLINTNEXTLINE
+#define SETTING_ALIAS_ENTRIES_(NAME, ...) SETTING_ALIAS_ENTRIES_IMPL_(NAME, __VA_ARGS__)
+/// NOLINTNEXTLINE
+#define SETTING_ALIAS_ENTRIES_IMPL_(NAME, ALIAS, ...) \
     { #ALIAS, #NAME }, \
     __VA_OPT__({ #__VA_ARGS__, #NAME },)
+
+/// The ALIAS argument of `DECLARE_WITH_ALIAS` for a setting with two aliases.
+/// NOLINTNEXTLINE
+#define SETTING_ALIASES(...) __VA_ARGS__
 
 /// Implement the full settings infrastructure for a settings class.
 /// Generates: Impl struct, Data constructor, Accessor singleton, and

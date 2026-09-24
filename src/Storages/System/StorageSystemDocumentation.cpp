@@ -525,19 +525,13 @@ using SettingsHistoryIndex = std::unordered_map<std::string_view, std::vector<Se
 /// The change history of a settings collection, indexed for lookup in the two ways it is looked up.
 struct SettingsHistory
 {
-    /// Keyed by the canonical name of the setting. `compatibility` resolves the recorded name of every change
-    /// through `resolveName` before applying it, so a change recorded under an alias of a setting belongs to the
-    /// history of that setting as much as one recorded under its canonical name. Without this, the history of a
-    /// setting that was renamed would be cut at the rename. `resolveName` knows only the names a setting has
-    /// today, so a rename whose old name was not kept as an alias is followed separately, by the names the
-    /// reasons of the rename records give — see `buildRenames`.
+    /// Keyed by the name of the setting: the records of its declaration. A rename whose old name was not kept as
+    /// an alias leaves records in the declaration of the old name (an obsolete setting, say), and those are
+    /// followed by the names the reasons of the rename records give — see `buildRenames`.
     SettingsHistoryIndex by_setting;
     /// Keyed by the name of an alias, and holding the history of that name as opposed to the history of the setting
-    /// it resolves to: every record written under the alias itself, plus the records written under another name of
-    /// the same setting that register this one as an alias. The second part is needed because the history file is
-    /// inconsistent about where aliasing is recorded — `async_insert_busy_timeout_ms` was registered as an alias by
-    /// a record written under the canonical `async_insert_busy_timeout_max_ms`, and a setting that is renamed with
-    /// its old name kept as an alias (`text_index_density_threshold`) has that rename recorded under the new name.
+    /// it resolves to: the records of the setting whose reason names the alias as an alias or as a former name of
+    /// the setting — see `recordRegistersAliasNamed`.
     SettingsHistoryIndex by_alias;
 };
 
@@ -556,10 +550,11 @@ bool reasonMentionsName(std::string_view reason, std::string_view name)
     return false;
 }
 
-/// Whether a record written under one name of a setting registers `alias` as another name of it: it names the alias
-/// and says either that an alias is being added ("`x` is aliased to `y`") or that the setting is being renamed,
-/// which is how the file words keeping the old name as an alias ("Renamed from `text_index_density_threshold`
-/// (kept as an alias)", "The setting was renamed. The previous name is `allow_statistic_optimize`.").
+/// Whether a record of a setting belongs to the history of its alias `alias`: it names the alias and says either
+/// that it is an alias ("Added the alias `x`", "At the time the setting was named `x`, which is now an alias of
+/// it.") or that the setting was renamed, which is how keeping the old name as an alias is worded ("Renamed from
+/// `text_index_density_threshold` (kept as an alias)", "The setting was renamed. The previous name is
+/// `allow_statistic_optimize`.").
 ///
 /// Whether the record also changes the default value is irrelevant: the two happen in the same version often
 /// enough ("Lightweight updates were moved to Beta. Added an alias for setting
@@ -572,9 +567,9 @@ bool recordRegistersAliasNamed(const SettingsChangesHistory::SettingChange & cha
         && reasonMentionsName(change.reason, alias);
 }
 
-/// Whether the reason authored for a change in `SettingsChangesHistory.cpp` says that the record is there to
+/// Whether the reason authored for a history record of a setting says that the record is there to
 /// register an alias of a setting: "Added an alias for setting `x`", "Add alias to x", "Added as an alias for 'x'",
-/// "Alias for os_threads_nice_value_query.".
+/// "Added the alias `x`.".
 ///
 /// The bound of the first form keeps the verb and the alias in one phrase, and the second form is anchored at the
 /// beginning of a sentence, so that a record which introduces a setting and mentions an alias of it in passing
@@ -586,19 +581,13 @@ bool reasonRegistersAnAlias(std::string_view reason)
     return re2::RE2::PartialMatch(reason, registers_an_alias);
 }
 
-/// Adds a record to the history of one name, unless the same change of the default value in the same version is
-/// already listed there under another name. One change is recorded twice whenever it concerns both a setting and
-/// an alias of it, once under each name and with a reason authored separately for each, and the history of a name
-/// lists it once. Which of the two records is kept is decided by `authoritative`: the history of a setting keeps
-/// the record written under the name of that setting, and the history of an alias keeps the record that registers
-/// the alias, each being the more direct account of the change for the name it is rendered for.
-///
-/// The two records are recognized as the same change by the version and the values, and not by the reason, which
-/// is free-form and authored per record ("Lightweight updates were moved to Beta. Added an alias for setting
-/// `allow_experimental_lightweight_update`." against "Lightweight updates were moved to Beta."). Records written
-/// under the same name are never coalesced: they are separate entries of the history file, not two accounts of
-/// one change (`enable_max_bytes_limit_for_min_age_to_force_merge` has two 25.1 records with the same values but
-/// different reasons), and each keeps its own reason.
+/// Adds a record to the history of a setting, unless the same change of the default value in the same version is
+/// already listed there under another name. That happens across a rename that did not keep the old name as an
+/// alias: the old name, made obsolete, keeps its records, and the change can be recorded under both names. The
+/// record of the setting itself is kept, as `authoritative` says. The two records are recognized as the same change
+/// by the version and the values, and not by the free-form reason. Records of the same setting are never coalesced:
+/// `output_format_arrow_use_64_bit_indexes_for_dictionary` was recorded twice in 24.1 before the history was moved
+/// into the declarations, and a declaration holds one record per version since.
 void addSettingHistoryEntry(std::vector<SettingHistoryEntry> & entries, const SettingHistoryEntry & entry, bool authoritative)
 {
     const auto same_change = std::find_if(entries.begin(), entries.end(), [&](const SettingHistoryEntry & other)
@@ -616,9 +605,9 @@ void addSettingHistoryEntry(std::vector<SettingHistoryEntry> & entries, const Se
 }
 
 /// The name that the reason of a record gives as another name of the same setting across a rename: the old name
-/// for a record written under the new one ("Rename of `x`", "Rename of setting `x`", "Renamed from `x`",
-/// "New name of `x`", "The setting was renamed. The previous name is `x`."), and the new name for a record written
-/// under the old one ("Obsolete setting, renamed to `x`."). Empty when the reason notes no rename.
+/// for a record of the new one ("Rename of `x`", "Rename of setting `x`", "Renamed from `x`", "New name of `x`",
+/// "The setting was renamed. The previous name is `x`."), and the new name for a record of the old one ("Obsolete
+/// setting, renamed to `x`."). Empty when the reason notes no rename.
 ///
 /// The returned view points into `reason`, which is owned by the static change history.
 std::string_view renamedName(std::string_view reason, const re2::RE2 & wording)
@@ -642,11 +631,10 @@ std::string_view newNameOfRenamedSetting(std::string_view reason)
     return renamedName(reason, wording);
 }
 
-/// Maps a name a setting used to have onto the name it has today, for the renames that `resolveName` cannot follow:
-/// a rename keeps the old name as an alias only sometimes, and when it does not — `distributed_cache_read_alignment`
-/// became `distributed_cache_alignment` and was made obsolete — the history recorded under the old name is not
-/// reachable from the setting through the aliases. The history file records such a rename in the reason of a
-/// record, written either under the new name or under the old one, and that reason is the only account of it.
+/// Maps a name a setting used to have onto the name it has today, for the renames that did not keep the old name as
+/// an alias: `distributed_cache_read_alignment` became `distributed_cache_alignment` and was made obsolete, and the
+/// records of the old name stay in its own declaration. The rename is recorded in the reason of a record, of either
+/// the new name or the old one, and that reason is the only account of it.
 ///
 /// Chains are followed, so a setting renamed twice maps to its current name; the recursion is bounded by the number
 /// of mappings, as a cycle would otherwise be possible for a pair of records naming each other.
@@ -657,8 +645,8 @@ std::unordered_map<std::string_view, std::string_view> buildRenames(const Versio
 
     auto add = [&](std::string_view previous_name, std::string_view current_name)
     {
-        /// A rename that kept the old name as an alias needs no mapping: `resolveName` already follows it. The same
-        /// goes for a reason that names the setting it is written under ("Renamed from ... (kept as an alias)").
+        /// A rename that kept the old name as an alias needs no mapping: the alias page covers it. The same goes
+        /// for a reason that names the setting it is written for ("Renamed from ... (kept as an alias)").
         if (previous_name.empty() || SettingsCollection::resolveName(previous_name) == current_name)
             return;
         renames.emplace(previous_name, current_name);
@@ -667,9 +655,8 @@ std::unordered_map<std::string_view, std::string_view> buildRenames(const Versio
     for (const auto & [_, changes] : history)
         for (const auto & change : changes)
         {
-            const std::string_view current = SettingsCollection::resolveName(change.name);
-            add(previousNameOfRenamedSetting(change.reason), current);
-            /// The record is written under the old name here, so it is that name which maps onto the new one.
+            add(previousNameOfRenamedSetting(change.reason), change.name);
+            /// The record is of the old name here, so it is that name which maps onto the new one.
             if (const std::string_view new_name = newNameOfRenamedSetting(change.reason); !new_name.empty())
                 add(change.name, SettingsCollection::resolveName(new_name));
         }
@@ -696,8 +683,7 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
     /// The names that settings used to have before a rename that `resolveName` cannot follow.
     const auto renames = buildRenames<SettingsCollection>(history);
 
-    /// The aliases of every setting of the collection, to attribute a record that registers an alias to that alias
-    /// even when the record is written under another name of the same setting.
+    /// The aliases of every setting of the collection, to attribute a record that registers an alias to that alias.
     std::unordered_map<std::string_view, std::vector<std::string_view>> aliases_by_setting;
     for (const auto & alias : settings.getAllAliasNames())
         aliases_by_setting[SettingsCollection::resolveName(alias)].push_back(alias);
@@ -711,39 +697,24 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
         {
             const SettingHistoryEntry entry{version_string, &change};
 
-            const std::string_view canonical = SettingsCollection::resolveName(change.name);
-
-            /// A record written under an alias is history of that alias, and a record written under another name of
-            /// the same setting is too when it is what registered the alias.
-            if (canonical != change.name)
-                addSettingHistoryEntry(result.by_alias[change.name], entry, /* authoritative= */ false);
-            if (const auto it = aliases_by_setting.find(canonical); it != aliases_by_setting.end())
+            if (const auto it = aliases_by_setting.find(change.name); it != aliases_by_setting.end())
                 for (const auto & alias : it->second)
-                    if (alias != change.name && recordRegistersAliasNamed(change, alias))
-                        addSettingHistoryEntry(result.by_alias[alias], entry, /* authoritative= */ true);
+                    if (recordRegistersAliasNamed(change, alias))
+                        result.by_alias[alias].push_back(entry);
 
-            /// A record written under an alias for the sole purpose of registering that alias is the history of
-            /// the alias and not of the setting it aliases: it neither introduces that setting nor changes its
-            /// default. Without this, `max_insert_block_size` — older than the change history and with no
-            /// recorded change of its own — would pick up the 26.1 record that registered its alias
-            /// `max_insert_block_size_rows` and claim to have been introduced in that version.
-            if (canonical != change.name && change.previous_value == change.new_value
-                && reasonRegistersAnAlias(change.reason))
-                continue;
+            addSettingHistoryEntry(result.by_setting[change.name], entry, /* authoritative= */ true);
 
-            addSettingHistoryEntry(result.by_setting[canonical], entry, /* authoritative= */ canonical == change.name);
-
-            /// A record written under a name the setting had before a rename is history of the setting as it is
-            /// named today as well. It is kept under the old name too: a name that is still a setting of its own
-            /// (an obsolete setting, say) keeps its own account of the change.
-            if (const auto renamed = renames.find(canonical); renamed != renames.end())
+            /// A record of a name the setting had before a rename is history of the setting as it is named today
+            /// as well. It is kept under the old name too: a name that is still a setting of its own (an obsolete
+            /// setting, say) keeps its own account of the change.
+            if (const auto renamed = renames.find(change.name); renamed != renames.end())
                 addSettingHistoryEntry(result.by_setting[renamed->second], entry, /* authoritative= */ false);
         }
     }
     return result;
 }
 
-/// Whether the reason authored for a change in `SettingsChangesHistory.cpp` says that the record is there to
+/// Whether the reason authored for a history record of a setting says that the record is there to
 /// register something that did not exist before, rather than to note something about a setting that already
 /// existed.
 ///
@@ -751,7 +722,7 @@ SettingsHistory buildSettingsHistory(const SettingsCollection & settings, const 
 /// a record that registers a new setting is as likely to describe what the setting does ("Cloud sync", "Max
 /// retries for general keeper operations", "Allow to skip empty files in azure table engine") as to say that it
 /// is new. Recognizing the phrasings that announce a new setting would therefore drop most introductions, so
-/// this recognizes the opposite — the far smaller and more formulaic set of phrasings the file uses when a
+/// this recognizes the opposite — the far smaller and more formulaic set of phrasings the history uses when a
 /// no-op record is about a setting that already existed: that it became obsolete, that it graduated to another
 /// maturity tier, that an existing setting became settable per query, that it was renamed, or that the record adds
 /// an alias.
@@ -792,7 +763,7 @@ bool isIntroduction(const SettingHistoryEntry & entry, bool documenting_an_alias
 
 /// The history of the default value of a setting, appended to its documentation as a Markdown list, newest change
 /// first: in which version the setting was introduced, if that is recorded, and how its default value changed since.
-/// Every change also carries the reason it was made, as authored in `SettingsChangesHistory.cpp`.
+/// Every change also carries the reason it was made, as authored in the history record of the setting.
 ///
 /// Not every setting has a recorded history: the history exists to implement the `compatibility` setting, so it
 /// covers the changes made since that mechanism was introduced, and a setting that is older than it and never

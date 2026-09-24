@@ -8,7 +8,7 @@ WITH toTime(toDateTime(12)) AS a
 SELECT toTypeName(a), a;
 
 -- An old compatibility version restores the legacy toTime (fixed date, DateTime result),
--- because the default change is registered in SettingsChangesHistory under version 26.7.
+-- because the default change is recorded in the history of the setting under version 26.7.
 SET compatibility = '26.6';
 SELECT 'compatibility = 26.6';
 WITH toTime(toDateTime(12)) AS a
