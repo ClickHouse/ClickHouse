@@ -135,13 +135,8 @@ struct CallbackRunnerTask
 template <typename Result, typename Callback = std::function<Result()>>
 ThreadPoolCallbackRunnerUnsafe<Result, Callback> threadPoolCallbackRunnerUnsafe(ThreadPool & pool, ThreadName thread_name)
 {
-    return [my_pool = &pool, thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
+    return [my_pool = &pool, thread_group = getCurrentThreadGroup(), thread_name](Callback && callback, Priority priority) mutable -> std::future<Result>
     {
-        /// Since it is a wrapper for a task that will be reused for each task
-        /// we need to obtain ThreadGroup here not during creating the task wrapper,
-        /// otherwise the accounting will be incorrect
-        auto thread_group = getCurrentThreadGroup();
-
         auto task = std::make_shared<detail::CallbackRunnerTask<Result, Callback>>(thread_group, thread_name, std::move(callback));
 
         auto future = task->promise.get_future();
@@ -282,7 +277,7 @@ public:
     [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(
         std::reference_wrapper<Fn> callback,
         Priority priority = {},
-        std::optional<Int64> wait_microseconds = {}) = delete;
+        std::optional<uint64_t> wait_microseconds = {}) = delete;
     // If you hit this error, you're passing std::ref(lambda) or capturing by reference.
     // Change [&my_lambda] to [my_lambda] (capture by value).
     //
@@ -293,7 +288,7 @@ public:
     /// You are responsible for handling it from now on, checking its status and so on. You must implement your own waitForAllToFinish* equivalent
     /// You must ensure that all returned tasks are waited upon (i.e., their futures are completed) before the ThreadPool is destroyed.
     /// Otherwise, the task's lambda may reference a destroyed pool state, leading to undefined behavior.
-    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
+    [[nodiscard]] std::shared_ptr<Task> enqueueAndGiveOwnership(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         auto promise = std::make_shared<std::promise<Result>>();
         auto task = std::make_shared<Task>();
@@ -337,14 +332,7 @@ public:
         return task;
     }
 
-    /// Reserve tracking capacity up front. With enough capacity reserved for every
-    /// enqueueAndKeepTrack call, the internal emplace_back cannot reallocate (and moving a
-    /// shared_ptr is noexcept), so enqueueAndKeepTrack can only throw from scheduling itself,
-    /// before the task is accepted by the pool. That lets callers safely run a task inline on
-    /// failure without risking a scheduled-but-untracked duplicate.
-    void reserve(size_t n) { tasks.reserve(n); }
-
-    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<Int64> wait_microseconds = {})
+    void enqueueAndKeepTrack(Callback && callback, Priority priority = {}, std::optional<uint64_t> wait_microseconds = {})
     {
         tasks.emplace_back(enqueueAndGiveOwnership(std::move(callback), priority, wait_microseconds));
     }

@@ -52,8 +52,6 @@ public:
 
     RefreshSet();
 
-    /// Caller should then also call notifyDependents, because dependent views need to know when
-    /// their dependencies appear/disappear.
     void emplace(StorageID id, std::optional<StorageID> inner_table_id, const std::vector<StorageID> & dependencies, RefreshTaskPtr task);
 
     /// Finds active refreshable view(s) by database and table name.

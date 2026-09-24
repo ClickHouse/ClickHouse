@@ -25,7 +25,8 @@ DiskObjectStoragePtr DiskObjectStorage::wrapWithCache(FileCachePtr cache, const 
         std::make_shared<ObjectStorageRouter>(std::move(registry)),
         std::dynamic_pointer_cast<const DiskObjectStorage>(shared_from_this()),
         Context::getGlobalContextInstance()->getConfigRef(),
-        "storage_configuration.disks." + layer_name);
+        "storage_configuration.disks." + layer_name,
+        use_fake_transaction);
 
     return cache_disk;
 }

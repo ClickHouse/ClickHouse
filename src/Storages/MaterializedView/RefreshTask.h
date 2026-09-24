@@ -3,14 +3,12 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshSchedule.h>
 #include <Storages/MaterializedView/RefreshSettings.h>
-#include <Parsers/ASTRefreshStrategy.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/StopToken.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Core/UUID.h>
 #include <IO/Progress.h>
 
-#include <map>
 #include <random>
 
 
@@ -22,14 +20,12 @@ namespace zkutil
 namespace DB
 {
 
-class CompletedPipelineExecutor;
+class PipelineExecutor;
 class QueryStatus;
 
 class StorageMaterializedView;
+class ASTRefreshStrategy;
 struct OwnedRefreshTask;
-
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 enum class RefreshState
 {
@@ -101,9 +97,10 @@ public:
         /// Used for exponential backoff on errors.
         Int64 attempt_number = 0;
 
-        /// Not used by this version. Replicas running older versions read it as the shared
-        /// RANDOMIZE FOR offset, so it has to keep carrying a random value.
-        Int64 randomness_obsolete = 0;
+        /// Random number in [-1e9, 1e9], for RANDOMIZE FOR. Re-rolled after every refresh attempt.
+        /// (Why write it to keeper instead of letting each replica toss its own coin? Because then refresh would happen earlier
+        /// on average, on the replica that generated the shortest delay. We could use nonuniform distribution to compensate, but this is easier.)
+        Int64 randomness = 0;
 
         /// Whether any replica is executing a refresh right now.
         /// May be inaccurate if the replica that's executing refresh lost zookeeper connection for
@@ -117,12 +114,10 @@ public:
         /// the dependency's latest last_success_end_time, we should start a refresh.
         AllDependenciesInfo last_success_dependencies;
 
-        /// Per-partition cursor of the last successfully processed snapshot, for incremental refresh
-        /// (`REFRESH ... APPEND INCREMENTAL`). Null when the view is not incremental or nothing has been processed yet.
-        CursorTreeNodePtr cursor;
-
         /// Znode version. Not serialized.
         int32_t version = -1;
+
+        void randomize(); // assigns `randomness`
 
         String toString() const;
         void parse(const String & data, bool running_znode_exists, const LoggerPtr & log_);
@@ -186,7 +181,7 @@ public:
     void startReplicated();
     void stopReplicated(const String & reason);
 
-    /// Schedule task immediately. For a coordinated view, records the request in Keeper first (may throw).
+    /// Schedule task immediately
     void run();
     /// Cancel task execution
     void cancel();
@@ -195,7 +190,6 @@ public:
     /// or on another one (if `coordinated`).
     /// If the refresh fails, throws an exception.
     /// If no refresh is running, completes immediately, throwing an exception if previous refresh failed.
-    /// For a coordinated view, also waits for a refresh requested but not started yet on any replica, and fails on Keeper errors.
     void wait(const ContextPtr & context);
 
     /// Wait for background work (refreshing or scheduling) on this replica to complete.
@@ -238,7 +232,6 @@ private:
         /// │   ├── name2
         /// │   └── name3
         /// ├── ["running"] (ephemeral)
-        /// ├── ["requested-<replica>"] (persistent; a pending `SYSTEM REFRESH VIEW` made on that replica, see `run`)
         /// └── ["paused"]
 
         struct WatchState
@@ -249,20 +242,6 @@ private:
         CoordinationZnode root_znode;
         bool running_znode_exists = false;
         bool paused_znode_exists = false;
-        /// Pending `SYSTEM REFRESH VIEW`s by znode name, ours included; czxid tells a re-created znode apart, see `doScheduling`.
-        struct PendingRequest
-        {
-            Int64 czxid = 0;
-            std::optional<std::chrono::system_clock::time_point> pending_since {};
-        };
-        std::map<String, PendingRequest> pending_requests;
-        /// `wait` needs a read of the znodes that started after it began, i.e. one that makes
-        /// `znode_reads_finished` exceed the `znode_reads_started` it saw. Or a failed pass, to fail instead of hanging.
-        UInt64 znode_reads_started = 0;
-        UInt64 znode_reads_finished = 0;
-        UInt64 scheduling_keeper_errors = 0;
-        /// Bumped by `wait`: the next completed read must have synced with the Keeper leader first, see `readZnodesIfNeeded`.
-        UInt64 syncs_requested = 0;
         std::shared_ptr<WatchState> watches = std::make_shared<WatchState>();
 
         /// Time when we first saw that `root_znode.refresh_running && !running_znode_exists`.
@@ -307,9 +286,9 @@ private:
         std::mutex executor_mutex;
         /// If there's a refresh in progress, it can be aborted by setting this flag and cancel()ling
         /// this executor. Refresh task will then reconsider what to do, re-checking `stop_requested`,
-        /// `pending_requests`, etc.
+        /// `out_of_schedule_refresh_requested`, etc.
         std::atomic_bool interrupt_execution {false};
-        CompletedPipelineExecutor * executor = nullptr;
+        PipelineExecutor * executor = nullptr;
         /// Process-list entry of the in-flight refresh query, so interruptExecution() can mark it
         /// killed. Set as soon as the query enters the process list, before it is interpreted.
         std::shared_ptr<QueryStatus> executing_query_status;
@@ -335,11 +314,8 @@ private:
         bool stop_requested = false;
         /// Refreshes are stopped because we got an unexpected error. Can be resumed with SYSTEM START VIEW.
         std::optional<String> unexpected_error;
-
-        /// This replica's RANDOMIZE FOR offset, and what it was drawn for.
-        /// Redrawn when last_completed_timeslot changes.
-        std::chrono::sys_seconds randomness_drawn_for_timeslot {};
-        Int64 randomness = 0;
+        /// An out-of-schedule refresh was requested, e.g. by SYSTEM REFRESH VIEW.
+        bool out_of_schedule_refresh_requested = false;
 
         /// Solves this unusual case:
         /// View X: REFRESH EVERY 10 SECOND.
@@ -367,9 +343,7 @@ private:
     RefreshSchedule refresh_schedule;
     RefreshSettings refresh_settings;
     std::vector<StorageID> initial_dependencies;
-    const RefreshMode refresh_mode;
-    bool isAppend() const { return refresh_mode != RefreshMode::Replace; }
-    bool isIncremental() const { return refresh_mode == RefreshMode::AppendIncremental; }
+    const bool refresh_append;
     /// Start with refreshing paused. Used for the temporary view of CREATE OR REPLACE, which is
     /// resumed after the rename so it cannot refresh the target before the replacement is committed.
     const bool start_paused;
@@ -411,7 +385,7 @@ private:
     /// It runs whenever anything changes (e.g. znodes change, or refresh completes, or retry timer fires).
     /// It looks at the state of everything and decides what needs to be done.
     /// Public methods just provide inputs for the doScheduling()'s decisions
-    /// (e.g. stop_requested, pending_requests), they don't do anything significant themselves.
+    /// (e.g. stop_requested, out_of_schedule_refresh_requested), they don't do anything significant themselves.
     /// If is_shutdown, both background tasks were stopped, and we only need to write to zookeeper
     /// to reflect that this replica is not running a refresh anymore.
     ///
@@ -421,7 +395,7 @@ private:
 
     /// Perform an actual refresh: create new table, run INSERT SELECT, exchange tables, drop old table.
     /// Mutex must be unlocked.
-    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message, CursorTreeNodePtr & out_cursor);
+    std::optional<UUID> executeRefreshUnlocked(int32_t root_znode_version, std::vector<StorageID> deps, const String & log_comment, String & out_error_message);
 
     DependencyRefreshInfo getInfoForDependentViewsLocked(const std::unique_lock<std::mutex> &) const;
 
@@ -454,17 +428,7 @@ private:
     /// If version number doesn't match, schedules a doScheduling() call
     /// with should_reread_znodes = true, and returns false.
     /// If coordination is disabled, just update in-memory struct without writing to zookeeper.
-    /// If `request_znode` is given, that "requested-*" znode is removed in the same multi: the started refresh consumes it.
-    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false, const String & request_znode = {});
-
-    /// Enter the permanent, non-resumable "coordination unavailable" state (sets
-    /// coordination.unavailable, stops the view, records the reason). Called when a coordinated view
-    /// is attached/restored on a Keeper that lacks the feature flags coordination requires.
-    void markCoordinationUnavailable();
-
-    /// Children of the coordination znode, one per replica with a pending `SYSTEM REFRESH VIEW`, see `run`.
-    static constexpr std::string_view request_znode_prefix = "requested-";
-    String requestZnodeName() const { return String(request_znode_prefix) + coordination.replica_name; }
+    bool updateCoordinationState(CoordinationZnode root, bool running, std::shared_ptr<zkutil::ZooKeeper> zookeeper, std::unique_lock<std::mutex> & lock, bool only_running_znode = false);
 
     void setState(RefreshState s, std::unique_lock<std::mutex> & lock);
     void scheduleRefresh(std::lock_guard<std::mutex> & lock);

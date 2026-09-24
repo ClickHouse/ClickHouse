@@ -15,7 +15,6 @@
 #include <Columns/ColumnTuple.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 
 
 namespace DB
@@ -35,10 +34,12 @@ class AggregateFunctionLast2Samples final :
     public IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>
 {
 public:
+    static constexpr bool DateTime64Supported = true;
+
     using Base = IAggregateFunctionHelper<AggregateFunctionLast2Samples<TimestampType, ValueType>>;
 
-    using TimestampColumnType = ColumnVectorOrDecimal<TimestampType>;
-    using ValueColumnType = ColumnVectorOrDecimal<ValueType>;
+    using ColVecType = ColumnVectorOrDecimal<TimestampType>;
+    using ColVecResultType = ColumnVectorOrDecimal<ValueType>;
 
     String getName() const override
     {
@@ -46,8 +47,7 @@ public:
     }
 
     /// Stores two samples with most recent distinct timestamps
-    /// If there are two samples with the same timestamp, the one with the bigger value is stored;
-    /// a NaN value is stored only if all values at this timestamp are NaN
+    /// If there are two samples with the same timestamp, the one with bigger value is stored
     struct Data
     {
         ValueType values[2]{};            /// In common scenario values are Float64, so put them first as they need 8-byte alignment
@@ -77,8 +77,8 @@ public:
                 }
                 else if (timestamp == timestamps[0])
                 {
-                    /// Replace the value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    /// Replace the value with bigger one
+                    values[0] = std::max(value, values[0]);
                 }
                 else
                 {
@@ -107,8 +107,8 @@ public:
                 }
                 else if (timestamp == timestamps[0])
                 {
-                    /// Replace first sample value with the bigger one
-                    values[0] = timeseriesMaxValueForDuplicateTimestamp(values[0], value);
+                    /// Replace first sample value with bigger one
+                    values[0] = std::max(value, values[0]);
                 }
                 else if (timestamp > timestamps[1])
                 {
@@ -118,17 +118,10 @@ public:
                 }
                 else if (timestamp == timestamps[1])
                 {
-                    /// Replace second sample value with the bigger one
-                    values[1] = timeseriesMaxValueForDuplicateTimestamp(values[1], value);
+                    /// Replace second sample value with bigger one
+                    values[1] = std::max(value, values[1]);
                 }
             }
-        }
-
-        /// Bulk `add`, for the batch bucketing kernel of `AggregateFunctionTimeseriesBase`.
-        ALWAYS_INLINE void addMany(const TimestampType * __restrict timestamps_ptr, const ValueType * __restrict values_ptr, size_t count)
-        {
-            for (size_t i = 0; i < count; ++i)
-                add(timestamps_ptr[i], values_ptr[i]);
         }
 
         void merge(const Data & rhs)
@@ -232,8 +225,8 @@ public:
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
-        const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
+        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
         add(place, timestamp_column.getData()[row_num], value_column.getData()[row_num]);
     }
 
@@ -265,8 +258,8 @@ public:
         Arena *,
         ssize_t if_argument_pos) const override
     {
-        const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
+        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
         if (if_argument_pos >= 0)
         {
             const auto & flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData();
@@ -288,14 +281,13 @@ public:
         ssize_t if_argument_pos)
         const override
     {
-        const auto & timestamp_column = typeid_cast<const TimestampColumnType &>(*columns[0]);
-        const auto & value_column = typeid_cast<const ValueColumnType &>(*columns[1]);
+        const auto & timestamp_column = typeid_cast<const ColVecType &>(*columns[0]);
+        const auto & value_column = typeid_cast<const ColVecResultType &>(*columns[1]);
         if (if_argument_pos >= 0)
         {
             /// Merge the 2 sets of flags (null and if) into a single one. This allows us to use parallelizable sums when available
             const auto * if_flags = typeid_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            /// Default-init: the loop below fills [row_begin, row_end) and nothing reads the rest.
-            auto final_flags = std::make_unique_for_overwrite<UInt8[]>(row_end);
+            auto final_flags = std::make_unique<UInt8[]>(row_end);
             for (size_t i = row_begin; i < row_end; ++i)
                 final_flags[i] = (!null_map[i]) & !!if_flags[i];
 
@@ -353,8 +345,8 @@ public:
                 "Expected tuple size 2, got {}",
                 tuple.tupleSize());
 
-        TimestampColumnType & timestamps_to = typeid_cast<TimestampColumnType &>(tuple.getColumn(0));
-        ValueColumnType & values_to = typeid_cast<ValueColumnType &>(tuple.getColumn(1));
+        ColVecType & timestamps_to = typeid_cast<ColVecType &>(tuple.getColumn(0));
+        ColVecResultType & values_to = typeid_cast<ColVecResultType &>(tuple.getColumn(1));
 
         const Data & data = this->data(place);
 
