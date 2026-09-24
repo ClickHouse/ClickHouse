@@ -2755,33 +2755,42 @@ static std::optional<bool> isNumericallyZeroConstant(const Field & field)
     }
 }
 
-/// Whether a value of this type holds a float anywhere, including inside a container.
-static bool typeContainsFloat(const DataTypePtr & type_with_wrappers)
+namespace
 {
-    const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
 
-    if (isFloat(type))
+bool typeContainsFloat(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    if (isFloat(removeLowCardinalityAndNullable(type)))
         return true;
 
-    if (const auto * tuple_type = typeid_cast<const DataTypeTuple *>(type.get()))
-        return std::ranges::any_of(tuple_type->getElements(), typeContainsFloat);
+    bool has_float = false;
+    type->forEachChild([&](const IDataType & child)
+    {
+        if (!has_float && WhichDataType(child).isFloat())
+            has_float = true;
+    });
+    return has_float;
+}
 
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
-        return typeContainsFloat(array_type->getNestedType());
-
-    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
-        return typeContainsFloat(map_type->getNestedType());
-
-    return false;
 }
 
 /// Whether the constant may reach a float element of the key input as a zero, `+0.0` or `-0.0`.
-/// `Tuple` is walked element by element, being the only container a sorting key can carry. Any other
-/// float carrier, and a constant whose shape does not match the type, are conservatively treated as
-/// holding a zero, so that the caller declines the rewrite and the granules are scanned.
+/// `Tuple`, `Array` and `Map` are walked element by element, so that only an actual zero at a float position
+/// counts. Any other float carrier, and a constant whose shape does not match the type, are conservatively
+/// treated as holding a zero, so that the caller declines the rewrite and the granules are scanned.
 static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & type_with_wrappers)
 {
+    /// A NULL compares equal to nothing, so it cannot be mistaken for either zero.
+    if (field.isNull())
+        return false;
+
     const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
+
+    if (!typeContainsFloat(type))
+        return false;
 
     if (isFloat(type))
         return isNumericallyZeroConstant(field).value_or(true);
@@ -2803,7 +2812,27 @@ static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & ty
         return false;
     }
 
-    return typeContainsFloat(type);
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Array)
+            return true;
+
+        return std::ranges::any_of(
+            field.safeGet<Array>(), [&](const Field & element) { return constantMayHoldFloatZero(element, array_type->getNestedType()); });
+    }
+
+    if (const auto * map_type = typeid_cast<const DataTypeMap *>(type.get()))
+    {
+        if (field.getType() != Field::Types::Map)
+            return true;
+
+        /// Each element of a `Map` field is a `(key, value)` tuple.
+        const DataTypePtr entry_type = std::make_shared<DataTypeTuple>(DataTypes{map_type->getKeyType(), map_type->getValueType()});
+        return std::ranges::any_of(
+            field.safeGet<Map>(), [&](const Field & entry) { return constantMayHoldFloatZero(entry, entry_type); });
+    }
+
+    return true;
 }
 
 
@@ -3186,23 +3215,6 @@ bool fieldContainsNaN(const Field & field)
     }
 
     return false;
-}
-
-bool typeContainsFloat(const DataTypePtr & type)
-{
-    if (!type)
-        return false;
-
-    if (isFloat(removeLowCardinalityAndNullable(type)))
-        return true;
-
-    bool has_float = false;
-    type->forEachChild([&](const IDataType & child)
-    {
-        if (!has_float && WhichDataType(child).isFloat())
-            has_float = true;
-    });
-    return has_float;
 }
 
 /** `IN` matches `NaN` bit-exactly - `SELECT nan IN (nan)` is `1` - but every range-based index check
