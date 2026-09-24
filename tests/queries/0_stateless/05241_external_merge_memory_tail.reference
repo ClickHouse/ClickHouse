@@ -1,0 +1,6 @@
+sort_at_cap ok
+distinct_fingerprint_at_cap ok
+distinct_ordered_at_cap ok
+sort_after_intermediate ok
+distinct_fingerprint_after_intermediate ok
+distinct_ordered_after_intermediate ok
